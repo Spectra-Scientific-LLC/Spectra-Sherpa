@@ -1,0 +1,65 @@
+# ============================================================================
+# SpectraSherpa Lite .gitignore
+# ============================================================================
+
+# Environment files (contain secrets - NEVER commit)
+.env
+.env.local
+.env.*.local
+*.env
+!.env.example
+!.env.production
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Pre-built frontend SPA (committed to git — DO NOT ignore)
+# src/spectrasherpa_lite/static/ is tracked
+
+# Data / databases
+data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite3
+
+# Rate limiter state
+rate_limits.json
+execution_rate_limits.json
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+.cursor/
+
+# Test / coverage
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# Legacy backend/ directory (superseded by src/spectrasherpa_lite/)
+backend/
+
+# Spectrasherpa server (separate paid repo)
+spectrasherpa-server/

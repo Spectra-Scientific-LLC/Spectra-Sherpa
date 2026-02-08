@@ -1,0 +1,180 @@
+import { defineStore } from "pinia";
+import { computed, ref } from "vue";
+import api from "@/api/client";
+import type { JobInfo } from "@/types";
+import { buildWsUrl, withApiKey } from "@/utils/ws";
+
+export const useJobStore = defineStore("job", () => {
+  const jobs = ref<JobInfo[]>([]);
+  const connected = ref(false);
+  const wsRef = ref<WebSocket | null>(null);
+  const connectionStatus = ref<"disconnected" | "connecting" | "connected">(
+    "disconnected"
+  );
+  const lastError = ref<string | null>(null);
+  const reconnectAttempts = ref(0);
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let allowReconnect = true;
+  let pendingConnect: Promise<void> | null = null;
+
+  const jobMap = computed(() => {
+    const map = new Map<number, JobInfo>();
+    jobs.value.forEach((job) => map.set(job.id, job));
+    return map;
+  });
+
+  const fetchJobs = async () => {
+    const response = await api.get<JobInfo[]>("/jobs");
+    jobs.value = response.data;
+  };
+
+  const fetchJob = async (jobId: number) => {
+    const response = await api.get<JobInfo>(`/jobs/${jobId}`);
+    const existingIndex = jobs.value.findIndex((job) => job.id === jobId);
+    if (existingIndex >= 0) {
+      jobs.value[existingIndex] = response.data;
+    } else {
+      jobs.value.unshift(response.data);
+    }
+    return response.data;
+  };
+
+  const updateJob = (payload: Partial<JobInfo> & { id: number }) => {
+    const existing = jobMap.value.get(payload.id);
+    if (!existing) {
+      return;
+    }
+    if (payload.status !== undefined) {
+      existing.status = payload.status;
+    }
+    if (payload.progress !== undefined) {
+      existing.progress = payload.progress;
+    }
+    if (payload.progress_message !== undefined) {
+      existing.progress_message = payload.progress_message;
+    }
+  };
+
+  const clearReconnect = () => {
+    if (reconnectTimer !== null) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+  };
+
+  const scheduleReconnect = () => {
+    if (!allowReconnect || reconnectTimer !== null) {
+      return;
+    }
+    reconnectAttempts.value += 1;
+    const delay = Math.min(1000 * 2 ** (reconnectAttempts.value - 1), 30000);
+    connectionStatus.value = "connecting";
+    reconnectTimer = window.setTimeout(() => {
+      reconnectTimer = null;
+      connect().catch(() => undefined);
+    }, delay);
+  };
+
+  const connect = (): Promise<void> => {
+    if (wsRef.value && wsRef.value.readyState === WebSocket.OPEN) {
+      connected.value = true;
+      connectionStatus.value = "connected";
+      return Promise.resolve();
+    }
+    if (wsRef.value && wsRef.value.readyState === WebSocket.CONNECTING) {
+      return pendingConnect || Promise.resolve();
+    }
+    clearReconnect();
+    allowReconnect = true;
+    connectionStatus.value = "connecting";
+    lastError.value = null;
+    const apiKey = localStorage.getItem("api_key");
+    const wsUrl = withApiKey(buildWsUrl(), apiKey);
+    const socket = new WebSocket(wsUrl);
+    wsRef.value = socket;
+
+    socket.addEventListener("open", () => {
+      connected.value = true;
+      connectionStatus.value = "connected";
+      reconnectAttempts.value = 0;
+      socket.send(JSON.stringify({ action: "subscribe", channel: "jobs" }));
+      fetchJobs().catch(() => undefined);
+    });
+
+    socket.addEventListener("message", async (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload?.job_id) {
+          const jobId = Number(payload.job_id);
+          if (!jobMap.value.has(jobId)) {
+            await fetchJob(jobId);
+          } else {
+            updateJob({
+              id: jobId,
+              status: payload.status,
+              progress: payload.progress,
+              progress_message: payload.message,
+            });
+          }
+        }
+      } catch {
+        // Ignore malformed payloads
+      }
+    });
+
+    socket.addEventListener("close", (event) => {
+      connected.value = false;
+      wsRef.value = null;
+      connectionStatus.value = "disconnected";
+      if (event.code === 1008) {
+        lastError.value = "Unauthorized. Check API key.";
+        allowReconnect = false;
+        return;
+      }
+      scheduleReconnect();
+    });
+
+    socket.addEventListener("error", () => {
+      lastError.value = "WebSocket error.";
+    });
+
+    pendingConnect = new Promise((resolve, reject) => {
+      const handleOpen = () => {
+        pendingConnect = null;
+        resolve();
+      };
+      const handleClose = (event: CloseEvent) => {
+        pendingConnect = null;
+        reject(
+          new Error(
+            event.code === 1008 ? "Unauthorized WebSocket connection." : "WebSocket closed."
+          )
+        );
+      };
+      socket.addEventListener("open", handleOpen, { once: true });
+      socket.addEventListener("close", handleClose, { once: true });
+    });
+
+    return pendingConnect;
+  };
+
+  const disconnect = () => {
+    allowReconnect = false;
+    clearReconnect();
+    wsRef.value?.close();
+    wsRef.value = null;
+    connected.value = false;
+    connectionStatus.value = "disconnected";
+  };
+
+  return {
+    jobs,
+    connected,
+    fetchJobs,
+    fetchJob,
+    connect,
+    disconnect,
+    connectionStatus,
+    lastError,
+  };
+});

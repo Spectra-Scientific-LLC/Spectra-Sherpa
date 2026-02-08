@@ -1,0 +1,89 @@
+site_name: SpectraSherpa Lite Documentation
+nav:
+  - Home: index.md
+  - Current:
+    - Overview: current/index.md
+    - Getting Started:
+      - Installation: getting_started/installation.md
+      - Quickstart: getting_started/quickstart.md
+    - User Guide:
+      - Experiments: user_guide/experiments.md
+      - Library (NIST): user_guide/library.md
+      - DOE (96-Well): user_guide/doe.md
+      - Synthesis Builder: user_guide/synthesis.md
+      - Workflow Builder: user_guide/workflow.md
+      - Reproduction Study:
+          - PCA (Side-by-Side): user_guide/case_study_pca.md
+          - Methodology: user_guide/reproduction_methodology.md
+    - User Manual: USER_MANUAL.md
+    - SpectrochemPy Examples:
+      - 00. Case Study Notebook: examples/00_case_study_notebook.ipynb
+      - 01. Loading Data: examples/01_loading_data.md
+      - 02. Manipulation: examples/02_dataset_manipulation.md
+      - 03. Plotting: examples/03_plotting.md
+      - 04. Smoothing: examples/04_preprocessing_smoothing.md
+      - 05. Baseline: examples/05_preprocessing_baseline.md
+      - 06. Peak Finding: examples/06_peak_finding.md
+      - 07. Integration: examples/07_peak_fitting.md
+      - 08. PCA: examples/08_pca.md
+      - 09. MCR-ALS: examples/09_mcr_als.md
+      - 10. PLS: examples/10_pls_regression.md
+    - Reference:
+      - Node Library: reference/nodes.md
+    - Architecture & System:
+      - Repository Overview: current/README.md
+      - System Overview: current/SYSTEM_OVERVIEW.md
+      - Architecture: current/ARCHITECTURE.md
+      - Information Architecture: current/INFORMATION_ARCHITECTURE.md
+      - Functional Mapping: current/FUNCTIONAL_MAPPING.md
+      - Data Sources: current/DATA_SOURCES.md
+      - Node Capabilities: current/NODE_CAPABILITIES.md
+      - Parameter Mapping: current/PARAMETER_MAPPING.md
+      - Database Schema: current/DATABASE_SCHEMA.md
+      - Authentication: current/AUTHENTICATION.md
+      - Phase 1 Setup Guide: current/PHASE1_SETUP_GUIDE.md
+    - Workflow & Analysis:
+      - Quickstart Analysis: current/QUICKSTART_ANALYSIS.md
+      - Multi-Port Guide: current/MULTI_PORT_GUIDE.md
+      - Folder & Pattern Loading: current/FOLDER_AND_PATTERN_LOADING.md
+      - DOE Manual: current/DOE_MANUAL.md
+      - Workflow Bench Gap Analysis: current/PROBLEM_REPORT.md
+    - Deployment:
+      - DigitalOcean: deployment/DIGITAL_OCEAN.md
+    - Quality & Validation:
+      - Algorithm Audit: current/ALGORITHM_AUDIT.md
+      - Synthetic Fallback Audit: current/SYNTHETIC_FALLBACK_AUDIT.md
+      - Test Framework: current/TEST_FRAMEWORK.md
+      - Backend Testing Guide: current/BACKEND_TESTING_GUIDE.md
+      - Testing Checklist: current/TESTING_CHECKLIST.md
+      - Verification Procedure: current/VERIFICATION_PROCEDURE.md
+    - Project1 (Standalone Tool):
+      - Overview: current/project1/README.md
+      - Quickstart: current/project1/QUICKSTART.md
+      - Installation Guide: current/project1/INSTALLATION_GUIDE.md
+      - Troubleshooting: current/project1/TROUBLESHOOTING.md
+      - Notice: current/project1/NOTICE.md
+  - Past:
+    - Summary: past/index.md
+    - Release Notes: past/RELEASE_NOTES.md
+    - Implementation Summary: past/IMPLEMENTATION_SUMMARY.md
+    - Final Fixes Summary: past/FINAL_FIXES_SUMMARY.md
+    - Session Summary: past/SESSION_SUMMARY_2026-01-21.md
+    - Node Standardization (2026-01-26): past/NODE_STANDARDIZATION_2026-01-26.md
+    - Fixes:
+      - 3D Concatenation Fix: past/3D_CONCATENATION_FIX.md
+      - Quick Plot Y-Axis Labels Fix: past/QUICK_PLOT_Y_AXIS_LABELS_FIX.md
+      - Case Sensitivity and UI Fixes: past/CASE_SENSITIVITY_AND_UI_FIXES.md
+      - Dedicated Load Group Enforcement: past/DEDICATED_LOAD_GROUP_ENFORCEMENT.md
+      - Load Group Node Implementation: past/LOAD_GROUP_NODE_IMPLEMENTATION.md
+    - Reviews & Testing:
+      - Code Review Findings: past/CODE_REVIEW_FINDINGS.md
+      - Week 7 Testing: past/WEEK7_TESTING.md
+  - Future:
+    - Summary: future/index.md
+    - Roadmap: future/ROADMAP.md
+    - DOE Enhancements: future/DOE_ENHANCEMENTS.md
+    - Analysis Canvas Wireframe: future/ANALYSIS_CANVAS_WIREFRAME.md
+    - Plugin Plan (2025-01-15): future/plugin_plan_011525.md
+theme: readthedocs
+dev_addr: '127.0.0.1:8100'

@@ -1,0 +1,7 @@
+{
+  "PCA": {
+    "n_components": 5,
+    "scaled": true,
+    "standardized": true
+  }
+}

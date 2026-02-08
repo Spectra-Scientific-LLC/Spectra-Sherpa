@@ -1,0 +1,224 @@
+"""
+Prediction API — flat REST endpoint for external systems.
+
+External consumers (spectrometers, LIMS, process controllers) POST raw
+spectral data and get back results without needing to understand the
+DAG structure.  The workflow is loaded from DB, entry nodes are injected
+with the caller's data, the rest of the DAG executes normally, and only
+exit-node results are returned.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+import numpy as np
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.api.deps import get_current_user, get_session
+from app.models.user import User
+from app.models.workflow import Workflow
+
+# NDDataset — required for prediction
+try:
+    from spectrochempy import NDDataset
+    HAS_NDDATASET = True
+except ImportError:
+    NDDataset = None
+    HAS_NDDATASET = False
+
+router = APIRouter(prefix="/workflows")
+
+
+# ---------------------------------------------------------------------------
+# Request / Response schemas
+# ---------------------------------------------------------------------------
+
+class PredictRequest(BaseModel):
+    """Payload for the flat prediction endpoint."""
+
+    data: list[list[float]] = Field(
+        ...,
+        description="Spectral matrix [n_samples × n_features]",
+    )
+    wavenumbers: list[float] | None = Field(
+        None,
+        description="Optional X-axis values (wavenumbers / wavelengths). "
+                    "Length must match n_features.",
+    )
+
+
+class PredictResponse(BaseModel):
+    """Result from a prediction run."""
+
+    results: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Serialized exit-node results keyed by node ID",
+    )
+    terminal_node_ids: list[str] = Field(
+        default_factory=list,
+        description="IDs of exit (terminal) nodes",
+    )
+    integrity_hash: str | None = Field(
+        None,
+        description="SHA-256 integrity hash of the workflow definition",
+    )
+    executed_at: str = Field(
+        ...,
+        description="ISO-8601 timestamp of execution",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Endpoint
+# ---------------------------------------------------------------------------
+
+@router.post("/{workflow_id}/predict", response_model=PredictResponse)
+async def predict(
+    workflow_id: int,
+    payload: PredictRequest,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> PredictResponse:
+    """
+    Flat prediction endpoint — no graph knowledge required.
+
+    1. Load the saved workflow (nodes + edges) from DB.
+    2. Build a DAGExecutor with the full pipeline.
+    3. Detect entry nodes (data.*) and exit nodes (no outgoing edges).
+    4. Convert ``payload.data`` to an NDDataset and inject it into every
+       entry node.
+    5. Execute the rest of the DAG (entry nodes are skipped as cached).
+    6. Collect and serialize only exit-node results.
+
+    Errors:
+        404 — Workflow not found
+        422 — Shape mismatch between data and wavenumbers
+        500 — Execution error
+    """
+    if not HAS_NDDATASET:
+        raise HTTPException(
+            status_code=500,
+            detail="SpectroChemPy is not installed — prediction requires NDDataset support.",
+        )
+
+    # --- 1. Load workflow ------------------------------------------------
+    query = (
+        select(Workflow)
+        .where(Workflow.id == workflow_id)
+        .where(Workflow.user_id == current_user.id)
+        .options(
+            selectinload(Workflow.nodes),
+            selectinload(Workflow.edges),
+        )
+    )
+    result = await session.execute(query)
+    workflow = result.scalar_one_or_none()
+
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    if not workflow.nodes:
+        raise HTTPException(status_code=422, detail="Workflow has no nodes")
+
+    # --- 2. Validate payload ---------------------------------------------
+    data_array = np.array(payload.data, dtype=np.float64)
+    if data_array.ndim == 1:
+        data_array = data_array.reshape(1, -1)
+    if data_array.ndim != 2:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Expected 2-D data matrix, got shape {data_array.shape}",
+        )
+
+    n_features = data_array.shape[1]
+
+    if payload.wavenumbers is not None:
+        if len(payload.wavenumbers) != n_features:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Wavenumber length ({len(payload.wavenumbers)}) does not "
+                    f"match feature count ({n_features})"
+                ),
+            )
+
+    # --- 3. Build NDDataset from payload ---------------------------------
+    dataset = NDDataset(data_array)
+    if payload.wavenumbers is not None:
+        from spectrochempy import Coord
+        dataset.set_coordset(x=Coord(payload.wavenumbers, title="Wavenumbers"))
+
+    # --- 4. Build DAGExecutor --------------------------------------------
+    from app.services.dag import (
+        DAGExecutor,
+        WorkflowEdge as DAGEdge,
+        WorkflowNode as DAGNode,
+    )
+
+    executor = DAGExecutor()
+
+    for node in workflow.nodes:
+        dag_node = DAGNode(
+            node_id=node.node_id,
+            node_type=node.node_type,
+            parameters=node.parameters,
+            position={"x": node.position_x, "y": node.position_y}
+            if node.position_x and node.position_y
+            else None,
+        )
+        executor.add_node(dag_node)
+
+    for edge in workflow.edges:
+        dag_edge = DAGEdge(
+            from_node=edge.from_node_id,
+            to_node=edge.to_node_id,
+            from_output=edge.from_output,
+            to_input=edge.to_input,
+        )
+        executor.add_edge(dag_edge)
+
+    # --- 5. Inject data into entry nodes ---------------------------------
+    entry_nodes = executor.find_entry_nodes()
+    if not entry_nodes:
+        raise HTTPException(
+            status_code=422,
+            detail="Workflow has no entry nodes (data sources) to inject data into",
+        )
+
+    for node_id in entry_nodes:
+        executor.inject_result(node_id, dataset)
+
+    # --- 6. Execute the DAG ----------------------------------------------
+    try:
+        results = await executor.execute()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Execution error: {exc}")
+
+    # --- 7. Collect and serialize exit-node results ----------------------
+    from app.api.v1.routes.workflows import serialize_result
+
+    exit_nodes = executor.find_exit_nodes()
+    serialized: dict[str, Any] = {}
+
+    for node_id in exit_nodes:
+        if node_id in results:
+            try:
+                serialized[node_id] = serialize_result(results[node_id])
+            except Exception as ser_err:
+                serialized[node_id] = {
+                    "error": f"Serialization failed: {ser_err}",
+                    "type": type(results[node_id]).__name__,
+                }
+
+    return PredictResponse(
+        results=serialized,
+        terminal_node_ids=exit_nodes,
+        integrity_hash=workflow.integrity_hash,
+        executed_at=datetime.utcnow().isoformat(),
+    )

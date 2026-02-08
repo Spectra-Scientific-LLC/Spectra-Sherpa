@@ -1,0 +1,83 @@
+"""Pytest configuration and shared fixtures"""
+
+from __future__ import annotations
+
+import asyncio
+from typing import AsyncGenerator
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.db.base import Base
+from app.db.session import get_session
+from app.main import app
+from app.models.user import User
+
+
+@pytest.fixture(scope="session")
+def event_loop():
+    """Create an event loop for the test session"""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
+
+
+@pytest.fixture
+async def test_engine():
+    """Create a test database engine"""
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    yield engine
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+
+    await engine.dispose()
+
+
+@pytest.fixture
+async def test_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
+    """Create a test database session"""
+    async_session = sessionmaker(
+        test_engine, class_=AsyncSession, expire_on_commit=False
+    )
+
+    async with async_session() as session:
+        yield session
+
+
+@pytest.fixture
+async def test_user(test_session: AsyncSession) -> User:
+    """Create a test user"""
+    user = User(username="testuser", password_hash="testhash")
+    test_session.add(user)
+    await test_session.commit()
+    await test_session.refresh(user)
+    return user
+
+
+@pytest.fixture
+async def client(test_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+    """Create a test HTTP client"""
+
+    async def override_get_session():
+        yield test_session
+
+    app.dependency_overrides[get_session] = override_get_session
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        yield ac
+
+    app.dependency_overrides.clear()

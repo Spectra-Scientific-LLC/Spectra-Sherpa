@@ -1,0 +1,45 @@
+# Build context: .. (repo root)
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    POETRY_VERSION=1.8.3 \
+    POETRY_HOME="/opt/poetry" \
+    POETRY_VIRTUALENVS_IN_PROJECT=true \
+    POETRY_NO_INTERACTION=1
+
+ENV PATH="$POETRY_HOME/bin:$PATH" \
+    PYTHONPATH="/app/src"
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -sSL https://install.python-poetry.org | python3 -
+
+WORKDIR /app
+
+# Copy dependency definition from repo root
+COPY pyproject.toml poetry.lock* ./
+
+# Install runtime dependencies only; app source is loaded via PYTHONPATH.
+RUN poetry install --only main --no-root && \
+    poetry run pip install gunicorn asyncpg
+
+# Copy package source
+COPY src/ ./src/
+
+# Create data directory
+RUN mkdir -p /app/data && chmod 777 /app/data
+
+EXPOSE 8000
+
+# Production: Gunicorn with Uvicorn workers
+CMD ["poetry", "run", "gunicorn", "spectrasherpa_lite.app.main:app", \
+     "-k", "uvicorn.workers.UvicornWorker", \
+     "--bind", "0.0.0.0:8000", \
+     "--workers", "3", \
+     "--timeout", "300", \
+     "--graceful-timeout", "30", \
+     "--access-logfile", "-"]

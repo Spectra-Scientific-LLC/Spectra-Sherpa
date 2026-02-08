@@ -1,0 +1,350 @@
+:root {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #1b1f23;
+  background-color: #f5f7fa;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f5f7fa;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  background: #f5f7fa;
+}
+
+.sidebar {
+  background: #0f2a3f;
+  color: #f1f5f9;
+  padding: 24px;
+  width: var(--nav-width, 240px);
+  transition: width 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sidebar.collapsed {
+  padding: 20px 12px;
+  align-items: center;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.sidebar-mark {
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.08em;
+}
+
+.sidebar h2 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: 0.04em;
+}
+
+.nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: #e2e8f0;
+}
+
+.nav-link.router-link-active {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.nav-link i {
+  font-size: 1.05rem;
+}
+
+.sidebar.collapsed .nav-link {
+  justify-content: center;
+}
+
+.nav-label {
+  white-space: nowrap;
+}
+
+.workspace {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.topbar-left,
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.topbar-host {
+  margin-left: 8px;
+  color: #64748b;
+}
+
+.content {
+  padding: 24px;
+  flex: 1;
+  min-width: 0;
+}
+
+.card {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+}
+
+input:not(.p-inputtext),
+textarea:not(.p-inputtextarea),
+select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #cbd5f5;
+}
+
+button:not(.p-button):not(.p-dialog-header-icon):not(.p-link) {
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: none;
+  background: #1d4ed8;
+  color: white;
+  cursor: pointer;
+}
+
+button.secondary:not(.p-button):not(.p-dialog-header-icon):not(.p-link) {
+  background: #475569;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.section-subtitle {
+  color: #64748b;
+  margin-top: 4px;
+}
+
+.form-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.form-grid.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.form-grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.muted-text {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.pill {
+  display: inline-flex;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  font-size: 0.75rem;
+}
+
+.panel {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+}
+
+.panel + .panel {
+  margin-top: 16px;
+}
+
+.chat-panel {
+  width: var(--chat-width, 360px);
+  height: 100vh;
+  border-left: 1px solid #e2e8f0;
+  transition: width 0.2s ease;
+  background: #ffffff;
+  flex-shrink: 0;
+}
+
+.chat-panel.collapsed {
+  border-left: none;
+}
+
+.chat-resize-handle {
+  width: 6px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.2s ease;
+  flex-shrink: 0;
+}
+
+.chat-resize-handle:hover,
+.chat-resize-handle.active {
+  background: #e2e8f0;
+}
+
+body.chat-resizing {
+  cursor: col-resize;
+}
+
+.two-column {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 20px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Page-level tabs (larger, prominent) */
+.main-content-wrapper .p-tabview-nav {
+  border-bottom: 2px solid #e2e8f0;
+  padding: 0 24px;
+  background: #ffffff;
+}
+
+.main-content-wrapper .p-tabview-nav-link {
+  font-size: 1rem;
+  font-weight: 500;
+  padding: 14px 20px;
+  color: #64748b;
+}
+
+.main-content-wrapper .p-tabview-nav-link:hover {
+  color: #1d4ed8;
+  border-bottom-color: #1d4ed8;
+}
+
+/* Tab content spacing */
+.main-content-wrapper .p-tabview-panels {
+  padding: 24px;
+  background: #f5f7fa;
+}
+
+/* Section layouts within tabs */
+.tab-section {
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.section-header {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+/* Two-column section layout */
+.section-two-column {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+/* Three-column section layout */
+.section-three-column {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+  }
+
+  .workspace {
+    flex-direction: column;
+  }
+
+  .chat-resize-handle {
+    display: none;
+  }
+
+  .chat-panel {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid #e2e8f0;
+  }
+
+  .two-column {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid.two,
+  .form-grid.three {
+    grid-template-columns: 1fr;
+  }
+
+  /* Responsive collapse for section layouts */
+  .section-two-column,
+  .section-three-column {
+    grid-template-columns: 1fr;
+  }
+}

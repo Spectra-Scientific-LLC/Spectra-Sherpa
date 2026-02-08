@@ -1,0 +1,53 @@
+{
+  "MCRALS": {
+    "closureTarget": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "getC_to_C_idx": [
+      0,
+      1,
+      2
+    ],
+    "getSt_to_St_idx": [
+      0,
+      1,
+      2
+    ],
+    "nonnegConc": [
+      0,
+      1,
+      2
+    ],
+    "nonnegSpec": [
+      0,
+      1,
+      2
+    ],
+    "unimodConc": [],
+    "max_iter": 100,
+    "tol": 0.01,
+    "solverConc": "nnls",
+    "solverSpec": "nnls",
+    "maxdiv": 10
+  }
+}

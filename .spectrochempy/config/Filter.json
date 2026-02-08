@@ -1,0 +1,6 @@
+{
+  "Filter": {
+    "method": "avg",
+    "size": 15
+  }
+}

@@ -1,0 +1,73 @@
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+    environment:
+      - APP_MODE=${APP_MODE:-hybrid}
+      - EXECUTION_MODE=${EXECUTION_MODE:-hybrid}
+      - CLOUD_COMPUTE_URL=${CLOUD_COMPUTE_URL:-}
+      - CLOUD_API_KEY=${CLOUD_API_KEY:-}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+      # Default to SQLite for quick start; set DATABASE_URL to PostgreSQL for production
+      - DATABASE_URL=${DATABASE_URL:-sqlite+aiosqlite:////app/data/spectra_platform.db}
+      - MASTER_ENCRYPTION_KEY=${MASTER_ENCRYPTION_KEY:-}
+      # CORS: REQUIRED for hybrid/demo — set to your frontend domain(s), comma-separated
+      # Example: CORS_ORIGINS=https://app.spectrascientific.ai,https://www.spectrascientific.ai
+      - CORS_ORIGINS=${CORS_ORIGINS:?CORS_ORIGINS is required for production}
+      # LLM API Keys (optional)
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    volumes:
+      - app-data:/app/data
+    expose:
+      - "8000"
+    networks:
+      - spectra-network
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: ../deploy/Dockerfile.frontend
+    # Caddy handles public ports 80/443 — frontend is internal only
+    expose:
+      - "80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - spectra-network
+    restart: always
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - frontend
+    networks:
+      - spectra-network
+    restart: always
+
+networks:
+  spectra-network:
+    driver: bridge
+
+volumes:
+  app-data:
+  caddy-data:
+  caddy-config:
