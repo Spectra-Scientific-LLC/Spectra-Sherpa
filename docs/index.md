@@ -1,12 +1,12 @@
-# Welcome to SpectraSherpa Lite
+# Welcome to SpectraSherpa
 
-**SpectraSherpa Lite** is an integrated platform for spectroscopic data analysis, synthesis, and workflow automation. It bridges the gap between experimental data management and advanced computational modeling.
+**SpectraSherpa** is an integrated platform for spectroscopic data analysis, synthesis, and workflow automation. It bridges the gap between experimental data management and advanced computational modeling.
 
 ## Quick Start
 
 ```bash
 pip install -e .
-spectrasherpa
+spectra-sherpa
 ```
 
 ## Key Features

@@ -796,14 +796,14 @@ export const useJobStore = defineStore('job', {
 ```bash
 cd "Spectra Scientific/Component_code/Refactored"
 pip install -e .
-spectrasherpa          # Opens browser → http://127.0.0.1:8000
+spectra-sherpa          # Opens browser → http://127.0.0.1:8000
 ```
 
 ### Development Setup (hot-reload)
 
 ```bash
 # Backend (from repo root)
-cd src/spectrasherpa_lite
+cd src/spectra_sherpa
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 # Frontend (separate terminal)
@@ -815,7 +815,7 @@ npm run dev
 
 ### Development Flow
 
-1. **Start backend:** `uvicorn app.main:app --reload` (from `src/spectrasherpa_lite/`)
+1. **Start backend:** `uvicorn app.main:app --reload` (from `src/spectra_sherpa/`)
 2. **Start frontend:** `npm run dev` (from `frontend/`)
 3. **Access app:** http://localhost:5173 (proxies to backend at :8000)
 4. **API Docs:** http://localhost:8000/docs (Swagger UI)
@@ -827,7 +827,7 @@ npm run dev
 scripts/build_frontend.sh
 
 # Run via CLI
-spectrasherpa --port 8000
+spectra-sherpa --port 8000
 # Backend serves frontend static files at http://localhost:8000
 ```
 

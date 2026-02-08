@@ -413,7 +413,7 @@ def _load_spectrochempy_group(self, example_dataset: str, pattern: str) -> NDDat
 ### Backend Tests
 
 ```bash
-cd Refactored/src/spectrasherpa_lite
+cd Refactored/src/spectra_sherpa
 
 # Test pattern detection
 python -c "

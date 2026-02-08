@@ -19,7 +19,7 @@ This guide walks you through using the new DAG-based Analysis workflow system fo
 ### 1. Install Dependencies
 
 ```bash
-cd Refactored/src/spectrasherpa_lite
+cd Refactored/src/spectra_sherpa
 /Users/fe2val/miniforge3/envs/scpy/bin/poetry install
 ```
 
@@ -168,7 +168,7 @@ curl -X POST http://localhost:8000/api/v1/workflows \
 ### Option C: Via Python Test Script (Immediate)
 
 ```bash
-cd Refactored/src/spectrasherpa_lite
+cd Refactored/src/spectra_sherpa
 /Users/fe2val/miniforge3/envs/scpy/bin/python test_workflow_executor.py
 ```
 
@@ -369,7 +369,7 @@ curl http://localhost:8000/api/v1/workflows/nodes/library
 ### Test Individual Node
 
 ```bash
-cd Refactored/src/spectrasherpa_lite
+cd Refactored/src/spectra_sherpa
 /Users/fe2val/miniforge3/envs/scpy/bin/python test_pca_node.py
 ```
 

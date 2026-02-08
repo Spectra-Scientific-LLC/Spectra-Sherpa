@@ -27,7 +27,7 @@ Once an experiment is created, you can add data:
 
 ## Version Control
 
-SpectraSherpa Lite tracks changes to your datasets:
+SpectraSherpa tracks changes to your datasets:
 1.  Go to the **Versions** tab.
 2.  Click **Create Version** to snapshot the current state.
 3.  Restore previous versions anytime using the restore icon.

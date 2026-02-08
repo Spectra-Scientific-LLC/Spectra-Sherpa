@@ -2,7 +2,7 @@
 
 ## Quick Install (Recommended)
 
-SpectraSherpa Lite is pip-installable. The CLI starts the server and opens your browser automatically.
+SpectraSherpa is pip-installable. The CLI starts the server and opens your browser automatically.
 
 ### Prerequisites
 
@@ -19,7 +19,7 @@ pip install -e .
 ### Run
 
 ```bash
-spectrasherpa
+spectra-sherpa
 ```
 
 This starts the server on `http://localhost:8000` and opens your browser.
@@ -32,7 +32,7 @@ The frontend SPA is bundled inside the package — no separate Node.js step requ
 | `--port PORT` | Server port | `8000` |
 | `--host HOST` | Bind address | `127.0.0.1` |
 | `--no-browser` | Don't auto-open browser | off |
-| `--data-dir DIR` | Data storage directory | `~/.spectrasherpa/` |
+| `--data-dir DIR` | Data storage directory | `~/.spectra_sherpa/` |
 | `--version` | Show version and exit | |
 
 *API Documentation will be available at [http://localhost:8000/docs](http://localhost:8000/docs).*
@@ -50,7 +50,7 @@ cd Refactored
 pip install -e ".[dev]"
 
 # Start with auto-reload
-cd src/spectrasherpa_lite
+cd src/spectra_sherpa
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -72,7 +72,7 @@ After making frontend changes, rebuild the SPA into the package:
 scripts/build_frontend.sh
 ```
 
-This copies the built `dist/` into `src/spectrasherpa_lite/static/` so the CLI serves it directly.
+This copies the built `dist/` into `src/spectra_sherpa/static/` so the CLI serves it directly.
 
 ---
 
@@ -83,7 +83,7 @@ The database schema is created automatically on first startup via
 
 > **Production upgrades:** When migrating an existing production database to a
 > newer schema version, use Alembic:
-> `cd src/spectrasherpa_lite && alembic upgrade heads`
+> `cd src/spectra_sherpa && alembic upgrade heads`
 
 ---
 

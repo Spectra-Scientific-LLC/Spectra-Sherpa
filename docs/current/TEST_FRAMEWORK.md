@@ -77,7 +77,7 @@ cd /Users/fe2val/Documents/Spectra\ Scientific/Component_code/Refactored
 
 # Make sure backend is running
 # Terminal 1:
-cd src/spectrasherpa_lite
+cd src/spectra_sherpa
 uvicorn app.main:app --reload
 
 # Terminal 2: Run tests
@@ -408,7 +408,7 @@ Note: Requires two inputs - X (features) and y (class labels)
 ```
 **Solution:** Start the backend server:
 ```bash
-cd src/spectrasherpa_lite
+cd src/spectra_sherpa
 uvicorn app.main:app --reload
 ```
 
@@ -521,7 +521,7 @@ jobs:
           pip install -r requirements.txt
       - name: Start backend
         run: |
-          cd src/spectrasherpa_lite
+          cd src/spectra_sherpa
           uvicorn app.main:app &
           sleep 10
       - name: Run integration tests

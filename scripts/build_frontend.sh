@@ -11,7 +11,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 FRONTEND_DIR="$REPO_ROOT/frontend"
-STATIC_DIR="$REPO_ROOT/src/spectrasherpa_lite/static"
+STATIC_DIR="$REPO_ROOT/src/spectra_sherpa/static"
 
 echo "Building frontend..."
 cd "$FRONTEND_DIR"

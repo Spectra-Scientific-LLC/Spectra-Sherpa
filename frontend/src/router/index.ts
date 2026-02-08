@@ -82,10 +82,10 @@ router.beforeEach(async (to, from, next) => {
     await loadConfig()
   }
 
-  // Local mode: bypass all authentication
-  // In local mode, the backend handles auth automatically
-  if (appMode.value === 'local') {
-    // Skip login page in local mode - redirect to workspace
+  // Local and hybrid modes: bypass all authentication
+  // Both run locally on the user's machine (single-user, no login needed)
+  if (appMode.value === 'local' || appMode.value === 'hybrid') {
+    // Skip login page - redirect to workspace
     if (to.path === '/login') {
       return next('/')
     }
@@ -105,9 +105,9 @@ router.beforeEach(async (to, from, next) => {
     return next('/login')
   }
 
-  // Admin pages (not available in local mode, requires superuser in other modes)
+  // Admin pages (requires superuser in demo mode)
   if (to.meta.requiresAdmin) {
-    if (appMode.value === 'local' || !authStore.user?.is_superuser) {
+    if (!authStore.user?.is_superuser) {
       return next('/')
     }
   }

@@ -45,7 +45,7 @@ Week 8: Documentation & Polish
 #### Tasks
 
 **Backend Setup**
-- [ ] Create `Refactored/src/spectrasherpa_lite/` directory structure
+- [ ] Create `Refactored/src/spectra_sherpa/` directory structure
 - [ ] Initialize Poetry project (`pyproject.toml`)
 - [ ] Configure SQLAlchemy with single SQLite database
   - [ ] `data/spectra_platform.db` - All application data
@@ -577,7 +577,7 @@ By the end of Phase 1, you will have:
 ### Daily Workflow
 ```bash
 # Terminal 1: Backend
-cd src/spectrasherpa_lite
+cd src/spectra_sherpa
 poetry run uvicorn app.main:app --reload
 
 # Terminal 2: Frontend
@@ -585,7 +585,7 @@ cd frontend
 npm run dev
 
 # Terminal 3: Testing
-cd src/spectrasherpa_lite
+cd src/spectra_sherpa
 poetry run pytest -v
 
 # Access app at http://localhost:5173

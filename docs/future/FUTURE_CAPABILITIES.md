@@ -1,4 +1,4 @@
-# Future Capabilities — SpectraSherpa Lite
+# Future Capabilities — SpectraSherpa
 
 Features that are **not needed for v1.0** but require **client-side preparation now**
 to avoid breaking changes after release.

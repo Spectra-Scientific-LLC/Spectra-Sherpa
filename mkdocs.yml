@@ -1,4 +1,4 @@
-site_name: SpectraSherpa Lite Documentation
+site_name: SpectraSherpa Documentation
 nav:
   - Home: index.md
   - Current:

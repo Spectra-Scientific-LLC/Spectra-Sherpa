@@ -1,7 +1,7 @@
-# SpectraSherpa Lite — System Overview
+# SpectraSherpa — System Overview
 
 **Version:** 1.3.3
-**Package:** `spectrasherpa-lite` (PyPI) / `spectrasherpa` (CLI)
+**Package:** `spectra-sherpa` (PyPI) / `spectra-sherpa` (CLI)
 **Date:** 2026-02-05
 **Status:** Production-Ready
 
@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-**SpectraSherpa Lite** is a modern web-based spectral analysis platform built for FTIR spectroscopy and chemometrics. It provides a visual workflow builder for constructing data processing pipelines using a directed acyclic graph (DAG) architecture, enabling researchers to load, analyze, and visualize spectral data through an intuitive drag-and-drop interface.
+**SpectraSherpa** is a modern web-based spectral analysis platform built for FTIR spectroscopy and chemometrics. It provides a visual workflow builder for constructing data processing pipelines using a directed acyclic graph (DAG) architecture, enabling researchers to load, analyze, and visualize spectral data through an intuitive drag-and-drop interface.
 
 **Key Differentiators:**
 - **Visual Workflow Builder:** No-code interface for building complex analysis pipelines
@@ -394,7 +394,7 @@ User → Frontend (Workflow Builder) → API → DAG Engine → Nodes → Scient
 
 ## System Capabilities Summary
 
-### What SpectraSherpa Lite Can Do
+### What SpectraSherpa Can Do
 
 ✅ **Load spectral data** from 7+ file formats
 ✅ **Group load** multiple files with pattern matching
@@ -410,7 +410,7 @@ User → Frontend (Workflow Builder) → API → DAG Engine → Nodes → Scient
 ✅ **Cache results** for fast re-execution
 ✅ **Handle errors** gracefully with detailed messages
 
-### What SpectraSherpa Lite Does NOT Do (Yet)
+### What SpectraSherpa Does NOT Do (Yet)
 
 ❌ Multi-user collaboration
 ❌ 3D spectral data (images, hyperspectral)
@@ -447,7 +447,7 @@ User → Frontend (Workflow Builder) → API → DAG Engine → Nodes → Scient
 
 ```bash
 pip install -e .
-spectrasherpa
+spectra-sherpa
 ```
 
 Server starts at http://localhost:8000 and opens your browser.
@@ -457,7 +457,7 @@ Frontend SPA is bundled inside the package — no Node.js required.
 
 ```bash
 # Backend (with auto-reload)
-cd src/spectrasherpa_lite
+cd src/spectra_sherpa
 uvicorn app.main:app --reload --port 8000
 
 # Frontend (separate terminal)
@@ -533,9 +533,9 @@ See [DigitalOcean Deployment Guide](../deployment/DIGITAL_OCEAN.md) for cloud se
 ```
 Refactored/
 ├── pyproject.toml                      # Root package definition (pip install -e .)
-├── src/spectrasherpa_lite/             # The pip-installable package
+├── src/spectra_sherpa/             # The pip-installable package
 │   ├── __init__.py                     # Version + meta-path finder (app.* alias)
-│   ├── cli.py                          # `spectrasherpa` CLI entry point
+│   ├── cli.py                          # `spectra-sherpa` CLI entry point
 │   ├── _paths.py                       # Dual-mode path resolution (dev/pip)
 │   ├── app/
 │   │   ├── api/v1/routes/              # API endpoints
@@ -733,7 +733,7 @@ async def custom_endpoint():
 
 ## Summary
 
-**SpectraSherpa Lite** is a production-ready, full-stack spectral analysis platform offering:
+**SpectraSherpa** is a production-ready, full-stack spectral analysis platform offering:
 
 ✅ **50+ specialized processing nodes**
 ✅ **Visual workflow builder**

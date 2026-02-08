@@ -5,13 +5,13 @@ This guide walks through setting up the newly implemented configuration system f
 ## What Was Built
 
 ### Backend
-1. **Multi-mode configuration system** ([app/core/config.py](../../src/spectrasherpa_lite/app/core/config.py))
+1. **Multi-mode configuration system** ([app/core/config.py](../../src/spectra_sherpa/app/core/config.py))
    - Support for `local`, `hybrid`, `demo` modes
    - LLM provider configuration (OpenAI, Anthropic, DeepSeek, Gemini)
    - Environment variable loading
    - Client-safe config endpoint
 
-2. **Configuration API** ([app/api/v1/routes/config.py](../../src/spectrasherpa_lite/app/api/v1/routes/config.py))
+2. **Configuration API** ([app/api/v1/routes/config.py](../../src/spectra_sherpa/app/api/v1/routes/config.py))
    - `GET /api/v1/config` - Returns app mode, features, LLM status
    - `GET /api/v1/config/mode` - Current mode
    - `GET /api/v1/config/llms` - Configured providers
@@ -53,7 +53,7 @@ DEEPSEEK_API_KEY=sk-...
 Start the backend:
 ```bash
 # From repo root (after pip install -e .)
-spectrasherpa
+spectra-sherpa
 ```
 
 Test the config endpoint:
@@ -123,7 +123,7 @@ pip install anthropic
 
 ### Step 2: Update LLM Service
 
-Edit [`app/services/llm.py`](../../src/spectrasherpa_lite/app/services/llm.py):
+Edit [`app/services/llm.py`](../../src/spectra_sherpa/app/services/llm.py):
 
 #### 2a. Add Anthropic Import
 ```python

@@ -6,18 +6,18 @@ Get from zero to your first analysis in under 2 minutes.
 
 ```bash
 pip install -e .
-spectrasherpa
+spectra-sherpa
 ```
 
-Your browser opens automatically to `http://localhost:8000`. No login required — SpectraSherpa Lite runs as a local tool (like Jupyter). You're immediately on the Workspace page, ready to work.
+Your browser opens automatically to `http://localhost:8000`. No login required — SpectraSherpa runs as a local tool (like Jupyter). You're immediately on the Workspace page, ready to work.
 
-> **Tip:** Use `spectrasherpa --port 9000` to pick a different port, or `--no-browser` if you prefer to open the URL yourself.
+> **Tip:** Use `spectra-sherpa --port 9000` to pick a different port, or `--no-browser` if you prefer to open the URL yourself.
 
 ---
 
 ## 2. Load Example Data
 
-SpectraSherpa Lite ships with access to SpectroChemPy's bundled example datasets. No downloads needed if SpectroChemPy is installed.
+SpectraSherpa ships with access to SpectroChemPy's bundled example datasets. No downloads needed if SpectroChemPy is installed.
 
 | Dataset | Location | Description |
 |---------|----------|-------------|
@@ -82,11 +82,11 @@ Select the **PCA** node — the Results panel shows the Score Plot and Explained
 
 ## 4. Configure LLM API Keys (Optional)
 
-SpectraSherpa Lite can use LLMs for AI-assisted workflow generation and a chat assistant. This is optional — all core spectroscopy features work without it.
+SpectraSherpa can use LLMs for AI-assisted workflow generation and a chat assistant. This is optional — all core spectroscopy features work without it.
 
 ### Option A: Environment Variables
 
-Create a `.env` file in your project root (or wherever you run `spectrasherpa`):
+Create a `.env` file in your project root (or wherever you run `spectra-sherpa`):
 
 ```bash
 # Copy the template

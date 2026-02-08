@@ -1,8 +1,8 @@
-# SpectraSherpa Lite User Manual
+# SpectraSherpa User Manual
 
 ## Overview
 
-SpectraSherpa Lite is an integrated platform for spectroscopic data analysis, synthesis, and workflow automation. This manual covers how to load different data sources and synthesize spectral data.
+SpectraSherpa is an integrated platform for spectroscopic data analysis, synthesis, and workflow automation. This manual covers how to load different data sources and synthesize spectral data.
 
 ---
 

@@ -1,12 +1,12 @@
-# SpectraSherpa Lite
+# SpectraSherpa
 
-SpectraSherpa Lite (`spectrasherpa-lite`) is a pip-installable platform for spectroscopic data analysis, synthesis, and workflow automation.
+SpectraSherpa (`spectra-sherpa`) is a pip-installable platform for spectroscopic data analysis, synthesis, and workflow automation.
 
 ## Quick Start
 
 ```bash
 pip install -e .
-spectrasherpa
+spectra-sherpa
 ```
 
 ## Documentation
@@ -32,9 +32,9 @@ Alternatively, you can browse the Markdown files directly in the `docs/` tree.
 ```
 Refactored/
 ├── pyproject.toml                  # Package definition (pip install -e .)
-├── src/spectrasherpa_lite/         # The pip-installable package
+├── src/spectra_sherpa/         # The pip-installable package
 │   ├── __init__.py                 # Version + meta-path finder
-│   ├── cli.py                      # `spectrasherpa` CLI entry point
+│   ├── cli.py                      # `spectra-sherpa` CLI entry point
 │   ├── app/                        # FastAPI backend (all services, routes, models)
 │   ├── libs/                       # NIST scraper
 │   ├── alembic/                    # Database migrations

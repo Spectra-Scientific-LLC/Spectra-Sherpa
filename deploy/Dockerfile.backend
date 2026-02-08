@@ -36,7 +36,7 @@ RUN mkdir -p /app/data && chmod 777 /app/data
 EXPOSE 8000
 
 # Production: Gunicorn with Uvicorn workers
-CMD ["poetry", "run", "gunicorn", "spectrasherpa_lite.app.main:app", \
+CMD ["poetry", "run", "gunicorn", "spectra_sherpa.app.main:app", \
      "-k", "uvicorn.workers.UvicornWorker", \
      "--bind", "0.0.0.0:8000", \
      "--workers", "3", \

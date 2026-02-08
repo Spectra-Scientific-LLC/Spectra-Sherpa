@@ -1,4 +1,4 @@
-# Current Capabilities — SpectraSherpa Lite v1.3
+# Current Capabilities — SpectraSherpa v1.3
 
 What ships today. Every item here is implemented across the three deployment
 modes (local, hybrid, demo). Test coverage is concentrated on local-mode
@@ -26,7 +26,7 @@ Testing Status below).
 
 ## Backend Infrastructure
 
-### Plugin SDK (`spectrasherpa_lite.sdk`)
+### Plugin SDK (`spectra_sherpa.sdk`)
 - Stable public API for third-party node developers
 - Re-exports: `Node`, `NodeMetadata`, `NodeParameter`, `PortMetadata`,
   `register_node`, `node_registry`
@@ -36,15 +36,15 @@ Testing Status below).
   `get_included_data`, `set_class`, `filter_by_class`
 - Spectral detection: `detect_spectral_technique`, `detect_x_axis_type`
 - Version policy: semver (minor = additive, major = may remove deprecated)
-- File: `src/spectrasherpa_lite/sdk.py`
+- File: `src/spectra_sherpa/sdk.py`
 
 ### Plugin Discovery (`plugin_loader.py`)
-- Scans `~/.spectrasherpa/plugins/` for package and single-file plugins
+- Scans `~/.spectra_sherpa/plugins/` for package and single-file plugins
 - Scans `<data_dir>/plugins/` as secondary location
 - Loads Python packages with `spectrasherpa.plugins` entry-point group
 - Best-effort loading: individual failures logged, never crash the app
 - Runs at startup before network health monitoring
-- File: `src/spectrasherpa_lite/app/services/plugin_loader.py`
+- File: `src/spectra_sherpa/app/services/plugin_loader.py`
 
 ### Sherpa Protocol (`schemas/sherpa.py`)
 - `EgressTier` enum: `STRUCTURE`, `SUMMARIES`, `FULL`
@@ -53,7 +53,7 @@ Testing Status below).
 - `UserDecision`: accept/reject with optional feedback
 - `ExplorationResult`: autonomous exploration results
 - `SherpaWSMessage`: WebSocket envelope
-- File: `src/spectrasherpa_lite/app/schemas/sherpa.py`
+- File: `src/spectra_sherpa/app/schemas/sherpa.py`
 
 ### Sherpa Advisor Service (`sherpa_advisor.py`)
 - Async httpx client talking to `spectrasherpa-server`
@@ -64,7 +64,7 @@ Testing Status below).
 - `request_exploration()`: opt-in autonomous parameter exploration
 - Local recommendation cache with expiration on new sync
 - Graceful degradation: returns empty list on connection failure
-- File: `src/spectrasherpa_lite/app/services/sherpa_advisor.py`
+- File: `src/spectra_sherpa/app/services/sherpa_advisor.py`
 
 ### WebSocket Actions (in `main.py`)
 - `sherpa_sync`: forwards workflow state to cloud, checks

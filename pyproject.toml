@@ -1,17 +1,17 @@
 [tool.poetry]
-name = "spectrasherpa-lite"
+name = "spectra-sherpa"
 version = "1.3.3"
-description = "SpectraSherpa Lite — local-first spectroscopy platform for chemometricians"
+description = "SpectraSherpa — local-first spectroscopy platform for chemometricians"
 authors = ["Spectra Scientific"]
 readme = "docs/index.md"
 license = "MIT"
-packages = [{include = "spectrasherpa_lite", from = "src"}]
+packages = [{include = "spectra_sherpa", from = "src"}]
 include = [
-    { path = "src/spectrasherpa_lite/static/**/*", format = "wheel" },
+    { path = "src/spectra_sherpa/static/**/*", format = "wheel" },
 ]
 
 [tool.poetry.scripts]
-spectrasherpa = "spectrasherpa_lite.cli:main"
+spectra-sherpa = "spectra_sherpa.cli:main"
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -59,7 +59,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --cov=spectrasherpa_lite --cov-report=term-missing"
+addopts = "-v --cov=spectra_sherpa --cov-report=term-missing"
 
 [build-system]
 requires = ["poetry-core"]
