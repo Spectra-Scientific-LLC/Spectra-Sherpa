@@ -84,60 +84,133 @@ Business and engineering reasons to refactor:
 
 ---
 
-## Phased Refactor Plan
+## Execution Order (Monorepo First)
 
-### Phase 0: Contract First (Do this before splitting repos)
+Do not split repositories yet. Complete contract discipline, test safety, and
+policy centralization inside the current monorepo first, then build MCP
+foundations, then perform extraction.
 
-1. Freeze API/WebSocket contracts used by hybrid/demo features.
-2. Publish versioned schemas (OpenAPI + typed WebSocket message schema).
-3. Define compatibility policy (for example: client supports current server and
-   previous minor version).
+### Step 1: Freeze and Document Contracts (Phase 0, 1-2 days)
 
-Deliverable:
-
-- One shared contract package or generated schema artifacts consumed by both
-  Repo 1 and Repo 2.
-
-### Phase 1: Internal Decoupling Inside Current Repo
-
-1. Isolate server-only modules behind clear package boundaries.
-2. Isolate local-only modules and remove server assumptions.
-3. Move deployment concerns behind `deploy/` entry points only.
-4. Add mode-matrix tests for local/hybrid/demo behavior.
+1. Export and version the FastAPI OpenAPI spec from `/openapi.json`.
+2. Document all current WebSocket action schemas (currently six action types)
+   with payload and response shapes.
+3. Document Sherpa sync/chat contracts explicitly.
+4. Create a `contracts/` directory with versioned schema files and changelog.
 
 Deliverable:
 
-- Monorepo still works end-to-end, but seams are explicit and testable.
+- A single source of truth for HTTP + WebSocket + Sherpa contract surfaces.
 
-### Phase 2: Extract Repo 2 (Server)
+Why now:
 
-1. Create `spectrasherpa-server` from server-specific modules.
-2. Keep external protocol identical at first (no breaking contract changes).
-3. Stand up independent CI/CD and versioning for Repo 2.
+- You cannot split safely without explicit contracts.
+- MCP will introduce new contract surface area, so contract governance must
+  exist first.
 
-Deliverable:
+### Step 2: Add Mode-Matrix Regression Tests (Phase 1a, 2-3 days)
 
-- Existing hybrid/demo clients function without client-side rewrites.
-
-### Phase 3: Extract Repo 3 (Ops)
-
-1. Move `deploy/`, Dockerfiles, reverse proxy configs, and production compose.
-2. Add environment overlays for demo, production SaaS, and enterprise on-prem.
-3. Centralize secrets management and rollout workflows.
-
-Deliverable:
-
-- Deployments no longer require product code repositories to own ops logic.
-
-### Phase 4: Clean Repo 1 to Pure Local-First OSS
-
-1. Remove Docker/Postgres/deploy dependencies from Repo 1.
-2. Keep optional cloud integration via API key and contract clients only.
-3. Verify zero-regression local quickstart and offline workflows.
+1. Add parametrized tests for key behavior in `local`, `hybrid`, and `demo`.
+2. Cover auth semantics by mode:
+   - local: no-auth behavior
+   - hybrid: loopback bypass + protected remote behavior
+   - demo: JWT-required behavior
+3. Cover mode-specific feature flags.
+4. Cover mode-specific egress defaults.
+5. Cover rate-limiting activation and enforcement paths by mode.
 
 Deliverable:
 
-- Repo 1 remains independently installable and useful without Sherpa cloud.
+- A regression safety net for refactor work across all three operational modes.
+
+Why now:
+
+- Structural refactors without mode coverage create blind regressions.
+- Stabilizing existing failing tests plus adding mode coverage materially lowers
+  migration risk.
+
+### Step 3: Centralize Mode Policy (Phase 1b, 1-2 days)
+
+1. Create `app/core/mode_policy.py`.
+2. Move scattered `if app_config.mode == ...` branches into policy functions,
+   for example:
+   - `requires_auth()`
+   - `allows_export()`
+   - `egress_default()`
+   - `max_token_ttl()`
+3. Replace direct mode branching in routes/services with policy calls.
+
+Deliverable:
+
+- Explicit, testable mode seams without moving repositories yet.
+
+Why now:
+
+- This is the real decoupling work.
+- Future extraction becomes targeted and mechanical instead of a broad search.
+
+### Step 4: Build MCP Tool Foundation (3-5 days)
+
+Implement core tool infrastructure before repository extraction:
+
+```text
+app/services/
+├── tools/
+│   ├── registry.py
+│   ├── executor.py
+│   ├── schemas.py
+│   └── builtin/
+```
+
+Integration points:
+
+1. `app/services/llm.py`: send tool schemas to providers that support tool or
+   function calling.
+2. `src/spectra_sherpa/app/main.py`: add WebSocket actions for tool
+   discovery/invocation.
+3. `src/spectra_sherpa/app/services/plugin_loader.py`: load tool manifests from
+   plugin directories and future MCP adapters.
+4. `src/spectra_sherpa/app/services/dag/node_base.py`: expose tools as DAG
+   addressable capabilities where appropriate.
+5. Frontend: add a tools store and tool invocation UX in chat/workflow surfaces.
+
+Deliverable:
+
+- The core capability layer that differentiates Sherpa and clarifies true
+  local-vs-cloud boundaries.
+
+Why now:
+
+- MCP defines practical boundaries for Repo 1 vs Repo 2 better than speculative
+  upfront partitioning.
+
+### Step 5: Split Repositories After MCP Stabilizes
+
+Perform physical extraction only after Steps 1-4 are stable in production-like
+validation:
+
+1. Extract Repo 2 (`spectrasherpa-server`) using established server seams.
+2. Extract Repo 3 (`spectra-ops`) for deploy and infrastructure concerns.
+3. Clean Repo 1 to strict local-first OSS boundaries.
+
+Deliverable:
+
+- Repo split based on proven seams, not assumptions.
+
+Why now:
+
+- By this point, tool boundaries, contract patterns, and operational needs are
+  known and test-backed.
+
+### Priority Summary
+
+| Priority | Action | Duration | Risk if Skipped |
+|---|---|---|---|
+| 1 | Freeze contracts (OpenAPI + WebSocket schema) | 1-2 days | Client/server drift |
+| 2 | Add mode-matrix tests | 2-3 days | Hidden regressions during refactor |
+| 3 | Centralize mode policy | 1-2 days | Scattered branches block clean extraction |
+| 4 | Build MCP tool foundation | 3-5 days | Product differentiation delayed |
+| 5 | Physical repository split | After MCP stability | Premature if done earlier |
 
 ---
 
