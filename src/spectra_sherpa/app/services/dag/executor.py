@@ -6,13 +6,18 @@ Handles execution of workflows represented as directed acyclic graphs.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Set, Tuple
-from dataclasses import dataclass
-from enum import Enum
 import asyncio
 import hashlib
 import json
+import logging
 import warnings
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Dict, List, Optional, Set, Tuple
+
+from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 from .node_base import Node, NodeStatus, node_registry
 from .meta_helpers import safe_get_coord
@@ -667,23 +672,36 @@ class DAGExecutor:
 
                 # Check if we can use cached result
                 if self._is_node_cached(node_id):
-                    print(f"Using cached result: {node_id} ({node.metadata.label})")
+                    logger.debug("Using cached result: %s (%s)", node_id, node.metadata.label)
                     continue
 
                 # Get inputs from upstream nodes (positional or named)
                 positional_inputs, named_inputs = self._get_node_inputs(node_id)
 
-                # Execute node with appropriate calling convention
-                print(f"Executing node: {node_id} ({node.metadata.label})")
-                if named_inputs:
-                    result = await node.run(**named_inputs)
-                else:
-                    result = await node.run(*positional_inputs)
+                # Execute node with timeout to prevent resource exhaustion
+                import asyncio
+                node_timeout = settings.max_job_duration_sec
+                label = node.metadata.label if node.metadata else node_id
+                logger.debug("Executing node: %s (%s)", node_id, label)
+                try:
+                    if named_inputs:
+                        result = await asyncio.wait_for(
+                            node.run(**named_inputs), timeout=node_timeout
+                        )
+                    else:
+                        result = await asyncio.wait_for(
+                            node.run(*positional_inputs), timeout=node_timeout
+                        )
+                except asyncio.TimeoutError:
+                    raise ValueError(
+                        f"Node '{label}' exceeded {node_timeout}s timeout. "
+                        f"Reduce dataset size or simplify parameters."
+                    )
 
                 # Store result and param hash for caching
                 self.results[node_id] = result
                 self._param_hashes[node_id] = self._compute_param_hash(node_id)
-                print(f"  ✓ Completed: {node_id} (status: {node.status.value})")
+                logger.debug("Completed: %s (status: %s)", node_id, node.status.value)
 
             self.status = WorkflowStatus.COMPLETED
             return self.results
@@ -733,7 +751,7 @@ class DAGExecutor:
 
             # Check if we can use cached result
             if self._is_node_cached(dep_node_id):
-                print(f"Using cached result: {dep_node_id} ({node.metadata.label})")
+                logger.debug("Using cached result: %s (%s)", dep_node_id, node.metadata.label)
                 # Still include in results even if cached
                 if dep_node_id not in executed_in_this_run:
                     executed_in_this_run.append(dep_node_id)
@@ -741,7 +759,7 @@ class DAGExecutor:
 
             # Execute the node
             positional_inputs, named_inputs = self._get_node_inputs(dep_node_id)
-            print(f"Executing node: {dep_node_id} ({node.metadata.label})")
+            logger.debug("Executing node: %s (%s)", dep_node_id, node.metadata.label)
             if named_inputs:
                 result = await node.run(**named_inputs)
             else:
@@ -751,7 +769,7 @@ class DAGExecutor:
             self.results[dep_node_id] = result
             self._param_hashes[dep_node_id] = self._compute_param_hash(dep_node_id)
             executed_in_this_run.append(dep_node_id)
-            print(f"  ✓ Completed: {dep_node_id} (status: {node.status.value})")
+            logger.debug("Completed: %s (status: %s)", dep_node_id, node.status.value)
 
         # Return all results from this execution (target + dependencies)
         return {nid: self.results[nid] for nid in executed_in_this_run}

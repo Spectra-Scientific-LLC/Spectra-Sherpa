@@ -2,7 +2,7 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 import api from "@/api/client";
 import type { ConversationSummary, LlmMessage } from "@/types";
-import { buildWsUrl, withApiKey } from "@/utils/ws";
+import { buildWsUrl, withCredentials } from "@/utils/ws";
 
 const STORAGE_KEY = "llm_conversations";
 
@@ -80,8 +80,7 @@ export const useLlmStore = defineStore("llm", () => {
     allowReconnect = true;
     connectionStatus.value = "connecting";
     lastError.value = null;
-    const apiKey = localStorage.getItem("api_key");
-    const wsUrl = withApiKey(buildWsUrl(), apiKey);
+    const wsUrl = withCredentials(buildWsUrl());
     wsRef.value = new WebSocket(wsUrl);
 
     wsRef.value.addEventListener("message", (event) => {

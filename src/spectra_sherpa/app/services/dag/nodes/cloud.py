@@ -5,6 +5,7 @@ import logging
 import httpx
 
 from app.core.config import app_config
+from app.core.security import is_egress_enabled
 from app.services.dag.node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
 from app.services.dag.meta_helpers import safe_get_coord
 
@@ -115,6 +116,14 @@ class CloudComputeNode(Node):
     async def execute(self, input_data: Any, **kwargs) -> Any:
         algorithm_id = self.parameters.get("algorithm_id", "advanced_baseline")
         timeout = self.parameters.get("timeout", 60)
+
+        # Egress guard — block outbound requests when egress is disabled
+        # (local mode default, or hybrid mode with degraded network)
+        if not is_egress_enabled():
+            raise RuntimeError(
+                "Network egress is disabled. Cloud compute requires egress to be enabled. "
+                "Set EGRESS_ENABLED=true or use APP_MODE=hybrid to allow outbound requests."
+            )
 
         # Check configuration
         if not app_config.cloud_compute_url:

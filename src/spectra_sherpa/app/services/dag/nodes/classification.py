@@ -11,11 +11,15 @@ import numpy as np
 import spectrochempy as scp
 from spectrochempy import NDDataset
 
+import logging
+
 from app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
 
 from ..node_base import Node, NodeMetadata, NodeParameter, InputPort, PortMetadata, register_node
 from .visualization import generate_confusion_matrix_heatmap
 from .modeling import _create_spectral_dataset
+
+logger = logging.getLogger(__name__)
 
 
 @register_node
@@ -301,8 +305,6 @@ class PLSDANode(Node):
                     pass
 
         # Generate plots for visualization
-        import logging
-        logger = logging.getLogger(__name__)
         plot_error = None
 
         try:
@@ -320,11 +322,8 @@ class PLSDANode(Node):
             )
 
         except Exception as e:
-            import traceback
             error_msg = f"Plot generation failed: {str(e)}"
-            logger.error(f"[PLSDANode] {error_msg}", exc_info=True)
-            print(f"[PLSDANode] WARNING: {error_msg}")
-            traceback.print_exc()
+            logger.warning("Plot generation failed: %s", e, exc_info=True)
             # Return partial plots with error info instead of silently failing
             plots = {
                 "_error": error_msg,
@@ -984,16 +983,16 @@ class KNNNode(Node):
         # Case 2: y is NDDataset - extract embedded labels from y (don't use raw dataset)
         # Case 3: y is array/list - use directly
         if y is None:
-            print("[KNN] No y input provided - extracting labels from X")
+            logger.debug("No y input provided - extracting labels from X")
             y_coord = safe_get_coord(X, 'y') if isinstance(X, NDDataset) else None
             if y_coord is not None:
                 # Extract labels from X's y-axis (prefer labels over data)
                 if hasattr(y_coord, 'labels') and y_coord.labels is not None:
                     y = y_coord.labels
-                    print("[KNN] Auto-extracted class labels from X.y.labels")
+                    logger.debug("Auto-extracted class labels from X.y.labels")
                 elif hasattr(y_coord, 'data') and y_coord.data is not None and np.array(y_coord.data).size > 0:
                     y = y_coord.data
-                    print("[KNN] Auto-extracted class labels from X.y.data")
+                    logger.debug("Auto-extracted class labels from X.y.data")
                 else:
                     raise ValueError(
                         "NDDataset has y-axis but no labels or data found. "
@@ -1006,16 +1005,16 @@ class KNNNode(Node):
                 )
         elif isinstance(y, NDDataset):
             # If y IS an NDDataset, extract embedded labels (don't use the dataset itself)
-            print("[KNN] y is NDDataset - extracting embedded labels")
+            logger.debug("y is NDDataset - extracting embedded labels")
             y_coord = safe_get_coord(y, 'y')
             if y_coord is not None:
                 # Extract from y's own y-axis
                 if hasattr(y_coord, 'labels') and y_coord.labels is not None:
                     y = y_coord.labels
-                    print("[KNN] Extracted labels from y.y.labels")
+                    logger.debug("Extracted labels from y.y.labels")
                 elif hasattr(y_coord, 'data') and y_coord.data is not None and np.array(y_coord.data).size > 0:
                     y = y_coord.data
-                    print("[KNN] Extracted labels from y.y.data")
+                    logger.debug("Extracted labels from y.y.data")
                 else:
                     raise ValueError(
                         "NDDataset passed to y port has no embedded labels. "
@@ -1110,11 +1109,11 @@ class KNNNode(Node):
             explained_var = np.array(pca_viz.explained_variance.data) if hasattr(pca_viz.explained_variance, "data") else np.array(pca_viz.explained_variance)
             viz_labels = [f"PC{i+1} ({explained_var[i]*100:.1f}%)" for i in range(n_viz_components)]
 
-            print(f"[KNN] High-dimensional data ({n_features} features) - computed PCA for visualization ({n_viz_components} PCs)")
+            logger.debug("High-dimensional data (%d features) - computed PCA for visualization (%d PCs)", n_features, n_viz_components)
         else:
             # Low-dimensional data, use as-is
             viz_labels = [f"Feature {i+1}" for i in range(n_features)]
-            print(f"[KNN] Low-dimensional data ({n_features} features) - using original features for visualization")
+            logger.debug("Low-dimensional data (%d features) - using original features for visualization", n_features)
 
         # --- K-Value Optimization ---
         # Run a quick search for optimal K to guide the user
@@ -1147,7 +1146,7 @@ class KNNNode(Node):
                 weights=weights
             )
         except Exception as e:
-            print(f"[KNN] Failed to generate decision boundary plot: {e}")
+            logger.warning("Failed to generate decision boundary plot: %s", e)
 
         # =====================================================================
         # Create NDDataset output with proper coordinate coupling
@@ -1185,7 +1184,7 @@ class KNNNode(Node):
             "optimal_k": k_tuning_results.get("best_k") if k_tuning_results else None,
         })
 
-        print(f"[KNN] Train accuracy: {train_accuracy:.3f}, CV accuracy: {cv_accuracy:.3f}")
+        logger.debug("Train accuracy: %.3f, CV accuracy: %.3f", train_accuracy, cv_accuracy)
 
         # NDDataset-only return: one serialization boundary at API layer
         return {
@@ -1481,16 +1480,16 @@ class SIMCANode(Node):
         # Case 2: y is NDDataset - extract embedded labels from y (don't use raw dataset)
         # Case 3: y is array/list - use directly
         if y is None:
-            print("[SIMCA] No y input provided - extracting labels from X")
+            logger.debug("No y input provided - extracting labels from X")
             y_coord = safe_get_coord(X, 'y') if isinstance(X, NDDataset) else None
             if y_coord is not None:
                 # Extract labels from X's y-axis (prefer labels over data)
                 if hasattr(y_coord, 'labels') and y_coord.labels is not None:
                     y = y_coord.labels
-                    print("[SIMCA] Auto-extracted class labels from X.y.labels")
+                    logger.debug("Auto-extracted class labels from X.y.labels")
                 elif hasattr(y_coord, 'data') and y_coord.data is not None and np.array(y_coord.data).size > 0:
                     y = y_coord.data
-                    print("[SIMCA] Auto-extracted class labels from X.y.data")
+                    logger.debug("Auto-extracted class labels from X.y.data")
                 else:
                     raise ValueError(
                         "NDDataset has y-axis but no labels or data found. "
@@ -1503,16 +1502,16 @@ class SIMCANode(Node):
                 )
         elif isinstance(y, NDDataset):
             # If y IS an NDDataset, extract embedded labels (don't use the dataset itself)
-            print("[SIMCA] y is NDDataset - extracting embedded labels")
+            logger.debug("y is NDDataset - extracting embedded labels")
             y_coord = safe_get_coord(y, 'y')
             if y_coord is not None:
                 # Extract from y's own y-axis
                 if hasattr(y_coord, 'labels') and y_coord.labels is not None:
                     y = y_coord.labels
-                    print("[SIMCA] Extracted labels from y.y.labels")
+                    logger.debug("Extracted labels from y.y.labels")
                 elif hasattr(y_coord, 'data') and y_coord.data is not None and np.array(y_coord.data).size > 0:
                     y = y_coord.data
-                    print("[SIMCA] Extracted labels from y.y.data")
+                    logger.debug("Extracted labels from y.y.data")
                 else:
                     raise ValueError(
                         "NDDataset passed to y port has no embedded labels. "
@@ -1668,7 +1667,7 @@ class SIMCANode(Node):
         viz_scores = first_pca.transform(scp.NDDataset(X_data))
         viz_scores_data = np.array(viz_scores.data) if hasattr(viz_scores, "data") else np.array(viz_scores)
 
-        print(f"[SIMCA] Visualization: projecting all samples into class '{first_class}' PC space")
+        logger.debug("Visualization: projecting all samples into class '%s' PC space", first_class)
 
         # Create serializable version of class models (exclude PCA objects)
         # CRITICAL: Include class_mean for projecting new samples in SIMCAPredictNode
@@ -1735,7 +1734,7 @@ class SIMCANode(Node):
             },
         })
 
-        print(f"[SIMCA] Train accuracy: {train_accuracy:.3f} with {n_components} PCs per class")
+        logger.debug("Train accuracy: %.3f with %d PCs per class", train_accuracy, n_components)
 
         # NDDataset-only return: one serialization boundary at API layer
         return {
@@ -2126,7 +2125,7 @@ class SIMCAPredictNode(Node):
         except (ValueError, TypeError):
             pass
 
-        print(f"[SIMCA Predict] Classified {n_samples} samples into {len(set(predictions))} classes")
+        logger.debug("Classified %d samples into %d classes", n_samples, len(set(predictions)))
 
         return {
             "y_pred": predictions,

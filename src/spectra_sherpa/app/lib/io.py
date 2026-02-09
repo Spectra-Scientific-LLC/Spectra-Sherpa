@@ -13,11 +13,14 @@ MIGRATED FROM: project0/io.py, project1/plot_ftir_spectra.py
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 import pandas as pd
 
 try:
@@ -215,7 +218,7 @@ def read_csv_directory(
                 ds = read_csv_spectrum(filepath)
                 datasets.append(ds)
             except Exception as e:
-                print(f"Warning: Could not read {filepath}: {e}")
+                logger.warning(f"Could not read {filepath}: {e}")
     return datasets
 
 

@@ -14,25 +14,25 @@ A **modular monolithic** web application for spectral data analysis, combining e
 - **Local-compute-first:** All computation defaults to local machine; network only for NIST/LLM
 - **File-based storage:** Raw spectra remain as files (scientific tradition)
 - **Git-like versioning:** Content-addressable storage for efficient snapshots
-- **Single-user:** Personal workspace with simple API key protection
+- **Three deployment modes:** Local (single-user, no auth), Hybrid (API-key linked identity from server), Demo/Cloud (multi-user JWT auth)
 - **Performance-focused:** WAL mode, caching, resource limits, crash-safe jobs
 - **Exportable:** Scientists live in Excel/Origin/Matlab - export everything
-- **Cloud-extensible:** Architecture supports future remote compute
+- **Cloud-extensible:** Architecture supports remote compute via spectrasherpa-server
 
 ---
 
 ## 🔐 Authentication & Data Access
 
 **See detailed documentation:**
-- [AUTHENTICATION.md](AUTHENTICATION.md) - Three-tier model (Free, BYOK, Paid Cloud), API key architecture
+- [AUTHENTICATION.md](AUTHENTICATION.md) - Three-mode deployment model, hybrid identity linking, API key architecture
 - [DATA_SOURCES.md](DATA_SOURCES.md) - Free databases (NIST, HITRAN, EPA), premium sources, licensing
 
 **Key Points:**
-- **Phase 1 (Current):** Simple shared API key for local deployment
-- **Free Data:** NIST, HITRAN, EPA - no authentication required
-- **BYOK (Bring Your Own Key):** Users can add their LLM API keys to unlock AI features
-- **Advanced LLM Agents:** Paid Cloud exclusive (extensible skills system)
-- **Phase 2:** JWT-based multi-user auth for cloud deployment
+- **Local mode:** Implicit single user, no login, all features except admin/cloud
+- **Hybrid mode:** API-key linked identity — `SPECTRASHERPA_API_KEY` validates against spectrasherpa-server at startup, enriches the local user with server-side `username` and `is_admin`. No login page needed. Managed LLM keys flow from server.
+- **Demo/Cloud mode:** JWT-based multi-user auth (email + password login via spectrasherpa-server)
+- **Free Data:** NIST, HITRAN, EPA - no authentication required in any mode
+- **BYOK (Bring Your Own Key):** Users can add their own LLM API keys in any mode
 
 ---
 
@@ -93,9 +93,11 @@ A **modular monolithic** web application for spectral data analysis, combining e
                     External Services (Optional)
 ┌─────────────────────────────────────────────────────────────────┐
 │  ┌──────────────────┬──────────────────┬──────────────────┐    │
-│  │  DeepSeek API    │   NIST WebBook   │  Future: Cloud   │    │
-│  │  (LLM queries)   │  (Spectral data) │   Compute        │    │
+│  │  LLM APIs        │   NIST WebBook   │ spectrasherpa-   │    │
+│  │  (OpenAI, etc.)  │  (Spectral data) │ server (hybrid)  │    │
 │  └──────────────────┴──────────────────┴──────────────────┘    │
+│  spectrasherpa-server provides: identity linking,              │
+│  managed LLM keys, usage quotas (hybrid/demo modes)            │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -361,7 +363,7 @@ Based on Exp_loader structure:
 1. **Metadata in DB, Files on Disk:** Database stores paths and metadata, actual spectral data stays as files
 2. **Content-Addressable Versioning:** Files stored once by SHA-256 hash, versions reference via manifests (prevents storage explosion)
 3. **SQLite WAL Mode:** Write-Ahead Logging allows concurrent readers + 1 writer (no UI freezes during job updates)
-4. **Simple API Key Auth:** No JWT/bcrypt in Phase 1 - just API key check (defer complex auth to Phase 2)
+4. **Mode-Dependent Auth:** Local = implicit user; Hybrid = API-key linked identity from spectrasherpa-server; Demo/Cloud = JWT auth
 5. **Local-Compute-First:** All scientific compute runs locally; network only for auxiliary services (NIST, LLM)
 6. **Crash-Safe Jobs:** BackgroundTasks with cleanup handlers mark jobs as failed on server crash
 7. **Compute Provenance:** Track whether job ran locally or via API (compute_location field)
@@ -447,11 +449,16 @@ Based on Exp_loader structure:
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| GET | `/auth/me` | Get current user (enriched in hybrid mode) |
+| POST | `/auth/login` | Login with credentials (demo/cloud mode) |
 | GET | `/user/profile` | Get user profile |
 | PUT | `/user/api-keys` | Update API keys (encrypted) |
 | GET | `/logs` | Get recent log entries (for debugging) |
 
-**Note:** Simple API key authentication via `X-API-Key` header. JWT deferred to Phase 2.
+**Auth by mode:**
+- **Local:** No auth required — implicit user resolved from DB
+- **Hybrid:** No login needed — identity linked from server via `SPECTRASHERPA_API_KEY` at startup. `GET /auth/me` returns enriched local user.
+- **Demo/Cloud:** JWT auth via `Authorization: Bearer <token>` header
 
 ### WebSocket Events
 
@@ -1467,6 +1474,6 @@ See [BIG_ROLLBACK_PLAN.md](../../BIG_ROLLBACK_PLAN.md) for full migration detail
 
 ---
 
-**Document Version:** 1.5
-**Last Updated:** 2026-02-05
+**Document Version:** 1.6
+**Last Updated:** 2026-02-07
 **Authors:** Spectra Scientific Team

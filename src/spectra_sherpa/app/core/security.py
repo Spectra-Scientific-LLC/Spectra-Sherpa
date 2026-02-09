@@ -1,5 +1,7 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+import ipaddress
 import hashlib
+import os
 import time
 from typing import Any, Optional, TYPE_CHECKING
 
@@ -24,7 +26,10 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # Cache entries expire after API_KEY_CACHE_TTL seconds.
 
 API_KEY_CACHE_TTL = 300  # 5 minutes
+API_KEY_CACHE_MAX_SIZE = 1024  # Max cached entries (prevents unbounded memory growth)
 _api_key_cache: dict[str, tuple[int, float]] = {}  # {key_hash: (user_id, expires_at)}
+INVALID_API_KEY_CACHE_TTL = 60  # 1 minute
+_invalid_api_key_cache: dict[str, float] = {}  # {key_hash: expires_at}
 
 
 def _hash_api_key(api_key: str) -> str:
@@ -44,10 +49,63 @@ def _get_cached_user_id(api_key: str) -> Optional[int]:
     return None
 
 
+def _evict_expired_cache_entries() -> None:
+    """Remove expired entries from both caches to reclaim memory."""
+    now = time.time()
+    expired_valid = [k for k, (_, exp) in _api_key_cache.items() if now >= exp]
+    for k in expired_valid:
+        del _api_key_cache[k]
+    expired_invalid = [k for k, exp in _invalid_api_key_cache.items() if now >= exp]
+    for k in expired_invalid:
+        del _invalid_api_key_cache[k]
+
+
 def _cache_api_key(api_key: str, user_id: int) -> None:
     """Cache a validated API key."""
+    if len(_api_key_cache) >= API_KEY_CACHE_MAX_SIZE:
+        _evict_expired_cache_entries()
+        # If still at capacity after eviction, drop oldest entry
+        if len(_api_key_cache) >= API_KEY_CACHE_MAX_SIZE:
+            oldest = min(_api_key_cache, key=lambda k: _api_key_cache[k][1])
+            del _api_key_cache[oldest]
     key_hash = _hash_api_key(api_key)
     _api_key_cache[key_hash] = (user_id, time.time() + API_KEY_CACHE_TTL)
+    _invalid_api_key_cache.pop(key_hash, None)
+
+
+def _is_cached_invalid_api_key(api_key: str) -> bool:
+    """Return True when this key recently failed validation."""
+    key_hash = _hash_api_key(api_key)
+    expires_at = _invalid_api_key_cache.get(key_hash)
+    if expires_at is None:
+        return False
+    if time.time() < expires_at:
+        return True
+    del _invalid_api_key_cache[key_hash]
+    return False
+
+
+def _cache_invalid_api_key(api_key: str) -> None:
+    """Cache an invalid key briefly to reduce repeated bcrypt scans."""
+    if len(_invalid_api_key_cache) >= API_KEY_CACHE_MAX_SIZE:
+        _evict_expired_cache_entries()
+        if len(_invalid_api_key_cache) >= API_KEY_CACHE_MAX_SIZE:
+            oldest = min(_invalid_api_key_cache, key=_invalid_api_key_cache.get)
+            del _invalid_api_key_cache[oldest]
+    key_hash = _hash_api_key(api_key)
+    _invalid_api_key_cache[key_hash] = time.time() + INVALID_API_KEY_CACHE_TTL
+
+
+def invalidate_gateway_api_key_cache(api_key: Optional[str] = None) -> None:
+    """Invalidate gateway API key caches (both valid and invalid entries)."""
+    global _api_key_cache, _invalid_api_key_cache
+    if api_key:
+        key_hash = _hash_api_key(api_key)
+        _api_key_cache.pop(key_hash, None)
+        _invalid_api_key_cache.pop(key_hash, None)
+        return
+    _api_key_cache = {}
+    _invalid_api_key_cache = {}
 
 # OAuth2 scheme - use relative URL for tokenUrl
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
@@ -67,7 +125,7 @@ def get_password_hash(password: str) -> str:
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Create a JWT access token."""
     to_encode = data.copy()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     if expires_delta:
         expire = now + expires_delta
     else:
@@ -87,6 +145,13 @@ def decode_access_token(token: str) -> Optional[dict]:
         return None
 
 
+def is_valid_bearer_token(token: Optional[str]) -> bool:
+    """Fast JWT validity check used by gateway middleware and WebSocket auth."""
+    if not token:
+        return False
+    return decode_access_token(token) is not None
+
+
 async def is_valid_api_key(api_key: Optional[str]) -> bool:
     """
     Validate an API key for WebSocket and middleware authentication.
@@ -95,7 +160,6 @@ async def is_valid_api_key(api_key: Optional[str]) -> bool:
     1. Global system API key (settings.api_key)
     2. Local mode bypass (no key required)
     3. User-specific API keys stored in database
-    4. JWT tokens passed as api_key
 
     Note: This path includes database validation so the gateway can accept
     user API keys before route-level dependencies run.
@@ -108,13 +172,11 @@ async def is_valid_api_key(api_key: Optional[str]) -> bool:
         return False
 
     # Check global system key
-    if api_key == settings.api_key:
+    if api_key == settings.api_key and is_system_api_key_auth_enabled():
         return True
 
-    # For JWT tokens passed as api_key, try to decode
-    payload = decode_access_token(api_key)
-    if payload:
-        return True
+    if _is_cached_invalid_api_key(api_key):
+        return False
 
     # Check user-specific API keys in database
     try:
@@ -130,12 +192,15 @@ async def is_valid_api_key(api_key: Optional[str]) -> bool:
                     select(User).where(User.id == cached_user_id)
                 )
                 user = result.scalar_one_or_none()
-                if user:
+                if user and getattr(user, "is_active", True):
                     return True
 
             # Cache miss - expensive bcrypt verification
             result = await session.execute(
-                select(User).where(User.api_key_hash.isnot(None))
+                select(User).where(
+                    User.api_key_hash.isnot(None),
+                    User.is_active.is_(True),
+                )
             )
             users_with_keys = result.scalars().all()
             for user in users_with_keys:
@@ -146,15 +211,110 @@ async def is_valid_api_key(api_key: Optional[str]) -> bool:
         # Fail closed if database lookup fails
         pass
 
+    _cache_invalid_api_key(api_key)
     return False
+
+
+def _is_loopback(host: str | None) -> bool:
+    """Check if a client address is a loopback address.
+
+    Returns ``False`` for ``None`` (fail closed — unknown client is not
+    considered loopback).
+    """
+    if not host:
+        return False
+    return host in ("127.0.0.1", "::1") or host.startswith("::ffff:127.")
+
+
+def is_system_api_key_auth_enabled() -> bool:
+    """Return whether APP_API_KEY is accepted for request authentication."""
+    if app_config.mode == "local":
+        return True
+    return os.getenv("ALLOW_SYSTEM_API_KEY_AUTH", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
+# Trust X-Forwarded-For when behind a reverse proxy (Docker, nginx, Caddy).
+# Only enable when you control the proxy — otherwise clients can spoof their IP.
+_TRUST_PROXY = os.getenv("TRUST_PROXY", "").strip().lower() in {"1", "true", "yes"}
+_TRUSTED_PROXY_CIDRS_ENV = os.getenv("TRUSTED_PROXY_CIDRS", "").strip()
+
+
+def _parse_trusted_proxy_cidrs(raw: str) -> tuple[ipaddress._BaseNetwork, ...]:
+    # Safe default: only trust loopback proxy peers when CIDRs are not specified.
+    values = (
+        ["127.0.0.1/32", "::1/128"]
+        if not raw
+        else [value.strip() for value in raw.split(",") if value.strip()]
+    )
+    networks: list[ipaddress._BaseNetwork] = []
+    for value in values:
+        try:
+            networks.append(ipaddress.ip_network(value, strict=False))
+        except ValueError:
+            continue
+    return tuple(networks)
+
+
+_TRUSTED_PROXY_CIDRS = _parse_trusted_proxy_cidrs(_TRUSTED_PROXY_CIDRS_ENV)
+
+
+def _normalize_ip(value: str | None) -> str | None:
+    if not value:
+        return None
+    candidate = value.strip()
+    if not candidate:
+        return None
+    if candidate.startswith("[") and "]" in candidate:
+        candidate = candidate[1 : candidate.index("]")]
+    elif candidate.count(":") == 1 and "." in candidate:
+        # IPv4 with port in forwarded headers, e.g. "203.0.113.7:12345"
+        candidate = candidate.rsplit(":", 1)[0]
+    try:
+        ipaddress.ip_address(candidate)
+    except ValueError:
+        return None
+    return candidate
+
+
+def _is_trusted_proxy_peer(host: str | None) -> bool:
+    normalized = _normalize_ip(host)
+    if not normalized:
+        return False
+    ip = ipaddress.ip_address(normalized)
+    return any(ip in network for network in _TRUSTED_PROXY_CIDRS)
+
+
+def get_client_host(request_or_ws) -> str | None:
+    """Extract the real client IP, respecting X-Forwarded-For when trusted.
+
+    X-Forwarded-For is only honored when TRUST_PROXY is enabled and the
+    immediate peer is inside TRUSTED_PROXY_CIDRS.
+    """
+    client = getattr(request_or_ws, "client", None)
+    direct_host = client.host if client else None
+
+    if _TRUST_PROXY and _is_trusted_proxy_peer(direct_host):
+        forwarded = getattr(request_or_ws, "headers", {}).get("x-forwarded-for")
+        if forwarded:
+            # X-Forwarded-For: client, proxy1, proxy2 — leftmost is original
+            forwarded_client = _normalize_ip(forwarded.split(",")[0].strip())
+            if forwarded_client:
+                return forwarded_client
+    return direct_host
 
 
 async def api_key_middleware(request: Request, call_next) -> Response:
     """
     Middleware to validate API keys for all requests.
 
-    In Local mode, all requests are allowed.
-    In Hybrid/Demo mode, requests must have valid authentication.
+    In Local mode, all requests are allowed (single-user desktop).
+    In Hybrid mode, loopback requests are allowed; non-loopback clients
+    must provide valid credentials (JWT or API key).
+    In Demo mode, all non-public requests must be authenticated.
 
     This middleware enforces authentication at the gateway level - requests
     without valid credentials are rejected with 401.
@@ -183,10 +343,16 @@ async def api_key_middleware(request: Request, call_next) -> Response:
             or path == "/favicon.ico"):
         return await call_next(request)
 
-    # Local and hybrid modes: bypass auth (single-user on local machine).
-    # Only demo mode (multi-user cloud) enforces gateway auth.
-    if app_config.mode in ("local", "hybrid"):
+    # Local mode: always bypass auth (single-user desktop, always loopback).
+    if app_config.mode == "local":
         return await call_next(request)
+
+    # Hybrid mode: bypass auth only for loopback clients (desktop use).
+    # Non-loopback clients must authenticate (JWT or API key) — falls
+    # through to the credential check below, same path as demo mode.
+    if app_config.mode == "hybrid":
+        if _is_loopback(get_client_host(request)):
+            return await call_next(request)
 
     # Check for API key or Bearer token
     api_key = request.headers.get("X-API-Key")
@@ -196,7 +362,7 @@ async def api_key_middleware(request: Request, call_next) -> Response:
 
     if auth_header and auth_header.startswith("Bearer "):
         token = auth_header[7:]
-        if await is_valid_api_key(token):
+        if is_valid_bearer_token(token):
             is_authenticated = True
 
     if not is_authenticated and api_key and await is_valid_api_key(api_key):

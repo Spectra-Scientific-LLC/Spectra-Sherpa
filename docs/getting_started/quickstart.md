@@ -5,7 +5,7 @@ Get from zero to your first analysis in under 2 minutes.
 ## 1. Install & Launch
 
 ```bash
-pip install -e .
+pip install spectra-sherpa
 spectra-sherpa
 ```
 
@@ -15,23 +15,35 @@ Your browser opens automatically to `http://localhost:8000`. No login required �
 
 ---
 
-## 2. Load Example Data
+## 2. Load Your First Dataset
 
-SpectraSherpa ships with access to SpectroChemPy's bundled example datasets. No downloads needed if SpectroChemPy is installed.
+You have two options: use bundled example data or upload your own files.
 
-| Dataset | Location | Description |
-|---------|----------|-------------|
-| `irdata` | `~/.spectrochempy/data/irdata/` | FTIR spectra (e.g., NH4Y zeolite activation) |
-| `ramandata` | `~/.spectrochempy/data/ramandata/` | Raman concentration series |
-| `nmrdata` | `~/.spectrochempy/data/nmrdata/` | 1D NMR spectra |
+### Option A: Upload Your Own Spectra
 
-To load data:
+1. Go to the **Experiments** page (sidebar).
+2. Click **New Experiment** — give it a name (e.g., "My FTIR Data").
+3. Click **Upload Files** and select your spectral files.
+
+**Supported formats:** `.csv`, `.jdx`, `.dx`, `.spc`, `.spa`, `.spg`, `.txt`, `.wdf`, `.mat`, `.opus`
+
+### Option B: Use Bundled Example Data
+
+SpectraSherpa ships with access to SpectroChemPy's bundled example datasets. No downloads needed.
+
+| Dataset | Description |
+|---------|-------------|
+| `irdata` | FTIR spectra (e.g., NH4Y zeolite activation) |
+| `ramandata` | Raman concentration series |
+| `nmrdata` | 1D NMR spectra |
+
+To use example data in a workflow:
 
 1. Navigate to the **Analysis** tab (sidebar icon).
 2. Add a **Data Source** node to the canvas.
 3. Set **Source Type** to `SpectroChemPy Example`.
 4. Choose an **Example Dataset** (e.g., `irdata`).
-5. Pick a specific file from the **Example File** dropdown (e.g., `nh4y-activation.spg`). Leave empty to load the dataset default.
+5. Pick a specific file from the **Example File** dropdown (e.g., `nh4y-activation.spg`).
 
 ---
 
@@ -80,32 +92,44 @@ Select the **PCA** node — the Results panel shows the Score Plot and Explained
 
 ---
 
-## 4. Configure LLM API Keys (Optional)
+## 4. Upload Your Own Data into a Workflow
+
+Once you've tried the example, load your own spectra:
+
+1. Change the **Data Source** node's **Source Type** to `Experiment File`.
+2. Select your experiment and file from the dropdowns.
+3. Re-execute the workflow.
+
+The workflow remembers your parameter settings — only the data changes.
+
+---
+
+## 5. Export Results
+
+After running a workflow, export your results:
+
+1. Select the output node (e.g., PCA).
+2. Click **Export** in the Results panel.
+3. Choose format: **CSV**, **Excel**, or **Parquet**.
+4. The file downloads to your browser.
+
+---
+
+## 6. Configure LLM API Keys (Optional)
 
 SpectraSherpa can use LLMs for AI-assisted workflow generation and a chat assistant. This is optional — all core spectroscopy features work without it.
 
 ### Option A: Environment Variables
 
-Create a `.env` file in your project root (or wherever you run `spectra-sherpa`):
+Create a `.env` file in your working directory:
 
 ```bash
-# Copy the template
-cp .env.example .env
-```
+EGRESS_ENABLED=true
 
-Add your API key(s) — only the provider(s) you want to use:
-
-```bash
-# OpenAI (GPT-4o)
+# Add your API key(s) — only the provider(s) you want to use:
 OPENAI_API_KEY=sk-...
-
-# Anthropic (Claude)
 ANTHROPIC_API_KEY=sk-ant-...
-
-# DeepSeek (most cost-effective)
-DEEPSEEK_API_KEY=sk-...
-
-# Google Gemini
+DEEPSEEK_API_KEY=sk-...       # Most cost-effective
 GEMINI_API_KEY=AI...
 ```
 
@@ -114,7 +138,7 @@ Restart SpectraSherpa after editing `.env`. The configured provider(s) will appe
 ### Option B: In-App Settings
 
 1. Open SpectraSherpa in your browser.
-2. Go to **Settings** > **API Keys** (or **Integrations**).
+2. Go to **Settings** > **API Keys**.
 3. Enter your API key for the provider you want.
 4. Click **Save** then **Test Connection** to verify.
 
@@ -131,11 +155,12 @@ Restart SpectraSherpa after editing `.env`. The configured provider(s) will appe
 
 ---
 
-## 5. What's Next
+## 7. What's Next
 
 - **Experiment Management**: Organize spectra with version tracking — see the [User Guide](../user_guide/experiments.md).
-- **NIST Search**: Download reference spectra from NIST WebBook directly in the app.
+- **NIST Search**: Download reference spectra from NIST WebBook directly in the app (requires `EGRESS_ENABLED=true`).
 - **Calibration**: Build quantitative models from multi-concentration measurements.
+- **Modes**: Connect to cloud GPU or run a demo server — see [Modes & Configuration](modes.md).
 - **Export**: Send results to CSV, Excel, or Parquet for use in Origin/MATLAB.
 
 For the full node catalog, see the [Node Reference](../reference/nodes.md).

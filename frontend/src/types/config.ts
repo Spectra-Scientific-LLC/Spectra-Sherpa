@@ -6,7 +6,7 @@
 
 export type AppMode = 'local' | 'hybrid' | 'demo'
 
-export type LLMProvider = 'openai' | 'anthropic' | 'deepseek' | 'gemini'
+export type LLMProvider = 'openai' | 'anthropic' | 'deepseek' | 'gemini' | 'custom_llm'
 
 export interface LLMConfig {
   provider: LLMProvider

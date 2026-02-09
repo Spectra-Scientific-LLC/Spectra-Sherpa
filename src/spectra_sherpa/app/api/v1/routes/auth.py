@@ -42,9 +42,20 @@ async def login_access_token(
     result = await session.execute(select(User).where(User.username == form_data.username))
     user = result.scalar_one_or_none()
 
-    # 2. Authenticate
-    if not user or not security.verify_password(form_data.password, user.password_hash):
+    # 2. Authenticate — always run bcrypt to prevent timing-based username enumeration.
+    # When user is None, verify against a dummy hash so the response time is constant.
+    _DUMMY_HASH = "$2b$12$LJ3m4ys3Lg2Kl7QLd.OXxuMhT5YEVMxNqXEPmJGxqE4M1ZpOSvSm"
+    password_valid = security.verify_password(
+        form_data.password,
+        user.password_hash if user else _DUMMY_HASH,
+    )
+    if not user or not password_valid:
         raise HTTPException(status_code=400, detail="Incorrect email or password")
+    if hasattr(user, "is_active") and not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account disabled",
+        )
 
     # 3. Generate token
     access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)

@@ -43,7 +43,7 @@ PROVIDERS: dict[str, ProviderMetadata] = {
     "anthropic": {
         "id": "anthropic",
         "name": "Anthropic (Claude)",
-        "default_model": "claude-3-5-sonnet-20241022",
+        "default_model": "claude-sonnet-4-5-20250929",
         "base_url": "https://api.anthropic.com",
         "env_var": "ANTHROPIC_API_KEY",
         "client_type": "anthropic",

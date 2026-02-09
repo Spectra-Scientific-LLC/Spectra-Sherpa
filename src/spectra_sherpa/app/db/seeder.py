@@ -6,7 +6,7 @@ from app.core.config import settings
 from app.db.session import async_session
 from app.models.experiment import Experiment
 from app.models.user import User
-from app.services.experiments import create_experiment, add_experiment_file
+from app.services.experiments import create_experiment, add_experiment_file, experiment_dir
 
 logger = logging.getLogger(__name__)
 
@@ -49,18 +49,20 @@ async def seed_data() -> None:
             if file_path.name.startswith("."): # skip .DS_Store
                 continue
             
-            # Destination in data/experiments/{id}/raw/
-            dest_dir = settings.data_dir / "experiments" / str(experiment.id) / "raw"
+            # Destination in canonical data/experiments/exp_XXX/raw/
+            exp_dir = experiment_dir(experiment.id)
+            dest_dir = exp_dir / "raw"
             dest_dir.mkdir(parents=True, exist_ok=True)
-            
+
             dest_file = dest_dir / file_path.name
             shutil.copy2(file_path, dest_file)
-            
-            # Register in DB
+
+            # Store relative path (relative to exp_dir) for secure download checks
+            rel_path = dest_file.relative_to(exp_dir)
             await add_experiment_file(
                 session=session,
                 experiment_id=experiment.id,
-                file_path=str(dest_file),
+                file_path=str(rel_path),
                 file_type=file_path.suffix.lstrip("."),
                 stage="raw",
                 file_size_bytes=dest_file.stat().st_size

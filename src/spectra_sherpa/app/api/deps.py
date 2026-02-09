@@ -83,7 +83,7 @@ async def _get_or_create_local_user(session: AsyncSession) -> User:
     global _local_user_cache
     if _local_user_cache is not None:
         return await session.merge(_local_user_cache)
-    result = await session.execute(select(User).where(User.username == "local"))
+    result = await session.execute(select(User).order_by(User.id).limit(1))
     user = result.scalar_one_or_none()
     if not user:
         user = User(username="local", password_hash="local")
@@ -104,23 +104,37 @@ async def _resolve_user(
 
     Returns the authenticated User or None if credentials are invalid.
     """
-    # 0. Local/hybrid mode: implicit admin — skip all auth, return cached user
-    # Both modes run on the user's machine (single-user, no login needed)
-    if app_config.mode in ("local", "hybrid"):
+    # 0. Local mode: implicit user identity (single-user, no login needed)
+    if app_config.mode == "local":
         return await _get_or_create_local_user(session)
+
+    has_credentials = bool(api_key or token)
+    # If system-key auth is disabled, ignore APP_API_KEY for dependency auth.
+    # This preserves hybrid loopback fallback behavior when stale keys are present
+    # in local storage, while gateway auth still blocks non-loopback requests.
+    if api_key == settings.api_key and not security.is_system_api_key_auth_enabled():
+        api_key = None
+        has_credentials = bool(token)
 
     # 1. API Key Auth (Machine-to-Machine / Cloud Node)
     if api_key:
         # Fast path: global system key
         if api_key == settings.api_key:
-            return User(id=0, username="system", is_superuser=True, password_hash="")
+            if not security.is_system_api_key_auth_enabled():
+                return None
+            # Map to a real DB user instead of a synthetic superuser so auth
+            # honors actual account state/permissions in non-local modes.
+            result = await session.execute(
+                select(User).where(User.is_active.is_(True)).order_by(User.id).limit(1)
+            )
+            return result.scalar_one_or_none()
 
         # Check cache first (avoids expensive bcrypt on every request)
         cached_user_id = _get_cached_user_id(api_key)
         if cached_user_id is not None:
             result = await session.execute(select(User).where(User.id == cached_user_id))
             user = result.scalar_one_or_none()
-            if user:
+            if user and getattr(user, "is_active", True):
                 return user
 
         # Cache miss - do expensive bcrypt verification
@@ -132,6 +146,8 @@ async def _resolve_user(
         users_with_keys = result.scalars().all()
 
         for user in users_with_keys:
+            if hasattr(user, "is_active") and not user.is_active:
+                continue
             if security.verify_password(api_key, user.api_key_hash):
                 _cache_api_key(api_key, user.id)
                 return user
@@ -148,6 +164,12 @@ async def _resolve_user(
                     return user
         except (JWTError, ValidationError):
             pass
+
+    # 3. Hybrid fallback: allow implicit local identity only when no
+    # credentials were provided. If credentials were provided but invalid,
+    # return None so callers can reject explicitly bad auth.
+    if app_config.mode == "hybrid" and not has_credentials:
+        return await _get_or_create_local_user(session)
 
     return None
 

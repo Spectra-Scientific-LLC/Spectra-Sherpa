@@ -73,8 +73,8 @@ def extract_metadata(dataset, file_path: str, debug: bool = False) -> dict:
         warnings.warn(warning_msg, category=UserWarning, stacklevel=2)
 
     if debug:
-        print(f"[METADATA] File: {filename}, Extension: {ext}")
-        print(f"[METADATA] Using extractor: {extractor_name}")
+        logger.debug(f"[METADATA] File: {filename}, Extension: {ext}")
+        logger.debug(f"[METADATA] Using extractor: {extractor_name}")
 
     # Extract raw metadata using format-specific extractor
     try:
@@ -96,10 +96,10 @@ def extract_metadata(dataset, file_path: str, debug: bool = False) -> dict:
     if debug:
         # Show what raw metadata was found
         raw_count = sum(len(v) if isinstance(v, dict) else 0 for v in raw_metadata.values())
-        print(f"[METADATA] Raw metadata fields extracted: {raw_count}")
+        logger.debug(f"[METADATA] Raw metadata fields extracted: {raw_count}")
         for section, data in raw_metadata.items():
             if isinstance(data, dict) and data:
-                print(f"[METADATA]   {section}: {list(data.keys())}")
+                logger.debug(f"[METADATA]   {section}: {list(data.keys())}")
 
     # Check if extraction yielded any metadata
     total_fields = sum(
@@ -117,7 +117,7 @@ def extract_metadata(dataset, file_path: str, debug: bool = False) -> dict:
 
     if debug:
         norm_count = sum(len(v) if isinstance(v, dict) else 0 for v in normalized.values())
-        print(f"[METADATA] Normalized metadata fields: {norm_count}")
+        logger.debug(f"[METADATA] Normalized metadata fields: {norm_count}")
 
     # Include extraction info for debugging (excluded from API by to_api_json)
     normalized["_extraction_info"] = extraction_info

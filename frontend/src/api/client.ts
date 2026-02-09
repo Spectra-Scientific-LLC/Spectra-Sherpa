@@ -37,4 +37,27 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+/**
+ * Response interceptor to handle expired sessions.
+ *
+ * When the backend returns 401 (e.g. expired JWT in demo mode),
+ * clear stored credentials and redirect to login so the user
+ * isn't stuck making failing requests.
+ */
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      const path = window.location.pathname;
+      // Don't redirect if already on login page (avoid loop)
+      if (!path.startsWith("/login")) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("api_key");
+        window.location.href = "/login";
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 export default api;

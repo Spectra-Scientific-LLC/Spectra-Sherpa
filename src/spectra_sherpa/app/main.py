@@ -20,13 +20,22 @@ from app.api.v1.api import api_router
 from app.api.deps import get_user_from_credentials
 from app.core.config import app_config, settings
 from app.core.logging import configure_logging
-from app.core.security import api_key_middleware, is_valid_api_key, check_egress_permission
+from app.core.security import (
+    _is_loopback,
+    api_key_middleware,
+    check_egress_permission,
+    get_client_host,
+    is_valid_api_key,
+    is_valid_bearer_token,
+)
 from app.core.demo_enforcement import DemoEnforcementMiddleware
 from app.core.startup import (
     ensure_data_dirs,
     ensure_database_ready,
+    wait_for_database_ready,
     ensure_default_user,
     ensure_egress_defaults,
+    link_hybrid_identity,
     reconcile_stale_jobs,
     ensure_spectrochempy_testdata,
     ensure_workflow_templates,
@@ -88,21 +97,57 @@ def get_cors_origins() -> list[str]:
     return default_origins
 
 
+def _try_leader_lock() -> bool:
+    """Acquire a non-blocking file lock for one-time startup tasks.
+
+    Returns True if this worker is the leader (lock acquired).
+    On platforms without fcntl (Windows) returns True so startup still runs.
+    """
+    try:
+        import fcntl
+    except ImportError:
+        return True
+
+    lock_path = settings.data_dir / ".startup.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # Keep fd open for process lifetime (lock released on exit)
+        return True
+    except OSError:
+        return False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup and shutdown hooks."""
     # === STARTUP ===
+    # Phase 1: per-worker setup (safe to run in every worker)
     configure_logging()
     validate_security_settings()  # Fail fast if security config is invalid
     validate_concurrency_settings()  # Log concurrency model info
     ensure_data_dirs()
-    await ensure_database_ready()
-    await ensure_default_user()
-    await ensure_egress_defaults()
-    await reconcile_stale_jobs()
-    await ensure_spectrochempy_testdata()
-    await ensure_workflow_templates()
 
+    # Phase 2: DB-mutating tasks — only the leader worker runs these.
+    # Other workers skip (the leader will have completed before requests arrive
+    # because Gunicorn's --preload or sequential worker spawn ensures ordering).
+    is_leader = _try_leader_lock()
+    if is_leader:
+        logger.info("Leader worker: running one-time startup tasks")
+        await ensure_database_ready()
+        await ensure_default_user()
+        await ensure_egress_defaults()
+        await link_hybrid_identity()
+        await reconcile_stale_jobs()
+        await ensure_spectrochempy_testdata()
+        await ensure_workflow_templates()
+    else:
+        logger.info("Follower worker: skipping one-time startup tasks (leader handles them)")
+        # Wait for leader to finish DB schema setup (no DB writes on followers).
+        await wait_for_database_ready()
+
+    # Phase 3: per-worker setup that depends on DB being ready
     # Discover and load third-party plugins
     from app.services.plugin_loader import discover_plugins
     discover_plugins()
@@ -175,8 +220,8 @@ def _mount_frontend(app: FastAPI) -> None:
     async def _spa_catchall(request: Request, path: str):
         # Let API and WebSocket routes take priority (already registered)
         # This only fires for paths that don't match any other route
-        file_path = static_dir / path
-        if file_path.is_file() and ".." not in path:
+        file_path = (static_dir / path).resolve()
+        if file_path.is_file() and file_path.is_relative_to(static_dir):
             return FileResponse(str(file_path))
         return FileResponse(str(index_html))
 
@@ -196,16 +241,25 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     # Import rate limiter here to avoid circular imports
     from app.api.v1.routes.llm import _llm_rate_limiter
 
-    api_key: str | None = None
-    token: str | None = None
+    api_key = websocket.headers.get("x-api-key") or websocket.query_params.get("api_key")
+    auth_header = websocket.headers.get("authorization", "")
+    token = auth_header[7:] if auth_header.startswith("Bearer ") else websocket.query_params.get("token")
+    has_credentials = bool(token or api_key)
 
-    # Local/hybrid mode: skip auth validation entirely (single-user, implicit admin)
-    if app_config.mode not in ("local", "hybrid"):
-        api_key = websocket.headers.get("x-api-key") or websocket.query_params.get("api_key")
-        auth_header = websocket.headers.get("authorization", "")
-        token = auth_header[7:] if auth_header.startswith("Bearer ") else None
+    # Determine if auth is required for this connection.
+    # Local mode: never requires auth.
+    # Hybrid mode: requires auth for non-loopback clients only.
+    # Demo mode: always requires auth.
+    requires_ws_auth = (
+        app_config.mode == "demo"
+        or (app_config.mode == "hybrid"
+            and not _is_loopback(get_client_host(websocket)))
+    )
 
-        if not await is_valid_api_key(api_key or token):
+    if requires_ws_auth:
+        token_valid = bool(token) and is_valid_bearer_token(token)
+        api_key_valid = bool(api_key) and await is_valid_api_key(api_key)
+        if not (token_valid or api_key_valid):
             await websocket.accept()
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
@@ -213,7 +267,50 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     # Resolve user for LLM operations (needed for rate limiting and egress)
     ws_user = None
     async with async_session() as session:
-        ws_user = await get_user_from_credentials(session, api_key=api_key, token=token)
+        # Prefer user JWT identity over machine API key when both are present.
+        if token:
+            ws_user = await get_user_from_credentials(session, token=token)
+        if ws_user is None and api_key:
+            ws_user = await get_user_from_credentials(session, api_key=api_key)
+        if ws_user is None and not has_credentials:
+            ws_user = await get_user_from_credentials(session)
+
+    # Credentials were provided but didn't resolve to a user.
+    if has_credentials and ws_user is None:
+        if requires_ws_auth:
+            # Non-loopback / demo: reject invalid credentials.
+            await websocket.accept()
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+        # Loopback local/hybrid: stale credentials from prior demo usage
+        # shouldn't block the implicit user. Fall back gracefully.
+        logger.debug("Stale WS credentials on loopback — falling back to implicit identity")
+        async with async_session() as session:
+            ws_user = await get_user_from_credentials(session)
+
+    if ws_user is not None and hasattr(ws_user, "is_active") and not ws_user.is_active:
+        await websocket.accept()
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    job_channel = f"jobs:{ws_user.id}" if ws_user and ws_user.id is not None else None
+
+    def _resolve_channel(requested: str | None) -> str | None:
+        if not requested:
+            return None
+
+        # Backward-compatible alias: "jobs" maps to the caller's own job channel.
+        if requested == "jobs":
+            return job_channel
+
+        if requested.startswith("jobs:"):
+            if ws_user and ws_user.is_superuser:
+                return requested
+            if requested == job_channel:
+                return requested
+            return None
+
+        return requested
 
     await ws_manager.connect(websocket)
     try:
@@ -222,19 +319,19 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             action = payload.get("action")
 
             if action == "subscribe":
-                channel = payload.get("channel")
+                channel = _resolve_channel(payload.get("channel"))
                 if not channel:
                     await websocket.send_json(
-                        {"type": "error", "detail": "Missing channel"}
+                        {"type": "error", "detail": "Missing or unauthorized channel"}
                     )
                     continue
                 await ws_manager.subscribe(websocket, channel)
                 await websocket.send_json({"type": "subscribed", "channel": channel})
             elif action == "unsubscribe":
-                channel = payload.get("channel")
+                channel = _resolve_channel(payload.get("channel"))
                 if not channel:
                     await websocket.send_json(
-                        {"type": "error", "detail": "Missing channel"}
+                        {"type": "error", "detail": "Missing or unauthorized channel"}
                     )
                     continue
                 await ws_manager.unsubscribe(websocket, channel)

@@ -2,9 +2,11 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import api from "@/api/client";
 import type { JobInfo } from "@/types";
-import { buildWsUrl, withApiKey } from "@/utils/ws";
+import { buildWsUrl, withCredentials } from "@/utils/ws";
+import { useAuthStore } from "@/stores/auth";
 
 export const useJobStore = defineStore("job", () => {
+  const authStore = useAuthStore();
   const jobs = ref<JobInfo[]>([]);
   const connected = ref(false);
   const wsRef = ref<WebSocket | null>(null);
@@ -88,8 +90,7 @@ export const useJobStore = defineStore("job", () => {
     allowReconnect = true;
     connectionStatus.value = "connecting";
     lastError.value = null;
-    const apiKey = localStorage.getItem("api_key");
-    const wsUrl = withApiKey(buildWsUrl(), apiKey);
+    const wsUrl = withCredentials(buildWsUrl());
     const socket = new WebSocket(wsUrl);
     wsRef.value = socket;
 
@@ -97,7 +98,10 @@ export const useJobStore = defineStore("job", () => {
       connected.value = true;
       connectionStatus.value = "connected";
       reconnectAttempts.value = 0;
-      socket.send(JSON.stringify({ action: "subscribe", channel: "jobs" }));
+      const userChannel = authStore.user?.id
+        ? `jobs:${authStore.user.id}`
+        : "jobs";
+      socket.send(JSON.stringify({ action: "subscribe", channel: userChannel }));
       fetchJobs().catch(() => undefined);
     });
 
@@ -127,7 +131,7 @@ export const useJobStore = defineStore("job", () => {
       wsRef.value = null;
       connectionStatus.value = "disconnected";
       if (event.code === 1008) {
-        lastError.value = "Unauthorized. Check API key.";
+        lastError.value = "Unauthorized. Check your credentials (JWT or API key).";
         allowReconnect = false;
         return;
       }

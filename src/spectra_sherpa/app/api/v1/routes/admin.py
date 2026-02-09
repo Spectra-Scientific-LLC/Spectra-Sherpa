@@ -73,12 +73,12 @@ async def get_current_superuser(
     return current_user
 
 
-def _ensure_mutable_standard_user(user: User) -> None:
-    """Reject status/delete operations for protected accounts."""
-    if user.username == "local":
+def _ensure_mutable_standard_user(user: User, current_user: User) -> None:
+    """Reject modifications to the requesting user's own account or superusers."""
+    if user.id == current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot modify the local system user.",
+            detail="Cannot modify your own account via admin API.",
         )
     if user.is_superuser:
         raise HTTPException(
@@ -174,6 +174,7 @@ async def rotate_api_key(
 
     # Invalidate all cached API keys for this user to ensure old keys stop working immediately
     invalidate_api_key_cache()
+    security.invalidate_gateway_api_key_cache()
 
     return {"api_key": new_key, "note": "Save this key now. It will not be shown again."}
 
@@ -195,10 +196,12 @@ async def update_user_status(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    _ensure_mutable_standard_user(user)
+    _ensure_mutable_standard_user(user, current_user)
     user.is_active = status_update.is_active
     session.add(user)
     await session.commit()
+    invalidate_api_key_cache()
+    security.invalidate_gateway_api_key_cache()
     await session.refresh(user)
     return user
 
@@ -219,10 +222,11 @@ async def delete_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    _ensure_mutable_standard_user(user)
+    _ensure_mutable_standard_user(user, current_user)
     await session.delete(user)
     await session.commit()
     invalidate_api_key_cache()
+    security.invalidate_gateway_api_key_cache()
 
 
 # ============================================================================

@@ -19,10 +19,13 @@ Core Algorithm:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, TYPE_CHECKING
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from spectrochempy import NDDataset
@@ -206,8 +209,8 @@ def eval_saturation_model(
     # Failsafe: catch any unexpected NaN/inf (should not occur with validation above)
     # If this triggers, there's a numerical issue in the calculation itself
     if np.any(~np.isfinite(absorbance)):
-        print(
-            f"WARNING: NaN/inf detected in saturation model output despite parameter validation"
+        logger.warning(
+            "NaN/inf detected in saturation model output despite parameter validation"
         )
     absorbance = np.nan_to_num(absorbance, nan=0.0, posinf=0.0, neginf=0.0)
 

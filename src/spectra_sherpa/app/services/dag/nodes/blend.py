@@ -16,9 +16,12 @@ Ground Truth Metadata:
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any, List, Dict, Optional
 import numpy as np
+
+logger = logging.getLogger(__name__)
 import spectrochempy as scp
 from spectrochempy import NDDataset
 
@@ -179,7 +182,7 @@ class BlendNode(Node):
             # Warn if units are inconsistent
             unique_units = list(set(input_units))
             if len(unique_units) > 1:
-                print(f"[BlendNode] WARNING: Input spectra have different units: {unique_units}. Using first spectrum's units.")
+                logger.warning(f"[BlendNode] Input spectra have different units: {unique_units}. Using first spectrum's units.")
             output_units = input_units[0]
         else:
             output_units = "absorbance"  # Default for typical FTIR blending
@@ -541,7 +544,7 @@ class MergeSpectraNode(Node):
         if input_units:
             unique_units = list(set(input_units))
             if len(unique_units) > 1:
-                print(f"[MergeSpectraNode] WARNING: Input spectra have different units: {unique_units}. Using first input's units.")
+                logger.warning(f"[MergeSpectraNode] Input spectra have different units: {unique_units}. Using first input's units.")
             output_units = input_units[0]
         else:
             output_units = "absorbance"  # Default fallback

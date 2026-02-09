@@ -4,6 +4,7 @@ Workflow API endpoints for DAG-based analysis pipelines.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -18,6 +19,8 @@ from app.core.config import settings
 from app.core.security import check_export_allowed
 from app.models.user import User
 from app.services.dag.serialize import serialize_for_api
+
+logger = logging.getLogger(__name__)
 
 # Import for NDDataset type checking
 try:
@@ -284,6 +287,7 @@ async def list_workflows(
 @router.post("/trial/execute", response_model=TrialExecuteResponse)
 async def execute_trial(
     payload: TrialExecuteRequest,
+    current_user: User = Depends(get_current_user),
 ) -> TrialExecuteResponse:
     """
     Execute a trial run of a node with trial parameters.
@@ -304,9 +308,9 @@ async def execute_trial(
         # Build a fresh DAG executor for this trial (no caching)
         executor = DAGExecutor()
 
-        print(f"\n[Trial Execution] Target node: {payload.target_node_id} (type: {type(payload.target_node_id)})")
-        print(f"[Trial Execution] Trial params: {payload.trial_params}")
-        print(f"[Trial Execution] Total nodes: {len(payload.nodes)}")
+        logger.debug("[Trial Execution] Target node: %s (type: %s)", payload.target_node_id, type(payload.target_node_id))
+        logger.debug("[Trial Execution] Trial params: %s", payload.trial_params)
+        logger.debug("[Trial Execution] Total nodes: %s", len(payload.nodes))
 
         # Add all nodes to the executor
         for node in payload.nodes:
@@ -318,11 +322,11 @@ async def execute_trial(
                 else node.parameters
             )
 
-            print(f"[Trial Execution] Node {node.node_id} (type: {node.node_type}):")
-            print(f"  - Is target: {is_target}")
-            print(f"  - String comparison: '{node.node_id}' == '{payload.target_node_id}': {node.node_id == payload.target_node_id}")
-            print(f"  - Node params from payload: {node.parameters}")
-            print(f"  - Params being used: {params}")
+            logger.debug("[Trial Execution] Node %s (type: %s):", node.node_id, node.node_type)
+            logger.debug("  - Is target: %s", is_target)
+            logger.debug("  - String comparison: '%s' == '%s': %s", node.node_id, payload.target_node_id, node.node_id == payload.target_node_id)
+            logger.debug("  - Node params from payload: %s", node.parameters)
+            logger.debug("  - Params being used: %s", params)
 
             dag_node = DAGNode(
                 node_id=node.node_id,
@@ -441,7 +445,9 @@ async def create_workflow(
 # IMPORTANT: This route must be defined BEFORE /{workflow_id} routes
 # to avoid "spectrochempy-examples" being parsed as a workflow_id
 @router.get("/spectrochempy-examples", response_model=dict[str, list[dict[str, str]]])
-async def list_spectrochempy_examples() -> dict[str, list[dict[str, str]]]:
+async def list_spectrochempy_examples(
+    current_user: User = Depends(get_current_user),
+) -> dict[str, list[dict[str, str]]]:
     """
     List available files in SpectroChemPy example datasets.
 
@@ -1089,7 +1095,7 @@ async def execute_workflow(
             results = await executor.execute(initial_data=payload.initial_data)
 
         # Serialize results to JSON-safe format (per-node, so one failure doesn't lose all)
-        print(f"\n[Serialization] Starting serialization of {len(results)} node results...")
+        logger.debug("[Serialization] Starting serialization of %s node results...", len(results))
         serialized_results = {}
         serialization_errors = []
         for node_id, node_result in results.items():
@@ -1100,13 +1106,11 @@ async def execute_workflow(
                 sr = serialized_results[node_id]
                 if isinstance(sr, dict):
                     keys = list(sr.keys())[:8]
-                    print(f"  ✓ Serialized node {node_id} ({result_type}): keys={keys}")
+                    logger.debug("  Serialized node %s (%s): keys=%s", node_id, result_type, keys)
                 else:
-                    print(f"  ✓ Serialized node {node_id} ({result_type}): type={type(sr).__name__}")
+                    logger.debug("  Serialized node %s (%s): type=%s", node_id, result_type, type(sr).__name__)
             except Exception as ser_err:
-                import traceback
-                print(f"  ✗ Serialization failed for node {node_id} ({result_type}): {ser_err}")
-                traceback.print_exc()
+                logger.warning("  Serialization failed for node %s (%s): %s", node_id, result_type, ser_err, exc_info=True)
                 serialization_errors.append(f"Node {node_id}: {ser_err}")
                 serialized_results[node_id] = {
                     "error": f"Serialization failed: {ser_err}",
@@ -1120,9 +1124,9 @@ async def execute_workflow(
         error_msg = "; ".join(serialization_errors) if serialization_errors else None
         final_status = executor.status.value if not serialization_errors else "partial"
         node_statuses = executor.get_status()["node_statuses"]
-        print(f"[Serialization] Done. status={final_status}, result_keys={list(serialized_results.keys())}, node_statuses={node_statuses}")
+        logger.debug("[Serialization] Done. status=%s, result_keys=%s, node_statuses=%s", final_status, list(serialized_results.keys()), node_statuses)
         if error_msg:
-            print(f"[Serialization] Errors: {error_msg}")
+            logger.debug("[Serialization] Errors: %s", error_msg)
 
         return WorkflowExecuteResponse(
             workflow_id=workflow_id,
@@ -1135,8 +1139,7 @@ async def execute_workflow(
         )
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.debug("Workflow execution failed for workflow_id=%s", workflow_id, exc_info=True)
 
         # Preserve successfully completed node outputs when later nodes fail.
         partial_results: dict[str, Any] = {}
@@ -1171,7 +1174,9 @@ async def execute_workflow(
 
 
 @router.get("/nodes/library", response_model=NodeLibraryResponse)
-async def get_node_library() -> NodeLibraryResponse:
+async def get_node_library(
+    current_user: User = Depends(get_current_user),
+) -> NodeLibraryResponse:
     """
     Get available node types from the registry.
 

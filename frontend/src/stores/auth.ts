@@ -12,7 +12,7 @@ interface User {
 export const useAuthStore = defineStore('auth', () => {
     const token = ref<string | null>(localStorage.getItem('token'))
     const user = ref<User | null>(null)
-    const isAuthenticated = computed(() => !!token.value)
+    const isAuthenticated = computed(() => !!token.value || !!user.value)
     const loginError = ref<string | null>(null)
 
     async function login(username: string, password: string) {
@@ -43,7 +43,37 @@ export const useAuthStore = defineStore('auth', () => {
             user.value = response.data
         } catch (error) {
             console.error('Fetch user failed', error)
-            logout()
+            // Only logout if token is still present. If clearCredentials()
+            // ran while this request was in flight (e.g. mode switched to
+            // local/hybrid), the token is already null — don't clobber state.
+            if (token.value) {
+                logout()
+            }
+        }
+    }
+
+    /**
+     * Clear stale auth artifacts without navigating to /login.
+     * Used when switching to a mode that doesn't need JWT (e.g. hybrid).
+     */
+    function clearCredentials() {
+        token.value = null
+        localStorage.removeItem('token')
+        localStorage.removeItem('api_key')
+        delete axios.defaults.headers.common['Authorization']
+    }
+
+    async function initHybridUser() {
+        // Hybrid mode uses implicit loopback identity, not JWT.
+        // Clear stale tokens from prior demo usage to prevent WS 1008.
+        if (token.value || localStorage.getItem('token') || localStorage.getItem('api_key')) {
+            clearCredentials()
+        }
+        try {
+            const response = await axios.get('/api/v1/auth/me')
+            user.value = response.data
+        } catch {
+            console.warn('Could not fetch hybrid user profile')
         }
     }
 
@@ -68,6 +98,8 @@ export const useAuthStore = defineStore('auth', () => {
         loginError,
         login,
         logout,
-        fetchUser
+        clearCredentials,
+        fetchUser,
+        initHybridUser
     }
 })

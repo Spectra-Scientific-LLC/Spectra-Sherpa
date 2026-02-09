@@ -411,16 +411,20 @@ async def get_spectrasherpa_user():
         return {"error": "SpectraSherpa not configured"}
 
     result = await service.validate_api_key()
-    if result.success:
+    if result.success and result.user is not None:
+        # Keep a backward-compatible payload while using current
+        # SpectraSherpaUser fields from spectrasherpa.py.
         return {
             "id": result.user.id,
             "email": result.user.email,
-            "display_name": result.user.display_name,
-            "tier": result.user.tier,
-            "llm_quota": result.user.features.get("llm_quota", 100),
+            "username": result.user.username,
+            "display_name": result.user.username,
+            "is_admin": result.user.is_admin,
+            "is_active": result.user.is_active,
+            "llm_quota": result.user.llm_quota,
         }
     else:
-        return {"error": result.error}
+        return {"error": result.error or "Unable to fetch SpectraSherpa user"}
 
 
 @router.get("/spectrasherpa/keys")

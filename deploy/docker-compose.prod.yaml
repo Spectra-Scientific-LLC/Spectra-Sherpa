@@ -9,12 +9,25 @@ services:
       - CLOUD_COMPUTE_URL=${CLOUD_COMPUTE_URL:-}
       - CLOUD_API_KEY=${CLOUD_API_KEY:-}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
-      # Default to SQLite for quick start; set DATABASE_URL to PostgreSQL for production
-      - DATABASE_URL=${DATABASE_URL:-sqlite+aiosqlite:////app/data/spectra_platform.db}
+      - APP_API_KEY=${APP_API_KEY:?APP_API_KEY is required}
+      # Keep this disabled for multi-user internet-facing deployments unless
+      # you explicitly need shared APP_API_KEY authentication.
+      - ALLOW_SYSTEM_API_KEY_AUTH=${ALLOW_SYSTEM_API_KEY_AUTH:-false}
+      # Required in production: use PostgreSQL connection string.
+      - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required (PostgreSQL)}
       - MASTER_ENCRYPTION_KEY=${MASTER_ENCRYPTION_KEY:-}
+      # Optional reverse-proxy trust settings
+      - TRUST_PROXY=${TRUST_PROXY:-false}
+      - TRUSTED_PROXY_CIDRS=${TRUSTED_PROXY_CIDRS:-}
+      # Keep a single backend worker by default until WebSocket pub/sub is shared.
+      - WEB_CONCURRENCY=${WEB_CONCURRENCY:-1}
       # CORS: REQUIRED for hybrid/demo — set to your frontend domain(s), comma-separated
       # Example: CORS_ORIGINS=https://app.spectrascientific.ai,https://www.spectrascientific.ai
       - CORS_ORIGINS=${CORS_ORIGINS:?CORS_ORIGINS is required for production}
+      # Demo mode settings (optional, only used when APP_MODE=demo)
+      - DEMO_PASSWORD=${DEMO_PASSWORD:-}
+      - RATE_LIMIT_EXECUTIONS=${RATE_LIMIT_EXECUTIONS:-100}
+      - SESSION_EXPIRY_HOURS=${SESSION_EXPIRY_HOURS:-24}
       # LLM API Keys (optional)
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}

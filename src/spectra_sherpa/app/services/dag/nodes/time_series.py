@@ -7,8 +7,11 @@ supporting batch monitoring, drift detection, and real-time process control appl
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional
 import numpy as np
+
+logger = logging.getLogger(__name__)
 import spectrochempy as scp
 from spectrochempy import NDDataset
 
@@ -102,7 +105,7 @@ class MovingWindowNode(Node):
             window_indices.append((i, i + window_size))
 
         n_windows = len(windows)
-        print(f"[Moving Window] Created {n_windows} windows of size {window_size} with step {step_size}")
+        logger.debug(f"[Moving Window] Created {n_windows} windows of size {window_size} with step {step_size}")
 
         # Aggregate if requested
         if aggregation == "mean":
@@ -250,7 +253,7 @@ class TrendRemovalNode(Node):
                 baseline = uniform_filter1d(data[:, j], window_size, mode='nearest')
                 detrended_data[:, j] = data[:, j] - baseline
 
-        print(f"[Trend Removal] Applied {method} detrending")
+        logger.debug(f"[Trend Removal] Applied {method} detrending")
 
         result = scp.NDDataset(detrended_data)
         # Copy coords and meta from input_data

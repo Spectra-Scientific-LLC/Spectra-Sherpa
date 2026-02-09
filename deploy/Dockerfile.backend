@@ -30,16 +30,14 @@ RUN poetry install --only main --no-root && \
 # Copy package source
 COPY src/ ./src/
 
-# Create data directory
-RUN mkdir -p /app/data && chmod 777 /app/data
+# Create non-root user and data directory
+RUN groupadd -r app && useradd -r -g app -s /bin/false app && \
+    mkdir -p /app/data && chown -R app:app /app/data
 
 EXPOSE 8000
 
-# Production: Gunicorn with Uvicorn workers
-CMD ["poetry", "run", "gunicorn", "spectra_sherpa.app.main:app", \
-     "-k", "uvicorn.workers.UvicornWorker", \
-     "--bind", "0.0.0.0:8000", \
-     "--workers", "3", \
-     "--timeout", "300", \
-     "--graceful-timeout", "30", \
-     "--access-logfile", "-"]
+USER app
+
+# Production: Gunicorn with Uvicorn workers.
+# Default to a single worker because WebSocket channel state is in-memory.
+CMD ["sh", "-c", "poetry run gunicorn spectra_sherpa.app.main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --workers ${WEB_CONCURRENCY:-1} --timeout 300 --graceful-timeout 30 --access-logfile -"]

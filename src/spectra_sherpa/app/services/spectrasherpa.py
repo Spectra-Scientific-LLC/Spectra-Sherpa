@@ -69,17 +69,13 @@ spectrasherpa_config = SpectraSherpaConfig.from_env()
 
 @dataclass
 class SpectraSherpaUser:
-    """User info from SpectraSherpa"""
-    id: str
+    """User info from SpectraSherpa server (/auth/me response)."""
+    id: int
     email: str
-    display_name: str
-    organization: Optional[str] = None
-    tier: str = "free"  # free, pro, enterprise
-    features: dict = None
-
-    def __post_init__(self):
-        if self.features is None:
-            self.features = {}
+    username: str
+    is_admin: bool = False
+    is_active: bool = True
+    llm_quota: int = 100
 
 
 @dataclass
@@ -223,11 +219,11 @@ class SpectraSherpaService:
 
                 user = SpectraSherpaUser(
                     id=data["id"],
-                    email=data["email"],
-                    display_name=data.get("display_name", data["email"]),
-                    organization=data.get("organization"),
-                    tier=data.get("tier", "free"),
-                    features=data.get("features", {})
+                    email=data.get("email", ""),
+                    username=data.get("username", data.get("email", "")),
+                    is_admin=data.get("is_admin", False),
+                    is_active=data.get("is_active", True),
+                    llm_quota=data.get("llm_quota", 100),
                 )
 
                 return AuthResult(success=True, user=user)

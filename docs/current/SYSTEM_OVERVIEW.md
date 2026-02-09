@@ -1,9 +1,9 @@
 # SpectraSherpa — System Overview
 
-**Version:** 1.3.3
+**Version:** 1.4.0
 **Package:** `spectra-sherpa` (PyPI) / `spectra-sherpa` (CLI)
-**Date:** 2026-02-05
-**Status:** Production-Ready
+**Date:** 2026-02-07
+**Status:** Production-Ready (Hybrid Identity Linking)
 
 ---
 
@@ -157,7 +157,8 @@ User → Frontend (Workflow Builder) → API → DAG Engine → Nodes → Scient
 - `workflow_executions` - Execution history
 - `experiment_files` - Uploaded spectral data
 - `nist_library` - Reference spectra
-- `users` - Authentication (future)
+- `users` - User identity (enriched from server in hybrid mode)
+- `user_egress_defaults` - Data egress permissions per user
 
 ### DevOps
 
@@ -412,7 +413,7 @@ User → Frontend (Workflow Builder) → API → DAG Engine → Nodes → Scient
 
 ### What SpectraSherpa Does NOT Do (Yet)
 
-❌ Multi-user collaboration
+❌ Real-time multi-user collaboration (hybrid mode links a single server identity)
 ❌ 3D spectral data (images, hyperspectral)
 ❌ Real-time instrument integration
 ❌ Mobile app
@@ -489,15 +490,24 @@ See [DigitalOcean Deployment Guide](../deployment/DIGITAL_OCEAN.md) for cloud se
 ✅ **Path traversal protection** (symlink validation)
 ✅ **File type validation**
 ✅ **Error message sanitization**
+✅ **Mode-dependent auth** (local: implicit, hybrid: API-key identity, demo: JWT)
+✅ **API key encryption** (AES-256 for stored LLM keys)
+✅ **Egress controls** (per-user data egress defaults)
+
+### Deployment Mode Auth Summary
+
+| Mode | Auth Method | Login Page | Admin Access |
+|------|-------------|------------|--------------|
+| **Local** | None (implicit user) | Skipped | Hidden |
+| **Hybrid** | `SPECTRASHERPA_API_KEY` → server identity | Skipped | Enabled if server user is admin |
+| **Demo/Cloud** | JWT (email + password) | Required | Enabled if user is admin |
 
 ### Future Security Enhancements
 
-🔲 JWT authentication
-🔲 Role-based access control (RBAC)
-🔲 API rate limiting
+🔲 Role-based access control (beyond admin/user)
 🔲 Audit logging
-🔲 Encrypted secrets management
-🔲 HTTPS enforcement
+🔲 HTTPS enforcement (production)
+🔲 OAuth providers (Google, GitHub, ORCID)
 
 ---
 
@@ -690,7 +700,15 @@ async def custom_endpoint():
 
 ## Version History
 
-**v1.3.3 (2026-01-21)** - Current
+**v1.4.0 (2026-02-07)** - Current
+- ✅ Hybrid mode API-key linked identity (`link_hybrid_identity()`)
+- ✅ `SpectraSherpaUser` aligned with server `UserResponse` schema
+- ✅ User lookup stability (ID-order instead of username match)
+- ✅ Admin route protection via self-ID check
+- ✅ Frontend `initHybridUser()` + separate local/hybrid router guards
+- ✅ Offline identity degradation
+
+**v1.3.3 (2026-01-21)**
 - ✅ Fixed 3D concatenation bug
 - ✅ Fixed case-sensitive file matching
 - ✅ Fixed Quick Plot y-axis labels
@@ -754,5 +772,5 @@ async def custom_endpoint():
 
 ---
 
-**Last Updated:** 2026-02-05
-**Document Version:** 1.1
+**Last Updated:** 2026-02-07
+**Document Version:** 1.2

@@ -82,10 +82,23 @@ router.beforeEach(async (to, from, next) => {
     await loadConfig()
   }
 
-  // Local and hybrid modes: bypass all authentication
-  // Both run locally on the user's machine (single-user, no login needed)
-  if (appMode.value === 'local' || appMode.value === 'hybrid') {
-    // Skip login page - redirect to workspace
+  // Local mode: bypass all authentication (single-user, no login needed)
+  if (appMode.value === 'local') {
+    // Clear stale credentials from prior demo/hybrid usage
+    if (authStore.token || localStorage.getItem('token')) {
+      authStore.clearCredentials()
+    }
+    if (to.path === '/login') {
+      return next('/')
+    }
+    return next()
+  }
+
+  // Hybrid mode: no login needed, but fetch user profile for admin/identity
+  if (appMode.value === 'hybrid') {
+    if (!authStore.user) {
+      await authStore.initHybridUser()
+    }
     if (to.path === '/login') {
       return next('/')
     }

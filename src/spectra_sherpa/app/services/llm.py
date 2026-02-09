@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator, Optional, Union
@@ -45,57 +47,132 @@ _pdf_cache_loaded = False
 
 class ConversationStore:
     """
-    User-scoped conversation storage.
+    User-scoped conversation storage backed by a JSON file.
 
     SECURITY: Conversations are stored with user_id to prevent cross-user access.
     A user can only access conversations that belong to them.
+
+    The file-backed design ensures:
+    - Conversations survive worker/container restarts
+    - State is visible across Gunicorn workers (file is shared)
+    - Concurrent access is safe via fcntl file locking
     """
 
-    def __init__(self) -> None:
-        # {conversation_id: {"user_id": int, "messages": [...]}}
-        self._conversations: dict[str, dict[str, Any]] = {}
+    MAX_CONVERSATIONS_PER_USER = 50
+    CONVERSATION_TTL_HOURS = 72  # Auto-expire after 3 days of inactivity
+
+    def __init__(self, state_path: Optional[Path] = None) -> None:
+        from app.core.config import settings
+        self._state_path = state_path or (settings.data_dir / "conversations.json")
+        self._state_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _load(self) -> dict[str, dict[str, Any]]:
+        """Load conversations from disk."""
+        if not self._state_path.exists():
+            return {}
+        try:
+            import json
+            data = json.loads(self._state_path.read_text())
+            # Expire old conversations
+            now = time.time()
+            ttl_sec = self.CONVERSATION_TTL_HOURS * 3600
+            return {
+                cid: conv for cid, conv in data.items()
+                if now - conv.get("updated_at", 0) < ttl_sec
+            }
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+    def _save(self, data: dict[str, dict[str, Any]]) -> None:
+        """Atomically write conversations to disk."""
+        import json
+        tmp = self._state_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, default=str))
+        tmp.replace(self._state_path)
+
+    @contextmanager
+    def _locked(self):
+        """File lock for concurrent worker access."""
+        try:
+            import fcntl
+            lock_path = self._state_path.with_suffix(".lock")
+            fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX)
+                yield
+            finally:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+                os.close(fd)
+        except ImportError:
+            yield  # No locking on Windows — acceptable for local dev
 
     def get(self, conversation_id: str, user_id: Optional[int] = None) -> Optional[list[dict[str, str]]]:
         """Get conversation messages if user has access."""
-        conv = self._conversations.get(conversation_id)
+        with self._locked():
+            data = self._load()
+        conv = data.get(conversation_id)
         if conv is None:
             return None
-        # If user_id provided, validate ownership
         if user_id is not None and conv.get("user_id") != user_id:
-            return None  # Access denied - wrong user
+            return None
         return conv.get("messages")
 
     def get_or_create(
         self, conversation_id: Optional[str], user_id: int
     ) -> tuple[str, list[dict[str, str]]]:
         """Get existing conversation (if owned by user) or create new one."""
-        if conversation_id and conversation_id in self._conversations:
-            conv = self._conversations[conversation_id]
-            # Validate ownership before returning
-            if conv.get("user_id") == user_id:
-                return conversation_id, conv["messages"]
-            # Wrong user - create new conversation instead of denying
-            # (the old conversation_id was for a different user)
+        with self._locked():
+            data = self._load()
 
-        new_id = conversation_id if conversation_id and conversation_id not in self._conversations else str(uuid.uuid4())
-        self._conversations[new_id] = {"user_id": user_id, "messages": []}
-        return new_id, self._conversations[new_id]["messages"]
+            if conversation_id and conversation_id in data:
+                conv = data[conversation_id]
+                if conv.get("user_id") == user_id:
+                    conv["updated_at"] = time.time()
+                    self._save(data)
+                    return conversation_id, conv["messages"]
+
+            # Enforce per-user limit
+            user_convs = [cid for cid, c in data.items() if c.get("user_id") == user_id]
+            if len(user_convs) >= self.MAX_CONVERSATIONS_PER_USER:
+                # Remove oldest
+                oldest = min(user_convs, key=lambda cid: data[cid].get("updated_at", 0))
+                del data[oldest]
+
+            new_id = conversation_id if (conversation_id and conversation_id not in data) else str(uuid.uuid4())
+            data[new_id] = {"user_id": user_id, "messages": [], "updated_at": time.time()}
+            self._save(data)
+            return new_id, data[new_id]["messages"]
+
+    def save_messages(self, conversation_id: str, messages: list[dict[str, str]]) -> None:
+        """Persist updated messages for a conversation."""
+        with self._locked():
+            data = self._load()
+            if conversation_id in data:
+                data[conversation_id]["messages"] = messages[-MAX_HISTORY_MESSAGES:]
+                data[conversation_id]["updated_at"] = time.time()
+                self._save(data)
 
     def delete(self, conversation_id: str, user_id: Optional[int] = None) -> bool:
         """Delete conversation if user has access."""
-        conv = self._conversations.get(conversation_id)
-        if conv is None:
-            return False
-        # If user_id provided, validate ownership
-        if user_id is not None and conv.get("user_id") != user_id:
-            return False  # Access denied - wrong user
-        return self._conversations.pop(conversation_id, None) is not None
+        with self._locked():
+            data = self._load()
+            conv = data.get(conversation_id)
+            if conv is None:
+                return False
+            if user_id is not None and conv.get("user_id") != user_id:
+                return False
+            del data[conversation_id]
+            self._save(data)
+            return True
 
     def trim(self, conversation_id: str) -> None:
         """Trim conversation to max history length."""
-        conv = self._conversations.get(conversation_id)
-        if conv and len(conv["messages"]) > MAX_HISTORY_MESSAGES:
-            conv["messages"] = conv["messages"][-MAX_HISTORY_MESSAGES:]
+        with self._locked():
+            data = self._load()
+            conv = data.get(conversation_id)
+            if conv and len(conv["messages"]) > MAX_HISTORY_MESSAGES:
+                conv["messages"] = conv["messages"][-MAX_HISTORY_MESSAGES:]
+                self._save(data)
 
 
 conversation_store = ConversationStore()
@@ -166,6 +243,7 @@ class LLMService:
 
         history.append({"role": "assistant", "content": content})
         conversation_store.trim(conversation_id)
+        conversation_store.save_messages(conversation_id, history)
         return conversation_id, content
 
     async def stream_chat(
@@ -227,6 +305,7 @@ class LLMService:
                         yield delta
                 history.append({"role": "assistant", "content": "".join(chunks)})
                 conversation_store.trim(conversation_id)
+                conversation_store.save_messages(conversation_id, history)
 
             return conversation_id, anthropic_generator()
         else:
@@ -247,6 +326,7 @@ class LLMService:
                     yield delta
                 history.append({"role": "assistant", "content": "".join(chunks)})
                 conversation_store.trim(conversation_id)
+                conversation_store.save_messages(conversation_id, history)
 
             return conversation_id, openai_generator()
 

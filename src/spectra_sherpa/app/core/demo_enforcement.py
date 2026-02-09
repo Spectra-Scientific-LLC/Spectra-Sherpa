@@ -17,7 +17,7 @@ from fastapi import Request, Response, status
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.config import app_config, settings
-from app.core.security import decode_access_token
+from app.core.security import decode_access_token, get_client_host
 from app.services.rate_limiter import RateLimiter
 
 
@@ -48,6 +48,12 @@ class DemoEnforcementMiddleware(BaseHTTPMiddleware):
         "/api/v1/process",
     ]
 
+    # Auth endpoints get stricter per-IP rate limiting
+    AUTH_RATE_LIMITS = {
+        "/api/v1/auth/login": (10, 900),      # 10 attempts per 15 minutes
+        "/api/v1/auth/register": (5, 3600),    # 5 registrations per hour
+    }
+
     def __init__(self, app):
         super().__init__(app)
         # Use file-backed rate limiter: survives restarts, shared across workers
@@ -57,6 +63,15 @@ class DemoEnforcementMiddleware(BaseHTTPMiddleware):
             period_sec=3600,
             state_path=settings.data_dir / "execution_rate_limits.json",
         )
+        # Separate rate limiters for auth endpoints (per-IP, tighter)
+        self._auth_limiters = {
+            path: RateLimiter(
+                max_calls=max_calls,
+                period_sec=period,
+                state_path=settings.data_dir / f"auth_rate_{path.rsplit('/', 1)[-1]}.json",
+            )
+            for path, (max_calls, period) in self.AUTH_RATE_LIMITS.items()
+        }
 
     async def dispatch(self, request: Request, call_next) -> Response:
         # Only active in Hybrid and Demo modes
@@ -65,7 +80,19 @@ class DemoEnforcementMiddleware(BaseHTTPMiddleware):
 
         path = request.url.path
 
-        # Skip public paths
+        # === AUTH RATE LIMITING (both Hybrid and Demo) ===
+        # Run before public-path bypass so login/register limits are enforced.
+        if request.method == "POST" and path in self._auth_limiters:
+            client_ip = get_client_host(request) or "unknown"
+            limiter = self._auth_limiters[path]
+            if not limiter.allow(f"ip:{client_ip}"):
+                return self._error_response(
+                    status.HTTP_429_TOO_MANY_REQUESTS,
+                    "Too many attempts. Please try again later.",
+                    {"retry_after": "15 minutes" if "login" in path else "1 hour"}
+                )
+
+        # Skip public paths after auth limiter checks
         if path in self.PUBLIC_PATHS or path.startswith("/docs"):
             return await call_next(request)
 
@@ -129,8 +156,8 @@ class DemoEnforcementMiddleware(BaseHTTPMiddleware):
             if payload and payload.get("sub"):
                 return f"user:{payload['sub']}"
 
-        # Fall back to IP
-        client_ip = request.client.host if request.client else "unknown"
+        # Fall back to IP (respects TRUST_PROXY for real client IP behind proxy)
+        client_ip = get_client_host(request) or "unknown"
         return f"ip:{client_ip}"
 
     def _check_session_expiry(self, token: str) -> Optional[Response]:

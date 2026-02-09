@@ -6,6 +6,7 @@ These nodes implement various modeling techniques like PCA, PLS, MCR-ALS.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional
 import numpy as np
 import spectrochempy as scp
@@ -13,6 +14,8 @@ from spectrochempy import NDDataset
 
 from ..node_base import Node, NodeMetadata, NodeParameter, InputPort, PortMetadata, register_node
 from app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
+
+logger = logging.getLogger(__name__)
 
 
 def _create_spectral_dataset(
@@ -235,10 +238,10 @@ class PCANode(Node):
                 f"Consider using a specific number of components or a variance threshold (0-1)."
             )
 
-        print(f"\n[PCA Node] Executing with:")
-        print(f"  - All parameters: {self.parameters}")
-        print(f"  - n_components parsed: {n_components_parsed} (type: {type(n_components_parsed).__name__})")
-        print(f"  - Data shape: {n_observations} observations × {n_features} features")
+        logger.debug("[PCA Node] Executing with:")
+        logger.debug("  - All parameters: %s", self.parameters)
+        logger.debug("  - n_components parsed: %s (type: %s)", n_components_parsed, type(n_components_parsed).__name__)
+        logger.debug("  - Data shape: %s observations x %s features", n_observations, n_features)
 
         # Perform PCA using SpectroChemPy
         pca = scp.PCA(n_components=n_components_parsed, standardized=standardized, scaled=scaled)
@@ -364,8 +367,8 @@ class PCANode(Node):
         })
 
         # NDDataset-only return: one serialization boundary at API layer
-        print(f"[PCA Node] Requested n_components={n_components_parsed}, fitted with {actual_n_components} components")
-        print(f"[PCA Node] Scores shape: {scores_dataset.shape}, Loadings shape: {loadings_dataset.shape}")
+        logger.debug("[PCA Node] Requested n_components=%s, fitted with %s components", n_components_parsed, actual_n_components)
+        logger.debug("[PCA Node] Scores shape: %s, Loadings shape: %s", scores_dataset.shape, loadings_dataset.shape)
 
         return {
             "default": scores_dataset,      # NDDataset: scores + sample labels (y) + PC coords (x)
@@ -513,11 +516,11 @@ class PLSNode(Node):
                 f"n_components must be <= min(n_samples - 1, n_features). Got {n_components} with max {max_components}."
             )
 
-        print(f"\n[PLS Node] Executing with:")
-        print(f"  - n_components: {n_components}")
-        print(f"  - scale: {scale}")
-        print(f"  - X shape: {X.shape}")
-        print(f"  - y shape: {y_dataset.shape}")
+        logger.debug("[PLS Node] Executing with:")
+        logger.debug("  - n_components: %s", n_components)
+        logger.debug("  - scale: %s", scale)
+        logger.debug("  - X shape: %s", X.shape)
+        logger.debug("  - y shape: %s", y_dataset.shape)
 
         # Perform PLS using SpectroChemPy
         pls = scp.PLSRegression(n_components=n_components, scale=scale)
@@ -530,9 +533,9 @@ class PLSNode(Node):
         Y_loadings_data = np.array(pls.y_loadings_) if hasattr(pls, "y_loadings_") else None
         coef_data = np.array(pls.coef_) if hasattr(pls, "coef_") else None
 
-        print(f"[PLS Node] PLS model fitted successfully")
-        print(f"  - X_scores shape: {X_scores_data.shape if X_scores_data is not None else 'N/A'}")
-        print(f"  - Coefficients shape: {coef_data.shape if coef_data is not None else 'N/A'}")
+        logger.debug("[PLS Node] PLS model fitted successfully")
+        logger.debug("  - X_scores shape: %s", X_scores_data.shape if X_scores_data is not None else 'N/A')
+        logger.debug("  - Coefficients shape: %s", coef_data.shape if coef_data is not None else 'N/A')
 
         # Extract label_categories for categorical coloring
         label_categories = None
@@ -800,11 +803,11 @@ class PCRNode(Node):
                 f"n_components must be <= min(n_samples - 1, n_features). Got {n_components} with max {max_components}."
             )
 
-        print(f"\n[PCR Node] Executing with:")
-        print(f"  - n_components: {n_components}")
-        print(f"  - scale: {scale}")
-        print(f"  - X shape: {X_data.shape}")
-        print(f"  - y shape: {y_array.shape}")
+        logger.debug("[PCR Node] Executing with:")
+        logger.debug("  - n_components: %s", n_components)
+        logger.debug("  - scale: %s", scale)
+        logger.debug("  - X shape: %s", X_data.shape)
+        logger.debug("  - y shape: %s", y_array.shape)
 
         scaler = StandardScaler(with_mean=True, with_std=scale)
         pca = SkPCA(n_components=n_components)
@@ -899,7 +902,7 @@ class PCRNode(Node):
             "y_pred": y_pred.tolist(),
         })
 
-        print(f"[PCR Node] Scores shape: {scores_dataset.shape}, Loadings shape: {loadings_dataset.shape}")
+        logger.debug("[PCR Node] Scores shape: %s, Loadings shape: %s", scores_dataset.shape, loadings_dataset.shape)
 
         return {
             "default": scores_dataset,      # NDDataset: scores + sample labels (y) + PC coords (x)
@@ -1091,13 +1094,13 @@ class SVRNode(Node):
         coef0 = self.parameters.get("coef0", 0.0)
         scale = self.parameters.get("scale", True)
 
-        print(f"\n[SVR Node] Executing with:")
-        print(f"  - kernel: {kernel}")
-        print(f"  - C: {C}")
-        print(f"  - epsilon: {epsilon}")
-        print(f"  - gamma: {gamma}")
-        print(f"  - X shape: {X_data.shape}")
-        print(f"  - y shape: {y_array.shape}")
+        logger.debug("[SVR Node] Executing with:")
+        logger.debug("  - kernel: %s", kernel)
+        logger.debug("  - C: %s", C)
+        logger.debug("  - epsilon: %s", epsilon)
+        logger.debug("  - gamma: %s", gamma)
+        logger.debug("  - X shape: %s", X_data.shape)
+        logger.debug("  - y shape: %s", y_array.shape)
 
         scaler = StandardScaler(with_mean=True, with_std=scale)
         svr = SVR(kernel=kernel, C=C, epsilon=epsilon, gamma=gamma, degree=degree, coef0=coef0)
@@ -1128,7 +1131,7 @@ class SVRNode(Node):
                     sample_labels = [str(l) for l in raw]
                     label_categories = sorted(set(sample_labels))
                 except Exception as e:
-                    print(f"[SVR Node] Warning: Could not extract categorical labels from y.labels: {e}")
+                    logger.warning("[SVR Node] Could not extract categorical labels from y.labels: %s", e, exc_info=True)
                     sample_labels = None
                     label_categories = None
 
@@ -1141,7 +1144,7 @@ class SVRNode(Node):
                     if len(unique_values) < 20 and not _is_sequential_numeric(raw):
                         label_categories = unique_values
                 except Exception as e:
-                    print(f"[SVR Node] Warning: Could not extract categorical labels from y.data: {e}")
+                    logger.warning("[SVR Node] Could not extract categorical labels from y.data: %s", e, exc_info=True)
                     sample_labels = None
                     label_categories = None
 
@@ -1490,9 +1493,9 @@ class MCRNode(Node):
                             else:
                                 names.append(f"Species {len(names)+1}")
                         species_names = names
-                        print(f"[MCR-ALS Node] Extracted species names from input metadata: {species_names}")
+                        logger.debug("[MCR-ALS Node] Extracted species names from input metadata: %s", species_names)
                     except Exception as e:
-                        print(f"[MCR-ALS Node] Warning: Could not extract species names: {e}")
+                        logger.warning("[MCR-ALS Node] Could not extract species names: %s", e, exc_info=True)
 
         # Use species names if available, otherwise use generic labels
         component_labels = species_names or [f"Component {i+1}" for i in range(n_components)]
@@ -1836,11 +1839,11 @@ class HCANode(Node):
         if linkage_method == "ward" and metric != "euclidean":
             raise ValueError("Ward linkage requires euclidean metric")
 
-        print(f"\n[HCA Node] Executing with:")
-        print(f"  - n_clusters: {n_clusters}")
-        print(f"  - linkage: {linkage_method}")
-        print(f"  - metric: {metric}")
-        print(f"  - X shape: {X_data.shape}")
+        logger.debug("[HCA Node] Executing with:")
+        logger.debug("  - n_clusters: %s", n_clusters)
+        logger.debug("  - linkage: %s", linkage_method)
+        logger.debug("  - metric: %s", metric)
+        logger.debug("  - X shape: %s", X_data.shape)
 
         # 1. Compute Linkage Matrix (Once)
         if linkage_method == "ward":
@@ -2131,11 +2134,11 @@ class KMeansNode(Node):
         max_iter = self.parameters.get("max_iter", 300)
         random_state = self.parameters.get("random_state", 42)
 
-        print(f"\n[KMeans Node] Executing with:")
-        print(f"  - n_clusters: {n_clusters}")
-        print(f"  - n_init: {n_init}")
-        print(f"  - max_iter: {max_iter}")
-        print(f"  - X shape: {X_data.shape}")
+        logger.debug("[KMeans Node] Executing with:")
+        logger.debug("  - n_clusters: %s", n_clusters)
+        logger.debug("  - n_init: %s", n_init)
+        logger.debug("  - max_iter: %s", max_iter)
+        logger.debug("  - X shape: %s", X_data.shape)
 
         model = KMeans(
             n_clusters=n_clusters,
@@ -2283,11 +2286,11 @@ class DBSCANNode(Node):
         min_samples = self.parameters.get("min_samples", 5)
         metric = self.parameters.get("metric", "euclidean")
 
-        print(f"\n[DBSCAN Node] Executing with:")
-        print(f"  - eps: {eps}")
-        print(f"  - min_samples: {min_samples}")
-        print(f"  - metric: {metric}")
-        print(f"  - X shape: {X_data.shape}")
+        logger.debug("[DBSCAN Node] Executing with:")
+        logger.debug("  - eps: %s", eps)
+        logger.debug("  - min_samples: %s", min_samples)
+        logger.debug("  - metric: %s", metric)
+        logger.debug("  - X shape: %s", X_data.shape)
 
         model = DBSCAN(eps=eps, min_samples=min_samples, metric=metric)
         labels = model.fit_predict(X_data)
@@ -2464,7 +2467,7 @@ class PeakFindingNode(Node):
         # Handle multi-spectrum input (take first spectrum for peak finding)
         if data.ndim > 1:
             spectrum = data[0]
-            print(f"[Peak Finding] Multi-spectrum input detected, analyzing first spectrum")
+            logger.debug("[Peak Finding] Multi-spectrum input detected, analyzing first spectrum")
         else:
             spectrum = data
 
@@ -2554,7 +2557,7 @@ class PeakFindingNode(Node):
             },
         }
 
-        print(f"[Peak Finding] Found {len(peak_indices)} peaks")
+        logger.debug("[Peak Finding] Found %s peaks", len(peak_indices))
 
         return result
 
@@ -2678,11 +2681,11 @@ class SIMPLISMANode(Node):
                 f"n_components ({n_components}) cannot exceed min(n_samples, n_features) = {min(n_samples, n_features)}"
             )
 
-        print(f"\n[SIMPLISMA Node] Executing with:")
-        print(f"  - n_components: {n_components}")
-        print(f"  - tol: {tol}")
-        print(f"  - noise: {noise}")
-        print(f"  - Data shape: {n_samples} samples × {n_features} features")
+        logger.debug("[SIMPLISMA Node] Executing with:")
+        logger.debug("  - n_components: %s", n_components)
+        logger.debug("  - tol: %s", tol)
+        logger.debug("  - noise: %s", noise)
+        logger.debug("  - Data shape: %s samples x %s features", n_samples, n_features)
 
         # Perform SIMPLISMA using SpectroChemPy
         simplisma = scp.SIMPLISMA(n_components=n_components, tol=tol, noise=noise)
@@ -2707,9 +2710,9 @@ class SIMPLISMANode(Node):
             # Use sample indices as time points
             times = list(range(n_samples))
 
-        print(f"[SIMPLISMA Node] Decomposition completed successfully")
-        print(f"  - C shape: {C_data.shape}")
-        print(f"  - St shape: {St_data.shape}")
+        logger.debug("[SIMPLISMA Node] Decomposition completed successfully")
+        logger.debug("  - C shape: %s", C_data.shape)
+        logger.debug("  - St shape: %s", St_data.shape)
 
         # Extract sample labels from input data for categorical coloring
         sample_labels = None
@@ -2724,9 +2727,9 @@ class SIMPLISMANode(Node):
                     # ufunc errors when sorting/comparing numpy string scalars
                     sample_labels = [str(l) for l in raw]
                     label_categories = sorted(set(sample_labels))
-                    print(f"[SIMPLISMA Node] Extracted {len(sample_labels)} sample labels with {len(label_categories)} unique categories")
+                    logger.debug("[SIMPLISMA Node] Extracted %s sample labels with %s unique categories", len(sample_labels), len(label_categories))
                 except Exception as e:
-                    print(f"[SIMPLISMA Node] Warning: Could not extract categorical labels from y.labels: {e}")
+                    logger.warning("[SIMPLISMA Node] Could not extract categorical labels from y.labels: %s", e, exc_info=True)
                     sample_labels = None
                     label_categories = None
 
@@ -2743,9 +2746,9 @@ class SIMPLISMANode(Node):
                     unique_values = sorted(set(sample_labels))
                     if len(unique_values) < 20 and not _is_sequential_numeric(raw):
                         label_categories = unique_values
-                        print(f"[SIMPLISMA Node] Using numeric y.data as categorical labels: {len(label_categories)} categories")
+                        logger.debug("[SIMPLISMA Node] Using numeric y.data as categorical labels: %s categories", len(label_categories))
                 except Exception as e:
-                    print(f"[SIMPLISMA Node] Warning: Could not extract categorical labels from y.data: {e}")
+                    logger.warning("[SIMPLISMA Node] Could not extract categorical labels from y.data: %s", e, exc_info=True)
                     sample_labels = None
                     label_categories = None
 
@@ -2928,16 +2931,16 @@ class NMFNode(Node):
         # Check for negative values (NMF requires non-negative data)
         data_array = np.array(input_data.data)
         if np.any(data_array < 0):
-            print("[NMF Node] Warning: Input contains negative values, shifting to non-negative range")
+            logger.warning("[NMF Node] Input contains negative values, shifting to non-negative range")
             data_array = data_array - data_array.min()
             input_data = scp.NDDataset(data_array)
 
-        print(f"\n[NMF Node] Executing with:")
-        print(f"  - n_components: {n_components}")
-        print(f"  - solver: {solver}")
-        print(f"  - max_iter: {max_iter}")
-        print(f"  - tol: {tol}")
-        print(f"  - Data shape: {n_samples} samples × {n_features} features")
+        logger.debug("[NMF Node] Executing with:")
+        logger.debug("  - n_components: %s", n_components)
+        logger.debug("  - solver: %s", solver)
+        logger.debug("  - max_iter: %s", max_iter)
+        logger.debug("  - tol: %s", tol)
+        logger.debug("  - Data shape: %s samples x %s features", n_samples, n_features)
 
         # Perform NMF using SpectroChemPy
         nmf = scp.NMF(n_components=n_components, solver=solver, max_iter=max_iter, tol=tol)
@@ -2964,11 +2967,11 @@ class NMFNode(Node):
         if hasattr(nmf, "reconstruction_err_"):
             reconstruction_err = float(nmf.reconstruction_err_)
 
-        print(f"[NMF Node] Decomposition completed successfully")
-        print(f"  - W shape: {W_data.shape}")
-        print(f"  - H shape: {H_data.shape}")
+        logger.debug("[NMF Node] Decomposition completed successfully")
+        logger.debug("  - W shape: %s", W_data.shape)
+        logger.debug("  - H shape: %s", H_data.shape)
         if reconstruction_err is not None:
-            print(f"  - Reconstruction error: {reconstruction_err:.6f}")
+            logger.debug("  - Reconstruction error: %.6f", reconstruction_err)
 
         # Extract label_categories for categorical coloring
         label_categories = None
@@ -3190,13 +3193,13 @@ class FastICANode(Node):
                 f"n_components ({n_components}) cannot exceed min(n_samples, n_features) = {min(n_samples, n_features)}"
             )
 
-        print(f"\n[FastICA Node] Executing with:")
-        print(f"  - n_components: {n_components}")
-        print(f"  - algorithm: {algorithm}")
-        print(f"  - fun: {fun}")
-        print(f"  - max_iter: {max_iter}")
-        print(f"  - tol: {tol}")
-        print(f"  - Data shape: {n_samples} samples × {n_features} features")
+        logger.debug("[FastICA Node] Executing with:")
+        logger.debug("  - n_components: %s", n_components)
+        logger.debug("  - algorithm: %s", algorithm)
+        logger.debug("  - fun: %s", fun)
+        logger.debug("  - max_iter: %s", max_iter)
+        logger.debug("  - tol: %s", tol)
+        logger.debug("  - Data shape: %s samples x %s features", n_samples, n_features)
 
         # Perform FastICA using SpectroChemPy
         ica = scp.FastICA(
@@ -3235,12 +3238,12 @@ class FastICANode(Node):
         _x_coord = safe_get_coord(input_data, 'x')
         _y_coord = safe_get_coord(input_data, 'y')
 
-        print(f"[FastICA Node] Decomposition completed successfully")
-        print(f"  - S (sources) shape: {S_data.shape}")
+        logger.debug("[FastICA Node] Decomposition completed successfully")
+        logger.debug("  - S (sources) shape: %s", S_data.shape)
         if St_data is not None:
-            print(f"  - St (spectral profiles) shape: {St_data.shape}")
+            logger.debug("  - St (spectral profiles) shape: %s", St_data.shape)
         if A_data is not None:
-            print(f"  - A (mixing) shape: {A_data.shape}")
+            logger.debug("  - A (mixing) shape: %s", A_data.shape)
 
         # Extract label_categories for categorical coloring
         label_categories = None
@@ -3275,9 +3278,9 @@ class FastICANode(Node):
                             else:
                                 names.append(f"IC {len(names)+1}")
                         species_names = names
-                        print(f"[FastICA Node] Extracted species names from input metadata: {species_names}")
+                        logger.debug("[FastICA Node] Extracted species names from input metadata: %s", species_names)
                     except Exception as e:
-                        print(f"[FastICA Node] Warning: Could not extract species names: {e}")
+                        logger.warning("[FastICA Node] Could not extract species names: %s", e, exc_info=True)
 
         # Use species names if available, otherwise use generic labels
         component_labels = species_names or [f"IC {i+1}" for i in range(n_components)]
@@ -3457,7 +3460,7 @@ class PLSPredictNode(Node):
             if y_pred_array.ndim > 1 and y_pred_array.shape[1] == 1:
                 y_pred_array = y_pred_array.ravel()
 
-            print(f"[PLS Predict] Generated {len(y_pred_array)} predictions")
+            logger.debug("[PLS Predict] Generated %s predictions", len(y_pred_array))
 
             return {"y_pred": y_pred_array}
 
@@ -3545,7 +3548,7 @@ class PCATransformNode(Node):
             if scores.shape[1] > n_components:
                 scores = scores[:, :n_components]
             
-            print(f"PCA Transform: Projected {len(scores)} samples to {scores.shape[1]} PCs")
+            logger.debug("PCA Transform: Projected %s samples to %s PCs", len(scores), scores.shape[1])
             
             return {"scores": scores}
             

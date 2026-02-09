@@ -60,7 +60,12 @@ class Settings:
     # JWT Authentication
     secret_key: str = os.getenv("SECRET_KEY", "your-super-secret-key-change-in-production")
     algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60 * 24 * 8  # 8 days for Phase 1/2 convenience
+    # Token lifetime: 8 days for local convenience, 60 min for internet-facing modes.
+    # Override with ACCESS_TOKEN_EXPIRE_MINUTES env var.
+    access_token_expire_minutes: int = _get_int(
+        "ACCESS_TOKEN_EXPIRE_MINUTES",
+        60 if os.getenv("APP_MODE", "local") != "local" else 60 * 24 * 8,
+    )
 
 
     max_spectra_per_job: int = _get_int("MAX_SPECTRA_PER_JOB", 1000)  # Increased for MCR-ALS datasets
@@ -281,8 +286,11 @@ class AppConfig(BaseModel):
                 auto_offload_threshold=int(os.getenv("AUTO_OFFLOAD_THRESHOLD", "10000"))
             ),
             demo_password=os.getenv("DEMO_PASSWORD"),
-            rate_limit_executions=int(os.getenv("RATE_LIMIT_EXECUTIONS", "100")) if os.getenv("RATE_LIMIT_EXECUTIONS") else None,
-            session_expiry_hours=int(os.getenv("SESSION_EXPIRY_HOURS", "24")) if os.getenv("SESSION_EXPIRY_HOURS") else None
+            # Demo mode: default to 100 executions/hour and 24-hour sessions
+            # unless explicitly overridden.  In other modes these stay None
+            # (disabled) unless the operator sets the env var.
+            rate_limit_executions=_get_int("RATE_LIMIT_EXECUTIONS", 100) if (os.getenv("RATE_LIMIT_EXECUTIONS") or app_mode == "demo") else None,
+            session_expiry_hours=_get_int("SESSION_EXPIRY_HOURS", 24) if (os.getenv("SESSION_EXPIRY_HOURS") or app_mode == "demo") else None
         )
 
     @classmethod

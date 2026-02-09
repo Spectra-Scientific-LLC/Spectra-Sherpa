@@ -7,6 +7,7 @@ All data source nodes attach SpectraMeta metadata for traceability.
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime
 from typing import Any, Optional
@@ -31,6 +32,8 @@ from app.models.spectra_meta import (
     set_spectra_meta,
     create_minimal_meta,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -100,7 +103,7 @@ def remove_index_columns(dataset: NDDataset) -> NDDataset:
     if n_cols > 1:  # Only remove if there are other columns
         first_col = data[:, 0]
         if is_index_column(first_col):
-            print(f"[DATA] Detected index column in first position (values: {first_col[0]:.0f}-{first_col[-1]:.0f}), removing from data")
+            logger.debug(f"[DATA] Detected index column in first position (values: {first_col[0]:.0f}-{first_col[-1]:.0f}), removing from data")
             # Remove first column
             cleaned_data = data[:, 1:]
 
@@ -172,12 +175,12 @@ def extract_dataset_from_result(result: Any, file_path: str) -> NDDataset:
         if candidates_2d:
             # Select largest 2D dataset by total elements
             best = max(candidates_2d, key=lambda d: np.prod(d.shape))
-            print(f"MAT file contains {len(datasets)} items, selected shape {best.shape}")
+            logger.debug(f"MAT file contains {len(datasets)} items, selected shape {best.shape}")
             return best
         else:
             # No 2D candidates - select largest overall (encapsulate as NDDataset)
             best = max(datasets, key=lambda d: np.prod(getattr(d, 'shape', (0,))))
-            print(f"MAT file contains {len(datasets)} items with no 2D arrays, selected largest dataset with shape {getattr(best, 'shape', 'unknown')}")
+            logger.debug(f"MAT file contains {len(datasets)} items with no 2D arrays, selected largest dataset with shape {getattr(best, 'shape', 'unknown')}")
             return best
 
     # Ensure result is encapsulated as NDDataset for consistency
@@ -236,7 +239,7 @@ def extract_instrument_metadata(dataset: NDDataset, file_path: str) -> dict:
         return extract_metadata(dataset, file_path)
     except ImportError:
         # Fallback if metadata service not available (shouldn't happen)
-        print("[DATA] Warning: Metadata service not available, using minimal extraction")
+        logger.warning("Metadata service not available, using minimal extraction")
         return _minimal_metadata_extraction(dataset, file_path)
 
 
@@ -614,7 +617,7 @@ class DataSourceNode(Node):
         # Transpose if requested (swap rows and columns)
         if transpose_on_load:
             dataset = dataset.T  # SpectroChemPy supports .T for transpose
-            print(f"[DATA] Transposed data to {dataset.shape[0]} samples × {dataset.shape[1]} features")
+            logger.debug(f"[DATA] Transposed data to {dataset.shape[0]} samples × {dataset.shape[1]} features")
 
         # NDDataset structure: y-axis (rows/samples), x-axis (columns/features/wavenumbers)
         if dataset.ndim >= 2:
@@ -693,7 +696,7 @@ class DataSourceNode(Node):
         Raises:
             ValueError: If dataset_name is not supported
         """
-        print(f"[DATA] Loading sklearn dataset via SpectroChemPy: {dataset_name}")
+        logger.debug(f"[DATA] Loading sklearn dataset via SpectroChemPy: {dataset_name}")
 
         try:
             if dataset_name == "iris":
@@ -713,8 +716,8 @@ class DataSourceNode(Node):
             if dataset is None:
                 raise ValueError(f"SpectroChemPy returned None for {dataset_name} dataset")
 
-            print(f"[DATA] Successfully loaded {dataset_name}: {dataset.shape}")
-            print(f"[DATA] Dataset info: {dataset.shape[0]} samples × {dataset.shape[1]} features")
+            logger.debug(f"[DATA] Successfully loaded {dataset_name}: {dataset.shape}")
+            logger.debug(f"[DATA] Dataset info: {dataset.shape[0]} samples × {dataset.shape[1]} features")
 
             # SpectroChemPy's load_* functions return NDDataset objects with:
             # - data: feature matrix
@@ -769,10 +772,10 @@ class DataSourceNode(Node):
             local_path = home_spectrochempy / "irdata" / "nh4y-activation.spg"
             if local_path.exists():
                 try:
-                    print(f"Loading local example from {local_path}")
+                    logger.debug(f"Loading local example from {local_path}")
                     dataset = scp.read_omnic(str(local_path))
                     if dataset is not None:
-                        print(f"Successfully loaded IR dataset: {dataset.shape}")
+                        logger.debug(f"Successfully loaded IR dataset: {dataset.shape}")
                         return dataset
                 except Exception as e:
                     errors.append(f"Local file exists but read failed: {e}")
@@ -781,7 +784,7 @@ class DataSourceNode(Node):
             try:
                 dataset = scp.read_omnic("irdata/nh4y-activation.spg")
                 if dataset is not None:
-                    print(f"Loaded SpectroChemPy IR dataset from datadir: {dataset.shape}")
+                    logger.debug(f"Loaded SpectroChemPy IR dataset from datadir: {dataset.shape}")
                     return dataset
                 else:
                     errors.append("scp.read_omnic() returned None")
@@ -806,10 +809,10 @@ class DataSourceNode(Node):
             local_path = home_spectrochempy / "ramandata" / "labspec" / "series.txt"
             if local_path.exists():
                 try:
-                    print(f"Loading local example from {local_path}")
+                    logger.debug(f"Loading local example from {local_path}")
                     dataset = scp.read(str(local_path))
                     if dataset is not None:
-                        print(f"Successfully loaded Raman dataset: {dataset.shape}")
+                        logger.debug(f"Successfully loaded Raman dataset: {dataset.shape}")
                         return dataset
                 except Exception as e:
                     errors.append(f"Local file exists but read failed: {e}")
@@ -818,7 +821,7 @@ class DataSourceNode(Node):
             try:
                 dataset = scp.read("ramandata/labspec/series.txt")
                 if dataset is not None:
-                    print(f"Loaded SpectroChemPy Raman dataset from datadir: {dataset.shape}")
+                    logger.debug(f"Loaded SpectroChemPy Raman dataset from datadir: {dataset.shape}")
                     return dataset
                 else:
                     errors.append("scp.read() returned None")
@@ -843,10 +846,10 @@ class DataSourceNode(Node):
             local_path = home_spectrochempy / "nmrdata" / "bruker" / "tests" / "nmr" / "topspin_1d"
             if local_path.exists():
                 try:
-                    print(f"Loading local example from {local_path}")
+                    logger.debug(f"Loading local example from {local_path}")
                     dataset = scp.read(str(local_path))
                     if dataset is not None:
-                        print(f"Successfully loaded NMR dataset: {dataset.shape}")
+                        logger.debug(f"Successfully loaded NMR dataset: {dataset.shape}")
                         return dataset
                 except Exception as e:
                     errors.append(f"Local directory exists but read failed: {e}")
@@ -855,7 +858,7 @@ class DataSourceNode(Node):
             try:
                 dataset = scp.read("nmrdata/bruker/tests/nmr/topspin_1d")
                 if dataset is not None:
-                    print(f"Loaded SpectroChemPy NMR dataset from datadir: {dataset.shape}")
+                    logger.debug(f"Loaded SpectroChemPy NMR dataset from datadir: {dataset.shape}")
                     return dataset
                 else:
                     errors.append("scp.read() returned None")
@@ -880,10 +883,10 @@ class DataSourceNode(Node):
             local_path = home_spectrochempy / "galacticdata" / "LabSpec5"
             if local_path.exists():
                 try:
-                    print(f"Loading local example from {local_path}")
+                    logger.debug(f"Loading local example from {local_path}")
                     dataset = scp.read_spc(str(local_path))
                     if dataset is not None:
-                        print(f"Successfully loaded Galactic SPC dataset: {dataset.shape}")
+                        logger.debug(f"Successfully loaded Galactic SPC dataset: {dataset.shape}")
                         return dataset
                 except Exception as e:
                     errors.append(f"Local file exists but read failed: {e}")
@@ -892,7 +895,7 @@ class DataSourceNode(Node):
             try:
                 dataset = scp.read_spc("galacticdata/LabSpec5")
                 if dataset is not None:
-                    print(f"Loaded SpectroChemPy Galactic dataset from datadir: {dataset.shape}")
+                    logger.debug(f"Loaded SpectroChemPy Galactic dataset from datadir: {dataset.shape}")
                     return dataset
                 else:
                     errors.append("scp.read_spc() returned None")
@@ -956,7 +959,7 @@ class DataSourceNode(Node):
             # For directories (Bruker NMR format), read the directory
             if full_path.is_dir():
                 dataset = scp.read(str(full_path))
-                print(f"Loaded NMR dataset from directory: {file_path}")
+                logger.debug(f"Loaded NMR dataset from directory: {file_path}")
                 dataset.title = file_path.replace("/", " / ")
                 return dataset
 
@@ -968,7 +971,7 @@ class DataSourceNode(Node):
             reader_method = getattr(scp, reader_name)
 
             dataset = reader_method(str(full_path))
-            print(f"Loaded {ext} dataset using {reader_name}: {file_path}")
+            logger.debug(f"Loaded {ext} dataset using {reader_name}: {file_path}")
 
             # Post-processing for specific formats
             if ext.lower() == ".csv":
@@ -1044,7 +1047,7 @@ class DataSourceNode(Node):
             folder_path = example_dataset
             glob_pattern = pattern
 
-        print(f"[DATA] Pattern detected: folder={folder_path}, pattern={glob_pattern}")
+        logger.debug(f"[DATA] Pattern detected: folder={folder_path}, pattern={glob_pattern}")
 
         # Resolve folder path (try both primary and fallback datadirs)
         datadir = Path(scp.preferences.datadir)
@@ -1095,7 +1098,7 @@ class DataSourceNode(Node):
                 f"Please verify the pattern matches existing files."
             )
 
-        print(f"[DATA] Found {len(files)} files matching pattern '{glob_pattern}'")
+        logger.debug(f"[DATA] Found {len(files)} files matching pattern '{glob_pattern}'")
 
         # Sort alphabetically
         files.sort(key=lambda f: f.name.lower())
@@ -1106,7 +1109,7 @@ class DataSourceNode(Node):
 
         for i, file_path in enumerate(files, 1):
             try:
-                print(f"[DATA] Loading {i}/{len(files)}: {file_path.name}")
+                logger.debug(f"[DATA] Loading {i}/{len(files)}: {file_path.name}")
 
                 # Use centralized reader
                 from app.core.config import get_reader_for_extension
@@ -1189,7 +1192,7 @@ class DataSourceNode(Node):
                         y_labels.append(f"{file_label}_{j+1}")
 
             total_spectra = concatenated_data.shape[0]
-            print(f"[DATA] Concatenated {len(datasets)} files ({total_spectra} spectra) into shape {concatenated_data.shape}")
+            logger.debug(f"[DATA] Concatenated {len(datasets)} files ({total_spectra} spectra) into shape {concatenated_data.shape}")
 
             # Create new NDDataset with stacked data
             concatenated = scp.NDDataset(concatenated_data)
@@ -1283,7 +1286,7 @@ class DataSourceNode(Node):
                     f"All files must have identical x-axis values."
                 )
 
-        print(f"[DATA] X-axis validation passed for {len(datasets)} files")
+        logger.debug(f"[DATA] X-axis validation passed for {len(datasets)} files")
 
     def _generate_ftir_synthetic(self) -> NDDataset:
         """Generate realistic FTIR-like synthetic data."""
@@ -2224,7 +2227,7 @@ class LoadGroupNode(Node):
                 f"Please verify the folder contains spectral files and the pattern is correct."
             )
 
-        print(f"[LOAD_GROUP] Found {len(files)} files matching '{pattern}' in {folder}")
+        logger.debug(f"[LOAD_GROUP] Found {len(files)} files matching '{pattern}' in {folder}")
 
         # Sort files according to sort_by parameter
         if sort_by == "numeric_suffix":
@@ -2234,17 +2237,17 @@ class LoadGroupNode(Node):
                 return int(match.group(1)) if match else 0
 
             files.sort(key=extract_number)
-            print(f"[LOAD_GROUP] Sorted by numeric suffix")
+            logger.debug("[LOAD_GROUP] Sorted by numeric suffix")
 
         elif sort_by == "modified_time":
             # Sort by file modification time (oldest first)
             files.sort(key=lambda f: f.stat().st_mtime)
-            print(f"[LOAD_GROUP] Sorted by modification time")
+            logger.debug("[LOAD_GROUP] Sorted by modification time")
 
         else:  # sort_by == "filename" (default)
             # Sort alphabetically by filename
             files.sort(key=lambda f: f.name.lower())
-            print(f"[LOAD_GROUP] Sorted alphabetically")
+            logger.debug("[LOAD_GROUP] Sorted alphabetically")
 
         # Load all files (FAIL-FAST: stop on first error)
         datasets = []
@@ -2253,7 +2256,7 @@ class LoadGroupNode(Node):
 
         for i, file_path in enumerate(files, 1):
             try:
-                print(f"[LOAD_GROUP] Loading {i}/{len(files)}: {file_path.name}")
+                logger.debug(f"[LOAD_GROUP] Loading {i}/{len(files)}: {file_path.name}")
 
                 # Load using centralized reader (supports mixed formats)
                 dataset = self._load_single_file(file_path)
@@ -2277,7 +2280,7 @@ class LoadGroupNode(Node):
                 )
                 raise ValueError(error_msg) from e
 
-        print(f"[LOAD_GROUP] Successfully loaded all {len(datasets)} files")
+        logger.debug(f"[LOAD_GROUP] Successfully loaded all {len(datasets)} files")
 
         # Validate x-axes match (strict validation if enabled)
         if validate_axes and len(datasets) > 1:
@@ -2327,7 +2330,7 @@ class LoadGroupNode(Node):
                         y_labels.append(f"{file_label}_{j+1}")
 
             total_spectra = concatenated_data.shape[0]
-            print(f"[LOAD_GROUP] Concatenated {len(datasets)} files ({total_spectra} spectra) into shape {concatenated_data.shape}")
+            logger.debug(f"[LOAD_GROUP] Concatenated {len(datasets)} files ({total_spectra} spectra) into shape {concatenated_data.shape}")
 
             # Create new NDDataset with stacked data
             concatenated = scp.NDDataset(concatenated_data)
@@ -2396,7 +2399,7 @@ class LoadGroupNode(Node):
         )
         set_spectra_meta(concatenated, meta)
 
-        print(f"[LOAD_GROUP] ✅ Group loaded successfully: {concatenated.title}")
+        logger.debug(f"[LOAD_GROUP] Group loaded successfully: {concatenated.title}")
 
         # Record provenance in dataset.meta
         add_processing_step(
@@ -2532,7 +2535,7 @@ class LoadGroupNode(Node):
                     f"Consider reprocessing files to ensure consistent spectral range and resolution."
                 )
 
-        print(f"[LOAD_GROUP] ✅ X-axis validation passed: All {len(datasets)} spectra have identical x-axes ({len(reference_x)} points)")
+        logger.debug(f"[LOAD_GROUP] X-axis validation passed: All {len(datasets)} spectra have identical x-axes ({len(reference_x)} points)")
 
 
 @register_node
@@ -2778,6 +2781,6 @@ class TrainTestSplitNode(Node):
             result["y_train"] = y_array[train_idx]
             result["y_test"] = y_array[test_idx]
 
-        print(f"Train/Test Split: {n_train} train, {n_test} test samples ({test_size*100:.0f}% test)")
+        logger.debug(f"Train/Test Split: {n_train} train, {n_test} test samples ({test_size*100:.0f}% test)")
 
         return result

@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Awaitable, Callable
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -27,6 +27,32 @@ class JobManager:
         # Local tracking for heartbeat tasks only - not used for concurrency control
         self._local_jobs: set[int] = set()
         self._heartbeat_tasks: dict[int, asyncio.Task] = {}
+        self._job_owners: dict[int, int] = {}
+        self._admission_lock_key = 0x53534A4D  # Stable lock key for PG advisory lock.
+
+    @property
+    def _uses_postgres(self) -> bool:
+        return settings.database_url.lower().startswith("postgresql")
+
+    async def _resolve_job_owner(
+        self, job_id: int, session: AsyncSession | None = None
+    ) -> int | None:
+        """Resolve and cache the owner user_id for a job."""
+        owner_id = self._job_owners.get(job_id)
+        if owner_id is not None:
+            return owner_id
+
+        if session is None:
+            async with async_session() as lookup_session:
+                return await self._resolve_job_owner(job_id, session=lookup_session)
+
+        result = await session.execute(
+            select(BackgroundJob.user_id).where(BackgroundJob.id == job_id)
+        )
+        owner_id = result.scalar_one_or_none()
+        if owner_id is not None:
+            self._job_owners[job_id] = owner_id
+        return owner_id
 
     async def _count_running_jobs(self, session: AsyncSession) -> int:
         """Count running jobs across all workers from database."""
@@ -40,12 +66,19 @@ class JobManager:
     async def run_job(
         self, session: AsyncSession, job_id: int, work: Callable[[], Awaitable[None]]
     ) -> None:
-        # Check concurrency limit from database (works across all workers)
+        # Admission step: serialize check-and-start in PostgreSQL deployments.
+        if self._uses_postgres:
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock(:k)"),
+                {"k": self._admission_lock_key},
+            )
+
         running_count = await self._count_running_jobs(session)
         if running_count >= settings.max_concurrent_jobs:
-            await session.execute(
+            block_result = await session.execute(
                 update(BackgroundJob)
                 .where(BackgroundJob.id == job_id)
+                .where(BackgroundJob.status == "pending")
                 .values(
                     status="failed",
                     error_message="Max concurrent jobs exceeded",
@@ -53,23 +86,34 @@ class JobManager:
                 )
             )
             await session.commit()
-            await self._broadcast_job(
-                job_id, status="failed", message="Max concurrent jobs exceeded"
-            )
+            if (block_result.rowcount or 0) > 0:
+                await self._broadcast_job(
+                    job_id,
+                    status="failed",
+                    message="Max concurrent jobs exceeded",
+                    session=session,
+                )
+            self._job_owners.pop(job_id, None)
             return
 
-        self._local_jobs.add(job_id)
-        await session.execute(
+        start_result = await session.execute(
             update(BackgroundJob)
             .where(BackgroundJob.id == job_id)
+            .where(BackgroundJob.status == "pending")
             .values(
                 status="running",
                 started_at=datetime.now(timezone.utc),
                 last_heartbeat=datetime.now(timezone.utc),
             )
         )
+        if (start_result.rowcount or 0) == 0:
+            await session.rollback()
+            self._job_owners.pop(job_id, None)
+            return
+
+        self._local_jobs.add(job_id)
         await session.commit()
-        await self._broadcast_job(job_id, status="running", progress=0)
+        await self._broadcast_job(job_id, status="running", progress=0, session=session)
 
         heartbeat_task = asyncio.create_task(self._heartbeat_loop(job_id))
         self._heartbeat_tasks[job_id] = heartbeat_task
@@ -86,7 +130,9 @@ class JobManager:
                 )
             )
             await session.commit()
-            await self._broadcast_job(job_id, status="completed", progress=100)
+            await self._broadcast_job(
+                job_id, status="completed", progress=100, session=session
+            )
         except Exception as exc:
             await session.execute(
                 update(BackgroundJob)
@@ -98,9 +144,12 @@ class JobManager:
                 )
             )
             await session.commit()
-            await self._broadcast_job(job_id, status="failed", message=str(exc))
+            await self._broadcast_job(
+                job_id, status="failed", message=str(exc), session=session
+            )
         finally:
             self._local_jobs.discard(job_id)
+            self._job_owners.pop(job_id, None)
             heartbeat_task = self._heartbeat_tasks.pop(job_id, None)
             if heartbeat_task:
                 heartbeat_task.cancel()
@@ -127,7 +176,7 @@ class JobManager:
             )
         )
         await session.commit()
-        await self._broadcast_job(job_id, progress=progress, message=message)
+        await self._broadcast_job(job_id, progress=progress, message=message, session=session)
 
     async def cancel_job(self, session: AsyncSession, job_id: int) -> None:
         await session.execute(
@@ -140,7 +189,10 @@ class JobManager:
             )
         )
         await session.commit()
-        await self._broadcast_job(job_id, status="cancelled", message="Cancelled by user")
+        await self._broadcast_job(
+            job_id, status="cancelled", message="Cancelled by user", session=session
+        )
+        self._job_owners.pop(job_id, None)
 
     async def shutdown(self) -> None:
         """Cancel all locally-tracked jobs on shutdown."""
@@ -184,7 +236,12 @@ class JobManager:
         status: str | None = None,
         progress: int | None = None,
         message: str | None = None,
+        session: AsyncSession | None = None,
     ) -> None:
+        owner_id = await self._resolve_job_owner(job_id, session=session)
+        if owner_id is None:
+            return
+
         payload: dict[str, object] = {"job_id": job_id}
         if status is not None:
             payload["status"] = status
@@ -192,7 +249,7 @@ class JobManager:
             payload["progress"] = progress
         if message is not None:
             payload["message"] = message
-        await ws_manager.broadcast("jobs", payload)
+        await ws_manager.broadcast(f"jobs:{owner_id}", payload)
 
 
 job_manager = JobManager()

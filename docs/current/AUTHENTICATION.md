@@ -1,20 +1,31 @@
 # Authentication & API Key Architecture
 
-**Version:** 1.0
-**Date:** 2026-01-03
-**Status:** Phase 1 Implementation
+**Version:** 2.0
+**Date:** 2026-02-07
+**Status:** Hybrid Mode Identity Implemented
 
 ---
 
 ## 🎯 **Overview**
 
-The platform uses a **three-tier deployment model** designed for flexible adoption and monetization:
+The platform uses a **three-mode deployment model** designed for flexible adoption and monetization:
 
-1. **Free Local Tier** - Students, researchers, trial users (fully functional core features)
-2. **BYOK Local Tier** - Power users with their own LLM API budgets (unlock AI features)
-3. **Paid Cloud Tier** - Enterprise subscribers with managed infrastructure (Phase 2)
+1. **Local Mode** (`APP_MODE=local`) — Single-user, no auth, SQLite. Students, researchers, trial users.
+2. **Hybrid Mode** (`APP_MODE=hybrid`) — Local app + cloud identity via `SPECTRASHERPA_API_KEY`. Power users who want managed LLM keys, admin features, and server-linked identity without a login page.
+3. **Demo/Cloud Mode** (`APP_MODE=demo`) — Multi-user JWT auth, rate-limited. Enterprise subscribers with managed infrastructure.
 
-This architecture allows users to start free, upgrade to BYOK when ready for AI features, then migrate to cloud when they need team collaboration and advanced agents.
+This architecture allows users to start free locally, upgrade to hybrid when ready for managed LLM keys and cloud identity, then migrate to full cloud for team collaboration and advanced agents.
+
+### Deployment Mode Comparison
+
+| Property | Local | Hybrid | Demo/Cloud |
+|----------|-------|--------|------------|
+| **Auth method** | None (implicit user) | API-key linked identity | JWT (email + password) |
+| **User resolution** | First DB user | First DB user, enriched from server | JWT → user lookup |
+| **Login page** | Skipped | Skipped | Required |
+| **Admin features** | Hidden | Visible (if server user is admin) | Visible (if user is admin) |
+| **LLM keys** | BYOK only | Managed (from server) + BYOK | Managed (from server) |
+| **Data egress** | Unrestricted | Configurable (egress defaults) | Configurable |
 
 ---
 
@@ -129,6 +140,69 @@ Priority order:
 | Local (Ollama) | Self-hosted models | ✅ (endpoint URL) |
 | SciFinder | Premium spectral DB | 🔜 Phase 2 |
 | Wiley | Premium spectral DB | 🔜 Phase 2 |
+
+---
+
+## 🔗 **Hybrid Mode: API-Key Linked Identity**
+
+In hybrid mode, the `SPECTRASHERPA_API_KEY` environment variable serves as **both** the authentication credential and the identity source. No login page is needed — the API key IS the credential.
+
+### How It Works
+
+```
+Startup (hybrid mode):
+  1. ensure_default_user()           → creates "local" user in DB (if no users exist)
+  2. ensure_egress_defaults()        → creates default egress permissions
+  3. link_hybrid_identity() [NEW]    → calls server GET /auth/me with API key
+     Server returns:                   {id: 42, username: "alice", is_admin: true, llm_quota: 100}
+  4. Update local DB user:             username="alice", is_superuser=true
+  5. First HTTP request arrives      → _resolve_user() reads enriched user from DB
+
+Frontend (hybrid mode):
+  1. Router guard: skip login (no password needed — API key is the credential)
+  2. initHybridUser(): call GET /api/v1/auth/me → backend returns enriched local user
+  3. authStore.user populated        → admin button shows, username displays
+```
+
+### Key Design Decisions
+
+- **API key = identity**: The `SPECTRASHERPA_API_KEY` maps to a `ClientKey` on the server, which maps to a `User`. On startup, `link_hybrid_identity()` calls server `GET /auth/me` and enriches the local DB user with the server identity.
+- **No duplicate users**: `_get_or_create_local_user()` looks up users by `order_by(User.id).limit(1)` (not `username == "local"`), so username changes from identity linking don't create duplicates on restart.
+- **Offline degradation**: If the server is unreachable, the last-synced identity persists in the local DB. First-ever offline startup uses the generic "local" user with `is_superuser=false`.
+- **Admin route protection**: `_ensure_mutable_standard_user(user, current_user)` checks `user.id == current_user.id` (self-modification guard), not username sentinel.
+
+### Implementation Files
+
+| File | Purpose |
+|------|---------|
+| `app/services/spectrasherpa.py` | `SpectraSherpaUser` dataclass, `validate_api_key()` |
+| `app/core/startup.py` | `link_hybrid_identity()` function |
+| `app/main.py` | Startup sequence wiring |
+| `app/api/deps.py` | `_get_or_create_local_user()` (ID-order lookup) |
+| `app/api/v1/routes/admin.py` | `_ensure_mutable_standard_user()` (self-ID check) |
+| `frontend/src/stores/auth.ts` | `initHybridUser()`, `isAuthenticated` computed |
+| `frontend/src/router/index.ts` | Separate local/hybrid navigation guards |
+
+### SpectraSherpaUser ↔ Server UserResponse Mapping
+
+The local `SpectraSherpaUser` dataclass must match the server's `UserResponse` schema:
+
+| SpectraSherpaUser (local) | UserResponse (server) |
+|---------------------------|----------------------|
+| `id: int` | `id: int` |
+| `email: str` | `email: str` |
+| `username: str` | `username: str` |
+| `is_admin: bool` | `is_admin: bool` |
+| `is_active: bool` | `is_active: bool` |
+| `llm_quota: int` | `llm_quota: int` |
+
+### Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `APP_MODE` | Yes | `local` | Deployment mode: `local`, `hybrid`, `demo` |
+| `SPECTRASHERPA_API_KEY` | Hybrid only | — | API key from spectrasherpa-server account |
+| `SPECTRASHERPA_SERVER_URL` | Hybrid only | — | URL of the spectrasherpa-server instance |
 
 ---
 
@@ -382,25 +456,36 @@ python manage.py revoke_api_keys --before=2027-01-01
 
 ## 📋 **Implementation Checklist**
 
-### **Phase 1 (Current) - Local Deployment** ✅
+### **Phase 1 (Complete) - Local Deployment** ✅
 
 - [x] Simple API key authentication (shared key)
 - [x] External API key storage (AES-256 encrypted)
 - [x] System keyring integration
 - [x] Settings UI for key management
 - [x] Feature gating (LLM disabled without key)
-- [ ] User documentation (this file)
+- [x] User documentation (this file)
 
-### **Phase 2 - Cloud Deployment** 🔜
+### **Phase 1.5 (Complete) - Hybrid Mode Identity** ✅
 
-- [ ] User registration endpoint (`POST /auth/register`)
-- [ ] Login endpoint with JWT issuance (`POST /auth/login`)
+- [x] `link_hybrid_identity()` startup function
+- [x] `SpectraSherpaUser` dataclass aligned with server `UserResponse`
+- [x] `_get_or_create_local_user()` ID-order lookup (survives username changes)
+- [x] Admin route protection via self-ID check (not username sentinel)
+- [x] Frontend `initHybridUser()` + router guard split
+- [x] `isAuthenticated` computed supports token-free hybrid auth
+- [x] Offline degradation (last-synced identity persists)
+
+### **Phase 2 - Cloud Deployment (spectrasherpa-server)** ✅ Partial
+
+- [x] User registration endpoint (`POST /auth/register`)
+- [x] Login endpoint with JWT issuance (`POST /auth/login`)
+- [x] JWT verification middleware
+- [x] Admin dashboard for user management (basic)
+- [x] API key client authentication (`X-API-Key` header)
 - [ ] Refresh token rotation (`POST /auth/refresh`)
 - [ ] Password reset flow (email verification)
-- [ ] JWT verification middleware
-- [ ] Role-based access control (RBAC)
+- [ ] Role-based access control (RBAC, beyond admin/user)
 - [ ] OAuth providers (Google, GitHub, ORCID)
-- [ ] Admin dashboard for user management
 - [ ] Audit log table (track all user actions)
 - [ ] Data migration tool (local → cloud)
 
@@ -418,4 +503,5 @@ python manage.py revoke_api_keys --before=2027-01-01
 **Document Maintenance:**
 - Review quarterly
 - Update when adding new LLM providers
-- Update when launching Phase 2
+- Update when changing hybrid identity flow
+- Last updated: 2026-02-07 (added hybrid mode identity linking)

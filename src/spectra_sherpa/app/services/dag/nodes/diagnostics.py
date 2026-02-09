@@ -7,8 +7,11 @@ and cross-validation metrics for chemometrics models.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional
 import numpy as np
+
+logger = logging.getLogger(__name__)
 from spectrochempy import NDDataset
 
 from ..node_base import Node, NodeMetadata, NodeParameter, InputPort, PortMetadata, register_node
@@ -127,8 +130,7 @@ class OutlierDetectionNode(Node):
 
         # Fallback to score variance (less accurate but functional)
         if eigenvalues is None:
-            import logging
-            logging.getLogger(__name__).warning(
+            logger.warning(
                 "PCA eigenvalues not available, falling back to score variance for T² calculation. "
                 "This may give slightly different results than using true eigenvalues."
             )
@@ -209,7 +211,7 @@ class OutlierDetectionNode(Node):
             },
         }
 
-        print(f"[Outlier Detection] Found {n_outliers} outliers ({100*n_outliers/n_observations:.1f}%) at {confidence_level*100}% confidence")
+        logger.debug(f"[Outlier Detection] Found {n_outliers} outliers ({100*n_outliers/n_observations:.1f}%) at {confidence_level*100}% confidence")
 
         return result
 
@@ -355,7 +357,7 @@ class CrossValidationNode(Node):
                 },
             })
 
-            print(f"[Cross-Validation] Classification accuracy: {accuracy:.3f}")
+            logger.debug(f"[Cross-Validation] Classification accuracy: {accuracy:.3f}")
 
         else:
             # Regression metrics
@@ -385,7 +387,7 @@ class CrossValidationNode(Node):
                 },
             })
 
-            print(f"[Cross-Validation] RMSECV: {rmse:.4f}, Q²: {Q2:.4f}, R²: {r2:.4f}")
+            logger.debug(f"[Cross-Validation] RMSECV: {rmse:.4f}, Q²: {Q2:.4f}, R²: {r2:.4f}")
 
         # Add visualization data
         result["data"] = [[y_true[i], y_pred[i]] for i in range(len(y_true))]

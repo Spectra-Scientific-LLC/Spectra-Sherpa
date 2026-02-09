@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import sys
 from datetime import datetime, timedelta, timezone
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 # Default secret key that should NOT be used in production
 DEFAULT_SECRET_KEY = "your-super-secret-key-change-in-production"
+DEFAULT_API_KEY = "default-local-key"
 
 
 def validate_concurrency_settings() -> None:
@@ -54,6 +56,20 @@ def validate_concurrency_settings() -> None:
         has_fcntl = False
 
     if app_config.mode in ("hybrid", "demo"):
+        web_concurrency = os.getenv("WEB_CONCURRENCY", "").strip()
+        if web_concurrency:
+            try:
+                workers = int(web_concurrency)
+            except ValueError:
+                workers = 1
+            if workers > 1:
+                logger.warning(
+                    "WEB_CONCURRENCY=%s with in-memory WebSocket channels can "
+                    "drop cross-worker realtime events. Use WEB_CONCURRENCY=1 "
+                    "unless a shared pub/sub backend is configured.",
+                    workers,
+                )
+
         if not has_fcntl:
             logger.warning(
                 "File locking (fcntl) not available on this platform. "
@@ -76,10 +92,13 @@ def validate_security_settings() -> None:
     In non-local modes (hybrid, demo, cloud), ensures:
     - SECRET_KEY is not the default value
     - MASTER_ENCRYPTION_KEY is set (warning only)
+    - Hybrid mode warns if bound to a non-loopback address
 
     Raises:
         SystemExit: If critical security settings are invalid
     """
+    import os
+
     if app_config.mode == "local":
         # Local mode: security validation is relaxed
         if settings.secret_key == DEFAULT_SECRET_KEY:
@@ -98,14 +117,72 @@ def validate_security_settings() -> None:
         )
         sys.exit(1)
 
+    # APP_API_KEY: when ALLOW_SYSTEM_API_KEY_AUTH is enabled, it becomes a
+    # shared authentication secret and must never remain at default value.
+    system_key_auth_enabled = os.getenv("ALLOW_SYSTEM_API_KEY_AUTH", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    if settings.api_key == DEFAULT_API_KEY and system_key_auth_enabled:
+        if app_config.mode == "demo":
+            logger.critical(
+                "SECURITY ERROR: Cannot start in 'demo' mode with default APP_API_KEY!\n"
+                "ALLOW_SYSTEM_API_KEY_AUTH is enabled and APP_API_KEY is default. "
+                "Set APP_API_KEY to a strong random value.\n"
+                "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+            )
+            sys.exit(1)
+        else:
+            # hybrid mode: warn (shared key accepted for non-loopback auth)
+            logger.warning(
+                "APP_API_KEY is set to the default value while ALLOW_SYSTEM_API_KEY_AUTH "
+                "is enabled. Set a strong random APP_API_KEY."
+            )
+    elif settings.api_key == DEFAULT_API_KEY and app_config.mode != "local":
+        logger.info(
+            "APP_API_KEY is default, but ALLOW_SYSTEM_API_KEY_AUTH is disabled, "
+            "so this key is not accepted for external authentication."
+        )
+
+    if os.getenv("TRUST_PROXY", "").strip().lower() in {"1", "true", "yes"}:
+        trusted_proxy_cidrs = os.getenv("TRUSTED_PROXY_CIDRS", "").strip()
+        if not trusted_proxy_cidrs:
+            logger.warning(
+                "TRUST_PROXY is enabled but TRUSTED_PROXY_CIDRS is not set. "
+                "Only loopback proxy peers are trusted by default. "
+                "Set TRUSTED_PROXY_CIDRS (e.g. 172.18.0.0/16) for container reverse proxies."
+            )
+
     # Check encryption key (warning, not fatal)
-    import os
     if not os.getenv("MASTER_ENCRYPTION_KEY"):
         logger.warning(
             "MASTER_ENCRYPTION_KEY not set. A key will be auto-generated, but this "
             "may cause issues if the container is recreated. Set this environment "
             "variable for persistent API key encryption."
         )
+
+    # Demo mode: SQLite is not safe for concurrent multi-user production workloads.
+    if app_config.mode == "demo" and settings.database_url.startswith("sqlite"):
+        logger.critical(
+            "SECURITY/RELIABILITY ERROR: Demo mode cannot run with SQLite. "
+            "Set DATABASE_URL to PostgreSQL before starting a multi-user deployment."
+        )
+        sys.exit(1)
+
+    # Hybrid mode: warn if bound to a non-loopback address.
+    # The auth middleware enforces loopback-only for unauthenticated hybrid
+    # requests, so non-loopback clients will need a JWT or API key.
+    if app_config.mode == "hybrid":
+        bind_host = os.getenv("HOST", "127.0.0.1")
+        loopback = {"127.0.0.1", "::1", "localhost"}
+        if bind_host not in loopback:
+            logger.warning(
+                "SECURITY: Hybrid mode is bound to '%s'. Non-loopback clients "
+                "must authenticate with a valid JWT or API key. Unauthenticated "
+                "access is restricted to loopback (127.0.0.1) only.",
+                bind_host,
+            )
 
 
 def ensure_data_dirs() -> None:
@@ -117,11 +194,30 @@ def ensure_data_dirs() -> None:
     (settings.data_dir / "user").mkdir(parents=True, exist_ok=True)
 
 
-async def ensure_database_ready() -> None:
+async def ensure_database_ready(*, include_seed: bool = True) -> None:
     await init_db()
-    # Auto-seed if configured or in dev/demo mode
-    # For now, we always try to seed if the seed dir exists
-    await seed_data()
+    if include_seed:
+        # Auto-seed if configured or in dev/demo mode
+        # For now, we always try to seed if the seed dir exists
+        await seed_data()
+
+
+async def wait_for_database_ready(timeout_seconds: int = 300) -> None:
+    """Wait for leader worker to finish DB schema setup without mutating DB."""
+    deadline = datetime.now(timezone.utc) + timedelta(seconds=timeout_seconds)
+    last_error: Exception | None = None
+    while datetime.now(timezone.utc) < deadline:
+        try:
+            async with async_session() as session:
+                await session.execute(select(User.id).limit(1))
+            return
+        except Exception as exc:
+            last_error = exc
+            await asyncio.sleep(1)
+
+    raise RuntimeError(
+        f"Database was not ready within {timeout_seconds} seconds."
+    ) from last_error
 
 
 async def ensure_default_user() -> None:
@@ -134,6 +230,63 @@ async def ensure_default_user() -> None:
                 await session.commit()
     except OperationalError:
         logger.warning("Skipping default user creation; database not initialized.")
+
+
+async def link_hybrid_identity() -> None:
+    """Enrich the local user with server-side identity in hybrid mode.
+
+    Calls ``GET /auth/me`` on the spectrasherpa-server using the configured
+    ``SPECTRASHERPA_API_KEY``.  On success the default local user is updated
+    with the server username and admin flag so that admin features, egress
+    controls, and future entitlements work correctly.
+
+    Gracefully degrades: if the server is unreachable the previously-synced
+    identity (or the generic "local" user on first-ever offline start) is
+    kept as-is.
+    """
+    if app_config.mode != "hybrid":
+        return
+
+    from app.services.spectrasherpa import get_spectrasherpa_service
+
+    service = get_spectrasherpa_service()
+    if not service.is_configured:
+        logger.info("Hybrid mode: no SPECTRASHERPA_API_KEY configured, using local identity")
+        return
+
+    try:
+        result = await service.validate_api_key()
+    except Exception as exc:
+        logger.warning("Hybrid identity linking failed: %s — using cached/local identity", exc)
+        return
+
+    if not result.success:
+        logger.warning(
+            "Hybrid identity linking failed: %s — using cached/local identity",
+            result.error,
+        )
+        return
+
+    server_user = result.user
+    try:
+        async with async_session() as session:
+            db_user = (
+                await session.execute(select(User).order_by(User.id).limit(1))
+            ).scalar_one_or_none()
+            if db_user is None:
+                return
+
+            db_user.username = server_user.username
+            db_user.is_superuser = server_user.is_admin
+            await session.commit()
+
+        logger.info(
+            "Hybrid identity linked: %s (admin=%s)",
+            server_user.username,
+            server_user.is_admin,
+        )
+    except Exception as exc:
+        logger.warning("Could not persist hybrid identity: %s", exc)
 
 
 async def ensure_egress_defaults() -> None:
@@ -175,6 +328,15 @@ async def reconcile_stale_jobs() -> None:
         async with async_session() as session:
             now = datetime.now(timezone.utc)
             stale_cutoff = now - timedelta(minutes=5)
+            await session.execute(
+                update(BackgroundJob)
+                .where(BackgroundJob.status == "pending")
+                .values(
+                    status="failed",
+                    error_message="Server restarted before job execution",
+                    completed_at=now,
+                )
+            )
             await session.execute(
                 update(BackgroundJob)
                 .where(BackgroundJob.status == "running")

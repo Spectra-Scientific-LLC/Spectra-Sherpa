@@ -78,22 +78,10 @@ async def _validate_file_path_ownership(
                 raise HTTPException(status_code=403, detail="Access denied: experiment not owned by user")
             return  # Access granted
 
-    # Check NIST library directory
+    # Check NIST library directory — NIST spectra are shared public data
+    # (no user_id on NistLibrary model), so any authenticated user can read.
     if parts[0] == "nist_library":
-        # Allow access to shared 'downloaded' folder (public NIST data)
-        if len(parts) >= 2 and parts[1] == "downloaded":
-            return  # Access granted - shared NIST downloads
-
-        # For other nist_library paths, check if it matches a user-owned entry
-        result = await session.execute(
-            select(NistLibrary)
-            .where(NistLibrary.user_id == current_user.id)
-            .where(NistLibrary.file_path.contains(str(rel_path)))
-        )
-        if result.scalar_one_or_none():
-            return  # Access granted - user owns this library entry
-
-        raise HTTPException(status_code=403, detail="Access denied: NIST library entry not owned by user")
+        return  # Access granted - NIST data is shared across all users
 
     # Check calibrations directory (user-specific, pattern: calibrations/cal_XXX/)
     if parts[0] == "calibrations" and len(parts) >= 2:
