@@ -274,6 +274,17 @@ class PCANode(Node):
         # Normalize EVR to ratio form (0-1) for consistent handling
         max_evr = evr.max() if len(evr) > 0 else 0
         evr_ratio = evr / 100.0 if max_evr > 1 else evr
+        pc_labels = [f"PC{i+1} ({evr_ratio[i] * 100:.1f}%)" for i in range(actual_n_components)]
+
+        # Ensure PCA outputs expose explicit PC coordinate labels for frontend display.
+        try:
+            scores_dataset.x = scp.Coord(pc_labels, title="Principal Component")
+        except Exception:
+            pass
+        try:
+            loadings_dataset.y = scp.Coord(pc_labels, title="Principal Component")
+        except Exception:
+            pass
 
         # PCA diagnostics: Hotelling T2 and SPE (Q residuals)
         t2_stats: Optional[np.ndarray] = None
@@ -319,10 +330,38 @@ class PCANode(Node):
         _y_coord = safe_get_coord(input_data, 'y')
         if _y_coord is not None:
             try:
+                def _label_to_string(label: Any) -> str:
+                    if label is None:
+                        return ""
+                    if isinstance(label, (list, tuple)):
+                        for item in reversed(label):
+                            if isinstance(item, str) and item.strip():
+                                return item.strip()
+                        return " | ".join(
+                            part for part in (_label_to_string(item) for item in label) if part
+                        )
+                    if isinstance(label, np.ndarray):
+                        if label.ndim == 0:
+                            return _label_to_string(label.item())
+                        return _label_to_string(label.tolist())
+                    if hasattr(label, "isoformat"):
+                        try:
+                            return label.isoformat()
+                        except Exception:
+                            pass
+                    return str(label)
+
                 if hasattr(_y_coord, 'labels') and _y_coord.labels is not None:
                     raw = _y_coord.labels.tolist() if hasattr(_y_coord.labels, 'tolist') else list(_y_coord.labels)
-                    str_labels = [str(l) for l in raw]
-                    label_categories = sorted(set(str_labels))
+                    str_labels = [_label_to_string(l) for l in raw]
+                    unique_labels = sorted(set(str_labels))
+                    # Keep categories only when they provide real grouping signal.
+                    # If almost every sample is unique, treat as unlabeled for coloring.
+                    if (
+                        1 < len(unique_labels) <= 12
+                        and len(unique_labels) <= max(3, int(0.5 * len(str_labels)))
+                    ):
+                        label_categories = unique_labels
                 elif hasattr(_y_coord, 'data') and _y_coord.data is not None:
                     raw = _y_coord.data.tolist() if hasattr(_y_coord.data, 'tolist') else list(_y_coord.data)
                     str_labels = [str(l) for l in raw]
@@ -355,6 +394,9 @@ class PCANode(Node):
         # serialize_for_api() extracts wavenumbers, sample_labels, x_title, etc.
         # from NDDataset coordinates automatically at the API boundary.
         scores_dataset.meta.update({
+            "type": "PCA",
+            "isPCA": True,
+            "pc_labels": pc_labels,
             "explained_variance_ratio": evr_ratio.tolist(),
             "n_components": actual_n_components,
             "t2": t2_stats.tolist() if t2_stats is not None else [],

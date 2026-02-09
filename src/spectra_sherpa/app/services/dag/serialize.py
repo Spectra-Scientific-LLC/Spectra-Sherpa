@@ -14,6 +14,7 @@ Usage:
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime, date
 from typing import Any, Dict, Optional
 import numpy as np
@@ -54,6 +55,57 @@ def _json_safe(obj: Any) -> Any:
         return [_json_safe(v) for v in obj]
     # Fallback: convert to string
     return str(obj)
+
+
+def _format_sample_label(value: Any) -> str:
+    """Convert raw sample label values to a readable string.
+
+    Handles common coordinate label shapes like:
+    - plain strings
+    - datetime objects
+    - tuples/lists such as [timestamp, sample_name]
+    """
+    if value is None:
+        return ""
+
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+
+    if isinstance(value, np.ndarray):
+        if value.ndim == 0:
+            return _format_sample_label(value.item())
+        return _format_sample_label(value.tolist())
+
+    if isinstance(value, (list, tuple)):
+        # Common case from imported coordinates: [timestamp, human_readable_name]
+        for item in reversed(value):
+            if isinstance(item, str) and item.strip():
+                return item.strip()
+        parts = [_format_sample_label(item) for item in value]
+        parts = [part for part in parts if part]
+        return " | ".join(parts)
+
+    if isinstance(value, str):
+        text = value.strip()
+        # Handle stringified tuple/list labels such as:
+        # "[datetime.datetime(...), 'Human Sample Name']"
+        if text.startswith("[") or text.startswith("("):
+            quoted = [
+                (m.group(1) or m.group(2)).strip()
+                for m in re.finditer(r"'([^']+)'|\"([^\"]+)\"", text)
+                if (m.group(1) or m.group(2))
+            ]
+            if quoted:
+                return quoted[-1]
+        return text
+
+    if isinstance(value, bytes):
+        try:
+            return value.decode("utf-8", errors="ignore")
+        except Exception:
+            return str(value)
+
+    return str(value)
 
 
 def serialize_for_api(
@@ -154,9 +206,9 @@ def serialize_for_api(
                     labels_list = None
 
                 if labels_list is not None:
-                    # Convert to JSON-safe strings. Labels may contain
-                    # datetime objects, numpy types, or multi-element arrays.
-                    y_labels = [str(v) for v in labels_list]
+                    # Convert to readable strings. Labels may contain
+                    # datetime objects or tuple/list payloads.
+                    y_labels = [_format_sample_label(v) for v in labels_list]
         except (KeyError, AttributeError, TypeError):
             y_labels = None
 

@@ -1,11 +1,29 @@
 <template>
   <section class="chat-panel" :class="{ compact, collapsed }">
     <div class="chat-panel__inner">
-      <!-- Panel Top Bar with Open in New Tab -->
+      <!-- Panel Top Bar with Tab Toggle -->
       <div class="panel-topbar">
-        <h1>LLM assistant</h1>
+        <div class="tab-toggle">
+          <button
+            class="tab-btn"
+            :class="{ active: activeTab === 'llm' }"
+            @click="activeTab = 'llm'"
+          >
+            LLM Chat
+          </button>
+          <button
+            v-if="sherpaEnabled"
+            class="tab-btn"
+            :class="{ active: activeTab === 'sherpa' }"
+            @click="switchToSherpa"
+          >
+            Sherpa Advisor
+          </button>
+        </div>
         <div class="panel-topbar-actions">
+          <!-- LLM settings (only on LLM tab) -->
           <Button
+            v-if="activeTab === 'llm'"
             icon="pi pi-cog"
             class="p-button-text p-button-sm llm-settings-btn"
             aria-label="LLM Settings"
@@ -21,6 +39,16 @@
               </div>
             </template>
           </Menu>
+          <!-- Sherpa refresh (only on Sherpa tab) -->
+          <Button
+            v-if="activeTab === 'sherpa'"
+            icon="pi pi-refresh"
+            class="p-button-text p-button-sm llm-settings-btn"
+            :loading="sherpaStore.state === 'syncing'"
+            aria-label="Re-sync workflow"
+            @click="sherpaStore.syncWorkflow()"
+            v-tooltip.bottom="'Re-sync workflow'"
+          />
           <Button
             icon="pi pi-external-link"
             class="p-button-text p-button-sm open-tab-btn"
@@ -31,8 +59,9 @@
         </div>
       </div>
 
-      <section class="card chat-view">
-        <div class="chat-sidebar">
+      <section class="card chat-view" :class="{ 'no-sidebar': activeTab === 'sherpa' }">
+        <!-- Conversation sidebar (LLM tab only) -->
+        <div v-if="activeTab === 'llm'" class="chat-sidebar">
           <div class="conversation-list">
             <div
               v-for="conversation in store.conversations"
@@ -58,20 +87,44 @@
           <Splitter layout="vertical" class="chat-splitter" :gutterSize="6">
             <SplitterPanel class="message-panel" :size="85" :minSize="20" style="display: flex; flex-direction: column; overflow: hidden;">
               <div ref="messageContainer" class="chat-messages">
-                <div
-                  v-for="(message, idx) in store.messages"
-                  :key="idx"
-                  class="chat-message"
-                  :class="message.role"
-                >
-                  <div v-if="message.role === 'system'" class="system-notification">
-                    {{ message.content }}
+                <!-- LLM messages -->
+                <template v-if="activeTab === 'llm'">
+                  <div
+                    v-for="(message, idx) in store.messages"
+                    :key="idx"
+                    class="chat-message"
+                    :class="message.role"
+                  >
+                    <div v-if="message.role === 'system'" class="system-notification">
+                      {{ message.content }}
+                    </div>
+                    <div v-else class="chat-bubble">{{ message.content }}</div>
                   </div>
-                  <div v-else class="chat-bubble">{{ message.content }}</div>
-                </div>
-                <div v-if="store.loading" class="chat-message assistant">
-                  <div class="chat-bubble">Streaming...</div>
-                </div>
+                  <div v-if="store.loading" class="chat-message assistant">
+                    <div class="chat-bubble">Streaming...</div>
+                  </div>
+                </template>
+
+                <!-- Sherpa messages -->
+                <template v-else>
+                  <div
+                    v-for="(message, idx) in sherpaStore.messages"
+                    :key="idx"
+                    class="chat-message"
+                    :class="message.role"
+                  >
+                    <div v-if="message.role === 'system'" class="system-notification">
+                      {{ message.content }}
+                    </div>
+                    <div v-else class="chat-bubble">{{ message.content }}</div>
+                  </div>
+                  <div v-if="sherpaStore.state === 'syncing'" class="chat-message assistant">
+                    <div class="chat-bubble">Analyzing workflow...</div>
+                  </div>
+                  <div v-if="sherpaStore.state === 'chatting'" class="chat-message assistant">
+                    <div class="chat-bubble">Thinking...</div>
+                  </div>
+                </template>
               </div>
             </SplitterPanel>
 
@@ -79,7 +132,7 @@
               <div class="chat-input">
                 <InputText
                   v-model="userMessage"
-                  placeholder="Ask about spectra, exports, or processing... (Type '/' to clear chat)"
+                  :placeholder="inputPlaceholder"
                   class="chat-input__field"
                   @keyup.enter="sendMessage"
                 />
@@ -104,7 +157,9 @@ import SplitterPanel from "primevue/splitterpanel";
 import { useToast } from "primevue/usetoast";
 
 import { useLlmStore } from "@/stores/llm";
+import { useSherpaStore } from "@/stores/sherpa";
 import { useExperimentStore } from "@/stores/experiment";
+import { useAppConfig } from "@/composables/useAppConfig";
 import { formatDateTime } from "@/utils/format";
 import api from "@/api/client";
 
@@ -125,15 +180,34 @@ const emit = defineEmits<{
 
 const router = useRouter();
 const store = useLlmStore();
+const sherpaStore = useSherpaStore();
 const experimentStore = useExperimentStore();
 const toast = useToast();
+const { isFeatureEnabled } = useAppConfig();
 
 const userMessage = ref("");
 const messageContainer = ref<HTMLDivElement | null>(null);
-
 const hadRealtime = ref(false);
 
-// LLM Provider Menu
+// ── Tab toggle ───────────────────────────────────────────────
+
+const activeTab = ref<"llm" | "sherpa">("llm");
+const sherpaEnabled = computed(() => isFeatureEnabled("sherpaAdvisor"));
+
+const switchToSherpa = () => {
+  activeTab.value = "sherpa";
+  // Auto-sync on switch (proactive assessment)
+  sherpaStore.syncWorkflow();
+};
+
+const inputPlaceholder = computed(() =>
+  activeTab.value === "sherpa"
+    ? "Ask Sherpa about your workflow..."
+    : "Ask about spectra, exports, or processing... (Type '/' to clear chat)"
+);
+
+// ── LLM Provider Menu ────────────────────────────────────────
+
 const llmMenu = ref();
 const selectedProvider = ref<string>("deepseek");
 
@@ -173,13 +247,15 @@ watch(
 );
 
 const handleConfigChange = async () => {
-  console.log('[ChatPanel] LLM config change event received');
   await store.checkConfigChange();
 };
+
+// ── Lifecycle ────────────────────────────────────────────────
 
 onMounted(async () => {
   store.connect();
   experimentStore.fetchExperiments();
+  sherpaStore.init();
 
   // Fetch initial config
   await store.checkConfigChange();
@@ -190,17 +266,36 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener("llm-config-changed", handleConfigChange);
+  sherpaStore.dispose();
 });
+
+// ── Auto-scroll ──────────────────────────────────────────────
 
 watch(
   () => store.messages.length,
   async () => {
-    await nextTick();
-    if (messageContainer.value) {
-      messageContainer.value.scrollTop = messageContainer.value.scrollHeight;
+    if (activeTab.value === "llm") {
+      await nextTick();
+      if (messageContainer.value) {
+        messageContainer.value.scrollTop = messageContainer.value.scrollHeight;
+      }
     }
   }
 );
+
+watch(
+  () => sherpaStore.messages.length,
+  async () => {
+    if (activeTab.value === "sherpa") {
+      await nextTick();
+      if (messageContainer.value) {
+        messageContainer.value.scrollTop = messageContainer.value.scrollHeight;
+      }
+    }
+  }
+);
+
+// ── Connection status toasts ─────────────────────────────────
 
 watch(
   () => store.connectionStatus,
@@ -227,12 +322,33 @@ watch(
   }
 );
 
+// ── Send message (dispatches to active tab's store) ──────────
+
 const sendMessage = async () => {
   if (!userMessage.value.trim()) {
     return;
   }
 
-  // Handle slash commands
+  // Sherpa tab: send via sherpa store
+  if (activeTab.value === "sherpa") {
+    // Handle "/" clear in Sherpa tab too
+    if (userMessage.value.trim() === "/") {
+      sherpaStore.clearMessages();
+      toast.add({
+        severity: "success",
+        summary: "Sherpa Chat Cleared",
+        detail: "Cleared Sherpa conversation",
+        life: 2000,
+      });
+      userMessage.value = "";
+      return;
+    }
+    await sherpaStore.sendMessage(userMessage.value);
+    userMessage.value = "";
+    return;
+  }
+
+  // LLM tab: existing logic
   if (userMessage.value.trim() === "/") {
     store.startNewConversation();
     toast.add({
@@ -245,7 +361,6 @@ const sendMessage = async () => {
     return;
   }
 
-  // Always include experiment metadata if available
   const metadata = experimentStore.experiments.length > 0
     ? { experiments: experimentStore.experiments }
     : undefined;
@@ -253,6 +368,8 @@ const sendMessage = async () => {
   await store.sendMessage(userMessage.value, metadata);
   userMessage.value = "";
 };
+
+// ── Conversation management (LLM tab) ───────────────────────
 
 const loadConversation = async (conversationId: string) => {
   try {
@@ -297,7 +414,6 @@ const deleteConversation = async (conversationId: string) => {
 };
 
 const openInNewTab = () => {
-  // Navigate to dedicated full-screen LLM chat view
   router.push('/llm-chat');
 };
 
@@ -418,6 +534,39 @@ const collapsed = computed(() => props.collapsed);
   margin-left: auto;
 }
 
+/* Tab Toggle */
+.tab-toggle {
+  display: flex;
+  gap: 2px;
+  background: #e2e8f0;
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.tab-btn {
+  padding: 5px 12px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.tab-btn:hover {
+  color: #334155;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.tab-btn.active {
+  background: #ffffff;
+  color: #1e293b;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
 .llm-settings-btn {
   color: #64748b;
 }
@@ -478,6 +627,10 @@ const collapsed = computed(() => props.collapsed);
   flex: 1;
   padding: 8px;
   overflow: hidden;
+}
+
+.chat-view.no-sidebar {
+  grid-template-columns: 1fr;
 }
 
 .chat-sidebar {

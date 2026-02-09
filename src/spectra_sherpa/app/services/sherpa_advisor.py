@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -276,6 +277,49 @@ class SherpaAdvisorService:
         except Exception:
             logger.warning("Sherpa exploration request failed")
             return None
+
+    async def chat_followup(
+        self,
+        message: str,
+        workflow_id: int | None = None,
+        history: list[dict[str, str]] | None = None,
+    ) -> AsyncIterator[str]:
+        """Stream a follow-up answer from the cloud Sherpa.
+
+        Sends ``POST /sherpa/chat`` with the question, workflow id and
+        recent conversation history.  Yields text chunks as they arrive.
+
+        Gracefully yields a single fallback message when the cloud is
+        unreachable or the endpoint does not exist yet (404).
+        """
+        if not self.is_available:
+            yield "Sherpa Advisor is not currently available."
+            return
+
+        try:
+            client = await self._get_client()
+            body: dict[str, Any] = {
+                "message": message,
+                "workflow_id": workflow_id,
+                "history": history or [],
+            }
+            async with client.stream("POST", "/sherpa/chat", json=body) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if line.strip():
+                        yield line
+        except httpx.ConnectError:
+            logger.warning("Sherpa cloud unreachable for chat")
+            yield "The Sherpa cloud service is currently unreachable. Your workflow recommendations are based on the last successful sync."
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                yield "Sherpa follow-up chat is not yet available on the cloud service. This feature is coming soon."
+            else:
+                logger.warning("Sherpa chat failed: HTTP %s", exc.response.status_code)
+                yield f"Sherpa chat encountered an error (HTTP {exc.response.status_code})."
+        except Exception:
+            logger.exception("Unexpected error during Sherpa chat")
+            yield "An unexpected error occurred. Please try again."
 
     async def health_check(self) -> tuple[bool, str]:
         """Check if the Sherpa endpoint is reachable."""

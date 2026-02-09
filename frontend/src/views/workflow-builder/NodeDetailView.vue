@@ -306,8 +306,15 @@
                     </div>
                     <div v-if="datasetInfo.yAxis.labels?.length" class="inspector-item wide">
                       <span class="insp-label">Labels</span>
-                      <span class="insp-value mono">
-                        {{ datasetInfo.yAxis.labels.slice(0, 6).join(', ') }}
+                      <span class="insp-value mono insp-label-list">
+                        <span
+                          v-for="(label, idx) in formattedDatasetLabelList"
+                          :key="`y-label-${idx}`"
+                          class="insp-label-entry"
+                          :title="label"
+                        >
+                          {{ label }}
+                        </span>
                         <span v-if="datasetInfo.yAxis.labels.length > 6" class="insp-more">
                           (+{{ datasetInfo.yAxis.labels.length - 6 }} more)
                         </span>
@@ -514,7 +521,7 @@
         <Transition name="collapse">
           <div v-if="sections.plots" class="section-content plots-content">
             <!-- PCA Plots -->
-            <template v-if="nodeTypeKey === 'PCA'">
+            <template v-if="isPCAOutput">
               <!-- Scores Plot -->
               <div class="plot-subsection">
                 <div class="plot-subsection-header" @click="togglePlot('pcaScores')">
@@ -1453,6 +1460,20 @@ const datasetInfo = computed(() => {
   return Object.keys(info).length > 0 ? info : null;
 });
 
+const formatDatasetLabel = (label: any): string => {
+  const text = formatSampleLabelForPlots(label).replace(/\s+/g, " ").trim();
+  if (text.length <= 64) return text;
+  return `${text.slice(0, 40)}...${text.slice(-18)}`;
+};
+
+const formattedDatasetLabelList = computed<string[]>(() => {
+  const labels = datasetInfo.value?.yAxis?.labels;
+  if (!Array.isArray(labels) || labels.length === 0) return [];
+  return labels
+    .slice(0, 6)
+    .map((label) => formatDatasetLabel(label));
+});
+
 /** Processing history from metadata. */
 const processingHistory = computed(() => {
   const hist = nodeOutput.value?.metadata?.processing_history;
@@ -1528,6 +1549,99 @@ const resolvePortPayload = (port: any): any => {
   if (!port || typeof port !== "object") return port;
   return "value" in port ? port.value : port;
 };
+
+const isPCAOutput = computed(() => {
+  const metadata = nodeOutput.value?.metadata || {};
+  return nodeTypeKey.value === "PCA" || metadata.type === "PCA" || metadata.isPCA === true;
+});
+
+const formatSampleLabelForPlots = (value: any): string => {
+  if (value === null || value === undefined) return "";
+
+  if (Array.isArray(value)) {
+    const readable = value
+      .slice()
+      .reverse()
+      .find((item) => typeof item === "string" && item.trim().length > 0);
+    if (readable) return readable.trim();
+    return value.map((item) => formatSampleLabelForPlots(item)).filter(Boolean).join(" | ");
+  }
+
+  if (typeof value === "object") {
+    if ("label" in value && typeof value.label === "string" && value.label.trim().length > 0) {
+      return value.label.trim();
+    }
+    if ("name" in value && typeof value.name === "string" && value.name.trim().length > 0) {
+      return value.name.trim();
+    }
+    return String(value);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    // Handle stringified tuple/list labels such as "[datetime..., 'sample name']".
+    if (trimmed.startsWith("[") || trimmed.startsWith("(")) {
+      const quoted = [...trimmed.matchAll(/'([^']+)'|\"([^\"]+)\"/g)]
+        .map((match) => match[1] || match[2])
+        .filter(Boolean);
+      if (quoted.length > 0) {
+        return quoted[quoted.length - 1];
+      }
+    }
+    return trimmed;
+  }
+
+  return String(value);
+};
+
+const primaryOutputPayload = computed(() => {
+  const primaryPort = nodeOutput.value?.primary_port;
+  if (!primaryPort) return null;
+  return resolvePortPayload(nodeOutput.value?.ports?.[primaryPort]);
+});
+
+const pcaSampleLabels = computed<string[]>(() => {
+  const metadata = nodeOutput.value?.metadata || {};
+  const candidates = [
+    metadata.sample_labels,
+    metadata.labels,
+    primaryOutputPayload.value?.y_axis?.labels,
+  ];
+
+  for (const raw of candidates) {
+    if (Array.isArray(raw) && raw.length > 0) {
+      return raw.map((item) => formatSampleLabelForPlots(item));
+    }
+  }
+
+  return [];
+});
+
+const pcaLabelCategories = computed<string[]>(() => {
+  const labels = pcaSampleLabels.value;
+  if (labels.length === 0) return [];
+  const metadata = nodeOutput.value?.metadata || {};
+  const labelSet = new Set(labels);
+
+  const rawCategories = Array.isArray(metadata.label_categories)
+    ? metadata.label_categories.map((item: any) => formatSampleLabelForPlots(item))
+    : [];
+
+  let categories = rawCategories.filter((category: string) => labelSet.has(category));
+  if (categories.length === 0) {
+    categories = Array.from(labelSet);
+  }
+  return Array.from(new Set(categories));
+});
+
+const pcaUseCategorical = computed(() => {
+  const labels = pcaSampleLabels.value;
+  const categories = pcaLabelCategories.value;
+  if (labels.length === 0 || categories.length < 2) return false;
+  // Avoid one-trace-per-sample views (noisy and frequently unreadable).
+  if (categories.length >= labels.length) return false;
+  return categories.length <= 20;
+});
 
 const metaTooltips: Record<string, string> = {
   t2_mean: "Hotelling's T² mean across samples (distance in PCA score space).",
@@ -1630,7 +1744,7 @@ const outputPreviewColumns = computed(() => {
 });
 
 const pcaDiagnosticsPreview = computed(() => {
-  if (nodeTypeKey.value !== "PCA" || !hasOutput.value) return [];
+  if (!isPCAOutput.value || !hasOutput.value) return [];
   const metadata = nodeOutput.value?.metadata || {};
   const t2 = Array.isArray(metadata.t2) ? metadata.t2 : [];
   const spe = Array.isArray(metadata.spe) ? metadata.spe : [];
@@ -1707,10 +1821,11 @@ const isPreprocessingNode = computed(() => {
 // Available plots based on node type
 const availablePlots = computed(() => {
   const plots: string[] = [];
+  if (isPCAOutput.value) {
+    plots.push("Scores Plot", "Loadings Plot", "Scree Plot", "Diagnostics Plot");
+    return plots;
+  }
   switch (nodeTypeKey.value) {
-    case "PCA":
-      plots.push("Scores Plot", "Loadings Plot", "Scree Plot", "Diagnostics Plot");
-      break;
     case "MCR":
       plots.push("Concentration Profiles", "Pure Spectra");
       break;
@@ -1789,7 +1904,7 @@ const xAxisLabel = computed(() => getXAxisLabel(nodeOutput.value?.metadata));
 watch(
   () => nodeOutput.value?.metadata?.n_components,
   (n_components) => {
-    if (nodeTypeKey.value === "PCA" && typeof n_components === "number") {
+    if (isPCAOutput.value && typeof n_components === "number") {
       const maxIndex = Math.max(0, n_components - 1);
       // Clamp X axis
       if (pcaXAxis.value > maxIndex) {
@@ -1846,17 +1961,18 @@ const pcaAxisOptions = computed(() => {
 });
 
 const pcaScoresData = computed(() => {
-  if (nodeTypeKey.value !== "PCA" || !hasOutput.value) return [];
+  if (!isPCAOutput.value || !hasOutput.value) return [];
   const scores = nodeOutput.value?.data || [];
-  const metadata = nodeOutput.value?.metadata || {};
   if (!scores.length) return [];
 
-  const labels = metadata.sample_labels || Array.from({ length: scores.length }, (_, i) => `Sample ${i + 1}`);
+  const labels = pcaSampleLabels.value.length === scores.length
+    ? pcaSampleLabels.value
+    : Array.from({ length: scores.length }, (_, i) => `Sample ${i + 1}`);
   const axisLabels = pcLabels.value;  // Use computed pcLabels
-  const labelCategories = metadata.label_categories;
+  const labelCategories = pcaLabelCategories.value;
 
   // Determine if we should use categorical coloring
-  const useCategorical = labelCategories && labelCategories.length > 0 && labelCategories.length < 50;
+  const useCategorical = pcaUseCategorical.value;
 
   if (useCategorical) {
     // Multiple traces, one per category
@@ -1901,27 +2017,27 @@ const pcaScoresData = computed(() => {
       }
     });
 
-    return traces;
-  } else {
-    // Fallback: Single trace with default blue color
-    const x = scores.map((row: number[]) => row[pcaXAxis.value]);
-    const y = scores.map((row: number[]) => row[pcaYAxis.value]);
-
-    return [{
-      type: "scatter",
-      mode: "markers",
-      x, y,
-      text: labels,
-      marker: { size: 10, color: "#3b82f6", opacity: 0.8, line: { width: 1, color: "#1e40af" } },
-      hovertemplate: `%{text}<br>${axisLabels[pcaXAxis.value] || `PC${pcaXAxis.value + 1}`}: %{x:.3f}<br>${axisLabels[pcaYAxis.value] || `PC${pcaYAxis.value + 1}`}: %{y:.3f}<extra></extra>`,
-    }];
+    if (traces.length > 0) {
+      return traces;
+    }
   }
+  // Fallback: Single trace with default blue color
+  const x = scores.map((row: number[]) => row[pcaXAxis.value]);
+  const y = scores.map((row: number[]) => row[pcaYAxis.value]);
+
+  return [{
+    type: "scatter",
+    mode: "markers",
+    x, y,
+    text: labels,
+    marker: { size: 10, color: "#3b82f6", opacity: 0.8, line: { width: 1, color: "#1e40af" } },
+    hovertemplate: `%{text}<br>${axisLabels[pcaXAxis.value] || `PC${pcaXAxis.value + 1}`}: %{x:.3f}<br>${axisLabels[pcaYAxis.value] || `PC${pcaYAxis.value + 1}`}: %{y:.3f}<extra></extra>`,
+  }];
 });
 
 const pcaScoresLayout = computed(() => {
-  const metadata = nodeOutput.value?.metadata || {};
   const axisLabels = pcLabels.value;  // Use computed pcLabels
-  const hasCategorical = metadata.label_categories && metadata.label_categories.length > 0 && metadata.label_categories.length < 50;
+  const hasCategorical = pcaUseCategorical.value;
 
   const layout: Record<string, any> = {
     ...basePlotLayout,
@@ -1953,7 +2069,7 @@ const pcaScoresConfig = computed(() => ({
 }));
 
 const pcaLoadingsData = computed(() => {
-  if (nodeTypeKey.value !== "PCA" || !hasOutput.value) return [];
+  if (!isPCAOutput.value || !hasOutput.value) return [];
 
   // Read loadings from port (new architecture) or metadata (backwards compat)
   const loadingsPort = nodeOutput.value?.ports?.loadings;
@@ -2028,7 +2144,7 @@ const pcaLoadingsConfig = computed(() => ({
 }));
 
 const pcaScreeData = computed(() => {
-  if (nodeTypeKey.value !== "PCA" || !hasOutput.value) return [];
+  if (!isPCAOutput.value || !hasOutput.value) return [];
   const metadata = nodeOutput.value?.metadata || {};
   let variance = metadata.explained_variance_ratio || [];
 
@@ -2107,20 +2223,22 @@ const pcaScreeLayout = computed(() => ({
 }));
 
 const pcaDiagnosticsData = computed(() => {
-  if (nodeTypeKey.value !== "PCA" || !hasOutput.value) return [];
+  if (!isPCAOutput.value || !hasOutput.value) return [];
   const metadata = nodeOutput.value?.metadata || {};
   const t2 = Array.isArray(metadata.t2) ? metadata.t2 : [];
   const spe = Array.isArray(metadata.spe) ? metadata.spe : [];
-  const sampleLabels = metadata.sample_labels || Array.from({ length: Math.max(t2.length, spe.length) }, (_, i) => `Sample ${i + 1}`);
-  const labelCategories = metadata.label_categories;
   const rowCount = Math.max(t2.length, spe.length);
   if (rowCount === 0) return [];
+  const sampleLabels = pcaSampleLabels.value.length === rowCount
+    ? pcaSampleLabels.value
+    : Array.from({ length: rowCount }, (_, i) => `Sample ${i + 1}`);
+  const labelCategories = pcaLabelCategories.value;
 
   const x = Array.from({ length: rowCount }, (_, i) => i + 1);
   const traces = [];
 
   // Determine if we should use categorical coloring
-  const useCategorical = labelCategories && labelCategories.length > 0 && labelCategories.length < 50;
+  const useCategorical = pcaUseCategorical.value;
 
   if (useCategorical) {
     // Categorical coloring: one trace per category
@@ -4612,6 +4730,17 @@ onUnmounted(() => {
 .insp-value.mono {
   font-family: "JetBrains Mono", monospace;
   font-size: 0.8rem;
+}
+
+.insp-label-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  white-space: normal;
+}
+
+.insp-label-entry {
+  line-height: 1.25;
 }
 
 .insp-units {

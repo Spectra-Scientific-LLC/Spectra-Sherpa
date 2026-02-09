@@ -424,7 +424,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     continue
 
                 try:
-                    sync_data = payload.get("payload", {})
+                    sync_data = dict(payload.get("payload", {}))
                     tier = EgressTier(sync_data.pop("tier", "structure"))
                     sync_msg = WorkflowStateSync(**sync_data)
                     recommendations = await advisor.sync_workflow(sync_msg, tier=tier)
@@ -453,6 +453,52 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 except Exception as exc:
                     await websocket.send_json(
                         {"type": "error", "detail": f"Sherpa decision failed: {exc}"}
+                    )
+
+            elif action == "sherpa_chat":
+                # Follow-up question on the Sherpa advisor channel
+                from app.services.sherpa_advisor import get_sherpa_advisor
+
+                advisor = get_sherpa_advisor()
+                if not advisor.is_available:
+                    await websocket.send_json(
+                        {"type": "sherpa_status", "payload": {"connected": False, "reason": "not_configured"}}
+                    )
+                    continue
+
+                async with async_session() as permission_session:
+                    allowed = await check_egress_permission(
+                        ws_user,
+                        "allow_spectrasherpa_sync",
+                        data_type="chat",
+                        destination="spectrasherpa",
+                        session=permission_session,
+                    )
+                if not allowed:
+                    await websocket.send_json(
+                        {"type": "sherpa_error", "detail": "Sherpa chat not permitted for this user"}
+                    )
+                    continue
+
+                try:
+                    chat_data = payload.get("payload", {})
+                    message = chat_data.get("message", "")
+                    workflow_id = chat_data.get("workflow_id")
+                    history = chat_data.get("history", [])
+
+                    await websocket.send_json({"type": "sherpa_chat_start"})
+                    async for chunk in advisor.chat_followup(
+                        message=message,
+                        workflow_id=workflow_id,
+                        history=history,
+                    ):
+                        await websocket.send_json(
+                            {"type": "sherpa_chat_chunk", "chunk": chunk}
+                        )
+                    await websocket.send_json({"type": "sherpa_chat_done"})
+                except Exception as exc:
+                    await websocket.send_json(
+                        {"type": "sherpa_error", "detail": f"Sherpa chat failed: {exc}"}
                     )
 
             else:

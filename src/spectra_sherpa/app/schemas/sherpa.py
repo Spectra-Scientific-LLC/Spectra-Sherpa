@@ -132,6 +132,13 @@ class UserDecision(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
+class SherpaChatRequest(BaseModel):
+    """Follow-up question from user to Sherpa about the current workflow."""
+    message: str
+    workflow_id: int | None = None
+    history: list[dict[str, str]] = Field(default_factory=list)
+
+
 # ── Messages: Cloud → Local ────────────────────────────────────────
 
 class SherpaRecommendation(BaseModel):
@@ -168,11 +175,14 @@ class SherpaWSMessage(BaseModel):
         # Local → Cloud
         {"action": "sherpa_sync",    "payload": WorkflowStateSync}
         {"action": "sherpa_decide",  "payload": UserDecision}
+        {"action": "sherpa_chat",    "payload": SherpaChatRequest}
 
         # Cloud → Local (pushed via subscription)
-        {"type": "sherpa_recommendation", "payload": SherpaRecommendation}
-        {"type": "sherpa_exploration",    "payload": ExplorationResult}
-        {"type": "sherpa_status",         "payload": {"connected": true}}
+        {"type": "sherpa_recommendations", "payload": [SherpaRecommendation]}
+        {"type": "sherpa_chat_start"}
+        {"type": "sherpa_chat_chunk", "chunk": "..."}
+        {"type": "sherpa_chat_done"}
+        {"type": "sherpa_status",          "payload": {"connected": true}}
     """
     action: str | None = None   # for client-sent messages
     type: str | None = None     # for server-sent messages

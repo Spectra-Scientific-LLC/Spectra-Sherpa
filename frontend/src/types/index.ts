@@ -182,6 +182,24 @@ export interface ConversationSummary {
   updatedAt: string;
 }
 
+// ── Sherpa Advisor Types ──────────────────────────────────────
+
+export interface SherpaMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+  recommendations?: SherpaRecommendationPayload[];
+}
+
+export interface SherpaRecommendationPayload {
+  suggestion_id: string;
+  workflow_id: number;
+  category: string;
+  title: string;
+  explanation: string;
+  confidence: number;
+  has_patch: boolean;
+}
+
 // Node execution states
 export type NodeExecutionStatus = "pending" | "running" | "completed" | "error" | "stale";
 

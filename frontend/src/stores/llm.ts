@@ -108,6 +108,11 @@ export const useLlmStore = defineStore("llm", () => {
             role: "assistant",
             content: payload.detail || "Streaming error.",
           });
+        } else if (payload.type?.startsWith("sherpa_")) {
+          // Forward Sherpa messages to the sherpa store via event bus
+          window.dispatchEvent(
+            new CustomEvent("sherpa-ws-message", { detail: payload })
+          );
         }
       } catch (error) {
         // Ignore malformed messages but log them
@@ -349,6 +354,7 @@ export const useLlmStore = defineStore("llm", () => {
     loading,
     streaming,
     currentConfig,
+    wsRef,
     connect,
     disconnect,
     reconnect,

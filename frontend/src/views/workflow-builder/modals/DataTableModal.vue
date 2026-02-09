@@ -71,7 +71,13 @@
             :style="{ minWidth: col.width }"
           >
             <template #body="{ data }">
-              <span :class="{ 'numeric-cell': col.isNumeric }">
+              <span
+                :class="{
+                  'numeric-cell': col.isNumeric,
+                  'label-cell': col.field === '_label',
+                }"
+                :title="col.field === '_label' ? (data._label_full || data._label || '') : ''"
+              >
                 {{ formatValue(data[col.field], col.isNumeric) }}
               </span>
             </template>
@@ -158,6 +164,50 @@ const precisionOptions = [
   { label: "6 decimals", value: 6 },
   { label: "8 decimals", value: 8 },
 ];
+
+function normalizeSampleLabel(value: any): string {
+  if (value === null || value === undefined) return "";
+
+  if (Array.isArray(value)) {
+    const readable = value
+      .slice()
+      .reverse()
+      .find((item) => typeof item === "string" && item.trim().length > 0);
+    if (readable) return readable.trim();
+    return value.map((item) => normalizeSampleLabel(item)).filter(Boolean).join(" | ");
+  }
+
+  if (typeof value === "object") {
+    if ("label" in value && typeof value.label === "string" && value.label.trim().length > 0) {
+      return value.label.trim();
+    }
+    if ("name" in value && typeof value.name === "string" && value.name.trim().length > 0) {
+      return value.name.trim();
+    }
+    return String(value);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    // Handle stringified tuple/list labels like:
+    // "[datetime.datetime(...), 'Human Sample Name']"
+    if (trimmed.startsWith("[") || trimmed.startsWith("(")) {
+      const quoted = [...trimmed.matchAll(/'([^']+)'|\"([^\"]+)\"/g)]
+        .map((match) => match[1] || match[2])
+        .filter(Boolean);
+      if (quoted.length > 0) return quoted[quoted.length - 1];
+    }
+    return trimmed;
+  }
+
+  return String(value);
+}
+
+function compactSampleLabel(value: any): string {
+  const text = normalizeSampleLabel(value).replace(/\s+/g, " ").trim();
+  if (text.length <= 64) return text;
+  return `${text.slice(0, 40)}...${text.slice(-18)}`;
+}
 
 // Check if data is Plotly visualization format (from CONTOUR_PLOT, PLOT nodes)
 const isPlotlyFormat = computed(() => {
@@ -258,14 +308,14 @@ const tableColumns = computed(() => {
       columns.push({
         field: "_label",
         header: "Sample",
-        width: "120px",
+        width: "260px",
         isNumeric: false,
       });
     } else if (!isMCR && !isPCA && metadata.labels && metadata.labels.length > 0) {
       columns.push({
         field: "_label",
         header: "Label",
-        width: "120px",
+        width: "260px",
         isNumeric: false,
       });
     }
@@ -325,7 +375,8 @@ const tableData = computed(() => {
   const metadata = output.metadata || {};
 
   // For MCR/PCA, use sample_labels; for spectra use labels
-  const labels = metadata.sample_labels || metadata.labels || [];
+  const labelsRaw = metadata.sample_labels || metadata.labels || [];
+  const labels = Array.isArray(labelsRaw) ? labelsRaw.map((label: any) => normalizeSampleLabel(label)) : [];
   const limit = rowLimit.value;
 
   if (!Array.isArray(data)) return [];
@@ -336,9 +387,11 @@ const tableData = computed(() => {
   if (Array.isArray(data[0])) {
     // 2D data
     for (let i = 0; i < maxRows; i++) {
+      const fullLabel = labels[i] || "";
       const row: any = {
         _index: i + 1,
-        _label: labels[i] || "",
+        _label: compactSampleLabel(fullLabel),
+        _label_full: fullLabel,
       };
 
       const maxCols = Math.min(data[i].length, 50);
@@ -428,7 +481,16 @@ function exportCSV() {
   const data = output.data;
   const metadata = output.metadata || {};
   const wavenumbers = metadata.wavenumbers || metadata.x_axis;
-  const labels = metadata.labels || [];
+  const labelsRaw = metadata.sample_labels || metadata.labels || [];
+  const labels = Array.isArray(labelsRaw) ? labelsRaw.map((label: any) => normalizeSampleLabel(label)) : [];
+
+  const escapeCsv = (value: any): string => {
+    const text = String(value ?? "");
+    if (text.includes(",") || text.includes("\"") || text.includes("\n")) {
+      return `"${text.replace(/\"/g, "\"\"")}"`;
+    }
+    return text;
+  };
 
   let csv = "";
 
@@ -442,20 +504,20 @@ function exportCSV() {
     } else {
       headers.push(...data[0].map((_: any, i: number) => `Col_${i + 1}`));
     }
-    csv += headers.join(",") + "\n";
+    csv += headers.map(escapeCsv).join(",") + "\n";
 
     // Data rows
     for (let i = 0; i < data.length; i++) {
-      const row = [i + 1];
+      const row: any[] = [i + 1];
       if (labels.length > 0) row.push(labels[i] || "");
       row.push(...data[i]);
-      csv += row.join(",") + "\n";
+      csv += row.map(escapeCsv).join(",") + "\n";
     }
   } else {
     // 1D data
     csv += "Index,Value\n";
     for (let i = 0; i < data.length; i++) {
-      csv += `${i + 1},${data[i]}\n`;
+      csv += `${escapeCsv(i + 1)},${escapeCsv(data[i])}\n`;
     }
   }
 
@@ -566,6 +628,16 @@ function exportCSV() {
 }
 
 .numeric-cell {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 0.8rem;
+}
+
+.label-cell {
+  display: inline-block;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: "JetBrains Mono", "Fira Code", monospace;
   font-size: 0.8rem;
 }

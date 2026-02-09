@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ============================================================================
 
-SPECTRASHERPA_API_BASE = "https://endpoint.spectrascientific.ai/api/v1"
+SPECTRASHERPA_API_BASE = "https://api.spectrascientific.ai/api/v1"
 SPECTRASHERPA_TIMEOUT = 10.0  # seconds
 
 
