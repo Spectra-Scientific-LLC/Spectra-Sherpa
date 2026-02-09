@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any, TypeAlias
 
 # Force non-interactive matplotlib backend before SpectroChemPy imports it.
 # The macOS backend requires the main thread, but FastAPI runs handlers
@@ -11,19 +13,18 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("agg")
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, FastAPI, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api.v1.api import api_router
+from app.api.v1.api import build_api_router
 from app.api.deps import get_user_from_credentials
 from app.core.config import app_config, settings
 from app.core.logging import configure_logging
 from app.core.security import (
     _is_loopback,
     api_key_middleware,
-    check_egress_permission,
     get_client_host,
     is_valid_api_key,
     is_valid_bearer_token,
@@ -44,10 +45,11 @@ from app.core.startup import (
 )
 from app.db.session import async_session
 from app.services.job_manager import job_manager
-from app.services.llm import LLMService
 from app.services.websocket_manager import ws_manager
 
 logger = logging.getLogger(__name__)
+
+RouterMount: TypeAlias = tuple[APIRouter, str | Mapping[str, Any]]
 
 
 def get_cors_origins() -> list[str]:
@@ -79,8 +81,8 @@ def get_cors_origins() -> list[str]:
     ]
 
     # In local mode, also allow the frontend to run on any port
-    if app_config.mode == "local":
-        # For local development, we're permissive
+    from app.core.mode_policy import cors_allow_all
+    if cors_allow_all():
         return ["*"]
 
     # For hybrid/demo/cloud modes, note if CORS_ORIGINS is not explicitly set
@@ -124,83 +126,121 @@ def _try_leader_lock() -> bool:
         return False
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Application lifespan: startup and shutdown hooks."""
-    # === STARTUP ===
-    # Phase 1: per-worker setup (safe to run in every worker)
-    configure_logging()
-    validate_security_settings()  # Fail fast if security config is invalid
-    validate_concurrency_settings()  # Log concurrency model info
-    ensure_data_dirs()
+def _normalize_router_mounts(extra_routers: list[RouterMount] | None) -> list[tuple[APIRouter, dict[str, Any]]]:
+    """Normalize extension router declarations for ``include_router``.
 
-    # Phase 2: DB-mutating tasks — only the leader worker runs these.
-    # Other workers skip (the leader will have completed before requests arrive
-    # because Gunicorn's --preload or sequential worker spawn ensures ordering).
-    is_leader = _try_leader_lock()
-    if is_leader:
-        logger.info("Leader worker: running one-time startup tasks")
-        await ensure_database_ready()
-        await ensure_default_user()
-        await ensure_egress_defaults()
-        await link_hybrid_identity()
-        await reconcile_stale_jobs()
-        await ensure_spectrochempy_testdata()
-        await ensure_workflow_templates()
-    else:
-        logger.info("Follower worker: skipping one-time startup tasks (leader handles them)")
-        # Wait for leader to finish DB schema setup (no DB writes on followers).
-        await wait_for_database_ready()
+    Accepted forms:
+    - ``(router, "/prefix")`` (legacy shorthand)
+    - ``(router, {"prefix": "/x", "tags": [...]})`` (full control)
+    """
+    normalized: list[tuple[APIRouter, dict[str, Any]]] = []
+    for idx, item in enumerate(extra_routers or []):
+        if not isinstance(item, tuple) or len(item) != 2:
+            raise TypeError(
+                f"extra_routers[{idx}] must be a (router, config) 2-tuple",
+            )
 
-    # Phase 3: per-worker setup that depends on DB being ready
-    # Discover and load third-party plugins
-    from app.services.plugin_loader import discover_plugins
-    discover_plugins()
+        router, config = item
+        if isinstance(config, str):
+            normalized.append((router, {"prefix": config}))
+        elif isinstance(config, Mapping):
+            normalized.append((router, dict(config)))
+        else:
+            raise TypeError(
+                f"extra_routers[{idx}] config must be a prefix string or mapping, got {type(config).__name__}",
+            )
 
-    # Start network health monitoring (HYBRID mode only)
-    from app.services.network_health import start_network_health_service
-    await start_network_health_service()
-
-    yield
-
-    # === SHUTDOWN ===
-    await job_manager.shutdown()
-
-    # Stop network health monitoring
-    from app.services.network_health import stop_network_health_service
-    await stop_network_health_service()
-
-    # Close SpectraSherpa service
-    from app.services.spectrasherpa import close_spectrasherpa_service
-    await close_spectrasherpa_service()
-
-    # Close Sherpa advisor
-    from app.services.sherpa_advisor import close_sherpa_advisor
-    await close_sherpa_advisor()
+    return normalized
 
 
-# Determine CORS settings based on mode
-cors_origins = get_cors_origins()
-cors_allow_all = cors_origins == ["*"]
+# ---------------------------------------------------------------------------
+# Lifespan factory
+# ---------------------------------------------------------------------------
 
-app = FastAPI(
-    title=settings.app_name,
-    openapi_url="/api/openapi.json",
-    lifespan=lifespan,
-)
+def _make_lifespan(
+    extra_startup: list[Callable[[], Awaitable[None]]] | None = None,
+    extra_shutdown: list[Callable[[], Awaitable[None]]] | None = None,
+):
+    """Return an ASGI lifespan context manager.
 
-app.middleware("http")(api_key_middleware)
-app.add_middleware(DemoEnforcementMiddleware)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=cors_origins if not cors_allow_all else [],
-    allow_origin_regex=r".*" if cors_allow_all else None,  # Allow all in local mode
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-app.include_router(api_router, prefix="/api/v1")
+    *extra_startup* / *extra_shutdown* are async callables invoked after
+    core phases complete (startup) or before core teardown finishes
+    (shutdown).  Repo 2 uses these to register server-only hooks without
+    forking this module.
+    """
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # === STARTUP ===
+        # Phase 1: per-worker setup (safe to run in every worker)
+        configure_logging()
+        validate_security_settings()  # Fail fast if security config is invalid
+        validate_concurrency_settings()  # Log concurrency model info
+        ensure_data_dirs()
 
+        # Phase 2: DB-mutating tasks — only the leader worker runs these.
+        # Other workers skip (the leader will have completed before requests arrive
+        # because Gunicorn's --preload or sequential worker spawn ensures ordering).
+        is_leader = _try_leader_lock()
+        if is_leader:
+            logger.info("Leader worker: running one-time startup tasks")
+            await ensure_database_ready()
+            await ensure_default_user()
+            await ensure_egress_defaults()
+            await link_hybrid_identity()
+            await reconcile_stale_jobs()
+            await ensure_spectrochempy_testdata()
+            await ensure_workflow_templates()
+        else:
+            logger.info("Follower worker: skipping one-time startup tasks (leader handles them)")
+            # Wait for leader to finish DB schema setup (no DB writes on followers).
+            await wait_for_database_ready()
+
+        # Phase 3: per-worker setup that depends on DB being ready
+        # Register built-in MCP tools (import triggers @register_tool decorators)
+        import app.services.tools.builtin  # noqa: F401
+        from app.services.tools import tool_registry as _tool_reg
+        logger.info("Registered %d built-in tool(s)", len(_tool_reg))
+
+        # Discover and load third-party plugins (may register additional tools)
+        from app.services.plugin_loader import discover_plugins
+        discover_plugins()
+
+        # Start network health monitoring (HYBRID mode only)
+        from app.services.network_health import start_network_health_service
+        await start_network_health_service()
+
+        # Phase 4: extension hooks (Repo 2 injects server-only startup here)
+        for hook in (extra_startup or []):
+            await hook()
+
+        yield
+
+        # === SHUTDOWN ===
+        # Extension shutdown hooks run first so server add-ons can still
+        # access core services before they are torn down.
+        for hook in (extra_shutdown or []):
+            await hook()
+
+        await job_manager.shutdown()
+
+        # Stop network health monitoring
+        from app.services.network_health import stop_network_health_service
+        await stop_network_health_service()
+
+        # Close SpectraSherpa service
+        from app.services.spectrasherpa import close_spectrasherpa_service
+        await close_spectrasherpa_service()
+
+        # Close Sherpa advisor
+        from app.services.sherpa_advisor import close_sherpa_advisor
+        await close_sherpa_advisor()
+
+    return lifespan
+
+
+# ---------------------------------------------------------------------------
+# Frontend SPA mount
+# ---------------------------------------------------------------------------
 
 def _mount_frontend(app: FastAPI) -> None:
     """Mount the pre-built frontend if static/ exists.
@@ -233,34 +273,33 @@ def _mount_frontend(app: FastAPI) -> None:
     logger.info("Frontend SPA mounted from %s", static_dir)
 
 
-_mount_frontend(app)
+# ---------------------------------------------------------------------------
+# WebSocket endpoint (standalone — registered on app inside create_app)
+# ---------------------------------------------------------------------------
 
-
-@app.get("/api/health")
-async def root() -> dict:
-    return {"status": "ok"}
-
-
-@app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
     # Import rate limiter here to avoid circular imports
     from app.api.v1.routes.llm import _llm_rate_limiter
+    from app.services.ws_handlers import (
+        handle_llm_chat,
+        handle_sherpa_chat,
+        handle_sherpa_decide,
+        handle_sherpa_sync,
+        handle_subscribe,
+        handle_tool_invoke,
+        handle_tool_list,
+        handle_unsubscribe,
+    )
 
     api_key = websocket.headers.get("x-api-key") or websocket.query_params.get("api_key")
     auth_header = websocket.headers.get("authorization", "")
     token = auth_header[7:] if auth_header.startswith("Bearer ") else websocket.query_params.get("token")
     has_credentials = bool(token or api_key)
 
-    # Determine if auth is required for this connection.
-    # Local mode: never requires auth.
-    # Hybrid mode: requires auth for non-loopback clients only.
-    # Demo mode: always requires auth.
+    # Determine if auth is required for this connection (mode-dependent).
+    from app.core.mode_policy import requires_ws_auth as _requires_ws_auth
     ws_client_host = get_client_host(websocket)
-    requires_ws_auth = (
-        app_config.mode == "demo"
-        or (app_config.mode == "hybrid"
-            and not _is_loopback(ws_client_host))
-    )
+    requires_ws_auth = _requires_ws_auth(ws_client_host)
 
     if requires_ws_auth:
         token_valid = bool(token) and is_valid_bearer_token(token)
@@ -304,20 +343,17 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     def _resolve_channel(requested: str | None) -> str | None:
         if not requested:
             return None
-
-        # Backward-compatible alias: "jobs" maps to the caller's own job channel.
         if requested == "jobs":
             return job_channel
-
         if requested.startswith("jobs:"):
             if ws_user and ws_user.is_superuser:
                 return requested
             if requested == job_channel:
                 return requested
             return None
-
         return requested
 
+    # ---- Action dispatcher ----
     await ws_manager.connect(websocket)
     try:
         while True:
@@ -326,201 +362,93 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             logger.info("WS action received: %s", action)
 
             if action == "subscribe":
-                channel = _resolve_channel(payload.get("channel"))
-                if not channel:
-                    await websocket.send_json(
-                        {"type": "error", "detail": "Missing or unauthorized channel"}
-                    )
-                    continue
-                await ws_manager.subscribe(websocket, channel)
-                await websocket.send_json({"type": "subscribed", "channel": channel})
+                await handle_subscribe(websocket, payload, ws_user, _llm_rate_limiter, resolve_channel=_resolve_channel)
             elif action == "unsubscribe":
-                channel = _resolve_channel(payload.get("channel"))
-                if not channel:
-                    await websocket.send_json(
-                        {"type": "error", "detail": "Missing or unauthorized channel"}
-                    )
-                    continue
-                await ws_manager.unsubscribe(websocket, channel)
-                await websocket.send_json({"type": "unsubscribed", "channel": channel})
+                await handle_unsubscribe(websocket, payload, ws_user, _llm_rate_limiter, resolve_channel=_resolve_channel)
             elif action == "llm_chat":
-                try:
-                    message = payload.get("message") or ""
-                    if not message:
-                        await websocket.send_json(
-                            {"type": "error", "detail": "Missing message"}
-                        )
-                        continue
-
-                    # Check egress permission (LLM requires network access)
-                    async with async_session() as permission_session:
-                        allowed = await check_egress_permission(
-                            ws_user,
-                            "allow_llm_context",
-                            data_type="metadata",
-                            destination="llm_context",
-                            session=permission_session,
-                        )
-                    if not allowed:
-                        await websocket.send_json(
-                            {"type": "error", "detail": "LLM access is disabled for this user or mode"}
-                        )
-                        continue
-
-                    # Check rate limit (same as HTTP endpoint)
-                    user_key = f"user_{ws_user.id}" if ws_user and ws_user.id else "anonymous"
-                    if not _llm_rate_limiter.allow(user_key):
-                        await websocket.send_json(
-                            {"type": "error", "detail": "LLM rate limit exceeded. Try again later."}
-                        )
-                        continue
-
-                    conversation_id = payload.get("conversation_id")
-                    metadata = payload.get("metadata")
-                    async with async_session() as session:
-                        service = LLMService(session, user=ws_user)
-                        try:
-                            convo_id, stream = await service.stream_chat(
-                                message=message,
-                                conversation_id=conversation_id,
-                                metadata=metadata,
-                            )
-                        except ValueError as exc:
-                            await websocket.send_json(
-                                {"type": "error", "detail": str(exc)}
-                            )
-                            continue
-                        await websocket.send_json(
-                            {"type": "llm_start", "conversation_id": convo_id}
-                        )
-                        async for chunk in stream:
-                            await websocket.send_json(
-                                {
-                                    "type": "llm_chunk",
-                                    "conversation_id": convo_id,
-                                    "chunk": chunk,
-                                }
-                            )
-                        await websocket.send_json(
-                            {"type": "llm_done", "conversation_id": convo_id}
-                        )
-                except Exception as exc:
-                    logger.exception("llm_chat failed: %s", exc)
-                    await websocket.send_json(
-                        {"type": "error", "detail": "LLM request failed. Check server logs for details."}
-                    )
+                await handle_llm_chat(websocket, payload, ws_user, _llm_rate_limiter)
             elif action == "sherpa_sync":
-                # Forward workflow state to cloud Sherpa advisor
-                try:
-                    from app.services.sherpa_advisor import get_sherpa_advisor
-                    from app.schemas.sherpa import EgressTier, WorkflowStateSync
-
-                    advisor = get_sherpa_advisor()
-                    if not advisor.is_available:
-                        await websocket.send_json(
-                            {"type": "sherpa_status", "payload": {"connected": False, "reason": "not_configured"}}
-                        )
-                        continue
-
-                    # Check egress permission for spectrasherpa sync
-                    async with async_session() as permission_session:
-                        allowed = await check_egress_permission(
-                            ws_user,
-                            "allow_spectrasherpa_sync",
-                            data_type="workflow",
-                            destination="spectrasherpa",
-                            session=permission_session,
-                        )
-                    if not allowed:
-                        await websocket.send_json(
-                            {"type": "sherpa_error", "detail": "Sherpa sync not permitted. Enable cloud sync in Settings > Data & Privacy."}
-                        )
-                        continue
-
-                    sync_data = dict(payload.get("payload", {}))
-                    tier = EgressTier(sync_data.pop("tier", "structure"))
-                    sync_msg = WorkflowStateSync(**sync_data)
-                    recommendations = await advisor.sync_workflow(sync_msg, tier=tier)
-                    logger.info("sherpa_sync: %d nodes → %d recommendations", len(sync_msg.nodes), len(recommendations))
-                    await websocket.send_json({
-                        "type": "sherpa_recommendations",
-                        "payload": [r.model_dump(mode="json") for r in recommendations],
-                    })
-                except Exception as exc:
-                    logger.exception("sherpa_sync failed: %s", exc)
-                    await websocket.send_json(
-                        {"type": "sherpa_error", "detail": "Sherpa sync failed. Check server logs for details."}
-                    )
-
+                await handle_sherpa_sync(websocket, payload, ws_user, _llm_rate_limiter)
             elif action == "sherpa_decide":
-                # Forward user decision on a Sherpa suggestion
-                from app.services.sherpa_advisor import get_sherpa_advisor
-                from app.schemas.sherpa import UserDecision
-
-                advisor = get_sherpa_advisor()
-                try:
-                    decision = UserDecision(**payload.get("payload", {}))
-                    delivered = await advisor.send_decision(decision)
-                    await websocket.send_json({
-                        "type": "sherpa_decision_ack",
-                        "payload": {"delivered": delivered, "suggestion_id": decision.suggestion_id},
-                    })
-                except Exception as exc:
-                    logger.exception("sherpa_decide failed: %s", exc)
-                    await websocket.send_json(
-                        {"type": "sherpa_error", "detail": "Sherpa decision failed. Check server logs for details."}
-                    )
-
+                await handle_sherpa_decide(websocket, payload, ws_user, _llm_rate_limiter)
             elif action == "sherpa_chat":
-                # Follow-up question on the Sherpa advisor channel
-                from app.services.sherpa_advisor import get_sherpa_advisor
-
-                advisor = get_sherpa_advisor()
-                if not advisor.is_available:
-                    await websocket.send_json(
-                        {"type": "sherpa_status", "payload": {"connected": False, "reason": "not_configured"}}
-                    )
-                    continue
-
-                async with async_session() as permission_session:
-                    allowed = await check_egress_permission(
-                        ws_user,
-                        "allow_spectrasherpa_sync",
-                        data_type="chat",
-                        destination="spectrasherpa",
-                        session=permission_session,
-                    )
-                if not allowed:
-                    await websocket.send_json(
-                        {"type": "sherpa_error", "detail": "Sherpa chat not permitted for this user"}
-                    )
-                    continue
-
-                try:
-                    chat_data = payload.get("payload", {})
-                    message = chat_data.get("message", "")
-                    workflow_id = chat_data.get("workflow_id")
-                    history = chat_data.get("history", [])
-
-                    await websocket.send_json({"type": "sherpa_chat_start"})
-                    async for chunk in advisor.chat_followup(
-                        message=message,
-                        workflow_id=workflow_id,
-                        history=history,
-                    ):
-                        await websocket.send_json(
-                            {"type": "sherpa_chat_chunk", "chunk": chunk}
-                        )
-                    await websocket.send_json({"type": "sherpa_chat_done"})
-                except Exception as exc:
-                    logger.exception("sherpa_chat failed: %s", exc)
-                    await websocket.send_json(
-                        {"type": "sherpa_error", "detail": "Sherpa chat failed. Check server logs for details."}
-                    )
-
+                await handle_sherpa_chat(websocket, payload, ws_user, _llm_rate_limiter)
+            elif action == "tool_list":
+                await handle_tool_list(websocket, payload, ws_user, _llm_rate_limiter)
+            elif action == "tool_invoke":
+                await handle_tool_invoke(websocket, payload, ws_user, _llm_rate_limiter)
             else:
-                await websocket.send_json(
-                    {"type": "error", "detail": "Unknown action"}
-                )
+                await websocket.send_json({"type": "error", "detail": "Unknown action"})
     except WebSocketDisconnect:
         await ws_manager.disconnect(websocket)
+
+
+# ---------------------------------------------------------------------------
+# Application factory
+# ---------------------------------------------------------------------------
+
+def create_app(
+    *,
+    extra_routers: list[RouterMount] | None = None,
+    extra_startup: list[Callable[[], Awaitable[None]]] | None = None,
+    extra_shutdown: list[Callable[[], Awaitable[None]]] | None = None,
+    extra_middleware: list[Callable[[FastAPI], None]] | None = None,
+    include_server_routers: bool = True,
+) -> FastAPI:
+    """Build and return the FastAPI application.
+
+    All parameters are optional — called with no arguments, the result is
+    identical to the previous module-level singleton.
+
+    Repo 2 (server) calls this with extra hooks to inject cloud-only
+    routers, startup tasks, and middleware without forking this module.
+    """
+    origins = get_cors_origins()
+    _allow_all = origins == ["*"]
+
+    mounts = _normalize_router_mounts(extra_routers)
+
+    _app = FastAPI(
+        title=settings.app_name,
+        openapi_url="/api/openapi.json",
+        lifespan=_make_lifespan(extra_startup, extra_shutdown),
+    )
+
+    # --- Middleware (order matters: outermost first) ---
+    _app.middleware("http")(api_key_middleware)
+    _app.add_middleware(DemoEnforcementMiddleware)
+    _app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins if not _allow_all else [],
+        allow_origin_regex=r".*" if _allow_all else None,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    for mw in (extra_middleware or []):
+        mw(_app)
+
+    # --- Routers ---
+    _app.include_router(
+        build_api_router(include_server_routers=include_server_routers),
+        prefix="/api/v1",
+    )
+    for router, kwargs in mounts:
+        _app.include_router(router, **kwargs)
+
+    # --- Health endpoint ---
+    @_app.get("/api/health")
+    async def root() -> dict:
+        return {"status": "ok"}
+
+    # --- WebSocket ---
+    _app.add_api_websocket_route("/ws", websocket_endpoint)
+
+    # --- Frontend SPA ---
+    _mount_frontend(_app)
+
+    return _app
+
+
+# Module-level singleton: backward-compat for Gunicorn, tests, and imports.
+app = create_app()

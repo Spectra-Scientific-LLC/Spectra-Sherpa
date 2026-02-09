@@ -92,7 +92,8 @@ async def register_user(
     header must be provided (enforced by DemoEnforcementMiddleware).
     """
     # Check if registration is allowed
-    if app_config.mode == "local":
+    from app.core.mode_policy import allows_registration
+    if not allows_registration():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Registration disabled in local mode. Use the 'local' user account."

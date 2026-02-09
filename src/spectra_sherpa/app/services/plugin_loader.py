@@ -1,30 +1,40 @@
 """
 Plugin discovery and loading for SpectraSherpa.
 
-On startup, this module scans for third-party node plugins and registers
-them with the DAG node registry.
+On startup, this module scans for third-party plugins and registers
+them with the DAG node registry and/or the MCP tool registry.
 
 Plugin locations (checked in order):
 1. ``~/.spectra_sherpa/plugins/``     — user plugins (pip-installed or manual)
 2. ``<data_dir>/plugins/``            — data-dir plugins
 3. Python packages with the ``spectrasherpa.plugins`` entry-point group
 
-Each plugin is a Python package containing one or more modules that import
-from ``spectra_sherpa.sdk`` and use ``@register_node`` to register
-their nodes.  The act of importing the module triggers registration.
+Each plugin is a Python package containing one or more modules that use
+decorator-based registration.  The act of importing triggers registration:
+
+- ``@register_node``  — registers a DAG workflow node
+- ``@register_tool``  — registers an MCP-compatible tool
 
 Example plugin layout::
 
     ~/.spectra_sherpa/plugins/
     └── my_plugin/
-        ├── __init__.py          # imports node modules
-        └── nodes.py             # @register_node classes
+        ├── __init__.py          # imports node/tool modules
+        ├── nodes.py             # @register_node classes
+        └── tools.py             # @register_tool functions
 
 Security
 --------
 Only ``.py`` files and directories with ``__init__.py`` are loaded.
 Plugin code runs with the same privileges as the main app — the user
 is responsible for trusting plugins they install.
+
+All plugin imports run inside ``tool_registry.plugin_context()`` which
+forces ``origin=plugin`` on every tool registered during loading —
+regardless of whether the plugin uses ``@register_tool`` or
+``register_plugin_tool()``.  This ensures plugin tools always get
+trust boundary constraints (no ``scope=internal``, forced
+``requires_user=True``).
 """
 from __future__ import annotations
 
@@ -154,16 +164,23 @@ def discover_plugins() -> int:
     """
     total = 0
 
-    # Filesystem plugins
-    for plugin_dir in _get_plugin_dirs():
-        count = _load_directory_plugins(plugin_dir)
-        total += count
+    # All plugin imports run inside plugin_context() so that any tool
+    # registered (via @register_tool or direct register()) automatically
+    # gets origin=plugin and the associated trust constraints.
+    from app.services.tools import tool_registry
 
-    # Entry-point plugins
-    total += _load_entrypoint_plugins()
+    with tool_registry.plugin_context():
+        # Filesystem plugins
+        for plugin_dir in _get_plugin_dirs():
+            count = _load_directory_plugins(plugin_dir)
+            total += count
+
+        # Entry-point plugins
+        total += _load_entrypoint_plugins()
 
     if total > 0:
         logger.info("Loaded %d plugin(s) total", total)
+        logger.info("Tool registry now has %d tool(s) after plugin discovery", len(tool_registry))
     else:
         logger.debug("No plugins found")
 

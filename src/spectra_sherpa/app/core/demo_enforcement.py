@@ -74,8 +74,9 @@ class DemoEnforcementMiddleware(BaseHTTPMiddleware):
         }
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        # Only active in Hybrid and Demo modes
-        if app_config.mode not in ("hybrid", "demo"):
+        # Only active in multi-user modes (Hybrid and Demo)
+        from app.core.mode_policy import has_rate_limits
+        if not has_rate_limits():
             return await call_next(request)
 
         path = request.url.path
@@ -97,7 +98,8 @@ class DemoEnforcementMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # === DEMO-ONLY FEATURES ===
-        if app_config.mode == "demo":
+        from app.core.mode_policy import is_demo
+        if is_demo():
             # 1. Demo Password Protection
             if app_config.demo_password:
                 # Enforce on registration and initial access

@@ -65,8 +65,28 @@ async def chat(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> LLMChatResponse:
+    from app.core.config import app_config
+
     _check_llm_rate_limit(current_user)
     service = LLMService(session, user=current_user)
+
+    # Tool-augmented chat (mirrors WS llm_chat with use_tools=true)
+    if payload.use_tools and app_config.to_client_safe()["features"].get("agenticWorkflow"):
+        try:
+            conversation_id, response, tool_calls_log = await service.chat_with_tools(
+                message=payload.message,
+                conversation_id=payload.conversation_id,
+                metadata=payload.metadata,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return LLMChatResponse(
+            conversation_id=conversation_id,
+            response=response,
+            tool_calls=tool_calls_log or None,
+        )
+
+    # Plain chat (no tools)
     try:
         conversation_id, response = await service.chat(
             message=payload.message,

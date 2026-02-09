@@ -165,7 +165,8 @@ async def is_valid_api_key(api_key: Optional[str]) -> bool:
     user API keys before route-level dependencies run.
     """
     # Local mode: always valid (no auth required)
-    if app_config.mode == "local":
+    from app.core.mode_policy import api_key_always_valid
+    if api_key_always_valid():
         return True
 
     if not api_key:
@@ -228,7 +229,8 @@ def _is_loopback(host: str | None) -> bool:
 
 def is_system_api_key_auth_enabled() -> bool:
     """Return whether APP_API_KEY is accepted for request authentication."""
-    if app_config.mode == "local":
+    from app.core.mode_policy import system_api_key_always_accepted
+    if system_api_key_always_accepted():
         return True
     return os.getenv("ALLOW_SYSTEM_API_KEY_AUTH", "").strip().lower() in {
         "1",
@@ -343,16 +345,10 @@ async def api_key_middleware(request: Request, call_next) -> Response:
             or path == "/favicon.ico"):
         return await call_next(request)
 
-    # Local mode: always bypass auth (single-user desktop, always loopback).
-    if app_config.mode == "local":
+    # Mode-based auth bypass: local always passes, hybrid loopback passes.
+    from app.core.mode_policy import requires_http_auth
+    if not requires_http_auth(get_client_host(request)):
         return await call_next(request)
-
-    # Hybrid mode: bypass auth only for loopback clients (desktop use).
-    # Non-loopback clients must authenticate (JWT or API key) — falls
-    # through to the credential check below, same path as demo mode.
-    if app_config.mode == "hybrid":
-        if _is_loopback(get_client_host(request)):
-            return await call_next(request)
 
     # Check for API key or Bearer token
     api_key = request.headers.get("X-API-Key")
@@ -529,7 +525,8 @@ async def check_export_allowed(
     In multi-user modes (hybrid, demo), the admin can restrict exports
     via the user's ``allow_export`` egress default.
     """
-    if app_config.mode == "local":
+    from app.core.mode_policy import export_always_allowed
+    if export_always_allowed():
         return True
 
     if user is None:

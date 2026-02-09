@@ -84,6 +84,7 @@ nav:
     - Summary: future/index.md
     - Roadmap: future/ROADMAP.md
     - 3-Repo Refactor Strategy: future/REFACTOR_3_REPO_STRATEGY.md
+    - Sherpa Implementation Plan V2: future/SHERPA_IMPLEMENTATION_PLAN_V2.md
     - DOE Enhancements: future/DOE_ENHANCEMENTS.md
     - Analysis Canvas Wireframe: future/ANALYSIS_CANVAS_WIREFRAME.md
     - Plugin Plan (2025-01-15): future/plugin_plan_011525.md

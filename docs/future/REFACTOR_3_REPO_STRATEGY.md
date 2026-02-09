@@ -326,6 +326,8 @@ The refactor is successful when:
 ## Recommended Next Steps (Immediate)
 
 1. Approve repository boundaries and non-negotiable rules.
-2. Create shared contract package for API/WebSocket/MCP/skill schemas.
-3. Implement mode-matrix tests before physical repo split.
-4. Extract Repo 2 first, then Repo 3, then finalize Repo 1 cleanup.
+2. Implement Step 1 contract artifacts (`contracts/`, versioning, changelog).
+3. Implement Step 2 mode-matrix tests for auth, flags, egress, and limits.
+4. Implement Step 3 `app/core/mode_policy.py` and replace scattered branching.
+5. Implement Step 4 MCP tool foundation and validate in hybrid/demo paths.
+6. Split repositories only after MCP and mode-policy seams are stable.

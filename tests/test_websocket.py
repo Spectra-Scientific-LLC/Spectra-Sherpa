@@ -7,7 +7,15 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 import app.main as app_main
+import app.services.ws_handlers as ws_handlers_mod
 from app.core.config import app_config
+from app.services.tools import tool_registry
+from app.services.tools.schemas import (
+    ToolCategory,
+    ToolDefinition,
+    ToolOrigin,
+    ToolScope,
+)
 from app.services.websocket_manager import ws_manager
 
 
@@ -151,3 +159,240 @@ def test_ws_demo_superuser_can_subscribe_any_jobs_channel(ws_client, monkeypatch
         ws.send_json({"action": "subscribe", "channel": "jobs:2"})
         response = ws.receive_json()
         assert response == {"type": "subscribed", "channel": "jobs:2"}
+
+
+# ---------------------------------------------------------------------------
+# Helpers for WS tool tests
+# ---------------------------------------------------------------------------
+
+def _setup_local_ws(monkeypatch, *, is_superuser: bool = False, user_id: int = 1):
+    """Common setup for local-mode WS tool tests."""
+    app_config.mode = "local"
+    _install_noop_async_session(monkeypatch)
+    # Also patch the handler-level async_session (used by tool_invoke)
+    monkeypatch.setattr(ws_handlers_mod, "async_session", lambda: _NullAsyncSessionContext())
+
+    async def _resolve_user(_session, api_key=None, token=None, client_host=None):
+        return SimpleNamespace(id=user_id, is_superuser=is_superuser, is_active=True)
+
+    monkeypatch.setattr(app_main, "get_user_from_credentials", _resolve_user)
+
+
+def _make_test_tool(
+    name: str,
+    *,
+    scope: ToolScope = ToolScope.public,
+    category: ToolCategory = ToolCategory.system,
+    parameters: dict | None = None,
+) -> ToolDefinition:
+    """Create a simple tool definition for testing."""
+    return ToolDefinition(
+        name=name,
+        description=f"Test tool: {name}",
+        scope=scope,
+        category=category,
+        origin=ToolOrigin.builtin,
+        parameters=parameters or {"type": "object", "properties": {}, "required": []},
+    )
+
+
+@pytest.fixture
+def _cleanup_test_tools():
+    """Clean up any test tools registered during a test."""
+    registered: list[str] = []
+    yield registered
+    for name in registered:
+        tool_registry.unregister(name)
+
+
+# ---------------------------------------------------------------------------
+# TestWsToolList
+# ---------------------------------------------------------------------------
+
+class TestWsToolList:
+    """WS integration tests for the tool_list action."""
+
+    def test_tool_list_returns_public_tools(self, ws_client, monkeypatch, _cleanup_test_tools):
+        _setup_local_ws(monkeypatch)
+        defn = _make_test_tool("ws_test_public")
+        tool_registry.register(defn, lambda: {"ok": True})
+        _cleanup_test_tools.append("ws_test_public")
+
+        with ws_client.websocket_connect("/ws") as ws:
+            ws.send_json({"action": "tool_list"})
+            response = ws.receive_json()
+
+        assert response["type"] == "tool_list"
+        names = [t["name"] for t in response["payload"]]
+        assert "ws_test_public" in names
+
+    def test_tool_list_hides_internal_tools(self, ws_client, monkeypatch, _cleanup_test_tools):
+        _setup_local_ws(monkeypatch)
+        defn = _make_test_tool("ws_test_internal", scope=ToolScope.internal)
+        tool_registry.register(defn, lambda: None)
+        _cleanup_test_tools.append("ws_test_internal")
+
+        with ws_client.websocket_connect("/ws") as ws:
+            ws.send_json({"action": "tool_list"})
+            response = ws.receive_json()
+
+        names = [t["name"] for t in response["payload"]]
+        assert "ws_test_internal" not in names
+
+    def test_tool_list_hides_admin_from_non_superuser(self, ws_client, monkeypatch, _cleanup_test_tools):
+        _setup_local_ws(monkeypatch, is_superuser=False)
+        defn = _make_test_tool("ws_test_admin", scope=ToolScope.admin)
+        tool_registry.register(defn, lambda: None)
+        _cleanup_test_tools.append("ws_test_admin")
+
+        with ws_client.websocket_connect("/ws") as ws:
+            ws.send_json({"action": "tool_list"})
+            response = ws.receive_json()
+
+        names = [t["name"] for t in response["payload"]]
+        assert "ws_test_admin" not in names
+
+    def test_tool_list_shows_admin_to_superuser(self, ws_client, monkeypatch, _cleanup_test_tools):
+        _setup_local_ws(monkeypatch, is_superuser=True)
+        defn = _make_test_tool("ws_test_admin_visible", scope=ToolScope.admin)
+        tool_registry.register(defn, lambda: None)
+        _cleanup_test_tools.append("ws_test_admin_visible")
+
+        with ws_client.websocket_connect("/ws") as ws:
+            ws.send_json({"action": "tool_list"})
+            response = ws.receive_json()
+
+        names = [t["name"] for t in response["payload"]]
+        assert "ws_test_admin_visible" in names
+
+    def test_tool_list_filters_by_category(self, ws_client, monkeypatch, _cleanup_test_tools):
+        _setup_local_ws(monkeypatch)
+        defn_spectral = _make_test_tool("ws_test_spectral", category=ToolCategory.spectral)
+        defn_workflow = _make_test_tool("ws_test_workflow", category=ToolCategory.workflow)
+        tool_registry.register(defn_spectral, lambda: None)
+        tool_registry.register(defn_workflow, lambda: None)
+        _cleanup_test_tools.extend(["ws_test_spectral", "ws_test_workflow"])
+
+        with ws_client.websocket_connect("/ws") as ws:
+            ws.send_json({"action": "tool_list", "category": "spectral"})
+            response = ws.receive_json()
+
+        names = [t["name"] for t in response["payload"]]
+        assert "ws_test_spectral" in names
+        assert "ws_test_workflow" not in names
+
+
+# ---------------------------------------------------------------------------
+# TestWsToolInvoke
+# ---------------------------------------------------------------------------
+
+class TestWsToolInvoke:
+    """WS integration tests for the tool_invoke action."""
+
+    def test_tool_invoke_success(self, ws_client, monkeypatch, _cleanup_test_tools):
+        _setup_local_ws(monkeypatch)
+        defn = _make_test_tool("ws_test_invoke_ok")
+        tool_registry.register(defn, lambda: {"result": "hello"})
+        _cleanup_test_tools.append("ws_test_invoke_ok")
+
+        with ws_client.websocket_connect("/ws") as ws:
+            ws.send_json({
+                "action": "tool_invoke",
+                "tool_name": "ws_test_invoke_ok",
+                "arguments": {},
+            })
+            response = ws.receive_json()
+
+        assert response["type"] == "tool_result"
+        assert response["payload"]["success"] is True
+        assert response["payload"]["result"] == {"result": "hello"}
+
+    def test_tool_invoke_unknown_tool(self, ws_client, monkeypatch, _cleanup_test_tools):
+        _setup_local_ws(monkeypatch)
+
+        with ws_client.websocket_connect("/ws") as ws:
+            ws.send_json({
+                "action": "tool_invoke",
+                "tool_name": "nonexistent_tool_xyz",
+                "arguments": {},
+            })
+            response = ws.receive_json()
+
+        assert response["type"] == "tool_result"
+        assert response["payload"]["success"] is False
+        assert "Unknown tool" in response["payload"]["error"]
+
+    def test_tool_invoke_missing_tool_name(self, ws_client, monkeypatch):
+        _setup_local_ws(monkeypatch)
+
+        with ws_client.websocket_connect("/ws") as ws:
+            ws.send_json({"action": "tool_invoke", "arguments": {}})
+            response = ws.receive_json()
+
+        assert response["type"] == "tool_error"
+        assert "Missing tool_name" in response["detail"]
+
+    def test_tool_invoke_internal_scope_blocked(self, ws_client, monkeypatch, _cleanup_test_tools):
+        _setup_local_ws(monkeypatch)
+        defn = _make_test_tool("ws_test_internal_invoke", scope=ToolScope.internal)
+        tool_registry.register(defn, lambda: "should not run")
+        _cleanup_test_tools.append("ws_test_internal_invoke")
+
+        with ws_client.websocket_connect("/ws") as ws:
+            ws.send_json({
+                "action": "tool_invoke",
+                "tool_name": "ws_test_internal_invoke",
+                "arguments": {},
+            })
+            response = ws.receive_json()
+
+        assert response["type"] == "tool_result"
+        assert response["payload"]["success"] is False
+        assert "internal" in response["payload"]["error"].lower()
+
+    def test_tool_invoke_rate_limited(self, ws_client, monkeypatch, _cleanup_test_tools):
+        _setup_local_ws(monkeypatch)
+        defn = _make_test_tool("ws_test_rate_limited")
+        tool_registry.register(defn, lambda: "ok")
+        _cleanup_test_tools.append("ws_test_rate_limited")
+
+        # Patch the rate limiter imported inside websocket_endpoint
+        from app.api.v1.routes.llm import _llm_rate_limiter
+        monkeypatch.setattr(_llm_rate_limiter, "allow", lambda _key: False)
+
+        with ws_client.websocket_connect("/ws") as ws:
+            ws.send_json({
+                "action": "tool_invoke",
+                "tool_name": "ws_test_rate_limited",
+                "arguments": {},
+            })
+            response = ws.receive_json()
+
+        assert response["type"] == "tool_error"
+        assert "rate limit" in response["detail"].lower()
+
+    def test_tool_invoke_validation_error(self, ws_client, monkeypatch, _cleanup_test_tools):
+        _setup_local_ws(monkeypatch)
+        defn = _make_test_tool(
+            "ws_test_validate",
+            parameters={
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"],
+            },
+        )
+        tool_registry.register(defn, lambda name: name)
+        _cleanup_test_tools.append("ws_test_validate")
+
+        with ws_client.websocket_connect("/ws") as ws:
+            # Missing required "name" argument
+            ws.send_json({
+                "action": "tool_invoke",
+                "tool_name": "ws_test_validate",
+                "arguments": {},
+            })
+            response = ws.receive_json()
+
+        assert response["type"] == "tool_result"
+        assert response["payload"]["success"] is False
+        assert "name" in response["payload"]["error"].lower()

@@ -65,7 +65,8 @@ async def _resolve_user(
     Returns the authenticated User or None if credentials are invalid.
     """
     # 0. Local mode: implicit user identity (single-user, no login needed)
-    if app_config.mode == "local":
+    from app.core.mode_policy import is_local
+    if is_local():
         return await _get_or_create_local_user(session)
 
     has_credentials = bool(api_key or token)
@@ -128,7 +129,8 @@ async def _resolve_user(
     # 3. Hybrid fallback: allow implicit local identity only when no
     # credentials were provided AND the client is loopback (defense-in-depth;
     # gateway middleware already enforces this, but we double-check here).
-    if app_config.mode == "hybrid" and not has_credentials:
+    from app.core.mode_policy import is_hybrid
+    if is_hybrid() and not has_credentials:
         if client_host is not None and not security._is_loopback(client_host):
             return None
         return await _get_or_create_local_user(session)

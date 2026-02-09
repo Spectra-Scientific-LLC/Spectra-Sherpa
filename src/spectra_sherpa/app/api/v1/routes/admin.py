@@ -52,7 +52,8 @@ def require_non_local_mode() -> None:
     Admin features (user management, API key rotation) are only relevant
     in multi-user deployments (hybrid, demo, cloud modes).
     """
-    if app_config.mode == "local":
+    from app.core.mode_policy import allows_admin
+    if not allows_admin():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin features are disabled in Local mode. "

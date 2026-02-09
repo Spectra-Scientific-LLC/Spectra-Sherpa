@@ -39,6 +39,7 @@ DEFAULT_MODEL = "deepseek-chat"
 DEFAULT_BASE_URL = "https://api.deepseek.com"
 
 MAX_HISTORY_MESSAGES = 40
+MAX_TOOL_ROUNDS = 5  # Prevent infinite function-calling loops
 
 # Cache for PDF reference content (loaded once)
 _spectrochempy_pdf_cache: Optional[str] = None
@@ -337,6 +338,232 @@ class LLMService:
                     conversation_store.save_messages(conversation_id, history)
 
             return conversation_id, openai_generator()
+
+    async def chat_with_tools(
+        self,
+        message: str,
+        conversation_id: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> tuple[str, str, list[dict[str, Any]]]:
+        """
+        Chat with MCP tool / function-calling support.
+
+        The LLM may request tool invocations; this method handles the
+        multi-turn loop transparently.  Returns the final text response
+        once all tool calls have been resolved.
+
+        Returns:
+            (conversation_id, final_text, tool_calls_log)
+        """
+        import logging as _logging
+
+        _logger = _logging.getLogger(__name__)
+
+        # ---- egress guard (same as chat()) ----
+        config = await self._get_llm_config()
+        if not self._is_local_provider(config["provider"]):
+            if not is_egress_enabled():
+                raise ValueError(
+                    "Network egress is disabled. Enable EGRESS_ENABLED=true or set "
+                    "APP_MODE=hybrid to use external LLM providers."
+                )
+            if not await check_egress_permission(
+                self.user,
+                "allow_llm_context",
+                data_type="metadata",
+                destination="llm_context",
+                session=self.session,
+            ):
+                raise ValueError("LLM context sharing is disabled in user privacy settings.")
+
+        provider_meta = get_provider(config["provider"])
+
+        # ---- resolve tool definitions ----
+        from app.services.tools import tool_registry
+
+        if provider_meta["client_type"] == "anthropic":
+            tools_payload = tool_registry.to_anthropic_tools()
+        else:
+            tools_payload = tool_registry.to_openai_tools()
+
+        if not tools_payload or not provider_meta.get("supports_function_calling"):
+            # No tools or provider doesn't support them — fall back
+            cid, content = await self.chat(message, conversation_id, metadata)
+            return cid, content, []
+
+        # ---- prepare conversation ----
+        user_id = self.user.id
+        conversation_id, history = conversation_store.get_or_create(conversation_id, user_id)
+        history.append({"role": "user", "content": message})
+
+        client = await self._client(config)
+        messages = self._build_messages(history, metadata, config)
+
+        tool_calls_log: list[dict[str, Any]] = []
+        content = ""
+
+        from app.services.tools.executor import ToolExecutionContext, execute_tool
+        from app.services.tools.schemas import ToolInvocation
+
+        ctx = ToolExecutionContext(session=self.session, user=self.user)
+
+        for round_num in range(MAX_TOOL_ROUNDS):
+            _logger.info("Tool round %d/%d", round_num + 1, MAX_TOOL_ROUNDS)
+
+            if provider_meta["client_type"] == "anthropic":
+                content, pending = await self._anthropic_tool_round(
+                    client, config, messages, tools_payload
+                )
+            else:
+                content, pending = await self._openai_tool_round(
+                    client, config, messages, tools_payload
+                )
+
+            if not pending:
+                break
+
+            # Execute each pending tool call
+            for tc in pending:
+                invocation = ToolInvocation(
+                    tool_name=tc["name"],
+                    arguments=tc["arguments"],
+                )
+                result = await execute_tool(invocation, ctx, allow_internal=True)
+                tool_calls_log.append(
+                    {
+                        "tool": tc["name"],
+                        "arguments": tc["arguments"],
+                        "result": result.result if result.success else None,
+                        "error": result.error,
+                    }
+                )
+
+                # Append tool result to messages for next round
+                if provider_meta["client_type"] == "anthropic":
+                    # Anthropic: assistant message with tool_use, then user with tool_result
+                    messages.append(
+                        {
+                            "role": "assistant",
+                            "content": [
+                                {
+                                    "type": "tool_use",
+                                    "id": tc["id"],
+                                    "name": tc["name"],
+                                    "input": tc["arguments"],
+                                }
+                            ],
+                        }
+                    )
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": [
+                                result.to_anthropic_block(tc["id"]),
+                            ],
+                        }
+                    )
+                else:
+                    # OpenAI: assistant message with tool_calls, then tool role message
+                    messages.append(
+                        {
+                            "role": "assistant",
+                            "tool_calls": [
+                                {
+                                    "id": tc["id"],
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc["name"],
+                                        "arguments": json.dumps(tc["arguments"]),
+                                    },
+                                }
+                            ],
+                        }
+                    )
+                    messages.append(result.to_openai_message(tc["id"]))
+
+        # ---- persist conversation ----
+        history.append({"role": "assistant", "content": content})
+        conversation_store.trim(conversation_id)
+        conversation_store.save_messages(conversation_id, history)
+
+        return conversation_id, content, tool_calls_log
+
+    # ---- Provider-specific tool-call helpers ----
+
+    async def _openai_tool_round(
+        self,
+        client: Any,
+        config: dict[str, Any],
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> tuple[str, list[dict[str, Any]]]:
+        """
+        Single OpenAI API round that may produce text or tool calls.
+
+        Returns (text_content, pending_tool_calls).
+        ``pending_tool_calls`` is empty when the model returned pure text.
+        """
+        response = await client.chat.completions.create(
+            model=config["model"],
+            messages=messages,
+            tools=tools,
+            stream=False,
+        )
+        choice = response.choices[0]
+        msg = choice.message
+
+        if msg.tool_calls:
+            pending = []
+            for tc in msg.tool_calls:
+                try:
+                    args = json.loads(tc.function.arguments)
+                except (json.JSONDecodeError, TypeError):
+                    args = {}
+                pending.append(
+                    {"id": tc.id, "name": tc.function.name, "arguments": args}
+                )
+            return msg.content or "", pending
+
+        return msg.content or "", []
+
+    async def _anthropic_tool_round(
+        self,
+        client: Any,
+        config: dict[str, Any],
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> tuple[str, list[dict[str, Any]]]:
+        """
+        Single Anthropic API round that may produce text or tool_use blocks.
+
+        Returns (text_content, pending_tool_calls).
+        """
+        system_msg = next(
+            (m["content"] for m in messages if m["role"] == "system"),
+            DEFAULT_SYSTEM_PROMPT,
+        )
+        user_msgs = [m for m in messages if m["role"] != "system"]
+
+        response = await client.messages.create(
+            model=config["model"],
+            max_tokens=4096,
+            system=system_msg,
+            messages=user_msgs,
+            tools=tools,
+        )
+
+        text_parts: list[str] = []
+        pending: list[dict[str, Any]] = []
+
+        for block in response.content:
+            if block.type == "text":
+                text_parts.append(block.text)
+            elif block.type == "tool_use":
+                pending.append(
+                    {"id": block.id, "name": block.name, "arguments": block.input}
+                )
+
+        return "".join(text_parts), pending
 
     async def suggest_name(self, components: list[str]) -> str:
         prompt = (
