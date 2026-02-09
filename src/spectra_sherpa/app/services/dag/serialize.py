@@ -108,6 +108,118 @@ def _format_sample_label(value: Any) -> str:
     return str(value)
 
 
+def _safe_coord_data(coord: Any) -> Any:
+    """Safely extract coordinate data without raising on malformed coord objects.
+
+    Some SpectroChemPy coordinate objects can raise errors (including
+    `TypeError: object of type 'NoneType' has no len()`) when their `data`
+    property is accessed if internal buffers are missing. This helper ensures
+    serialization remains best-effort and never fails hard on coordinate access.
+    """
+    if coord is None:
+        return None
+    try:
+        return coord.data
+    except Exception:
+        return None
+
+
+def _safe_coord_labels(coord: Any) -> Any:
+    """Safely extract coordinate labels without raising."""
+    if coord is None:
+        return None
+    try:
+        labels = getattr(coord, "labels", None)
+    except Exception:
+        return None
+    return labels
+
+
+def _safe_coord_list(coord_values: Any) -> list[Any]:
+    """Convert coordinate payload to a plain Python list safely."""
+    if coord_values is None:
+        return []
+    try:
+        if hasattr(coord_values, "tolist"):
+            values = coord_values.tolist()
+            if isinstance(values, list):
+                return values
+            return [values]
+        if isinstance(coord_values, (list, tuple)):
+            return list(coord_values)
+        arr = np.asarray(coord_values)
+        if arr.ndim == 0:
+            return [arr.item()]
+        return arr.tolist()
+    except Exception:
+        try:
+            return [coord_values]
+        except Exception:
+            return []
+
+
+def _safe_attr(obj: Any, attr: str, default: Any = None) -> Any:
+    """Safely access object attribute without propagating backend-internal errors."""
+    if obj is None:
+        return default
+    try:
+        value = getattr(obj, attr)
+    except Exception:
+        return default
+    return default if value is None else value
+
+
+def _safe_str_attr(obj: Any, attr: str, default: str = "") -> str:
+    """Safely convert attribute to string."""
+    value = _safe_attr(obj, attr, None)
+    if value is None:
+        return default
+    try:
+        return str(value)
+    except Exception:
+        return default
+
+
+def _meta_get(meta: Any, key: str, default: Any = None) -> Any:
+    """Best-effort metadata lookup for dict-like or object-like meta containers."""
+    if meta is None:
+        return default
+    try:
+        if isinstance(meta, dict):
+            return meta.get(key, default)
+        if hasattr(meta, "get"):
+            value = meta.get(key, default)
+            return default if value is None else value
+    except Exception:
+        pass
+    try:
+        return meta[key]
+    except Exception:
+        pass
+    try:
+        value = getattr(meta, key)
+        return default if value is None else value
+    except Exception:
+        return default
+
+
+def _meta_items(meta: Any) -> list[tuple[Any, Any]]:
+    """Best-effort conversion of metadata container to key/value pairs."""
+    if meta is None:
+        return []
+    if isinstance(meta, dict):
+        return list(meta.items())
+    try:
+        return list(dict(meta).items())
+    except Exception:
+        pass
+    try:
+        keys = list(meta.keys())
+        return [(key, _meta_get(meta, key)) for key in keys]
+    except Exception:
+        return []
+
+
 def serialize_for_api(
     dataset: NDDataset,
     sanitize_paths: bool = False,
@@ -126,16 +238,28 @@ def serialize_for_api(
         Dict ready for JSON response
     """
     # Convert data, replacing NaN/Inf with None for JSON safety
-    raw_data = np.asarray(dataset.data, dtype=float)
+    try:
+        raw_data = np.asarray(dataset.data, dtype=float)
+    except Exception:
+        # Defensive fallback: keep serializer alive even if backend data payload
+        # is temporarily malformed.
+        raw_data = np.asarray([], dtype=float)
     # Replace NaN and Inf with None (JSON-safe)
     data_list = np.where(np.isfinite(raw_data), raw_data, None).tolist()
 
+    try:
+        dataset_shape = list(dataset.shape)
+    except Exception:
+        dataset_shape = list(raw_data.shape)
+    if len(dataset_shape) == 0:
+        dataset_shape = [0]
+
     result = {
         "type": "NDDataset",
-        "shape": list(dataset.shape),
+        "shape": dataset_shape,
         "data": data_list,
-        "n_samples": dataset.shape[0] if dataset.ndim == 2 else 1,
-        "n_features": dataset.shape[-1],
+        "n_samples": dataset_shape[0] if len(dataset_shape) > 1 else 1,
+        "n_features": dataset_shape[-1] if len(dataset_shape) > 0 else 0,
         "metadata": {},
     }
 
@@ -144,16 +268,19 @@ def serialize_for_api(
     # when a coordinate name like 'x' is not found, so hasattr() alone is insufficient.
     try:
         x_coord = dataset.x
-    except (KeyError, AttributeError):
+    except Exception:
         x_coord = None
 
     if x_coord is not None:
+        x_raw = _safe_coord_data(x_coord)
         try:
-            x_data = np.array(x_coord.data, dtype=float).tolist()
-        except (ValueError, TypeError):
-            x_data = [str(v) for v in x_coord.data]
-        x_title = str(x_coord.title) if hasattr(x_coord, 'title') and x_coord.title else "Feature"
-        x_units = str(x_coord.units) if hasattr(x_coord, 'units') and str(x_coord.units) != "dimensionless" else ""
+            x_data = np.array(x_raw, dtype=float).tolist() if x_raw is not None else []
+        except Exception:
+            x_data = [str(v) for v in _safe_coord_list(x_raw)]
+        x_title = _safe_str_attr(x_coord, "title", "Feature") or "Feature"
+        x_units = _safe_str_attr(x_coord, "units", "")
+        if x_units == "dimensionless":
+            x_units = ""
 
         result["x_axis"] = {
             "title": x_title,
@@ -168,7 +295,7 @@ def serialize_for_api(
     try:
         technique = detect_spectral_technique(dataset)
         data_quantity = detect_data_quantity(dataset)
-    except (KeyError, AttributeError):
+    except Exception:
         technique = None
         data_quantity = None
     is_spectra = technique is not None
@@ -177,26 +304,31 @@ def serialize_for_api(
     result["metadata"]["is_spectra"] = is_spectra
     result["metadata"]["spectral_technique"] = technique
     result["metadata"]["data_quantity"] = data_quantity
+    dataset_meta = _safe_attr(dataset, "meta", None)
 
     # Y-axis (sample labels)
     try:
         y_coord = dataset.y
-    except (KeyError, AttributeError):
+    except Exception:
         y_coord = None
 
     if y_coord is not None:
-        y_title = str(y_coord.title) if hasattr(y_coord, 'title') else "Sample"
+        y_title = _safe_str_attr(y_coord, "title", "Sample") or "Sample"
+        y_units = _safe_str_attr(y_coord, "units", "")
+        if y_units == "dimensionless":
+            y_units = ""
+        y_raw = _safe_coord_data(y_coord)
         try:
-            y_data = np.array(y_coord.data, dtype=float).tolist()
-        except (ValueError, TypeError):
+            y_data = np.array(y_raw, dtype=float).tolist() if y_raw is not None else []
+        except Exception:
             # String or non-numeric y-axis data — convert to string list
-            y_data = [str(v) for v in y_coord.data]
+            y_data = [str(v) for v in _safe_coord_list(y_raw)]
 
         # Extract labels from y-axis (file names, sample names, etc.)
         y_labels = None
         try:
-            if hasattr(y_coord, 'labels') and y_coord.labels is not None:
-                labels_raw = y_coord.labels
+            labels_raw = _safe_coord_labels(y_coord)
+            if labels_raw is not None:
                 # Handle both list and ndarray of labels
                 if hasattr(labels_raw, 'tolist'):
                     labels_list = labels_raw.tolist()
@@ -209,15 +341,21 @@ def serialize_for_api(
                     # Convert to readable strings. Labels may contain
                     # datetime objects or tuple/list payloads.
                     y_labels = [_format_sample_label(v) for v in labels_list]
-        except (KeyError, AttributeError, TypeError):
+        except Exception:
             y_labels = None
+
+        # If coord values are unavailable but we do have labels, synthesize row indices.
+        if len(y_data) == 0 and y_labels:
+            y_data = list(range(len(y_labels)))
 
         result["y_axis"] = {
             "title": y_title,
-            "units": "",
+            "units": y_units,
             "data": y_data,
             "labels": y_labels,  # Include labels in y_axis
         }
+        result["metadata"]["y_title"] = y_title
+        result["metadata"]["y_units"] = y_units
 
         # Also add to metadata for frontend compatibility (DataTableModal expects these)
         if y_labels:
@@ -225,19 +363,29 @@ def serialize_for_api(
             result["metadata"]["labels"] = y_labels  # Alias for backwards compat
 
     # Data units
-    if hasattr(dataset, 'units') and dataset.units:
-        result["metadata"]["value_units"] = str(dataset.units)
+    dataset_units = _safe_str_attr(dataset, "units", "")
+    if dataset_units and dataset_units != "dimensionless":
+        result["metadata"]["value_units"] = dataset_units
+    if dataset_meta is not None:
+        semantic_units = _meta_get(dataset_meta, "value_units_label")
+        if semantic_units:
+            semantic_units_text = str(semantic_units)
+            result["metadata"]["value_units_label"] = semantic_units_text
+            result["metadata"].setdefault("value_units", semantic_units_text)
 
     # Processing history from meta
-    history = get_processing_history(dataset)
+    try:
+        history = get_processing_history(dataset)
+    except Exception:
+        history = []
     if history:
         result["metadata"]["processing_history"] = history
 
     # Build provenance: merge rich provenance from meta with processing history summary
     # Start with rich provenance from dataset.meta (original_source_type, operator, lab_name, etc.)
     rich_provenance: dict | Any | None = None
-    if hasattr(dataset, 'meta') and dataset.meta:
-        meta_provenance = dataset.meta.get("provenance")
+    if dataset_meta:
+        meta_provenance = _meta_get(dataset_meta, "provenance")
         if isinstance(meta_provenance, dict):
             rich_provenance = dict(meta_provenance)
         elif meta_provenance:
@@ -266,18 +414,20 @@ def serialize_for_api(
     # Include all other meta fields
     PATH_FIELDS = {"original_file_path", "original_source", "background_file", "original_filename"}
 
-    if hasattr(dataset, 'meta') and dataset.meta:
-        for key, value in dataset.meta.items():
+    meta_items = _meta_items(dataset_meta)
+    if meta_items:
+        for key, value in meta_items:
             if key in ("processing_history", "samples", "provenance", "raw_file_metadata"):
                 continue  # Already handled or internal
-            if key.startswith("_"):
+            if isinstance(key, str) and key.startswith("_"):
                 continue  # Internal/debug-only fields
             if sanitize_paths and key in PATH_FIELDS and isinstance(value, str):
                 value = os.path.basename(value)
             result["metadata"][key] = _json_safe(value)
 
     # Title
-    result["title"] = str(dataset.title) if hasattr(dataset, 'title') and dataset.title else (
+    dataset_title = _safe_str_attr(dataset, "title", "")
+    result["title"] = dataset_title if dataset_title else (
         "Spectra" if is_spectra else "Data"
     )
 

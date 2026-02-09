@@ -142,7 +142,19 @@ export const useLlmStore = defineStore("llm", () => {
         });
       }
       if (event.code === 1008) {
-        lastError.value = "Unauthorized. Check API key.";
+        // Stale token may have caused the rejection.  Clear it and retry
+        // once if an api_key is still available as fallback credential.
+        const hadToken = !!localStorage.getItem("token");
+        if (hadToken) {
+          localStorage.removeItem("token");
+        }
+        if (hadToken && localStorage.getItem("api_key")) {
+          // One retry with api_key only
+          reconnectAttempts.value = 0;
+          scheduleReconnect();
+          return;
+        }
+        lastError.value = "Unauthorized. Check your credentials.";
         allowReconnect = false;
         return;
       }

@@ -229,7 +229,10 @@ class SpectraSherpaService:
                 return AuthResult(success=True, user=user)
 
         except httpx.HTTPStatusError as e:
-            logger.warning(f"SpectraSherpa auth failed: {e}")
+            if e.response.status_code >= 500:
+                logger.info("SpectraSherpa /auth/me returned %s (server-side — identity linking unavailable)", e.response.status_code)
+            else:
+                logger.warning("SpectraSherpa auth failed: %s", e)
             return AuthResult(success=False, error=f"Authentication failed: {e.response.status_code}")
         except Exception as e:
             logger.error(f"SpectraSherpa auth error: {e}")

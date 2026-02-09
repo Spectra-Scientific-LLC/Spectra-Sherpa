@@ -18,6 +18,45 @@ from app.services.dag.meta_helpers import add_processing_step, copy_processing_h
 logger = logging.getLogger(__name__)
 
 
+def _make_safe_coord(values: Any, title: Optional[str] = None) -> Any:
+    """
+    Build a SpectroChemPy Coord safely for numeric and categorical values.
+
+    SpectroChemPy 0.6.x can fail when creating Coord directly from string arrays
+    (internal numeric ops such as ``np.abs`` on string dtype). For non-numeric
+    labels, create a numeric index coordinate and attach labels separately.
+    """
+    if values is None:
+        return None
+
+    if hasattr(values, "data") and hasattr(values, "copy"):
+        coord = values.copy()
+        if title:
+            try:
+                if not getattr(coord, "title", None):
+                    coord.title = title
+            except Exception:
+                pass
+        return coord
+
+    try:
+        return scp.Coord(values, title=title) if title is not None else scp.Coord(values)
+    except Exception:
+        labels_obj = np.asarray(values, dtype=object)
+        if labels_obj.ndim == 0:
+            labels_list = [labels_obj.item()]
+        else:
+            labels_list = labels_obj.reshape(-1).tolist()
+
+        labels_str = [str(v) for v in labels_list]
+        coord = scp.Coord(np.arange(len(labels_str), dtype=float), title=title)
+        try:
+            coord.labels = labels_str
+        except Exception:
+            pass
+        return coord
+
+
 def _create_spectral_dataset(
     data: np.ndarray,
     x_coord: Optional[Any] = None,
@@ -44,28 +83,42 @@ def _create_spectral_dataset(
         NDDataset with coordinates properly attached
     """
     dataset = scp.NDDataset(data)
+    invalid_units_label: Optional[str] = None
 
     if x_coord is not None:
-        # Copy the coordinate to preserve it
-        if hasattr(x_coord, 'copy'):
-            dataset.x = x_coord.copy()
-        else:
-            dataset.x = scp.Coord(x_coord)
+        dataset.x = _make_safe_coord(x_coord)
 
     if y_coord is not None:
-        if hasattr(y_coord, 'copy'):
-            dataset.y = y_coord.copy()
-        else:
-            dataset.y = scp.Coord(y_coord)
+        dataset.y = _make_safe_coord(y_coord)
 
     if units is not None:
-        dataset.units = units
+        try:
+            dataset.units = units
+        except Exception:
+            # Some semantic unit labels used for chemometric outputs
+            # (e.g., "score", "loading") are not part of Pint's registry.
+            # Keep dataset dimensionless and preserve the label in metadata.
+            invalid_units_label = str(units)
 
     if title is not None:
         dataset.title = title
 
     if meta is not None:
         dataset.meta = meta.copy() if hasattr(meta, 'copy') else dict(meta)
+
+    if invalid_units_label:
+        if not hasattr(dataset, "meta") or dataset.meta is None:
+            dataset.meta = {}
+        try:
+            existing = dataset.meta.get("value_units_label")
+        except Exception:
+            existing = None
+        if not existing:
+            try:
+                dataset.meta["value_units_label"] = invalid_units_label
+            except Exception:
+                # Last-resort fallback: replace with plain dict metadata
+                dataset.meta = {"value_units_label": invalid_units_label}
 
     return dataset
 
@@ -278,11 +331,11 @@ class PCANode(Node):
 
         # Ensure PCA outputs expose explicit PC coordinate labels for frontend display.
         try:
-            scores_dataset.x = scp.Coord(pc_labels, title="Principal Component")
+            scores_dataset.x = _make_safe_coord(pc_labels, title="Principal Component")
         except Exception:
             pass
         try:
-            loadings_dataset.y = scp.Coord(pc_labels, title="Principal Component")
+            loadings_dataset.y = _make_safe_coord(pc_labels, title="Principal Component")
         except Exception:
             pass
 
@@ -621,7 +674,7 @@ class PLSNode(Node):
         if X_scores_data is not None:
             X_scores_dataset = _create_spectral_dataset(
                 data=X_scores_data,
-                x_coord=scp.Coord(lv_labels, title="Latent Variable"),
+                x_coord=_make_safe_coord(lv_labels, title="Latent Variable"),
                 y_coord=_y_coord,  # Preserve sample labels from input
                 units="score",
                 title="PLS X Scores",
@@ -632,7 +685,7 @@ class PLSNode(Node):
         if Y_scores_data is not None:
             Y_scores_dataset = _create_spectral_dataset(
                 data=Y_scores_data,
-                x_coord=scp.Coord(lv_labels, title="Latent Variable"),
+                x_coord=_make_safe_coord(lv_labels, title="Latent Variable"),
                 y_coord=_y_coord,  # Preserve sample labels from input
                 units="score",
                 title="PLS Y Scores",
@@ -644,7 +697,7 @@ class PLSNode(Node):
             X_loadings_dataset = _create_spectral_dataset(
                 data=X_loadings_data.T if X_loadings_data.ndim == 2 else X_loadings_data,  # Transpose to (n_components, n_features)
                 x_coord=_x_coord,
-                y_coord=scp.Coord(lv_labels, title="Latent Variable"),
+                y_coord=_make_safe_coord(lv_labels, title="Latent Variable"),
                 units="loading",
                 title="PLS X Loadings",
             )
@@ -654,7 +707,7 @@ class PLSNode(Node):
         if Y_loadings_data is not None:
             Y_loadings_dataset = _create_spectral_dataset(
                 data=Y_loadings_data,
-                x_coord=scp.Coord(lv_labels, title="Latent Variable"),
+                x_coord=_make_safe_coord(lv_labels, title="Latent Variable"),
                 units="loading",
                 title="PLS Y Loadings",
             )
@@ -900,7 +953,7 @@ class PCRNode(Node):
         # Scores: shape (n_samples, n_components)
         scores_dataset = _create_spectral_dataset(
             data=X_scores,
-            x_coord=scp.Coord(pc_labels, title="Principal Component"),
+            x_coord=_make_safe_coord(pc_labels, title="Principal Component"),
             y_coord=_y_coord,  # Preserve sample labels from input
             units="score",
             title="PCR Scores",
@@ -910,7 +963,7 @@ class PCRNode(Node):
         loadings_dataset = _create_spectral_dataset(
             data=pca.components_,
             x_coord=_x_coord,
-            y_coord=scp.Coord(pc_labels, title="Principal Component"),
+            y_coord=_make_safe_coord(pc_labels, title="Principal Component"),
             units="loading",
             title="PCR Loadings",
         )
@@ -1553,7 +1606,7 @@ class MCRNode(Node):
         St_dataset = _create_spectral_dataset(
             data=St_data,
             x_coord=_x_coord,
-            y_coord=scp.Coord(spectrum_labels, title="Component"),
+            y_coord=_make_safe_coord(spectrum_labels, title="Component"),
             units=input_data.units if hasattr(input_data, 'units') else None,
             title="MCR-ALS Pure Component Spectra",
         )
@@ -1562,7 +1615,7 @@ class MCRNode(Node):
         # X-axis = component labels, Y-axis = sample labels/time
         C_dataset = _create_spectral_dataset(
             data=C_data,
-            x_coord=scp.Coord(component_labels, title="Component"),
+            x_coord=_make_safe_coord(component_labels, title="Component"),
             y_coord=_y_coord,  # Preserve sample labels from input
             units="relative concentration",
             title="MCR-ALS Concentration Profiles",
@@ -1714,7 +1767,7 @@ class EFANode(Node):
         if forward_ev is not None:
             forward_ev_dataset = _create_spectral_dataset(
                 data=forward_ev,
-                x_coord=scp.Coord(component_labels, title="Component"),
+                x_coord=_make_safe_coord(component_labels, title="Component"),
                 y_coord=_y_coord,  # Preserve sample labels from input
                 units="eigenvalue",
                 title="EFA Forward Eigenvalues",
@@ -1725,7 +1778,7 @@ class EFANode(Node):
         if backward_ev is not None:
             backward_ev_dataset = _create_spectral_dataset(
                 data=backward_ev,
-                x_coord=scp.Coord(component_labels, title="Component"),
+                x_coord=_make_safe_coord(component_labels, title="Component"),
                 y_coord=_y_coord,  # Preserve sample labels from input
                 units="eigenvalue",
                 title="EFA Backward Eigenvalues",
@@ -3044,7 +3097,7 @@ class NMFNode(Node):
         H_dataset = _create_spectral_dataset(
             data=H_data,
             x_coord=_x_coord,
-            y_coord=scp.Coord(spectrum_labels, title="Component"),
+            y_coord=_make_safe_coord(spectrum_labels, title="Component"),
             units=input_data.units if hasattr(input_data, 'units') else None,
             title="NMF Basis Spectra (H)",
         )
@@ -3053,7 +3106,7 @@ class NMFNode(Node):
         # X-axis = component labels, Y-axis = sample labels/time
         W_dataset = _create_spectral_dataset(
             data=W_data,
-            x_coord=scp.Coord(component_labels, title="Component"),
+            x_coord=_make_safe_coord(component_labels, title="Component"),
             y_coord=_y_coord,  # Preserve sample labels from input
             units="relative concentration",
             title="NMF Concentration Profiles (W)",
@@ -3337,7 +3390,7 @@ class FastICANode(Node):
         # X-axis = component labels, Y-axis = sample labels/time
         S_dataset = _create_spectral_dataset(
             data=S_data,
-            x_coord=scp.Coord(component_labels, title="Independent Component"),
+            x_coord=_make_safe_coord(component_labels, title="Independent Component"),
             y_coord=_y_coord,  # Preserve sample labels from input
             units="source signal",
             title="FastICA Source Signals",
@@ -3350,7 +3403,7 @@ class FastICANode(Node):
             St_dataset = _create_spectral_dataset(
                 data=St_data,
                 x_coord=_x_coord,
-                y_coord=scp.Coord(spectrum_labels, title="Independent Component"),
+                y_coord=_make_safe_coord(spectrum_labels, title="Independent Component"),
                 units=input_data.units if hasattr(input_data, 'units') else None,
                 title="FastICA Spectral Profiles",
             )
@@ -3360,7 +3413,7 @@ class FastICANode(Node):
         if A_data is not None:
             A_dataset = _create_spectral_dataset(
                 data=A_data,
-                x_coord=scp.Coord(component_labels, title="Independent Component"),
+                x_coord=_make_safe_coord(component_labels, title="Independent Component"),
                 y_coord=_y_coord,  # Preserve sample labels from input
                 units="mixing coefficient",
                 title="FastICA Mixing Matrix",

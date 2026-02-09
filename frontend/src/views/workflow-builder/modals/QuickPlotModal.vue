@@ -275,6 +275,12 @@ import Column from "primevue/column";
 import PlotlyChart from "@/components/PlotlyChart.vue";
 import { createCategoryColorMap } from "@/utils/colors";
 import { getYAxisLabel, getXAxisLabel, isSpectralData } from "@/utils/plotLabels";
+import {
+  compactSampleLabel,
+  detectLabelDelimiter,
+  normalizeSampleLabel,
+  splitLabelByDelimiter,
+} from "@/utils/sampleLabels";
 
 interface Props {
   modelValue: boolean;
@@ -302,6 +308,55 @@ const previewRowLimit = 100; // Same as NodeDetailView
 function toggleViewMode() {
   viewMode.value = viewMode.value === "plot" ? "data" : "plot";
 }
+
+const getNormalizedLabelArray = (
+  rawLabels: unknown,
+  fallbackCount: number,
+  fallbackPrefix = "Sample",
+): string[] => {
+  if (Array.isArray(rawLabels) && rawLabels.length > 0) {
+    return rawLabels.map((item, idx) => {
+      const normalized = normalizeSampleLabel(item);
+      return normalized.length > 0 ? normalized : `${fallbackPrefix} ${idx + 1}`;
+    });
+  }
+
+  return Array.from({ length: fallbackCount }, (_, idx) => `${fallbackPrefix} ${idx + 1}`);
+};
+
+const getNormalizedOptionalLabelArray = (rawLabels: unknown): string[] => {
+  if (!Array.isArray(rawLabels)) return [];
+  return rawLabels.map((item) => normalizeSampleLabel(item));
+};
+
+const getNormalizedCategoryArray = (rawCategories: unknown): string[] => {
+  if (!Array.isArray(rawCategories)) return [];
+  const normalized = rawCategories
+    .map((item) => normalizeSampleLabel(item))
+    .filter((item) => item.length > 0);
+  return Array.from(new Set(normalized));
+};
+
+const getPreviewLabelInfo = (metadata: Record<string, any>) => {
+  const labelsRaw = metadata.sample_labels || metadata.labels || [];
+  const labels = Array.isArray(labelsRaw)
+    ? labelsRaw.map((label: any) => normalizeSampleLabel(label))
+    : [];
+  const delimiter = detectLabelDelimiter(labels);
+  const splitLabels = delimiter
+    ? labels.map((label: string) => splitLabelByDelimiter(label, delimiter))
+    : [];
+  const maxParts = splitLabels.length > 0
+    ? Math.max(...splitLabels.map((parts: string[]) => parts.length))
+    : 0;
+
+  return {
+    labels,
+    splitLabels,
+    maxParts,
+    useSplitColumns: !!delimiter && maxParts > 1,
+  };
+};
 
 // Plot configuration
 const plotType = ref<"line" | "heatmap" | "scatter">("line");
@@ -718,9 +773,29 @@ const featureNames = computed(() => {
 // Data preview for table view (DRY with NodeDetailView.vue outputPreview)
 const dataPreview = computed(() => {
   const data = props.nodeOutput?.data;
+  const metadata = props.nodeOutput?.metadata || {};
+  const labelInfo = getPreviewLabelInfo(metadata);
   if (!data || !Array.isArray(data)) return [];
   return data.slice(0, previewRowLimit).map((row: any, i: number) => {
-    const obj: any = { _index: i + 1 };
+    const obj: any = { _index: i + 1, _label_full: labelInfo.labels[i] || "" };
+    if (labelInfo.labels.length > 0) {
+      if (labelInfo.useSplitColumns) {
+        const parts = labelInfo.splitLabels[i] || [];
+        for (let labelIdx = 0; labelIdx < labelInfo.maxParts; labelIdx += 1) {
+          obj[`_label_${labelIdx}`] = compactSampleLabel(parts[labelIdx] || "", {
+            maxLength: 42,
+            headLength: 28,
+            tailLength: 12,
+          });
+        }
+      } else {
+        obj._label = compactSampleLabel(labelInfo.labels[i] || "", {
+          maxLength: 52,
+          headLength: 34,
+          tailLength: 14,
+        });
+      }
+    }
     if (Array.isArray(row)) {
       row.slice(0, 10).forEach((val: any, j: number) => {
         obj[`col_${j}`] = typeof val === "number" ? val.toFixed(4) : val;
@@ -735,19 +810,26 @@ const dataPreview = computed(() => {
 // Data preview columns (DRY with NodeDetailView.vue outputPreviewColumns)
 const dataPreviewColumns = computed(() => {
   if (!dataPreview.value.length) return [];
-  const first = dataPreview.value[0];
+  const first = dataPreview.value[0] as Record<string, any>;
   const metadata = props.nodeOutput?.metadata || {};
   const pcLabels = metadata.pc_labels || [];
-  const mcrLabels = metadata.labels || [];
+  const mcrLabels = getNormalizedOptionalLabelArray(metadata.labels);
   const _featureNames = metadata.feature_names || [];
   const xTitle = metadata.x_title || "";
   const isPCA = metadata.type === "PCA" || metadata.isPCA;
   const isMCR = metadata.type === "MCR_ALS";
 
-  return Object.keys(first).map((key) => {
+  return Object.keys(first)
+    .filter((key) => key !== "_label_full")
+    .map((key) => {
     let header = key;
     if (key === "_index") {
       header = "#";
+    } else if (key === "_label") {
+      header = "Label";
+    } else if (key.startsWith("_label_")) {
+      const labelIdx = Number.parseInt(key.replace("_label_", ""), 10);
+      header = Number.isNaN(labelIdx) ? "Label" : `Field ${labelIdx + 1}`;
     } else if (key.startsWith("col_")) {
       const colIdx = parseInt(key.replace("col_", ""));
       if (isPCA && pcLabels[colIdx]) {
@@ -863,9 +945,9 @@ function buildMCRData(output: any, mode: "C" | "St"): any[] {
     // For NMF, data is W matrix; for FastICA, data is S matrix
     const C = output.data; // Already in correct format
     const x = metadata.x_axis || Array.from({ length: C.length }, (_, i) => i);
-    const labels = metadata.labels || [];
+    const labels = getNormalizedOptionalLabelArray(metadata.labels);
     const n_components = C[0]?.length || 0;
-    const sampleLabels = metadata.sample_labels || Array.from({ length: C.length }, (_, i) => `Sample ${i + 1}`);
+    const sampleLabels = getNormalizedLabelArray(metadata.sample_labels, C.length, "Sample");
 
     // Transpose C: plot each component as a separate trace
     for (let comp = 0; comp < n_components; comp++) {
@@ -899,7 +981,7 @@ function buildMCRData(output: any, mode: "C" | "St"): any[] {
     } else {
       x_values = Array.from({ length: St[0]?.length || 0 }, (_, i) => i);
     }
-    const labels = metadata.St_labels || [];
+    const labels = getNormalizedOptionalLabelArray(metadata.St_labels);
 
     for (let comp = 0; comp < St.length; comp++) {
       traces.push({
@@ -927,12 +1009,11 @@ function buildPCAData(output: any, mode: "scores" | "loadings" | "scree" | "diag
     if (!scores || !scores.length) return [];
 
     const pcLabels = metadata.pc_labels || [];
-    const sampleLabels = metadata.sample_labels ||
-      Array.from({ length: scores.length }, (_, i) => `Sample ${i + 1}`);
-    const labelCategories = metadata.label_categories;
+    const sampleLabels = getNormalizedLabelArray(metadata.sample_labels, scores.length, "Sample");
+    const labelCategories = getNormalizedCategoryArray(metadata.label_categories);
 
     // Determine if we should use categorical coloring
-    const useCategorical = labelCategories && labelCategories.length > 0 && labelCategories.length < 50;
+    const useCategorical = labelCategories.length > 0 && labelCategories.length < 50;
 
     if (useCategorical) {
       // Multiple traces, one per category
@@ -940,7 +1021,7 @@ function buildPCAData(output: any, mode: "scores" | "loadings" | "scree" | "diag
 
       // Group points by category
       const categoryGroups = new Map<string | number, { x: number[], y: number[], labels: string[] }>();
-      labelCategories.forEach((cat: any) => {
+      labelCategories.forEach((cat) => {
         categoryGroups.set(cat, { x: [], y: [], labels: [] });
       });
 
@@ -955,7 +1036,7 @@ function buildPCAData(output: any, mode: "scores" | "loadings" | "scree" | "diag
       });
 
       // Create one trace per category
-      labelCategories.forEach((category: any) => {
+      labelCategories.forEach((category) => {
         const group = categoryGroups.get(category);
         if (group && group.x.length > 0) {
           traces.push({
@@ -1068,16 +1149,16 @@ function buildPCAData(output: any, mode: "scores" | "loadings" | "scree" | "diag
     // Diagnostics plot: Hotelling T² and SPE with categorical coloring
     const t2 = metadata.t2 || [];
     const spe = metadata.spe || [];
-    const sampleLabels = metadata.sample_labels ||
-      Array.from({ length: t2.length }, (_, i) => `Sample ${i + 1}`);
-    const labelCategories = metadata.label_categories;
+    const nSamples = Math.max(t2.length, spe.length);
+    const sampleLabels = getNormalizedLabelArray(metadata.sample_labels, nSamples, "Sample");
+    const labelCategories = getNormalizedCategoryArray(metadata.label_categories);
 
     if (!t2.length && !spe.length) return [];
 
     const sampleIndices = Array.from({ length: Math.max(t2.length, spe.length) }, (_, i) => i + 1);
 
     // Determine if we should use categorical coloring
-    const useCategorical = labelCategories && labelCategories.length > 0 && labelCategories.length < 50;
+    const useCategorical = labelCategories.length > 0 && labelCategories.length < 50;
 
     if (useCategorical) {
       // Categorical coloring: one trace per category
@@ -1085,7 +1166,7 @@ function buildPCAData(output: any, mode: "scores" | "loadings" | "scree" | "diag
 
       // Group data by category
       const categoryGroups = new Map<string | number, { indices: number[], t2Values: number[], speValues: number[], labels: string[] }>();
-      labelCategories.forEach((cat: any) => {
+      labelCategories.forEach((cat) => {
         categoryGroups.set(cat, { indices: [], t2Values: [], speValues: [], labels: [] });
       });
 
@@ -1102,7 +1183,7 @@ function buildPCAData(output: any, mode: "scores" | "loadings" | "scree" | "diag
 
       // Create T² traces per category
       if (t2.length > 0) {
-        labelCategories.forEach((category: any) => {
+        labelCategories.forEach((category) => {
           const group = categoryGroups.get(category);
           if (group && group.t2Values.length > 0) {
             traces.push({
@@ -1138,7 +1219,7 @@ function buildPCAData(output: any, mode: "scores" | "loadings" | "scree" | "diag
 
       // Create SPE traces per category
       if (spe.length > 0) {
-        labelCategories.forEach((category: any) => {
+        labelCategories.forEach((category) => {
           const group = categoryGroups.get(category);
           if (group && group.speValues.length > 0) {
             traces.push({
@@ -1248,12 +1329,11 @@ function buildPLSData(output: any, xAxis: number, yAxis: number): any[] {
   if (!scores || !scores.length) return [];
 
   const pcLabels = metadata.pc_labels || [];
-  const sampleLabels = metadata.sample_labels ||
-    Array.from({ length: scores.length }, (_, i) => `Sample ${i + 1}`);
-  const labelCategories = metadata.label_categories;
+  const sampleLabels = getNormalizedLabelArray(metadata.sample_labels, scores.length, "Sample");
+  const labelCategories = getNormalizedCategoryArray(metadata.label_categories);
 
   // Determine if we should use categorical coloring
-  const useCategorical = labelCategories && labelCategories.length > 0 && labelCategories.length < 50;
+  const useCategorical = labelCategories.length > 0 && labelCategories.length < 50;
 
   if (useCategorical) {
     // Multiple traces, one per category
@@ -1261,7 +1341,7 @@ function buildPLSData(output: any, xAxis: number, yAxis: number): any[] {
 
     // Group points by category
     const categoryGroups = new Map();
-    labelCategories.forEach((cat: any) => {
+    labelCategories.forEach((cat) => {
       categoryGroups.set(cat, { x: [], y: [], labels: [] });
     });
 
@@ -1276,7 +1356,7 @@ function buildPLSData(output: any, xAxis: number, yAxis: number): any[] {
     });
 
     // Create one trace per category
-    labelCategories.forEach((category: any) => {
+    labelCategories.forEach((category) => {
       const group = categoryGroups.get(category);
       if (group && group.x.length > 0) {
         traces.push({
@@ -1400,12 +1480,11 @@ function buildClassificationData(output: any, xAxis: number, yAxis: number): any
   if (!data || !data.length) return [];
 
   const pcLabels = metadata.pc_labels || [];
-  const sampleLabels = metadata.sample_labels ||
-    Array.from({ length: data.length }, (_, i) => `Sample ${i + 1}`);
-  const labelCategories = metadata.label_categories;
+  const sampleLabels = getNormalizedLabelArray(metadata.sample_labels, data.length, "Sample");
+  const labelCategories = getNormalizedCategoryArray(metadata.label_categories);
 
   // Determine if we should use categorical coloring (always true for classification)
-  const useCategorical = labelCategories && labelCategories.length > 0 && labelCategories.length < 50;
+  const useCategorical = labelCategories.length > 0 && labelCategories.length < 50;
 
   if (useCategorical) {
     // Multiple traces, one per category (class)
@@ -1413,7 +1492,7 @@ function buildClassificationData(output: any, xAxis: number, yAxis: number): any
 
     // Group points by category
     const categoryGroups = new Map();
-    labelCategories.forEach((cat: any) => {
+    labelCategories.forEach((cat) => {
       categoryGroups.set(cat, { x: [], y: [], labels: [] });
     });
 
@@ -1429,7 +1508,7 @@ function buildClassificationData(output: any, xAxis: number, yAxis: number): any
     });
 
     // Create one trace per category
-    labelCategories.forEach((category: any) => {
+    labelCategories.forEach((category) => {
       const group = categoryGroups.get(category);
       if (group && group.x.length > 0) {
         traces.push({
@@ -1485,7 +1564,7 @@ function buildBoxPlotData(output: any): any[] {
 
   const traces: any[] = [];
   const _featureNames = metadata.feature_names || [];
-  const sampleLabels = metadata.labels || [];
+  const sampleLabels = getNormalizedLabelArray(metadata.labels, data.length, "Sample");
   const n_features = Math.min(data[0]?.length || 0, 10);
 
   // Get unique categories from sample labels
@@ -1561,7 +1640,7 @@ function buildFeatureScatterData(output: any, xFeatureIdx: number, yFeatureIdx: 
 
   const traces: any[] = [];
   const _featureNames = metadata.feature_names || [];
-  const sampleLabels = metadata.labels || [];
+  const sampleLabels = getNormalizedLabelArray(metadata.labels, data.length, "Sample");
   const xFeatureName = _featureNames[xFeatureIdx] || `Feature ${xFeatureIdx + 1}`;
   const yFeatureName = _featureNames[yFeatureIdx] || `Feature ${yFeatureIdx + 1}`;
 
@@ -1629,7 +1708,7 @@ function buildFeatureScatterData(output: any, xFeatureIdx: number, yFeatureIdx: 
 
 function buildLineData(data: any[], xAxisValues: any[] | null, metadata: any) {
   const traces: any[] = [];
-  const labels = metadata.labels || [];
+  const labels = getNormalizedLabelArray(metadata.labels, data.length, "Row");
   // Use "Row" for non-spectral data (DRY with NodeDetailView)
   const rowLabel = isSpectraData.value ? "Spectrum" : "Row";
 
@@ -1692,7 +1771,7 @@ function buildHeatmapData(data: any[], wavenumbers: number[] | null, metadata: a
 
 function buildScatterData(data: any[], metadata: any) {
   const traces: any[] = [];
-  const labels = metadata.labels || [];
+  const labels = getNormalizedLabelArray(metadata.labels, data.length, "Point");
 
   // Assume first two columns are x, y coordinates
   const x = data.map((row) => (Array.isArray(row) ? row[0] : row));
@@ -1798,10 +1877,12 @@ const plotLayout = computed(() => {
   // PCA specific layout
   if (isPCAOutput.value) {
     const pcLabels = metadata.pc_labels || [];
+    const hasCategorical = (() => {
+      const categories = getNormalizedCategoryArray(metadata.label_categories);
+      return categories.length > 0 && categories.length < 50;
+    })();
 
     if (pcaDisplayMode.value === "scores") {
-      const hasCategorical = metadata.label_categories && metadata.label_categories.length > 0 && metadata.label_categories.length < 50;
-
       const layout: Record<string, any> = {
         ...baseLayout,
         showlegend: hasCategorical,
@@ -1896,10 +1977,12 @@ const plotLayout = computed(() => {
   // PLS specific layout
   if (isPLSOutput.value) {
     const pcLabels = metadata.pc_labels || [];
+    const hasCategorical = (() => {
+      const categories = getNormalizedCategoryArray(metadata.label_categories);
+      return categories.length > 0 && categories.length < 50;
+    })();
 
     if (plsDisplayMode.value === "scores") {
-      const hasCategorical = metadata.label_categories && metadata.label_categories.length > 0 && metadata.label_categories.length < 50;
-
       const layout: Record<string, any> = {
         ...baseLayout,
         showlegend: hasCategorical,
@@ -1992,7 +2075,8 @@ const plotLayout = computed(() => {
   // Classification specific layout (PLS-DA without plots, SIMCA, KNN)
   if (isClassificationOutput.value) {
     const pcLabels = metadata.pc_labels || [];
-    const hasCategorical = metadata.label_categories && metadata.label_categories.length > 0 && metadata.label_categories.length < 50;
+    const categories = getNormalizedCategoryArray(metadata.label_categories);
+    const hasCategorical = categories.length > 0 && categories.length < 50;
 
     const layout: Record<string, any> = {
       ...baseLayout,
@@ -2026,7 +2110,7 @@ const plotLayout = computed(() => {
   // Generic dataset layout (Load Data with non-spectral data like Iris)
   if (isGenericDatasetOutput.value) {
     const _featureNames = metadata.feature_names || [];
-    const sampleLabels = metadata.labels || [];
+    const sampleLabels = getNormalizedLabelArray(metadata.labels, output.data?.length || 0, "Sample");
     const categories = [...new Set(sampleLabels)];
     const hasCategories = categories.length > 1 && categories.length < 20;
 

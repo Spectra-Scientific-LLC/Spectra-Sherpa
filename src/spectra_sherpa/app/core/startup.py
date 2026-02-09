@@ -139,7 +139,7 @@ def validate_security_settings() -> None:
                 "APP_API_KEY is set to the default value while ALLOW_SYSTEM_API_KEY_AUTH "
                 "is enabled. Set a strong random APP_API_KEY."
             )
-    elif settings.api_key == DEFAULT_API_KEY and app_config.mode != "local":
+    elif settings.api_key == DEFAULT_API_KEY and app_config.mode == "demo":
         logger.info(
             "APP_API_KEY is default, but ALLOW_SYSTEM_API_KEY_AUTH is disabled, "
             "so this key is not accepted for external authentication."
@@ -156,11 +156,17 @@ def validate_security_settings() -> None:
 
     # Check encryption key (warning, not fatal)
     if not os.getenv("MASTER_ENCRYPTION_KEY"):
-        logger.warning(
-            "MASTER_ENCRYPTION_KEY not set. A key will be auto-generated, but this "
-            "may cause issues if the container is recreated. Set this environment "
-            "variable for persistent API key encryption."
-        )
+        if app_config.mode == "demo":
+            logger.warning(
+                "MASTER_ENCRYPTION_KEY not set. A key will be auto-generated, but this "
+                "may cause issues if the container is recreated. Set this environment "
+                "variable for persistent API key encryption."
+            )
+        elif app_config.mode == "hybrid":
+            logger.info(
+                "MASTER_ENCRYPTION_KEY not set — auto-generating. Set this env var "
+                "before deploying to production."
+            )
 
     # Demo mode: SQLite is not safe for concurrent multi-user production workloads.
     if app_config.mode == "demo" and settings.database_url.startswith("sqlite"):
@@ -254,15 +260,25 @@ async def link_hybrid_identity() -> None:
         logger.info("Hybrid mode: no SPECTRASHERPA_API_KEY configured, using local identity")
         return
 
+    # Verify server connectivity via health check first
+    is_healthy, health_msg = await service.health_check()
+    if not is_healthy:
+        logger.info(
+            "Hybrid mode: cloud server not reachable (%s) — using local identity",
+            health_msg,
+        )
+        return
+
+    # Try to link identity via /auth/me (may fail if cloud DB isn't set up)
     try:
         result = await service.validate_api_key()
     except Exception as exc:
-        logger.warning("Hybrid identity linking failed: %s — using cached/local identity", exc)
+        logger.info("Hybrid identity linking skipped: %s — Sherpa sync still works", exc)
         return
 
     if not result.success:
-        logger.warning(
-            "Hybrid identity linking failed: %s — using cached/local identity",
+        logger.info(
+            "Hybrid identity linking skipped: %s — Sherpa sync still works via API key auth",
             result.error,
         )
         return

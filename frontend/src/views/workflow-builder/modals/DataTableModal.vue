@@ -31,12 +31,35 @@
           />
         </div>
 
+        <div class="control-group search-group">
+          <label>Search</label>
+          <InputText
+            v-model="searchQuery"
+            placeholder="Filter visible rows"
+            class="search-input"
+          />
+        </div>
+
+        <div class="control-group">
+          <label>Scope</label>
+          <Dropdown
+            v-model="searchScope"
+            :options="searchScopeOptions"
+            optionLabel="label"
+            optionValue="value"
+            class="filter-dropdown"
+          />
+        </div>
+
         <div class="control-group stats-summary">
           <span class="stat-item">
             <strong>{{ dataShape.rows }}</strong> rows
           </span>
           <span class="stat-item">
             <strong>{{ dataShape.cols }}</strong> columns
+          </span>
+          <span v-if="hasActiveFilter" class="stat-item">
+            <strong>{{ filteredRowCount }}</strong> matched
           </span>
           <span v-if="dataShape.rows > rowLimit" class="stat-item warning">
             Showing first {{ rowLimit }} rows
@@ -74,9 +97,9 @@
               <span
                 :class="{
                   'numeric-cell': col.isNumeric,
-                  'label-cell': col.field === '_label',
+                  'label-cell': col.field.startsWith('_label'),
                 }"
-                :title="col.field === '_label' ? (data._label_full || data._label || '') : ''"
+                :title="col.field.startsWith('_label') ? (data._label_full || data[col.field] || '') : ''"
               >
                 {{ formatValue(data[col.field], col.isNumeric) }}
               </span>
@@ -86,8 +109,10 @@
 
         <div v-else class="empty-table">
           <i class="pi pi-table" />
-          <p>No data to display</p>
-          <small>Execute the node first to see results</small>
+          <p>{{ hasActiveFilter ? "No rows match the current filter" : "No data to display" }}</p>
+          <small>
+            {{ hasActiveFilter ? "Try a broader search or switch scope to All fields." : "Execute the node first to see results" }}
+          </small>
         </div>
       </div>
 
@@ -106,12 +131,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
+import { ref, computed } from "vue";
 import Dialog from "primevue/dialog";
 import Dropdown from "primevue/dropdown";
+import InputText from "primevue/inputtext";
 import Button from "primevue/button";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
+import {
+  compactSampleLabel,
+  detectLabelDelimiter,
+  normalizeSampleLabel,
+  splitLabelByDelimiter,
+} from "@/utils/sampleLabels";
 
 interface Props {
   modelValue: boolean;
@@ -130,25 +162,13 @@ const visible = computed({
   set: (value) => emit("update:modelValue", value),
 });
 
-// Debug: log when modal opens or data changes
-watch([visible, () => props.nodeOutput], ([isVisible, output]) => {
-  if (isVisible) {
-    console.log('[DataTableModal] Modal opened with:', {
-      hasOutput: !!output,
-      hasData: !!output?.data,
-      dataType: output?.data ? (Array.isArray(output.data) ? 'array' : typeof output.data) : 'none',
-      dataLength: Array.isArray(output?.data) ? output.data.length : 'N/A',
-      firstRowType: Array.isArray(output?.data) && output.data[0] ? (Array.isArray(output.data[0]) ? 'array' : typeof output.data[0]) : 'N/A',
-      outputKeys: output ? Object.keys(output) : [],
-    });
-  }
-}, { immediate: true });
-
 const title = computed(() => `${props.nodeLabel} - Data View`);
 
 // Display options
 const rowLimit = ref(100);
 const precision = ref(6);
+const searchQuery = ref("");
+const searchScope = ref<"all" | "label">("all");
 
 const rowLimitOptions = [
   { label: "50 rows", value: 50 },
@@ -165,49 +185,10 @@ const precisionOptions = [
   { label: "8 decimals", value: 8 },
 ];
 
-function normalizeSampleLabel(value: any): string {
-  if (value === null || value === undefined) return "";
-
-  if (Array.isArray(value)) {
-    const readable = value
-      .slice()
-      .reverse()
-      .find((item) => typeof item === "string" && item.trim().length > 0);
-    if (readable) return readable.trim();
-    return value.map((item) => normalizeSampleLabel(item)).filter(Boolean).join(" | ");
-  }
-
-  if (typeof value === "object") {
-    if ("label" in value && typeof value.label === "string" && value.label.trim().length > 0) {
-      return value.label.trim();
-    }
-    if ("name" in value && typeof value.name === "string" && value.name.trim().length > 0) {
-      return value.name.trim();
-    }
-    return String(value);
-  }
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    // Handle stringified tuple/list labels like:
-    // "[datetime.datetime(...), 'Human Sample Name']"
-    if (trimmed.startsWith("[") || trimmed.startsWith("(")) {
-      const quoted = [...trimmed.matchAll(/'([^']+)'|\"([^\"]+)\"/g)]
-        .map((match) => match[1] || match[2])
-        .filter(Boolean);
-      if (quoted.length > 0) return quoted[quoted.length - 1];
-    }
-    return trimmed;
-  }
-
-  return String(value);
-}
-
-function compactSampleLabel(value: any): string {
-  const text = normalizeSampleLabel(value).replace(/\s+/g, " ").trim();
-  if (text.length <= 64) return text;
-  return `${text.slice(0, 40)}...${text.slice(-18)}`;
-}
+const searchScopeOptions = [
+  { label: "All fields", value: "all" },
+  { label: "Labels only", value: "label" },
+];
 
 // Check if data is Plotly visualization format (from CONTOUR_PLOT, PLOT nodes)
 const isPlotlyFormat = computed(() => {
@@ -271,6 +252,28 @@ const dataShape = computed(() => {
   return { rows, cols };
 });
 
+function getLabelInfo(metadata: Record<string, any>) {
+  const labelsRaw = metadata.sample_labels || metadata.labels || [];
+  const labels = Array.isArray(labelsRaw)
+    ? labelsRaw.map((label: any) => normalizeSampleLabel(label))
+    : [];
+  const delimiter = detectLabelDelimiter(labels);
+  const splitLabels = delimiter
+    ? labels.map((label: string) => splitLabelByDelimiter(label, delimiter))
+    : [];
+  const maxParts = splitLabels.length > 0
+    ? Math.max(...splitLabels.map((parts: string[]) => parts.length))
+    : 0;
+
+  return {
+    labels,
+    delimiter,
+    splitLabels,
+    maxParts,
+    useSplitColumns: !!delimiter && maxParts > 1,
+  };
+}
+
 // Build table columns
 const tableColumns = computed(() => {
   const output = props.nodeOutput;
@@ -289,6 +292,7 @@ const tableColumns = computed(() => {
   const isPCA = metadata.type === "PCA" || metadata.isPCA;
   const pcLabels = metadata.pc_labels || [];
   const mcrLabels = metadata.labels || [];
+  const labelInfo = getLabelInfo(metadata);
 
   // Check if it's 2D data
   if (Array.isArray(data[0])) {
@@ -303,21 +307,28 @@ const tableColumns = computed(() => {
       isNumeric: true,
     });
 
-    // Add label column if available (for spectra names)
-    if (metadata.sample_labels && metadata.sample_labels.length > 0) {
-      columns.push({
-        field: "_label",
-        header: "Sample",
-        width: "260px",
-        isNumeric: false,
-      });
-    } else if (!isMCR && !isPCA && metadata.labels && metadata.labels.length > 0) {
-      columns.push({
-        field: "_label",
-        header: "Label",
-        width: "260px",
-        isNumeric: false,
-      });
+    // Add label columns if available
+    if (labelInfo.labels.length > 0) {
+      if (labelInfo.useSplitColumns) {
+        for (let i = 0; i < labelInfo.maxParts; i += 1) {
+          columns.push({
+            field: `_label_${i}`,
+            header: `Field ${i + 1}`,
+            width: "220px",
+            isNumeric: false,
+          });
+        }
+      } else {
+        const labelHeader = metadata.sample_labels?.length > 0
+          ? "Sample"
+          : (!isMCR && !isPCA ? "Label" : "Sample");
+        columns.push({
+          field: "_label",
+          header: labelHeader,
+          width: "280px",
+          isNumeric: false,
+        });
+      }
     }
 
     // Add data columns (limit to reasonable number for display)
@@ -357,15 +368,35 @@ const tableColumns = computed(() => {
     return columns;
   } else {
     // 1D data
-    return [
+    const columns: any[] = [
       { field: "_index", header: "#", width: "60px", isNumeric: true },
-      { field: "value", header: "Value", width: "150px", isNumeric: true },
     ];
+    if (labelInfo.labels.length > 0) {
+      if (labelInfo.useSplitColumns) {
+        for (let i = 0; i < labelInfo.maxParts; i += 1) {
+          columns.push({
+            field: `_label_${i}`,
+            header: `Field ${i + 1}`,
+            width: "220px",
+            isNumeric: false,
+          });
+        }
+      } else {
+        columns.push({
+          field: "_label",
+          header: "Label",
+          width: "280px",
+          isNumeric: false,
+        });
+      }
+    }
+    columns.push({ field: "value", header: "Value", width: "150px", isNumeric: true });
+    return columns;
   }
 });
 
 // Build table data
-const tableData = computed(() => {
+const previewTableData = computed(() => {
   const output = props.nodeOutput;
   if (!output?.data) return [];
 
@@ -373,10 +404,7 @@ const tableData = computed(() => {
   const sourceData = isPlotlyFormat.value ? extractedData.value : null;
   const data = sourceData?.data || output.data;
   const metadata = output.metadata || {};
-
-  // For MCR/PCA, use sample_labels; for spectra use labels
-  const labelsRaw = metadata.sample_labels || metadata.labels || [];
-  const labels = Array.isArray(labelsRaw) ? labelsRaw.map((label: any) => normalizeSampleLabel(label)) : [];
+  const labelInfo = getLabelInfo(metadata);
   const limit = rowLimit.value;
 
   if (!Array.isArray(data)) return [];
@@ -387,12 +415,26 @@ const tableData = computed(() => {
   if (Array.isArray(data[0])) {
     // 2D data
     for (let i = 0; i < maxRows; i++) {
-      const fullLabel = labels[i] || "";
-      const row: any = {
-        _index: i + 1,
-        _label: compactSampleLabel(fullLabel),
-        _label_full: fullLabel,
-      };
+      const fullLabel = labelInfo.labels[i] || "";
+      const row: any = { _index: i + 1, _label_full: fullLabel };
+      if (labelInfo.labels.length > 0) {
+        if (labelInfo.useSplitColumns) {
+          const parts = labelInfo.splitLabels[i] || [];
+          for (let labelIdx = 0; labelIdx < labelInfo.maxParts; labelIdx += 1) {
+            row[`_label_${labelIdx}`] = compactSampleLabel(parts[labelIdx] || "", {
+              maxLength: 56,
+              headLength: 36,
+              tailLength: 16,
+            });
+          }
+        } else {
+          row._label = compactSampleLabel(fullLabel, {
+            maxLength: 64,
+            headLength: 40,
+            tailLength: 18,
+          });
+        }
+      }
 
       const maxCols = Math.min(data[i].length, 50);
       for (let j = 0; j < maxCols; j++) {
@@ -408,15 +450,58 @@ const tableData = computed(() => {
   } else {
     // 1D data
     for (let i = 0; i < maxRows; i++) {
-      rows.push({
+      const row: any = {
         _index: i + 1,
         value: data[i],
-      });
+        _label_full: labelInfo.labels[i] || "",
+      };
+      if (labelInfo.labels.length > 0) {
+        if (labelInfo.useSplitColumns) {
+          const parts = labelInfo.splitLabels[i] || [];
+          for (let labelIdx = 0; labelIdx < labelInfo.maxParts; labelIdx += 1) {
+            row[`_label_${labelIdx}`] = compactSampleLabel(parts[labelIdx] || "", {
+              maxLength: 56,
+              headLength: 36,
+              tailLength: 16,
+            });
+          }
+        } else {
+          row._label = compactSampleLabel(labelInfo.labels[i] || "", {
+            maxLength: 64,
+            headLength: 40,
+            tailLength: 18,
+          });
+        }
+      }
+      rows.push(row);
     }
   }
 
   return rows;
 });
+
+const hasActiveFilter = computed(() => searchQuery.value.trim().length > 0);
+
+const tableData = computed(() => {
+  if (!hasActiveFilter.value) return previewTableData.value;
+
+  const tokens = searchQuery.value
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (tokens.length === 0) return previewTableData.value;
+
+  return previewTableData.value.filter((row: Record<string, any>) => {
+    const fields = searchScope.value === "label"
+      ? [row._label_full ?? row._label ?? ""]
+      : Object.values(row);
+    const haystack = fields.map((value) => String(value ?? "").toLowerCase()).join(" ");
+    return tokens.every((token) => haystack.includes(token));
+  });
+});
+
+const filteredRowCount = computed(() => tableData.value.length);
 
 // Metadata handling
 const hasMetadata = computed(() => {
@@ -481,8 +566,7 @@ function exportCSV() {
   const data = output.data;
   const metadata = output.metadata || {};
   const wavenumbers = metadata.wavenumbers || metadata.x_axis;
-  const labelsRaw = metadata.sample_labels || metadata.labels || [];
-  const labels = Array.isArray(labelsRaw) ? labelsRaw.map((label: any) => normalizeSampleLabel(label)) : [];
+  const labelInfo = getLabelInfo(metadata);
 
   const escapeCsv = (value: any): string => {
     const text = String(value ?? "");
@@ -497,7 +581,13 @@ function exportCSV() {
   if (Array.isArray(data[0])) {
     // 2D data - build header row
     const headers = ["Index"];
-    if (labels.length > 0) headers.push("Label");
+    if (labelInfo.labels.length > 0) {
+      if (labelInfo.useSplitColumns) {
+        headers.push(...Array.from({ length: labelInfo.maxParts }, (_, idx) => `Field ${idx + 1}`));
+      } else {
+        headers.push("Label");
+      }
+    }
 
     if (wavenumbers) {
       headers.push(...wavenumbers.map((w: number) => w.toFixed(2)));
@@ -509,15 +599,45 @@ function exportCSV() {
     // Data rows
     for (let i = 0; i < data.length; i++) {
       const row: any[] = [i + 1];
-      if (labels.length > 0) row.push(labels[i] || "");
+      if (labelInfo.labels.length > 0) {
+        if (labelInfo.useSplitColumns) {
+          const parts = labelInfo.splitLabels[i] || [];
+          for (let labelIdx = 0; labelIdx < labelInfo.maxParts; labelIdx += 1) {
+            row.push(parts[labelIdx] || "");
+          }
+        } else {
+          row.push(labelInfo.labels[i] || "");
+        }
+      }
       row.push(...data[i]);
       csv += row.map(escapeCsv).join(",") + "\n";
     }
   } else {
     // 1D data
-    csv += "Index,Value\n";
+    const headers = ["Index"];
+    if (labelInfo.labels.length > 0) {
+      if (labelInfo.useSplitColumns) {
+        headers.push(...Array.from({ length: labelInfo.maxParts }, (_, idx) => `Field ${idx + 1}`));
+      } else {
+        headers.push("Label");
+      }
+    }
+    headers.push("Value");
+    csv += headers.map(escapeCsv).join(",") + "\n";
     for (let i = 0; i < data.length; i++) {
-      csv += `${escapeCsv(i + 1)},${escapeCsv(data[i])}\n`;
+      const row: any[] = [i + 1];
+      if (labelInfo.labels.length > 0) {
+        if (labelInfo.useSplitColumns) {
+          const parts = labelInfo.splitLabels[i] || [];
+          for (let labelIdx = 0; labelIdx < labelInfo.maxParts; labelIdx += 1) {
+            row.push(parts[labelIdx] || "");
+          }
+        } else {
+          row.push(labelInfo.labels[i] || "");
+        }
+      }
+      row.push(data[i]);
+      csv += row.map(escapeCsv).join(",") + "\n";
     }
   }
 
@@ -567,6 +687,18 @@ function exportCSV() {
 
 .row-limit-dropdown {
   min-width: 120px;
+}
+
+.search-group {
+  min-width: 260px;
+}
+
+.search-input {
+  min-width: 220px;
+}
+
+.filter-dropdown {
+  min-width: 140px;
 }
 
 .stats-summary {
@@ -734,5 +866,18 @@ function exportCSV() {
 /* Virtual scroller styling */
 :deep(.p-virtualscroller) {
   background: #0f172a;
+}
+
+@media (max-width: 1200px) {
+  .table-controls {
+    flex-wrap: wrap;
+    gap: 12px 16px;
+  }
+
+  .stats-summary {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+  }
 }
 </style>

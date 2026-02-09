@@ -83,12 +83,17 @@ def get_cors_origins() -> list[str]:
         # For local development, we're permissive
         return ["*"]
 
-    # For hybrid/demo/cloud modes, warn if CORS_ORIGINS is not explicitly set
-    logger.warning(
-        "CORS_ORIGINS not set for %s mode — using localhost defaults only. "
-        "Set CORS_ORIGINS to your production frontend domain(s).",
-        app_config.mode,
-    )
+    # For hybrid/demo/cloud modes, note if CORS_ORIGINS is not explicitly set
+    if app_config.mode == "demo":
+        logger.warning(
+            "CORS_ORIGINS not set for demo mode — using localhost defaults only. "
+            "Set CORS_ORIGINS to your production frontend domain(s).",
+        )
+    else:
+        logger.info(
+            "CORS_ORIGINS not set for %s mode — using localhost defaults.",
+            app_config.mode,
+        )
 
     # For hybrid/demo/cloud modes, add production URL if configured
     if app_config.api_base_url and app_config.api_base_url not in default_origins:
@@ -250,10 +255,11 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     # Local mode: never requires auth.
     # Hybrid mode: requires auth for non-loopback clients only.
     # Demo mode: always requires auth.
+    ws_client_host = get_client_host(websocket)
     requires_ws_auth = (
         app_config.mode == "demo"
         or (app_config.mode == "hybrid"
-            and not _is_loopback(get_client_host(websocket)))
+            and not _is_loopback(ws_client_host))
     )
 
     if requires_ws_auth:
@@ -269,11 +275,11 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     async with async_session() as session:
         # Prefer user JWT identity over machine API key when both are present.
         if token:
-            ws_user = await get_user_from_credentials(session, token=token)
+            ws_user = await get_user_from_credentials(session, token=token, client_host=ws_client_host)
         if ws_user is None and api_key:
-            ws_user = await get_user_from_credentials(session, api_key=api_key)
+            ws_user = await get_user_from_credentials(session, api_key=api_key, client_host=ws_client_host)
         if ws_user is None and not has_credentials:
-            ws_user = await get_user_from_credentials(session)
+            ws_user = await get_user_from_credentials(session, client_host=ws_client_host)
 
     # Credentials were provided but didn't resolve to a user.
     if has_credentials and ws_user is None:
@@ -286,7 +292,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         # shouldn't block the implicit user. Fall back gracefully.
         logger.debug("Stale WS credentials on loopback — falling back to implicit identity")
         async with async_session() as session:
-            ws_user = await get_user_from_credentials(session)
+            ws_user = await get_user_from_credentials(session, client_host=ws_client_host)
 
     if ws_user is not None and hasattr(ws_user, "is_active") and not ws_user.is_active:
         await websocket.accept()
@@ -317,6 +323,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         while True:
             payload = await websocket.receive_json()
             action = payload.get("action")
+            logger.info("WS action received: %s", action)
 
             if action == "subscribe":
                 channel = _resolve_channel(payload.get("channel"))
@@ -337,104 +344,112 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 await ws_manager.unsubscribe(websocket, channel)
                 await websocket.send_json({"type": "unsubscribed", "channel": channel})
             elif action == "llm_chat":
-                message = payload.get("message") or ""
-                if not message:
-                    await websocket.send_json(
-                        {"type": "error", "detail": "Missing message"}
-                    )
-                    continue
-
-                # Check egress permission (LLM requires network access)
-                async with async_session() as permission_session:
-                    allowed = await check_egress_permission(
-                        ws_user,
-                        "allow_llm_context",
-                        data_type="metadata",
-                        destination="llm_context",
-                        session=permission_session,
-                    )
-                if not allowed:
-                    await websocket.send_json(
-                        {"type": "error", "detail": "LLM access is disabled for this user or mode"}
-                    )
-                    continue
-
-                # Check rate limit (same as HTTP endpoint)
-                user_key = f"user_{ws_user.id}" if ws_user and ws_user.id else "anonymous"
-                if not _llm_rate_limiter.allow(user_key):
-                    await websocket.send_json(
-                        {"type": "error", "detail": "LLM rate limit exceeded. Try again later."}
-                    )
-                    continue
-
-                conversation_id = payload.get("conversation_id")
-                metadata = payload.get("metadata")
-                async with async_session() as session:
-                    service = LLMService(session, user=ws_user)
-                    try:
-                        convo_id, stream = await service.stream_chat(
-                            message=message,
-                            conversation_id=conversation_id,
-                            metadata=metadata,
-                        )
-                    except ValueError as exc:
+                try:
+                    message = payload.get("message") or ""
+                    if not message:
                         await websocket.send_json(
-                            {"type": "error", "detail": str(exc)}
+                            {"type": "error", "detail": "Missing message"}
                         )
                         continue
-                    await websocket.send_json(
-                        {"type": "llm_start", "conversation_id": convo_id}
-                    )
-                    async for chunk in stream:
-                        await websocket.send_json(
-                            {
-                                "type": "llm_chunk",
-                                "conversation_id": convo_id,
-                                "chunk": chunk,
-                            }
+
+                    # Check egress permission (LLM requires network access)
+                    async with async_session() as permission_session:
+                        allowed = await check_egress_permission(
+                            ws_user,
+                            "allow_llm_context",
+                            data_type="metadata",
+                            destination="llm_context",
+                            session=permission_session,
                         )
+                    if not allowed:
+                        await websocket.send_json(
+                            {"type": "error", "detail": "LLM access is disabled for this user or mode"}
+                        )
+                        continue
+
+                    # Check rate limit (same as HTTP endpoint)
+                    user_key = f"user_{ws_user.id}" if ws_user and ws_user.id else "anonymous"
+                    if not _llm_rate_limiter.allow(user_key):
+                        await websocket.send_json(
+                            {"type": "error", "detail": "LLM rate limit exceeded. Try again later."}
+                        )
+                        continue
+
+                    conversation_id = payload.get("conversation_id")
+                    metadata = payload.get("metadata")
+                    async with async_session() as session:
+                        service = LLMService(session, user=ws_user)
+                        try:
+                            convo_id, stream = await service.stream_chat(
+                                message=message,
+                                conversation_id=conversation_id,
+                                metadata=metadata,
+                            )
+                        except ValueError as exc:
+                            await websocket.send_json(
+                                {"type": "error", "detail": str(exc)}
+                            )
+                            continue
+                        await websocket.send_json(
+                            {"type": "llm_start", "conversation_id": convo_id}
+                        )
+                        async for chunk in stream:
+                            await websocket.send_json(
+                                {
+                                    "type": "llm_chunk",
+                                    "conversation_id": convo_id,
+                                    "chunk": chunk,
+                                }
+                            )
+                        await websocket.send_json(
+                            {"type": "llm_done", "conversation_id": convo_id}
+                        )
+                except Exception as exc:
+                    logger.exception("llm_chat failed: %s", exc)
                     await websocket.send_json(
-                        {"type": "llm_done", "conversation_id": convo_id}
+                        {"type": "error", "detail": "LLM request failed. Check server logs for details."}
                     )
             elif action == "sherpa_sync":
                 # Forward workflow state to cloud Sherpa advisor
-                from app.services.sherpa_advisor import get_sherpa_advisor
-                from app.schemas.sherpa import EgressTier, WorkflowStateSync
-
-                advisor = get_sherpa_advisor()
-                if not advisor.is_available:
-                    await websocket.send_json(
-                        {"type": "sherpa_status", "payload": {"connected": False, "reason": "not_configured"}}
-                    )
-                    continue
-
-                # Check egress permission for spectrasherpa sync
-                async with async_session() as permission_session:
-                    allowed = await check_egress_permission(
-                        ws_user,
-                        "allow_spectrasherpa_sync",
-                        data_type="workflow",
-                        destination="spectrasherpa",
-                        session=permission_session,
-                    )
-                if not allowed:
-                    await websocket.send_json(
-                        {"type": "error", "detail": "Sherpa sync not permitted for this user"}
-                    )
-                    continue
-
                 try:
+                    from app.services.sherpa_advisor import get_sherpa_advisor
+                    from app.schemas.sherpa import EgressTier, WorkflowStateSync
+
+                    advisor = get_sherpa_advisor()
+                    if not advisor.is_available:
+                        await websocket.send_json(
+                            {"type": "sherpa_status", "payload": {"connected": False, "reason": "not_configured"}}
+                        )
+                        continue
+
+                    # Check egress permission for spectrasherpa sync
+                    async with async_session() as permission_session:
+                        allowed = await check_egress_permission(
+                            ws_user,
+                            "allow_spectrasherpa_sync",
+                            data_type="workflow",
+                            destination="spectrasherpa",
+                            session=permission_session,
+                        )
+                    if not allowed:
+                        await websocket.send_json(
+                            {"type": "sherpa_error", "detail": "Sherpa sync not permitted. Enable cloud sync in Settings > Data & Privacy."}
+                        )
+                        continue
+
                     sync_data = dict(payload.get("payload", {}))
                     tier = EgressTier(sync_data.pop("tier", "structure"))
                     sync_msg = WorkflowStateSync(**sync_data)
                     recommendations = await advisor.sync_workflow(sync_msg, tier=tier)
+                    logger.info("sherpa_sync: %d nodes → %d recommendations", len(sync_msg.nodes), len(recommendations))
                     await websocket.send_json({
                         "type": "sherpa_recommendations",
                         "payload": [r.model_dump(mode="json") for r in recommendations],
                     })
                 except Exception as exc:
+                    logger.exception("sherpa_sync failed: %s", exc)
                     await websocket.send_json(
-                        {"type": "error", "detail": f"Sherpa sync failed: {exc}"}
+                        {"type": "sherpa_error", "detail": "Sherpa sync failed. Check server logs for details."}
                     )
 
             elif action == "sherpa_decide":
@@ -451,8 +466,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                         "payload": {"delivered": delivered, "suggestion_id": decision.suggestion_id},
                     })
                 except Exception as exc:
+                    logger.exception("sherpa_decide failed: %s", exc)
                     await websocket.send_json(
-                        {"type": "error", "detail": f"Sherpa decision failed: {exc}"}
+                        {"type": "sherpa_error", "detail": "Sherpa decision failed. Check server logs for details."}
                     )
 
             elif action == "sherpa_chat":
@@ -497,8 +513,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                         )
                     await websocket.send_json({"type": "sherpa_chat_done"})
                 except Exception as exc:
+                    logger.exception("sherpa_chat failed: %s", exc)
                     await websocket.send_json(
-                        {"type": "sherpa_error", "detail": f"Sherpa chat failed: {exc}"}
+                        {"type": "sherpa_error", "detail": "Sherpa chat failed. Check server logs for details."}
                     )
 
             else:

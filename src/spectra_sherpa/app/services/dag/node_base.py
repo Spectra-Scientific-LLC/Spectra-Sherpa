@@ -86,6 +86,20 @@ class NodeMetadata:
     output_ports: Optional[List[PortMetadata]] = None
 
 
+def _format_value(value: Any) -> str:
+    """Format a Python value as a code literal for codegen."""
+    if isinstance(value, bool):
+        return "True" if value else "False"
+    if isinstance(value, str):
+        return repr(value)
+    if isinstance(value, float):
+        # Use scientific notation for very large/small values
+        if value != 0 and (abs(value) >= 1e6 or abs(value) < 1e-3):
+            return f"{value:.0e}" if value == int(value) else f"{value:e}"
+        return repr(value)
+    return repr(value)
+
+
 class Node(ABC):
     """
     Base class for all workflow nodes.
@@ -96,6 +110,19 @@ class Node(ABC):
 
     # Class-level metadata (must be overridden in subclasses)
     metadata: NodeMetadata = None
+
+    # --- Python export support (override in subclasses) ---
+    # SpectroChemPy method name for simple preprocessing nodes.
+    # When set, the default generate_python() emits: data.{scp_method}(**params)
+    scp_method: Optional[str] = None
+    # Rename node parameters -> SCP keyword arguments
+    # e.g. {"lam": "lamb", "p": "asymmetry"} means node param "lam" becomes scp kwarg "lamb"
+    scp_param_map: Dict[str, str] = {}
+    # Extra hardcoded kwargs always passed to the SCP method
+    # e.g. {"deriv": 1} for first-derivative nodes
+    scp_extra_kwargs: Dict[str, Any] = {}
+    # Additional import lines needed by generated code
+    python_extra_imports: List[str] = []
 
     def __init__(self, node_id: str, parameters: Optional[Dict[str, Any]] = None):
         """
@@ -174,6 +201,82 @@ class Node(ABC):
                     raise ValueError(
                         f"Parameter {param_def.name} must be a boolean, got {type(value)}"
                     )
+
+    # ------------------------------------------------------------------
+    # Python export / code generation
+    # ------------------------------------------------------------------
+
+    def _resolve_params(self) -> Dict[str, Any]:
+        """
+        Merge metadata defaults with instance parameters.
+
+        Returns a dict of all parameter values with defaults filled in.
+        This is the single source of truth for parameter values used by
+        both execute() and generate_python().
+        """
+        resolved: Dict[str, Any] = {}
+        if self.metadata:
+            for p in self.metadata.parameters:
+                resolved[p.name] = self.parameters.get(p.name, p.default)
+        return resolved
+
+    def supports_python_export(self) -> bool:
+        """Return True if this node can generate Python export code."""
+        if self.scp_method is not None:
+            return True
+        # Check if the subclass overrides generate_python
+        return type(self).generate_python is not Node.generate_python
+
+    def generate_python(
+        self, inputs: Dict[str, str], indent: str = "    "
+    ) -> List[str]:
+        """
+        Generate Python code lines for this node.
+
+        The default implementation handles the common SCP-method pattern::
+
+            data = {input_expr}.copy()
+            data.{scp_method}(**kwargs)
+            results['{node_id}'] = data
+
+        Nodes that use numpy or have complex logic should override this.
+
+        Args:
+            inputs: Mapping of input name -> Python expression
+                (e.g. ``{"input": "results['node_1']"}``)
+            indent: Whitespace prefix for each line
+
+        Returns:
+            List of Python code lines (already indented)
+        """
+        if self.scp_method is None:
+            return [
+                f"{indent}# TODO: {self.metadata.node_type} does not support Python export yet",
+                f"{indent}raise NotImplementedError("
+                f"'{self.metadata.node_type} export not implemented')",
+            ]
+
+        lines: List[str] = []
+        lines.append(f"{indent}# --- {self.metadata.label} ({self.node_id}) ---")
+
+        # Determine input expression
+        input_expr = next(iter(inputs.values())) if inputs else "input_data"
+        lines.append(f"{indent}data = {input_expr}.copy()")
+
+        # Build SCP method kwargs
+        params = self._resolve_params()
+        kwargs_parts: List[str] = []
+        for param_name, value in params.items():
+            scp_name = self.scp_param_map.get(param_name, param_name)
+            kwargs_parts.append(f"{scp_name}={_format_value(value)}")
+        for extra_name, extra_val in self.scp_extra_kwargs.items():
+            kwargs_parts.append(f"{extra_name}={_format_value(extra_val)}")
+
+        kwargs_str = ", ".join(kwargs_parts)
+        lines.append(f"{indent}data.{self.scp_method}({kwargs_str})")
+        lines.append(f"{indent}results['{self.node_id}'] = data")
+
+        return lines
 
     async def run(self, *inputs: Any, **kwargs: Any) -> Any:
         """

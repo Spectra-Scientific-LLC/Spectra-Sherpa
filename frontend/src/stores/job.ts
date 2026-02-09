@@ -131,7 +131,18 @@ export const useJobStore = defineStore("job", () => {
       wsRef.value = null;
       connectionStatus.value = "disconnected";
       if (event.code === 1008) {
-        lastError.value = "Unauthorized. Check your credentials (JWT or API key).";
+        // Stale token may have caused the rejection.  Clear it and retry
+        // once if an api_key is still available as fallback credential.
+        const hadToken = !!localStorage.getItem("token");
+        if (hadToken) {
+          localStorage.removeItem("token");
+        }
+        if (hadToken && localStorage.getItem("api_key")) {
+          reconnectAttempts.value = 0;
+          scheduleReconnect();
+          return;
+        }
+        lastError.value = "Unauthorized. Check your credentials.";
         allowReconnect = false;
         return;
       }
@@ -171,6 +182,13 @@ export const useJobStore = defineStore("job", () => {
     connectionStatus.value = "disconnected";
   };
 
+  const reconnect = async () => {
+    disconnect();
+    allowReconnect = true;
+    reconnectAttempts.value = 0;
+    await connect();
+  };
+
   return {
     jobs,
     connected,
@@ -178,6 +196,7 @@ export const useJobStore = defineStore("job", () => {
     fetchJob,
     connect,
     disconnect,
+    reconnect,
     connectionStatus,
     lastError,
   };

@@ -470,21 +470,46 @@ async def check_egress_permission(
             # Fall back to coarse defaults if fine-grained lookup isn't available.
             pass
 
-    # Check user's egress_defaults relationship for the permission
-    # The egress_defaults is a relationship to UserEgressDefaults
-    if hasattr(user, 'egress_defaults') and user.egress_defaults is not None:
-        egress_defaults = user.egress_defaults
-        if hasattr(egress_defaults, permission):
-            return getattr(egress_defaults, permission, False)
+    # Check user's egress_defaults relationship for the permission.
+    # Wrapped in try/except because the user object may be detached from its
+    # original session (e.g. WS handler), causing a lazy-load error.
+    try:
+        if hasattr(user, 'egress_defaults') and user.egress_defaults is not None:
+            egress_defaults = user.egress_defaults
+            if hasattr(egress_defaults, permission):
+                return getattr(egress_defaults, permission, False)
+    except Exception:
+        # Relationship access failed (DetachedInstanceError).  If we have a
+        # session and user id, query UserEgressDefaults directly so we never
+        # silently fall through to permissive hardcoded defaults.
+        if session is not None and getattr(user, "id", None) is not None:
+            try:
+                from sqlalchemy import select
+                from app.models.data_egress import UserEgressDefaults
 
-    # No explicit permission set - apply sensible defaults
-    # These match the defaults we create for new users in auth.py/admin.py
-    # This ensures existing users and system users work correctly
+                row = (
+                    await session.execute(
+                        select(UserEgressDefaults).where(
+                            UserEgressDefaults.user_id == user.id
+                        )
+                    )
+                ).scalar_one_or_none()
+                if row is not None and hasattr(row, permission):
+                    return getattr(row, permission, False)
+            except Exception:
+                logger.debug(
+                    "UserEgressDefaults DB fallback failed for user %s",
+                    getattr(user, "id", "?"),
+                )
+
+    # No explicit permission set - apply sensible defaults.
+    # These are intentionally conservative: new users are created with
+    # allow_spectrasherpa_sync=False, so the default here must match.
     DEFAULT_PERMISSIONS = {
         "allow_llm_context": True,      # Allow LLM by default
         "allow_nist_queries": True,     # Allow NIST by default
         "allow_export": True,           # Allow export by default
-        "allow_spectrasherpa_sync": False,  # Opt-in for cloud sync
+        "allow_spectrasherpa_sync": False,
     }
     return DEFAULT_PERMISSIONS.get(permission, False)
 
@@ -510,7 +535,25 @@ async def check_export_allowed(
     if user is None:
         return True
 
-    if hasattr(user, "egress_defaults") and user.egress_defaults is not None:
-        return getattr(user.egress_defaults, "allow_export", True)
+    try:
+        if hasattr(user, "egress_defaults") and user.egress_defaults is not None:
+            return getattr(user.egress_defaults, "allow_export", True)
+    except Exception:
+        if session is not None and getattr(user, "id", None) is not None:
+            try:
+                from sqlalchemy import select
+                from app.models.data_egress import UserEgressDefaults
+
+                row = (
+                    await session.execute(
+                        select(UserEgressDefaults).where(
+                            UserEgressDefaults.user_id == user.id
+                        )
+                    )
+                ).scalar_one_or_none()
+                if row is not None:
+                    return getattr(row, "allow_export", True)
+            except Exception:
+                pass
 
     return True  # default: allow exports

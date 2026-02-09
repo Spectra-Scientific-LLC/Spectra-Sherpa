@@ -209,13 +209,17 @@ const handleBroadcastMessage = async (event: MessageEvent) => {
       let executedNodeOutput: NodeOutput | null = null;
 
       for (const [nId, result] of Object.entries(response.results)) {
-        const parsedNId = parseInt(nId, 10);
-        const output = buildOutputForNode(parsedNId, result);
-        newOutputs.set(parsedNId, output);
+        const resolvedNodeId = workflowStore.resolveFrontendNodeId(nId);
+        if (resolvedNodeId === null) {
+          console.warn("[WorkflowBuilder] Could not resolve backend node ID:", nId);
+          continue;
+        }
+        const output = buildOutputForNode(resolvedNodeId, result);
+        newOutputs.set(resolvedNodeId, output);
 
         // Track the specific node's output for the broadcast response
         // Use string comparison to handle type mismatches
-        if (String(parsedNId) === String(nodeId)) {
+        if (String(resolvedNodeId) === String(nodeId)) {
           console.log('[WorkflowBuilder] Found matching output for node:', nodeId);
           executedNodeOutput = output;
         }
@@ -736,8 +740,12 @@ const executeWorkflow = async () => {
     // Convert backend results to frontend node outputs format
     const outputs = new Map<number, NodeOutput>();
     for (const [nodeId, result] of Object.entries(response.results)) {
-      const parsedNodeId = parseInt(nodeId, 10);
-      const output = buildOutputForNode(parsedNodeId, result);
+      const resolvedNodeId = workflowStore.resolveFrontendNodeId(nodeId);
+      if (resolvedNodeId === null) {
+        console.warn("[Workflow] Could not resolve backend node ID:", nodeId);
+        continue;
+      }
+      const output = buildOutputForNode(resolvedNodeId, result);
       // Debug: log what we're receiving from backend
       console.log(`[Workflow] Node ${nodeId} result:`, {
         hasData: !!output.data,
@@ -746,7 +754,7 @@ const executeWorkflow = async () => {
         keys: Object.keys(result || {}),
       });
 
-      outputs.set(parsedNodeId, output);
+      outputs.set(resolvedNodeId, output);
     }
 
     // Assign new Map for proper Vue reactivity
@@ -976,8 +984,12 @@ const onExecuteNode = async (nodeId: number) => {
     // Update outputs - create new Map for proper Vue reactivity
     const newOutputs = new Map(nodeOutputs.value);
     for (const [nId, result] of Object.entries(response.results)) {
-      const parsedNId = parseInt(nId, 10);
-      const output = buildOutputForNode(parsedNId, result);
+      const resolvedNodeId = workflowStore.resolveFrontendNodeId(nId);
+      if (resolvedNodeId === null) {
+        console.warn("[Workflow] Could not resolve backend node ID:", nId);
+        continue;
+      }
+      const output = buildOutputForNode(resolvedNodeId, result);
       // Debug: log what we're receiving from backend
       console.log(`[Workflow] Node ${nId} result:`, {
         hasData: !!output.data,
@@ -986,7 +998,7 @@ const onExecuteNode = async (nodeId: number) => {
         firstRowType: Array.isArray(output.data) && output.data[0] ? (Array.isArray(output.data[0]) ? 'array' : typeof output.data[0]) : 'N/A',
         keys: Object.keys(result || {}),
       });
-      newOutputs.set(parsedNId, output);
+      newOutputs.set(resolvedNodeId, output);
     }
     nodeOutputs.value = newOutputs;
 

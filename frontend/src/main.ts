@@ -50,18 +50,17 @@ workflowStore.fetchNodeLibrary().catch((err) => {
 
 // Auto-refresh node library when page becomes visible (e.g., after backend restart)
 // This prevents stale cache issues without requiring manual browser refresh
-document.addEventListener("visibilitychange", () => {
+const onVisibilityChange = () => {
   if (!document.hidden) {
-    console.log("[main.ts] Page visible, checking for backend updates...");
     workflowStore.checkAndRefreshNodeLibrary().catch((err) => {
       console.debug("[main.ts] Background version check failed:", err);
     });
   }
-});
+};
+document.addEventListener("visibilitychange", onVisibilityChange);
 
 // Also check periodically (every 30 seconds) while page is visible
-let versionCheckInterval: number | undefined;
-versionCheckInterval = window.setInterval(() => {
+const versionCheckInterval = window.setInterval(() => {
   if (!document.hidden) {
     workflowStore.checkAndRefreshNodeLibrary().catch((err) => {
       console.debug("[main.ts] Background version check failed:", err);
@@ -70,3 +69,11 @@ versionCheckInterval = window.setInterval(() => {
 }, 30000);
 
 app.mount("#app");
+
+// Cleanup on HMR to prevent stacked intervals and leaked listeners
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    clearInterval(versionCheckInterval);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+  });
+}

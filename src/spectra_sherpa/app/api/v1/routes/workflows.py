@@ -1292,7 +1292,11 @@ async def export_workflow_to_python(
             "python_code": python_code,
             "filename": f"{workflow.name.lower().replace(' ', '_')}_workflow.py",
         }
+    except ValueError as e:
+        # Unsupported node types or cycles — client-actionable error
+        raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
+        logger.exception("Unexpected error exporting workflow %s", workflow_id)
         raise HTTPException(
-            status_code=500, detail=f"Failed to export workflow: {str(e)}"
+            status_code=500, detail="Failed to export workflow. Check server logs."
         )

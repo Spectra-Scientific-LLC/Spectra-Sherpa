@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import hashlib
-import time
 from typing import AsyncGenerator, Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import APIKeyHeader
 from jose import JWTError
 from pydantic import ValidationError
@@ -18,48 +16,9 @@ from app.db.session import async_session
 from app.models.user import User
 
 
-# ============================================================================
-# API Key Validation Cache
-# ============================================================================
-# Caches validated API keys to avoid expensive bcrypt verification on every request.
-# Cache entries expire after API_KEY_CACHE_TTL seconds.
-
-API_KEY_CACHE_TTL = 300  # 5 minutes
-_api_key_cache: dict[str, tuple[int, float]] = {}  # {key_hash: (user_id, expires_at)}
-
-
-def _hash_api_key(api_key: str) -> str:
-    """Create a fast hash of API key for cache lookup."""
-    return hashlib.sha256(api_key.encode()).hexdigest()
-
-
-def _get_cached_user_id(api_key: str) -> Optional[int]:
-    """Check if API key is in cache and not expired."""
-    key_hash = _hash_api_key(api_key)
-    if key_hash in _api_key_cache:
-        user_id, expires_at = _api_key_cache[key_hash]
-        if time.time() < expires_at:
-            return user_id
-        else:
-            # Expired - remove from cache
-            del _api_key_cache[key_hash]
-    return None
-
-
-def _cache_api_key(api_key: str, user_id: int) -> None:
-    """Cache a validated API key."""
-    key_hash = _hash_api_key(api_key)
-    _api_key_cache[key_hash] = (user_id, time.time() + API_KEY_CACHE_TTL)
-
-
 def invalidate_api_key_cache(api_key: Optional[str] = None) -> None:
-    """Invalidate cache entry for an API key, or all entries if key is None."""
-    global _api_key_cache
-    if api_key:
-        key_hash = _hash_api_key(api_key)
-        _api_key_cache.pop(key_hash, None)
-    else:
-        _api_key_cache = {}
+    """Invalidate API key cache (delegates to security module's canonical cache)."""
+    security.invalidate_gateway_api_key_cache(api_key)
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -98,6 +57,7 @@ async def _resolve_user(
     session: AsyncSession,
     api_key: Optional[str] = None,
     token: Optional[str] = None,
+    client_host: Optional[str] = None,
 ) -> Optional[User]:
     """
     Core authentication logic shared by get_current_user and get_user_from_credentials.
@@ -130,7 +90,7 @@ async def _resolve_user(
             return result.scalar_one_or_none()
 
         # Check cache first (avoids expensive bcrypt on every request)
-        cached_user_id = _get_cached_user_id(api_key)
+        cached_user_id = security._get_cached_user_id(api_key)
         if cached_user_id is not None:
             result = await session.execute(select(User).where(User.id == cached_user_id))
             user = result.scalar_one_or_none()
@@ -149,7 +109,7 @@ async def _resolve_user(
             if hasattr(user, "is_active") and not user.is_active:
                 continue
             if security.verify_password(api_key, user.api_key_hash):
-                _cache_api_key(api_key, user.id)
+                security._cache_api_key(api_key, user.id)
                 return user
 
     # 2. JWT Auth (User Login)
@@ -166,21 +126,27 @@ async def _resolve_user(
             pass
 
     # 3. Hybrid fallback: allow implicit local identity only when no
-    # credentials were provided. If credentials were provided but invalid,
-    # return None so callers can reject explicitly bad auth.
+    # credentials were provided AND the client is loopback (defense-in-depth;
+    # gateway middleware already enforces this, but we double-check here).
     if app_config.mode == "hybrid" and not has_credentials:
+        if client_host is not None and not security._is_loopback(client_host):
+            return None
         return await _get_or_create_local_user(session)
 
     return None
 
 
 async def get_current_user(
+    request: Request,
     session: AsyncSession = Depends(get_session),
     token: Optional[str] = Depends(security.oauth2_scheme_optional),
     api_key: Optional[str] = Depends(api_key_header),
 ) -> User:
     """FastAPI dependency that returns the authenticated user or raises 401."""
-    user = await _resolve_user(session, api_key=api_key, token=token)
+    user = await _resolve_user(
+        session, api_key=api_key, token=token,
+        client_host=security.get_client_host(request),
+    )
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -206,6 +172,7 @@ async def get_user_from_credentials(
     session: AsyncSession,
     api_key: Optional[str] = None,
     token: Optional[str] = None,
+    client_host: Optional[str] = None,
 ) -> Optional[User]:
     """
     Resolve user from API key or JWT token (for WebSocket auth).
@@ -215,4 +182,4 @@ async def get_user_from_credentials(
 
     Returns None if credentials are invalid (doesn't raise HTTPException).
     """
-    return await _resolve_user(session, api_key=api_key, token=token)
+    return await _resolve_user(session, api_key=api_key, token=token, client_host=client_host)

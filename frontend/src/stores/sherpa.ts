@@ -21,22 +21,45 @@ export const useSherpaStore = defineStore("sherpa", () => {
 
   function buildSyncPayload() {
     const workflow = useWorkflowStore();
-    return {
-      workflow_id: workflow.workflowId,
-      workflow_name: workflow.workflowName,
-      tier: "structure",
-      nodes: workflow.nodes.map((n) => ({
+
+    // Collect per-node execution results (shape, type) when available
+    const nodes = workflow.nodes.map((n) => {
+      const exec = n.executionState;
+      return {
         node_id: String(n.id),
         node_type: n.type,
         label: n.type,
         parameters: n.params || {},
-      })),
+        result_shape: exec?.output_shape ?? null,
+        result_statistics: null,
+      };
+    });
+
+    // Derive top-level data dimensions from the first DATA node with results
+    let n_samples: number | null = null;
+    let n_features: number | null = null;
+    for (const n of workflow.nodes) {
+      if (n.type === "DATA" && n.executionState?.output_shape) {
+        const shape = n.executionState.output_shape;
+        n_samples = shape[0] ?? null;
+        n_features = shape[1] ?? null;
+        break;
+      }
+    }
+
+    return {
+      workflow_id: workflow.workflowId,
+      workflow_name: workflow.workflowName,
+      tier: "summaries",
+      nodes,
       edges: workflow.edges.map((e) => ({
         from_node_id: String(e.from),
         to_node_id: String(e.to),
         from_output: e.fromPort || "default",
         to_input: e.toPort || "default",
       })),
+      n_samples,
+      n_features,
     };
   }
 

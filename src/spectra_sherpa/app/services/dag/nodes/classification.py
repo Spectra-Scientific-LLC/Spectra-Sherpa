@@ -7,6 +7,7 @@ These nodes implement various classification techniques like PLS-DA, KNN, etc.
 from __future__ import annotations
 
 from typing import Any, Optional
+import re
 import numpy as np
 import spectrochempy as scp
 from spectrochempy import NDDataset
@@ -20,6 +21,142 @@ from .visualization import generate_confusion_matrix_heatmap
 from .modeling import _create_spectral_dataset
 
 logger = logging.getLogger(__name__)
+
+
+def _make_labeled_coord(labels: Any, title: str) -> Any:
+    """
+    Create a SpectroChemPy Coord with string labels in a robust way.
+
+    SpectroChemPy 0.6.x fails when Coord is initialized directly from string
+    arrays (it internally applies `np.abs` to data). To avoid this, build a
+    numeric coordinate axis and attach human-readable labels separately.
+    """
+    labels_list = [str(v) for v in (labels or [])]
+    coord = scp.Coord(np.arange(len(labels_list), dtype=float), title=title)
+    try:
+        coord.labels = labels_list
+    except Exception:
+        # Labels are optional metadata for display; keep numeric coord if label
+        # assignment is not supported by the current SpectroChemPy build.
+        pass
+    return coord
+
+
+def _coerce_numeric_array(values: Any) -> np.ndarray:
+    """
+    Best-effort conversion to float ndarray.
+
+    SpectroChemPy objects can occasionally surface object/string dtypes in `.data`
+    payloads. This helper converts numeric-like values to float and maps
+    non-convertible entries to NaN so downstream code can handle them safely.
+    """
+    arr = np.asarray(values)
+    if np.issubdtype(arr.dtype, np.number):
+        return arr.astype(float, copy=False)
+
+    flat = []
+    for item in arr.reshape(-1):
+        try:
+            if isinstance(item, np.generic):
+                item = item.item()
+            flat.append(float(item))
+        except Exception:
+            flat.append(np.nan)
+
+    return np.array(flat, dtype=float).reshape(arr.shape)
+
+
+def _normalize_class_label_value(value: Any) -> str:
+    """Normalize one raw class label into a stable, human-readable string."""
+    if isinstance(value, np.generic):
+        value = value.item()
+
+    if value is None:
+        return ""
+
+    if isinstance(value, np.ndarray):
+        return _normalize_class_label_value(value.tolist())
+
+    if isinstance(value, (list, tuple)):
+        # Common case for SpectroChemPy labels:
+        # [datetime(...), "ClassName"] -> use the readable trailing string.
+        for item in reversed(value):
+            if isinstance(item, str) and item.strip():
+                return item.strip()
+        normalized_parts = [_normalize_class_label_value(item) for item in value]
+        normalized_parts = [part for part in normalized_parts if part]
+        if len(normalized_parts) == 1:
+            return normalized_parts[0]
+        if normalized_parts:
+            return " | ".join(normalized_parts)
+        return ""
+
+    if isinstance(value, dict):
+        for key in ("label", "name"):
+            candidate = value.get(key)
+            if isinstance(candidate, str) and candidate.strip():
+                return candidate.strip()
+        return str(value)
+
+    if isinstance(value, str):
+        trimmed = value.strip()
+        if trimmed.startswith("[") or trimmed.startswith("("):
+            quoted = re.findall(r"'([^']+)'|\"([^\"]+)\"", trimmed)
+            if quoted:
+                return quoted[-1][0] or quoted[-1][1]
+        return trimmed
+
+    return str(value)
+
+
+def _normalize_class_label_vector(raw_labels: Any, n_samples: int) -> np.ndarray:
+    """
+    Normalize class labels while preserving one label per sample.
+
+    This specifically guards against nested label structures like
+    ``[[datetime, "ClassA"], [datetime, "ClassB"], ...]`` where a naive
+    ``flatten()`` would incorrectly produce 2× the sample count.
+    """
+    labels_obj = np.asarray(raw_labels, dtype=object)
+
+    if labels_obj.ndim == 0:
+        labels = [_normalize_class_label_value(labels_obj.item())]
+    elif labels_obj.ndim == 1:
+        if n_samples > 0 and labels_obj.size == n_samples:
+            labels = [_normalize_class_label_value(item) for item in labels_obj.tolist()]
+        elif n_samples > 0 and labels_obj.size % n_samples == 0:
+            reshaped = labels_obj.reshape(n_samples, -1)
+            labels = [_normalize_class_label_value(row.tolist()) for row in reshaped]
+        else:
+            labels = [_normalize_class_label_value(item) for item in labels_obj.tolist()]
+    else:
+        if n_samples > 0 and labels_obj.shape[0] == n_samples:
+            labels = [_normalize_class_label_value(row.tolist()) for row in labels_obj]
+        elif n_samples > 0 and labels_obj.size == n_samples:
+            labels = [_normalize_class_label_value(item) for item in labels_obj.reshape(-1).tolist()]
+        else:
+            labels = [_normalize_class_label_value(item) for item in labels_obj.reshape(-1).tolist()]
+
+    return np.asarray(labels, dtype=object)
+
+
+def _prepare_class_labels(raw_labels: Any, n_samples: int) -> np.ndarray:
+    """Build validated class-label vector aligned to X sample count."""
+    y_array = _normalize_class_label_vector(raw_labels, n_samples)
+
+    if y_array.shape[0] != n_samples:
+        raise ValueError(
+            f"X and y must have the same number of samples (X={n_samples}, y={y_array.shape[0]}). "
+            "If labels came from dataset coordinates, ensure one class label exists per sample."
+        )
+
+    if any(str(label).strip() == "" for label in y_array):
+        raise ValueError(
+            "Class labels contain empty values. "
+            "Please provide one non-empty class label per sample."
+        )
+
+    return y_array
 
 
 @register_node
@@ -191,10 +328,7 @@ class PLSDANode(Node):
 
         # Convert inputs to numpy arrays
         X_data = np.array(X.data)
-        y_array = np.array(y).flatten()
-
-        if X_data.shape[0] != y_array.shape[0]:
-            raise ValueError("X and y must have the same number of samples")
+        y_array = _prepare_class_labels(y, X_data.shape[0])
 
         max_components = min(X_data.shape[0] - 1, X_data.shape[1])
         if n_components > max_components:
@@ -278,11 +412,17 @@ class PLSDANode(Node):
         cv_f1_macro = f1_score(y_array, y_pred_cv, average="macro")
 
         # Get PLS scores for visualization (extract numpy arrays from SpectroChemPy model)
-        X_scores = np.array(pls.x_scores.data) if hasattr(pls.x_scores, "data") else np.array(pls.x_scores)
-        X_loadings = np.array(pls.x_loadings.data) if hasattr(pls.x_loadings, "data") else np.array(pls.x_loadings)
+        X_scores = _coerce_numeric_array(pls.x_scores.data) if hasattr(pls.x_scores, "data") else _coerce_numeric_array(pls.x_scores)
+        X_loadings = _coerce_numeric_array(pls.x_loadings.data) if hasattr(pls.x_loadings, "data") else _coerce_numeric_array(pls.x_loadings)
 
         # Calculate VIP scores (Variable Importance in Projection)
-        vip_scores = self._calculate_vip(pls, X_data, Y_dummy)
+        vip_error = None
+        try:
+            vip_scores = self._calculate_vip(pls, X_data, Y_dummy)
+        except Exception as e:
+            logger.warning("VIP calculation failed: %s", e, exc_info=True)
+            vip_scores = np.zeros(X_data.shape[1], dtype=float)
+            vip_error = f"{type(e).__name__}: {e}"
 
         # Extract wavenumbers and feature_names from input coordinates for plot generation
         _x_coord = safe_get_coord(X, 'x')
@@ -344,7 +484,7 @@ class PLSDANode(Node):
         # Scores NDDataset: shape (n_samples, n_components)
         scores_dataset = _create_spectral_dataset(
             data=X_scores,
-            x_coord=scp.Coord(lv_labels, title="Latent Variable"),
+            x_coord=_make_labeled_coord(lv_labels, title="Latent Variable"),
             y_coord=_y_coord,  # Preserve sample labels from input
             units="score",
             title="PLS-DA Scores",
@@ -354,7 +494,7 @@ class PLSDANode(Node):
         loadings_dataset = _create_spectral_dataset(
             data=X_loadings,
             x_coord=_x_coord,  # Preserve wavenumber/feature axis from input
-            y_coord=scp.Coord(lv_labels, title="Latent Variable"),
+            y_coord=_make_labeled_coord(lv_labels, title="Latent Variable"),
             units="loading",
             title="PLS-DA Loadings",
         )
@@ -389,6 +529,7 @@ class PLSDANode(Node):
             "confusion_matrix_cv": cm_cv.tolist(),
             "classification_report": class_report,
             "vip_scores": vip_scores.tolist(),
+            "vip_error": vip_error,
             "plot_error": plot_error,
         })
 
@@ -497,27 +638,41 @@ class PLSDANode(Node):
         VIP scores indicate the importance of each variable in the PLS model.
         VIP > 1 indicates important variables.
         """
-        # Extract numpy arrays from SpectroChemPy model
-        t = np.array(pls_model.x_scores.data) if hasattr(pls_model.x_scores, "data") else np.array(pls_model.x_scores)
+        # Extract numeric arrays from SpectroChemPy model
+        t = _coerce_numeric_array(pls_model.x_scores.data) if hasattr(pls_model.x_scores, "data") else _coerce_numeric_array(pls_model.x_scores)
         # SpectroChemPy returns x_weights as (n_components, n_features), but VIP calculation expects (n_features, n_components)
-        w_raw = np.array(pls_model.x_weights.data) if hasattr(pls_model.x_weights, "data") else np.array(pls_model.x_weights)
+        w_raw = _coerce_numeric_array(pls_model.x_weights.data) if hasattr(pls_model.x_weights, "data") else _coerce_numeric_array(pls_model.x_weights)
         w = w_raw.T  # Transpose to (n_features, n_components)
-        q = np.array(pls_model.y_loadings.data) if hasattr(pls_model.y_loadings, "data") else np.array(pls_model.y_loadings)
+        q = _coerce_numeric_array(pls_model.y_loadings.data) if hasattr(pls_model.y_loadings, "data") else _coerce_numeric_array(pls_model.y_loadings)
+
+        # Guard against malformed arrays
+        if t.ndim != 2 or w.ndim != 2 or q.ndim < 1:
+            return np.zeros(X.shape[1], dtype=float)
 
         n_features = X.shape[1]
         n_components = t.shape[1]
 
         # Calculate explained variance for each component
         s = np.diag(t.T @ t @ q.T @ q).reshape(n_components, -1)
-        total_s = np.sum(s)
+        s = np.nan_to_num(s, nan=0.0, posinf=0.0, neginf=0.0)
+        total_s = float(np.sum(s))
+        if total_s <= 1e-12:
+            return np.zeros(n_features, dtype=float)
 
         # VIP formula
         vip = np.zeros(n_features)
         for i in range(n_features):
-            weight = np.array([(w[i, j] / np.linalg.norm(w[:, j])) ** 2 for j in range(n_components)])
+            weights = []
+            for j in range(n_components):
+                norm = float(np.linalg.norm(np.nan_to_num(w[:, j], nan=0.0)))
+                if norm <= 1e-12:
+                    weights.append(0.0)
+                else:
+                    weights.append((w[i, j] / norm) ** 2)
+            weight = np.array(weights, dtype=float)
             vip[i] = np.sqrt(n_features * np.sum(s.flatten() * weight) / total_s)
 
-        return vip
+        return np.nan_to_num(vip, nan=0.0, posinf=0.0, neginf=0.0)
 
 
 
@@ -1028,8 +1183,7 @@ class KNNNode(Node):
 
         # Convert to numpy arrays - X is NDDataset
         X_data = np.array(X.data)
-
-        y_array = np.array(y).flatten()
+        y_array = _prepare_class_labels(y, X_data.shape[0])
 
         # Get parameters
         n_neighbors = self.parameters.get("n_neighbors", 5)
@@ -1156,7 +1310,7 @@ class KNNNode(Node):
         # as the primary output for the "default" port
         scores_dataset = _create_spectral_dataset(
             data=viz_data,
-            x_coord=scp.Coord(viz_labels, title="Feature"),
+            x_coord=_make_labeled_coord(viz_labels, title="Feature"),
             y_coord=_y_coord,  # Preserve sample labels from input
             units="score",
             title="KNN Visualization Scores",
@@ -1525,8 +1679,7 @@ class SIMCANode(Node):
 
         # Convert to numpy arrays - X is NDDataset
         X_data = np.array(X.data)
-
-        y_array = np.array(y).flatten()
+        y_array = _prepare_class_labels(y, X_data.shape[0])
 
         # Get parameters
         n_components = self.parameters.get("n_components", 3)
@@ -1704,7 +1857,7 @@ class SIMCANode(Node):
         # Scores NDDataset: shape (n_samples, n_components) — projected into first class PC space
         scores_dataset = _create_spectral_dataset(
             data=viz_scores_data,
-            x_coord=scp.Coord(pc_labels, title="Principal Component"),
+            x_coord=_make_labeled_coord(pc_labels, title="Principal Component"),
             y_coord=_y_coord,  # Preserve sample labels from input
             units="score",
             title="SIMCA Scores",

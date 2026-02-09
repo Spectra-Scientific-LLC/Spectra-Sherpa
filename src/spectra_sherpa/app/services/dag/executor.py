@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 from .node_base import Node, NodeStatus, node_registry
 from .meta_helpers import safe_get_coord
+from .graph_utils import Edge as _Edge, build_dependency_map, topological_sort
 
 # Try to import NDDataset for type checking
 try:
@@ -156,24 +157,62 @@ def _validate_port_type(
     if is_valid and expected_type == "dataset" and HAS_NDDATASET and isinstance(data, NDDataset):
         coord_issues = []
 
-        # Check X-axis (spectral dimension) exists and matches data shape
-        x_coord = safe_get_coord(data, 'x')
-        if x_coord is not None:
-            x_len = len(x_coord.data) if hasattr(x_coord, 'data') else len(x_coord)
-            data_spectral_dim = data.shape[-1] if len(data.shape) > 0 else 0
-            if x_len != data_spectral_dim:
-                coord_issues.append(
-                    f"X-axis length ({x_len}) doesn't match spectral dimension ({data_spectral_dim})"
-                )
-        elif len(data.shape) > 0 and data.shape[-1] > 1:
-            # Missing X-axis on multi-point data is a warning
-            coord_issues.append(
-                "No X-axis coordinates defined (wavenumbers will be unavailable for display)"
-            )
+        try:
+            # Check X-axis (spectral dimension) exists and matches data shape.
+            # Coordinate internals can occasionally be malformed (e.g., coord.data is None),
+            # so this validation must never raise and block execution.
+            x_coord = safe_get_coord(data, "x")
+            data_shape = tuple(data.shape) if hasattr(data, "shape") else ()
+            data_spectral_dim = data_shape[-1] if len(data_shape) > 0 else 0
 
-        # Check for NaN in data
-        if np.any(np.isnan(data.data)):
-            coord_issues.append("Data contains NaN values")
+            if x_coord is not None:
+                x_len = None
+                try:
+                    x_data = getattr(x_coord, "data")
+                except Exception:
+                    x_data = None
+
+                if x_data is not None:
+                    try:
+                        x_len = len(x_data)
+                    except Exception:
+                        try:
+                            x_arr = np.asarray(x_data)
+                            x_len = int(x_arr.shape[0]) if x_arr.ndim > 0 else 1
+                        except Exception:
+                            x_len = None
+
+                if x_len is None:
+                    try:
+                        x_len = len(x_coord)
+                    except Exception:
+                        x_len = None
+
+                if x_len is None:
+                    coord_issues.append("X-axis coordinates exist but length could not be determined")
+                elif data_spectral_dim > 0 and x_len != data_spectral_dim:
+                    coord_issues.append(
+                        f"X-axis length ({x_len}) doesn't match spectral dimension ({data_spectral_dim})"
+                    )
+            elif data_spectral_dim > 1:
+                # Missing X-axis on multi-point data is a warning
+                coord_issues.append(
+                    "No X-axis coordinates defined (wavenumbers will be unavailable for display)"
+                )
+
+            # Check for NaN in data (best effort; ignore non-numeric payloads)
+            try:
+                data_values = getattr(data, "data", None)
+                if data_values is not None and np.any(np.isnan(np.asarray(data_values, dtype=float))):
+                    coord_issues.append("Data contains NaN values")
+            except Exception:
+                pass
+        except Exception as coord_err:
+            warnings.warn(
+                f"Data integrity validation failed on '{port_name}' from node '{source_node_id}': {coord_err}",
+                UserWarning,
+                stacklevel=3,
+            )
 
         # Warn about coordinate issues (don't block execution)
         for issue in coord_issues:
@@ -430,6 +469,13 @@ class DAGExecutor:
 
         self.edges.append(edge)
 
+    def _normalized_edges(self) -> List[_Edge]:
+        """Convert executor WorkflowEdge objects to graph_utils Edge tuples."""
+        return [
+            _Edge(e.from_node, e.to_node, e.from_output, e.to_input)
+            for e in self.edges
+        ]
+
     def _get_dependencies(self) -> Dict[str, List[str]]:
         """
         Build dependency graph.
@@ -437,12 +483,9 @@ class DAGExecutor:
         Returns:
             Dict mapping node_id to list of nodes it depends on
         """
-        deps: Dict[str, List[str]] = {node_id: [] for node_id in self.nodes}
-
-        for edge in self.edges:
-            deps[edge.to_node].append(edge.from_node)
-
-        return deps
+        return build_dependency_map(
+            list(self.nodes.keys()), self._normalized_edges()
+        )
 
     def _topological_sort(self) -> List[str]:
         """
@@ -454,33 +497,9 @@ class DAGExecutor:
         Raises:
             ValueError: If workflow contains cycles
         """
-        deps = self._get_dependencies()
-
-        # Count incoming edges for each node
-        in_degree = {node_id: len(dep_list) for node_id, dep_list in deps.items()}
-
-        # Queue of nodes with no dependencies
-        queue = [node_id for node_id, degree in in_degree.items() if degree == 0]
-        result = []
-
-        while queue:
-            # Pop node with no dependencies
-            node_id = queue.pop(0)
-            result.append(node_id)
-
-            # Find all nodes that depend on this one
-            for edge in self.edges:
-                if edge.from_node == node_id:
-                    target = edge.to_node
-                    in_degree[target] -= 1
-                    if in_degree[target] == 0:
-                        queue.append(target)
-
-        # Check for cycles
-        if len(result) != len(self.nodes):
-            raise ValueError("Workflow contains cycles - not a valid DAG")
-
-        return result
+        return topological_sort(
+            list(self.nodes.keys()), self._normalized_edges()
+        )
 
     def _get_node_inputs(self, node_id: str, validate_types: bool = True) -> Tuple[List[Any], Dict[str, Any]]:
         """
@@ -561,13 +580,22 @@ class DAGExecutor:
 
                 named_inputs[port_name] = data
 
-            # Validate and normalize spectral units for multi-input nodes
+            # Validate and normalize spectral units only for true spectral dataset ports.
+            # Do NOT include target/config/model ports even if they are NDDataset objects
+            # (e.g., class-label dataset on y port), or numeric conversion may fail.
             if validate_types and len(named_inputs) > 1:
-                all_values = list(named_inputs.values())
-                normalized = _validate_spectral_units(all_values, node.metadata.label if node.metadata else node_id)
-                # Update named_inputs with normalized values
-                for i, key in enumerate(named_inputs.keys()):
-                    named_inputs[key] = normalized[i]
+                spectral_keys = [
+                    key for key in named_inputs.keys()
+                    if port_types.get(key) == "dataset"
+                ]
+                if len(spectral_keys) > 1:
+                    spectral_values = [named_inputs[key] for key in spectral_keys]
+                    normalized = _validate_spectral_units(
+                        spectral_values,
+                        node.metadata.label if node.metadata else node_id,
+                    )
+                    for i, key in enumerate(spectral_keys):
+                        named_inputs[key] = normalized[i]
 
             return [], named_inputs
         else:
@@ -618,12 +646,27 @@ class DAGExecutor:
 
                 positional_inputs.append(data)
 
-            # Validate and normalize spectral units for multi-input nodes
+            # Validate and normalize spectral units only when we have 2+ spectral inputs.
+            # Legacy nodes use input_types ordering; restrict to NDDataset-typed inputs.
             if validate_types and len(positional_inputs) > 1:
-                positional_inputs = _validate_spectral_units(
-                    positional_inputs,
-                    node.metadata.label if node.metadata else node_id
-                )
+                spectral_indices: List[int] = []
+                if node.metadata and node.metadata.input_types:
+                    for i, expected in enumerate(node.metadata.input_types):
+                        if i >= len(positional_inputs):
+                            break
+                        if expected == "NDDataset":
+                            spectral_indices.append(i)
+                else:
+                    spectral_indices = list(range(len(positional_inputs)))
+
+                if len(spectral_indices) > 1:
+                    spectral_values = [positional_inputs[i] for i in spectral_indices]
+                    normalized = _validate_spectral_units(
+                        spectral_values,
+                        node.metadata.label if node.metadata else node_id
+                    )
+                    for idx, i in enumerate(spectral_indices):
+                        positional_inputs[i] = normalized[idx]
 
             return positional_inputs, {}
 

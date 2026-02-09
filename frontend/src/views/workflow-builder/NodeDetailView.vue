@@ -254,8 +254,18 @@
 
               <!-- Dataset Inspector: Coordinates -->
               <div v-if="datasetInfo" class="inspector-section">
-                <h4><i class="pi pi-compass" /> Dataset Coordinates</h4>
-                <div class="inspector-grid">
+                <button
+                  type="button"
+                  class="inspector-toggle"
+                  @click="toggleOutputSubsection('coordinates')"
+                >
+                  <span class="inspector-toggle-title">
+                    <i class="pi pi-compass" />
+                    Dataset Coordinates
+                  </span>
+                  <i :class="outputSubsections.coordinates ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                </button>
+                <div v-if="outputSubsections.coordinates" class="inspector-grid">
                   <div v-if="datasetInfo.title" class="inspector-item">
                     <span class="insp-label">Title</span>
                     <span class="insp-value">{{ datasetInfo.title }}</span>
@@ -298,7 +308,10 @@
                   <template v-if="datasetInfo.yAxis">
                     <div class="inspector-item">
                       <span class="insp-label">Y-Axis</span>
-                      <span class="insp-value">{{ datasetInfo.yAxis.title }}</span>
+                      <span class="insp-value">
+                        {{ datasetInfo.yAxis.title }}
+                        <span v-if="datasetInfo.yAxis.units" class="insp-units">({{ datasetInfo.yAxis.units }})</span>
+                      </span>
                     </div>
                     <div v-if="datasetInfo.yAxis.nSamples" class="inspector-item">
                       <span class="insp-label">Samples</span>
@@ -306,28 +319,59 @@
                     </div>
                     <div v-if="datasetInfo.yAxis.labels?.length" class="inspector-item wide">
                       <span class="insp-label">Labels</span>
-                      <span class="insp-value mono insp-label-list">
-                        <span
-                          v-for="(label, idx) in formattedDatasetLabelList"
-                          :key="`y-label-${idx}`"
-                          class="insp-label-entry"
-                          :title="label"
-                        >
-                          {{ label }}
+                      <div class="insp-label-table-wrap">
+                        <table class="insp-label-table">
+                          <thead>
+                            <tr>
+                              <th>#</th>
+                              <th
+                                v-for="(header, idx) in datasetLabelTable.headers"
+                                :key="`label-header-${idx}`"
+                              >
+                                {{ header }}
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr
+                              v-for="(row, rowIdx) in datasetLabelTable.rows"
+                              :key="`label-row-${rowIdx}`"
+                            >
+                              <td class="label-row-index">{{ rowIdx + 1 }}</td>
+                              <td
+                                v-for="(cell, cellIdx) in row"
+                                :key="`label-cell-${rowIdx}-${cellIdx}`"
+                                class="label-cell"
+                                :title="cell"
+                              >
+                                {{ cell }}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                        <span v-if="datasetInfo.yAxis.labels.length > labelPreviewLimit" class="insp-more">
+                          (+{{ datasetInfo.yAxis.labels.length - labelPreviewLimit }} more)
                         </span>
-                        <span v-if="datasetInfo.yAxis.labels.length > 6" class="insp-more">
-                          (+{{ datasetInfo.yAxis.labels.length - 6 }} more)
-                        </span>
-                      </span>
+                      </div>
                     </div>
                   </template>
                 </div>
               </div>
 
               <!-- Output metadata (scientific results) -->
-              <div v-if="Object.keys(outputMetadata).length" class="metadata-section">
-                <h4>Metadata</h4>
-                <div class="metadata-grid">
+              <div v-if="Object.keys(outputMetadata).length" class="inspector-section metadata-section">
+                <button
+                  type="button"
+                  class="inspector-toggle"
+                  @click="toggleOutputSubsection('metadata')"
+                >
+                  <span class="inspector-toggle-title">
+                    <i class="pi pi-database" />
+                    Metadata
+                  </span>
+                  <i :class="outputSubsections.metadata ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                </button>
+                <div v-if="outputSubsections.metadata" class="metadata-grid">
                   <div
                     v-for="(value, key) in outputMetadata"
                     :key="key"
@@ -348,8 +392,18 @@
 
               <!-- Processing History -->
               <div v-if="processingHistory" class="inspector-section">
-                <h4><i class="pi pi-history" /> Processing History</h4>
-                <div class="processing-timeline">
+                <button
+                  type="button"
+                  class="inspector-toggle"
+                  @click="toggleOutputSubsection('processing')"
+                >
+                  <span class="inspector-toggle-title">
+                    <i class="pi pi-history" />
+                    Processing History
+                  </span>
+                  <i :class="outputSubsections.processing ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                </button>
+                <div v-if="outputSubsections.processing" class="processing-timeline">
                   <div
                     v-for="(step, index) in processingHistory"
                     :key="index"
@@ -387,8 +441,18 @@
 
               <!-- Provenance -->
               <div v-if="provenanceInfo" class="inspector-section">
-                <h4><i class="pi pi-sitemap" /> Provenance</h4>
-                <div class="inspector-grid">
+                <button
+                  type="button"
+                  class="inspector-toggle"
+                  @click="toggleOutputSubsection('provenance')"
+                >
+                  <span class="inspector-toggle-title">
+                    <i class="pi pi-sitemap" />
+                    Provenance
+                  </span>
+                  <i :class="outputSubsections.provenance ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                </button>
+                <div v-if="outputSubsections.provenance" class="inspector-grid">
                   <div v-if="provenanceInfo.source_type" class="inspector-item">
                     <span class="insp-label">Source</span>
                     <span class="insp-value">{{ provenanceInfo.source_type }}</span>
@@ -417,8 +481,18 @@
 
               <!-- Secondary Port Outputs -->
               <div v-if="portSummaries.length > 0" class="inspector-section">
-                <h4><i class="pi pi-share-alt" /> Output Ports</h4>
-                <div class="port-summaries">
+                <button
+                  type="button"
+                  class="inspector-toggle"
+                  @click="toggleOutputSubsection('ports')"
+                >
+                  <span class="inspector-toggle-title">
+                    <i class="pi pi-share-alt" />
+                    Output Ports
+                  </span>
+                  <i :class="outputSubsections.ports ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                </button>
+                <div v-if="outputSubsections.ports" class="port-summaries">
                   <div v-for="port in portSummaries" :key="port.name" class="port-summary-card">
                     <div class="port-header">
                       <span class="port-name">{{ port.name }}</span>
@@ -1038,6 +1112,13 @@ import { PARAM_NAME_MAP, normalizeNodeType, getLegacyNodeType, useWorkflowStore 
 import { createCategoryColorMap } from "@/utils/colors";
 import { getYAxisLabel, getXAxisLabel, isSpectralData as checkIsSpectral } from "@/utils/plotLabels";
 import { buildNodeOutput, type NodeOutput } from "@/utils/nodeOutput";
+import {
+  buildLabelTable,
+  compactSampleLabel,
+  detectLabelDelimiter,
+  normalizeSampleLabel,
+  splitLabelByDelimiter,
+} from "@/utils/sampleLabels";
 import api from "@/api/client";
 
 /**
@@ -1096,6 +1177,14 @@ const sections = ref({
   output: true,
   plots: true,
   log: true,
+});
+
+const outputSubsections = ref({
+  coordinates: true,
+  metadata: false,
+  processing: false,
+  provenance: false,
+  ports: false,
 });
 
 // Execution log entries
@@ -1384,7 +1473,7 @@ const outputMetadata = computed(() => {
     "processing_history", "provenance",
     "x_title", "x_units", "y_title", "y_units",
     "data_type", "is_spectra", "spectral_technique", "data_quantity",
-    "value_units",
+    "value_units", "value_units_label",
   ];
 
   for (const [key, value] of Object.entries(metadata)) {
@@ -1439,12 +1528,14 @@ const datasetInfo = computed(() => {
   if (yAxis) {
     info.yAxis = {
       title: yAxis.title || metadata.y_title || "Sample",
+      units: yAxis.units || metadata.y_units || "",
       labels: yAxis.labels,
       nSamples: yAxis.data?.length,
     };
   } else if (metadata.sample_labels?.length) {
     info.yAxis = {
       title: metadata.y_title || "Sample",
+      units: metadata.y_units || "",
       labels: metadata.sample_labels,
       nSamples: metadata.sample_labels.length,
     };
@@ -1454,24 +1545,27 @@ const datasetInfo = computed(() => {
   if (metadata.spectral_technique) info.spectralTechnique = metadata.spectral_technique;
   if (metadata.data_quantity) info.dataQuantity = metadata.data_quantity;
   if (metadata.is_spectra) info.isSpectra = true;
-  if (metadata.value_units) info.valueUnits = metadata.value_units;
+  if (metadata.value_units || metadata.value_units_label) {
+    info.valueUnits = metadata.value_units || metadata.value_units_label;
+  }
   if (portValue?.title) info.title = portValue.title;
 
   return Object.keys(info).length > 0 ? info : null;
 });
 
-const formatDatasetLabel = (label: any): string => {
-  const text = formatSampleLabelForPlots(label).replace(/\s+/g, " ").trim();
-  if (text.length <= 64) return text;
-  return `${text.slice(0, 40)}...${text.slice(-18)}`;
-};
+const labelPreviewLimit = 6;
 
-const formattedDatasetLabelList = computed<string[]>(() => {
+const datasetLabelTable = computed<{ headers: string[]; rows: string[][] }>(() => {
   const labels = datasetInfo.value?.yAxis?.labels;
-  if (!Array.isArray(labels) || labels.length === 0) return [];
-  return labels
-    .slice(0, 6)
-    .map((label) => formatDatasetLabel(label));
+  if (!Array.isArray(labels) || labels.length === 0) {
+    return { headers: ["Label"], rows: [] };
+  }
+
+  const table = buildLabelTable(labels, {
+    limit: labelPreviewLimit,
+    columnHeaderPrefix: "Field",
+  });
+  return { headers: table.headers, rows: table.rows };
 });
 
 /** Processing history from metadata. */
@@ -1555,45 +1649,6 @@ const isPCAOutput = computed(() => {
   return nodeTypeKey.value === "PCA" || metadata.type === "PCA" || metadata.isPCA === true;
 });
 
-const formatSampleLabelForPlots = (value: any): string => {
-  if (value === null || value === undefined) return "";
-
-  if (Array.isArray(value)) {
-    const readable = value
-      .slice()
-      .reverse()
-      .find((item) => typeof item === "string" && item.trim().length > 0);
-    if (readable) return readable.trim();
-    return value.map((item) => formatSampleLabelForPlots(item)).filter(Boolean).join(" | ");
-  }
-
-  if (typeof value === "object") {
-    if ("label" in value && typeof value.label === "string" && value.label.trim().length > 0) {
-      return value.label.trim();
-    }
-    if ("name" in value && typeof value.name === "string" && value.name.trim().length > 0) {
-      return value.name.trim();
-    }
-    return String(value);
-  }
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    // Handle stringified tuple/list labels such as "[datetime..., 'sample name']".
-    if (trimmed.startsWith("[") || trimmed.startsWith("(")) {
-      const quoted = [...trimmed.matchAll(/'([^']+)'|\"([^\"]+)\"/g)]
-        .map((match) => match[1] || match[2])
-        .filter(Boolean);
-      if (quoted.length > 0) {
-        return quoted[quoted.length - 1];
-      }
-    }
-    return trimmed;
-  }
-
-  return String(value);
-};
-
 const primaryOutputPayload = computed(() => {
   const primaryPort = nodeOutput.value?.primary_port;
   if (!primaryPort) return null;
@@ -1610,7 +1665,7 @@ const pcaSampleLabels = computed<string[]>(() => {
 
   for (const raw of candidates) {
     if (Array.isArray(raw) && raw.length > 0) {
-      return raw.map((item) => formatSampleLabelForPlots(item));
+      return raw.map((item) => normalizeSampleLabel(item));
     }
   }
 
@@ -1624,7 +1679,7 @@ const pcaLabelCategories = computed<string[]>(() => {
   const labelSet = new Set(labels);
 
   const rawCategories = Array.isArray(metadata.label_categories)
-    ? metadata.label_categories.map((item: any) => formatSampleLabelForPlots(item))
+    ? metadata.label_categories.map((item: any) => normalizeSampleLabel(item))
     : [];
 
   let categories = rawCategories.filter((category: string) => labelSet.has(category));
@@ -1697,8 +1752,45 @@ const inputPreviewColumns = computed(() => {
 const outputPreview = computed(() => {
   const data = nodeOutput.value?.data;
   if (!data || !Array.isArray(data)) return [];
+  const metadata = nodeOutput.value?.metadata || {};
+  const labelsRaw = metadata.sample_labels || metadata.labels || [];
+  const labels = Array.isArray(labelsRaw)
+    ? labelsRaw.map((label: any) => normalizeSampleLabel(label))
+    : [];
+  const labelDelimiter = detectLabelDelimiter(labels);
+  const splitLabels = labelDelimiter
+    ? labels.map((label: string) => splitLabelByDelimiter(label, labelDelimiter))
+    : [];
+  const maxLabelParts = splitLabels.length > 0
+    ? Math.max(...splitLabels.map((parts: string[]) => parts.length))
+    : 0;
+  const useSplitLabelColumns = !!labelDelimiter && maxLabelParts > 1;
+
   return data.slice(0, previewRowLimit).map((row: any, i: number) => {
     const obj: any = { _index: i + 1 };
+    const fullLabel = labels[i] || "";
+    obj._label_full = fullLabel;
+
+    if (labels.length > 0) {
+      if (useSplitLabelColumns) {
+        const parts = splitLabels[i] || [];
+        for (let labelIdx = 0; labelIdx < maxLabelParts; labelIdx += 1) {
+          const value = parts[labelIdx] || "";
+          obj[`_label_${labelIdx}`] = compactSampleLabel(value, {
+            maxLength: 42,
+            headLength: 28,
+            tailLength: 12,
+          });
+        }
+      } else {
+        obj._label = compactSampleLabel(fullLabel, {
+          maxLength: 52,
+          headLength: 34,
+          tailLength: 14,
+        });
+      }
+    }
+
     if (Array.isArray(row)) {
       row.slice(0, 10).forEach((val: any, j: number) => {
         obj[`col_${j}`] = typeof val === "number" ? val.toFixed(4) : val;
@@ -1712,7 +1804,7 @@ const outputPreview = computed(() => {
 
 const outputPreviewColumns = computed(() => {
   if (!outputPreview.value.length) return [];
-  const first = outputPreview.value[0];
+  const first = outputPreview.value[0] as Record<string, any>;
   const metadata = nodeOutput.value?.metadata || {};
   const pcLabels = metadata.pc_labels || [];
   const mcrLabels = metadata.labels || [];
@@ -1721,10 +1813,17 @@ const outputPreviewColumns = computed(() => {
   const isPCA = metadata.type === "PCA" || metadata.isPCA;
   const isMCR = metadata.type === "MCR_ALS";
 
-  return Object.keys(first).map((key, idx) => {
+  return Object.keys(first)
+    .filter((key) => key !== "_label_full")
+    .map((key) => {
     let header = key;
     if (key === "_index") {
       header = "#";
+    } else if (key === "_label") {
+      header = "Label";
+    } else if (key.startsWith("_label_")) {
+      const labelIdx = Number.parseInt(key.replace("_label_", ""), 10);
+      header = Number.isNaN(labelIdx) ? "Label" : `Field ${labelIdx + 1}`;
     } else if (key.startsWith("col_")) {
       const colIdx = parseInt(key.replace("col_", ""));
       if (isPCA && pcLabels[colIdx]) {
@@ -3150,7 +3249,8 @@ const spectraOverlayData = computed(() => {
   const data = nodeOutput.value?.data || [];
   const metadata = nodeOutput.value?.metadata || {};
   const wavenumbers = metadata.wavenumbers || Array.from({ length: data[0]?.length || 0 }, (_, i) => i);
-  const labels = metadata.labels || metadata.sample_labels || [];
+  const labelsRaw = metadata.labels || metadata.sample_labels || [];
+  const labels = Array.isArray(labelsRaw) ? labelsRaw.map((label: any) => normalizeSampleLabel(label)) : [];
 
   if (!Array.isArray(data[0])) return [];
 
@@ -3546,6 +3646,12 @@ const statsDistributionLayout = computed(() => ({
 // Methods
 const toggleSection = (section: "input" | "settings" | "output" | "plots" | "log") => {
   sections.value[section] = !sections.value[section];
+};
+
+const toggleOutputSubsection = (
+  section: "coordinates" | "metadata" | "processing" | "provenance" | "ports",
+) => {
+  outputSubsections.value[section] = !outputSubsections.value[section];
 };
 
 const togglePlot = (plot: string) => {
@@ -4683,19 +4789,43 @@ onUnmounted(() => {
   border: 1px solid #334155;
 }
 
-.inspector-section h4 {
-  margin: 0 0 12px;
-  font-size: 0.85rem;
-  color: #94a3b8;
-  font-weight: 500;
+.inspector-toggle {
+  width: 100%;
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.inspector-toggle-title {
+  display: inline-flex;
   align-items: center;
   gap: 8px;
 }
 
-.inspector-section h4 i {
+.inspector-toggle i {
   font-size: 0.85rem;
+}
+
+.inspector-toggle-title i {
   color: #3b82f6;
+}
+
+.inspector-toggle > i:last-child {
+  color: #64748b;
+}
+
+.inspector-toggle:hover {
+  color: #cbd5e1;
 }
 
 .inspector-grid {
@@ -4732,15 +4862,44 @@ onUnmounted(() => {
   font-size: 0.8rem;
 }
 
-.insp-label-list {
+.insp-label-table-wrap {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  white-space: normal;
+  gap: 6px;
 }
 
-.insp-label-entry {
-  line-height: 1.25;
+.insp-label-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid #334155;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.78rem;
+}
+
+.insp-label-table th,
+.insp-label-table td {
+  border: 1px solid #334155;
+  padding: 4px 6px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.insp-label-table th {
+  background: #1e293b;
+  color: #cbd5e1;
+  font-weight: 600;
+}
+
+.label-row-index {
+  width: 44px;
+  color: #94a3b8;
+}
+
+.insp-label-table .label-cell {
+  max-width: 340px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .insp-units {

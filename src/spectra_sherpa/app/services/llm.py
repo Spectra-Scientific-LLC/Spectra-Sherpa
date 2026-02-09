@@ -298,14 +298,18 @@ class LLMService:
 
             async def anthropic_generator() -> AsyncIterator[str]:
                 chunks: list[str] = []
-                async for event in stream:
-                    if event.type == "content_block_delta":
-                        delta = event.delta.text
-                        chunks.append(delta)
-                        yield delta
-                history.append({"role": "assistant", "content": "".join(chunks)})
-                conversation_store.trim(conversation_id)
-                conversation_store.save_messages(conversation_id, history)
+                try:
+                    async for event in stream:
+                        if event.type == "content_block_delta":
+                            delta = event.delta.text
+                            chunks.append(delta)
+                            yield delta
+                finally:
+                    # Save conversation (full or partial) on completion or interruption
+                    if chunks:
+                        history.append({"role": "assistant", "content": "".join(chunks)})
+                    conversation_store.trim(conversation_id)
+                    conversation_store.save_messages(conversation_id, history)
 
             return conversation_id, anthropic_generator()
         else:
@@ -318,15 +322,19 @@ class LLMService:
 
             async def openai_generator() -> AsyncIterator[str]:
                 chunks: list[str] = []
-                async for chunk in stream:
-                    delta = chunk.choices[0].delta.content
-                    if not delta:
-                        continue
-                    chunks.append(delta)
-                    yield delta
-                history.append({"role": "assistant", "content": "".join(chunks)})
-                conversation_store.trim(conversation_id)
-                conversation_store.save_messages(conversation_id, history)
+                try:
+                    async for chunk in stream:
+                        delta = chunk.choices[0].delta.content
+                        if not delta:
+                            continue
+                        chunks.append(delta)
+                        yield delta
+                finally:
+                    # Save conversation (full or partial) on completion or interruption
+                    if chunks:
+                        history.append({"role": "assistant", "content": "".join(chunks)})
+                    conversation_store.trim(conversation_id)
+                    conversation_store.save_messages(conversation_id, history)
 
             return conversation_id, openai_generator()
 

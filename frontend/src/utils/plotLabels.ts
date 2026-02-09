@@ -18,6 +18,8 @@ export interface PlotMetadata {
   x_units?: string;
   y_title?: string;
   y_units?: string;
+  value_units?: string;
+  value_units_label?: string;
   loadings_axis_labels?: any[];
   loadings_axis_units?: string;
   wavenumbers?: number[];
@@ -57,7 +59,8 @@ export function buildAxisLabel(
  */
 export function getYAxisLabel(metadata?: PlotMetadata | null): string {
   if (!metadata) return "Response";
-  return buildAxisLabel(metadata.y_title, metadata.y_units, "Response");
+  const fallbackUnits = metadata.value_units_label || metadata.value_units;
+  return buildAxisLabel(metadata.y_title, metadata.y_units || fallbackUnits, "Response");
 }
 
 /**

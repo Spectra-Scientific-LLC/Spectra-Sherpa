@@ -25,8 +25,8 @@ export const buildWsUrl = (): string => {
 
 /**
  * Attach credentials to a WebSocket URL.
- * Prefers JWT token (user login) over api_key (machine key).
- * Backend accepts both via query params: ?api_key=... or ?token=...
+ * Sends both token and api_key when both exist so the backend can
+ * fall back to api_key if the JWT is expired (avoids unnecessary 1008).
  */
 export const withCredentials = (wsUrl: string): string => {
   const apiKey = localStorage.getItem("api_key");
@@ -37,18 +37,9 @@ export const withCredentials = (wsUrl: string): string => {
   const url = new URL(wsUrl);
   if (token) {
     url.searchParams.set("token", token);
-  } else if (apiKey) {
+  }
+  if (apiKey) {
     url.searchParams.set("api_key", apiKey);
   }
-  return url.toString();
-};
-
-/** @deprecated Use withCredentials instead */
-export const withApiKey = (wsUrl: string, apiKey?: string | null): string => {
-  if (!apiKey) {
-    return wsUrl;
-  }
-  const url = new URL(wsUrl);
-  url.searchParams.set("api_key", apiKey);
   return url.toString();
 };

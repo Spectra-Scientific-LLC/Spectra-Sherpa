@@ -715,6 +715,10 @@ export const useWorkflowStore = defineStore("workflow", () => {
   const isLoading = ref(false);
   const lastExecutionResults = ref<UnknownRecord | null>(null);
   const availableDatasets = ref<AvailableDatasets | null>(null);
+  // Maps frontend canvas node IDs <-> backend workflow node_id strings.
+  // Needed to correctly correlate status/result payloads when backend IDs are non-numeric.
+  const frontendToBackendNodeIds = ref<Map<number, string>>(new Map());
+  const backendToFrontendNodeIds = ref<Map<string, number>>(new Map());
 
   // Node library metadata (validation schemas, parameters, etc.)
   const nodeLibrary = ref<Map<string, NodeTypeMetadata>>(new Map());
@@ -730,10 +734,58 @@ export const useWorkflowStore = defineStore("workflow", () => {
   const edgeCount = computed(() => edges.value.length);
   const availableTemplates = computed(() => Object.values(TEMPLATES));
 
+  const normalizeBackendExecutionStatus = (status: unknown): NodeExecutionStatus | null => {
+    if (typeof status !== "string") {
+      return null;
+    }
+    const normalized = status.toLowerCase();
+    if (normalized === "completed" || normalized === "complete" || normalized === "success" || normalized === "succeeded") {
+      return "completed";
+    }
+    if (normalized === "error" || normalized === "failed" || normalized === "failure") {
+      return "error";
+    }
+    if (normalized === "running" || normalized === "in_progress" || normalized === "processing") {
+      return "running";
+    }
+    if (normalized === "pending" || normalized === "queued") {
+      return "pending";
+    }
+    return null;
+  };
+
+  function resolveBackendNodeId(frontendNodeId: number): string {
+    const existing = frontendToBackendNodeIds.value.get(frontendNodeId);
+    if (existing) {
+      return existing;
+    }
+    const generated = String(frontendNodeId);
+    frontendToBackendNodeIds.value.set(frontendNodeId, generated);
+    backendToFrontendNodeIds.value.set(generated, frontendNodeId);
+    return generated;
+  }
+
+  function resolveFrontendNodeId(backendNodeId: string): number | null {
+    const key = String(backendNodeId);
+    if (backendToFrontendNodeIds.value.has(key)) {
+      return backendToFrontendNodeIds.value.get(key) ?? null;
+    }
+    const parsed = Number.parseInt(key, 10);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+    return null;
+  }
+
+  function clearNodeIdMappings(): void {
+    frontendToBackendNodeIds.value.clear();
+    backendToFrontendNodeIds.value.clear();
+  }
+
   // Helper: Convert frontend nodes/edges to backend format
   function toBackendFormat(): { nodes: BackendWorkflowNode[]; edges: BackendWorkflowEdge[] } {
     const backendNodes: BackendWorkflowNode[] = nodes.value.map((n) => ({
-      node_id: String(n.id),
+      node_id: resolveBackendNodeId(n.id),
       node_type: normalizeNodeType(n.type),
       label: n.type,
       // Map UI parameter names to backend parameter names
@@ -743,8 +795,8 @@ export const useWorkflowStore = defineStore("workflow", () => {
     }));
 
     const backendEdges: BackendWorkflowEdge[] = edges.value.map((e) => ({
-      from_node_id: String(e.from),
-      to_node_id: String(e.to),
+      from_node_id: resolveBackendNodeId(e.from),
+      to_node_id: resolveBackendNodeId(e.to),
       from_output: e.fromPort || "default",
       to_input: e.toPort || "default",
     }));
@@ -757,6 +809,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
     backendNodes: BackendWorkflowNode[],
     backendEdges: BackendWorkflowEdge[]
   ): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
+    clearNodeIdMappings();
     const usedIds = new Set<number>();
     let fallbackId = -1;
     const nodeIdMap = new Map<string, number>();
@@ -780,6 +833,10 @@ export const useWorkflowStore = defineStore("workflow", () => {
 
       usedIds.add(resolved);
       nodeIdMap.set(key, resolved);
+      if (key) {
+        frontendToBackendNodeIds.value.set(resolved, key);
+        backendToFrontendNodeIds.value.set(key, resolved);
+      }
       return resolved;
     };
 
@@ -818,6 +875,10 @@ export const useWorkflowStore = defineStore("workflow", () => {
       ...node,
       type: normalizeNodeType(node.type),
     }));
+    clearNodeIdMappings();
+    for (const node of nodes.value) {
+      resolveBackendNodeId(node.id);
+    }
     edges.value = JSON.parse(JSON.stringify(template.edges));
     currentTemplateId.value = templateId;
     workflowName.value = template.name;
@@ -829,6 +890,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   function clearWorkflow() {
     nodes.value = [];
     edges.value = [];
+    clearNodeIdMappings();
     currentTemplateId.value = null;
     workflowName.value = "Untitled Workflow";
     workflowId.value = null;
@@ -938,12 +1000,14 @@ export const useWorkflowStore = defineStore("workflow", () => {
       // Process node statuses from backend response
       const nodeStatuses = response.data.node_statuses || {};
       for (const node of nodes.value) {
-        const nodeIdStr = String(node.id);
-        const status = nodeStatuses[nodeIdStr];
-        const result = response.data.results?.[nodeIdStr];
+        const backendNodeId = resolveBackendNodeId(node.id);
+        const status = nodeStatuses[backendNodeId] ?? nodeStatuses[String(node.id)];
+        const result = response.data.results?.[backendNodeId] ?? response.data.results?.[String(node.id)];
+        const normalizedStatus = normalizeBackendExecutionStatus(status);
+        const hasResult = result !== undefined;
 
         // Update node execution state based on status
-        if (status === "completed") {
+        if (normalizedStatus === "completed" || (normalizedStatus === null && hasResult)) {
           // Extract shape information from result if available
           let outputShape: number[] | null = null;
           let outputType: string | null = null;
@@ -970,7 +1034,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
             output_shape: outputShape,
             output_type: outputType,
           });
-        } else if (status === "error") {
+        } else if (normalizedStatus === "error") {
           // Extract error message from response or use generic message
           const errorMsg = response.data.error || "Node execution failed";
           setNodeExecutionState(node.id, {
@@ -981,8 +1045,10 @@ export const useWorkflowStore = defineStore("workflow", () => {
             output_shape: null,
             output_type: null,
           });
+        } else if (normalizedStatus === "running") {
+          setNodeExecutionState(node.id, { status: "running" });
         } else {
-          // If node wasn't executed, keep as pending
+          // Pending/unknown/non-executed node.
           setNodeExecutionState(node.id, { status: "pending" });
         }
       }
@@ -1017,13 +1083,17 @@ export const useWorkflowStore = defineStore("workflow", () => {
     }
 
     // Mark target node and its dependencies as running
-    const nodeIdNum = typeof nodeId === 'string' ? parseInt(nodeId, 10) : nodeId;
-    setNodeExecutionState(nodeIdNum, { status: "running" });
+    const parsedNodeId = typeof nodeId === "string" ? Number.parseInt(nodeId, 10) : nodeId;
+    const nodeIdNum = Number.isFinite(parsedNodeId) ? parsedNodeId : resolveFrontendNodeId(nodeId);
+    const backendNodeId = nodeIdNum !== null ? resolveBackendNodeId(nodeIdNum) : String(nodeId);
+    if (nodeIdNum !== null) {
+      setNodeExecutionState(nodeIdNum, { status: "running" });
+    }
 
     isLoading.value = true;
     try {
       const response = await api.post(`/workflows/${workflowId.value}/execute`, {
-        node_id: nodeId,
+        node_id: backendNodeId,
         initial_data: initialData || {},
       });
 
@@ -1036,29 +1106,31 @@ export const useWorkflowStore = defineStore("workflow", () => {
       // Process node statuses from backend response
       const nodeStatuses = response.data.node_statuses || {};
       for (const node of nodes.value) {
-        const nodeIdStr = String(node.id);
-        const status = nodeStatuses[nodeIdStr];
-        const result = response.data.results?.[nodeIdStr];
+        const currentBackendNodeId = resolveBackendNodeId(node.id);
+        const status = nodeStatuses[currentBackendNodeId] ?? nodeStatuses[String(node.id)];
+        const result = response.data.results?.[currentBackendNodeId] ?? response.data.results?.[String(node.id)];
+        const normalizedStatus = normalizeBackendExecutionStatus(status);
+        const hasResult = result !== undefined;
 
         // Update node execution state based on status
-        if (status === "completed") {
+        if (normalizedStatus === "completed" || (normalizedStatus === null && hasResult)) {
           // Extract shape information from result if available
           let outputShape: number[] | null = null;
           let outputType: string | null = null;
 
-        if (result) {
-          const primaryResult = (result && typeof result === "object" && "default" in result) ? result.default : result;
-          if (primaryResult?.type) {
-            outputType = primaryResult.type;
+          if (result) {
+            const primaryResult = (result && typeof result === "object" && "default" in result) ? result.default : result;
+            if (primaryResult?.type) {
+              outputType = primaryResult.type;
+            }
+            if (primaryResult?.shape && Array.isArray(primaryResult.shape)) {
+              outputShape = primaryResult.shape;
+            }
+            // Handle NDDataset with n_samples and n_features
+            if (primaryResult?.n_samples !== undefined && primaryResult?.n_features !== undefined) {
+              outputShape = [primaryResult.n_samples, primaryResult.n_features];
+            }
           }
-          if (primaryResult?.shape && Array.isArray(primaryResult.shape)) {
-            outputShape = primaryResult.shape;
-          }
-          // Handle NDDataset with n_samples and n_features
-          if (primaryResult?.n_samples !== undefined && primaryResult?.n_features !== undefined) {
-            outputShape = [primaryResult.n_samples, primaryResult.n_features];
-          }
-        }
 
           setNodeExecutionState(node.id, {
             status: "completed",
@@ -1068,7 +1140,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
             output_shape: outputShape,
             output_type: outputType,
           });
-        } else if (status === "error") {
+        } else if (normalizedStatus === "error") {
           const errorMsg = response.data.error || "Node execution failed";
           setNodeExecutionState(node.id, {
             status: "error",
@@ -1078,6 +1150,8 @@ export const useWorkflowStore = defineStore("workflow", () => {
             output_shape: null,
             output_type: null,
           });
+        } else if (normalizedStatus === "running") {
+          setNodeExecutionState(node.id, { status: "running" });
         }
       }
 
@@ -1085,11 +1159,13 @@ export const useWorkflowStore = defineStore("workflow", () => {
     } catch (error: unknown) {
       // Mark node as error
       const errorMsg = getErrorMessage(error, "Execution failed");
-      setNodeExecutionState(nodeIdNum, {
-        status: "error",
-        error_message: errorMsg,
-        error_details: errorMsg,
-      });
+      if (nodeIdNum !== null) {
+        setNodeExecutionState(nodeIdNum, {
+          status: "error",
+          error_message: errorMsg,
+          error_details: errorMsg,
+        });
+      }
       throw error;
     } finally {
       isLoading.value = false;
@@ -1113,24 +1189,29 @@ export const useWorkflowStore = defineStore("workflow", () => {
     trialParams: ParamsMap,
     initialData?: ParamsMap
   ): Promise<TrialExecuteResponse> {
+    const targetFrontendId = Number.parseInt(targetNodeId, 10);
+    const resolvedTargetNodeId = Number.isFinite(targetFrontendId)
+      ? resolveBackendNodeId(targetFrontendId)
+      : targetNodeId;
+
     // Build nodes list from current workflow (using backend format)
     const trialNodes = nodes.value.map((node) => ({
-      node_id: String(node.id),
+      node_id: resolveBackendNodeId(node.id),
       node_type: normalizeNodeType(node.type),
       parameters: node.params || {},
     }));
 
     // Build edges list from current workflow
     const trialEdges = edges.value.map((edge) => ({
-      from_node_id: String(edge.from),
-      to_node_id: String(edge.to),
+      from_node_id: resolveBackendNodeId(edge.from),
+      to_node_id: resolveBackendNodeId(edge.to),
       from_output: edge.fromPort || "default",
       to_input: edge.toPort || "default",
     }));
 
     try {
       const response = await api.post("/workflows/trial/execute", {
-        target_node_id: targetNodeId,
+        target_node_id: resolvedTargetNodeId,
         trial_params: trialParams,
         nodes: trialNodes,
         edges: trialEdges,
@@ -1477,11 +1558,17 @@ export const useWorkflowStore = defineStore("workflow", () => {
     node.type = normalizeNodeType(node.type);
     node.executionState = { status: "pending" };
     nodes.value.push(node);
+    resolveBackendNodeId(node.id);
     hasUnsavedChanges.value = true;
     markWorkflowStale();
   }
 
   function removeNode(nodeId: number) {
+    const backendNodeId = frontendToBackendNodeIds.value.get(nodeId);
+    if (backendNodeId) {
+      backendToFrontendNodeIds.value.delete(backendNodeId);
+    }
+    frontendToBackendNodeIds.value.delete(nodeId);
     nodes.value = nodes.value.filter((n) => n.id !== nodeId);
     edges.value = edges.value.filter((e) => e.from !== nodeId && e.to !== nodeId);
     hasUnsavedChanges.value = true;
@@ -1688,7 +1775,17 @@ export const useWorkflowStore = defineStore("workflow", () => {
         node.executionState = { status: "pending" };
       }
     }
+    const nextNodeIds = new Set(newNodes.map((node) => node.id));
+    for (const [frontendId, backendId] of frontendToBackendNodeIds.value.entries()) {
+      if (!nextNodeIds.has(frontendId)) {
+        frontendToBackendNodeIds.value.delete(frontendId);
+        backendToFrontendNodeIds.value.delete(backendId);
+      }
+    }
     nodes.value = newNodes;
+    for (const node of newNodes) {
+      resolveBackendNodeId(node.id);
+    }
     hasUnsavedChanges.value = true;
     markWorkflowStale();
   }
@@ -1745,6 +1842,8 @@ export const useWorkflowStore = defineStore("workflow", () => {
     validateNodeParams,
     validateEdge,
     validateAllEdges,
+    resolveFrontendNodeId,
+    resolveBackendNodeId,
     setNodeExecutionState,
     getNodeExecutionState,
     markWorkflowStale,

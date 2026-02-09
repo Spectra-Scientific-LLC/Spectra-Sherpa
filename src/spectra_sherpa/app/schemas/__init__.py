@@ -1,5 +1,5 @@
-from app.schemas.api_key import APIKeyCreate, APIKeyInfo
-from app.schemas.builder import (
+from .api_key import APIKeyCreate, APIKeyInfo
+from .builder import (
     BlendRequest,
     BlendResponse,
     CurveDefaultsResponse,
@@ -9,7 +9,7 @@ from app.schemas.builder import (
     PreprocessResponse,
     SpectrumPayload,
 )
-from app.schemas.calibrations import (
+from .calibrations import (
     CalModelInfo,
     CalibrationCreate,
     CalibrationDetail,
@@ -18,7 +18,7 @@ from app.schemas.calibrations import (
     CalibrationFitResponse,
     CalibrationSummary,
 )
-from app.schemas.experiments import (
+from .experiments import (
     ExperimentCreate,
     ExperimentDetail,
     ExperimentFileOut,
@@ -27,7 +27,7 @@ from app.schemas.experiments import (
     VersionCreate,
     VersionInfo,
 )
-from app.schemas.llm import (
+from .llm import (
     LLMChatRequest,
     LLMChatResponse,
     LLMConversation,
@@ -39,16 +39,16 @@ from app.schemas.llm import (
     LLMTextResponse,
     LLMWriteReportRequest,
 )
-from app.schemas.jobs import JobInfo
-from app.schemas.logs import LogEntry, LogResponse
-from app.schemas.nist import (
+from .jobs import JobInfo
+from .logs import LogEntry, LogResponse
+from .nist import (
     NistDownloadRequest,
     NistDownloadResponse,
     NistLibraryEntry,
     NistSearchResult,
 )
-from app.schemas.token import Token, TokenPayload
-from app.schemas.user import User, UserCreate, UserStatusUpdate, UserUpdate
+from .token import Token, TokenPayload
+from .user import User, UserCreate, UserStatusUpdate, UserUpdate
 
 
 __all__ = [
