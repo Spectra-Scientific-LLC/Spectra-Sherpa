@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Quickstart Analysis - SpectraSherpa Documentation</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Quickstart Analysis";
+        var mkdocs_page_input_path = "current/QUICKSTART_ANALYSIS.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> SpectraSherpa Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Current</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Getting Started</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/installation/">Installation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/quickstart/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/modes/">Modes & Configuration</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >User Guide</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/experiments/">Experiments</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/library/">Library (NIST)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/doe/">DOE (96-Well)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/synthesis/">Synthesis Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/workflow/">Workflow Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" >Reproduction Study</a>
+    <ul>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
+                </li>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/reproduction_methodology/">Methodology</a>
+                </li>
+    </ul>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../USER_MANUAL/">User Manual</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >SpectrochemPy Examples</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/01_loading_data/">01. Loading Data</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/02_dataset_manipulation/">02. Manipulation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/03_plotting/">03. Plotting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/04_preprocessing_smoothing/">04. Smoothing</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/05_preprocessing_baseline/">05. Baseline</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/06_peak_finding/">06. Peak Finding</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/07_peak_fitting/">07. Integration</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/08_pca/">08. PCA</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/09_mcr_als/">09. MCR-ALS</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/10_pls_regression/">10. PLS</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reference</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../reference/nodes/">Node Library</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Architecture & System</a>
+    <ul>
+                <li class="toctree-l2"><a class="" href="../README.md">Repository Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SYSTEM_OVERVIEW/">System Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../ARCHITECTURE/">Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../INFORMATION_ARCHITECTURE/">Information Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../FUNCTIONAL_MAPPING/">Functional Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DATA_SOURCES/">Data Sources</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../NODE_CAPABILITIES/">Node Capabilities</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PARAMETER_MAPPING/">Parameter Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DATABASE_SCHEMA/">Database Schema</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../AUTHENTICATION/">Authentication</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PHASE1_SETUP_GUIDE/">Phase 1 Setup Guide</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" >Workflow & Analysis</a>
+    <ul class="current">
+                <li class="toctree-l2 current"><a class="reference internal current" href="#">Quickstart Analysis</a>
+    <ul class="current">
+    <li class="toctree-l3"><a class="reference internal" href="#getting-started">🚀 Getting Started</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#prerequisites">📋 Prerequisites</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#backend-setup">🔧 Backend Setup</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#1-install-dependencies">1. Install Dependencies</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#2-start-backend-server">2. Start Backend Server</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#frontend-setup">🎨 Frontend Setup</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#1-install-dependencies_1">1. Install Dependencies</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#2-start-development-server">2. Start Development Server</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#using-the-analysis-workflow-system">🎯 Using the Analysis Workflow System</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#navigation">Navigation</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#creating-your-first-workflow">📝 Creating Your First Workflow</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#example-smooth-pca-pipeline">Example: Smooth → PCA Pipeline</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#executing-workflows">🔬 Executing Workflows</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#option-a-via-ui-coming-soon-backend-ready">Option A: Via UI (Coming Soon - Backend Ready)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#option-b-via-api-available-now">Option B: Via API (Available Now)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#option-c-via-python-test-script-immediate">Option C: Via Python Test Script (Immediate)</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#available-nodes">📦 Available Nodes</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#preprocessing-7-nodes">Preprocessing (7 Nodes)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#modeling-3-nodes">Modeling (3 Nodes)</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#exporting-to-python">🐍 Exporting to Python</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#via-api">Via API</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#generated-python-script-structure">Generated Python Script Structure</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#viewing-node-library">🔍 Viewing Node Library</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#via-api_1">Via API</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#example-workflows">📚 Example Workflows</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#1-basic-preprocessing">1. Basic Preprocessing</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#2-pca-exploration">2. PCA Exploration</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#3-calibration-workflow">3. Calibration Workflow</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#4-derivative-analysis">4. Derivative Analysis</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#running-tests">🧪 Running Tests</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#test-individual-node">Test Individual Node</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#test-node-registry">Test Node Registry</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#test-full-workflow">Test Full Workflow</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#troubleshooting">🛠️ Troubleshooting</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#backend-wont-start">Backend won't start</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#spectrochempy-errors">SpectroChemPy errors</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#database-errors">Database errors</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#api-documentation">📖 API Documentation</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#next-steps">🎓 Next Steps</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#notes">📝 Notes</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#contributing">🤝 Contributing</a>
+    </li>
+    </ul>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../MULTI_PORT_GUIDE/">Multi-Port Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../FOLDER_AND_PATTERN_LOADING/">Folder & Pattern Loading</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DOE_MANUAL/">DOE Manual</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PROBLEM_REPORT/">Workflow Bench Gap Analysis</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Deployment</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../deployment/DIGITAL_OCEAN/">DigitalOcean</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Quality & Validation</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../ALGORITHM_AUDIT/">Algorithm Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SYNTHETIC_FALLBACK_AUDIT/">Synthetic Fallback Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../TEST_FRAMEWORK/">Test Framework</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../BACKEND_TESTING_GUIDE/">Backend Testing Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../TESTING_CHECKLIST/">Testing Checklist</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../VERIFICATION_PROCEDURE/">Verification Procedure</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Project1 (Standalone Tool)</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/">Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/QUICKSTART/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/INSTALLATION_GUIDE/">Installation Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/TROUBLESHOOTING/">Troubleshooting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/NOTICE/">Notice</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Past</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/RELEASE_NOTES/">Release Notes</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/IMPLEMENTATION_SUMMARY/">Implementation Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/FINAL_FIXES_SUMMARY/">Final Fixes Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/SESSION_SUMMARY_2026-01-21/">Session Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/NODE_STANDARDIZATION_2026-01-26/">Node Standardization (2026-01-26)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Fixes</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/3D_CONCATENATION_FIX/">3D Concatenation Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/QUICK_PLOT_Y_AXIS_LABELS_FIX/">Quick Plot Y-Axis Labels Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CASE_SENSITIVITY_AND_UI_FIXES/">Case Sensitivity and UI Fixes</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/DEDICATED_LOAD_GROUP_ENFORCEMENT/">Dedicated Load Group Enforcement</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/LOAD_GROUP_NODE_IMPLEMENTATION/">Load Group Node Implementation</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reviews & Testing</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CODE_REVIEW_FINDINGS/">Code Review Findings</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/WEEK7_TESTING/">Week 7 Testing</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Future</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ROADMAP/">Roadmap</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/DOE_ENHANCEMENTS/">DOE Enhancements</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ANALYSIS_CANVAS_WIREFRAME/">Analysis Canvas Wireframe</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/plugin_plan_011525/">Plugin Plan (2025-01-15)</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">SpectraSherpa Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Current</li>
+          <li class="breadcrumb-item">Workflow & Analysis</li>
+      <li class="breadcrumb-item active">Quickstart Analysis</li>
+    <li class="wy-breadcrumbs-aside">
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="dag-analysis-workflow-system-quickstart-guide">DAG Analysis Workflow System - Quickstart Guide</h1>
+<h2 id="getting-started">🚀 Getting Started</h2>
+<p>This guide walks you through using the new DAG-based Analysis workflow system for spectral data analysis.</p>
+<hr />
+<h2 id="prerequisites">📋 Prerequisites</h2>
+<ul>
+<li>Python 3.11+ with <code>poetry</code> installed</li>
+<li>Node.js 18+ with <code>npm</code> installed</li>
+<li>SpectroChemPy environment (<code>scpy</code> conda env)</li>
+</ul>
+<hr />
+<h2 id="backend-setup">🔧 Backend Setup</h2>
+<h3 id="1-install-dependencies">1. Install Dependencies</h3>
+<pre><code class="language-bash">cd Refactored/src/spectra_sherpa
+/Users/fe2val/miniforge3/envs/scpy/bin/poetry install
+</code></pre>
+<h3 id="2-start-backend-server">2. Start Backend Server</h3>
+<blockquote>
+<p><strong>Note:</strong> The database is created automatically on first startup.
+No manual migration step is needed.</p>
+</blockquote>
+<pre><code class="language-bash">/Users/fe2val/miniforge3/envs/scpy/bin/poetry run uvicorn app.main:app --reload --port 8000
+</code></pre>
+<p><strong>Verify</strong>: Visit http://localhost:8000/docs to see the API documentation</p>
+<hr />
+<h2 id="frontend-setup">🎨 Frontend Setup</h2>
+<h3 id="1-install-dependencies_1">1. Install Dependencies</h3>
+<pre><code class="language-bash">cd Refactored/frontend
+npm install
+</code></pre>
+<h3 id="2-start-development-server">2. Start Development Server</h3>
+<pre><code class="language-bash">npm run dev
+</code></pre>
+<p><strong>Verify</strong>: Visit http://localhost:5173 and navigate to the Analysis tab</p>
+<hr />
+<h2 id="using-the-analysis-workflow-system">🎯 Using the Analysis Workflow System</h2>
+<h3 id="navigation">Navigation</h3>
+<ol>
+<li>Click on <strong>Analysis</strong> in the left sidebar (icon: <code>pi pi-sitemap</code>)</li>
+<li>You'll see a 3-panel layout:</li>
+<li><strong>Left</strong>: Node Library (palette of available nodes)</li>
+<li><strong>Center</strong>: Workflow Canvas (drag-and-drop area)</li>
+<li><strong>Right</strong>: Node Inspector + Results Panel</li>
+</ol>
+<hr />
+<h2 id="creating-your-first-workflow">📝 Creating Your First Workflow</h2>
+<h3 id="example-smooth-pca-pipeline">Example: Smooth → PCA Pipeline</h3>
+<h4 id="step-1-add-nodes-to-canvas">Step 1: Add Nodes to Canvas</h4>
+<ol>
+<li><strong>Add a Smoothing Node</strong>:</li>
+<li>In the Node Library, expand "Preprocessing"</li>
+<li>Drag "Smooth (Savitzky-Golay)" to the canvas</li>
+<li>
+<p>Node ID: <code>smooth_001</code></p>
+</li>
+<li>
+<p><strong>Add a PCA Node</strong>:</p>
+</li>
+<li>In Node Library, expand "Modeling"</li>
+<li>Drag "PCA" to the canvas</li>
+<li>Node ID: <code>pca_001</code></li>
+</ol>
+<h4 id="step-2-connect-nodes">Step 2: Connect Nodes</h4>
+<ol>
+<li>Click on the output port of <code>smooth_001</code></li>
+<li>Drag to the input port of <code>pca_001</code></li>
+<li>Release to create the connection</li>
+</ol>
+<h4 id="step-3-configure-parameters">Step 3: Configure Parameters</h4>
+<ol>
+<li><strong>Click on <code>smooth_001</code></strong> (node becomes selected)</li>
+<li>In the <strong>Node Inspector</strong> (right panel):</li>
+<li>Window Size: <code>11</code></li>
+<li>
+<p>Polynomial Order: <code>2</code></p>
+</li>
+<li>
+<p><strong>Click on <code>pca_001</code></strong>:</p>
+</li>
+<li>Number of Components: <code>3</code></li>
+<li>Standardize Data: <code>false</code></li>
+<li>Scale Data: <code>false</code></li>
+</ol>
+<h4 id="step-4-save-workflow">Step 4: Save Workflow</h4>
+<ol>
+<li>Click <strong>Save</strong> button (top of canvas)</li>
+<li>Name: <code>"FTIR Smoothing + PCA"</code></li>
+<li>Description: <code>"Denoise FTIR spectra and extract principal components"</code></li>
+<li>Click <strong>Create</strong></li>
+</ol>
+<hr />
+<h2 id="executing-workflows">🔬 Executing Workflows</h2>
+<h3 id="option-a-via-ui-coming-soon-backend-ready">Option A: Via UI (Coming Soon - Backend Ready)</h3>
+<p>The frontend execution UI is ready to be connected. The backend <code>/workflows/{id}/execute</code> endpoint is fully functional.</p>
+<h3 id="option-b-via-api-available-now">Option B: Via API (Available Now)</h3>
+<pre><code class="language-bash"># 1. Create a test workflow
+curl -X POST http://localhost:8000/api/v1/workflows \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;name&quot;: &quot;Test PCA Workflow&quot;,
+    &quot;description&quot;: &quot;Simple PCA analysis&quot;,
+    &quot;status&quot;: &quot;active&quot;,
+    &quot;nodes&quot;: [
+      {
+        &quot;node_id&quot;: &quot;data_source&quot;,
+        &quot;node_type&quot;: &quot;smooth.savitzky_golay&quot;,
+        &quot;parameters&quot;: {},
+        &quot;position_x&quot;: 100,
+        &quot;position_y&quot;: 100
+      },
+      {
+        &quot;node_id&quot;: &quot;smooth_001&quot;,
+        &quot;node_type&quot;: &quot;smooth.savitzky_golay&quot;,
+        &quot;parameters&quot;: {&quot;size&quot;: 11, &quot;order&quot;: 2},
+        &quot;position_x&quot;: 300,
+        &quot;position_y&quot;: 100
+      },
+      {
+        &quot;node_id&quot;: &quot;pca_001&quot;,
+        &quot;node_type&quot;: &quot;model.pca&quot;,
+        &quot;parameters&quot;: {&quot;n_components&quot;: 3, &quot;standardized&quot;: false, &quot;scaled&quot;: false},
+        &quot;position_x&quot;: 500,
+        &quot;position_y&quot;: 100
+      }
+    ],
+    &quot;edges&quot;: [
+      {
+        &quot;from_node_id&quot;: &quot;data_source&quot;,
+        &quot;to_node_id&quot;: &quot;smooth_001&quot;
+      },
+      {
+        &quot;from_node_id&quot;: &quot;smooth_001&quot;,
+        &quot;to_node_id&quot;: &quot;pca_001&quot;
+      }
+    ]
+  }'
+
+# 2. Execute workflow (you'll need to provide actual NDDataset data)
+# See test_workflow_executor.py for a working example
+</code></pre>
+<h3 id="option-c-via-python-test-script-immediate">Option C: Via Python Test Script (Immediate)</h3>
+<pre><code class="language-bash">cd Refactored/src/spectra_sherpa
+/Users/fe2val/miniforge3/envs/scpy/bin/python test_workflow_executor.py
+</code></pre>
+<p><strong>Expected Output</strong>:</p>
+<pre><code>============================================================
+DAG Workflow Executor Test
+============================================================
+
+1. Creating synthetic FTIR dataset...
+   Created dataset: 50 samples × 400 features
+
+2. Building workflow...
+   Added nodes:
+     • data_source: Raw spectral data
+     • smooth_001: Savitzky-Golay Smoothing
+     • pca_001: PCA (3 components)
+   Added edges:
+     • data_source → smooth_001 → pca_001
+
+3. Executing workflow...
+Executing node: smooth_001 (Smooth (Savitzky-Golay))
+  ✓ Completed: smooth_001 (status: completed)
+Executing node: pca_001 (PCA)
+  ✓ Completed: pca_001 (status: completed)
+
+4. Workflow Results:
+   Workflow status: completed
+   ...
+</code></pre>
+<hr />
+<h2 id="available-nodes">📦 Available Nodes</h2>
+<h3 id="preprocessing-7-nodes">Preprocessing (7 Nodes)</h3>
+<table>
+<thead>
+<tr>
+<th>Node Type</th>
+<th>Label</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>baseline.als</code></td>
+<td>Baseline (ALS)</td>
+<td>Asymmetric Least Squares baseline correction</td>
+</tr>
+<tr>
+<td><code>baseline.rubberband</code></td>
+<td>Baseline (Rubberband)</td>
+<td>Convex hull baseline correction</td>
+</tr>
+<tr>
+<td><code>smooth.savitzky_golay</code></td>
+<td>Smooth (Savitzky-Golay)</td>
+<td>Polynomial smoothing filter</td>
+</tr>
+<tr>
+<td><code>normalize.snv</code></td>
+<td>Normalize (SNV)</td>
+<td>Standard Normal Variate normalization</td>
+</tr>
+<tr>
+<td><code>normalize.msc</code></td>
+<td>Normalize (MSC)</td>
+<td>Multiplicative Scatter Correction</td>
+</tr>
+<tr>
+<td><code>derivative.first</code></td>
+<td>1st Derivative</td>
+<td>First derivative using SG filter</td>
+</tr>
+<tr>
+<td><code>derivative.second</code></td>
+<td>2nd Derivative</td>
+<td>Second derivative using SG filter</td>
+</tr>
+</tbody>
+</table>
+<h3 id="modeling-3-nodes">Modeling (3 Nodes)</h3>
+<table>
+<thead>
+<tr>
+<th>Node Type</th>
+<th>Label</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>model.pca</code></td>
+<td>PCA</td>
+<td>Principal Component Analysis</td>
+</tr>
+<tr>
+<td><code>model.pls</code></td>
+<td>PLS</td>
+<td>Partial Least Squares Regression</td>
+</tr>
+<tr>
+<td><code>model.linear_regression</code></td>
+<td>Linear Regression</td>
+<td>Simple linear regression</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="exporting-to-python">🐍 Exporting to Python</h2>
+<h3 id="via-api">Via API</h3>
+<pre><code class="language-bash"># Export workflow ID 1 to Python code
+curl http://localhost:8000/api/v1/workflows/1/export/python
+</code></pre>
+<p><strong>Response</strong>:</p>
+<pre><code class="language-json">{
+  &quot;workflow_id&quot;: 1,
+  &quot;workflow_name&quot;: &quot;FTIR Smoothing + PCA&quot;,
+  &quot;python_code&quot;: &quot;...&quot;,
+  &quot;filename&quot;: &quot;ftir_smoothing_+_pca_workflow.py&quot;
+}
+</code></pre>
+<h3 id="generated-python-script-structure">Generated Python Script Structure</h3>
+<pre><code class="language-python">&quot;&quot;&quot;
+Generated workflow: FTIR Smoothing + PCA
+
+Denoise FTIR spectra and extract principal components
+&quot;&quot;&quot;
+
+import asyncio
+import numpy as np
+import spectrochempy as scp
+from spectrochempy import NDDataset
+
+
+async def run_workflow():
+    &quot;&quot;&quot;Execute the workflow.&quot;&quot;&quot;
+    results = {}
+
+    # Node: smooth_001 (smooth.savitzky_golay)
+    data = results['data_source'].copy()
+    data.smooth(size=11, order=2)
+    results['smooth_001'] = data
+
+    # Node: pca_001 (model.pca)
+    # Perform PCA
+    pca = scp.PCA(n_components=3, standardized=False, scaled=False)
+    pca.fit(results['smooth_001'])
+
+    # Store PCA results
+    pca_result = {
+        'model': pca,
+        'scores': pca.transform(),
+        'loadings': pca.components,
+        'explained_variance': pca.explained_variance,
+        'explained_variance_ratio': pca.explained_variance_ratio,
+        'n_components': 3,
+    }
+    results['pca_001'] = pca_result
+
+    return results
+
+
+if __name__ == &quot;__main__&quot;:
+    results = asyncio.run(run_workflow())
+    print(&quot;\n\nWorkflow completed successfully!&quot;)
+</code></pre>
+<hr />
+<h2 id="viewing-node-library">🔍 Viewing Node Library</h2>
+<h3 id="via-api_1">Via API</h3>
+<pre><code class="language-bash">curl http://localhost:8000/api/v1/workflows/nodes/library
+</code></pre>
+<p><strong>Response</strong> (excerpt):</p>
+<pre><code class="language-json">{
+  &quot;nodes&quot;: [
+    {
+      &quot;node_type&quot;: &quot;model.pca&quot;,
+      &quot;category&quot;: &quot;modeling&quot;,
+      &quot;label&quot;: &quot;PCA&quot;,
+      &quot;description&quot;: &quot;Principal Component Analysis for dimensionality reduction&quot;,
+      &quot;parameters&quot;: [
+        {
+          &quot;name&quot;: &quot;n_components&quot;,
+          &quot;label&quot;: &quot;Number of Components&quot;,
+          &quot;param_type&quot;: &quot;number&quot;,
+          &quot;default&quot;: 5,
+          &quot;min_value&quot;: 1,
+          &quot;max_value&quot;: 50,
+          &quot;step&quot;: 1,
+          &quot;required&quot;: true
+        },
+        ...
+      ],
+      &quot;input_types&quot;: [&quot;NDDataset&quot;],
+      &quot;output_type&quot;: &quot;PCAModel&quot;
+    },
+    ...
+  ],
+  &quot;total&quot;: 10
+}
+</code></pre>
+<hr />
+<h2 id="example-workflows">📚 Example Workflows</h2>
+<h3 id="1-basic-preprocessing">1. Basic Preprocessing</h3>
+<p><strong>Nodes</strong>: Raw Data → Baseline (ALS) → Smooth (SG) → Normalize (SNV)</p>
+<p><strong>Use Case</strong>: Clean noisy FTIR spectra</p>
+<h3 id="2-pca-exploration">2. PCA Exploration</h3>
+<p><strong>Nodes</strong>: Raw Data → Smooth → PCA</p>
+<p><strong>Use Case</strong>: Visualize variance in spectral dataset</p>
+<h3 id="3-calibration-workflow">3. Calibration Workflow</h3>
+<p><strong>Nodes</strong>: Raw Data → Baseline → Normalize → PLS</p>
+<p><strong>Use Case</strong>: Build quantitative calibration model</p>
+<h3 id="4-derivative-analysis">4. Derivative Analysis</h3>
+<p><strong>Nodes</strong>: Raw Data → Smooth → 2nd Derivative → PCA</p>
+<p><strong>Use Case</strong>: Enhance spectral features, remove baseline</p>
+<hr />
+<h2 id="running-tests">🧪 Running Tests</h2>
+<h3 id="test-individual-node">Test Individual Node</h3>
+<pre><code class="language-bash">cd Refactored/src/spectra_sherpa
+/Users/fe2val/miniforge3/envs/scpy/bin/python test_pca_node.py
+</code></pre>
+<h3 id="test-node-registry">Test Node Registry</h3>
+<pre><code class="language-bash">/Users/fe2val/miniforge3/envs/scpy/bin/python test_node_registry.py
+</code></pre>
+<h3 id="test-full-workflow">Test Full Workflow</h3>
+<pre><code class="language-bash">/Users/fe2val/miniforge3/envs/scpy/bin/python test_workflow_executor.py
+</code></pre>
+<hr />
+<h2 id="troubleshooting">🛠️ Troubleshooting</h2>
+<h3 id="backend-wont-start">Backend won't start</h3>
+<pre><code class="language-bash"># Check if port 8000 is in use
+lsof -i :8000
+
+# Use different port
+/Users/fe2val/miniforge3/envs/scpy/bin/poetry run uvicorn app.main:app --reload --port 8001
+</code></pre>
+<h3 id="spectrochempy-errors">SpectroChemPy errors</h3>
+<pre><code class="language-bash"># Verify SpectroChemPy is installed
+/Users/fe2val/miniforge3/envs/scpy/bin/python -c &quot;import spectrochempy as scp; print(scp.__version__)&quot;
+
+# Should output: 0.8.1
+</code></pre>
+<h3 id="database-errors">Database errors</h3>
+<pre><code class="language-bash"># Reset database (CAUTION: Deletes all data)
+# Delete the .db file and restart the server — tables are recreated automatically.
+rm -f Refactored/data/spectra_platform.db*
+</code></pre>
+<hr />
+<h2 id="api-documentation">📖 API Documentation</h2>
+<p>Once the backend is running, visit:</p>
+<p><strong>Swagger UI</strong>: http://localhost:8000/docs</p>
+<p><strong>ReDoc</strong>: http://localhost:8000/redoc</p>
+<p><strong>Key Endpoints</strong>:
+- <code>GET /api/v1/workflows</code> - List workflows
+- <code>POST /api/v1/workflows</code> - Create workflow
+- <code>POST /api/v1/workflows/{id}/execute</code> - Execute workflow
+- <code>GET /api/v1/workflows/{id}/export/python</code> - Export to Python
+- <code>GET /api/v1/workflows/nodes/library</code> - Get node library</p>
+<hr />
+<h2 id="next-steps">🎓 Next Steps</h2>
+<ol>
+<li><strong>Connect Frontend Execution</strong>: Wire up the Execute button in AnalysisContent.vue to call the API</li>
+<li><strong>Add More Nodes</strong>: Create new nodes in <code>app/services/dag/nodes/</code></li>
+<li><strong>File Upload</strong>: Add data source nodes that load from uploaded files</li>
+<li><strong>Plotting Integration</strong>: Connect ResultsPanel.vue to display Plotly charts from node results</li>
+<li><strong>Real-time Updates</strong>: Use WebSockets for live execution status</li>
+</ol>
+<hr />
+<h2 id="notes">📝 Notes</h2>
+<ul>
+<li>All workflows use <strong>SpectroChemPy NDDataset</strong> objects for data flow</li>
+<li>Nodes are <strong>automatically registered</strong> via <code>@register_node</code> decorator</li>
+<li><strong>Topological sorting</strong> ensures correct execution order</li>
+<li><strong>Python export</strong> generates standalone, executable scripts</li>
+<li><strong>Database persistence</strong> allows saving/loading workflows</li>
+</ul>
+<hr />
+<h2 id="contributing">🤝 Contributing</h2>
+<p>To add a new node type:</p>
+<ol>
+<li>Create node class in <code>app/services/dag/nodes/</code></li>
+<li>Decorate with <code>@register_node</code></li>
+<li>Define <code>metadata</code> (NodeMetadata)</li>
+<li>Implement <code>async execute()</code> method</li>
+<li>Add to frontend NodeLibrary.vue palette</li>
+<li>Test with test script</li>
+</ol>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-python">@register_node
+class MyCustomNode(Node):
+    metadata = NodeMetadata(
+        node_type=&quot;custom.my_node&quot;,
+        category=&quot;preprocessing&quot;,
+        label=&quot;My Custom Node&quot;,
+        description=&quot;Does something cool&quot;,
+        parameters=[...],
+        input_types=[&quot;NDDataset&quot;],
+        output_type=&quot;NDDataset&quot;,
+    )
+
+    async def execute(self, input_data: NDDataset) -&gt; Any:
+        # Your logic here
+        result = input_data.copy()
+        # ... process result ...
+        return result
+</code></pre>
+<hr />
+<p><strong>Happy Analyzing! 🎉</strong></p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../PHASE1_SETUP_GUIDE/" class="btn btn-neutral float-left" title="Phase 1 Setup Guide"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../MULTI_PORT_GUIDE/" class="btn btn-neutral float-right" title="Multi-Port Guide">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+    
+      <span><a href="../PHASE1_SETUP_GUIDE/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../MULTI_PORT_GUIDE/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

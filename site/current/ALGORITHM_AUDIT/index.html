@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Algorithm Audit - SpectraSherpa Documentation</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Algorithm Audit";
+        var mkdocs_page_input_path = "current/ALGORITHM_AUDIT.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> SpectraSherpa Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Current</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Getting Started</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/installation/">Installation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/quickstart/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/modes/">Modes & Configuration</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >User Guide</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/experiments/">Experiments</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/library/">Library (NIST)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/doe/">DOE (96-Well)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/synthesis/">Synthesis Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/workflow/">Workflow Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" >Reproduction Study</a>
+    <ul>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
+                </li>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/reproduction_methodology/">Methodology</a>
+                </li>
+    </ul>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../USER_MANUAL/">User Manual</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >SpectrochemPy Examples</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/01_loading_data/">01. Loading Data</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/02_dataset_manipulation/">02. Manipulation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/03_plotting/">03. Plotting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/04_preprocessing_smoothing/">04. Smoothing</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/05_preprocessing_baseline/">05. Baseline</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/06_peak_finding/">06. Peak Finding</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/07_peak_fitting/">07. Integration</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/08_pca/">08. PCA</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/09_mcr_als/">09. MCR-ALS</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/10_pls_regression/">10. PLS</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reference</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../reference/nodes/">Node Library</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Architecture & System</a>
+    <ul>
+                <li class="toctree-l2"><a class="" href="../README.md">Repository Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SYSTEM_OVERVIEW/">System Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../ARCHITECTURE/">Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../INFORMATION_ARCHITECTURE/">Information Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../FUNCTIONAL_MAPPING/">Functional Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DATA_SOURCES/">Data Sources</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../NODE_CAPABILITIES/">Node Capabilities</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PARAMETER_MAPPING/">Parameter Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DATABASE_SCHEMA/">Database Schema</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../AUTHENTICATION/">Authentication</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PHASE1_SETUP_GUIDE/">Phase 1 Setup Guide</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Workflow & Analysis</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../QUICKSTART_ANALYSIS/">Quickstart Analysis</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../MULTI_PORT_GUIDE/">Multi-Port Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../FOLDER_AND_PATTERN_LOADING/">Folder & Pattern Loading</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DOE_MANUAL/">DOE Manual</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PROBLEM_REPORT/">Workflow Bench Gap Analysis</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Deployment</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../deployment/DIGITAL_OCEAN/">DigitalOcean</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" >Quality & Validation</a>
+    <ul class="current">
+                <li class="toctree-l2 current"><a class="reference internal current" href="#">Algorithm Audit</a>
+    <ul class="current">
+    <li class="toctree-l3"><a class="reference internal" href="#executive-summary">Executive Summary</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#current-backend-nodes-50-total">Current Backend Nodes (50 total)</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#data-sources-6-nodes">Data Sources (6 nodes)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#component-analysis-decomposition-11-nodes">Component Analysis / Decomposition (11 nodes)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#classification-5-nodes">Classification (5 nodes)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#preprocessing-baseline-correction-2-nodes">Preprocessing - Baseline Correction (2 nodes)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#preprocessing-smoothing-1-node">Preprocessing - Smoothing (1 node)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#preprocessing-normalization-3-nodes">Preprocessing - Normalization (3 nodes)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#preprocessing-derivatives-2-nodes">Preprocessing - Derivatives (2 nodes)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#preprocessing-advanced-9-nodes">Preprocessing - Advanced (9 nodes)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#analysis-peak-detection-1-node">Analysis / Peak Detection (1 node)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#diagnostics-2-nodes">Diagnostics (2 nodes)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#time-series-2-nodes">Time Series (2 nodes)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#output-visualization-5-nodes">Output / Visualization (5 nodes)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#synthesis-blending-3-nodes">Synthesis / Blending (3 nodes)</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#missing-spectrochempy-algorithms-high-priority">Missing SpectroChemPy Algorithms (HIGH PRIORITY)</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#1-simplisma-implemented-2025-01-22">1. SIMPLISMA ✅ IMPLEMENTED (2025-01-22)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#2-nmf-non-negative-matrix-factorization-implemented-2025-01-22">2. NMF (Non-negative Matrix Factorization) ✅ IMPLEMENTED (2025-01-22)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#3-ica-fastica-independent-component-analysis-implemented-2025-01-22">3. ICA / FastICA (Independent Component Analysis) ✅ IMPLEMENTED (2025-01-22)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#4-svd-singular-value-decomposition-low-priority">4. SVD (Singular Value Decomposition) ⚠️ LOW PRIORITY</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#5-iris-interactive-resolution-low-priority">5. IRIS (Interactive Resolution) ⚠️ LOW PRIORITY</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#recommended-additional-algorithms-beyond-spectrochempy">Recommended Additional Algorithms (Beyond SpectroChemPy)</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#sklearn-based-classification-currently-missing">sklearn-based Classification (Currently Missing)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#sklearn-based-regression-currently-missing">sklearn-based Regression (Currently Missing)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#advanced-peak-analysis-currently-missing">Advanced Peak Analysis (Currently Missing)</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#implementation-recommendations">Implementation Recommendations</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#phase-1-critical-missing-algorithms-user-requested">Phase 1: Critical Missing Algorithms (User-Requested)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#phase-2-foundation-algorithms">Phase 2: Foundation Algorithms</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#phase-3-extended-classification">Phase 3: Extended Classification</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#phase-4-advanced-analysis">Phase 4: Advanced Analysis</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#algorithm-comparison-matrix">Algorithm Comparison Matrix</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#sources">Sources</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#conclusion">Conclusion</a>
+    </li>
+    </ul>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SYNTHETIC_FALLBACK_AUDIT/">Synthetic Fallback Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../TEST_FRAMEWORK/">Test Framework</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../BACKEND_TESTING_GUIDE/">Backend Testing Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../TESTING_CHECKLIST/">Testing Checklist</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../VERIFICATION_PROCEDURE/">Verification Procedure</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Project1 (Standalone Tool)</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/">Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/QUICKSTART/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/INSTALLATION_GUIDE/">Installation Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/TROUBLESHOOTING/">Troubleshooting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/NOTICE/">Notice</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Past</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/RELEASE_NOTES/">Release Notes</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/IMPLEMENTATION_SUMMARY/">Implementation Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/FINAL_FIXES_SUMMARY/">Final Fixes Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/SESSION_SUMMARY_2026-01-21/">Session Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/NODE_STANDARDIZATION_2026-01-26/">Node Standardization (2026-01-26)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Fixes</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/3D_CONCATENATION_FIX/">3D Concatenation Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/QUICK_PLOT_Y_AXIS_LABELS_FIX/">Quick Plot Y-Axis Labels Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CASE_SENSITIVITY_AND_UI_FIXES/">Case Sensitivity and UI Fixes</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/DEDICATED_LOAD_GROUP_ENFORCEMENT/">Dedicated Load Group Enforcement</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/LOAD_GROUP_NODE_IMPLEMENTATION/">Load Group Node Implementation</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reviews & Testing</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CODE_REVIEW_FINDINGS/">Code Review Findings</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/WEEK7_TESTING/">Week 7 Testing</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Future</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ROADMAP/">Roadmap</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/DOE_ENHANCEMENTS/">DOE Enhancements</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ANALYSIS_CANVAS_WIREFRAME/">Analysis Canvas Wireframe</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/plugin_plan_011525/">Plugin Plan (2025-01-15)</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">SpectraSherpa Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Current</li>
+          <li class="breadcrumb-item">Quality & Validation</li>
+      <li class="breadcrumb-item active">Algorithm Audit</li>
+    <li class="wy-breadcrumbs-aside">
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="backend-algorithm-audit">Backend Algorithm Audit</h1>
+<h2 id="executive-summary">Executive Summary</h2>
+<p><strong>Total Nodes Implemented:</strong> 53 (Updated: +3 SpectroChemPy algorithms)
+<strong>SpectroChemPy Algorithms Available but NOT Implemented:</strong> 1-2 (SVD, IRIS)
+<strong>Additional Non-SpectroChemPy Algorithms Implemented:</strong> Multiple (sklearn-based)</p>
+<h2 id="current-backend-nodes-50-total">Current Backend Nodes (50 total)</h2>
+<h3 id="data-sources-6-nodes">Data Sources (6 nodes)</h3>
+<ul>
+<li>✅ <code>data.source</code> - SpectroChemPy/sklearn/experiment data loading</li>
+<li>✅ <code>data.file_load</code> - Direct file loading</li>
+<li>✅ <code>data.load_group</code> - Multiple file loading with patterns</li>
+<li>✅ <code>data.nist_library</code> - NIST spectral library access</li>
+<li>✅ <code>data.synthetic_curve</code> - Synthetic curve generation</li>
+<li>✅ <code>data.train_test_split</code> - Train/test data splitting</li>
+</ul>
+<h3 id="component-analysis-decomposition-11-nodes">Component Analysis / Decomposition (11 nodes)</h3>
+<ul>
+<li>✅ <code>model.pca</code> - Principal Component Analysis (SpectroChemPy)</li>
+<li>✅ <code>model.pls</code> - Partial Least Squares (SpectroChemPy)</li>
+<li>✅ <code>model.mcr_als</code> - Multivariate Curve Resolution (SpectroChemPy MCRALS)</li>
+<li>✅ <code>model.efa</code> - Evolving Factor Analysis (SpectroChemPy)</li>
+<li>✅ <code>model.simplisma</code> - SIMPLISMA decomposition (SpectroChemPy) ⭐ <strong>NEW</strong></li>
+<li>✅ <code>model.nmf</code> - Non-negative Matrix Factorization (SpectroChemPy) ⭐ <strong>NEW</strong></li>
+<li>✅ <code>model.ica</code> - Independent Component Analysis (SpectroChemPy FastICA) ⭐ <strong>NEW</strong></li>
+<li>✅ <code>model.pca_transform</code> - Apply PCA transformation</li>
+<li>✅ <code>model.pls_predict</code> - Apply PLS prediction</li>
+<li>✅ <code>model.linear_regression</code> - Simple linear regression</li>
+<li>❌ <strong>MISSING: <code>model.svd</code></strong> - Singular Value Decomposition (SpectroChemPy HAS this)</li>
+</ul>
+<h3 id="classification-5-nodes">Classification (5 nodes)</h3>
+<ul>
+<li>✅ <code>classification.plsda</code> - PLS Discriminant Analysis (custom, uses SpectroChemPy PLS)</li>
+<li>✅ <code>classification.simca</code> - Soft Independent Modeling (custom, uses SpectroChemPy PCA)</li>
+<li>✅ <code>classification.knn</code> - K-Nearest Neighbors (sklearn)</li>
+<li>✅ <code>classification.plsda_predict</code> - Apply PLS-DA model</li>
+<li>✅ <code>classification.knn_predict</code> - Apply KNN model</li>
+<li>❌ <strong>MISSING:</strong> SVM, Random Forest, Neural Networks (could use sklearn)</li>
+<li>❌ <strong>MISSING:</strong> LDA (Linear Discriminant Analysis)</li>
+</ul>
+<h3 id="preprocessing-baseline-correction-2-nodes">Preprocessing - Baseline Correction (2 nodes)</h3>
+<ul>
+<li>✅ <code>baseline.als</code> - Asymmetric Least Squares</li>
+<li>✅ <code>baseline.rubberband</code> - Rubberband baseline</li>
+<li>❌ <strong>MISSING:</strong> Other baseline methods (polynomial, spline, etc.)</li>
+</ul>
+<h3 id="preprocessing-smoothing-1-node">Preprocessing - Smoothing (1 node)</h3>
+<ul>
+<li>✅ <code>smooth.savitzky_golay</code> - Savitzky-Golay filter</li>
+<li>❌ <strong>MISSING:</strong> Other smoothing (moving average, Gaussian, etc.)</li>
+</ul>
+<h3 id="preprocessing-normalization-3-nodes">Preprocessing - Normalization (3 nodes)</h3>
+<ul>
+<li>✅ <code>normalize.snv</code> - Standard Normal Variate</li>
+<li>✅ <code>normalize.msc</code> - Multiplicative Scatter Correction</li>
+<li>✅ <code>normalize.scale</code> - Min-max scaling</li>
+<li>❌ <strong>MISSING:</strong> Other normalization methods</li>
+</ul>
+<h3 id="preprocessing-derivatives-2-nodes">Preprocessing - Derivatives (2 nodes)</h3>
+<ul>
+<li>✅ <code>derivative.first</code> - First derivative</li>
+<li>✅ <code>derivative.second</code> - Second derivative</li>
+</ul>
+<h3 id="preprocessing-advanced-9-nodes">Preprocessing - Advanced (9 nodes)</h3>
+<ul>
+<li>✅ <code>preprocess.cosmic_ray</code> - Cosmic ray removal</li>
+<li>✅ <code>preprocess.clip_range</code> - Clip to wavenumber range</li>
+<li>✅ <code>preprocess.clip_floor</code> - Clip to minimum value</li>
+<li>✅ <code>preprocess.wavenumber_align</code> - Align wavenumber axes</li>
+<li>✅ <code>preprocess.scale_max</code> - Scale to maximum</li>
+<li>✅ <code>preprocess.center_mean</code> - Mean centering</li>
+<li>✅ <code>preprocess.pareto_scaling</code> - Pareto scaling</li>
+<li>✅ <code>preprocess.autoscaling</code> - Autoscaling</li>
+<li>✅ <code>preprocess.osc</code> - Orthogonal Signal Correction</li>
+<li>✅ <code>preprocess.emsc</code> - Extended Multiplicative Signal Correction</li>
+<li>✅ <code>preprocess.sg_derivative</code> - Savitzky-Golay derivative</li>
+</ul>
+<h3 id="analysis-peak-detection-1-node">Analysis / Peak Detection (1 node)</h3>
+<ul>
+<li>✅ <code>analysis.peak_finding</code> - Peak detection and characterization</li>
+<li>❌ <strong>MISSING:</strong> Peak fitting, deconvolution</li>
+</ul>
+<h3 id="diagnostics-2-nodes">Diagnostics (2 nodes)</h3>
+<ul>
+<li>✅ <code>diagnostics.outliers</code> - Outlier detection</li>
+<li>✅ <code>diagnostics.cross_validation</code> - Cross-validation framework</li>
+</ul>
+<h3 id="time-series-2-nodes">Time Series (2 nodes)</h3>
+<ul>
+<li>✅ <code>time_series.moving_window</code> - Moving window analysis</li>
+<li>✅ <code>time_series.trend_removal</code> - Trend removal</li>
+</ul>
+<h3 id="output-visualization-5-nodes">Output / Visualization (5 nodes)</h3>
+<ul>
+<li>✅ <code>output.plot</code> - Plotting</li>
+<li>✅ <code>output.contour</code> - Contour plots</li>
+<li>✅ <code>output.data_table</code> - Data tables</li>
+<li>✅ <code>output.export</code> - Data export</li>
+<li>✅ <code>stats.summary</code> - Statistical summary</li>
+</ul>
+<h3 id="synthesis-blending-3-nodes">Synthesis / Blending (3 nodes)</h3>
+<ul>
+<li>✅ <code>synthesis.blend</code> - Spectral blending</li>
+<li>✅ <code>synthesis.species</code> - Species definition</li>
+<li>✅ <code>synthesis.merge</code> - Merge datasets</li>
+</ul>
+<h2 id="missing-spectrochempy-algorithms-high-priority">Missing SpectroChemPy Algorithms (HIGH PRIORITY)</h2>
+<p>Based on <a href="https://www.spectrochempy.fr/">SpectroChemPy documentation</a> and <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC9657760/">recent research</a>, the following algorithms are <strong>available in SpectroChemPy but NOT implemented</strong> in our backend:</p>
+<h3 id="1-simplisma-implemented-2025-01-22">1. SIMPLISMA ✅ IMPLEMENTED (2025-01-22)</h3>
+<p><strong>Status:</strong> ✅ Now available as <code>model.simplisma</code>
+<strong>SpectroChemPy Class:</strong> <code>scp.SIMPLISMA</code>
+<strong>Use Case:</strong> Self-modeling mixture analysis for resolving pure component spectra
+<strong>Reference:</strong> <a href="https://www.spectrochempy.fr/gettingstarted/examples/gallery/auto_examples_analysis/a_decomposition/plot_simplisma.html">SIMPLISMA example</a>
+<strong>Research:</strong> "SIMPLISMA and JADE produced the best quantitative analysis of concentration, and SIMPLISMA and MCR-ALS produced the best decompositions of binary mixtures"</p>
+<p><strong>Parameters:</strong>
+- <code>n_components</code>: Number of pure components to resolve (default: 3)
+- <code>tol</code>: Convergence tolerance (default: 0.1)
+- <code>noise</code>: Noise level for purity calculation (default: 3.0)</p>
+<h3 id="2-nmf-non-negative-matrix-factorization-implemented-2025-01-22">2. NMF (Non-negative Matrix Factorization) ✅ IMPLEMENTED (2025-01-22)</h3>
+<p><strong>Status:</strong> ✅ Now available as <code>model.nmf</code>
+<strong>SpectroChemPy Class:</strong> <code>scp.NMF</code>
+<strong>Use Case:</strong> Decomposition with non-negativity constraints (physical interpretability)
+<strong>Research:</strong> "NMF and MCR allow better interpretability of chemical reactions than PCA, with comparable quality of fit"
+<strong>Notes:</strong> Also available via sklearn (<code>sklearn.decomposition.NMF</code>)</p>
+<p><strong>Parameters:</strong>
+- <code>n_components</code>: Number of components (default: 3)
+- <code>method</code>: 'mu' (Multiplicative Update) or 'als' (default: 'mu')
+- <code>max_iter</code>: Maximum iterations (default: 200)
+- <code>tol</code>: Convergence tolerance (default: 0.0001)</p>
+<h3 id="3-ica-fastica-independent-component-analysis-implemented-2025-01-22">3. ICA / FastICA (Independent Component Analysis) ✅ IMPLEMENTED (2025-01-22)</h3>
+<p><strong>Status:</strong> ✅ Now available as <code>model.ica</code>
+<strong>SpectroChemPy Class:</strong> <code>scp.FastICA</code>
+<strong>Reference:</strong> <a href="https://www.spectrochempy.fr/latest/reference/generated/spectrochempy.FastICA.html">FastICA documentation</a>
+<strong>Use Case:</strong> Blind source separation, extracting underlying independent sources
+<strong>Research:</strong> "FastICA extracts the underlying sources of the variability of a set of spectra into spectral profiles"</p>
+<p><strong>Parameters:</strong>
+- <code>n_components</code>: Number of independent components (default: 3)
+- <code>algorithm</code>: 'parallel' or 'deflation' (default: 'parallel')
+- <code>fun</code>: Contrast function - 'logcosh', 'exp', or 'cube' (default: 'logcosh')
+- <code>max_iter</code>: Maximum iterations (default: 200)
+- <code>tol</code>: Convergence tolerance (default: 0.0001)</p>
+<h3 id="4-svd-singular-value-decomposition-low-priority">4. SVD (Singular Value Decomposition) ⚠️ LOW PRIORITY</h3>
+<p><strong>Status:</strong> Available in SpectroChemPy, NOT implemented
+<strong>SpectroChemPy Class:</strong> <code>scp.SVD</code>
+<strong>Reference:</strong> <a href="https://www.spectrochempy.fr/reference/generated/spectrochempy.SVD.html">SVD documentation</a>
+<strong>Use Case:</strong> Matrix decomposition, rank determination, noise reduction</p>
+<p><strong>Implementation Priority:</strong> MEDIUM - Foundation for many chemometric methods</p>
+<h3 id="5-iris-interactive-resolution-low-priority">5. IRIS (Interactive Resolution) ⚠️ LOW PRIORITY</h3>
+<p><strong>Status:</strong> Available in SpectroChemPy, NOT implemented
+<strong>SpectroChemPy Class:</strong> <code>scp.IRIS</code>
+<strong>Use Case:</strong> Interactive resolution of mixture spectra</p>
+<p><strong>Implementation Priority:</strong> LOW - Less commonly used than above methods</p>
+<h2 id="recommended-additional-algorithms-beyond-spectrochempy">Recommended Additional Algorithms (Beyond SpectroChemPy)</h2>
+<h3 id="sklearn-based-classification-currently-missing">sklearn-based Classification (Currently Missing)</h3>
+<ul>
+<li><strong>SVM (Support Vector Machines)</strong> - <code>sklearn.svm.SVC</code></li>
+<li><strong>Random Forest</strong> - <code>sklearn.ensemble.RandomForestClassifier</code></li>
+<li><strong>Gradient Boosting</strong> - <code>sklearn.ensemble.GradientBoostingClassifier</code></li>
+<li><strong>LDA (Linear Discriminant Analysis)</strong> - <code>sklearn.discriminant_analysis.LinearDiscriminantAnalysis</code></li>
+<li><strong>QDA (Quadratic Discriminant Analysis)</strong> - <code>sklearn.discriminant_analysis.QuadraticDiscriminantAnalysis</code></li>
+</ul>
+<h3 id="sklearn-based-regression-currently-missing">sklearn-based Regression (Currently Missing)</h3>
+<ul>
+<li><strong>Ridge Regression</strong> - <code>sklearn.linear_model.Ridge</code></li>
+<li><strong>Lasso Regression</strong> - <code>sklearn.linear_model.Lasso</code></li>
+<li><strong>Elastic Net</strong> - <code>sklearn.linear_model.ElasticNet</code></li>
+<li><strong>SVR (Support Vector Regression)</strong> - <code>sklearn.svm.SVR</code></li>
+</ul>
+<h3 id="advanced-peak-analysis-currently-missing">Advanced Peak Analysis (Currently Missing)</h3>
+<ul>
+<li><strong>Peak Fitting</strong> - Gaussian/Lorentzian fitting</li>
+<li><strong>Peak Deconvolution</strong> - Resolve overlapping peaks</li>
+<li><strong>Integration</strong> - Calculate peak areas</li>
+</ul>
+<h2 id="implementation-recommendations">Implementation Recommendations</h2>
+<h3 id="phase-1-critical-missing-algorithms-user-requested">Phase 1: Critical Missing Algorithms (User-Requested)</h3>
+<ol>
+<li><strong>SIMPLISMA</strong> - Add <code>model.simplisma</code> node</li>
+<li><strong>NMF</strong> - Add <code>model.nmf</code> node</li>
+<li><strong>ICA/FastICA</strong> - Add <code>model.ica</code> node</li>
+</ol>
+<h3 id="phase-2-foundation-algorithms">Phase 2: Foundation Algorithms</h3>
+<ol>
+<li><strong>SVD</strong> - Add <code>model.svd</code> node</li>
+<li><strong>Ridge/Lasso Regression</strong> - Add <code>model.ridge</code> and <code>model.lasso</code> nodes</li>
+</ol>
+<h3 id="phase-3-extended-classification">Phase 3: Extended Classification</h3>
+<ol>
+<li><strong>SVM</strong> - Add <code>classification.svm</code> node</li>
+<li><strong>Random Forest</strong> - Add <code>classification.random_forest</code> node</li>
+<li><strong>LDA</strong> - Add <code>classification.lda</code> node</li>
+</ol>
+<h3 id="phase-4-advanced-analysis">Phase 4: Advanced Analysis</h3>
+<ol>
+<li><strong>Peak Fitting</strong> - Add <code>analysis.peak_fitting</code> node</li>
+<li><strong>Peak Deconvolution</strong> - Add <code>analysis.peak_deconvolution</code> node</li>
+</ol>
+<h2 id="algorithm-comparison-matrix">Algorithm Comparison Matrix</h2>
+<table>
+<thead>
+<tr>
+<th>Algorithm</th>
+<th>SpectroChemPy</th>
+<th>sklearn</th>
+<th>Backend Status</th>
+<th>Priority</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PCA</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅ Implemented</td>
+<td>-</td>
+</tr>
+<tr>
+<td>PLS</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅ Implemented</td>
+<td>-</td>
+</tr>
+<tr>
+<td>MCR-ALS</td>
+<td>✅</td>
+<td>❌</td>
+<td>✅ Implemented</td>
+<td>-</td>
+</tr>
+<tr>
+<td>EFA</td>
+<td>✅</td>
+<td>❌</td>
+<td>✅ Implemented</td>
+<td>-</td>
+</tr>
+<tr>
+<td><strong>SIMPLISMA</strong></td>
+<td>✅</td>
+<td>❌</td>
+<td>✅ <strong>Implemented (NEW)</strong></td>
+<td>-</td>
+</tr>
+<tr>
+<td><strong>NMF</strong></td>
+<td>✅</td>
+<td>✅</td>
+<td>✅ <strong>Implemented (NEW)</strong></td>
+<td>-</td>
+</tr>
+<tr>
+<td><strong>ICA/FastICA</strong></td>
+<td>✅</td>
+<td>✅</td>
+<td>✅ <strong>Implemented (NEW)</strong></td>
+<td>-</td>
+</tr>
+<tr>
+<td><strong>SVD</strong></td>
+<td>✅</td>
+<td>✅</td>
+<td>❌ <strong>MISSING</strong></td>
+<td><strong>LOW</strong></td>
+</tr>
+<tr>
+<td>PLS-DA</td>
+<td>Custom</td>
+<td>✅</td>
+<td>✅ Implemented</td>
+<td>-</td>
+</tr>
+<tr>
+<td>SIMCA</td>
+<td>Custom</td>
+<td>❌</td>
+<td>✅ Implemented</td>
+<td>-</td>
+</tr>
+<tr>
+<td>KNN</td>
+<td>❌</td>
+<td>✅</td>
+<td>✅ Implemented</td>
+<td>-</td>
+</tr>
+<tr>
+<td><strong>SVM</strong></td>
+<td>❌</td>
+<td>✅</td>
+<td>❌ <strong>MISSING</strong></td>
+<td><strong>MEDIUM</strong></td>
+</tr>
+<tr>
+<td><strong>Random Forest</strong></td>
+<td>❌</td>
+<td>✅</td>
+<td>❌ <strong>MISSING</strong></td>
+<td><strong>MEDIUM</strong></td>
+</tr>
+<tr>
+<td><strong>LDA</strong></td>
+<td>❌</td>
+<td>✅</td>
+<td>❌ <strong>MISSING</strong></td>
+<td><strong>MEDIUM</strong></td>
+</tr>
+<tr>
+<td>Ridge/Lasso</td>
+<td>❌</td>
+<td>✅</td>
+<td>❌ <strong>MISSING</strong></td>
+<td><strong>LOW</strong></td>
+</tr>
+</tbody>
+</table>
+<h2 id="sources">Sources</h2>
+<ul>
+<li><a href="https://www.spectrochempy.fr/gettingstarted/examples/gallery/auto_examples_analysis/a_decomposition/plot_simplisma.html">SpectroChemPy SIMPLISMA example</a></li>
+<li><a href="https://www.spectrochempy.fr/latest/reference/generated/spectrochempy.FastICA.html">SpectroChemPy FastICA documentation</a></li>
+<li><a href="https://www.spectrochempy.fr/reference/generated/spectrochempy.SVD.html">SpectroChemPy SVD documentation</a></li>
+<li><a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC9657760/">Research on chemometrics for zooplankton classification</a></li>
+<li><a href="https://github.com/spectrochempy/spectrochempy/discussions/502">SIMPLISMA GitHub discussion</a></li>
+</ul>
+<h2 id="conclusion">Conclusion</h2>
+<p>The backend now has <strong>53 implemented nodes</strong> including all priority SpectroChemPy algorithms:</p>
+<p><strong>✅ COMPLETED (2025-01-22):</strong>
+1. ✅ Implemented <strong>SIMPLISMA</strong> (<code>model.simplisma</code>)
+2. ✅ Implemented <strong>NMF</strong> (<code>model.nmf</code>)
+3. ✅ Implemented <strong>ICA/FastICA</strong> (<code>model.ica</code>)</p>
+<p><strong>Remaining Low-Priority Items:</strong>
+- SVD (Singular Value Decomposition) - low priority as PCA covers most use cases
+- sklearn-based classifiers (SVM, Random Forest, LDA)
+- Additional regression methods (Ridge, Lasso, Elastic Net)</p>
+<p>The platform now has feature parity with SpectroChemPy for critical chemometric decomposition methods while maintaining additional sklearn-based capabilities for classification and preprocessing.</p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../../deployment/DIGITAL_OCEAN/" class="btn btn-neutral float-left" title="DigitalOcean"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../SYNTHETIC_FALLBACK_AUDIT/" class="btn btn-neutral float-right" title="Synthetic Fallback Audit">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+    
+      <span><a href="../../deployment/DIGITAL_OCEAN/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../SYNTHETIC_FALLBACK_AUDIT/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

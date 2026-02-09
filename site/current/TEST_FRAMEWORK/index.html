@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Test Framework - SpectraSherpa Documentation</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Test Framework";
+        var mkdocs_page_input_path = "current/TEST_FRAMEWORK.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> SpectraSherpa Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Current</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Getting Started</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/installation/">Installation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/quickstart/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/modes/">Modes & Configuration</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >User Guide</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/experiments/">Experiments</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/library/">Library (NIST)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/doe/">DOE (96-Well)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/synthesis/">Synthesis Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/workflow/">Workflow Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" >Reproduction Study</a>
+    <ul>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
+                </li>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/reproduction_methodology/">Methodology</a>
+                </li>
+    </ul>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../USER_MANUAL/">User Manual</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >SpectrochemPy Examples</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/01_loading_data/">01. Loading Data</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/02_dataset_manipulation/">02. Manipulation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/03_plotting/">03. Plotting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/04_preprocessing_smoothing/">04. Smoothing</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/05_preprocessing_baseline/">05. Baseline</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/06_peak_finding/">06. Peak Finding</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/07_peak_fitting/">07. Integration</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/08_pca/">08. PCA</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/09_mcr_als/">09. MCR-ALS</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/10_pls_regression/">10. PLS</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reference</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../reference/nodes/">Node Library</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Architecture & System</a>
+    <ul>
+                <li class="toctree-l2"><a class="" href="../README.md">Repository Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SYSTEM_OVERVIEW/">System Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../ARCHITECTURE/">Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../INFORMATION_ARCHITECTURE/">Information Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../FUNCTIONAL_MAPPING/">Functional Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DATA_SOURCES/">Data Sources</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../NODE_CAPABILITIES/">Node Capabilities</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PARAMETER_MAPPING/">Parameter Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DATABASE_SCHEMA/">Database Schema</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../AUTHENTICATION/">Authentication</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PHASE1_SETUP_GUIDE/">Phase 1 Setup Guide</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Workflow & Analysis</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../QUICKSTART_ANALYSIS/">Quickstart Analysis</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../MULTI_PORT_GUIDE/">Multi-Port Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../FOLDER_AND_PATTERN_LOADING/">Folder & Pattern Loading</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DOE_MANUAL/">DOE Manual</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PROBLEM_REPORT/">Workflow Bench Gap Analysis</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Deployment</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../deployment/DIGITAL_OCEAN/">DigitalOcean</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" >Quality & Validation</a>
+    <ul class="current">
+                <li class="toctree-l2"><a class="reference internal" href="../ALGORITHM_AUDIT/">Algorithm Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SYNTHETIC_FALLBACK_AUDIT/">Synthetic Fallback Audit</a>
+                </li>
+                <li class="toctree-l2 current"><a class="reference internal current" href="#">Test Framework</a>
+    <ul class="current">
+    <li class="toctree-l3"><a class="reference internal" href="#overview">Overview</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#test-coverage">Test Coverage</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#current-tests-9">Current Tests (9)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#test-results">Test Results</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#algorithms-not-implemented">Algorithms NOT Implemented</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#prerequisites">Prerequisites</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#running-tests">Running Tests</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#quick-start">Quick Start</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#expected-output">Expected Output</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#configuration">Configuration</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#test-framework-architecture">Test Framework Architecture</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#core-functions">Core Functions</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#test-result-class">Test Result Class</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#adding-new-tests">Adding New Tests</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#template">Template</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#add-to-main-runner">Add to Main Runner</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#node-types-and-parameters">Node Types and Parameters</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#available-via-workflowsnodeslibrary">Available via /workflows/nodes/library</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#common-node-types">Common Node Types</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#known-limitations">Known Limitations</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#troubleshooting">Troubleshooting</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#backend-not-reachable">Backend Not Reachable</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#api-key-invalid">API Key Invalid</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#unknown-node-type">Unknown Node Type</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#workflow-execution-timeout">Workflow Execution Timeout</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#node-failed-status">Node Failed Status</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#future-extensions">Future Extensions</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#recommended-additions">Recommended Additions</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#future-directions-effectiveness-improvements">Future Directions (Effectiveness Improvements)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#cicd-integration">CI/CD Integration</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#contact">Contact</a>
+    </li>
+    </ul>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../BACKEND_TESTING_GUIDE/">Backend Testing Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../TESTING_CHECKLIST/">Testing Checklist</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../VERIFICATION_PROCEDURE/">Verification Procedure</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Project1 (Standalone Tool)</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/">Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/QUICKSTART/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/INSTALLATION_GUIDE/">Installation Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/TROUBLESHOOTING/">Troubleshooting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/NOTICE/">Notice</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Past</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/RELEASE_NOTES/">Release Notes</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/IMPLEMENTATION_SUMMARY/">Implementation Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/FINAL_FIXES_SUMMARY/">Final Fixes Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/SESSION_SUMMARY_2026-01-21/">Session Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/NODE_STANDARDIZATION_2026-01-26/">Node Standardization (2026-01-26)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Fixes</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/3D_CONCATENATION_FIX/">3D Concatenation Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/QUICK_PLOT_Y_AXIS_LABELS_FIX/">Quick Plot Y-Axis Labels Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CASE_SENSITIVITY_AND_UI_FIXES/">Case Sensitivity and UI Fixes</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/DEDICATED_LOAD_GROUP_ENFORCEMENT/">Dedicated Load Group Enforcement</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/LOAD_GROUP_NODE_IMPLEMENTATION/">Load Group Node Implementation</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reviews & Testing</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CODE_REVIEW_FINDINGS/">Code Review Findings</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/WEEK7_TESTING/">Week 7 Testing</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Future</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ROADMAP/">Roadmap</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/DOE_ENHANCEMENTS/">DOE Enhancements</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ANALYSIS_CANVAS_WIREFRAME/">Analysis Canvas Wireframe</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/plugin_plan_011525/">Plugin Plan (2025-01-15)</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">SpectraSherpa Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Current</li>
+          <li class="breadcrumb-item">Quality & Validation</li>
+      <li class="breadcrumb-item active">Test Framework</li>
+    <li class="wy-breadcrumbs-aside">
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="chemometrics-integration-test-framework">Chemometrics Integration Test Framework</h1>
+<h2 id="overview">Overview</h2>
+<p>Automated test suite for validating workflow execution and chemometrics algorithms across the entire stack (API → Backend → SpectroChemPy).</p>
+<p><strong>Tested algorithms:</strong>
+- <strong>PCA</strong> (Principal Component Analysis) - with flexible n_components (mle, variance threshold, integer)
+- <strong>MCR-ALS</strong> (Multivariate Curve Resolution - Alternating Least Squares)
+- <strong>EFA</strong> (Evolving Factor Analysis)
+- <strong>PLS</strong> (Partial Least Squares) - node configuration tested, requires Y target
+- <strong>PLS-DA</strong> (PLS Discriminant Analysis) - node configuration tested; labels can be auto-extracted from <code>X.y</code> or provided via a target output/port
+- <strong>SIMCA</strong> (Soft Independent Modeling of Class Analogy) - node configuration tested; labels can be auto-extracted from <code>X.y</code> or provided via a target output/port</p>
+<p><strong>Not implemented:</strong>
+- SIMPLISMA (no backend node exists)
+- NMF (no backend node exists)</p>
+<h2 id="test-coverage">Test Coverage</h2>
+<h3 id="current-tests-9">Current Tests (9)</h3>
+<p><strong>PCA Tests:</strong>
+1. <strong>PCA with n_components="mle"</strong> - Maximum Likelihood Estimation for automatic component selection
+2. <strong>PCA with n_components="0.95"</strong> - Variance threshold (95% explained variance)
+3. <strong>PCA with n_components="3"</strong> - Integer component specification</p>
+<p><strong>Component Analysis Tests:</strong>
+4. <strong>PLS with n_components=3</strong> - Partial Least Squares regression (requires Y target, currently skipped)
+5. <strong>MCR-ALS with n_components=3</strong> - Multivariate Curve Resolution decomposition
+6. <strong>EFA with n_components=10</strong> - Evolving Factor Analysis for rank determination</p>
+<p><strong>Classification Tests:</strong>
+7. <strong>PLS-DA with n_components=2</strong> - Partial Least Squares Discriminant Analysis (uses <code>target</code> output or auto-extract)
+8. <strong>SIMCA with n_components=3</strong> - Soft Independent Modeling of Class Analogy (uses <code>target</code> output or auto-extract)</p>
+<p><strong>Data Source Tests:</strong>
+9. <strong>Sklearn data sources</strong> - Multiple dataset loading (wine, breast_cancer datasets have limited support)</p>
+<h3 id="test-results">Test Results</h3>
+<pre><code>✓ PCA with n_components='mle' on iris - MLE auto-selection worked
+✓ PCA with n_components='0.95' variance threshold - Variance threshold worked
+✓ PCA with n_components='3' (integer) - Integer n_components worked
+⊘ PLS with n_components=3 - PLS requires Y target dataset
+✓ MCR-ALS with n_components=3 - MCR-ALS decomposition worked
+✓ EFA with n_components=10 - EFA rank determination worked
+✓ PLS-DA with n_components=2 - Sklearn data source exposes target output port
+✓ SIMCA with n_components=3 - Sklearn data source exposes target output port
+✗ Sklearn data source variety (wine, breast_cancer) - SpectroChemPy 0.8.1 limitation
+
+Total: 9 tests | Passed: 7 | Failed: 1 | Skipped: 1
+</code></pre>
+<h3 id="algorithms-not-implemented">Algorithms NOT Implemented</h3>
+<p>The following algorithms from the user's request are <strong>not currently implemented</strong> in the backend:
+- <strong>SIMPLISMA</strong> - No node exists for this algorithm
+- <strong>NMF</strong> (Non-negative Matrix Factorization) - No node exists for this algorithm</p>
+<h2 id="prerequisites">Prerequisites</h2>
+<ul>
+<li>Backend server running at <code>http://127.0.0.1:8000</code></li>
+<li>API key configured (default: <code>default-local-key</code>)</li>
+<li>Python 3.10+ with dependencies:</li>
+<li><code>requests</code></li>
+<li>Standard library: <code>json</code>, <code>time</code>, <code>sys</code></li>
+</ul>
+<h2 id="running-tests">Running Tests</h2>
+<h3 id="quick-start">Quick Start</h3>
+<pre><code class="language-bash"># From the Refactored directory
+cd /Users/fe2val/Documents/Spectra\ Scientific/Component_code/Refactored
+
+# Make sure backend is running
+# Terminal 1:
+cd src/spectra_sherpa
+uvicorn app.main:app --reload
+
+# Terminal 2: Run tests
+python test_pca_integration.py
+</code></pre>
+<h3 id="expected-output">Expected Output</h3>
+<pre><code>[HH:MM:SS] ============================================================
+[HH:MM:SS] PCA Integration Test Suite
+[HH:MM:SS] ============================================================
+[HH:MM:SS] ✓ Backend connected: 50 nodes registered
+
+[HH:MM:SS] ============================================================
+[HH:MM:SS] TEST: PCA with n_components='mle' on iris
+[HH:MM:SS] ============================================================
+[HH:MM:SS] Created workflow 'Test PCA MLE' (ID: 123) with 2 nodes, 1 edges
+[HH:MM:SS] Executing workflow 123...
+[HH:MM:SS]   Execution completed with status: completed
+[HH:MM:SS] ✓ PCA execution completed successfully
+[HH:MM:SS] Cleaned up workflow 123
+
+... (additional tests)
+
+[HH:MM:SS] ============================================================
+[HH:MM:SS] TEST RESULTS SUMMARY
+[HH:MM:SS] ============================================================
+[✓] PCA with n_components='mle' on iris - MLE auto-selection worked
+[✓] PCA with n_components='0.95' variance threshold - Variance threshold worked
+[✓] PCA with n_components='3' (integer) - Integer n_components worked
+[⊘] PLS with n_components=3 - PLS requires Y target dataset
+[✗] Sklearn data source variety (wine, breast_cancer) - No datasets could be tested
+</code></pre>
+<h2 id="configuration">Configuration</h2>
+<p>Edit constants at the top of <code>test_pca_integration.py</code>:</p>
+<pre><code class="language-python">API_BASE_URL = &quot;http://127.0.0.1:8000/api/v1&quot;  # Backend endpoint
+API_KEY = &quot;default-local-key&quot;                   # API authentication key
+</code></pre>
+<h2 id="test-framework-architecture">Test Framework Architecture</h2>
+<h3 id="core-functions">Core Functions</h3>
+<h4 id="create_workflow_with_nodesname-description-nodes-edges-int"><code>create_workflow_with_nodes(name, description, nodes, edges) -&gt; int</code></h4>
+<p>Creates a workflow with nodes and edges in a single API call.</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-python">nodes = [
+    {
+        &quot;node_id&quot;: &quot;data-1&quot;,
+        &quot;node_type&quot;: &quot;data.source&quot;,
+        &quot;label&quot;: &quot;Iris Dataset&quot;,
+        &quot;parameters&quot;: {&quot;source&quot;: &quot;sklearn&quot;, &quot;sklearn_dataset&quot;: &quot;iris&quot;},
+        &quot;position_x&quot;: 100,
+        &quot;position_y&quot;: 100
+    },
+    {
+        &quot;node_id&quot;: &quot;pca-1&quot;,
+        &quot;node_type&quot;: &quot;model.pca&quot;,
+        &quot;label&quot;: &quot;PCA (MLE)&quot;,
+        &quot;parameters&quot;: {&quot;n_components&quot;: &quot;mle&quot;, &quot;standardized&quot;: False, &quot;scaled&quot;: False},
+        &quot;position_x&quot;: 400,
+        &quot;position_y&quot;: 100
+    }
+]
+
+edges = [
+    {
+        &quot;from_node_id&quot;: &quot;data-1&quot;,
+        &quot;to_node_id&quot;: &quot;pca-1&quot;,
+        &quot;from_output&quot;: &quot;default&quot;,
+        &quot;to_input&quot;: &quot;default&quot;
+    }
+]
+
+wf_id = create_workflow_with_nodes(&quot;Test Workflow&quot;, &quot;Description&quot;, nodes, edges)
+</code></pre>
+<h4 id="execute_workflowworkflow_id-timeout60-dict"><code>execute_workflow(workflow_id, timeout=60) -&gt; Dict</code></h4>
+<p>Executes a workflow synchronously and returns results.</p>
+<p><strong>Returns:</strong></p>
+<pre><code class="language-python">{
+    &quot;workflow_id&quot;: 123,
+    &quot;status&quot;: &quot;completed&quot;,  # or &quot;failed&quot;, &quot;error&quot;
+    &quot;results&quot;: {
+        &quot;node-id&quot;: {...}  # Node execution results
+    },
+    &quot;node_statuses&quot;: {
+        &quot;node-id&quot;: &quot;completed&quot;  # or &quot;failed&quot;, &quot;pending&quot;
+    },
+    &quot;executed_at&quot;: &quot;2024-01-15T10:30:00&quot;,
+    &quot;error&quot;: None  # or error message if failed
+}
+</code></pre>
+<p><strong>Important:</strong> Execution is synchronous - the API call blocks until workflow completes or times out.</p>
+<h4 id="get_node_resultexecution_result-node_id-dict"><code>get_node_result(execution_result, node_id) -&gt; Dict</code></h4>
+<p>Extracts a specific node's result from execution response.</p>
+<pre><code class="language-python">result = execute_workflow(wf_id)
+pca_node = get_node_result(result, &quot;pca-1&quot;)
+
+print(pca_node[&quot;status&quot;])  # &quot;completed&quot;
+print(pca_node[&quot;result&quot;])  # PCA execution results
+</code></pre>
+<h4 id="cleanup_workflowworkflow_id"><code>cleanup_workflow(workflow_id)</code></h4>
+<p>Deletes a workflow after test completion.</p>
+<h3 id="test-result-class">Test Result Class</h3>
+<pre><code class="language-python">class TestResult:
+    def __init__(self, name: str, status: str, message: str = &quot;&quot;, details: Any = None):
+        self.name = name
+        self.status = status  # PASS, FAIL, SKIP
+        self.message = message
+        self.details = details
+</code></pre>
+<p><strong>Status symbols:</strong>
+- ✓ PASS - Test completed successfully
+- ✗ FAIL - Test encountered an error
+- ⊘ SKIP - Test skipped (expected behavior, not an error)</p>
+<h2 id="adding-new-tests">Adding New Tests</h2>
+<h3 id="template">Template</h3>
+<pre><code class="language-python">def test_your_feature():
+    &quot;&quot;&quot;Test description.&quot;&quot;&quot;
+    test_name = &quot;Your Feature Test Name&quot;
+    log(f&quot;\n{'='*60}&quot;)
+    log(f&quot;TEST: {test_name}&quot;)
+    log(f&quot;{'='*60}&quot;)
+
+    try:
+        # 1. Define nodes
+        nodes = [
+            {
+                &quot;node_id&quot;: &quot;unique-id&quot;,
+                &quot;node_type&quot;: &quot;node.type&quot;,
+                &quot;label&quot;: &quot;Display Label&quot;,
+                &quot;parameters&quot;: {...},
+                &quot;position_x&quot;: 100,
+                &quot;position_y&quot;: 100
+            }
+        ]
+
+        # 2. Define edges
+        edges = [
+            {
+                &quot;from_node_id&quot;: &quot;source-node&quot;,
+                &quot;to_node_id&quot;: &quot;target-node&quot;,
+                &quot;from_output&quot;: &quot;default&quot;,
+                &quot;to_input&quot;: &quot;default&quot;
+            }
+        ]
+
+        # 3. Create workflow
+        wf_id = create_workflow_with_nodes(
+            &quot;Workflow Name&quot;,
+            &quot;Description&quot;,
+            nodes,
+            edges
+        )
+
+        # 4. Execute
+        result = execute_workflow(wf_id, timeout=120)
+
+        # 5. Verify
+        if result[&quot;status&quot;] != &quot;completed&quot;:
+            raise AssertionError(f&quot;Workflow failed: {result.get('error')}&quot;)
+
+        node_result = get_node_result(result, &quot;node-id&quot;)
+        if node_result[&quot;status&quot;] != &quot;completed&quot;:
+            raise AssertionError(f&quot;Node failed: {node_result['status']}&quot;)
+
+        log(f&quot;✓ Test passed&quot;)
+        test_results.append(TestResult(test_name, &quot;PASS&quot;, &quot;Success message&quot;))
+
+        # 6. Cleanup
+        cleanup_workflow(wf_id)
+
+    except Exception as e:
+        log(f&quot;✗ Test failed: {e}&quot;)
+        test_results.append(TestResult(test_name, &quot;FAIL&quot;, str(e)))
+        if 'wf_id' in locals():
+            cleanup_workflow(wf_id)
+</code></pre>
+<h3 id="add-to-main-runner">Add to Main Runner</h3>
+<pre><code class="language-python">def main():
+    # ... existing setup ...
+
+    # Add your test
+    test_your_feature()
+
+    # ... print summary ...
+</code></pre>
+<h2 id="node-types-and-parameters">Node Types and Parameters</h2>
+<h3 id="available-via-workflowsnodeslibrary">Available via <code>/workflows/nodes/library</code></h3>
+<p>Query the backend for the full list:</p>
+<pre><code class="language-bash">curl -H &quot;X-API-Key: default-local-key&quot; http://127.0.0.1:8000/api/v1/workflows/nodes/library
+</code></pre>
+<h3 id="common-node-types">Common Node Types</h3>
+<p><strong>Data Source:</strong></p>
+<pre><code class="language-python">{
+    &quot;node_type&quot;: &quot;data.source&quot;,
+    &quot;parameters&quot;: {
+        &quot;source&quot;: &quot;sklearn&quot;,  # or &quot;spectrochempy&quot;, &quot;experiment&quot;
+        &quot;sklearn_dataset&quot;: &quot;iris&quot;  # or &quot;wine&quot;, &quot;breast_cancer&quot;, &quot;digits&quot;
+    }
+}
+</code></pre>
+<p><strong>PCA:</strong></p>
+<pre><code class="language-python">{
+    &quot;node_type&quot;: &quot;model.pca&quot;,
+    &quot;parameters&quot;: {
+        &quot;n_components&quot;: &quot;mle&quot;,  # or &quot;0.95&quot;, &quot;3&quot;, etc.
+        &quot;standardized&quot;: False,
+        &quot;scaled&quot;: False
+    }
+}
+</code></pre>
+<p><strong>PLS:</strong></p>
+<pre><code class="language-python">{
+    &quot;node_type&quot;: &quot;model.pls&quot;,
+    &quot;parameters&quot;: {
+        &quot;n_components&quot;: 3,
+        &quot;scale&quot;: True
+    }
+}
+</code></pre>
+<p><strong>MCR-ALS:</strong></p>
+<pre><code class="language-python">{
+    &quot;node_type&quot;: &quot;model.mcr_als&quot;,
+    &quot;parameters&quot;: {
+        &quot;n_components&quot;: 3,
+        &quot;non_negative_C&quot;: True,  # Non-negative concentrations
+        &quot;non_negative_St&quot;: True,  # Non-negative spectra
+        &quot;max_iter&quot;: 50,
+        &quot;tol&quot;: 0.1
+    }
+}
+</code></pre>
+<p><strong>EFA:</strong></p>
+<pre><code class="language-python">{
+    &quot;node_type&quot;: &quot;model.efa&quot;,
+    &quot;parameters&quot;: {
+        &quot;n_components&quot;: 10
+    }
+}
+</code></pre>
+<p><strong>PLS-DA:</strong></p>
+<pre><code class="language-python">{
+    &quot;node_type&quot;: &quot;classification.plsda&quot;,
+    &quot;parameters&quot;: {
+        &quot;n_components&quot;: 2,
+        &quot;scale&quot;: True,
+        &quot;cv_folds&quot;: 5
+    }
+}
+</code></pre>
+<p>Note: Requires two inputs - X (spectra) and y (class labels)</p>
+<p><strong>SIMCA:</strong></p>
+<pre><code class="language-python">{
+    &quot;node_type&quot;: &quot;classification.simca&quot;,
+    &quot;parameters&quot;: {
+        &quot;n_components&quot;: 3,
+        &quot;confidence_level&quot;: 0.95
+    }
+}
+</code></pre>
+<p>Note: Requires two inputs - X (features) and y (class labels)</p>
+<h2 id="known-limitations">Known Limitations</h2>
+<ol>
+<li>
+<p><strong>SpectroChemPy Dataset Support</strong>: Only <code>iris</code> dataset works with SpectroChemPy 0.8.1. The <code>wine</code> and <code>breast_cancer</code> datasets fail because SpectroChemPy doesn't provide <code>load_wine()</code> or <code>load_breast_cancer()</code> wrappers.</p>
+</li>
+<li>
+<p><strong>Classification Node Testing</strong>: Classification nodes (PLS-DA, SIMCA) and PLS regression require <strong>separate X and y inputs</strong>. The sklearn data source now exposes a <code>target</code> output port (and classifiers can auto-extract labels from <code>X.y</code>), so PLS-DA/SIMCA tests can run. PLS regression still requires an explicit target dataset or labels.</p>
+</li>
+<li>
+<p><strong>Missing Algorithms</strong>: The following algorithms are NOT implemented in the backend:</p>
+</li>
+<li><strong>SIMPLISMA</strong> (Self Modeling Mixture Analysis)</li>
+<li>
+<p><strong>NMF</strong> (Non-negative Matrix Factorization)</p>
+</li>
+<li>
+<p><strong>Workflow Status Field</strong>: The <code>workflow.status</code> field in the database is NOT updated during execution. The execute endpoint runs synchronously and returns results in the response, but leaves the workflow record in "draft" status.</p>
+</li>
+<li>
+<p><strong>Timeout Handling</strong>: Long-running workflows may timeout. Adjust <code>timeout</code> parameter in <code>execute_workflow()</code> if needed (max 600s recommended).</p>
+</li>
+</ol>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="backend-not-reachable">Backend Not Reachable</h3>
+<pre><code>✗ Cannot connect to backend: Connection refused
+</code></pre>
+<p><strong>Solution:</strong> Start the backend server:</p>
+<pre><code class="language-bash">cd src/spectra_sherpa
+uvicorn app.main:app --reload
+</code></pre>
+<h3 id="api-key-invalid">API Key Invalid</h3>
+<pre><code>403 Forbidden - Invalid API key
+</code></pre>
+<p><strong>Solution:</strong> Check <code>API_KEY</code> constant matches backend configuration.</p>
+<h3 id="unknown-node-type">Unknown Node Type</h3>
+<pre><code>Unknown node type: 'your.node.type'
+</code></pre>
+<p><strong>Solution:</strong> Query <code>/workflows/nodes/library</code> to verify correct node_type and parameters.</p>
+<h3 id="workflow-execution-timeout">Workflow Execution Timeout</h3>
+<pre><code>Workflow execution timed out after 60s
+</code></pre>
+<p><strong>Solution:</strong> Increase timeout in test:</p>
+<pre><code class="language-python">result = execute_workflow(wf_id, timeout=120)  # 2 minutes
+</code></pre>
+<h3 id="node-failed-status">Node Failed Status</h3>
+<pre><code>AssertionError: Node failed with status: failed
+</code></pre>
+<p><strong>Solution:</strong> Check execution result for error details:</p>
+<pre><code class="language-python">result = execute_workflow(wf_id)
+print(result.get(&quot;error&quot;))  # Print error message
+</code></pre>
+<h2 id="future-extensions">Future Extensions</h2>
+<h3 id="recommended-additions">Recommended Additions</h3>
+<ol>
+<li><strong>Component Analysis Algorithms</strong> (Partially Complete)</li>
+<li>✅ MCR-ALS (Multivariate Curve Resolution) - <strong>Now tested</strong></li>
+<li>✅ EFA (Evolving Factor Analysis) - <strong>Now tested</strong></li>
+<li>⬜ SIMPLISMA - <strong>Not implemented in backend</strong></li>
+<li>
+<p>⬜ NMF (Non-negative Matrix Factorization) - <strong>Not implemented in backend</strong></p>
+</li>
+<li>
+<p><strong>Classification Nodes</strong> (Partially Complete)</p>
+</li>
+<li>✅ PLS-DA (Discriminant Analysis) - <strong>Tests added; runs with <code>target</code> output or <code>X.y</code> labels</strong></li>
+<li>✅ SIMCA (Soft Independent Modeling of Class Analogy) - <strong>Tests added; runs with <code>target</code> output or <code>X.y</code> labels</strong></li>
+<li>
+<p>✅ KNN (K-Nearest Neighbors) - <strong>Available but not yet tested</strong></p>
+</li>
+<li>
+<p><strong>Data Preprocessing</strong></p>
+</li>
+<li>Baseline correction</li>
+<li>Normalization</li>
+<li>Smoothing</li>
+<li>
+<p>Derivative calculations</p>
+</li>
+<li>
+<p><strong>Multi-Node Workflows</strong></p>
+</li>
+<li>Data → Preprocess → PCA → Visualization</li>
+<li>
+<p>Data → Split → Train/Test → Validate</p>
+</li>
+<li>
+<p><strong>Result Validation</strong></p>
+</li>
+<li>Check explained variance ratios</li>
+<li>Verify component counts</li>
+<li>Compare with expected outputs</li>
+</ol>
+<h3 id="future-directions-effectiveness-improvements">Future Directions (Effectiveness Improvements)</h3>
+<ol>
+<li><strong>Deterministic Assertions (Beyond "completed")</strong></li>
+<li>Validate output shapes (scores/loadings) and <code>metadata.n_components</code>.</li>
+<li>
+<p>Assert variance threshold behavior for <code>"0.95"</code> and component count for <code>"mle"</code>.</p>
+</li>
+<li>
+<p><strong>PLS Test Without Skips</strong></p>
+</li>
+<li>Add a simple synthetic <code>Y</code> (e.g., linear combination of features) so PLS can run.</li>
+<li>
+<p>Verify predicted shape and coefficient dimensions.</p>
+</li>
+<li>
+<p><strong>Stable Data Fixtures</strong></p>
+</li>
+<li>Use a local CSV/JSON fixture or a generated synthetic dataset for PCA/PLS tests.</li>
+<li>
+<p>Avoid reliance on SpectroChemPy dataset wrappers that may be version-limited.</p>
+</li>
+<li>
+<p><strong>Negative Tests</strong></p>
+</li>
+<li>Validate error messages for invalid <code>n_components</code> values (e.g., <code>"-1"</code>, <code>"abc"</code>, <code>"1.5"</code>).</li>
+<li>
+<p>Check MLE constraint errors when <code>n_observations &lt; n_features</code>.</p>
+</li>
+<li>
+<p><strong>Reduce Timing Flakiness</strong></p>
+</li>
+<li>Replace fixed <code>sleep</code> in CI with a health check loop (e.g., <code>/docs</code> or <code>/nodes/library</code>).</li>
+<li>
+<p>If possible, poll node statuses instead of relying solely on synchronous calls.</p>
+</li>
+<li>
+<p><strong>Test Isolation</strong></p>
+</li>
+<li>Use a test-specific API key and name prefix for workflows.</li>
+<li>Verify cleanup and/or run against a temp DB in CI to avoid state bleed.</li>
+</ol>
+<h3 id="cicd-integration">CI/CD Integration</h3>
+<pre><code class="language-yaml"># .github/workflows/integration-tests.yml
+name: Integration Tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+      - name: Start backend
+        run: |
+          cd src/spectra_sherpa
+          uvicorn app.main:app &amp;
+          sleep 10
+      - name: Run integration tests
+        run: python test_pca_integration.py
+</code></pre>
+<h2 id="contact">Contact</h2>
+<p>For issues or questions about the test framework, refer to the main project documentation or check the backend API documentation at <code>http://127.0.0.1:8000/docs</code> when the server is running.</p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../SYNTHETIC_FALLBACK_AUDIT/" class="btn btn-neutral float-left" title="Synthetic Fallback Audit"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../BACKEND_TESTING_GUIDE/" class="btn btn-neutral float-right" title="Backend Testing Guide">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+    
+      <span><a href="../SYNTHETIC_FALLBACK_AUDIT/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../BACKEND_TESTING_GUIDE/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

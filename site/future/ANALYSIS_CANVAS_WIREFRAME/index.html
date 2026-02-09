@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Analysis Canvas Wireframe - SpectraSherpa Documentation</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Analysis Canvas Wireframe";
+        var mkdocs_page_input_path = "future/ANALYSIS_CANVAS_WIREFRAME.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> SpectraSherpa Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Current</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../current/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Getting Started</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/installation/">Installation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/quickstart/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/modes/">Modes & Configuration</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >User Guide</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/experiments/">Experiments</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/library/">Library (NIST)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/doe/">DOE (96-Well)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/synthesis/">Synthesis Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/workflow/">Workflow Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" >Reproduction Study</a>
+    <ul>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
+                </li>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/reproduction_methodology/">Methodology</a>
+                </li>
+    </ul>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../USER_MANUAL/">User Manual</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >SpectrochemPy Examples</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/01_loading_data/">01. Loading Data</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/02_dataset_manipulation/">02. Manipulation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/03_plotting/">03. Plotting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/04_preprocessing_smoothing/">04. Smoothing</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/05_preprocessing_baseline/">05. Baseline</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/06_peak_finding/">06. Peak Finding</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/07_peak_fitting/">07. Integration</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/08_pca/">08. PCA</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/09_mcr_als/">09. MCR-ALS</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/10_pls_regression/">10. PLS</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reference</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../reference/nodes/">Node Library</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Architecture & System</a>
+    <ul>
+                <li class="toctree-l2"><a class="" href="../../current/README.md">Repository Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/SYSTEM_OVERVIEW/">System Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/ARCHITECTURE/">Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/INFORMATION_ARCHITECTURE/">Information Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/FUNCTIONAL_MAPPING/">Functional Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/DATA_SOURCES/">Data Sources</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/NODE_CAPABILITIES/">Node Capabilities</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/PARAMETER_MAPPING/">Parameter Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/DATABASE_SCHEMA/">Database Schema</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/AUTHENTICATION/">Authentication</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/PHASE1_SETUP_GUIDE/">Phase 1 Setup Guide</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Workflow & Analysis</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/QUICKSTART_ANALYSIS/">Quickstart Analysis</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/MULTI_PORT_GUIDE/">Multi-Port Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/FOLDER_AND_PATTERN_LOADING/">Folder & Pattern Loading</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/DOE_MANUAL/">DOE Manual</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/PROBLEM_REPORT/">Workflow Bench Gap Analysis</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Deployment</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../deployment/DIGITAL_OCEAN/">DigitalOcean</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Quality & Validation</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/ALGORITHM_AUDIT/">Algorithm Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/SYNTHETIC_FALLBACK_AUDIT/">Synthetic Fallback Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/TEST_FRAMEWORK/">Test Framework</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/BACKEND_TESTING_GUIDE/">Backend Testing Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/TESTING_CHECKLIST/">Testing Checklist</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/VERIFICATION_PROCEDURE/">Verification Procedure</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Project1 (Standalone Tool)</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/project1/">Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/project1/QUICKSTART/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/project1/INSTALLATION_GUIDE/">Installation Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/project1/TROUBLESHOOTING/">Troubleshooting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/project1/NOTICE/">Notice</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Past</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/RELEASE_NOTES/">Release Notes</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/IMPLEMENTATION_SUMMARY/">Implementation Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/FINAL_FIXES_SUMMARY/">Final Fixes Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/SESSION_SUMMARY_2026-01-21/">Session Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/NODE_STANDARDIZATION_2026-01-26/">Node Standardization (2026-01-26)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Fixes</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/3D_CONCATENATION_FIX/">3D Concatenation Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/QUICK_PLOT_Y_AXIS_LABELS_FIX/">Quick Plot Y-Axis Labels Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CASE_SENSITIVITY_AND_UI_FIXES/">Case Sensitivity and UI Fixes</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/DEDICATED_LOAD_GROUP_ENFORCEMENT/">Dedicated Load Group Enforcement</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/LOAD_GROUP_NODE_IMPLEMENTATION/">Load Group Node Implementation</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reviews & Testing</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CODE_REVIEW_FINDINGS/">Code Review Findings</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/WEEK7_TESTING/">Week 7 Testing</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Future</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../ROADMAP/">Roadmap</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../DOE_ENHANCEMENTS/">DOE Enhancements</a>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" href="#">Analysis Canvas Wireframe</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#overview">Overview</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#layout-structure">Layout Structure</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#component-breakdown">Component Breakdown</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#1-header-actions-top-bar">1. Header Actions (Top Bar)</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#2-node-library-left-panel-250px">2. Node Library (Left Panel, 250px)</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#3-workflow-canvas-center-60">3. Workflow Canvas (Center, ~60%)</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#4-node-inspector-top-right-350px-50-height">4. Node Inspector (Top-Right, 350px, ~50% height)</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#5-results-panel-bottom-right-350px-50-height">5. Results Panel (Bottom-Right, 350px, ~50% height)</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#user-workflow-example">User Workflow Example</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#scenario-baseline-correction-pca">Scenario: Baseline Correction + PCA</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#technical-implementation">Technical Implementation</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#data-flow-dag-execution">Data Flow (DAG Execution)</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#state-management-pinia-store">State Management (Pinia Store)</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#backend-api-endpoints">Backend API Endpoints</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#future-enhancements-phase-2">Future Enhancements (Phase 2)</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#accessibility-ux">Accessibility &amp; UX</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#design-inspiration">Design Inspiration</a>
+    </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../plugin_plan_011525/">Plugin Plan (2025-01-15)</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">SpectraSherpa Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Future</li>
+      <li class="breadcrumb-item active">Analysis Canvas Wireframe</li>
+    <li class="wy-breadcrumbs-aside">
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="analysis-canvas-wireframe">Analysis Canvas Wireframe</h1>
+<p><strong>Date:</strong> 2026-01-04
+<strong>Version:</strong> 1.0
+<strong>Component:</strong> Analysis Section (DAG Workflow Editor)</p>
+<hr />
+<h2 id="overview">Overview</h2>
+<p>The Analysis section provides a <strong>KNIME-style visual programming interface</strong> for building spectral analysis workflows using drag-and-drop nodes. Users can create, execute, and export reproducible analysis pipelines without writing code.</p>
+<hr />
+<h2 id="layout-structure">Layout Structure</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────────────┐
+│  Analysis Workflow                [New] [Save] [Export Python ↓]         │
+│  Build visual workflows for spectral analysis using drag-and-drop nodes  │
+├──────────────┬──────────────────────────────────────────┬────────────────┤
+│              │                                          │                │
+│  NODE        │         WORKFLOW CANVAS                  │  INSPECTOR     │
+│  LIBRARY     │                                          │                │
+│              │  ┌──────┐                                │  ┌──────────┐  │
+│ 🔍 Search    │  │Input │                                │  │ Selected │  │
+│              │  │ Data │──┐                             │  │   Node   │  │
+│ Preprocessing│  └──────┘  │                             │  ├──────────┤  │
+│  ○ Baseline  │             │    ┌──────────┐            │  │Parameters│  │
+│  ○ Smooth    │             └───→│Baseline  │            │  │ λ: 10000│  │
+│  ○ Normalize │                  │  (ALS)   │──┐         │  │ p: 0.001│  │
+│  ○ Derivative│                  └──────────┘  │         │  │          │  │
+│              │                                 │         │  │ [Execute]│  │
+│ Modeling     │                    ┌──────────┐│         │  └──────────┘  │
+│  ○ PCA       │                    │   PCA    ││         │                │
+│  ○ PLS       │              ┌────→│  Model   │├──┐      │  RESULTS       │
+│  ○ MCR-ALS   │              │     └──────────┘│  │      │                │
+│              │              │                  │  │      │ 📊 Plot        │
+│ Diagnostics  │   ┌────────┐ │                  │  │      │ 📈 Metrics     │
+│  ○ Outliers  │   │Smooth  │ │     ┌────────┐  │  │      │ 📋 Data        │
+│  ○ Metrics   │   │  (SG)  │─┴────→│Outlier │  │  │      │                │
+│  ○ Residuals │   └────────┘       │Detect  │  │  │      │ [Spectra plot] │
+│              │                     └────────┘  │  │      │                │
+│ Export       │                                 │  │      │ Mean: 0.542   │
+│  ○ CSV       │                      ┌────────┐ │  │      │ StDev: 0.082  │
+│  ○ Plot      │                      │Export  │ │  │      │                │
+│  ○ Model     │                      │  CSV   │←┴──┘      │ [Clear ×]     │
+│              │                      └────────┘           │                │
+│              │  [Zoom] [Fit] [MiniMap]                   │                │
+└──────────────┴──────────────────────────────────────────┴────────────────┘
+     250px                   ~60%                              350px
+</code></pre>
+<hr />
+<h2 id="component-breakdown">Component Breakdown</h2>
+<h3 id="1-header-actions-top-bar">1. Header Actions (Top Bar)</h3>
+<pre><code>┌─────────────────────────────────────────────────────────────┐
+│  Analysis Workflow            [+ New] [💾 Save] [⬇ Export] │
+│  Build visual workflows...                                  │
+└─────────────────────────────────────────────────────────────┘
+</code></pre>
+<p><strong>Buttons:</strong>
+- <strong>New Workflow</strong> - Clear canvas, start fresh
+- <strong>Save</strong> - Save current workflow to database
+- <strong>Export Python</strong> - Download executable Python script</p>
+<hr />
+<h3 id="2-node-library-left-panel-250px">2. Node Library (Left Panel, 250px)</h3>
+<p><strong>Purpose:</strong> Draggable palette of available operations</p>
+<pre><code>┌───────────────────────┐
+│ Node Library          │
+│ ┌─────────────────┐   │
+│ │ 🔍 Search nodes │   │
+│ └─────────────────┘   │
+│                       │
+│ 🔧 Preprocessing      │
+│  ─────────────────    │
+│  ○ Baseline (ALS)     │
+│  ○ Baseline (Rubber)  │
+│  ○ Smooth (SG)        │
+│  ○ Normalize (SNV)    │
+│  ○ Normalize (MSC)    │
+│  ○ 1st Derivative     │
+│  ○ 2nd Derivative     │
+│                       │
+│ 📊 Modeling           │
+│  ─────────────────    │
+│  ○ PCA                │
+│  ○ PLS                │
+│  ○ MCR-ALS            │
+│  ○ Linear Regression  │
+│                       │
+│ ✅ Diagnostics        │
+│  ─────────────────    │
+│  ○ Outlier Detection  │
+│  ○ Model Metrics      │
+│  ○ Residuals Plot     │
+│                       │
+│ 💾 Export             │
+│  ─────────────────    │
+│  ○ Export CSV         │
+│  ○ Save Plot          │
+│  ○ Save Model         │
+└───────────────────────┘
+</code></pre>
+<p><strong>Interaction:</strong>
+- Click to add node at default position
+- Drag-and-drop onto canvas (future enhancement)
+- Search filter narrows visible nodes</p>
+<hr />
+<h3 id="3-workflow-canvas-center-60">3. Workflow Canvas (Center, ~60%)</h3>
+<p><strong>Purpose:</strong> Visual DAG editor with Vue Flow</p>
+<pre><code>┌──────────────────────────────────────────────────┐
+│                                                  │
+│   ┌──────────┐          ┌──────────┐            │
+│   │  Input   │          │ Baseline │            │
+│   │   Data   │─────────→│  (ALS)   │──────┐     │
+│   └──────────┘          └──────────┘      │     │
+│                                            ↓     │
+│                                      ┌──────────┐│
+│   ┌──────────┐          ┌──────────┐│   PCA    ││
+│   │  Smooth  │─────────→│ Outlier  ││  Model   ││
+│   │   (SG)   │          │  Detect  │└──────────┘│
+│   └──────────┘          └──────────┘      │     │
+│                                            ↓     │
+│                                      ┌──────────┐│
+│                                      │  Export  ││
+│                                      │   CSV    ││
+│                                      └──────────┘│
+│                                                  │
+│  [Zoom -] [Zoom +] [Fit View] [MiniMap]         │
+└──────────────────────────────────────────────────┘
+</code></pre>
+<p><strong>Node Appearance:</strong></p>
+<pre><code>┌────────────────────┐
+│ 🔧 Baseline (ALS) │  ← Header (color-coded by category)
+├────────────────────┤
+│  ⏳ Status icon   │  ← Body (shows execution status)
+└────────────────────┘
+  ●                ●   ← Input/output handles (left/right)
+</code></pre>
+<p><strong>Node Color Coding:</strong>
+- <strong>Preprocessing</strong> - Blue (#eff6ff)
+- <strong>Modeling</strong> - Green (#f0fdf4)
+- <strong>Diagnostics</strong> - Yellow (#fef3c7)
+- <strong>Export</strong> - Purple (#f3e8ff)</p>
+<p><strong>Status Icons:</strong>
+- 🕐 Pending (gray)
+- ⏳ Running (blue, spinning)
+- ✅ Completed (green)
+- ❌ Error (red)</p>
+<p><strong>Interactions:</strong>
+- <strong>Click</strong> - Select node (highlights in Inspector)
+- <strong>Double-click</strong> - Execute node
+- <strong>Drag</strong> - Reposition node
+- <strong>Connect</strong> - Drag from output handle to input handle</p>
+<p><strong>Controls:</strong>
+- <strong>Zoom</strong> - Mouse wheel or buttons
+- <strong>Pan</strong> - Click-drag on background
+- <strong>Fit View</strong> - Auto-zoom to fit all nodes
+- <strong>MiniMap</strong> - Bird's-eye view navigator (bottom-right overlay)</p>
+<hr />
+<h3 id="4-node-inspector-top-right-350px-50-height">4. Node Inspector (Top-Right, 350px, ~50% height)</h3>
+<p><strong>Purpose:</strong> Edit parameters of selected node</p>
+<pre><code>┌───────────────────────────┐
+│ Node Inspector            │
+├───────────────────────────┤
+│ Baseline (ALS)            │
+│ Asymmetric Least Squares  │
+│                           │
+│ Parameters                │
+│ ─────────────────────     │
+│ Lambda                    │
+│ [10000    ] (1-1M)       │
+│ Smoothness parameter      │
+│                           │
+│ Asymmetry (p)             │
+│ [0.001    ] (0.001-0.1)  │
+│ Lower = more asymmetric   │
+│                           │
+│ ┌─────────────────────┐   │
+│ │   ▶ Execute Node    │   │
+│ └─────────────────────┘   │
+└───────────────────────────┘
+</code></pre>
+<p><strong>Empty State:</strong></p>
+<pre><code>┌───────────────────────────┐
+│ Node Inspector            │
+├───────────────────────────┤
+│                           │
+│       ℹ️                  │
+│                           │
+│  Select a node to view    │
+│  and edit its parameters  │
+│                           │
+└───────────────────────────┘
+</code></pre>
+<p><strong>Parameter Types:</strong>
+- <strong>Number</strong> - Slider or input with min/max/step
+- <strong>Boolean</strong> - Toggle switch
+- <strong>Select</strong> - Dropdown menu
+- <strong>Text</strong> - Text input</p>
+<hr />
+<h3 id="5-results-panel-bottom-right-350px-50-height">5. Results Panel (Bottom-Right, 350px, ~50% height)</h3>
+<p><strong>Purpose:</strong> Display live analysis results</p>
+<pre><code>┌───────────────────────────┐
+│ Results            [×]    │
+├───────────────────────────┤
+│ [Plot] [Metrics] [Data]   │  ← Tabs
+├───────────────────────────┤
+│                           │
+│   📊 Spectrum Plot        │
+│                           │
+│   [Interactive Plotly]    │
+│   ┌─────────────────────┐ │
+│   │                     │ │
+│   │  ─────────╱─╲─────  │ │
+│   │ ╱            ╲╱     │ │
+│   │                     │ │
+│   └─────────────────────┘ │
+│                           │
+└───────────────────────────┘
+</code></pre>
+<p><strong>Tabs:</strong></p>
+<ol>
+<li><strong>Plot Tab</strong> - Plotly interactive chart</li>
+<li>Zoom, pan, hover tooltips</li>
+<li>Multiple traces for comparison</li>
+<li>
+<p>Export plot as PNG/SVG</p>
+</li>
+<li>
+<p><strong>Metrics Tab</strong> - Key statistics
+   <code>Samples       │ 150
+   Wavelengths   │ 1024
+   Mean Intensity│ 0.5421
+   Std Dev       │ 0.0823
+   R²            │ 0.9876
+   RMSE          │ 0.0145</code></p>
+</li>
+<li>
+<p><strong>Data Tab</strong> - Table preview
+   <code>┌──────────┬──────────┬────────┐
+   │ Sample   │ Wavenum  │ Absorp │
+   ├──────────┼──────────┼────────┤
+   │ S001     │ 400.0    │ 0.123  │
+   │ S001     │ 400.5    │ 0.124  │
+   │ ...      │ ...      │ ...    │
+   └──────────┴──────────┴────────┘</code></p>
+</li>
+</ol>
+<p><strong>Empty State:</strong></p>
+<pre><code>┌───────────────────────────┐
+│ Results                   │
+├───────────────────────────┤
+│                           │
+│       📊                  │
+│                           │
+│  Execute nodes to see     │
+│  results here             │
+│                           │
+└───────────────────────────┘
+</code></pre>
+<hr />
+<h2 id="user-workflow-example">User Workflow Example</h2>
+<h3 id="scenario-baseline-correction-pca">Scenario: Baseline Correction + PCA</h3>
+<ol>
+<li><strong>Add Input Data Node</strong></li>
+<li>Click "Input Data" in Node Library</li>
+<li>
+<p>Node appears on canvas</p>
+</li>
+<li>
+<p><strong>Add Baseline Correction</strong></p>
+</li>
+<li>Click "Baseline (ALS)" in Node Library</li>
+<li>Node appears on canvas</li>
+<li>
+<p>Connect Input → Baseline</p>
+</li>
+<li>
+<p><strong>Configure Parameters</strong></p>
+</li>
+<li>Click Baseline node</li>
+<li>Inspector shows Lambda and p parameters</li>
+<li>Adjust Lambda slider to 10000</li>
+<li>
+<p>Click "Execute Node"</p>
+</li>
+<li>
+<p><strong>View Results</strong></p>
+</li>
+<li>Results panel shows corrected spectrum</li>
+<li>
+<p>Metrics tab shows mean intensity</p>
+</li>
+<li>
+<p><strong>Add PCA</strong></p>
+</li>
+<li>Click "PCA" in Node Library</li>
+<li>Connect Baseline → PCA</li>
+<li>Set n_components = 5</li>
+<li>
+<p>Execute</p>
+</li>
+<li>
+<p><strong>Export</strong></p>
+</li>
+<li>Click "Export Python" button</li>
+<li>Download workflow_20260104.py</li>
+<li>Script recreates entire pipeline</li>
+</ol>
+<hr />
+<h2 id="technical-implementation">Technical Implementation</h2>
+<h3 id="data-flow-dag-execution">Data Flow (DAG Execution)</h3>
+<pre><code>User clicks &quot;Execute Node&quot;
+       ↓
+Traverse DAG backwards to find input dependencies
+       ↓
+Execute nodes in topological order
+       ↓
+Each node:
+  - Reads NDDataset from previous node
+  - Applies transformation
+  - Stores result in cache (Map&lt;nodeId, NDDataset&gt;)
+       ↓
+Update Results Panel with final output
+</code></pre>
+<h3 id="state-management-pinia-store">State Management (Pinia Store)</h3>
+<pre><code class="language-typescript">interface AnalysisState {
+  workflows: Workflow[]
+  activeWorkflow: Workflow | null
+  nodes: Node[]
+  edges: Edge[]
+  executionResults: Map&lt;nodeId, NDDataset&gt;
+  selectedNode: Node | null
+}
+</code></pre>
+<h3 id="backend-api-endpoints">Backend API Endpoints</h3>
+<pre><code>POST /api/v1/workflows          - Create new workflow
+GET  /api/v1/workflows          - List workflows
+GET  /api/v1/workflows/{id}     - Get workflow
+PUT  /api/v1/workflows/{id}     - Update workflow
+DELETE /api/v1/workflows/{id}   - Delete workflow
+
+POST /api/v1/workflows/{id}/execute/{nodeId}  - Execute single node
+POST /api/v1/workflows/{id}/execute/all       - Execute entire workflow
+GET  /api/v1/workflows/{id}/export/python     - Export to .py script
+GET  /api/v1/workflows/{id}/export/jupyter    - Export to .ipynb notebook
+</code></pre>
+<hr />
+<h2 id="future-enhancements-phase-2">Future Enhancements (Phase 2)</h2>
+<ol>
+<li><strong>Subworkflows</strong> - Group nodes into reusable subgraphs</li>
+<li><strong>Branching</strong> - A/B test different preprocessing methods</li>
+<li><strong>Loop Nodes</strong> - Iterate over parameter grid</li>
+<li><strong>Conditional Nodes</strong> - If/else logic</li>
+<li><strong>LLM Integration</strong> - "Add baseline correction" → LLM suggests node + parameters</li>
+<li><strong>Side-by-side Comparison</strong> - Compare two workflows</li>
+<li><strong>Undo/Redo</strong> - History stack for canvas edits</li>
+<li><strong>Templates</strong> - Pre-built workflows (e.g., "FTIR Preprocessing Pipeline")</li>
+<li><strong>Collaboration</strong> - Share workflows via URL</li>
+</ol>
+<hr />
+<h2 id="accessibility-ux">Accessibility &amp; UX</h2>
+<ul>
+<li><strong>Keyboard Navigation</strong> - Arrow keys to select nodes, Tab to cycle</li>
+<li><strong>Tooltips</strong> - Hover on node for description</li>
+<li><strong>Validation</strong> - Prevent invalid connections (type mismatch)</li>
+<li><strong>Auto-layout</strong> - Organize nodes in clean rows/columns</li>
+<li><strong>Save Prompts</strong> - Warn before discarding unsaved changes</li>
+<li><strong>Error Handling</strong> - Show node-level error messages</li>
+</ul>
+<hr />
+<h2 id="design-inspiration">Design Inspiration</h2>
+<ul>
+<li><strong>KNIME</strong> - Node-based workflow editor</li>
+<li><strong>Orange Data Mining</strong> - Visual programming for data science</li>
+<li><strong>Node-RED</strong> - Flow-based programming for IoT</li>
+<li><strong>Unreal Engine Blueprints</strong> - Visual scripting</li>
+</ul>
+<hr />
+<p><strong>Version History:</strong>
+- v1.0 (2026-01-04) - Initial wireframe</p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../DOE_ENHANCEMENTS/" class="btn btn-neutral float-left" title="DOE Enhancements"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../plugin_plan_011525/" class="btn btn-neutral float-right" title="Plugin Plan (2025-01-15)">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+    
+      <span><a href="../DOE_ENHANCEMENTS/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../plugin_plan_011525/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Testing Checklist - SpectraSherpa Documentation</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Testing Checklist";
+        var mkdocs_page_input_path = "current/TESTING_CHECKLIST.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> SpectraSherpa Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Current</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Getting Started</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/installation/">Installation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/quickstart/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/modes/">Modes & Configuration</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >User Guide</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/experiments/">Experiments</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/library/">Library (NIST)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/doe/">DOE (96-Well)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/synthesis/">Synthesis Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/workflow/">Workflow Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" >Reproduction Study</a>
+    <ul>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
+                </li>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/reproduction_methodology/">Methodology</a>
+                </li>
+    </ul>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../USER_MANUAL/">User Manual</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >SpectrochemPy Examples</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/01_loading_data/">01. Loading Data</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/02_dataset_manipulation/">02. Manipulation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/03_plotting/">03. Plotting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/04_preprocessing_smoothing/">04. Smoothing</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/05_preprocessing_baseline/">05. Baseline</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/06_peak_finding/">06. Peak Finding</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/07_peak_fitting/">07. Integration</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/08_pca/">08. PCA</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/09_mcr_als/">09. MCR-ALS</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/10_pls_regression/">10. PLS</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reference</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../reference/nodes/">Node Library</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Architecture & System</a>
+    <ul>
+                <li class="toctree-l2"><a class="" href="../README.md">Repository Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SYSTEM_OVERVIEW/">System Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../ARCHITECTURE/">Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../INFORMATION_ARCHITECTURE/">Information Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../FUNCTIONAL_MAPPING/">Functional Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DATA_SOURCES/">Data Sources</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../NODE_CAPABILITIES/">Node Capabilities</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PARAMETER_MAPPING/">Parameter Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DATABASE_SCHEMA/">Database Schema</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../AUTHENTICATION/">Authentication</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PHASE1_SETUP_GUIDE/">Phase 1 Setup Guide</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Workflow & Analysis</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../QUICKSTART_ANALYSIS/">Quickstart Analysis</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../MULTI_PORT_GUIDE/">Multi-Port Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../FOLDER_AND_PATTERN_LOADING/">Folder & Pattern Loading</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DOE_MANUAL/">DOE Manual</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PROBLEM_REPORT/">Workflow Bench Gap Analysis</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Deployment</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../deployment/DIGITAL_OCEAN/">DigitalOcean</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" >Quality & Validation</a>
+    <ul class="current">
+                <li class="toctree-l2"><a class="reference internal" href="../ALGORITHM_AUDIT/">Algorithm Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SYNTHETIC_FALLBACK_AUDIT/">Synthetic Fallback Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../TEST_FRAMEWORK/">Test Framework</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../BACKEND_TESTING_GUIDE/">Backend Testing Guide</a>
+                </li>
+                <li class="toctree-l2 current"><a class="reference internal current" href="#">Testing Checklist</a>
+    <ul class="current">
+    <li class="toctree-l3"><a class="reference internal" href="#code-quality-checks-passed">✅ Code Quality Checks (PASSED)</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#syntax-validation">Syntax Validation</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#critical-path-analysis">Critical Path Analysis</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#known-issues-fixed">🔍 Known Issues Fixed</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#manual-testing-required">🧪 Manual Testing Required</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#backend-startup-user-action-required">Backend Startup (User Action Required)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#database-schema-validation">Database Schema Validation</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#api-endpoint-testing">API Endpoint Testing</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#frontend-testing">🎨 Frontend Testing</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#node-library-loading">Node Library Loading</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#node-addition">Node Addition</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#data-node-configuration">Data Node Configuration</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#data-integrity-checks">🔐 Data Integrity Checks</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#path-construction-validation">Path Construction Validation</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#database-relationship-integrity">Database Relationship Integrity</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#known-limitations-not-bugs">⚠️ Known Limitations (Not Bugs)</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#pre-deployment-checklist">📋 Pre-Deployment Checklist</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#deployment-notes">🚀 Deployment Notes</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#environment-variables-required">Environment Variables Required</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#first-time-setup">First-Time Setup</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#health-check-endpoint">Health Check Endpoint</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#test-results-log">📝 Test Results Log</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#success-criteria">🎯 Success Criteria</a>
+    </li>
+    </ul>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../VERIFICATION_PROCEDURE/">Verification Procedure</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Project1 (Standalone Tool)</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/">Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/QUICKSTART/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/INSTALLATION_GUIDE/">Installation Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/TROUBLESHOOTING/">Troubleshooting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/NOTICE/">Notice</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Past</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/RELEASE_NOTES/">Release Notes</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/IMPLEMENTATION_SUMMARY/">Implementation Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/FINAL_FIXES_SUMMARY/">Final Fixes Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/SESSION_SUMMARY_2026-01-21/">Session Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/NODE_STANDARDIZATION_2026-01-26/">Node Standardization (2026-01-26)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Fixes</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/3D_CONCATENATION_FIX/">3D Concatenation Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/QUICK_PLOT_Y_AXIS_LABELS_FIX/">Quick Plot Y-Axis Labels Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CASE_SENSITIVITY_AND_UI_FIXES/">Case Sensitivity and UI Fixes</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/DEDICATED_LOAD_GROUP_ENFORCEMENT/">Dedicated Load Group Enforcement</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/LOAD_GROUP_NODE_IMPLEMENTATION/">Load Group Node Implementation</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reviews & Testing</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CODE_REVIEW_FINDINGS/">Code Review Findings</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/WEEK7_TESTING/">Week 7 Testing</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Future</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ROADMAP/">Roadmap</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/DOE_ENHANCEMENTS/">DOE Enhancements</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ANALYSIS_CANVAS_WIREFRAME/">Analysis Canvas Wireframe</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/plugin_plan_011525/">Plugin Plan (2025-01-15)</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">SpectraSherpa Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Current</li>
+          <li class="breadcrumb-item">Quality & Validation</li>
+      <li class="breadcrumb-item active">Testing Checklist</li>
+    <li class="wy-breadcrumbs-aside">
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="prototype-release-testing-checklist">Prototype Release - Testing Checklist</h1>
+<p><strong>Release Date</strong>: 2026-01-15
+<strong>Status</strong>: Pre-Release Hardening Complete</p>
+<h2 id="code-quality-checks-passed">✅ Code Quality Checks (PASSED)</h2>
+<h3 id="syntax-validation">Syntax Validation</h3>
+<ul>
+<li>✅ <code>data.py</code> - Python syntax valid</li>
+<li>✅ <code>classification.py</code> - Python syntax valid</li>
+<li>✅ <code>models/__init__.py</code> - Python syntax valid</li>
+</ul>
+<h3 id="critical-path-analysis">Critical Path Analysis</h3>
+<ul>
+<li>✅ 48 nodes registered across 9 node files</li>
+<li>✅ All Phase 1 models exported in <code>__init__.py</code></li>
+<li>✅ 4 Alembic migrations created for Phase 1 features</li>
+<li>✅ No duplicate code (removed 78 lines)</li>
+<li>✅ No leftover backup files</li>
+</ul>
+<hr />
+<h2 id="known-issues-fixed">🔍 Known Issues Fixed</h2>
+<table>
+<thead>
+<tr>
+<th>Issue</th>
+<th>Severity</th>
+<th>Status</th>
+<th>File</th>
+<th>Line</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FileLoadNode missing stage directory</td>
+<td>CRITICAL</td>
+<td>✅ FIXED</td>
+<td>data.py</td>
+<td>706</td>
+</tr>
+<tr>
+<td>Stage parameter not validated</td>
+<td>HIGH</td>
+<td>✅ FIXED</td>
+<td>data.py</td>
+<td>692</td>
+</tr>
+<tr>
+<td>NIST path construction inconsistency</td>
+<td>MEDIUM</td>
+<td>✅ FIXED</td>
+<td>data.py</td>
+<td>827</td>
+</tr>
+<tr>
+<td>Duplicate <code>_extract_dataset_from_result</code></td>
+<td>MEDIUM</td>
+<td>✅ FIXED</td>
+<td>data.py</td>
+<td>39-85</td>
+</tr>
+<tr>
+<td>10 nodes missing from NODE_TYPE_MAP</td>
+<td>HIGH</td>
+<td>✅ FIXED</td>
+<td>workflow.ts</td>
+<td>83-130</td>
+</tr>
+<tr>
+<td>Dead code (data_FIXED.py)</td>
+<td>HIGH</td>
+<td>✅ FIXED</td>
+<td>-</td>
+<td>-</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="manual-testing-required">🧪 Manual Testing Required</h2>
+<h3 id="backend-startup-user-action-required">Backend Startup (User Action Required)</h3>
+<pre><code class="language-bash">cd Refactored/backend
+source venv/bin/activate  # or conda activate &lt;env&gt;
+uvicorn app.main:app --reload
+</code></pre>
+<p><strong>Expected</strong>: Server starts on http://localhost:8000
+<strong>Check</strong>:
+- [ ] No import errors
+- [ ] No SQLAlchemy relationship warnings
+- [ ] Database connection successful
+- [ ] All models registered</p>
+<h3 id="database-schema-validation">Database Schema Validation</h3>
+<pre><code class="language-bash">cd Refactored/backend
+alembic current
+alembic history
+</code></pre>
+<p><strong>Expected Output</strong>:
+- Current revision: <code>d0f6e1b4cf70</code> (add_workflow_annotations)
+- 4 Phase 1 migrations visible in history</p>
+<p><strong>Check Tables Created</strong>:</p>
+<pre><code class="language-sql">SELECT name FROM sqlite_master WHERE type='table'
+ORDER BY name;
+</code></pre>
+<p>Expected Phase 1 tables:
+- [ ] workflow_folder
+- [ ] workflow_tag
+- [ ] workflow_tag_association
+- [ ] workflow_template
+- [ ] workflow_version</p>
+<h3 id="api-endpoint-testing">API Endpoint Testing</h3>
+<h4 id="1-node-library-endpoint">1. Node Library Endpoint</h4>
+<pre><code class="language-bash">curl http://localhost:8000/api/v1/workflows/nodes/library
+</code></pre>
+<p><strong>Expected</strong>: JSON with 48 nodes across categories:
+- preprocessing (19 nodes)
+- modeling (6 nodes)
+- classification (3 nodes)
+- diagnostics (2 nodes)
+- data (4 nodes)
+- output (5 nodes)
+- time_series (2 nodes)</p>
+<p><strong>Check</strong>:
+- [ ] All 10 newly added nodes present
+- [ ] Node types match backend registration
+- [ ] Icons/labels are user-friendly</p>
+<h4 id="2-workflow-crud-operations">2. Workflow CRUD Operations</h4>
+<pre><code class="language-bash"># Create workflow
+curl -X POST http://localhost:8000/api/v1/workflows/ \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;name&quot;:&quot;Test Workflow&quot;,&quot;description&quot;:&quot;Testing&quot;}'
+
+# List workflows
+curl http://localhost:8000/api/v1/workflows/
+
+# Get by ID
+curl http://localhost:8000/api/v1/workflows/1
+</code></pre>
+<p><strong>Check</strong>:
+- [ ] Create returns workflow with ID
+- [ ] List includes created workflow
+- [ ] Get by ID returns full details
+- [ ] Timestamps are present</p>
+<h4 id="3-version-history">3. Version History</h4>
+<pre><code class="language-bash"># Update workflow to create version
+curl -X PUT http://localhost:8000/api/v1/workflows/1 \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;name&quot;:&quot;Updated Workflow&quot;,&quot;nodes&quot;:[],&quot;edges&quot;:[]}'
+
+# Get versions
+curl http://localhost:8000/api/v1/workflows/1/versions
+</code></pre>
+<p><strong>Check</strong>:
+- [ ] Version created automatically
+- [ ] Snapshot contains full state
+- [ ] Version number increments
+- [ ] created_at timestamp present</p>
+<h4 id="4-tags-folders">4. Tags &amp; Folders</h4>
+<pre><code class="language-bash"># Create folder
+curl -X POST http://localhost:8000/api/v1/workflows/folders \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;name&quot;:&quot;My Folder&quot;}'
+
+# Create tag
+curl -X POST http://localhost:8000/api/v1/workflows/tags \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;name&quot;:&quot;classification&quot;,&quot;color&quot;:&quot;#3B82F6&quot;}'
+
+# Assign folder
+curl -X PATCH http://localhost:8000/api/v1/workflows/1 \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;folder_id&quot;:1}'
+
+# Assign tags
+curl -X PUT http://localhost:8000/api/v1/workflows/1/tags \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;tag_ids&quot;:[1]}'
+</code></pre>
+<p><strong>Check</strong>:
+- [ ] Folder created with ID
+- [ ] Tag created with color
+- [ ] Workflow moved to folder
+- [ ] Tag assigned to workflow</p>
+<h4 id="5-templates">5. Templates</h4>
+<pre><code class="language-bash"># Get templates
+curl http://localhost:8000/api/v1/workflows/templates
+
+# Create from template
+curl -X POST http://localhost:8000/api/v1/workflows/from-template/pca_basic \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;name&quot;:&quot;From Template&quot;}'
+</code></pre>
+<p><strong>Check</strong>:
+- [ ] 10 templates returned
+- [ ] Templates have workflow_json
+- [ ] Create from template works
+- [ ] New workflow has nodes/edges from template</p>
+<hr />
+<h2 id="frontend-testing">🎨 Frontend Testing</h2>
+<h3 id="node-library-loading">Node Library Loading</h3>
+<ol>
+<li>Open frontend in browser</li>
+<li>Navigate to workflow builder</li>
+<li>Check Node Library panel</li>
+</ol>
+<p><strong>Expected</strong>:
+- [ ] "Loading nodes..." appears briefly
+- [ ] Nodes grouped by category
+- [ ] All categories visible: Preprocessing, Modeling, Classification, Diagnostics, Data, Output
+- [ ] Search bar filters nodes
+- [ ] Icons display correctly</p>
+<h3 id="node-addition">Node Addition</h3>
+<ol>
+<li>Click a node in library</li>
+<li>Verify it appears on canvas</li>
+</ol>
+<p><strong>Test Nodes</strong>:
+- [ ] PLS-DA (classification)
+- [ ] Outlier Detection (diagnostics)
+- [ ] Data Table (output)
+- [ ] Pareto Scaling (preprocessing)
+- [ ] Moving Window (time_series)</p>
+<h3 id="data-node-configuration">Data Node Configuration</h3>
+<ol>
+<li>Add "Data Source" node</li>
+<li>Open node inspector</li>
+</ol>
+<p><strong>Expected Parameters</strong>:
+- [ ] source (dropdown: spectrochempy/experiment/library/file/synthetic)
+- [ ] experiment_id (number)
+- [ ] file_id (number)
+- [ ] stage (dropdown: raw/preprocessed/synthetic)
+- [ ] library_id (number)</p>
+<p><strong>Test Cases</strong>:
+- [ ] Selecting experiment shows experiment_id
+- [ ] Selecting library shows library_id
+- [ ] Stage parameter has 3 options</p>
+<hr />
+<h2 id="data-integrity-checks">🔐 Data Integrity Checks</h2>
+<h3 id="path-construction-validation">Path Construction Validation</h3>
+<p>All file loading paths should follow these patterns:</p>
+<h4 id="experiment-files">Experiment Files</h4>
+<pre><code class="language-python"># Pattern
+settings.data_dir / &quot;experiments&quot; / &quot;exp_001&quot; / stage / file_path
+
+# Examples
+.../experiments/exp_001/raw/sample.csv
+.../experiments/exp_001/preprocessed/sample_baseline.csv
+.../experiments/exp_001/synthetic/synthetic_001.csv
+</code></pre>
+<p><strong>Check</strong>:
+- [ ] DataSourceNode._load_from_experiment uses pattern (line 443)
+- [ ] FileLoadNode.execute uses pattern (line 706)
+- [ ] Stage directory is included</p>
+<h4 id="nist-library-files">NIST Library Files</h4>
+<pre><code class="language-python"># Pattern
+settings.data_dir / &quot;nist_library&quot; / file_path
+
+# Examples
+.../nist_library/methanol_1000.jdx
+.../nist_library/ethanol_4000.jdx
+</code></pre>
+<p><strong>Check</strong>:
+- [ ] DataSourceNode._load_from_library uses pattern (line 534)
+- [ ] NISTLibraryNode.execute uses pattern (line 827)
+- [ ] Both nodes consistent</p>
+<h3 id="database-relationship-integrity">Database Relationship Integrity</h3>
+<p>Run SQL to verify cascading deletes:</p>
+<pre><code class="language-sql">-- Test workflow deletion cascades to nodes/edges
+DELETE FROM workflow WHERE id = 1;
+
+-- Check orphaned records
+SELECT COUNT(*) FROM workflow_node WHERE workflow_id = 1;  -- Should be 0
+SELECT COUNT(*) FROM workflow_edge WHERE workflow_id = 1;  -- Should be 0
+SELECT COUNT(*) FROM workflow_version WHERE workflow_id = 1;  -- Should be 0
+</code></pre>
+<p><strong>Check</strong>:
+- [ ] Nodes deleted when workflow deleted
+- [ ] Edges deleted when workflow deleted
+- [ ] Versions deleted when workflow deleted
+- [ ] No orphaned records</p>
+<hr />
+<h2 id="known-limitations-not-bugs">⚠️ Known Limitations (Not Bugs)</h2>
+<p>These are features NOT YET IMPLEMENTED - not issues with current code:</p>
+<ol>
+<li><strong>Multi-input port validation</strong> - Frontend may need adjustment for diagnostics nodes</li>
+<li><strong>Template coverage</strong> - Only 10 templates exist (not all node types covered)</li>
+<li><strong>PARAM_NAME_MAP completeness</strong> - May not cover all 48 nodes</li>
+<li><strong>Workflow execution</strong> - Trial execution not tested</li>
+<li><strong>Authentication</strong> - User system not implemented</li>
+<li><strong>File upload</strong> - Experiment file upload not implemented</li>
+<li><strong>NIST database</strong> - No NIST entries populated</li>
+<li><strong>Error boundaries</strong> - Frontend may not handle all error states</li>
+</ol>
+<hr />
+<h2 id="pre-deployment-checklist">📋 Pre-Deployment Checklist</h2>
+<p>Before deploying to production/staging:</p>
+<ul>
+<li>[ ] All API tests passed</li>
+<li>[ ] Frontend connects to backend</li>
+<li>[ ] Database migrations run cleanly</li>
+<li>[ ] No console errors in browser</li>
+<li>[ ] No Python exceptions on startup</li>
+<li>[ ] Node library loads completely</li>
+<li>[ ] Version history creates snapshots</li>
+<li>[ ] Tags and folders functional</li>
+<li>[ ] Templates create workflows</li>
+</ul>
+<hr />
+<h2 id="deployment-notes">🚀 Deployment Notes</h2>
+<h3 id="environment-variables-required">Environment Variables Required</h3>
+<pre><code class="language-bash">DATABASE_URL=sqlite+aiosqlite:///./app.db
+DATA_DIR=/path/to/data
+CORS_ORIGINS=http://localhost:5173
+</code></pre>
+<h3 id="first-time-setup">First-Time Setup</h3>
+<pre><code class="language-bash"># 1. Install dependencies
+cd backend &amp;&amp; pip install -r requirements.txt
+
+# 2. Start server (database is created automatically on first run)
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+</code></pre>
+<h3 id="health-check-endpoint">Health Check Endpoint</h3>
+<pre><code class="language-bash">curl http://localhost:8000/health
+</code></pre>
+<p>Expected: <code>{"status":"ok"}</code></p>
+<hr />
+<h2 id="test-results-log">📝 Test Results Log</h2>
+<table>
+<thead>
+<tr>
+<th>Test</th>
+<th>Date</th>
+<th>Tester</th>
+<th>Result</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Backend startup</td>
+<td></td>
+<td></td>
+<td>⏳ Pending</td>
+<td></td>
+</tr>
+<tr>
+<td>Database schema</td>
+<td></td>
+<td></td>
+<td>⏳ Pending</td>
+<td></td>
+</tr>
+<tr>
+<td>Node library API</td>
+<td></td>
+<td></td>
+<td>⏳ Pending</td>
+<td></td>
+</tr>
+<tr>
+<td>Workflow CRUD</td>
+<td></td>
+<td></td>
+<td>⏳ Pending</td>
+<td></td>
+</tr>
+<tr>
+<td>Version history</td>
+<td></td>
+<td></td>
+<td>⏳ Pending</td>
+<td></td>
+</tr>
+<tr>
+<td>Tags &amp; folders</td>
+<td></td>
+<td></td>
+<td>⏳ Pending</td>
+<td></td>
+</tr>
+<tr>
+<td>Frontend loading</td>
+<td></td>
+<td></td>
+<td>⏳ Pending</td>
+<td></td>
+</tr>
+<tr>
+<td>Node addition</td>
+<td></td>
+<td></td>
+<td>⏳ Pending</td>
+<td></td>
+</tr>
+<tr>
+<td>Data paths</td>
+<td></td>
+<td></td>
+<td>⏳ Pending</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="success-criteria">🎯 Success Criteria</h2>
+<p>Prototype is ready for user testing when:</p>
+<ol>
+<li>✅ All critical bugs fixed</li>
+<li>✅ Syntax validation passed</li>
+<li>⏳ Backend starts without errors</li>
+<li>⏳ API endpoints return valid JSON</li>
+<li>⏳ Frontend displays all 48 nodes</li>
+<li>⏳ Workflow CRUD operations work</li>
+<li>⏳ Version history creates snapshots</li>
+<li>⏳ File paths construct correctly</li>
+</ol>
+<hr />
+<p><strong>Last Updated</strong>: 2026-01-15
+<strong>Reviewed By</strong>: Claude Code (Senior Engineer Mode)</p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../BACKEND_TESTING_GUIDE/" class="btn btn-neutral float-left" title="Backend Testing Guide"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../VERIFICATION_PROCEDURE/" class="btn btn-neutral float-right" title="Verification Procedure">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+    
+      <span><a href="../BACKEND_TESTING_GUIDE/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../VERIFICATION_PROCEDURE/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Verification Procedure - SpectraSherpa Documentation</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Verification Procedure";
+        var mkdocs_page_input_path = "current/VERIFICATION_PROCEDURE.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> SpectraSherpa Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Current</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Getting Started</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/installation/">Installation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/quickstart/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/modes/">Modes & Configuration</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >User Guide</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/experiments/">Experiments</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/library/">Library (NIST)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/doe/">DOE (96-Well)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/synthesis/">Synthesis Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/workflow/">Workflow Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" >Reproduction Study</a>
+    <ul>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
+                </li>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/reproduction_methodology/">Methodology</a>
+                </li>
+    </ul>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../USER_MANUAL/">User Manual</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >SpectrochemPy Examples</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/01_loading_data/">01. Loading Data</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/02_dataset_manipulation/">02. Manipulation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/03_plotting/">03. Plotting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/04_preprocessing_smoothing/">04. Smoothing</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/05_preprocessing_baseline/">05. Baseline</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/06_peak_finding/">06. Peak Finding</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/07_peak_fitting/">07. Integration</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/08_pca/">08. PCA</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/09_mcr_als/">09. MCR-ALS</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/10_pls_regression/">10. PLS</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reference</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../reference/nodes/">Node Library</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Architecture & System</a>
+    <ul>
+                <li class="toctree-l2"><a class="" href="../README.md">Repository Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SYSTEM_OVERVIEW/">System Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../ARCHITECTURE/">Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../INFORMATION_ARCHITECTURE/">Information Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../FUNCTIONAL_MAPPING/">Functional Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DATA_SOURCES/">Data Sources</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../NODE_CAPABILITIES/">Node Capabilities</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PARAMETER_MAPPING/">Parameter Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DATABASE_SCHEMA/">Database Schema</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../AUTHENTICATION/">Authentication</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PHASE1_SETUP_GUIDE/">Phase 1 Setup Guide</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Workflow & Analysis</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../QUICKSTART_ANALYSIS/">Quickstart Analysis</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../MULTI_PORT_GUIDE/">Multi-Port Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../FOLDER_AND_PATTERN_LOADING/">Folder & Pattern Loading</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DOE_MANUAL/">DOE Manual</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PROBLEM_REPORT/">Workflow Bench Gap Analysis</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Deployment</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../deployment/DIGITAL_OCEAN/">DigitalOcean</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" >Quality & Validation</a>
+    <ul class="current">
+                <li class="toctree-l2"><a class="reference internal" href="../ALGORITHM_AUDIT/">Algorithm Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SYNTHETIC_FALLBACK_AUDIT/">Synthetic Fallback Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../TEST_FRAMEWORK/">Test Framework</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../BACKEND_TESTING_GUIDE/">Backend Testing Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../TESTING_CHECKLIST/">Testing Checklist</a>
+                </li>
+                <li class="toctree-l2 current"><a class="reference internal current" href="#">Verification Procedure</a>
+    <ul class="current">
+    <li class="toctree-l3"><a class="reference internal" href="#prerequisites">Prerequisites</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#test-1-folder-picker-file-loading">Test 1: Folder Picker &amp; File Loading</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#steps">Steps:</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#expected-results">Expected Results:</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#verification">Verification:</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#test-2-auto-match-with-plate-map">Test 2: Auto-Match with Plate Map</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#steps_1">Steps:</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#expected-results_1">Expected Results:</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#verification-script">Verification Script:</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#test-3-dynamic-factor-columns-in-table">Test 3: Dynamic Factor Columns in Table</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#steps_2">Steps:</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#expected-results_2">Expected Results:</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#manual-verification">Manual Verification:</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#test-4-csv-export-with-factor-columns">Test 4: CSV Export with Factor Columns</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#steps_3">Steps:</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#expected-csv-structure">Expected CSV Structure:</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#automated-comparison">Automated Comparison:</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#expected-results_3">Expected Results:</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#test-5-run-sequence-auto-population">Test 5: Run Sequence Auto-Population</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#steps_4">Steps:</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#expected-results_4">Expected Results:</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#verification_1">Verification:</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#test-6-performance-query-efficiency">Test 6: Performance &amp; Query Efficiency</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#steps_5">Steps:</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#expected-results_5">Expected Results:</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#query-pattern-should-look-like">Query Pattern Should Look Like:</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#test-7-end-to-end-workflow">Test 7: End-to-End Workflow</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#complete-workflow-test">Complete Workflow Test:</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#success-criteria">Success Criteria:</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#troubleshooting">Troubleshooting</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#issue-folder-picker-not-showing">Issue: "Folder picker not showing"</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#issue-factor-columns-not-appearing-in-table">Issue: "Factor columns not appearing in table"</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#issue-csv-missing-factor-columns">Issue: "CSV missing factor columns"</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#issue-sequence-numbers-restart-per-batch">Issue: "Sequence numbers restart per batch"</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#automated-test-suite">Automated Test Suite</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#acceptance-criteria-summary">Acceptance Criteria Summary</a>
+    </li>
+    </ul>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Project1 (Standalone Tool)</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/">Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/QUICKSTART/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/INSTALLATION_GUIDE/">Installation Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/TROUBLESHOOTING/">Troubleshooting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/NOTICE/">Notice</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Past</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/RELEASE_NOTES/">Release Notes</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/IMPLEMENTATION_SUMMARY/">Implementation Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/FINAL_FIXES_SUMMARY/">Final Fixes Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/SESSION_SUMMARY_2026-01-21/">Session Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/NODE_STANDARDIZATION_2026-01-26/">Node Standardization (2026-01-26)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Fixes</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/3D_CONCATENATION_FIX/">3D Concatenation Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/QUICK_PLOT_Y_AXIS_LABELS_FIX/">Quick Plot Y-Axis Labels Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CASE_SENSITIVITY_AND_UI_FIXES/">Case Sensitivity and UI Fixes</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/DEDICATED_LOAD_GROUP_ENFORCEMENT/">Dedicated Load Group Enforcement</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/LOAD_GROUP_NODE_IMPLEMENTATION/">Load Group Node Implementation</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reviews & Testing</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CODE_REVIEW_FINDINGS/">Code Review Findings</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/WEEK7_TESTING/">Week 7 Testing</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Future</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ROADMAP/">Roadmap</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/DOE_ENHANCEMENTS/">DOE Enhancements</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ANALYSIS_CANVAS_WIREFRAME/">Analysis Canvas Wireframe</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/plugin_plan_011525/">Plugin Plan (2025-01-15)</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">SpectraSherpa Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Current</li>
+          <li class="breadcrumb-item">Quality & Validation</li>
+      <li class="breadcrumb-item active">Verification Procedure</li>
+    <li class="wy-breadcrumbs-aside">
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="doe-implementation-verification-procedure">DOE Implementation Verification Procedure</h1>
+<p>This document outlines how to verify that the refactored DOE implementation produces identical results to the original Exp_loader.</p>
+<h2 id="prerequisites">Prerequisites</h2>
+<ol>
+<li><strong>Test Data</strong>: Use <code>Spike_DOE_082925</code> folder with known ground truth</li>
+<li><strong>Original Exp_loader</strong>: Have the original implementation available for comparison</li>
+<li><strong>Reference CSV</strong>: Keep the original <code>EXP_20250909_6ZJBX_matched.csv</code> for comparison</li>
+</ol>
+<h2 id="test-1-folder-picker-file-loading">Test 1: Folder Picker &amp; File Loading</h2>
+<h3 id="steps">Steps:</h3>
+<ol>
+<li>
+<p>Start the refactored frontend:
+   <code>bash
+   cd Refactored/frontend
+   npm run dev</code></p>
+</li>
+<li>
+<p>Navigate to an experiment → DOE tab</p>
+</li>
+<li>
+<p>Click "Match Files" → Select "Folder-Based" tab</p>
+</li>
+<li>
+<p>Click "Select Folders" button</p>
+</li>
+<li>
+<p>Select the <code>Spike_DOE_082925</code> folder (contains 3 subfolders with 40 files each)</p>
+</li>
+</ol>
+<h3 id="expected-results">Expected Results:</h3>
+<ul>
+<li>✅ All 3 folders should appear with batch numbers 1, 2, 3</li>
+<li>✅ Each folder should show "40 files" tag</li>
+<li>✅ File preview should show first 5 filenames</li>
+<li>✅ No manual copy-paste required</li>
+</ul>
+<h3 id="verification">Verification:</h3>
+<pre><code class="language-bash"># The matchFolders array should contain:
+[
+  { folder_path: &quot;08-29-2025_@05-19-55&quot;, batch_number: 1, file_list: [&quot;Spectrum_0001.csv&quot;, ...] },
+  { folder_path: &quot;08-29-2025_@05-39-11&quot;, batch_number: 2, file_list: [&quot;Spectrum_0041.csv&quot;, ...] },
+  { folder_path: &quot;08-29-2025_@05-59-01&quot;, batch_number: 3, file_list: [&quot;Spectrum_0081.csv&quot;, ...] }
+]
+</code></pre>
+<hr />
+<h2 id="test-2-auto-match-with-plate-map">Test 2: Auto-Match with Plate Map</h2>
+<h3 id="steps_1">Steps:</h3>
+<ol>
+<li>Set up DOE factors (same as original):</li>
+<li><strong>Sample Factor "Cells"</strong>: 2 levels (Cell1, Cell2)</li>
+<li>
+<p><strong>Method Factor "Defocus"</strong>: 5 levels (-200, -100, 0, 100, 200)</p>
+</li>
+<li>
+<p>Create plate map (10 unique mixtures, A1-E2)</p>
+</li>
+<li>
+<p>Create run sequence:</p>
+</li>
+<li>Map batch 1 → Defocus: -200</li>
+<li>Map batch 2 → Defocus: -100</li>
+<li>
+<p>Map batch 3 → Defocus: 0</p>
+</li>
+<li>
+<p>Match files with these settings:</p>
+</li>
+<li>First Cell: <code>A1</code></li>
+<li>Scan Orientation: <code>serpentine_column</code></li>
+<li>✅ Use plate map for cells</li>
+<li>✅ Use run sequence for factors</li>
+</ol>
+<h3 id="expected-results_1">Expected Results:</h3>
+<ul>
+<li>✅ 120 matched acquisitions (40 files × 3 batches)</li>
+<li>✅ Sequence numbers: 1-120 (continuous, NOT restarting per batch)</li>
+<li>✅ Each acquisition has correct cell assignment (A1-H12 pattern)</li>
+<li>✅ Each acquisition has <code>factor_values</code> with "Cells" and "Defocus"</li>
+</ul>
+<h3 id="verification-script">Verification Script:</h3>
+<pre><code class="language-python"># Run this to verify matching
+cd Refactored
+python test_spike_doe.py
+</code></pre>
+<p>Expected output:</p>
+<pre><code>Creating experiment...
+Creating sample factor (Cells)...
+Creating method factor (Defocus)...
+Creating mixtures and plate map...
+Creating run sequence...
+Matching files...
+Matched 120 acquisitions
+
+Comparing first 10 rows with original...
+✓ All first 10 rows match!
+</code></pre>
+<hr />
+<h2 id="test-3-dynamic-factor-columns-in-table">Test 3: Dynamic Factor Columns in Table</h2>
+<h3 id="steps_2">Steps:</h3>
+<ol>
+<li>
+<p>After matching (from Test 2), scroll to "Matched Acquisitions" section</p>
+</li>
+<li>
+<p>Check the DataTable columns</p>
+</li>
+</ol>
+<h3 id="expected-results_2">Expected Results:</h3>
+<ul>
+<li>✅ Base columns: Seq, Filename, Folder, Batch, Cell, Sample ID</li>
+<li>✅ <strong>Dynamic factor columns</strong>: "Cells" and "Defocus [mm]" (or whatever you named them)</li>
+<li>✅ Factor values populated for each row</li>
+<li>✅ Table is scrollable with frozen Seq/Filename columns</li>
+</ul>
+<h3 id="manual-verification">Manual Verification:</h3>
+<p>Look at row 1:
+- Seq: 1
+- Filename: Spectrum_0001.csv
+- Folder: 08-29-2025_@05-19-55
+- Batch: 1
+- Cell: A1
+- Sample ID: mixture_1 (or actual mixture name)
+- <strong>Cells</strong>: Cell1 (from plate map)
+- <strong>Defocus [mm]</strong>: -200 (from run sequence)</p>
+<hr />
+<h2 id="test-4-csv-export-with-factor-columns">Test 4: CSV Export with Factor Columns</h2>
+<h3 id="steps_3">Steps:</h3>
+<ol>
+<li>
+<p>Click "Export CSV" button</p>
+</li>
+<li>
+<p>Save the file as <code>refactored_matched.csv</code></p>
+</li>
+<li>
+<p>Compare with original <code>EXP_20250909_6ZJBX_matched.csv</code></p>
+</li>
+</ol>
+<h3 id="expected-csv-structure">Expected CSV Structure:</h3>
+<pre><code class="language-csv">seq,filename,folder,timestamp,cell,sample_id,Cells,Defocus [mm],batch
+1,Spectrum_0001.csv,08-29-2025_@05-19-55,,A1,mixture_1,Cell1,-200,1
+2,Spectrum_0002.csv,08-29-2025_@05-19-55,,B1,mixture_2,Cell2,-200,1
+...
+</code></pre>
+<h3 id="automated-comparison">Automated Comparison:</h3>
+<pre><code class="language-python">import pandas as pd
+
+# Load both CSVs
+original = pd.read_csv(&quot;Original/EXP_20250909_6ZJBX_matched.csv&quot;)
+refactored = pd.read_csv(&quot;Refactored/refactored_matched.csv&quot;)
+
+# Compare key columns
+key_cols = [&quot;seq&quot;, &quot;filename&quot;, &quot;cell&quot;, &quot;sample_id&quot;]
+factor_cols = [&quot;Cells&quot;, &quot;Defocus [mm]&quot;]  # Adjust to your factor names
+
+print(&quot;Checking key columns...&quot;)
+for col in key_cols:
+    matches = (original[col] == refactored[col]).all()
+    print(f&quot;  {col}: {'✓ MATCH' if matches else '✗ MISMATCH'}&quot;)
+
+print(&quot;\nChecking factor columns...&quot;)
+for col in factor_cols:
+    if col in original.columns and col in refactored.columns:
+        matches = (original[col] == refactored[col]).all()
+        print(f&quot;  {col}: {'✓ MATCH' if matches else '✗ MISMATCH'}&quot;)
+    else:
+        print(f&quot;  {col}: ✗ MISSING&quot;)
+
+print(f&quot;\nRow count: Original={len(original)}, Refactored={len(refactored)}&quot;)
+</code></pre>
+<h3 id="expected-results_3">Expected Results:</h3>
+<ul>
+<li>✅ seq: MATCH</li>
+<li>✅ filename: MATCH</li>
+<li>✅ cell: MATCH</li>
+<li>✅ sample_id: MATCH</li>
+<li>✅ Factor columns (Cells, Defocus): MATCH</li>
+<li>✅ Row count: 120 (or 121 if original has duplicate)</li>
+</ul>
+<hr />
+<h2 id="test-5-run-sequence-auto-population">Test 5: Run Sequence Auto-Population</h2>
+<h3 id="steps_4">Steps:</h3>
+<ol>
+<li>
+<p>Create a new experiment</p>
+</li>
+<li>
+<p>Create a method factor (e.g., "Temperature")</p>
+</li>
+<li>
+<p>Go to Match Files → Folder-Based tab</p>
+</li>
+<li>
+<p>Select 3 folders using folder picker</p>
+</li>
+<li>
+<p><strong>Check if run sequence is auto-created</strong></p>
+</li>
+</ol>
+<h3 id="expected-results_4">Expected Results:</h3>
+<ul>
+<li>✅ Run sequence automatically created with 3 levels</li>
+<li>✅ Each level mapped to a folder/batch</li>
+<li>✅ Level values default to batch numbers (1, 2, 3)</li>
+<li>✅ Toast notification: "Run Sequence Auto-Created"</li>
+</ul>
+<h3 id="verification_1">Verification:</h3>
+<pre><code class="language-bash"># Check the API response
+curl http://localhost:8000/api/v1/experiments/{exp_id}/doe/run-sequence
+</code></pre>
+<p>Expected:</p>
+<pre><code class="language-json">[
+  {
+    &quot;factor_definition_id&quot;: 1,
+    &quot;path&quot;: &quot;folder1&quot;,
+    &quot;batch&quot;: 1,
+    &quot;level_value&quot;: &quot;1&quot;,
+    &quot;sequence_order&quot;: 0
+  },
+  ...
+]
+</code></pre>
+<hr />
+<h2 id="test-6-performance-query-efficiency">Test 6: Performance &amp; Query Efficiency</h2>
+<h3 id="steps_5">Steps:</h3>
+<ol>
+<li>
+<p>Start backend with query logging:
+   <code>bash
+   cd Refactored/backend
+   # Add to .env: DATABASE_ECHO=true
+   poetry run uvicorn app.main:app --reload</code></p>
+</li>
+<li>
+<p>Match 120 files using the folder picker</p>
+</li>
+<li>
+<p>Watch the SQL queries in the terminal</p>
+</li>
+</ol>
+<h3 id="expected-results_5">Expected Results:</h3>
+<ul>
+<li>✅ <strong>No N+1 queries</strong>: Should see batched <code>SELECT</code> with <code>JOIN</code> for mixtures</li>
+<li>✅ Plate wells loaded with eager loading: <code>selectinload(PlateWell.mixture)</code></li>
+<li>✅ Total queries &lt; 10 (not 100+)</li>
+</ul>
+<h3 id="query-pattern-should-look-like">Query Pattern Should Look Like:</h3>
+<pre><code class="language-sql">-- Single query with JOIN, NOT one query per well
+SELECT plate_well.*, mixture.*
+FROM plate_well
+LEFT OUTER JOIN mixture ON mixture.id = plate_well.mixture_id
+WHERE plate_well.experiment_id = ?
+</code></pre>
+<hr />
+<h2 id="test-7-end-to-end-workflow">Test 7: End-to-End Workflow</h2>
+<h3 id="complete-workflow-test">Complete Workflow Test:</h3>
+<ol>
+<li>✅ Create experiment</li>
+<li>✅ Define 2 sample factors (Cells, Method)</li>
+<li>✅ Define 1 method factor (Defocus)</li>
+<li>✅ Create 10 mixtures</li>
+<li>✅ Generate plate map (A1-E2)</li>
+<li>✅ Use folder picker to select 3 folders → Auto-creates run sequence</li>
+<li>✅ Match files with plate map + run sequence</li>
+<li>✅ View table with dynamic factor columns</li>
+<li>✅ Export CSV with all factor columns</li>
+<li>✅ Compare CSV with original Exp_loader output</li>
+</ol>
+<h3 id="success-criteria">Success Criteria:</h3>
+<ul>
+<li>✅ No manual file pasting required</li>
+<li>✅ Factor columns visible in table</li>
+<li>✅ Factor columns in CSV export</li>
+<li>✅ Run sequence tied to folder selection</li>
+<li>✅ Output matches original Exp_loader</li>
+</ul>
+<hr />
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="issue-folder-picker-not-showing">Issue: "Folder picker not showing"</h3>
+<p><strong>Solution</strong>: Rebuild frontend</p>
+<pre><code class="language-bash">cd Refactored/frontend
+npm run build
+# Or restart dev server
+npm run dev
+</code></pre>
+<h3 id="issue-factor-columns-not-appearing-in-table">Issue: "Factor columns not appearing in table"</h3>
+<p><strong>Check</strong>:
+1. Are <code>factor_values</code> populated in matched acquisitions?
+2. Is <code>factorColumnNames</code> computed property defined?
+3. Browser console for errors</p>
+<p><strong>Debug</strong>:</p>
+<pre><code class="language-javascript">// In browser console
+console.log(matchedAcquisitions.value[0]?.factor_values)
+// Should show: { &quot;Cells&quot;: &quot;Cell1&quot;, &quot;Defocus [mm]&quot;: -200 }
+</code></pre>
+<h3 id="issue-csv-missing-factor-columns">Issue: "CSV missing factor columns"</h3>
+<p><strong>Check</strong>: Backend route at <code>/api/v1/experiments/{id}/doe/export/csv</code></p>
+<pre><code class="language-python"># In doe.py:675-679, verify:
+all_factor_names = set()
+for acq in acquisitions:
+    if acq.factor_values:
+        all_factor_names.update(acq.factor_values.keys())
+</code></pre>
+<h3 id="issue-sequence-numbers-restart-per-batch">Issue: "Sequence numbers restart per batch"</h3>
+<p><strong>Fixed in</strong>: <code>doe.py:510</code> - uses global index not batch-local index</p>
+<hr />
+<h2 id="automated-test-suite">Automated Test Suite</h2>
+<p>Run the full automated test:</p>
+<pre><code class="language-bash"># Backend tests
+cd Refactored/backend
+poetry install
+poetry run pytest tests/
+
+# Frontend tests
+cd Refactored/frontend
+npm install
+npm test
+
+# Integration test
+cd Refactored
+python test_spike_doe.py
+</code></pre>
+<hr />
+<h2 id="acceptance-criteria-summary">Acceptance Criteria Summary</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Status</th>
+<th>Location</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Folder picker (no manual paste)</td>
+<td>✅ Implemented</td>
+<td>DoeTab.vue:543-599</td>
+</tr>
+<tr>
+<td>Factor columns in table</td>
+<td>✅ Implemented</td>
+<td>DoeTab.vue:206-210</td>
+</tr>
+<tr>
+<td>Factor columns in CSV</td>
+<td>✅ Implemented</td>
+<td>doe.py:675-706</td>
+</tr>
+<tr>
+<td>Run sequence auto-populate</td>
+<td>✅ Implemented</td>
+<td>DoeTab.vue:1080-1096</td>
+</tr>
+<tr>
+<td>N+1 query prevention</td>
+<td>✅ Implemented</td>
+<td>doe.py:473-477</td>
+</tr>
+<tr>
+<td>Eager loading</td>
+<td>✅ Implemented</td>
+<td>experiments.py:84-88</td>
+</tr>
+</tbody>
+</table>
+<p><strong>All must-fix items are implemented and ready for verification.</strong></p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../TESTING_CHECKLIST/" class="btn btn-neutral float-left" title="Testing Checklist"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../project1/" class="btn btn-neutral float-right" title="Overview">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+    
+      <span><a href="../TESTING_CHECKLIST/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../project1/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

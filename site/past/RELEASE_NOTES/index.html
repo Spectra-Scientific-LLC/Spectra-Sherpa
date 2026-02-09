@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Release Notes - SpectraSherpa Documentation</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Release Notes";
+        var mkdocs_page_input_path = "past/RELEASE_NOTES.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> SpectraSherpa Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Current</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../current/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Getting Started</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/installation/">Installation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/quickstart/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/modes/">Modes & Configuration</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >User Guide</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/experiments/">Experiments</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/library/">Library (NIST)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/doe/">DOE (96-Well)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/synthesis/">Synthesis Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/workflow/">Workflow Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" >Reproduction Study</a>
+    <ul>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
+                </li>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/reproduction_methodology/">Methodology</a>
+                </li>
+    </ul>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../USER_MANUAL/">User Manual</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >SpectrochemPy Examples</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/01_loading_data/">01. Loading Data</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/02_dataset_manipulation/">02. Manipulation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/03_plotting/">03. Plotting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/04_preprocessing_smoothing/">04. Smoothing</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/05_preprocessing_baseline/">05. Baseline</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/06_peak_finding/">06. Peak Finding</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/07_peak_fitting/">07. Integration</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/08_pca/">08. PCA</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/09_mcr_als/">09. MCR-ALS</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/10_pls_regression/">10. PLS</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reference</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../reference/nodes/">Node Library</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Architecture & System</a>
+    <ul>
+                <li class="toctree-l2"><a class="" href="../../current/README.md">Repository Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/SYSTEM_OVERVIEW/">System Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/ARCHITECTURE/">Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/INFORMATION_ARCHITECTURE/">Information Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/FUNCTIONAL_MAPPING/">Functional Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/DATA_SOURCES/">Data Sources</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/NODE_CAPABILITIES/">Node Capabilities</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/PARAMETER_MAPPING/">Parameter Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/DATABASE_SCHEMA/">Database Schema</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/AUTHENTICATION/">Authentication</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/PHASE1_SETUP_GUIDE/">Phase 1 Setup Guide</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Workflow & Analysis</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/QUICKSTART_ANALYSIS/">Quickstart Analysis</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/MULTI_PORT_GUIDE/">Multi-Port Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/FOLDER_AND_PATTERN_LOADING/">Folder & Pattern Loading</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/DOE_MANUAL/">DOE Manual</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/PROBLEM_REPORT/">Workflow Bench Gap Analysis</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Deployment</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../deployment/DIGITAL_OCEAN/">DigitalOcean</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Quality & Validation</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/ALGORITHM_AUDIT/">Algorithm Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/SYNTHETIC_FALLBACK_AUDIT/">Synthetic Fallback Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/TEST_FRAMEWORK/">Test Framework</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/BACKEND_TESTING_GUIDE/">Backend Testing Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/TESTING_CHECKLIST/">Testing Checklist</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/VERIFICATION_PROCEDURE/">Verification Procedure</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Project1 (Standalone Tool)</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/project1/">Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/project1/QUICKSTART/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/project1/INSTALLATION_GUIDE/">Installation Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/project1/TROUBLESHOOTING/">Troubleshooting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/project1/NOTICE/">Notice</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Past</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../">Summary</a>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" href="#">Release Notes</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#phase-1-workflow-management-excellence">🎯 Phase 1: Workflow Management Excellence</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#features-implemented">✅ Features Implemented</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#1-version-history">1. Version History</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#2-organization-system">2. Organization System</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#3-template-library">3. Template Library</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#4-advanced-search-filtering">4. Advanced Search &amp; Filtering</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#5-documentation">5. Documentation</a>
+    </li>
+        </ul>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#bugs-fixed-this-session">🐛 Bugs Fixed (This Session)</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#critical-fixes">Critical Fixes</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#high-priority-fixes">High Priority Fixes</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#medium-priority-fixes">Medium Priority Fixes</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#code-metrics">📊 Code Metrics</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#backend">Backend</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#database">Database</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#frontend">Frontend</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#technical-improvements">🔧 Technical Improvements</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#architecture">Architecture</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#code-quality">Code Quality</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#database-integrity">Database Integrity</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#api-endpoints-addedmodified">📝 API Endpoints Added/Modified</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#version-history">Version History</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#tags-folders">Tags &amp; Folders</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#templates">Templates</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#search-filter">Search &amp; Filter</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#documentation">Documentation</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#testing-status">🧪 Testing Status</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#static-analysis">Static Analysis</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#code-review">Code Review</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#runtime-testing">Runtime Testing</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#deployment-checklist">🚀 Deployment Checklist</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#prerequisites">Prerequisites</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#backend-setup">Backend Setup</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#frontend-setup">Frontend Setup</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#verification">Verification</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#known-limitations">⚠️ Known Limitations</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#not-yet-implemented">Not Yet Implemented</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#future-enhancements-phase-2">Future Enhancements (Phase 2+)</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#documentation_1">📚 Documentation</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#for-developers">For Developers</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#for-users">For Users</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#acknowledgments">🙏 Acknowledgments</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#support-issues">📞 Support &amp; Issues</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#reporting-bugs">Reporting Bugs</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#feature-requests">Feature Requests</a>
+    </li>
+        </ul>
+    </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../IMPLEMENTATION_SUMMARY/">Implementation Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../FINAL_FIXES_SUMMARY/">Final Fixes Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../SESSION_SUMMARY_2026-01-21/">Session Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../NODE_STANDARDIZATION_2026-01-26/">Node Standardization (2026-01-26)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Fixes</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../3D_CONCATENATION_FIX/">3D Concatenation Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../QUICK_PLOT_Y_AXIS_LABELS_FIX/">Quick Plot Y-Axis Labels Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../CASE_SENSITIVITY_AND_UI_FIXES/">Case Sensitivity and UI Fixes</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DEDICATED_LOAD_GROUP_ENFORCEMENT/">Dedicated Load Group Enforcement</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../LOAD_GROUP_NODE_IMPLEMENTATION/">Load Group Node Implementation</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reviews & Testing</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../CODE_REVIEW_FINDINGS/">Code Review Findings</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../WEEK7_TESTING/">Week 7 Testing</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Future</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ROADMAP/">Roadmap</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/DOE_ENHANCEMENTS/">DOE Enhancements</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ANALYSIS_CANVAS_WIREFRAME/">Analysis Canvas Wireframe</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/plugin_plan_011525/">Plugin Plan (2025-01-15)</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">SpectraSherpa Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Past</li>
+      <li class="breadcrumb-item active">Release Notes</li>
+    <li class="wy-breadcrumbs-aside">
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="phase-1-prototype-release-notes">Phase 1 Prototype Release Notes</h1>
+<p><strong>Version</strong>: 1.0.0-prototype
+<strong>Release Date</strong>: January 15, 2026
+<strong>Status</strong>: Ready for User Testing</p>
+<hr />
+<h2 id="phase-1-workflow-management-excellence">🎯 Phase 1: Workflow Management Excellence</h2>
+<h3 id="features-implemented">✅ Features Implemented</h3>
+<h4 id="1-version-history">1. Version History</h4>
+<ul>
+<li><strong>Automatic snapshots</strong> on every workflow save</li>
+<li><strong>Complete state capture</strong> (nodes, edges, canvas state)</li>
+<li><strong>Version browsing</strong> via API endpoints</li>
+<li><strong>Database table</strong>: <code>workflow_version</code></li>
+<li><strong>Migration</strong>: <code>a7f3e891bc4d_add_workflow_version_history_table.py</code></li>
+</ul>
+<h4 id="2-organization-system">2. Organization System</h4>
+<ul>
+<li><strong>Folders</strong> for hierarchical organization</li>
+<li><strong>Tags</strong> with color coding</li>
+<li><strong>Many-to-many</strong> tag-workflow relationships</li>
+<li><strong>Database tables</strong>: <code>workflow_folder</code>, <code>workflow_tag</code>, <code>workflow_tag_association</code></li>
+<li><strong>Migration</strong>: <code>b8f4d9a2cd5e_add_workflow_tags_and_folders.py</code></li>
+</ul>
+<h4 id="3-template-library">3. Template Library</h4>
+<ul>
+<li><strong>10 pre-built templates</strong>:</li>
+<li>PCA Basic (3 components)</li>
+<li>PCA Comprehensive (5 components)</li>
+<li>PLS Regression (3 components)</li>
+<li>Baseline + Smooth</li>
+<li>Full Preprocessing Pipeline</li>
+<li>MCR-ALS Analysis</li>
+<li>EFA Analysis</li>
+<li>Peak Finding</li>
+<li>Classification PLS-DA</li>
+<li>Outlier Detection</li>
+<li><strong>One-click workflow creation</strong> from templates</li>
+<li><strong>Database table</strong>: <code>workflow_template</code></li>
+<li><strong>Migration</strong>: <code>c9e5f0a3de6f_add_workflow_templates.py</code></li>
+</ul>
+<h4 id="4-advanced-search-filtering">4. Advanced Search &amp; Filtering</h4>
+<ul>
+<li><strong>Full-text search</strong> across workflow names and descriptions</li>
+<li><strong>Filter by folder</strong> (including "No Folder")</li>
+<li><strong>Filter by tags</strong> (multiple tag support)</li>
+<li><strong>Filter by status</strong> (draft/active/archived)</li>
+<li><strong>Pagination</strong> for large workflow lists</li>
+<li><strong>Sort options</strong> (date, name, status)</li>
+</ul>
+<h4 id="5-documentation">5. Documentation</h4>
+<ul>
+<li><strong>Markdown notes</strong> for workflows (rich text documentation)</li>
+<li><strong>Node annotations</strong> for inline comments</li>
+<li><strong>Export to Markdown</strong> (workflow documentation generation)</li>
+<li><strong>Database migration</strong>: <code>d0f6e1b4cf70_add_workflow_annotations.py</code></li>
+</ul>
+<hr />
+<h2 id="bugs-fixed-this-session">🐛 Bugs Fixed (This Session)</h2>
+<h3 id="critical-fixes">Critical Fixes</h3>
+<ol>
+<li><strong>FileLoadNode Path Bug</strong> - Fixed missing stage directory in file paths</li>
+<li><strong>Impact</strong>: File loading would fail for all experiment files</li>
+<li>
+<p><strong>File</strong>: <code>data.py:706</code></p>
+</li>
+<li>
+<p><strong>10 Missing Nodes</strong> - Added backend nodes to frontend NODE_TYPE_MAP</p>
+</li>
+<li><strong>Impact</strong>: Users couldn't access 10 functional nodes through UI</li>
+<li><strong>File</strong>: <code>workflow.ts:83-130</code></li>
+<li><strong>Added</strong>:<ul>
+<li>Preprocessing: PARETO_SCALING, OSC, AUTOSCALING, SG_DERIVATIVE, EMSC</li>
+<li>Diagnostics: OUTLIER_DETECTION, CROSS_VALIDATION</li>
+<li>Time Series: MOVING_WINDOW, TREND_REMOVAL</li>
+<li>Output: DATA_TABLE</li>
+</ul>
+</li>
+</ol>
+<h3 id="high-priority-fixes">High Priority Fixes</h3>
+<ol>
+<li><strong>Stage Parameter Validation</strong> - FileLoadNode now validates stage matches file record</li>
+<li><strong>Impact</strong>: Prevents loading wrong files when same file_id exists in multiple stages</li>
+<li>
+<p><strong>File</strong>: <code>data.py:692</code></p>
+</li>
+<li>
+<p><strong>Code Duplication</strong> - Extracted <code>_extract_dataset_from_result</code> to module-level utility</p>
+</li>
+<li><strong>Impact</strong>: Reduced 78 lines of duplicate code, improved maintainability</li>
+<li><strong>File</strong>: <code>data.py:39-85</code></li>
+</ol>
+<h3 id="medium-priority-fixes">Medium Priority Fixes</h3>
+<ol>
+<li><strong>NIST Path Consistency</strong> - Standardized NIST library path construction</li>
+<li><strong>Impact</strong>: NISTLibraryNode now matches DataSourceNode pattern</li>
+<li>
+<p><strong>File</strong>: <code>data.py:827</code></p>
+</li>
+<li>
+<p><strong>Dead Code Removed</strong> - Deleted <code>data_FIXED.py</code> backup file</p>
+</li>
+<li><strong>Impact</strong>: Cleaned up codebase, removed 30KB of clutter</li>
+</ol>
+<hr />
+<h2 id="code-metrics">📊 Code Metrics</h2>
+<h3 id="backend">Backend</h3>
+<ul>
+<li><strong>Total Nodes</strong>: 48 registered nodes</li>
+<li><strong>Node Files</strong>: 9 Python modules</li>
+<li><strong>Code Reduction</strong>: 78 lines removed (duplicate code)</li>
+<li><strong>File Size Reduction</strong>: ~8% in data.py (1023 → ~945 lines)</li>
+</ul>
+<h3 id="database">Database</h3>
+<ul>
+<li><strong>New Tables</strong>: 5 (for Phase 1 features)</li>
+<li><strong>Migrations</strong>: 4 Alembic revisions</li>
+<li><strong>Relationships</strong>: All with proper CASCADE delete</li>
+</ul>
+<h3 id="frontend">Frontend</h3>
+<ul>
+<li><strong>Dynamic Node Loading</strong>: Replaced 200+ lines of hardcoded nodes</li>
+<li><strong>API-Driven</strong>: Node library fetched from backend</li>
+<li><strong>New Mappings</strong>: 10 additional NODE_TYPE_MAP entries</li>
+</ul>
+<hr />
+<h2 id="technical-improvements">🔧 Technical Improvements</h2>
+<h3 id="architecture">Architecture</h3>
+<ol>
+<li><strong>Module-Level Utilities</strong>: Shared functions for common operations</li>
+<li><strong>Consistent Path Patterns</strong>: Standardized file path construction</li>
+<li><strong>Proper Stage Validation</strong>: Database queries filter by stage</li>
+<li><strong>Complete Model Exports</strong>: All Phase 1 models properly exported</li>
+</ol>
+<h3 id="code-quality">Code Quality</h3>
+<ul>
+<li>✅ <strong>Syntax Validation</strong>: All Python files compile cleanly</li>
+<li>✅ <strong>No Circular Dependencies</strong>: Import structure is clean</li>
+<li>✅ <strong>Type Consistency</strong>: Pydantic schemas properly ordered</li>
+<li>✅ <strong>Error Handling</strong>: Descriptive error messages added</li>
+</ul>
+<h3 id="database-integrity">Database Integrity</h3>
+<ul>
+<li>✅ <strong>Cascading Deletes</strong>: Workflow deletion removes all related records</li>
+<li>✅ <strong>Foreign Keys</strong>: Proper relationships defined</li>
+<li>✅ <strong>Indexes</strong>: Performance optimizations on search columns</li>
+<li>✅ <strong>Constraints</strong>: Unique constraints where appropriate</li>
+</ul>
+<hr />
+<h2 id="api-endpoints-addedmodified">📝 API Endpoints Added/Modified</h2>
+<h3 id="version-history">Version History</h3>
+<pre><code>GET    /api/v1/workflows/{id}/versions      # List all versions
+GET    /api/v1/workflows/{id}/versions/{v}  # Get specific version
+POST   /api/v1/workflows/{id}/restore/{v}   # Restore version
+</code></pre>
+<h3 id="tags-folders">Tags &amp; Folders</h3>
+<pre><code>GET    /api/v1/workflows/tags                # List tags
+POST   /api/v1/workflows/tags                # Create tag
+GET    /api/v1/workflows/folders             # List folders
+POST   /api/v1/workflows/folders             # Create folder
+PUT    /api/v1/workflows/{id}/tags           # Assign tags
+PATCH  /api/v1/workflows/{id}                # Move to folder
+</code></pre>
+<h3 id="templates">Templates</h3>
+<pre><code>GET    /api/v1/workflows/templates           # List templates
+POST   /api/v1/workflows/from-template/{id}  # Create from template
+</code></pre>
+<h3 id="search-filter">Search &amp; Filter</h3>
+<pre><code>GET    /api/v1/workflows/                    # Enhanced with filters
+  ?search=query
+  &amp;folder_id=1
+  &amp;tag_ids=1,2,3
+  &amp;status=active
+  &amp;skip=0
+  &amp;limit=50
+</code></pre>
+<h3 id="documentation">Documentation</h3>
+<pre><code>GET    /api/v1/workflows/{id}/export/markdown  # Export to MD
+PATCH  /api/v1/workflows/{id}                   # Update notes
+</code></pre>
+<hr />
+<h2 id="testing-status">🧪 Testing Status</h2>
+<h3 id="static-analysis">Static Analysis</h3>
+<ul>
+<li>✅ <strong>Python Syntax</strong>: All files valid</li>
+<li>✅ <strong>Import Structure</strong>: No circular dependencies</li>
+<li>✅ <strong>Type Annotations</strong>: Proper forward references</li>
+</ul>
+<h3 id="code-review">Code Review</h3>
+<ul>
+<li>✅ <strong>Path Construction</strong>: All patterns verified</li>
+<li>✅ <strong>Serialization</strong>: NumPy arrays converted to lists</li>
+<li>✅ <strong>Database Models</strong>: All relationships defined</li>
+<li>✅ <strong>Frontend Contracts</strong>: NODE_TYPE_MAP complete</li>
+</ul>
+<h3 id="runtime-testing">Runtime Testing</h3>
+<ul>
+<li>⏳ <strong>Backend Startup</strong>: Requires environment setup (see TESTING_CHECKLIST.md)</li>
+<li>⏳ <strong>Database Migrations</strong>: Requires alembic execution</li>
+<li>⏳ <strong>API Endpoints</strong>: Requires running server</li>
+<li>⏳ <strong>Frontend Integration</strong>: Requires npm build</li>
+</ul>
+<hr />
+<h2 id="deployment-checklist">🚀 Deployment Checklist</h2>
+<h3 id="prerequisites">Prerequisites</h3>
+<ul>
+<li>[ ] Python 3.10+ installed</li>
+<li>[ ] SQLAlchemy dependencies installed</li>
+<li>[ ] Node.js 18+ for frontend</li>
+<li>[ ] Database initialized</li>
+</ul>
+<h3 id="backend-setup">Backend Setup</h3>
+<pre><code class="language-bash">cd Refactored/backend
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+# Database is created automatically on first startup
+</code></pre>
+<h3 id="frontend-setup">Frontend Setup</h3>
+<pre><code class="language-bash">cd Refactored/frontend
+npm install
+npm run dev
+</code></pre>
+<h3 id="verification">Verification</h3>
+<pre><code class="language-bash"># Check backend health
+curl http://localhost:8000/health
+
+# Check node library
+curl http://localhost:8000/api/v1/workflows/nodes/library
+
+# Check templates
+curl http://localhost:8000/api/v1/workflows/templates
+</code></pre>
+<hr />
+<h2 id="known-limitations">⚠️ Known Limitations</h2>
+<h3 id="not-yet-implemented">Not Yet Implemented</h3>
+<ol>
+<li><strong>Authentication</strong> - User system placeholder only</li>
+<li><strong>File Upload</strong> - Experiment files must be manually placed</li>
+<li><strong>NIST Database</strong> - No library entries populated</li>
+<li><strong>Workflow Execution</strong> - Trial execution not tested end-to-end</li>
+<li><strong>Multi-Input Validation</strong> - Frontend may need adjustment for complex nodes</li>
+</ol>
+<h3 id="future-enhancements-phase-2">Future Enhancements (Phase 2+)</h3>
+<ul>
+<li>Real-time workflow execution monitoring</li>
+<li>Collaborative editing</li>
+<li>Advanced template creation UI</li>
+<li>Workflow sharing/export</li>
+<li>Performance optimization for large workflows</li>
+</ul>
+<hr />
+<h2 id="documentation_1">📚 Documentation</h2>
+<h3 id="for-developers">For Developers</h3>
+<ul>
+<li><strong><a href="TESTING_CHECKLIST.md">TESTING_CHECKLIST.md</a></strong> - Comprehensive testing guide</li>
+<li><strong><a href="claude.md">claude.md</a></strong> - Project guidance for AI assistants</li>
+<li><strong>Alembic Migrations</strong> - Database schema evolution history</li>
+</ul>
+<h3 id="for-users">For Users</h3>
+<ul>
+<li>API documentation available at http://localhost:8000/docs (FastAPI auto-generated)</li>
+<li>Frontend tooltips and help text for all features</li>
+</ul>
+<hr />
+<h2 id="acknowledgments">🙏 Acknowledgments</h2>
+<p><strong>Developed by</strong>: Claude Code (Anthropic)
+<strong>Guided by</strong>: Project requirements and user feedback
+<strong>Architecture</strong>: FastAPI + Vue 3 + SQLAlchemy
+<strong>Scientific Stack</strong>: SpectroChemPy + scikit-learn</p>
+<hr />
+<h2 id="support-issues">📞 Support &amp; Issues</h2>
+<h3 id="reporting-bugs">Reporting Bugs</h3>
+<ol>
+<li>Check <a href="TESTING_CHECKLIST.md">TESTING_CHECKLIST.md</a> for known issues</li>
+<li>Verify issue persists after backend restart</li>
+<li>Collect error logs from browser console and server</li>
+<li>Document steps to reproduce</li>
+</ol>
+<h3 id="feature-requests">Feature Requests</h3>
+<p>Phase 2 planning will incorporate user feedback from this prototype release.</p>
+<hr />
+<p><strong>Next Steps</strong>: Run through TESTING_CHECKLIST.md before production deployment</p>
+<p><strong>Happy Testing! 🎉</strong></p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../" class="btn btn-neutral float-left" title="Summary"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../IMPLEMENTATION_SUMMARY/" class="btn btn-neutral float-right" title="Implementation Summary">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+    
+      <span><a href="../" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../IMPLEMENTATION_SUMMARY/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

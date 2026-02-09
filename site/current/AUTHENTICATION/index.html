@@ -1,0 +1,1178 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Authentication - SpectraSherpa Documentation</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Authentication";
+        var mkdocs_page_input_path = "current/AUTHENTICATION.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> SpectraSherpa Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Current</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Getting Started</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/installation/">Installation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/quickstart/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/modes/">Modes & Configuration</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >User Guide</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/experiments/">Experiments</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/library/">Library (NIST)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/doe/">DOE (96-Well)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/synthesis/">Synthesis Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/workflow/">Workflow Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" >Reproduction Study</a>
+    <ul>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
+                </li>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/reproduction_methodology/">Methodology</a>
+                </li>
+    </ul>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../USER_MANUAL/">User Manual</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >SpectrochemPy Examples</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/01_loading_data/">01. Loading Data</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/02_dataset_manipulation/">02. Manipulation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/03_plotting/">03. Plotting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/04_preprocessing_smoothing/">04. Smoothing</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/05_preprocessing_baseline/">05. Baseline</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/06_peak_finding/">06. Peak Finding</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/07_peak_fitting/">07. Integration</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/08_pca/">08. PCA</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/09_mcr_als/">09. MCR-ALS</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/10_pls_regression/">10. PLS</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reference</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../reference/nodes/">Node Library</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" >Architecture & System</a>
+    <ul class="current">
+                <li class="toctree-l2"><a class="" href="../README.md">Repository Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SYSTEM_OVERVIEW/">System Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../ARCHITECTURE/">Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../INFORMATION_ARCHITECTURE/">Information Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../FUNCTIONAL_MAPPING/">Functional Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DATA_SOURCES/">Data Sources</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../NODE_CAPABILITIES/">Node Capabilities</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PARAMETER_MAPPING/">Parameter Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DATABASE_SCHEMA/">Database Schema</a>
+                </li>
+                <li class="toctree-l2 current"><a class="reference internal current" href="#">Authentication</a>
+    <ul class="current">
+    <li class="toctree-l3"><a class="reference internal" href="#overview">🎯 Overview</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#deployment-mode-comparison">Deployment Mode Comparison</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#api-key-types">🔑 API Key Types</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#1-application-authentication-key">1. Application Authentication Key</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#2-external-service-api-keys-user-provided-encrypted">2. External Service API Keys (User-Provided, Encrypted)</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#hybrid-mode-api-key-linked-identity">🔗 Hybrid Mode: API-Key Linked Identity</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#how-it-works">How It Works</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#key-design-decisions">Key Design Decisions</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#implementation-files">Implementation Files</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#spectrasherpauser-server-userresponse-mapping">SpectraSherpaUser ↔ Server UserResponse Mapping</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#environment-variables">Environment Variables</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#feature-gating-by-tier">🎭 Feature Gating by Tier</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#feature-comparison-table">Feature Comparison Table</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#llm-advanced-agents-explained">💡 LLM Advanced Agents Explained</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#business-model">💰 Business Model</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#free-local-tier">Free Local Tier</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#byok-local-tier-bring-your-own-key">BYOK Local Tier (Bring Your Own Key)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#paid-cloud-tier-phase-2">Paid Cloud Tier (Phase 2)</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#security-considerations">🔐 Security Considerations</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#phase-1-current-local-deployment">Phase 1 (Current) - Local Deployment</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#phase-2-future-cloud-deployment">Phase 2 (Future) - Cloud Deployment</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#migration-path-phase-1-phase-2">🚀 Migration Path (Phase 1 → Phase 2)</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#user-data-migration">User Data Migration</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#authentication-migration">Authentication Migration</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#implementation-checklist">📋 Implementation Checklist</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#phase-1-complete-local-deployment">Phase 1 (Complete) - Local Deployment ✅</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#phase-15-complete-hybrid-mode-identity">Phase 1.5 (Complete) - Hybrid Mode Identity ✅</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#phase-2-cloud-deployment-spectrasherpa-server-partial">Phase 2 - Cloud Deployment (spectrasherpa-server) ✅ Partial</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#references">📚 References</a>
+    </li>
+    </ul>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PHASE1_SETUP_GUIDE/">Phase 1 Setup Guide</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Workflow & Analysis</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../QUICKSTART_ANALYSIS/">Quickstart Analysis</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../MULTI_PORT_GUIDE/">Multi-Port Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../FOLDER_AND_PATTERN_LOADING/">Folder & Pattern Loading</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DOE_MANUAL/">DOE Manual</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PROBLEM_REPORT/">Workflow Bench Gap Analysis</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Deployment</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../deployment/DIGITAL_OCEAN/">DigitalOcean</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Quality & Validation</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../ALGORITHM_AUDIT/">Algorithm Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SYNTHETIC_FALLBACK_AUDIT/">Synthetic Fallback Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../TEST_FRAMEWORK/">Test Framework</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../BACKEND_TESTING_GUIDE/">Backend Testing Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../TESTING_CHECKLIST/">Testing Checklist</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../VERIFICATION_PROCEDURE/">Verification Procedure</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Project1 (Standalone Tool)</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/">Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/QUICKSTART/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/INSTALLATION_GUIDE/">Installation Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/TROUBLESHOOTING/">Troubleshooting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/NOTICE/">Notice</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Past</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/RELEASE_NOTES/">Release Notes</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/IMPLEMENTATION_SUMMARY/">Implementation Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/FINAL_FIXES_SUMMARY/">Final Fixes Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/SESSION_SUMMARY_2026-01-21/">Session Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/NODE_STANDARDIZATION_2026-01-26/">Node Standardization (2026-01-26)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Fixes</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/3D_CONCATENATION_FIX/">3D Concatenation Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/QUICK_PLOT_Y_AXIS_LABELS_FIX/">Quick Plot Y-Axis Labels Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CASE_SENSITIVITY_AND_UI_FIXES/">Case Sensitivity and UI Fixes</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/DEDICATED_LOAD_GROUP_ENFORCEMENT/">Dedicated Load Group Enforcement</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/LOAD_GROUP_NODE_IMPLEMENTATION/">Load Group Node Implementation</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reviews & Testing</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CODE_REVIEW_FINDINGS/">Code Review Findings</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/WEEK7_TESTING/">Week 7 Testing</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Future</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ROADMAP/">Roadmap</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/DOE_ENHANCEMENTS/">DOE Enhancements</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ANALYSIS_CANVAS_WIREFRAME/">Analysis Canvas Wireframe</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/plugin_plan_011525/">Plugin Plan (2025-01-15)</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">SpectraSherpa Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Current</li>
+          <li class="breadcrumb-item">Architecture & System</li>
+      <li class="breadcrumb-item active">Authentication</li>
+    <li class="wy-breadcrumbs-aside">
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="authentication-api-key-architecture">Authentication &amp; API Key Architecture</h1>
+<p><strong>Version:</strong> 2.0
+<strong>Date:</strong> 2026-02-07
+<strong>Status:</strong> Hybrid Mode Identity Implemented</p>
+<hr />
+<h2 id="overview">🎯 <strong>Overview</strong></h2>
+<p>The platform uses a <strong>three-mode deployment model</strong> designed for flexible adoption and monetization:</p>
+<ol>
+<li><strong>Local Mode</strong> (<code>APP_MODE=local</code>) — Single-user, no auth, SQLite. Students, researchers, trial users.</li>
+<li><strong>Hybrid Mode</strong> (<code>APP_MODE=hybrid</code>) — Local app + cloud identity via <code>SPECTRASHERPA_API_KEY</code>. Power users who want managed LLM keys, admin features, and server-linked identity without a login page.</li>
+<li><strong>Demo/Cloud Mode</strong> (<code>APP_MODE=demo</code>) — Multi-user JWT auth, rate-limited. Enterprise subscribers with managed infrastructure.</li>
+</ol>
+<p>This architecture allows users to start free locally, upgrade to hybrid when ready for managed LLM keys and cloud identity, then migrate to full cloud for team collaboration and advanced agents.</p>
+<h3 id="deployment-mode-comparison">Deployment Mode Comparison</h3>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Local</th>
+<th>Hybrid</th>
+<th>Demo/Cloud</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Auth method</strong></td>
+<td>None (implicit user)</td>
+<td>API-key linked identity</td>
+<td>JWT (email + password)</td>
+</tr>
+<tr>
+<td><strong>User resolution</strong></td>
+<td>First DB user</td>
+<td>First DB user, enriched from server</td>
+<td>JWT → user lookup</td>
+</tr>
+<tr>
+<td><strong>Login page</strong></td>
+<td>Skipped</td>
+<td>Skipped</td>
+<td>Required</td>
+</tr>
+<tr>
+<td><strong>Admin features</strong></td>
+<td>Hidden</td>
+<td>Visible (if server user is admin)</td>
+<td>Visible (if user is admin)</td>
+</tr>
+<tr>
+<td><strong>LLM keys</strong></td>
+<td>BYOK only</td>
+<td>Managed (from server) + BYOK</td>
+<td>Managed (from server)</td>
+</tr>
+<tr>
+<td><strong>Data egress</strong></td>
+<td>Unrestricted</td>
+<td>Configurable (egress defaults)</td>
+<td>Configurable</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="api-key-types">🔑 <strong>API Key Types</strong></h2>
+<h3 id="1-application-authentication-key"><strong>1. Application Authentication Key</strong></h3>
+<p><strong>Current Implementation (Phase 1):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Type</strong></td>
+<td>Simple shared API key</td>
+</tr>
+<tr>
+<td><strong>Default</strong></td>
+<td><code>"default-local-key"</code></td>
+</tr>
+<tr>
+<td><strong>Storage</strong></td>
+<td>Backend: <code>.env</code> file as <code>APP_API_KEY</code><br>Frontend: <code>localStorage</code></td>
+</tr>
+<tr>
+<td><strong>Transmission</strong></td>
+<td>Auto-injected in <code>X-API-Key</code> HTTP header</td>
+</tr>
+<tr>
+<td><strong>Validation</strong></td>
+<td>Backend middleware checks header matches env var</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Purpose:</strong>
+Prevent accidental unauthorized access on local machine. This is NOT secure authentication - just a basic barrier.</p>
+<p><strong>Security Level:</strong> ⚠️ <strong>Low</strong> (intentionally simple for Phase 1)</p>
+<p><strong>Files:</strong>
+- Backend: <a href="app/core/config.py">app/core/config.py</a> - Settings
+- Backend: <a href="app/api/v1/dependencies.py">app/api/v1/dependencies.py</a> - Validation
+- Frontend: <a href="frontend/src/stores/index.ts">src/stores/index.ts</a> - Storage
+- Frontend: <a href="frontend/src/api/client.ts">src/api/client.ts</a> - Injection</p>
+<hr />
+<p><strong>Phase 2 Migration (Paid Cloud):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Type</strong></td>
+<td>JWT-based per-user authentication</td>
+</tr>
+<tr>
+<td><strong>Storage</strong></td>
+<td>Database with bcrypt password hashing</td>
+</tr>
+<tr>
+<td><strong>Transmission</strong></td>
+<td><code>Authorization: Bearer &lt;token&gt;</code> header</td>
+</tr>
+<tr>
+<td><strong>Validation</strong></td>
+<td>JWT signature verification + expiration</td>
+</tr>
+<tr>
+<td><strong>Features</strong></td>
+<td>Role-based permissions, refresh tokens, OAuth integration</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Security Level:</strong> 🔒 <strong>High</strong> (industry standard)</p>
+<p><strong>Migration Path:</strong>
+1. Add User model with password field
+2. Implement login/register endpoints
+3. Generate JWT on successful login
+4. Replace API key middleware with JWT verification
+5. Add role-based access control (admin, user, viewer)</p>
+<hr />
+<h3 id="2-external-service-api-keys-user-provided-encrypted"><strong>2. External Service API Keys</strong> (User-Provided, Encrypted)</h3>
+<p><strong>Purpose:</strong>
+Securely store third-party service credentials for:
+- LLM providers (OpenAI, Anthropic, DeepSeek, local models)
+- Future premium databases (SciFinder, Wiley)</p>
+<p><strong>Storage Architecture:</strong></p>
+<pre><code>┌─────────────────────────────────────────┐
+│ User Input (Settings Page)              │
+│ &quot;sk-abc123...&quot;                          │
+└──────────────┬──────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────┐
+│ Backend: AES-256 Encryption              │
+│ encrypt(plaintext, master_key)           │
+└──────────────┬──────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────┐
+│ Database: api_keys table                 │
+│ id | service  | encrypted_value | user_id│
+│ 1  | openai   | Xu8#nF... | 1            │
+└──────────────┬──────────────────────────┘
+               │
+               ▼ (when needed)
+┌─────────────────────────────────────────┐
+│ decrypt(encrypted_value, master_key)     │
+│ Use for API calls                        │
+└─────────────────────────────────────────┘
+</code></pre>
+<p><strong>Master Key Storage:</strong></p>
+<p>Priority order:
+1. <strong>System Keyring</strong> (Best) - OS-managed secure storage
+   - macOS: Keychain
+   - Windows: Credential Manager
+   - Linux: Secret Service (libsecret)
+2. <strong>Environment Variable</strong> (Fallback) - <code>.env</code> file with 600 permissions
+   - Auto-generated on first run if keyring unavailable
+   - <code>MASTER_ENCRYPTION_KEY=&lt;random-256-bit-hex&gt;</code></p>
+<p><strong>Security Level:</strong> 🔒 <strong>High</strong> (AES-256 with secure key management)</p>
+<p><strong>Implementation Files:</strong>
+- Backend: <a href="app/models/api_key.py">app/models/api_key.py</a> - Database model
+- Backend: <a href="app/services/encryption.py">app/services/encryption.py</a> - AES encryption
+- Frontend: Settings view - UI for CRUD operations</p>
+<p><strong>Supported Services:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Service</th>
+<th>Purpose</th>
+<th>Config in UI</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OpenAI</td>
+<td>GPT-3.5/4 chat &amp; embeddings</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Anthropic</td>
+<td>Claude models</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>DeepSeek</td>
+<td>Cost-effective LLM</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Local (Ollama)</td>
+<td>Self-hosted models</td>
+<td>✅ (endpoint URL)</td>
+</tr>
+<tr>
+<td>SciFinder</td>
+<td>Premium spectral DB</td>
+<td>🔜 Phase 2</td>
+</tr>
+<tr>
+<td>Wiley</td>
+<td>Premium spectral DB</td>
+<td>🔜 Phase 2</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="hybrid-mode-api-key-linked-identity">🔗 <strong>Hybrid Mode: API-Key Linked Identity</strong></h2>
+<p>In hybrid mode, the <code>SPECTRASHERPA_API_KEY</code> environment variable serves as <strong>both</strong> the authentication credential and the identity source. No login page is needed — the API key IS the credential.</p>
+<h3 id="how-it-works">How It Works</h3>
+<pre><code>Startup (hybrid mode):
+  1. ensure_default_user()           → creates &quot;local&quot; user in DB (if no users exist)
+  2. ensure_egress_defaults()        → creates default egress permissions
+  3. link_hybrid_identity() [NEW]    → calls server GET /auth/me with API key
+     Server returns:                   {id: 42, username: &quot;alice&quot;, is_admin: true, llm_quota: 100}
+  4. Update local DB user:             username=&quot;alice&quot;, is_superuser=true
+  5. First HTTP request arrives      → _resolve_user() reads enriched user from DB
+
+Frontend (hybrid mode):
+  1. Router guard: skip login (no password needed — API key is the credential)
+  2. initHybridUser(): call GET /api/v1/auth/me → backend returns enriched local user
+  3. authStore.user populated        → admin button shows, username displays
+</code></pre>
+<h3 id="key-design-decisions">Key Design Decisions</h3>
+<ul>
+<li><strong>API key = identity</strong>: The <code>SPECTRASHERPA_API_KEY</code> maps to a <code>ClientKey</code> on the server, which maps to a <code>User</code>. On startup, <code>link_hybrid_identity()</code> calls server <code>GET /auth/me</code> and enriches the local DB user with the server identity.</li>
+<li><strong>No duplicate users</strong>: <code>_get_or_create_local_user()</code> looks up users by <code>order_by(User.id).limit(1)</code> (not <code>username == "local"</code>), so username changes from identity linking don't create duplicates on restart.</li>
+<li><strong>Offline degradation</strong>: If the server is unreachable, the last-synced identity persists in the local DB. First-ever offline startup uses the generic "local" user with <code>is_superuser=false</code>.</li>
+<li><strong>Admin route protection</strong>: <code>_ensure_mutable_standard_user(user, current_user)</code> checks <code>user.id == current_user.id</code> (self-modification guard), not username sentinel.</li>
+</ul>
+<h3 id="implementation-files">Implementation Files</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>app/services/spectrasherpa.py</code></td>
+<td><code>SpectraSherpaUser</code> dataclass, <code>validate_api_key()</code></td>
+</tr>
+<tr>
+<td><code>app/core/startup.py</code></td>
+<td><code>link_hybrid_identity()</code> function</td>
+</tr>
+<tr>
+<td><code>app/main.py</code></td>
+<td>Startup sequence wiring</td>
+</tr>
+<tr>
+<td><code>app/api/deps.py</code></td>
+<td><code>_get_or_create_local_user()</code> (ID-order lookup)</td>
+</tr>
+<tr>
+<td><code>app/api/v1/routes/admin.py</code></td>
+<td><code>_ensure_mutable_standard_user()</code> (self-ID check)</td>
+</tr>
+<tr>
+<td><code>frontend/src/stores/auth.ts</code></td>
+<td><code>initHybridUser()</code>, <code>isAuthenticated</code> computed</td>
+</tr>
+<tr>
+<td><code>frontend/src/router/index.ts</code></td>
+<td>Separate local/hybrid navigation guards</td>
+</tr>
+</tbody>
+</table>
+<h3 id="spectrasherpauser-server-userresponse-mapping">SpectraSherpaUser ↔ Server UserResponse Mapping</h3>
+<p>The local <code>SpectraSherpaUser</code> dataclass must match the server's <code>UserResponse</code> schema:</p>
+<table>
+<thead>
+<tr>
+<th>SpectraSherpaUser (local)</th>
+<th>UserResponse (server)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id: int</code></td>
+<td><code>id: int</code></td>
+</tr>
+<tr>
+<td><code>email: str</code></td>
+<td><code>email: str</code></td>
+</tr>
+<tr>
+<td><code>username: str</code></td>
+<td><code>username: str</code></td>
+</tr>
+<tr>
+<td><code>is_admin: bool</code></td>
+<td><code>is_admin: bool</code></td>
+</tr>
+<tr>
+<td><code>is_active: bool</code></td>
+<td><code>is_active: bool</code></td>
+</tr>
+<tr>
+<td><code>llm_quota: int</code></td>
+<td><code>llm_quota: int</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="environment-variables">Environment Variables</h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Required</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>APP_MODE</code></td>
+<td>Yes</td>
+<td><code>local</code></td>
+<td>Deployment mode: <code>local</code>, <code>hybrid</code>, <code>demo</code></td>
+</tr>
+<tr>
+<td><code>SPECTRASHERPA_API_KEY</code></td>
+<td>Hybrid only</td>
+<td>—</td>
+<td>API key from spectrasherpa-server account</td>
+</tr>
+<tr>
+<td><code>SPECTRASHERPA_SERVER_URL</code></td>
+<td>Hybrid only</td>
+<td>—</td>
+<td>URL of the spectrasherpa-server instance</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="feature-gating-by-tier">🎭 <strong>Feature Gating by Tier</strong></h2>
+<h3 id="feature-comparison-table"><strong>Feature Comparison Table</strong></h3>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Free Local</th>
+<th>BYOK Local</th>
+<th>Paid Cloud</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Core Scientific Features</strong></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Experiment Management</td>
+<td>✅ Full</td>
+<td>✅ Full</td>
+<td>✅ Full</td>
+</tr>
+<tr>
+<td>Spectra Preprocessing</td>
+<td>✅ Full</td>
+<td>✅ Full</td>
+<td>✅ Full</td>
+</tr>
+<tr>
+<td>Spectra Blending (Beer's Law)</td>
+<td>✅ Full</td>
+<td>✅ Full</td>
+<td>✅ Full</td>
+</tr>
+<tr>
+<td>Calibration Fitting</td>
+<td>✅ Full</td>
+<td>✅ Full</td>
+<td>✅ Full</td>
+</tr>
+<tr>
+<td>Version Control</td>
+<td>✅ Full</td>
+<td>✅ Full</td>
+<td>✅ Full</td>
+</tr>
+<tr>
+<td>Data Export (CSV/JSON/ZIP)</td>
+<td>✅ Full</td>
+<td>✅ Full</td>
+<td>✅ Full</td>
+</tr>
+<tr>
+<td><strong>Free Data Sources</strong></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>NIST Spectra (16k compounds)</td>
+<td>✅ Full</td>
+<td>✅ Full</td>
+<td>✅ Full</td>
+</tr>
+<tr>
+<td>HITRAN Database (bundled)</td>
+<td>✅ Full</td>
+<td>✅ Full</td>
+<td>✅ Full</td>
+</tr>
+<tr>
+<td>EPA Spectral Library</td>
+<td>✅ Full</td>
+<td>✅ Full</td>
+<td>✅ Full</td>
+</tr>
+<tr>
+<td><strong>Basic LLM Features</strong> (User's API key)</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>LLM Chat</td>
+<td>❌</td>
+<td>✅ User pays</td>
+<td>✅ Included</td>
+</tr>
+<tr>
+<td>Auto-Suggest Names</td>
+<td>❌</td>
+<td>✅ User pays</td>
+<td>✅ Included</td>
+</tr>
+<tr>
+<td>Peak Identification</td>
+<td>❌</td>
+<td>✅ User pays</td>
+<td>✅ Included</td>
+</tr>
+<tr>
+<td>Code Generation</td>
+<td>❌</td>
+<td>✅ User pays</td>
+<td>✅ Included</td>
+</tr>
+<tr>
+<td>Report Writing</td>
+<td>❌</td>
+<td>✅ User pays</td>
+<td>✅ Included</td>
+</tr>
+<tr>
+<td><strong>Advanced LLM Agents</strong> (Extensible Skills)</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>MCR-ALS Assistant</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅ Exclusive</td>
+</tr>
+<tr>
+<td>Experimental Design Agent</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅ Exclusive</td>
+</tr>
+<tr>
+<td>Anomaly Detection Agent</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅ Exclusive</td>
+</tr>
+<tr>
+<td>Literature Search Agent</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅ Exclusive</td>
+</tr>
+<tr>
+<td>Regulatory Compliance Agent</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅ Exclusive</td>
+</tr>
+<tr>
+<td>Custom Domain Agents</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅ Exclusive</td>
+</tr>
+<tr>
+<td><strong>Cloud Features</strong></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Cloud Storage &amp; Sync</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅ Included</td>
+</tr>
+<tr>
+<td>Team Collaboration</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅ Included</td>
+</tr>
+<tr>
+<td>Shared Workspaces</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅ Included</td>
+</tr>
+<tr>
+<td>Access Control (RBAC)</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅ Included</td>
+</tr>
+<tr>
+<td>Audit Logs</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅ Included</td>
+</tr>
+<tr>
+<td><strong>Premium Data</strong></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Wiley Spectral DB</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅ Included</td>
+</tr>
+<tr>
+<td>SciFinder Integration</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅ Included</td>
+</tr>
+<tr>
+<td><strong>Support</strong></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Community Support</td>
+<td>✅ Forum</td>
+<td>✅ Forum</td>
+<td>✅ Priority Email</td>
+</tr>
+<tr>
+<td>Updates</td>
+<td>✅ Manual</td>
+<td>✅ Manual</td>
+<td>✅ Auto-updates</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="llm-advanced-agents-explained">💡 <strong>LLM Advanced Agents Explained</strong></h2>
+<p><strong>What are Advanced Agents?</strong></p>
+<p>Advanced Agents are specialized AI assistants with:
+- <strong>Domain expertise</strong> - Trained on specific scientific workflows
+- <strong>Tool access</strong> - Can execute code, query databases, generate reports
+- <strong>Multi-step reasoning</strong> - Plan and execute complex tasks autonomously
+- <strong>Context awareness</strong> - Remember conversation history and experiment state</p>
+<p><strong>Example Agent: MCR-ALS Assistant</strong></p>
+<pre><code>User: &quot;Analyze this blend for 3 components using MCR-ALS&quot;
+
+Agent:
+1. Validates input data dimensions
+2. Suggests initial estimates (PCA or known spectra)
+3. Configures MCR-ALS parameters (constraints, max iterations)
+4. Runs optimization
+5. Evaluates fit quality (R², residuals)
+6. Generates publication-ready plots
+7. Writes interpretation summary
+</code></pre>
+<p><strong>Why Paid Cloud Only?</strong></p>
+<p>Advanced Agents require:
+- <strong>High compute costs</strong> - Long-running model inference
+- <strong>Specialized infrastructure</strong> - Agent orchestration, tool sandboxing
+- <strong>Ongoing maintenance</strong> - New skills, model updates, bug fixes
+- <strong>Data security</strong> - Enterprise-grade guardrails</p>
+<p>This justifies subscription pricing while keeping core features free.</p>
+<hr />
+<h2 id="business-model">💰 <strong>Business Model</strong></h2>
+<h3 id="free-local-tier"><strong>Free Local Tier</strong></h3>
+<p><strong>Target Users:</strong> Students, academics, small labs, hobbyists</p>
+<p><strong>Value Proposition:</strong>
+- Full scientific functionality
+- No limitations on data processing
+- Access to free public databases (NIST, HITRAN, EPA)
+- Local data ownership (never leaves your machine)</p>
+<p><strong>Limitations:</strong>
+- No LLM features (manual workflow only)
+- No cloud sync
+- Manual software updates</p>
+<p><strong>Monetization:</strong> None (community growth, brand awareness)</p>
+<p><strong>Expected User Journey:</strong></p>
+<pre><code>Download → Use for thesis/project → Graduate →
+Recommend to employer → BYOK for work → Cloud for team
+</code></pre>
+<hr />
+<h3 id="byok-local-tier-bring-your-own-key"><strong>BYOK Local Tier</strong> (Bring Your Own Key)</h3>
+<p><strong>Target Users:</strong> Power users, researchers with grant funding, consultants</p>
+<p><strong>Value Proposition:</strong>
+- Unlock all basic LLM features
+- Still runs locally (data privacy)
+- Pay only for what you use (LLM API costs)
+- No vendor lock-in (swap providers anytime)</p>
+<p><strong>Cost Structure:</strong>
+- <strong>Software:</strong> Free (same as Free Tier)
+- <strong>LLM API:</strong> $10-$100/month (user pays OpenAI/Anthropic directly)
+  - GPT-3.5-turbo: ~$0.002/1k tokens (~$15/month light use)
+  - Claude Sonnet: ~$0.003/1k tokens (~$25/month moderate use)
+  - GPT-4: ~$0.06/1k tokens (~$100/month heavy use)</p>
+<p><strong>Limitations:</strong>
+- No Advanced Agents
+- No cloud features
+- No premium databases</p>
+<p><strong>Monetization:</strong> None directly (builds loyalty for cloud upgrade)</p>
+<p><strong>Expected User Journey:</strong></p>
+<pre><code>Start Free → Need AI → Add OpenAI key → Use for 6-12 months →
+Team grows → Need collaboration → Upgrade to Paid Cloud
+</code></pre>
+<hr />
+<h3 id="paid-cloud-tier-phase-2"><strong>Paid Cloud Tier</strong> (Phase 2)</h3>
+<p><strong>Target Users:</strong> Enterprise labs, pharma R&amp;D, contract testing labs</p>
+<p><strong>Value Proposition:</strong>
+- <strong>Managed LLM</strong> - No need to manage API keys, billing, or rate limits
+- <strong>Advanced Agents</strong> - Specialized assistants for complex workflows
+- <strong>Team collaboration</strong> - Shared experiments, comments, annotations
+- <strong>Premium data</strong> - Wiley, SciFinder, proprietary databases
+- <strong>Enterprise support</strong> - Priority email, onboarding, training
+- <strong>Compliance</strong> - Audit logs, data retention, SOC 2 (future)</p>
+<p><strong>Pricing (TBD):</strong>
+- <strong>Starter:</strong> $49/user/month - 5 users max, 100 GB storage
+- <strong>Professional:</strong> $99/user/month - Unlimited users, 1 TB storage, all agents
+- <strong>Enterprise:</strong> Custom pricing - SSO, dedicated support, SLA</p>
+<p><strong>Includes:</strong>
+- LLM API usage (up to generous quota, then throttled)
+- All Advanced Agents
+- Cloud storage
+- Automatic updates
+- Priority support</p>
+<p><strong>Monetization:</strong> Direct subscription revenue</p>
+<hr />
+<h2 id="security-considerations">🔐 <strong>Security Considerations</strong></h2>
+<h3 id="phase-1-current-local-deployment"><strong>Phase 1 (Current) - Local Deployment</strong></h3>
+<p><strong>Threat Model:</strong>
+- <strong>In Scope:</strong> Protect external API keys from local malware
+- <strong>Out of Scope:</strong> Multi-user attacks (single user only)
+- <strong>Attack Surface:</strong> Local file system, process memory</p>
+<p><strong>Mitigations:</strong>
+1. ✅ API keys encrypted at rest (AES-256)
+2. ✅ Master key in OS keyring (secure storage)
+3. ✅ File permissions (600 on .env)
+4. ❌ Not protected: Memory dumps, debugger access (acceptable for local use)</p>
+<p><strong>Compliance:</strong> Not applicable (single-user local deployment)</p>
+<hr />
+<h3 id="phase-2-future-cloud-deployment"><strong>Phase 2 (Future) - Cloud Deployment</strong></h3>
+<p><strong>Threat Model:</strong>
+- <strong>In Scope:</strong> Multi-tenant data isolation, credential theft, API abuse
+- <strong>Attack Surface:</strong> Public internet, database, cloud storage</p>
+<p><strong>Required Mitigations:</strong>
+1. 🔜 JWT with HTTPS only
+2. 🔜 bcrypt password hashing (cost factor 12)
+3. 🔜 Rate limiting (per user + per IP)
+4. 🔜 CSRF tokens
+5. 🔜 SQL injection protection (parameterized queries)
+6. 🔜 XSS protection (CSP headers)
+7. 🔜 Database encryption at rest
+8. 🔜 Audit logging (GDPR compliance)</p>
+<p><strong>Compliance Targets:</strong>
+- GDPR (EU users)
+- SOC 2 Type II (enterprise customers)
+- HIPAA (if handling patient samples - future)</p>
+<hr />
+<h2 id="migration-path-phase-1-phase-2">🚀 <strong>Migration Path (Phase 1 → Phase 2)</strong></h2>
+<h3 id="user-data-migration"><strong>User Data Migration</strong></h3>
+<p><strong>Local to Cloud:</strong>
+1. User creates cloud account (email + password)
+2. Installs cloud sync client
+3. Selects local experiments to upload
+4. Client encrypts + uploads to S3/Azure Blob
+5. Local app continues working (dual mode)</p>
+<p><strong>Data Preservation:</strong>
+- Local database remains intact
+- Cloud becomes source of truth for shared experiments
+- Conflicts resolved manually (show diff, choose version)</p>
+<hr />
+<h3 id="authentication-migration"><strong>Authentication Migration</strong></h3>
+<p><strong>Backward Compatibility:</strong>
+1. Cloud API supports both methods:
+   - <code>X-API-Key: &lt;old-key&gt;</code> → Read-only access (view experiments)
+   - <code>Authorization: Bearer &lt;jwt&gt;</code> → Full access
+2. Force upgrade after 6 months (disable API key auth)</p>
+<p><strong>Admin Tools:</strong></p>
+<pre><code class="language-bash"># Generate migration report
+python manage.py audit_api_keys
+
+# Invalidate old API keys (after migration deadline)
+python manage.py revoke_api_keys --before=2027-01-01
+</code></pre>
+<hr />
+<h2 id="implementation-checklist">📋 <strong>Implementation Checklist</strong></h2>
+<h3 id="phase-1-complete-local-deployment"><strong>Phase 1 (Complete) - Local Deployment</strong> ✅</h3>
+<ul>
+<li>[x] Simple API key authentication (shared key)</li>
+<li>[x] External API key storage (AES-256 encrypted)</li>
+<li>[x] System keyring integration</li>
+<li>[x] Settings UI for key management</li>
+<li>[x] Feature gating (LLM disabled without key)</li>
+<li>[x] User documentation (this file)</li>
+</ul>
+<h3 id="phase-15-complete-hybrid-mode-identity"><strong>Phase 1.5 (Complete) - Hybrid Mode Identity</strong> ✅</h3>
+<ul>
+<li>[x] <code>link_hybrid_identity()</code> startup function</li>
+<li>[x] <code>SpectraSherpaUser</code> dataclass aligned with server <code>UserResponse</code></li>
+<li>[x] <code>_get_or_create_local_user()</code> ID-order lookup (survives username changes)</li>
+<li>[x] Admin route protection via self-ID check (not username sentinel)</li>
+<li>[x] Frontend <code>initHybridUser()</code> + router guard split</li>
+<li>[x] <code>isAuthenticated</code> computed supports token-free hybrid auth</li>
+<li>[x] Offline degradation (last-synced identity persists)</li>
+</ul>
+<h3 id="phase-2-cloud-deployment-spectrasherpa-server-partial"><strong>Phase 2 - Cloud Deployment (spectrasherpa-server)</strong> ✅ Partial</h3>
+<ul>
+<li>[x] User registration endpoint (<code>POST /auth/register</code>)</li>
+<li>[x] Login endpoint with JWT issuance (<code>POST /auth/login</code>)</li>
+<li>[x] JWT verification middleware</li>
+<li>[x] Admin dashboard for user management (basic)</li>
+<li>[x] API key client authentication (<code>X-API-Key</code> header)</li>
+<li>[ ] Refresh token rotation (<code>POST /auth/refresh</code>)</li>
+<li>[ ] Password reset flow (email verification)</li>
+<li>[ ] Role-based access control (RBAC, beyond admin/user)</li>
+<li>[ ] OAuth providers (Google, GitHub, ORCID)</li>
+<li>[ ] Audit log table (track all user actions)</li>
+<li>[ ] Data migration tool (local → cloud)</li>
+</ul>
+<hr />
+<h2 id="references">📚 <strong>References</strong></h2>
+<ul>
+<li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html">OWASP Authentication Cheat Sheet</a></li>
+<li><a href="https://datatracker.ietf.org/doc/html/rfc8725">JWT Best Practices</a></li>
+<li><a href="https://pages.nist.gov/800-63-3/">NIST Digital Identity Guidelines</a></li>
+<li><a href="https://www.pcisecuritystandards.org/">PCI DSS Key Management</a></li>
+</ul>
+<hr />
+<p><strong>Document Maintenance:</strong>
+- Review quarterly
+- Update when adding new LLM providers
+- Update when changing hybrid identity flow
+- Last updated: 2026-02-07 (added hybrid mode identity linking)</p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../DATABASE_SCHEMA/" class="btn btn-neutral float-left" title="Database Schema"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../PHASE1_SETUP_GUIDE/" class="btn btn-neutral float-right" title="Phase 1 Setup Guide">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+    
+      <span><a href="../DATABASE_SCHEMA/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../PHASE1_SETUP_GUIDE/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

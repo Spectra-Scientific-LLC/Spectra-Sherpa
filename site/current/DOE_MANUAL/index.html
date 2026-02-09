@@ -1,0 +1,1384 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>DOE Manual - SpectraSherpa Documentation</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "DOE Manual";
+        var mkdocs_page_input_path = "current/DOE_MANUAL.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> SpectraSherpa Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Current</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Getting Started</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/installation/">Installation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/quickstart/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/modes/">Modes & Configuration</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >User Guide</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/experiments/">Experiments</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/library/">Library (NIST)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/doe/">DOE (96-Well)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/synthesis/">Synthesis Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/workflow/">Workflow Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" >Reproduction Study</a>
+    <ul>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
+                </li>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/reproduction_methodology/">Methodology</a>
+                </li>
+    </ul>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../USER_MANUAL/">User Manual</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >SpectrochemPy Examples</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/01_loading_data/">01. Loading Data</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/02_dataset_manipulation/">02. Manipulation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/03_plotting/">03. Plotting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/04_preprocessing_smoothing/">04. Smoothing</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/05_preprocessing_baseline/">05. Baseline</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/06_peak_finding/">06. Peak Finding</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/07_peak_fitting/">07. Integration</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/08_pca/">08. PCA</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/09_mcr_als/">09. MCR-ALS</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/10_pls_regression/">10. PLS</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reference</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../reference/nodes/">Node Library</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Architecture & System</a>
+    <ul>
+                <li class="toctree-l2"><a class="" href="../README.md">Repository Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SYSTEM_OVERVIEW/">System Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../ARCHITECTURE/">Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../INFORMATION_ARCHITECTURE/">Information Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../FUNCTIONAL_MAPPING/">Functional Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DATA_SOURCES/">Data Sources</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../NODE_CAPABILITIES/">Node Capabilities</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PARAMETER_MAPPING/">Parameter Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DATABASE_SCHEMA/">Database Schema</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../AUTHENTICATION/">Authentication</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PHASE1_SETUP_GUIDE/">Phase 1 Setup Guide</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" >Workflow & Analysis</a>
+    <ul class="current">
+                <li class="toctree-l2"><a class="reference internal" href="../QUICKSTART_ANALYSIS/">Quickstart Analysis</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../MULTI_PORT_GUIDE/">Multi-Port Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../FOLDER_AND_PATTERN_LOADING/">Folder & Pattern Loading</a>
+                </li>
+                <li class="toctree-l2 current"><a class="reference internal current" href="#">DOE Manual</a>
+    <ul class="current">
+    <li class="toctree-l3"><a class="reference internal" href="#overview">Overview</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#table-of-contents">Table of Contents</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#1-sample-database-management">1. Sample Database Management</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#original-implementation">Original Implementation</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#refactored-implementation">Refactored Implementation</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#verification-steps">Verification Steps</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#2-mixture-creation">2. Mixture Creation</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#original-implementation_1">Original Implementation</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#refactored-implementation_1">Refactored Implementation</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#verification-steps_1">Verification Steps</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#3-96-well-plate-mapping">3. 96-Well Plate Mapping</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#original-implementation_2">Original Implementation</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#refactored-implementation_2">Refactored Implementation</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#verification-steps_2">Verification Steps</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#4-experimental-factors">4. Experimental Factors</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#original-implementation_3">Original Implementation</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#refactored-implementation_3">Refactored Implementation</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#verification-steps_3">Verification Steps</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#5-run-sequence-management">5. Run Sequence Management</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#original-implementation_4">Original Implementation</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#refactored-implementation_4">Refactored Implementation</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#verification-steps_4">Verification Steps</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#6-acquisition-file-matching">6. Acquisition File Matching</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#original-implementation_5">Original Implementation</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#refactored-implementation_5">Refactored Implementation</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#verification-steps_5">Verification Steps</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#7-doe-design-export">7. DOE Design Export</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#original-implementation_6">Original Implementation</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#refactored-implementation_6">Refactored Implementation</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#verification-steps_6">Verification Steps</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#8-doe-summary-statistics">8. DOE Summary Statistics</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#refactored-enhancement-not-in-original">Refactored Enhancement (Not in Original)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#verification-steps_7">Verification Steps</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#complete-end-to-end-workflow-test">Complete End-to-End Workflow Test</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#scenario-multi-factor-solvent-study">Scenario: Multi-Factor Solvent Study</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#comparison-matrix-original-vs-refactored">Comparison Matrix: Original vs Refactored</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#testing-checklist">Testing Checklist</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#troubleshooting">Troubleshooting</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#issue-no-experiment-selected">Issue: "No experiment selected"</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#issue-import-failed">Issue: "Import failed"</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#issue-cant-create-mixture">Issue: "Can't create mixture"</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#issue-cant-add-run-level">Issue: "Can't add run level"</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#issue-export-disabled">Issue: "Export disabled"</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#api-reference-summary">API Reference Summary</a>
+    </li>
+    </ul>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PROBLEM_REPORT/">Workflow Bench Gap Analysis</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Deployment</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../deployment/DIGITAL_OCEAN/">DigitalOcean</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Quality & Validation</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../ALGORITHM_AUDIT/">Algorithm Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SYNTHETIC_FALLBACK_AUDIT/">Synthetic Fallback Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../TEST_FRAMEWORK/">Test Framework</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../BACKEND_TESTING_GUIDE/">Backend Testing Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../TESTING_CHECKLIST/">Testing Checklist</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../VERIFICATION_PROCEDURE/">Verification Procedure</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Project1 (Standalone Tool)</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/">Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/QUICKSTART/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/INSTALLATION_GUIDE/">Installation Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/TROUBLESHOOTING/">Troubleshooting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/NOTICE/">Notice</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Past</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/RELEASE_NOTES/">Release Notes</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/IMPLEMENTATION_SUMMARY/">Implementation Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/FINAL_FIXES_SUMMARY/">Final Fixes Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/SESSION_SUMMARY_2026-01-21/">Session Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/NODE_STANDARDIZATION_2026-01-26/">Node Standardization (2026-01-26)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Fixes</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/3D_CONCATENATION_FIX/">3D Concatenation Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/QUICK_PLOT_Y_AXIS_LABELS_FIX/">Quick Plot Y-Axis Labels Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CASE_SENSITIVITY_AND_UI_FIXES/">Case Sensitivity and UI Fixes</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/DEDICATED_LOAD_GROUP_ENFORCEMENT/">Dedicated Load Group Enforcement</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/LOAD_GROUP_NODE_IMPLEMENTATION/">Load Group Node Implementation</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reviews & Testing</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CODE_REVIEW_FINDINGS/">Code Review Findings</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/WEEK7_TESTING/">Week 7 Testing</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Future</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ROADMAP/">Roadmap</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/DOE_ENHANCEMENTS/">DOE Enhancements</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ANALYSIS_CANVAS_WIREFRAME/">Analysis Canvas Wireframe</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/plugin_plan_011525/">Plugin Plan (2025-01-15)</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">SpectraSherpa Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Current</li>
+          <li class="breadcrumb-item">Workflow & Analysis</li>
+      <li class="breadcrumb-item active">DOE Manual</li>
+    <li class="wy-breadcrumbs-aside">
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="design-of-experiments-doe-comprehensive-manual">Design of Experiments (DOE) - Comprehensive Manual</h1>
+<h2 id="overview">Overview</h2>
+<p>This manual documents the DOE capabilities implemented in the Refactored codebase, with examples paralleling the Original/Exp_loader functionality. Each section includes verification steps to test the implementation.</p>
+<hr />
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol>
+<li><a href="#1-sample-database-management">Sample Database Management</a></li>
+<li><a href="#2-mixture-creation">Mixture Creation</a></li>
+<li><a href="#3-96-well-plate-mapping">96-Well Plate Mapping</a></li>
+<li><a href="#4-experimental-factors">Experimental Factors</a></li>
+<li><a href="#5-run-sequence-management">Run Sequence Management</a></li>
+<li><a href="#6-acquisition-file-matching">Acquisition File Matching</a></li>
+<li><a href="#7-doe-design-export">DOE Design Export</a></li>
+</ol>
+<hr />
+<h2 id="1-sample-database-management">1. Sample Database Management</h2>
+<h3 id="original-implementation">Original Implementation</h3>
+<p><strong>File</strong>: <code>Original/Exp_loader/app/routes.py</code> (lines 84-226)</p>
+<p><strong>Original Capability</strong>:</p>
+<pre><code class="language-python"># Load samples.csv with columns: sample_id, name, type, brand, cas, active
+# Filter samples by type, brand, active status
+# Faceted search with autocomplete
+</code></pre>
+<p><strong>Sample Data Format</strong> (Original):</p>
+<pre><code class="language-csv">sample_id,name,type,brand,cas,active
+S001,Methanol,Solvent,Sigma-Aldrich,67-56-1,true
+S002,Ethanol,Solvent,Fisher,64-17-5,true
+S003,Acetone,Solvent,Sigma-Aldrich,67-64-1,true
+S004,Benzene,Standard,Acros,71-43-2,true
+S005,Toluene,Standard,Sigma-Aldrich,108-88-3,false
+</code></pre>
+<h3 id="refactored-implementation">Refactored Implementation</h3>
+<p><strong>Backend Endpoint</strong>: <code>POST /api/v1/experiments/{experiment_id}/doe/samples/import</code></p>
+<p><strong>Frontend</strong>: Experiments → DOE Tab → Sample Database → "Import CSV"</p>
+<h3 id="verification-steps">Verification Steps</h3>
+<h4 id="test-11-import-sample-database">Test 1.1: Import Sample Database</h4>
+<p><strong>Step 1</strong>: Create test CSV data</p>
+<pre><code class="language-csv">sample_id,name,type,brand,cas_number,active
+S001,Methanol,Solvent,Sigma-Aldrich,67-56-1,true
+S002,Ethanol,Solvent,Fisher,64-17-5,true
+S003,Acetone,Solvent,Sigma-Aldrich,67-64-1,true
+S004,Benzene,Standard,Acros,71-43-2,true
+S005,Toluene,Standard,Sigma-Aldrich,108-88-3,false
+S006,Water,Solvent,Fisher,7732-18-5,true
+S007,Hexane,Solvent,Acros,110-54-3,true
+S008,Naphthalene,Standard,Sigma-Aldrich,91-20-3,true
+</code></pre>
+<p><strong>Step 2</strong>: Via GUI
+1. Navigate to <strong>Experiments</strong> tab
+2. Select or create an experiment
+3. Go to <strong>DOE</strong> tab
+4. Click <strong>"Import CSV"</strong> button
+5. Paste the CSV data above
+6. Click <strong>"Import"</strong></p>
+<p><strong>Expected Result</strong>:
+- ✅ Success toast: "Imported 8 samples"
+- ✅ DataTable shows 8 rows
+- ✅ Columns: Sample ID, Name, Type, Brand, CAS Number, Active
+- ✅ Active samples show green "Active" tag
+- ✅ Inactive (Toluene) shows red "Inactive" tag</p>
+<p><strong>Step 3</strong>: Via API (curl verification)</p>
+<pre><code class="language-bash">curl -X POST &quot;http://localhost:8000/api/v1/experiments/1/doe/samples/import&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;csv_data&quot;: &quot;sample_id,name,type,brand,cas_number,active\nS001,Methanol,Solvent,Sigma,67-56-1,true&quot;
+  }'
+</code></pre>
+<p><strong>Expected API Response</strong>:</p>
+<pre><code class="language-json">[
+  {
+    &quot;id&quot;: 1,
+    &quot;experiment_id&quot;: 1,
+    &quot;sample_id&quot;: &quot;S001&quot;,
+    &quot;name&quot;: &quot;Methanol&quot;,
+    &quot;type&quot;: &quot;Solvent&quot;,
+    &quot;brand&quot;: &quot;Sigma&quot;,
+    &quot;cas_number&quot;: &quot;67-56-1&quot;,
+    &quot;active&quot;: true,
+    &quot;notes&quot;: null,
+    &quot;created_at&quot;: &quot;2026-01-04T...&quot;
+  }
+]
+</code></pre>
+<h4 id="test-12-list-samples">Test 1.2: List Samples</h4>
+<p><strong>Via API</strong>:</p>
+<pre><code class="language-bash">curl &quot;http://localhost:8000/api/v1/experiments/1/doe/samples&quot;
+</code></pre>
+<p><strong>Expected</strong>: JSON array of all imported samples</p>
+<p><strong>Comparison with Original</strong>:
+- Original: <code>GET /api/samples?type=Solvent</code> filters by type
+- Refactored: <code>GET /experiments/1/doe/samples</code> returns all samples (filtering on frontend)</p>
+<hr />
+<h2 id="2-mixture-creation">2. Mixture Creation</h2>
+<h3 id="original-implementation_1">Original Implementation</h3>
+<p><strong>File</strong>: <code>Original/Exp_loader/app/models.py</code> (lines 18-24)</p>
+<p><strong>Original Data Model</strong>:</p>
+<pre><code class="language-python">class RackMixture(BaseModel):
+    mixture_id: str
+    name: Optional[str] = None
+    basis: Literal[&quot;volume&quot;, &quot;mass&quot;] = &quot;volume&quot;
+    components: List[MixtureComponent]
+    notes: Optional[str] = None
+
+class MixtureComponent(BaseModel):
+    sample_id: str
+    amount: float
+    unit: str  # volume: mL/uL/µL; mass: g/mg/ug/µg
+</code></pre>
+<h3 id="refactored-implementation_1">Refactored Implementation</h3>
+<p><strong>Backend Endpoint</strong>: <code>POST /api/v1/experiments/{experiment_id}/doe/mixtures</code></p>
+<p><strong>Frontend</strong>: Experiments → DOE Tab → Mixtures → "Create Mixture"</p>
+<h3 id="verification-steps_1">Verification Steps</h3>
+<h4 id="test-21-create-volume-based-mixture">Test 2.1: Create Volume-Based Mixture</h4>
+<p><strong>Step 1</strong>: Via GUI
+1. Go to <strong>DOE</strong> tab → <strong>Mixtures</strong> section
+2. Click <strong>"Create Mixture"</strong> button
+3. Fill in form:
+   - <strong>Mixture ID</strong>: <code>MIX001</code>
+   - <strong>Name</strong>: <code>Methanol-Ethanol 50:50</code>
+   - <strong>Basis</strong>: <code>Volume</code>
+4. Click <strong>"Add Component"</strong> twice
+5. Component 1: Select <code>Methanol</code>, Amount: <code>5.0</code>, Unit: <code>mL</code>
+6. Component 2: Select <code>Ethanol</code>, Amount: <code>5.0</code>, Unit: <code>mL</code>
+7. Click <strong>"Create"</strong></p>
+<p><strong>Expected Result</strong>:
+- ✅ Success toast: "Mixture created successfully"
+- ✅ Mixture appears in DataTable
+- ✅ Shows "2 component(s)"
+- ✅ Basis tag shows "volume"</p>
+<p><strong>Step 2</strong>: Via API</p>
+<pre><code class="language-bash">curl -X POST &quot;http://localhost:8000/api/v1/experiments/1/doe/mixtures&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;mixture_id&quot;: &quot;MIX002&quot;,
+    &quot;name&quot;: &quot;Acetone-Water 70:30&quot;,
+    &quot;basis&quot;: &quot;volume&quot;,
+    &quot;components&quot;: [
+      {&quot;sample_id&quot;: 3, &quot;amount&quot;: 7.0, &quot;unit&quot;: &quot;mL&quot;},
+      {&quot;sample_id&quot;: 6, &quot;amount&quot;: 3.0, &quot;unit&quot;: &quot;mL&quot;}
+    ]
+  }'
+</code></pre>
+<p><strong>Expected Response</strong>:</p>
+<pre><code class="language-json">{
+  &quot;id&quot;: 2,
+  &quot;experiment_id&quot;: 1,
+  &quot;mixture_id&quot;: &quot;MIX002&quot;,
+  &quot;name&quot;: &quot;Acetone-Water 70:30&quot;,
+  &quot;basis&quot;: &quot;volume&quot;,
+  &quot;components&quot;: [
+    {&quot;id&quot;: 1, &quot;mixture_id&quot;: 2, &quot;sample_id&quot;: 3, &quot;amount&quot;: 7.0, &quot;unit&quot;: &quot;mL&quot;},
+    {&quot;id&quot;: 2, &quot;mixture_id&quot;: 2, &quot;sample_id&quot;: 6, &quot;amount&quot;: 3.0, &quot;unit&quot;: &quot;mL&quot;}
+  ],
+  &quot;created_at&quot;: &quot;...&quot;
+}
+</code></pre>
+<h4 id="test-22-create-mass-based-mixture">Test 2.2: Create Mass-Based Mixture</h4>
+<p><strong>Via GUI</strong>:
+1. Create mixture with <strong>Basis</strong>: <code>Mass</code>
+2. Components with units: <code>g</code>, <code>mg</code></p>
+<p><strong>Expected</strong>: Mass-basis mixtures work identically</p>
+<p><strong>Comparison with Original</strong>:
+- Original: Mixtures stored in XML under <code>&lt;rack&gt;</code> element
+- Refactored: Mixtures stored in SQL database, linked to experiment</p>
+<hr />
+<h2 id="3-96-well-plate-mapping">3. 96-Well Plate Mapping</h2>
+<h3 id="original-implementation_2">Original Implementation</h3>
+<p><strong>File</strong>: <code>Original/Exp_loader/app/models.py</code> (lines 58-69)</p>
+<p><strong>Original Data Model</strong>:</p>
+<pre><code class="language-python">class PlacementInfo(BaseModel):
+    protocol: Optional[str] = None
+    plate_map: Dict[str, str] = Field(default_factory=dict)  # well -&gt; mixture_id
+    # ... includes BLANK
+</code></pre>
+<p><strong>Original UI</strong>: JavaScript-based 96-well grid with drag-drop</p>
+<h3 id="refactored-implementation_2">Refactored Implementation</h3>
+<p><strong>Backend Endpoint</strong>: <code>POST /api/v1/experiments/{experiment_id}/doe/plate-map</code></p>
+<p><strong>Frontend</strong>: Experiments → DOE Tab → 96-Well Plate Map</p>
+<h3 id="verification-steps_2">Verification Steps</h3>
+<h4 id="test-31-assign-mixtures-to-wells">Test 3.1: Assign Mixtures to Wells</h4>
+<p><strong>Step 1</strong>: Create test mixtures (if not done)
+- Create at least 3 mixtures (MIX001, MIX002, MIX003)</p>
+<p><strong>Step 2</strong>: Via GUI
+1. Go to <strong>DOE</strong> tab → <strong>96-Well Plate Map</strong> section
+2. Select mixture from dropdown: <code>MIX001</code>
+3. Click wells: <code>A1</code>, <code>A2</code>, <code>A3</code>
+4. Select mixture: <code>MIX002</code>
+5. Click wells: <code>B1</code>, <code>B2</code>, <code>B3</code>
+6. Select mixture: <code>MIX003</code>
+7. Click wells: <code>C1</code>, <code>C2</code>, <code>C3</code></p>
+<p><strong>Expected Result</strong>:
+- ✅ Wells show blue background when assigned
+- ✅ Well labels show mixture ID (e.g., "Mix 1")
+- ✅ Toast confirmation: "Mixture assigned to A1"
+- ✅ Stats update: "Assigned Wells: 9 / 96"
+- ✅ Legend shows assigned vs empty</p>
+<p><strong>Step 3</strong>: Verify plate map layout
+- Rows: A-H (8 rows)
+- Columns: 1-12 (12 columns)
+- Total: 96 wells
+- Wells clickable with hover effect</p>
+<p><strong>Step 4</strong>: Via API</p>
+<pre><code class="language-bash">curl -X POST &quot;http://localhost:8000/api/v1/experiments/1/doe/plate-map&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;wells&quot;: [
+      {&quot;well_position&quot;: &quot;A1&quot;, &quot;mixture_id&quot;: 1},
+      {&quot;well_position&quot;: &quot;A2&quot;, &quot;mixture_id&quot;: 1},
+      {&quot;well_position&quot;: &quot;B1&quot;, &quot;mixture_id&quot;: 2},
+      {&quot;well_position&quot;: &quot;B2&quot;, &quot;mixture_id&quot;: 2}
+    ]
+  }'
+</code></pre>
+<p><strong>Expected Response</strong>: Array of plate wells with assignments</p>
+<h4 id="test-32-clear-plate-map">Test 3.2: Clear Plate Map</h4>
+<p><strong>Via GUI</strong>:
+1. Click <strong>"Clear Plate"</strong> button
+2. Confirm in dialog (if prompted)</p>
+<p><strong>Expected</strong>:
+- ✅ All wells return to white/empty state
+- ✅ Stats show: "Assigned Wells: 0 / 96"</p>
+<p><strong>Comparison with Original</strong>:
+- Original: Stores <code>plate_map: {"A1": "mix_01", "BLANK": "B12"}</code>
+- Refactored: Stores in <code>plate_well</code> table with mixture foreign keys</p>
+<hr />
+<h2 id="4-experimental-factors">4. Experimental Factors</h2>
+<h3 id="original-implementation_3">Original Implementation</h3>
+<p><strong>File</strong>: <code>Original/Exp_loader/app/models.py</code> (lines 43-49)</p>
+<p><strong>Original Data Model</strong>:</p>
+<pre><code class="language-python">class FactorDef(BaseModel):
+    name: str
+    scope: Literal[&quot;sample&quot;, &quot;method&quot;]
+    type: Literal[&quot;categorical&quot;, &quot;numeric&quot;]
+    unit: Optional[str] = None
+    levels: Optional[List[str]] = None
+</code></pre>
+<p><strong>Original Example</strong>:</p>
+<pre><code class="language-json">{
+  &quot;sample_defs&quot;: [
+    {&quot;name&quot;: &quot;Temperature&quot;, &quot;scope&quot;: &quot;sample&quot;, &quot;type&quot;: &quot;numeric&quot;, &quot;unit&quot;: &quot;°C&quot;, &quot;levels&quot;: [&quot;25&quot;, &quot;50&quot;, &quot;75&quot;]},
+    {&quot;name&quot;: &quot;Concentration&quot;, &quot;scope&quot;: &quot;sample&quot;, &quot;type&quot;: &quot;numeric&quot;, &quot;unit&quot;: &quot;ppm&quot;, &quot;levels&quot;: [&quot;100&quot;, &quot;500&quot;, &quot;1000&quot;]}
+  ],
+  &quot;method_defs&quot;: [
+    {&quot;name&quot;: &quot;Scan_Type&quot;, &quot;scope&quot;: &quot;method&quot;, &quot;type&quot;: &quot;categorical&quot;, &quot;levels&quot;: [&quot;transmission&quot;, &quot;ATR&quot;]},
+    {&quot;name&quot;: &quot;Resolution&quot;, &quot;scope&quot;: &quot;method&quot;, &quot;type&quot;: &quot;categorical&quot;, &quot;levels&quot;: [&quot;standard&quot;, &quot;high&quot;]}
+  ]
+}
+</code></pre>
+<h3 id="refactored-implementation_3">Refactored Implementation</h3>
+<p><strong>Backend Endpoint</strong>: <code>POST /api/v1/experiments/{experiment_id}/doe/factors</code></p>
+<p><strong>Frontend</strong>: Experiments → DOE Tab → Experimental Factors → "Add Factor"</p>
+<h3 id="verification-steps_3">Verification Steps</h3>
+<h4 id="test-41-create-sample-factor">Test 4.1: Create Sample Factor</h4>
+<p><strong>Step 1</strong>: Via GUI
+1. Go to <strong>DOE</strong> tab → <strong>Experimental Factors</strong> section
+2. Click <strong>"Add Factor"</strong> button
+3. Fill in form:
+   - <strong>Factor Name</strong>: <code>Temperature</code>
+   - <strong>Scope</strong>: <code>Sample</code>
+   - <strong>Type</strong>: <code>Numeric</code>
+   - <strong>Unit</strong>: <code>°C</code>
+   - <strong>Levels</strong>: <code>25, 50, 75, 100</code>
+4. Click <strong>"Add"</strong></p>
+<p><strong>Expected Result</strong>:
+- ✅ Factor appears in <strong>Sample Factors</strong> table
+- ✅ Type tag shows "numeric"
+- ✅ Levels column shows "4"</p>
+<p><strong>Step 2</strong>: Create another sample factor
+- <strong>Name</strong>: <code>Concentration</code>
+- <strong>Scope</strong>: <code>Sample</code>
+- <strong>Type</strong>: <code>Numeric</code>
+- <strong>Unit</strong>: <code>ppm</code>
+- <strong>Levels</strong>: <code>100, 500, 1000</code></p>
+<h4 id="test-42-create-method-factor">Test 4.2: Create Method Factor</h4>
+<p><strong>Via GUI</strong>:
+1. Click <strong>"Add Factor"</strong>
+2. <strong>Name</strong>: <code>Scan_Type</code>
+3. <strong>Scope</strong>: <code>Method</code>
+4. <strong>Type</strong>: <code>Categorical</code>
+5. <strong>Levels</strong>: <code>transmission, ATR, reflection</code></p>
+<p><strong>Expected</strong>: Appears in <strong>Method Factors</strong> table</p>
+<p><strong>Step 3</strong>: Via API</p>
+<pre><code class="language-bash">curl -X POST &quot;http://localhost:8000/api/v1/experiments/1/doe/factors&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;name&quot;: &quot;Resolution&quot;,
+    &quot;scope&quot;: &quot;method&quot;,
+    &quot;type&quot;: &quot;categorical&quot;,
+    &quot;levels&quot;: [&quot;standard&quot;, &quot;high&quot;, &quot;ultra&quot;]
+  }'
+</code></pre>
+<p><strong>Expected Response</strong>:</p>
+<pre><code class="language-json">{
+  &quot;id&quot;: 4,
+  &quot;experiment_id&quot;: 1,
+  &quot;name&quot;: &quot;Resolution&quot;,
+  &quot;scope&quot;: &quot;method&quot;,
+  &quot;type&quot;: &quot;categorical&quot;,
+  &quot;unit&quot;: null,
+  &quot;levels&quot;: [&quot;standard&quot;, &quot;high&quot;, &quot;ultra&quot;]
+}
+</code></pre>
+<h4 id="test-43-verify-factor-separation">Test 4.3: Verify Factor Separation</h4>
+<p><strong>Expected Display</strong>:
+- <strong>Sample Factors</strong> table shows: Temperature, Concentration
+- <strong>Method Factors</strong> table shows: Scan_Type, Resolution
+- Each in separate columns (two-column grid layout)</p>
+<p><strong>Comparison with Original</strong>:
+- Original: Factors stored in XML under <code>&lt;sample_defs&gt;</code> and <code>&lt;method_defs&gt;</code>
+- Refactored: Factors stored in <code>factor_definition</code> table with <code>scope</code> field</p>
+<hr />
+<h2 id="5-run-sequence-management">5. Run Sequence Management</h2>
+<h3 id="original-implementation_4">Original Implementation</h3>
+<p><strong>File</strong>: <code>Original/Exp_loader/app/models.py</code> (lines 25-29, 62-63)</p>
+<p><strong>Original Data Model</strong>:</p>
+<pre><code class="language-python">class RunLevel(BaseModel):
+    value: str
+    path: Optional[str] = None
+    batch: Optional[int] = None
+    fileCount: Optional[int] = None
+
+# In PlacementInfo:
+run_sequence: Dict[str, List[RunLevel]] = Field(default_factory=dict)
+# Example: {&quot;Defocus&quot;: [{&quot;value&quot;: &quot;94&quot;, &quot;path&quot;: &quot;RunA&quot;, &quot;batch&quot;: 1, &quot;fileCount&quot;: 24}, ...]}
+</code></pre>
+<p><strong>Original Example</strong>:</p>
+<pre><code class="language-json">{
+  &quot;run_sequence&quot;: {
+    &quot;Scan_Type&quot;: [
+      {&quot;value&quot;: &quot;transmission&quot;, &quot;path&quot;: &quot;Transmission_Run&quot;, &quot;batch&quot;: 1, &quot;fileCount&quot;: 96},
+      {&quot;value&quot;: &quot;ATR&quot;, &quot;path&quot;: &quot;ATR_Run&quot;, &quot;batch&quot;: 2, &quot;fileCount&quot;: 96}
+    ],
+    &quot;Resolution&quot;: [
+      {&quot;value&quot;: &quot;standard&quot;, &quot;path&quot;: &quot;Std_Res&quot;, &quot;batch&quot;: 1, &quot;fileCount&quot;: 48},
+      {&quot;value&quot;: &quot;high&quot;, &quot;path&quot;: &quot;High_Res&quot;, &quot;batch&quot;: 2, &quot;fileCount&quot;: 48}
+    ]
+  }
+}
+</code></pre>
+<h3 id="refactored-implementation_4">Refactored Implementation</h3>
+<p><strong>Backend Endpoint</strong>: <code>POST /api/v1/experiments/{experiment_id}/doe/run-sequence</code></p>
+<p><strong>Frontend</strong>: Experiments → DOE Tab → Run Sequence → "Add Run Level"</p>
+<h3 id="verification-steps_4">Verification Steps</h3>
+<h4 id="test-51-create-run-sequence">Test 5.1: Create Run Sequence</h4>
+<p><strong>Prerequisites</strong>: Must have created method factors (Test 4.2)</p>
+<p><strong>Step 1</strong>: Add first run level via GUI
+1. Go to <strong>DOE</strong> tab → <strong>Run Sequence</strong> section
+2. Click <strong>"Add Run Level"</strong>
+3. Fill in form:
+   - <strong>Factor</strong>: Select <code>Scan_Type</code>
+   - <strong>Level Value</strong>: <code>transmission</code>
+   - <strong>Folder Path</strong>: <code>Transmission_Run</code>
+   - <strong>Batch Number</strong>: <code>1</code>
+   - <strong>File Count</strong>: <code>96</code>
+   - <strong>Sequence Order</strong>: <code>0</code>
+4. Click <strong>"Add"</strong></p>
+<p><strong>Expected Result</strong>:
+- ✅ Run level appears in DataTable
+- ✅ Columns show: #, Level Value, Folder Path, Batch, File Count</p>
+<p><strong>Step 2</strong>: Add more run levels</p>
+<pre><code>Factor: Scan_Type, Value: ATR, Path: ATR_Run, Batch: 2, Files: 96, Order: 1
+Factor: Resolution, Value: standard, Path: Std_Res, Batch: 1, Files: 48, Order: 2
+Factor: Resolution, Value: high, Path: High_Res, Batch: 2, Files: 48, Order: 3
+</code></pre>
+<p><strong>Step 3</strong>: Via API (Bulk create)</p>
+<pre><code class="language-bash">curl -X POST &quot;http://localhost:8000/api/v1/experiments/1/doe/run-sequence&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;levels&quot;: [
+      {
+        &quot;factor_definition_id&quot;: 3,
+        &quot;level_value&quot;: &quot;transmission&quot;,
+        &quot;path&quot;: &quot;Transmission_Run&quot;,
+        &quot;batch&quot;: 1,
+        &quot;file_count&quot;: 96,
+        &quot;sequence_order&quot;: 0
+      },
+      {
+        &quot;factor_definition_id&quot;: 3,
+        &quot;level_value&quot;: &quot;ATR&quot;,
+        &quot;path&quot;: &quot;ATR_Run&quot;,
+        &quot;batch&quot;: 2,
+        &quot;file_count&quot;: 96,
+        &quot;sequence_order&quot;: 1
+      }
+    ]
+  }'
+</code></pre>
+<p><strong>Expected Response</strong>: Array of created run levels</p>
+<h4 id="test-52-verify-sequence-order">Test 5.2: Verify Sequence Order</h4>
+<p><strong>Expected</strong>: DataTable sorted by <strong>sequence_order</strong> ascending (0, 1, 2, 3, ...)</p>
+<p><strong>Comparison with Original</strong>:
+- Original: Run sequence grouped by factor name in dictionary
+- Refactored: Run levels stored in <code>run_level</code> table with <code>factor_definition_id</code> and <code>sequence_order</code></p>
+<hr />
+<h2 id="6-acquisition-file-matching">6. Acquisition File Matching</h2>
+<h3 id="original-implementation_5">Original Implementation</h3>
+<p><strong>File</strong>: <code>Original/Exp_loader/app/models.py</code> (lines 32-41), <code>Original/Exp_loader/app/static/app_c.js</code> (lines 692-704)</p>
+<p><strong>Original Data Model</strong>:</p>
+<pre><code class="language-python">class MatchedRow(BaseModel):
+    seq: Optional[int] = None
+    filename: Optional[str] = None
+    folder: Optional[str] = None
+    timestamp: Optional[int] = None
+    date: Optional[str] = None
+    batch: Optional[int] = None
+    sample_id: Optional[str] = None
+    cell: Optional[str] = None
+    special: Optional[str] = None
+</code></pre>
+<p><strong>Original Matching Logic</strong>: JavaScript pattern matching on filename strings</p>
+<h3 id="refactored-implementation_5">Refactored Implementation</h3>
+<p><strong>Backend Endpoint</strong>: <code>POST /api/v1/experiments/{experiment_id}/doe/match-acquisitions</code></p>
+<p><strong>Auto-Match Algorithm</strong> (<code>app/api/v1/routes/doe.py</code>, lines 371-408):</p>
+<pre><code class="language-python"># Pattern: extracts seq, batch, timestamp, cell from filenames
+# e.g., &quot;Batch1_A1_20240101_123456.csv&quot; → seq=1, batch=1, cell=A1, timestamp=...
+pattern = re.compile(r&quot;(?:seq|s)?(\d+)?.*?(?:batch|b)?(\d+)?.*?(\d{6,})?&quot;, re.IGNORECASE)
+cell_pattern = re.compile(r&quot;([A-H][0-9]{1,2})&quot;, re.IGNORECASE)
+</code></pre>
+<h3 id="verification-steps_5">Verification Steps</h3>
+<h4 id="test-61-auto-match-acquisition-files">Test 6.1: Auto-Match Acquisition Files</h4>
+<p><strong>Step 1</strong>: Prepare test filename list</p>
+<pre><code>Batch1_A1_seq001_20260104_120000.csv
+Batch1_A2_seq002_20260104_120100.csv
+Batch1_A3_seq003_20260104_120200.csv
+Batch1_B1_seq004_20260104_120300.csv
+Batch1_B2_seq005_20260104_120400.csv
+Batch2_C1_seq006_20260104_130000.csv
+Batch2_C2_seq007_20260104_130100.csv
+Batch2_C3_seq008_20260104_130200.csv
+</code></pre>
+<p><strong>Step 2</strong>: Via GUI
+1. Go to <strong>DOE</strong> tab → <strong>Acquisition Matching</strong> section
+2. Click <strong>"Auto-Match Files"</strong> button
+3. Paste filename list (one per line)
+4. Optional: Set <strong>First Cell</strong>: <code>A1</code>
+5. Optional: Set <strong>Scan Orientation</strong>: <code>Row-wise</code>
+6. Click <strong>"Match Files"</strong></p>
+<p><strong>Expected Result</strong>:
+- ✅ Success toast: "Matched 8 acquisitions"
+- ✅ DataTable shows 8 rows
+- ✅ Columns populated:
+  - <strong>Seq</strong>: 1, 2, 3, 4, 5, 6, 7, 8 (extracted from filenames)
+  - <strong>Filename</strong>: Full filename
+  - <strong>Batch</strong>: 1, 1, 1, 1, 1, 2, 2, 2 (extracted from "Batch1", "Batch2")
+  - <strong>Cell</strong>: A1, A2, A3, B1, B2, C1, C2, C3 (extracted from pattern)
+  - <strong>Timestamp</strong>: Extracted if present
+  - <strong>Date</strong>: Derived from timestamp</p>
+<h4 id="test-62-test-different-filename-patterns">Test 6.2: Test Different Filename Patterns</h4>
+<p><strong>Pattern Variations</strong>:</p>
+<pre><code># Seq-based
+seq001_sample_A1.dat
+s002_sample_A2.dat
+
+# Batch-based
+b1_well_A1_data.csv
+batch2_well_A2_data.csv
+
+# Timestamp-based
+20260104120000_A1.csv
+file_20260104120100_A2.csv
+
+# Combined
+Batch1_seq001_A1_20260104.csv
+B2_s002_C3_timestamp.dat
+</code></pre>
+<p><strong>Via API</strong>:</p>
+<pre><code class="language-bash">curl -X POST &quot;http://localhost:8000/api/v1/experiments/1/doe/match-acquisitions&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;file_list&quot;: [
+      &quot;Batch1_A1_seq001.csv&quot;,
+      &quot;Batch1_A2_seq002.csv&quot;,
+      &quot;Batch2_B1_seq003.csv&quot;
+    ],
+    &quot;first_cell&quot;: &quot;A1&quot;,
+    &quot;scan_orientation&quot;: &quot;row&quot;
+  }'
+</code></pre>
+<p><strong>Expected Response</strong>:</p>
+<pre><code class="language-json">[
+  {
+    &quot;id&quot;: 1,
+    &quot;experiment_id&quot;: 1,
+    &quot;seq&quot;: 1,
+    &quot;filename&quot;: &quot;Batch1_A1_seq001.csv&quot;,
+    &quot;folder&quot;: null,
+    &quot;timestamp&quot;: null,
+    &quot;date&quot;: null,
+    &quot;batch&quot;: 1,
+    &quot;sample_id&quot;: null,
+    &quot;cell&quot;: &quot;A1&quot;,
+    &quot;special&quot;: null
+  },
+  ...
+]
+</code></pre>
+<h4 id="test-63-edge-cases">Test 6.3: Edge Cases</h4>
+<p><strong>Test filenames without patterns</strong>:</p>
+<pre><code>unknown_file.csv
+data.txt
+measurement_001.dat
+</code></pre>
+<p><strong>Expected</strong>: Sequential seq assignment (1, 2, 3), null values for batch/cell</p>
+<p><strong>Comparison with Original</strong>:
+- Original: JavaScript regex matching in frontend
+- Refactored: Python regex matching in backend with more robust pattern detection</p>
+<hr />
+<h2 id="7-doe-design-export">7. DOE Design Export</h2>
+<h3 id="original-implementation_6">Original Implementation</h3>
+<p><strong>File</strong>: <code>Original/Exp_loader/app/routes.py</code> (lines 400+)</p>
+<p><strong>Original Export Formats</strong>:
+- CSV: Matched acquisitions export
+- XML: Full experiment export with mixtures, factors, acquisitions
+- JSON: Not implemented in Original</p>
+<p><strong>Original CSV Format</strong>:</p>
+<pre><code class="language-csv">seq,filename,folder,batch,sample_id,cell,timestamp,date
+1,file1.csv,RunA,1,S001,A1,1609459200,2021-01-01
+2,file2.csv,RunA,1,S002,A2,1609459300,2021-01-01
+</code></pre>
+<p><strong>Original XML Format</strong>:</p>
+<pre><code class="language-xml">&lt;experiment&gt;
+  &lt;experiment_id&gt;exp_001&lt;/experiment_id&gt;
+  &lt;mixtures&gt;
+    &lt;mixture&gt;
+      &lt;mixture_id&gt;mix_01&lt;/mixture_id&gt;
+      &lt;components&gt;...&lt;/components&gt;
+    &lt;/mixture&gt;
+  &lt;/mixtures&gt;
+  &lt;factors&gt;...&lt;/factors&gt;
+  &lt;matched_acquisitions&gt;...&lt;/matched_acquisitions&gt;
+&lt;/experiment&gt;
+</code></pre>
+<h3 id="refactored-implementation_6">Refactored Implementation</h3>
+<p><strong>Backend Endpoints</strong>:
+- <code>GET /api/v1/experiments/{experiment_id}/doe/export/csv</code>
+- <code>GET /api/v1/experiments/{experiment_id}/doe/export/json</code>
+- <code>GET /api/v1/experiments/{experiment_id}/doe/export/xml</code></p>
+<p><strong>Frontend</strong>: Experiments → DOE Tab → Export DOE Design → "Export CSV/JSON/XML"</p>
+<h3 id="verification-steps_6">Verification Steps</h3>
+<h4 id="test-71-export-as-csv">Test 7.1: Export as CSV</h4>
+<p><strong>Prerequisites</strong>: Must have matched acquisitions (Test 6.1)</p>
+<p><strong>Step 1</strong>: Via GUI
+1. Go to <strong>DOE</strong> tab → <strong>Export DOE Design</strong> section
+2. Click <strong>"Export CSV"</strong> button</p>
+<p><strong>Expected Result</strong>:
+- ✅ Browser downloads file: <code>doe_export.csv</code>
+- ✅ File contains matched acquisitions
+- ✅ Columns: seq, filename, folder, batch, sample_id, cell, timestamp, date</p>
+<p><strong>Step 2</strong>: Verify CSV content</p>
+<pre><code class="language-bash">cat doe_export.csv
+</code></pre>
+<p><strong>Expected Output</strong>:</p>
+<pre><code class="language-csv">seq,filename,folder,batch,sample_id,cell,timestamp,date
+1,Batch1_A1_seq001_20260104_120000.csv,,1,,A1,20260104120000,2026-01-04
+2,Batch1_A2_seq002_20260104_120100.csv,,1,,A2,20260104120100,2026-01-04
+...
+</code></pre>
+<p><strong>Step 3</strong>: Via API</p>
+<pre><code class="language-bash">curl &quot;http://localhost:8000/api/v1/experiments/1/doe/export/csv&quot; -o doe_export.csv
+</code></pre>
+<h4 id="test-72-export-as-json">Test 7.2: Export as JSON</h4>
+<p><strong>Via GUI</strong>:
+1. Click <strong>"Export JSON"</strong> button</p>
+<p><strong>Expected Result</strong>:
+- ✅ Downloads: <code>doe_export.json</code>
+- ✅ Contains all DOE data: samples, mixtures, factors, plate_map, run_sequence, matched_acquisitions</p>
+<p><strong>Verify JSON structure</strong>:</p>
+<pre><code class="language-bash">cat doe_export.json | python -m json.tool
+</code></pre>
+<p><strong>Expected Output</strong>:</p>
+<pre><code class="language-json">{
+  &quot;experiment_id&quot;: 1,
+  &quot;exported_at&quot;: &quot;2026-01-04T12:00:00&quot;,
+  &quot;samples&quot;: [
+    {&quot;id&quot;: 1, &quot;sample_id&quot;: &quot;S001&quot;, &quot;name&quot;: &quot;Methanol&quot;, ...}
+  ],
+  &quot;mixtures&quot;: [
+    {&quot;id&quot;: 1, &quot;mixture_id&quot;: &quot;MIX001&quot;, &quot;components&quot;: [...]}
+  ],
+  &quot;factors&quot;: [
+    {&quot;id&quot;: 1, &quot;name&quot;: &quot;Temperature&quot;, &quot;scope&quot;: &quot;sample&quot;, ...}
+  ],
+  &quot;plate_map&quot;: [
+    {&quot;well_position&quot;: &quot;A1&quot;, &quot;mixture_id&quot;: 1}
+  ],
+  &quot;run_sequence&quot;: [
+    {&quot;level_value&quot;: &quot;transmission&quot;, &quot;path&quot;: &quot;Transmission_Run&quot;, ...}
+  ],
+  &quot;matched_acquisitions&quot;: [
+    {&quot;seq&quot;: 1, &quot;filename&quot;: &quot;...&quot;, &quot;batch&quot;: 1, ...}
+  ]
+}
+</code></pre>
+<h4 id="test-73-export-as-xml">Test 7.3: Export as XML</h4>
+<p><strong>Via GUI</strong>:
+1. Click <strong>"Export XML"</strong> button</p>
+<p><strong>Expected Result</strong>:
+- ✅ Downloads: <code>doe_export.xml</code>
+- ✅ XML structure matches Original format</p>
+<p><strong>Verify XML structure</strong>:</p>
+<pre><code class="language-bash">cat doe_export.xml
+</code></pre>
+<p><strong>Expected Output</strong>:</p>
+<pre><code class="language-xml">&lt;?xml version=&quot;1.0&quot; ?&gt;
+&lt;experiment id=&quot;1&quot;&gt;
+  &lt;samples&gt;
+    &lt;sample id=&quot;S001&quot;&gt;
+      &lt;name&gt;Methanol&lt;/name&gt;
+      &lt;type&gt;Solvent&lt;/type&gt;
+      &lt;brand&gt;Sigma-Aldrich&lt;/brand&gt;
+    &lt;/sample&gt;
+  &lt;/samples&gt;
+  &lt;mixtures&gt;
+    &lt;mixture id=&quot;MIX001&quot;&gt;
+      &lt;basis&gt;volume&lt;/basis&gt;
+      &lt;components&gt;
+        &lt;component&gt;
+          &lt;amount&gt;5.0&lt;/amount&gt;
+          &lt;unit&gt;mL&lt;/unit&gt;
+        &lt;/component&gt;
+      &lt;/components&gt;
+    &lt;/mixture&gt;
+  &lt;/mixtures&gt;
+  &lt;factors&gt;
+    &lt;factor&gt;
+      &lt;name&gt;Temperature&lt;/name&gt;
+      &lt;scope&gt;sample&lt;/scope&gt;
+      &lt;type&gt;numeric&lt;/type&gt;
+    &lt;/factor&gt;
+  &lt;/factors&gt;
+  &lt;matched_acquisitions&gt;
+    &lt;acquisition&gt;
+      &lt;seq&gt;1&lt;/seq&gt;
+      &lt;filename&gt;...&lt;/filename&gt;
+      &lt;batch&gt;1&lt;/batch&gt;
+    &lt;/acquisition&gt;
+  &lt;/matched_acquisitions&gt;
+&lt;/experiment&gt;
+</code></pre>
+<h4 id="test-74-verify-export-completeness">Test 7.4: Verify Export Completeness</h4>
+<p><strong>Check export includes all sections</strong>:</p>
+<pre><code class="language-bash"># JSON export should have all keys
+jq 'keys' doe_export.json
+# Expected: [&quot;experiment_id&quot;, &quot;exported_at&quot;, &quot;samples&quot;, &quot;mixtures&quot;, &quot;factors&quot;, &quot;plate_map&quot;, &quot;run_sequence&quot;, &quot;matched_acquisitions&quot;]
+
+# Count items
+jq '.samples | length' doe_export.json  # Should match imported count
+jq '.mixtures | length' doe_export.json
+jq '.matched_acquisitions | length' doe_export.json
+</code></pre>
+<p><strong>Comparison with Original</strong>:
+- Original: CSV exports acquisitions only, XML exports full experiment
+- Refactored: CSV exports acquisitions, JSON exports everything, XML exports structured data</p>
+<hr />
+<h2 id="8-doe-summary-statistics">8. DOE Summary Statistics</h2>
+<h3 id="refactored-enhancement-not-in-original">Refactored Enhancement (Not in Original)</h3>
+<p><strong>Backend Endpoint</strong>: <code>GET /api/v1/experiments/{experiment_id}/doe/summary</code></p>
+<p><strong>Frontend</strong>: Experiments → DOE Tab → Export section → Summary cards</p>
+<h3 id="verification-steps_7">Verification Steps</h3>
+<h4 id="test-81-view-summary-statistics">Test 8.1: View Summary Statistics</h4>
+<p><strong>Via GUI</strong>:
+1. Go to <strong>DOE</strong> tab → <strong>Export DOE Design</strong> section
+2. View summary cards at bottom</p>
+<p><strong>Expected Display</strong>:</p>
+<pre><code>┌─────────────┬─────────────┬─────────────┐
+│ 📊 Samples  │ 🧪 Mixtures │ 📋 Wells    │
+│     8       │     3       │     9       │
+├─────────────┼─────────────┼─────────────┤
+│ ⚙️  Factors │ 📝 Runs     │ ✅ Matched  │
+│     4       │     4       │     8       │
+└─────────────┴─────────────┴─────────────┘
+</code></pre>
+<p><strong>Via API</strong>:</p>
+<pre><code class="language-bash">curl &quot;http://localhost:8000/api/v1/experiments/1/doe/summary&quot;
+</code></pre>
+<p><strong>Expected Response</strong>:</p>
+<pre><code class="language-json">{
+  &quot;sample_count&quot;: 8,
+  &quot;mixture_count&quot;: 3,
+  &quot;factor_count&quot;: 4,
+  &quot;well_count&quot;: 9,
+  &quot;run_level_count&quot;: 4,
+  &quot;matched_count&quot;: 8
+}
+</code></pre>
+<hr />
+<h2 id="complete-end-to-end-workflow-test">Complete End-to-End Workflow Test</h2>
+<h3 id="scenario-multi-factor-solvent-study">Scenario: Multi-Factor Solvent Study</h3>
+<p><strong>Objective</strong>: Design experiment with 3 solvents, 3 temperatures, 2 scan types = 18 total measurements</p>
+<h4 id="step-1-import-samples">Step 1: Import Samples</h4>
+<pre><code class="language-csv">sample_id,name,type,brand,cas_number,active
+S001,Methanol,Solvent,Sigma,67-56-1,true
+S002,Ethanol,Solvent,Fisher,64-17-5,true
+S003,Acetone,Solvent,Sigma,67-64-1,true
+</code></pre>
+<h4 id="step-2-create-mixtures">Step 2: Create Mixtures</h4>
+<ul>
+<li>MIX001: Pure Methanol (10 mL)</li>
+<li>MIX002: Pure Ethanol (10 mL)</li>
+<li>MIX003: Pure Acetone (10 mL)</li>
+</ul>
+<h4 id="step-3-assign-plate-map">Step 3: Assign Plate Map</h4>
+<pre><code>A1-A6: MIX001
+B1-B6: MIX002
+C1-C6: MIX003
+</code></pre>
+<h4 id="step-4-define-factors">Step 4: Define Factors</h4>
+<p><strong>Sample Factors</strong>:
+- Temperature: 25, 50, 75 (°C)</p>
+<p><strong>Method Factors</strong>:
+- Scan_Type: transmission, ATR</p>
+<h4 id="step-5-create-run-sequence">Step 5: Create Run Sequence</h4>
+<pre><code>Order 0: transmission, Batch 1, Files 9
+Order 1: ATR, Batch 2, Files 9
+</code></pre>
+<h4 id="step-6-match-files">Step 6: Match Files</h4>
+<pre><code>Batch1_A1_25C_trans.csv
+Batch1_A2_50C_trans.csv
+Batch1_A3_75C_trans.csv
+Batch1_B1_25C_trans.csv
+... (9 transmission files)
+Batch2_A1_25C_ATR.csv
+Batch2_A2_50C_ATR.csv
+... (9 ATR files)
+</code></pre>
+<h4 id="step-7-export-design">Step 7: Export Design</h4>
+<ul>
+<li>Export JSON with complete DOE configuration</li>
+<li>Use for downstream analysis</li>
+</ul>
+<p><strong>Expected Final Summary</strong>:
+- Samples: 3
+- Mixtures: 3
+- Wells: 18
+- Factors: 2 (1 sample + 1 method)
+- Run Levels: 2
+- Matched: 18</p>
+<hr />
+<h2 id="comparison-matrix-original-vs-refactored">Comparison Matrix: Original vs Refactored</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Original</th>
+<th>Refactored</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Sample DB Import</td>
+<td>CSV file upload</td>
+<td>CSV paste import</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Sample Storage</td>
+<td>In-memory Pandas DataFrame</td>
+<td>SQL database</td>
+<td>✅ Enhanced</td>
+</tr>
+<tr>
+<td>Mixture Creation</td>
+<td>XML storage</td>
+<td>SQL with components</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Plate Mapping</td>
+<td>JSON dict in XML</td>
+<td>SQL table (96 wells)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Factor Definitions</td>
+<td>JSON arrays in XML</td>
+<td>SQL table with types</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Run Sequence</td>
+<td>Nested dict in XML</td>
+<td>SQL table with order</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>File Matching</td>
+<td>Frontend JS regex</td>
+<td>Backend Python regex</td>
+<td>✅ Enhanced</td>
+</tr>
+<tr>
+<td>Export CSV</td>
+<td>Acquisitions only</td>
+<td>Acquisitions only</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Export XML</td>
+<td>Full experiment</td>
+<td>Structured data</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Export JSON</td>
+<td>Not available</td>
+<td>Full DOE config</td>
+<td>✅ New</td>
+</tr>
+<tr>
+<td>Summary Stats</td>
+<td>Not available</td>
+<td>Real-time counts</td>
+<td>✅ New</td>
+</tr>
+<tr>
+<td>Plate Visualization</td>
+<td>Custom JS grid</td>
+<td>Vue component</td>
+<td>✅ Enhanced</td>
+</tr>
+<tr>
+<td>Multi-tenancy</td>
+<td>Single experiment</td>
+<td>Per-experiment isolation</td>
+<td>✅ New</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="testing-checklist">Testing Checklist</h2>
+<ul>
+<li>[ ] Test 1.1: Import sample database (8 samples)</li>
+<li>[ ] Test 1.2: List samples via API</li>
+<li>[ ] Test 2.1: Create volume-based mixture</li>
+<li>[ ] Test 2.2: Create mass-based mixture</li>
+<li>[ ] Test 3.1: Assign mixtures to plate wells</li>
+<li>[ ] Test 3.2: Clear plate map</li>
+<li>[ ] Test 4.1: Create sample factor</li>
+<li>[ ] Test 4.2: Create method factor</li>
+<li>[ ] Test 4.3: Verify factor separation</li>
+<li>[ ] Test 5.1: Create run sequence</li>
+<li>[ ] Test 5.2: Verify sequence order</li>
+<li>[ ] Test 6.1: Auto-match acquisition files</li>
+<li>[ ] Test 6.2: Test different filename patterns</li>
+<li>[ ] Test 6.3: Test edge cases (no patterns)</li>
+<li>[ ] Test 7.1: Export as CSV</li>
+<li>[ ] Test 7.2: Export as JSON</li>
+<li>[ ] Test 7.3: Export as XML</li>
+<li>[ ] Test 7.4: Verify export completeness</li>
+<li>[ ] Test 8.1: View summary statistics</li>
+<li>[ ] Complete end-to-end workflow</li>
+</ul>
+<hr />
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="issue-no-experiment-selected">Issue: "No experiment selected"</h3>
+<p><strong>Solution</strong>: Select an experiment in Overview tab before accessing DOE tab</p>
+<h3 id="issue-import-failed">Issue: "Import failed"</h3>
+<p><strong>Solution</strong>: Check CSV format, ensure headers match: <code>sample_id,name,type,brand,cas_number,active</code></p>
+<h3 id="issue-cant-create-mixture">Issue: "Can't create mixture"</h3>
+<p><strong>Solution</strong>: Import samples first before creating mixtures</p>
+<h3 id="issue-cant-add-run-level">Issue: "Can't add run level"</h3>
+<p><strong>Solution</strong>: Create method factors first</p>
+<h3 id="issue-export-disabled">Issue: "Export disabled"</h3>
+<p><strong>Solution</strong>: Must have matched acquisitions before exporting</p>
+<hr />
+<h2 id="api-reference-summary">API Reference Summary</h2>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Method</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/experiments/{id}/doe/samples/import</code></td>
+<td>POST</td>
+<td>Import samples from CSV</td>
+</tr>
+<tr>
+<td><code>/experiments/{id}/doe/samples</code></td>
+<td>GET</td>
+<td>List samples</td>
+</tr>
+<tr>
+<td><code>/experiments/{id}/doe/mixtures</code></td>
+<td>GET</td>
+<td>List mixtures</td>
+</tr>
+<tr>
+<td><code>/experiments/{id}/doe/mixtures</code></td>
+<td>POST</td>
+<td>Create mixture</td>
+</tr>
+<tr>
+<td><code>/experiments/{id}/doe/factors</code></td>
+<td>GET</td>
+<td>List factors</td>
+</tr>
+<tr>
+<td><code>/experiments/{id}/doe/factors</code></td>
+<td>POST</td>
+<td>Create factor</td>
+</tr>
+<tr>
+<td><code>/experiments/{id}/doe/plate-map</code></td>
+<td>GET</td>
+<td>Get plate map</td>
+</tr>
+<tr>
+<td><code>/experiments/{id}/doe/plate-map</code></td>
+<td>POST</td>
+<td>Set plate map</td>
+</tr>
+<tr>
+<td><code>/experiments/{id}/doe/run-sequence</code></td>
+<td>GET</td>
+<td>Get run sequence</td>
+</tr>
+<tr>
+<td><code>/experiments/{id}/doe/run-sequence</code></td>
+<td>POST</td>
+<td>Set run sequence</td>
+</tr>
+<tr>
+<td><code>/experiments/{id}/doe/match-acquisitions</code></td>
+<td>POST</td>
+<td>Auto-match files</td>
+</tr>
+<tr>
+<td><code>/experiments/{id}/doe/matched-acquisitions</code></td>
+<td>GET</td>
+<td>Get matched data</td>
+</tr>
+<tr>
+<td><code>/experiments/{id}/doe/export/csv</code></td>
+<td>GET</td>
+<td>Export CSV</td>
+</tr>
+<tr>
+<td><code>/experiments/{id}/doe/export/json</code></td>
+<td>GET</td>
+<td>Export JSON</td>
+</tr>
+<tr>
+<td><code>/experiments/{id}/doe/export/xml</code></td>
+<td>GET</td>
+<td>Export XML</td>
+</tr>
+<tr>
+<td><code>/experiments/{id}/doe/summary</code></td>
+<td>GET</td>
+<td>Get summary stats</td>
+</tr>
+</tbody>
+</table>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../FOLDER_AND_PATTERN_LOADING/" class="btn btn-neutral float-left" title="Folder & Pattern Loading"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../PROBLEM_REPORT/" class="btn btn-neutral float-right" title="Workflow Bench Gap Analysis">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+    
+      <span><a href="../FOLDER_AND_PATTERN_LOADING/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../PROBLEM_REPORT/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

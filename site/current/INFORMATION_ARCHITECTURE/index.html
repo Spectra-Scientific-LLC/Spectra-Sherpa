@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Information Architecture - SpectraSherpa Documentation</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Information Architecture";
+        var mkdocs_page_input_path = "current/INFORMATION_ARCHITECTURE.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> SpectraSherpa Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Current</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Getting Started</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/installation/">Installation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/quickstart/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/modes/">Modes & Configuration</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >User Guide</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/experiments/">Experiments</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/library/">Library (NIST)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/doe/">DOE (96-Well)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/synthesis/">Synthesis Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/workflow/">Workflow Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" >Reproduction Study</a>
+    <ul>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
+                </li>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/reproduction_methodology/">Methodology</a>
+                </li>
+    </ul>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../USER_MANUAL/">User Manual</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >SpectrochemPy Examples</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/01_loading_data/">01. Loading Data</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/02_dataset_manipulation/">02. Manipulation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/03_plotting/">03. Plotting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/04_preprocessing_smoothing/">04. Smoothing</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/05_preprocessing_baseline/">05. Baseline</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/06_peak_finding/">06. Peak Finding</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/07_peak_fitting/">07. Integration</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/08_pca/">08. PCA</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/09_mcr_als/">09. MCR-ALS</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/10_pls_regression/">10. PLS</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reference</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../reference/nodes/">Node Library</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" >Architecture & System</a>
+    <ul class="current">
+                <li class="toctree-l2"><a class="" href="../README.md">Repository Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SYSTEM_OVERVIEW/">System Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../ARCHITECTURE/">Architecture</a>
+                </li>
+                <li class="toctree-l2 current"><a class="reference internal current" href="#">Information Architecture</a>
+    <ul class="current">
+    <li class="toctree-l3"><a class="reference internal" href="#executive-summary">Executive Summary</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#core-principles">Core Principles</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#navigation-structure">Navigation Structure</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#header-always-visible-global-context">Header (Always Visible - Global Context)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#main-navigation-3-tabs">Main Navigation (3 Tabs)</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#tab-1-data-data-ingestion">Tab 1: Data (Data Ingestion)</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#11-experiments-sub-tab">1.1 Experiments Sub-tab</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#12-library-sub-tab">1.2 Library Sub-tab</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#13-synthesis-sub-tab-renamed-from-builder">1.3 Synthesis Sub-tab (renamed from "Builder")</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#tab-2-operations-data-transformation">Tab 2: Operations (Data Transformation)</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#21-calibration-sub-tab">2.1 Calibration Sub-tab</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#22-process-sub-tab">2.2 Process Sub-tab</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#23-analysis-sub-tab">2.3 Analysis Sub-tab</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#tab-3-workflows">Tab 3: Workflows</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#31-builder-sub-tab-visual-workflow">3.1 Builder Sub-tab (Visual Workflow)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#32-templates-sub-tab">3.2 Templates Sub-tab</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#llm-assistant-realistic-capabilities">LLM Assistant - Realistic Capabilities</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#design-philosophy">Design Philosophy</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#what-the-llm-can-do-technical-assistance">What the LLM CAN Do (Technical Assistance)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#what-the-llm-should-not-do">What the LLM Should NOT Do</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#llm-integration-architecture">LLM Integration Architecture</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#context-passed-to-llm">Context Passed to LLM</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#data-flow-diagram">Data Flow Diagram</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#project-structure-spectrochempy-aligned">Project Structure (SpectrochemPy-Aligned)</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#key-design-decisions-summary">Key Design Decisions Summary</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#navigation-flow-examples">Navigation Flow Examples</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#example-1-new-doe-experiment">Example 1: New DOE Experiment</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#example-2-using-project1-template">Example 2: Using Project1 Template</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#example-3-building-custom-workflow">Example 3: Building Custom Workflow</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#implementation-phases">Implementation Phases</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#phase-1-core-structure">Phase 1: Core Structure</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#phase-2-data-tab">Phase 2: Data Tab</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#phase-3-operations-tab">Phase 3: Operations Tab</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#phase-4-workflows-tab">Phase 4: Workflows Tab</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#phase-5-project-management">Phase 5: Project Management</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#appendix-spectrochempy-integration-points">Appendix: SpectrochemPy Integration Points</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#data-ingestion-data-tab">Data Ingestion (Data Tab)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#processing-operations-tab">Processing (Operations Tab)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#analysis-operations-tab">Analysis (Operations Tab)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#project-management">Project Management</a>
+    </li>
+        </ul>
+    </li>
+    </ul>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../FUNCTIONAL_MAPPING/">Functional Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DATA_SOURCES/">Data Sources</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../NODE_CAPABILITIES/">Node Capabilities</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PARAMETER_MAPPING/">Parameter Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DATABASE_SCHEMA/">Database Schema</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../AUTHENTICATION/">Authentication</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PHASE1_SETUP_GUIDE/">Phase 1 Setup Guide</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Workflow & Analysis</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../QUICKSTART_ANALYSIS/">Quickstart Analysis</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../MULTI_PORT_GUIDE/">Multi-Port Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../FOLDER_AND_PATTERN_LOADING/">Folder & Pattern Loading</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DOE_MANUAL/">DOE Manual</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PROBLEM_REPORT/">Workflow Bench Gap Analysis</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Deployment</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../deployment/DIGITAL_OCEAN/">DigitalOcean</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Quality & Validation</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../ALGORITHM_AUDIT/">Algorithm Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SYNTHETIC_FALLBACK_AUDIT/">Synthetic Fallback Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../TEST_FRAMEWORK/">Test Framework</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../BACKEND_TESTING_GUIDE/">Backend Testing Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../TESTING_CHECKLIST/">Testing Checklist</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../VERIFICATION_PROCEDURE/">Verification Procedure</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Project1 (Standalone Tool)</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/">Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/QUICKSTART/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/INSTALLATION_GUIDE/">Installation Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/TROUBLESHOOTING/">Troubleshooting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/NOTICE/">Notice</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Past</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/RELEASE_NOTES/">Release Notes</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/IMPLEMENTATION_SUMMARY/">Implementation Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/FINAL_FIXES_SUMMARY/">Final Fixes Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/SESSION_SUMMARY_2026-01-21/">Session Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/NODE_STANDARDIZATION_2026-01-26/">Node Standardization (2026-01-26)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Fixes</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/3D_CONCATENATION_FIX/">3D Concatenation Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/QUICK_PLOT_Y_AXIS_LABELS_FIX/">Quick Plot Y-Axis Labels Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CASE_SENSITIVITY_AND_UI_FIXES/">Case Sensitivity and UI Fixes</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/DEDICATED_LOAD_GROUP_ENFORCEMENT/">Dedicated Load Group Enforcement</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/LOAD_GROUP_NODE_IMPLEMENTATION/">Load Group Node Implementation</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reviews & Testing</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CODE_REVIEW_FINDINGS/">Code Review Findings</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/WEEK7_TESTING/">Week 7 Testing</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Future</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ROADMAP/">Roadmap</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/DOE_ENHANCEMENTS/">DOE Enhancements</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ANALYSIS_CANVAS_WIREFRAME/">Analysis Canvas Wireframe</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/plugin_plan_011525/">Plugin Plan (2025-01-15)</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">SpectraSherpa Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Current</li>
+          <li class="breadcrumb-item">Architecture & System</li>
+      <li class="breadcrumb-item active">Information Architecture</li>
+    <li class="wy-breadcrumbs-aside">
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="spectra-platform-information-architecture">Spectra Platform - Information Architecture</h1>
+<p><strong>Version</strong>: 1.0
+<strong>Date</strong>: January 2025
+<strong>Status</strong>: Approved for Implementation</p>
+<hr />
+<h2 id="executive-summary">Executive Summary</h2>
+<p>This document defines the high-level information architecture for the Spectra Platform - the navigation structure, tab organization, and LLM integration strategy.</p>
+<h3 id="core-principles">Core Principles</h3>
+<ol>
+<li><strong>Project as Global Context</strong> - Scientists think "I'm working on Project X"</li>
+<li><strong>3-Tab Navigation</strong> - Data | Operations | Workflows (low cognitive load)</li>
+<li><strong>NDDataset Throughout</strong> - All data flows as SpectroChemPy <code>NDDataset</code> (provenance in <code>meta["processing_history"]</code>, serialization at API boundary via <code>serialize_for_api()</code>)</li>
+<li><strong>LLM as Technical Assistant</strong> - Code generation and guidance, not scientific conclusions</li>
+</ol>
+<hr />
+<h2 id="navigation-structure">Navigation Structure</h2>
+<h3 id="header-always-visible-global-context">Header (Always Visible - Global Context)</h3>
+<pre><code>┌─────────────────────────────────────────────────────────────────────┐
+│ [Logo] Spectra Platform                                             │
+│                                                                     │
+│ Project: [Spike_DOE_082925 ▼]  [+ New] [Save] [⚙ Settings]         │
+└─────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<p><strong>Project Dropdown Features:</strong>
+- Recently opened projects
+- Create new project
+- Open from file
+- Save current project
+- Project properties/metadata</p>
+<p><strong>Rationale</strong>: Scientists think in terms of "I'm working on Project X" - the project is the mental frame, not a navigation destination.</p>
+<h3 id="main-navigation-3-tabs">Main Navigation (3 Tabs)</h3>
+<pre><code>┌─────────────────────────────────────────────────────────────────────┐
+│         Data          |       Operations       |      Workflows     │
+│  ─────────────────────────────────────────────────────────────────  │
+│  Experiments          |       Calibration      |      Builder       │
+│  Library              |       Process          |      Templates     │
+│  Synthesis            |       Analysis         |                    │
+└─────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<p><strong>Rationale</strong>: 3 clear categories reduces cognitive load compared to 7-8 separate tabs.</p>
+<hr />
+<h2 id="tab-1-data-data-ingestion">Tab 1: Data (Data Ingestion)</h2>
+<p><strong>Purpose</strong>: Get NDDatasets into the project from various sources.</p>
+<h3 id="11-experiments-sub-tab">1.1 Experiments Sub-tab</h3>
+<p><strong>Purpose</strong>: Capture real lab data with proper metadata organization.</p>
+<p><strong>Features:</strong>
+- File upload supporting all SpectrochemPy formats:
+  - <code>read_csv()</code> - CSV files
+  - <code>read_jcamp()</code> - JCAMP-DX files
+  - <code>read_opus()</code> - Bruker OPUS files
+  - <code>read_omnic()</code> - Thermo OMNIC files
+  - <code>read_labspec()</code> - Horiba LabSpec files
+  - <code>read_srs()</code> - SRS format
+  - <code>read_matlab()</code> - MATLAB files
+- <strong>DOE Configuration</strong>:
+  - Factor definitions (sample factors, method factors)
+  - Plate mapping (96-well)
+  - Run sequences
+  - File matching with metadata capture
+  - Folder-based batch organization
+- Metadata editor
+- Version control for raw data
+- Preview loaded datasets</p>
+<p><strong>Design Decision</strong>: DOE stays in Experiments because it's about <strong>organizing experimental metadata</strong>, not analyzing results.</p>
+<h3 id="12-library-sub-tab">1.2 Library Sub-tab</h3>
+<p><strong>Purpose</strong>: Access validated reference and standard spectra.</p>
+<p><strong>Features:</strong>
+- NIST spectral database browser
+- JCAMP-DX imports
+- Compound search:
+  - By CAS number
+  - By chemical formula
+  - By compound name
+- Reference spectra collections
+- User-uploaded standards
+- Tag and categorize library entries
+- Preview spectra before adding to project</p>
+<h3 id="13-synthesis-sub-tab-renamed-from-builder">1.3 Synthesis Sub-tab (renamed from "Builder")</h3>
+<p><strong>Purpose</strong>: Generate synthetic data for training, testing, or simulation.</p>
+<p><strong>Features:</strong>
+- Mix/blend existing datasets
+- Concentration profiles:
+  - Linear gradients
+  - Random sampling
+  - Custom curves
+- Noise models:
+  - Gaussian noise
+  - Baseline drift
+  - Cosmic ray simulation
+- Spectral simulation
+- Export as new NDDataset to project</p>
+<hr />
+<h2 id="tab-2-operations-data-transformation">Tab 2: Operations (Data Transformation)</h2>
+<p><strong>Purpose</strong>: Transform NDDatasets through calibration, processing, and analysis.</p>
+<h3 id="21-calibration-sub-tab">2.1 Calibration Sub-tab</h3>
+<p><strong>Purpose</strong>: Correct systematic instrumental errors.</p>
+<p><strong>Features:</strong>
+- <strong>Wavelength Calibration</strong>:
+  - Using reference peak positions
+  - Polynomial correction
+  - Apply to datasets
+- <strong>Intensity Calibration</strong>:
+  - Background correction
+  - Sensitivity correction
+- Fit/transform operations
+- Save calibration models to project
+- Apply saved calibrations to new data</p>
+<h3 id="22-process-sub-tab">2.2 Process Sub-tab</h3>
+<p><strong>Purpose</strong>: Essential preprocessing only (minimal, focused).</p>
+<p><strong>Features</strong> (Only these four categories):</p>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>Methods</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Baseline Correction</strong></td>
+<td>Polynomial, ALS, airPLS, SNIP</td>
+</tr>
+<tr>
+<td><strong>Smoothing</strong></td>
+<td>Savitzky-Golay, Moving average, Gaussian</td>
+</tr>
+<tr>
+<td><strong>Alignment</strong></td>
+<td>Peak alignment, COW, Shift correction</td>
+</tr>
+<tr>
+<td><strong>Interpolation</strong></td>
+<td>Common wavenumber grid, Resampling</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Design Decision</strong>: Simple math operations (add, subtract, multiply, normalize) are NOT separate menu items - they're available within workflows as needed.</p>
+<h3 id="23-analysis-sub-tab">2.3 Analysis Sub-tab</h3>
+<p><strong>Purpose</strong>: Extract insights from processed data (comprehensive).</p>
+<p><strong>Features</strong> (All SpectrochemPy analysis methods):</p>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>Methods</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Peak Analysis</strong></td>
+<td>Detection, Fitting (Gaussian, Lorentzian, Voigt), Integration, Assignment</td>
+</tr>
+<tr>
+<td><strong>Multivariate</strong></td>
+<td>PCA, PLS, MCR-ALS, NMF</td>
+</tr>
+<tr>
+<td><strong>RSM</strong></td>
+<td>Response surface fitting, Optimization, Interaction effects</td>
+</tr>
+<tr>
+<td><strong>Classification</strong></td>
+<td>LDA, PLS-DA, SVM</td>
+</tr>
+<tr>
+<td><strong>Clustering</strong></td>
+<td>K-means, Hierarchical, DBSCAN</td>
+</tr>
+<tr>
+<td><strong>Curve Fitting</strong></td>
+<td>Linear regression, Nonlinear fitting, Custom models</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Design Decision</strong>: RSM (Response Surface Methodology) lives in Analysis because it <strong>analyzes DOE results</strong>. DOE setup lives in Experiments because it <strong>organizes experimental metadata</strong>.</p>
+<hr />
+<h2 id="tab-3-workflows">Tab 3: Workflows</h2>
+<p><strong>Purpose</strong>: Automate multi-step analyses and provide reusable patterns.</p>
+<h3 id="31-builder-sub-tab-visual-workflow">3.1 Builder Sub-tab (Visual Workflow)</h3>
+<p><strong>Purpose</strong>: Drag-and-drop workflow construction.</p>
+<p><strong>Features:</strong>
+- Node-based visual editor
+- Nodes from ALL categories:
+  - <strong>Data nodes</strong>: Load from Experiments, Library, Synthesis
+  - <strong>Calibration nodes</strong>: Apply wavelength/intensity calibration
+  - <strong>Process nodes</strong>: Baseline, smooth, align, interpolate
+  - <strong>Analysis nodes</strong>: PCA, MCR, peak detection, RSM, etc.
+  - <strong>Export nodes</strong>: Save results, generate reports
+- Connect nodes to define data flow
+- Execute entire workflow
+- Save workflows to project
+- <strong>LLM Assistant panel</strong> (collapsible, resizable, 30% default width)</p>
+<h3 id="32-templates-sub-tab">3.2 Templates Sub-tab</h3>
+<p><strong>Purpose</strong>: Pre-built workflows for common analysis patterns.</p>
+<h4 id="template-project1-wavenumber-specific-calibration">Template: Project1 - Wavenumber-Specific Calibration</h4>
+<pre><code>Purpose: Extract wavenumber-specific absorption vs. concentration
+         models per species from skew data.
+
+Flow:
+[Load Experiments]
+    → [Calibrate Wavelength]
+    → [Process: Baseline + Smooth]
+    → [Analysis: Fit Absorption vs Concentration per Wavenumber]
+    → [Save Calibration Model]
+
+Output: Wavenumber-specific absorption coefficients per species
+</code></pre>
+<h4 id="template-project2-mcr-with-nonlinear-models">Template: Project2 - MCR with Nonlinear Models</h4>
+<pre><code>Purpose: Specialized MCR implementation with nonlinear models
+         for complex mixture analysis.
+
+Flow:
+[Load Data]
+    → [Process: Align + Smooth + Baseline]
+    → [Analysis: MCR-ALS with Constraints]
+    → [Nonlinear Fitting for Pure Components]
+    → [Save Resolved Components]
+
+Output: Pure component spectra and concentration profiles
+</code></pre>
+<h4 id="template-doe-analysis-pipeline">Template: DOE Analysis Pipeline</h4>
+<pre><code>Purpose: Analyze factorial experimental designs.
+
+Flow:
+[Load DOE Experiment]
+    → [Process: Standard Preprocessing]
+    → [Analysis: Extract Response Variable]
+    → [Analysis: RSM - Response Surface]
+    → [Visualize + Optimize]
+
+Output: Response surface model, optimal conditions
+</code></pre>
+<h4 id="template-routine-qc-analysis">Template: Routine QC Analysis</h4>
+<pre><code>Purpose: Quick quality control check on new samples.
+
+Flow:
+[Load Sample]
+    → [Apply Saved Calibration]
+    → [Process: Standard Pipeline]
+    → [Compare to Reference Specs]
+    → [Generate QC Report]
+
+Output: Pass/fail determination, comparison charts
+</code></pre>
+<h4 id="template-library-matching">Template: Library Matching</h4>
+<pre><code>Purpose: Identify unknown spectra by library comparison.
+
+Flow:
+[Load Unknown Sample]
+    → [Process: Baseline + Normalize]
+    → [Analysis: Library Search]
+    → [Rank Matches by Similarity]
+    → [Generate Match Report]
+
+Output: Top library matches with confidence scores
+</code></pre>
+<hr />
+<h2 id="llm-assistant-realistic-capabilities">LLM Assistant - Realistic Capabilities</h2>
+<h3 id="design-philosophy">Design Philosophy</h3>
+<p>The LLM is a <strong>technical assistant</strong>, not a scientific advisor. It helps with code, workflows, and documentation - not scientific interpretation.</p>
+<p><strong>Target Users</strong>: Scientists who already know spectroscopy. They don't need the LLM to teach them science - they need it to help them use the software efficiently.</p>
+<h3 id="what-the-llm-can-do-technical-assistance">What the LLM CAN Do (Technical Assistance)</h3>
+<h4 id="1-code-generation">1. Code Generation</h4>
+<pre><code>User: &quot;Create a baseline correction using ALS with lambda=1e5&quot;
+LLM:  [Generates SpectrochemPy Python code]
+
+User: &quot;Write a loop to process all datasets in batch&quot;
+LLM:  [Generates batch processing script]
+</code></pre>
+<ul>
+<li>Generate SpectrochemPy Python code from natural language</li>
+<li>Export workflows as executable Python scripts</li>
+<li>Translate user intent into correct API calls</li>
+</ul>
+<h4 id="2-workflow-construction-assistance">2. Workflow Construction Assistance</h4>
+<pre><code>User: &quot;What should I add after baseline correction?&quot;
+LLM:  &quot;Based on your noisy data, consider adding Savitzky-Golay
+       smoothing next. Drag the 'Smooth' node from Process category.&quot;
+</code></pre>
+<ul>
+<li>Suggest next nodes based on current workflow state</li>
+<li>Recommend node parameters based on data characteristics</li>
+<li>Identify missing connections or incomplete flows</li>
+</ul>
+<h4 id="3-parameter-guidance">3. Parameter Guidance</h4>
+<pre><code>User: &quot;What's a good window size for Savitzky-Golay?&quot;
+LLM:  &quot;For your data with ~2 cm⁻¹ resolution, try window=15
+       (covers ~30 cm⁻¹). Start with order=3 for smoothing
+       without distorting peak shapes.&quot;
+</code></pre>
+<ul>
+<li>Explain what parameters do in plain language</li>
+<li>Suggest reasonable starting values based on data</li>
+<li>Flag potentially problematic parameter combinations</li>
+</ul>
+<h4 id="4-error-interpretation">4. Error Interpretation</h4>
+<pre><code>Error: &quot;ValueError: Wavenumber ranges do not overlap&quot;
+LLM:   &quot;This means your spectra have different x-axis ranges.
+        Add an 'Interpolate' node before merging to create a
+        common wavenumber grid.&quot;
+</code></pre>
+<ul>
+<li>Parse Python/SpectrochemPy error messages</li>
+<li>Suggest fixes for common errors</li>
+<li>Point to relevant documentation</li>
+</ul>
+<h4 id="5-documentation-lookup">5. Documentation Lookup</h4>
+<pre><code>User: &quot;How do I use MCR-ALS?&quot;
+LLM:  [Explains MCR-ALS parameters, shows example code,
+       links to SpectrochemPy docs]
+</code></pre>
+<ul>
+<li>Answer "How do I..." questions about SpectrochemPy</li>
+<li>Explain method differences (ALS vs airPLS baseline)</li>
+<li>Provide syntax examples</li>
+</ul>
+<h4 id="6-data-quality-checks">6. Data Quality Checks</h4>
+<pre><code>LLM: &quot;Warning: Your spectrum has negative values after baseline
+     correction. This might indicate over-correction. Consider
+     adjusting the ALS smoothness parameter.&quot;
+</code></pre>
+<ul>
+<li>Flag suspicious patterns in data</li>
+<li>Suggest preprocessing steps based on data characteristics</li>
+<li>Identify potential cosmic rays or artifacts</li>
+</ul>
+<h4 id="7-result-summarization">7. Result Summarization</h4>
+<pre><code>LLM: &quot;PCA Results Summary:
+      - 3 components explain 95.2% of variance
+      - PC1 (67%): Correlates with concentration
+      - PC2 (21%): Correlates with temperature
+      - Outlier detected: Sample #47&quot;
+</code></pre>
+<ul>
+<li>Generate plain-language summaries of analysis results</li>
+<li>Create formatted reports for export</li>
+<li>Summarize workflow execution results</li>
+</ul>
+<h4 id="8-template-recommendations">8. Template Recommendations</h4>
+<pre><code>User: &quot;I want to calibrate my instrument for CF4&quot;
+LLM:  &quot;For concentration calibration, the 'Project1' template
+       is designed exactly for this. It will:
+       1. Load your reference spectra
+       2. Apply wavelength calibration
+       3. Fit absorption vs concentration at each wavenumber
+       Would you like me to load it?&quot;
+</code></pre>
+<ul>
+<li>Suggest which workflow template to use based on user's goal</li>
+<li>Explain differences between templates</li>
+<li>Help customize templates for specific needs</li>
+</ul>
+<h4 id="9-context-aware-responses">9. Context-Aware Responses</h4>
+<p>The LLM has access to:
+- Current project name and contents
+- Datasets loaded in current session
+- Current workflow state (nodes, connections)
+- Selected node and its parameters
+- Previous conversation history</p>
+<h3 id="what-the-llm-should-not-do">What the LLM Should NOT Do</h3>
+<h4 id="1-make-scientific-conclusions">1. Make Scientific Conclusions</h4>
+<pre><code>❌ &quot;This peak at 1650 cm⁻¹ is definitely amide I&quot;
+✅ &quot;The peak at 1650 cm⁻¹ is in the typical amide I region (1600-1700 cm⁻¹)&quot;
+</code></pre>
+<h4 id="2-replace-domain-expertise">2. Replace Domain Expertise</h4>
+<pre><code>❌ &quot;Your sample contains 45% protein based on this spectrum&quot;
+✅ &quot;Here's how to set up a quantitative model for protein content using
+   the amide I band. You'll need reference samples with known concentrations.&quot;
+</code></pre>
+<h4 id="3-claim-certainty-about-assignments">3. Claim Certainty About Assignments</h4>
+<pre><code>❌ &quot;This is contamination&quot;
+✅ &quot;This unexpected peak at 2350 cm⁻¹ might be CO₂ from the atmosphere.
+   If it's not expected, you may want to investigate.&quot;
+</code></pre>
+<h4 id="4-make-decisions-about-experimental-validity">4. Make Decisions About Experimental Validity</h4>
+<pre><code>❌ &quot;This data is bad, discard it&quot;
+✅ &quot;This dataset shows unusually high noise (SNR=15, typical is &gt;50).
+   Consider repeating the measurement or applying stronger smoothing.&quot;
+</code></pre>
+<h4 id="5-provide-medicalsafety-conclusions">5. Provide Medical/Safety Conclusions</h4>
+<pre><code>❌ &quot;This sample is safe for consumption&quot;
+✅ &quot;I can help you compare your spectrum against regulatory reference
+   values. You'll need to interpret the results according to your
+   organization's safety protocols.&quot;
+</code></pre>
+<h3 id="llm-integration-architecture">LLM Integration Architecture</h3>
+<pre><code>┌─────────────────────────────────────────────────────────────────┐
+│                    Workflows Tab                                 │
+│  ┌─────────────────────────────┬─────────────────────────────┐  │
+│  │                             │   LLM Assistant Panel       │  │
+│  │    Visual Workflow          │   ─────────────────────     │  │
+│  │    Builder                  │   [Collapsible]             │  │
+│  │                             │   [Resizable: 30% default]  │  │
+│  │    ┌───┐    ┌───┐    ┌───┐ │                             │  │
+│  │    │ A │───▶│ B │───▶│ C │ │   User: &quot;Add MCR analysis&quot;  │  │
+│  │    └───┘    └───┘    └───┘ │                             │  │
+│  │                             │   🤖 Drag the MCR-ALS node  │  │
+│  │                             │   from Analysis → Multi-    │  │
+│  │                             │   variate. Connect it to    │  │
+│  │                             │   your preprocessed data.   │  │
+│  │                             │                             │  │
+│  │                             │   [Generate Code] [Explain] │  │
+│  └─────────────────────────────┴─────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+</code></pre>
+<h3 id="context-passed-to-llm">Context Passed to LLM</h3>
+<pre><code class="language-python">llm_context = {
+    &quot;project&quot;: {
+        &quot;name&quot;: &quot;DOE_Spike_Analysis&quot;,
+        &quot;datasets&quot;: [&quot;raw_batch1&quot;, &quot;raw_batch2&quot;, &quot;nist_co2&quot;],
+        &quot;calibrations&quot;: [&quot;wavelength_cal_v1&quot;],
+    },
+    &quot;workflow&quot;: {
+        &quot;nodes&quot;: [
+            {&quot;id&quot;: &quot;n1&quot;, &quot;type&quot;: &quot;load&quot;, &quot;data&quot;: &quot;raw_batch1&quot;},
+            {&quot;id&quot;: &quot;n2&quot;, &quot;type&quot;: &quot;baseline&quot;, &quot;method&quot;: &quot;als&quot;},
+        ],
+        &quot;edges&quot;: [{&quot;from&quot;: &quot;n1&quot;, &quot;to&quot;: &quot;n2&quot;}],
+        &quot;selected_node&quot;: &quot;n2&quot;,
+    },
+    &quot;selected_node_params&quot;: {
+        &quot;method&quot;: &quot;als&quot;,
+        &quot;lam&quot;: 1e5,
+        &quot;p&quot;: 0.001,
+    },
+}
+</code></pre>
+<hr />
+<h2 id="data-flow-diagram">Data Flow Diagram</h2>
+<pre><code>                    ┌─────────────────────────────────────────────┐
+                    │               PROJECT CONTEXT                │
+                    │         (Always Active in Header)            │
+                    └─────────────────────────────────────────────┘
+                                         │
+            ┌────────────────────────────┼────────────────────────────┐
+            │                            │                            │
+            ▼                            ▼                            ▼
+    ┌───────────────┐           ┌───────────────┐           ┌───────────────┐
+    │     DATA      │           │  OPERATIONS   │           │   WORKFLOWS   │
+    │───────────────│           │───────────────│           │───────────────│
+    │ • Experiments │           │ • Calibration │           │ • Builder     │
+    │ • Library     │──────────▶│ • Process     │──────────▶│ • Templates   │
+    │ • Synthesis   │           │ • Analysis    │           │ • LLM Assist  │
+    └───────────────┘           └───────────────┘           └───────────────┘
+            │                            │                            │
+            │         NDDataset          │         NDDataset          │
+            └────────────────────────────┼────────────────────────────┘
+                                         │
+                                         ▼
+                              ┌─────────────────────┐
+                              │   PROJECT STORAGE   │
+                              │  (Parquet + JSON)   │
+                              └─────────────────────┘
+</code></pre>
+<hr />
+<h2 id="project-structure-spectrochempy-aligned">Project Structure (SpectrochemPy-Aligned)</h2>
+<pre><code class="language-python">from spectrochempy import Project, NDDataset
+
+project = Project(
+    name=&quot;DOE_Spike_Analysis&quot;,
+
+    # Datasets from all sources
+    datasets={
+        # From Experiments
+        &quot;raw_batch1&quot;: NDDataset(...),
+        &quot;raw_batch2&quot;: NDDataset(...),
+
+        # From Library
+        &quot;nist_co2_reference&quot;: NDDataset(...),
+
+        # From Synthesis
+        &quot;synthetic_training_set&quot;: NDDataset(...),
+
+        # Processed
+        &quot;processed_batch1&quot;: NDDataset(...),
+    },
+
+    # Calibrations
+    calibrations={
+        &quot;wavelength_cal_20250105&quot;: Calibration(...),
+    },
+
+    # Saved workflows
+    scripts={
+        &quot;project1_workflow&quot;: Workflow(...),
+        &quot;project2_mcr&quot;: Workflow(...),
+    },
+
+    # Analysis results
+    results={
+        &quot;pca_model&quot;: PCAResult(...),
+        &quot;rsm_surface&quot;: RSMResult(...),
+    },
+
+    metadata={
+        &quot;created&quot;: &quot;2025-01-05&quot;,
+        &quot;author&quot;: &quot;User&quot;,
+        &quot;description&quot;: &quot;DOE analysis of spike samples&quot;,
+    }
+)
+</code></pre>
+<hr />
+<h2 id="key-design-decisions-summary">Key Design Decisions Summary</h2>
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Choice</th>
+<th>Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Project context</td>
+<td>Global (header dropdown)</td>
+<td>Scientists think "I'm working on X"</td>
+</tr>
+<tr>
+<td>Main navigation</td>
+<td>3 tabs</td>
+<td>Lower cognitive load</td>
+</tr>
+<tr>
+<td>DOE location</td>
+<td>Experiments tab</td>
+<td>DOE is metadata organization</td>
+</tr>
+<tr>
+<td>RSM location</td>
+<td>Analysis tab</td>
+<td>RSM analyzes DOE results</td>
+</tr>
+<tr>
+<td>Project1/2</td>
+<td>Workflow templates</td>
+<td>Span multiple operations</td>
+</tr>
+<tr>
+<td>Process scope</td>
+<td>4 categories only</td>
+<td>Essential preprocessing only</td>
+</tr>
+<tr>
+<td>LLM role</td>
+<td>Technical assistant</td>
+<td>Code gen, not scientific conclusions</td>
+</tr>
+<tr>
+<td>Data structure</td>
+<td>NDDataset only</td>
+<td>SpectroChemPy alignment with provenance in <code>meta["processing_history"]</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="navigation-flow-examples">Navigation Flow Examples</h2>
+<h3 id="example-1-new-doe-experiment">Example 1: New DOE Experiment</h3>
+<ol>
+<li><strong>Header</strong>: Select or create project "New_DOE_Study"</li>
+<li><strong>Data → Experiments</strong>: Upload files, set up DOE metadata</li>
+<li><strong>Operations → Process</strong>: Baseline correction, smoothing</li>
+<li><strong>Operations → Analysis → RSM</strong>: Fit response surface</li>
+<li>Save results to project</li>
+</ol>
+<h3 id="example-2-using-project1-template">Example 2: Using Project1 Template</h3>
+<ol>
+<li><strong>Header</strong>: Select project "Calibration_Study"</li>
+<li><strong>Workflows → Templates</strong>: Click "Project1 - Wavenumber Calibration"</li>
+<li>Configure input datasets</li>
+<li>Click "Run Workflow"</li>
+<li>Review results, save model to project</li>
+</ol>
+<h3 id="example-3-building-custom-workflow">Example 3: Building Custom Workflow</h3>
+<ol>
+<li><strong>Header</strong>: Select project</li>
+<li><strong>Workflows → Builder</strong>: Drag nodes</li>
+<li>Add "Load Experiment" node (from Data)</li>
+<li>Add "Baseline Correction" node (from Process)</li>
+<li>Add "PCA" node (from Analysis)</li>
+<li>Add "Export" node</li>
+<li>Connect nodes</li>
+<li>Ask LLM: "What parameters for baseline?"</li>
+<li>Save as "My Custom Pipeline"</li>
+<li>Execute</li>
+</ol>
+<hr />
+<h2 id="implementation-phases">Implementation Phases</h2>
+<h3 id="phase-1-core-structure">Phase 1: Core Structure</h3>
+<ul>
+<li>[ ] Implement global project context in header</li>
+<li>[ ] Restructure Vue Router to 3 main tabs</li>
+<li>[ ] Create sub-tab navigation components</li>
+<li>[ ] Move existing views to correct locations</li>
+<li>[ ] Rename "Builder" to "Synthesis"</li>
+</ul>
+<h3 id="phase-2-data-tab">Phase 2: Data Tab</h3>
+<ul>
+<li>[ ] Experiments sub-tab (DOE functionality exists)</li>
+<li>[ ] Library sub-tab (NIST browser, compound search)</li>
+<li>[ ] Synthesis sub-tab (move current Builder here)</li>
+<li>[ ] Unify file upload with all SpectrochemPy readers</li>
+</ul>
+<h3 id="phase-3-operations-tab">Phase 3: Operations Tab</h3>
+<ul>
+<li>[ ] Calibration sub-tab (new implementation)</li>
+<li>[ ] Process sub-tab (baseline, smooth, align, interpolate only)</li>
+<li>[ ] Analysis sub-tab (PCA, PLS, MCR, RSM, peak detection)</li>
+</ul>
+<h3 id="phase-4-workflows-tab">Phase 4: Workflows Tab</h3>
+<ul>
+<li>[ ] Visual workflow builder (exists, needs restructuring)</li>
+<li>[ ] Workflow template system</li>
+<li>[ ] Project1 template implementation</li>
+<li>[ ] Project2 template implementation</li>
+<li>[ ] LLM assistant enhancement (base already implemented)</li>
+</ul>
+<h3 id="phase-5-project-management">Phase 5: Project Management</h3>
+<ul>
+<li>[ ] Project CRUD operations</li>
+<li>[ ] SpectrochemPy Project format save/load</li>
+<li>[ ] Project history and versioning</li>
+<li>[ ] Project export/import</li>
+</ul>
+<hr />
+<h2 id="appendix-spectrochempy-integration-points">Appendix: SpectrochemPy Integration Points</h2>
+<h3 id="data-ingestion-data-tab">Data Ingestion (Data Tab)</h3>
+<pre><code class="language-python">scp.read()           # Generic reader (auto-detect format)
+scp.read_csv()       # CSV files
+scp.read_jcamp()     # JCAMP-DX
+scp.read_opus()      # Bruker OPUS
+scp.read_omnic()     # Thermo OMNIC
+scp.read_matlab()    # MATLAB files
+</code></pre>
+<h3 id="processing-operations-tab">Processing (Operations Tab)</h3>
+<pre><code class="language-python">dataset.baseline()      # Baseline correction
+dataset.smooth()        # Smoothing
+dataset.align()         # Alignment
+dataset.interpolate()   # Interpolation
+</code></pre>
+<h3 id="analysis-operations-tab">Analysis (Operations Tab)</h3>
+<pre><code class="language-python">scp.PCA()              # Principal Component Analysis
+scp.PLS()              # Partial Least Squares
+scp.MCR_ALS()          # Multivariate Curve Resolution
+scp.find_peaks()       # Peak detection
+scp.fit()              # Curve fitting
+</code></pre>
+<h3 id="project-management">Project Management</h3>
+<pre><code class="language-python">scp.Project()          # Create project
+project.save()         # Save to file
+Project.load()         # Load from file
+</code></pre>
+<hr />
+<p><em>This document represents the approved information architecture for the Spectra Platform. All implementation should follow this structure.</em></p>
+<p><strong>Document Version:</strong> 1.0
+<strong>Last Updated:</strong> January 2025
+<strong>Status:</strong> Approved for Implementation</p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../ARCHITECTURE/" class="btn btn-neutral float-left" title="Architecture"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../FUNCTIONAL_MAPPING/" class="btn btn-neutral float-right" title="Functional Mapping">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+    
+      <span><a href="../ARCHITECTURE/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../FUNCTIONAL_MAPPING/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

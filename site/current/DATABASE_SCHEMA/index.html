@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Database Schema - SpectraSherpa Documentation</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Database Schema";
+        var mkdocs_page_input_path = "current/DATABASE_SCHEMA.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> SpectraSherpa Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Current</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Getting Started</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/installation/">Installation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/quickstart/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/modes/">Modes & Configuration</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >User Guide</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/experiments/">Experiments</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/library/">Library (NIST)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/doe/">DOE (96-Well)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/synthesis/">Synthesis Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/workflow/">Workflow Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" >Reproduction Study</a>
+    <ul>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
+                </li>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/reproduction_methodology/">Methodology</a>
+                </li>
+    </ul>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../USER_MANUAL/">User Manual</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >SpectrochemPy Examples</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/01_loading_data/">01. Loading Data</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/02_dataset_manipulation/">02. Manipulation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/03_plotting/">03. Plotting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/04_preprocessing_smoothing/">04. Smoothing</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/05_preprocessing_baseline/">05. Baseline</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/06_peak_finding/">06. Peak Finding</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/07_peak_fitting/">07. Integration</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/08_pca/">08. PCA</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/09_mcr_als/">09. MCR-ALS</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/10_pls_regression/">10. PLS</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reference</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../reference/nodes/">Node Library</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" >Architecture & System</a>
+    <ul class="current">
+                <li class="toctree-l2"><a class="" href="../README.md">Repository Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SYSTEM_OVERVIEW/">System Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../ARCHITECTURE/">Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../INFORMATION_ARCHITECTURE/">Information Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../FUNCTIONAL_MAPPING/">Functional Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DATA_SOURCES/">Data Sources</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../NODE_CAPABILITIES/">Node Capabilities</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PARAMETER_MAPPING/">Parameter Mapping</a>
+                </li>
+                <li class="toctree-l2 current"><a class="reference internal current" href="#">Database Schema</a>
+    <ul class="current">
+    <li class="toctree-l3"><a class="reference internal" href="#schema-overview">📋 Schema Overview</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#tables">🗂️ Tables</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#1-user">1. User</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#2-experiment">2. Experiment</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#3-experimentfile">3. ExperimentFile</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#4-expversion">4. ExpVersion</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#5-calibration">5. Calibration</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#6-calibrationfile">6. CalibrationFile</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#7-calmodel">7. CalModel</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#8-nistlibrary">8. NISTLibrary</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#9-backgroundjob">9. BackgroundJob</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#10-apikey">10. APIKey</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#relationships">🔗 Relationships</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#entity-relationship-diagram">Entity Relationship Diagram</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#version-branching-example">🔄 Version Branching Example</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#migration-to-postgresql-future">🚀 Migration to PostgreSQL (Future)</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#sample-queries">📝 Sample Queries</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#get-all-experiments-with-latest-version">Get all experiments with latest version</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#get-active-calibration-model-for-compound">Get active calibration model for compound</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#get-running-jobs">Get running jobs</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#version-history-tree">Version history tree</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#database-initialization">🛠️ Database Initialization</a>
+    </li>
+    </ul>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../AUTHENTICATION/">Authentication</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PHASE1_SETUP_GUIDE/">Phase 1 Setup Guide</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Workflow & Analysis</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../QUICKSTART_ANALYSIS/">Quickstart Analysis</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../MULTI_PORT_GUIDE/">Multi-Port Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../FOLDER_AND_PATTERN_LOADING/">Folder & Pattern Loading</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DOE_MANUAL/">DOE Manual</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PROBLEM_REPORT/">Workflow Bench Gap Analysis</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Deployment</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../deployment/DIGITAL_OCEAN/">DigitalOcean</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Quality & Validation</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../ALGORITHM_AUDIT/">Algorithm Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SYNTHETIC_FALLBACK_AUDIT/">Synthetic Fallback Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../TEST_FRAMEWORK/">Test Framework</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../BACKEND_TESTING_GUIDE/">Backend Testing Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../TESTING_CHECKLIST/">Testing Checklist</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../VERIFICATION_PROCEDURE/">Verification Procedure</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Project1 (Standalone Tool)</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/">Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/QUICKSTART/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/INSTALLATION_GUIDE/">Installation Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/TROUBLESHOOTING/">Troubleshooting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/NOTICE/">Notice</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Past</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/RELEASE_NOTES/">Release Notes</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/IMPLEMENTATION_SUMMARY/">Implementation Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/FINAL_FIXES_SUMMARY/">Final Fixes Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/SESSION_SUMMARY_2026-01-21/">Session Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/NODE_STANDARDIZATION_2026-01-26/">Node Standardization (2026-01-26)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Fixes</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/3D_CONCATENATION_FIX/">3D Concatenation Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/QUICK_PLOT_Y_AXIS_LABELS_FIX/">Quick Plot Y-Axis Labels Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CASE_SENSITIVITY_AND_UI_FIXES/">Case Sensitivity and UI Fixes</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/DEDICATED_LOAD_GROUP_ENFORCEMENT/">Dedicated Load Group Enforcement</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/LOAD_GROUP_NODE_IMPLEMENTATION/">Load Group Node Implementation</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reviews & Testing</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CODE_REVIEW_FINDINGS/">Code Review Findings</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/WEEK7_TESTING/">Week 7 Testing</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Future</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ROADMAP/">Roadmap</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/DOE_ENHANCEMENTS/">DOE Enhancements</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ANALYSIS_CANVAS_WIREFRAME/">Analysis Canvas Wireframe</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/plugin_plan_011525/">Plugin Plan (2025-01-15)</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">SpectraSherpa Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Current</li>
+          <li class="breadcrumb-item">Architecture & System</li>
+      <li class="breadcrumb-item active">Database Schema</li>
+    <li class="wy-breadcrumbs-aside">
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="database-schema-sqlite-design">Database Schema - SQLite Design</h1>
+<p><strong>Version:</strong> 1.3
+<strong>Date:</strong> 2026-01-02 (Updated: Added last_heartbeat for crash recovery)</p>
+<hr />
+<h2 id="schema-overview">📋 Schema Overview</h2>
+<p>Single SQLite database with WAL (Write-Ahead Logging) mode for local-compute-first operation, with PostgreSQL compatibility in mind for future cloud migration.</p>
+<p><strong>Database File:</strong>
+- <code>data/spectra_platform.db</code> - All application data (experiments, calibrations, users, background jobs)</p>
+<p><strong>Performance:</strong> WAL mode enables concurrent readers + 1 writer, preventing UI freezes during job progress updates</p>
+<hr />
+<h2 id="tables">🗂️ Tables</h2>
+<p>All tables reside in <code>data/spectra_platform.db</code> with WAL mode enabled.</p>
+<hr />
+<h3 id="1-user">1. User</h3>
+<p>Single-user for Phase 1, multi-user ready for Phase 2.</p>
+<pre><code class="language-sql">CREATE TABLE user (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_user_username ON user(username);
+</code></pre>
+<hr />
+<h3 id="2-experiment">2. Experiment</h3>
+<p>Metadata for experiments. Actual files stored on filesystem.</p>
+<pre><code class="language-sql">CREATE TABLE experiment (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    metadata_path VARCHAR(500) NOT NULL,  -- Path to metadata.json
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_experiment_user ON experiment(user_id);
+CREATE INDEX idx_experiment_created ON experiment(created_at DESC);
+</code></pre>
+<p><strong>Metadata JSON fields</strong> (stored in filesystem <code>metadata.json</code>):
+- <code>hardware</code>: Instrument details, resolution, detector, etc.
+- <code>design_of_experiment</code>: DOE type, factors, levels, total runs
+- <code>mixtures</code>: Sample compositions, rack positions
+- <code>acquisition_sequence</code>: Ordered list of measurements</p>
+<hr />
+<h3 id="3-experimentfile">3. ExperimentFile</h3>
+<p>Tracks individual spectral files within an experiment.</p>
+<pre><code class="language-sql">CREATE TABLE experiment_file (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    experiment_id INTEGER NOT NULL,
+    file_path VARCHAR(500) NOT NULL,  -- Relative to data/experiments/{exp_id}/
+    file_type VARCHAR(50),             -- csv, jdx, json
+    stage VARCHAR(50) NOT NULL,        -- raw, preprocessed, synthetic
+    file_size_bytes INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (experiment_id) REFERENCES experiment(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_expfile_experiment ON experiment_file(experiment_id);
+CREATE INDEX idx_expfile_stage ON experiment_file(stage);
+</code></pre>
+<p><strong>Stage values:</strong>
+- <code>raw</code>: Original uploaded files
+- <code>preprocessed</code>: After cosmic ray, smoothing, etc.
+- <code>synthetic</code>: Generated blends</p>
+<hr />
+<h3 id="4-expversion">4. ExpVersion</h3>
+<p>Git-like versioning with content-addressable storage (files stored once by hash).</p>
+<pre><code class="language-sql">CREATE TABLE exp_version (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    experiment_id INTEGER NOT NULL,
+    version_name VARCHAR(100) NOT NULL,  -- v1_initial, v2_cosmic_ray_removed
+    description TEXT,
+    manifest_path VARCHAR(500) NOT NULL,  -- Path to manifest.json
+    parent_version_id INTEGER,             -- For branching (Git-like)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (experiment_id) REFERENCES experiment(id) ON DELETE CASCADE,
+    FOREIGN KEY (parent_version_id) REFERENCES exp_version(id) ON DELETE SET NULL,
+
+    UNIQUE(experiment_id, version_name)
+);
+
+CREATE INDEX idx_expver_experiment ON exp_version(experiment_id);
+CREATE INDEX idx_expver_created ON exp_version(created_at DESC);
+</code></pre>
+<p><strong>Content-Addressable Storage Structure:</strong></p>
+<pre><code>data/experiments/exp_001/
+├── objects/                          # Content store (files by SHA-256)
+│   ├── a3f9c8d2e1b4f6a8...          # sample_01_original.csv
+│   ├── b7e4d1f53c2a8967...          # sample_01_cleaned.csv (unique)
+│   └── c2a8f6437e1d9b5a...          # sample_02.csv
+└── versions/
+    ├── v1_initial/
+    │   └── manifest.json             # File references by hash
+    └── v2_cosmic_ray_removed/
+        └── manifest.json
+</code></pre>
+<p><strong>Manifest JSON format:</strong></p>
+<pre><code class="language-json">{
+  &quot;version_name&quot;: &quot;v2_cosmic_ray_removed&quot;,
+  &quot;parent_version&quot;: &quot;v1_initial&quot;,
+  &quot;created_at&quot;: &quot;2026-01-01T12:00:00Z&quot;,
+  &quot;description&quot;: &quot;Removed cosmic rays from all spectra&quot;,
+  &quot;files&quot;: {
+    &quot;sample_01.csv&quot;: {
+      &quot;hash&quot;: &quot;b7e4d1f53c2a8967...&quot;,
+      &quot;size&quot;: 524288,
+      &quot;modified&quot;: &quot;2026-01-01T12:00:00Z&quot;
+    },
+    &quot;sample_02.csv&quot;: {
+      &quot;hash&quot;: &quot;c2a8f6437e1d9b5a...&quot;,
+      &quot;size&quot;: 524288,
+      &quot;modified&quot;: &quot;2026-01-01T11:30:00Z&quot;
+    }
+  }
+}
+</code></pre>
+<p><strong>Key Benefits:</strong>
+- Each unique file stored exactly once (deduplication)
+- Fast version creation (write manifest, not files)
+- SHA-256 hash verification prevents corruption
+- Easy restore: copy files from <code>objects/</code> based on manifest</p>
+<hr />
+<h3 id="5-calibration">5. Calibration</h3>
+<p>Calibration datasets for compound quantification.</p>
+<pre><code class="language-sql">CREATE TABLE calibration (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    compound_name VARCHAR(100) NOT NULL,
+    concentration_mode VARCHAR(50) NOT NULL,  -- product (ppm·m) or concentration (ppm)
+    x_unit VARCHAR(50) NOT NULL,              -- ppm·m, ppm
+    pathlength_m REAL,                        -- Meters (for product mode)
+    metadata_path VARCHAR(500) NOT NULL,      -- Path to metadata.json
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_calibration_user ON calibration(user_id);
+CREATE INDEX idx_calibration_compound ON calibration(compound_name);
+</code></pre>
+<hr />
+<h3 id="6-calibrationfile">6. CalibrationFile</h3>
+<p>Raw measurement files at various concentrations.</p>
+<pre><code class="language-sql">CREATE TABLE calibration_file (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    calibration_id INTEGER NOT NULL,
+    file_path VARCHAR(500) NOT NULL,  -- Relative to data/calibrations/{cal_id}/raw_measurements/
+    concentration REAL NOT NULL,      -- In x_unit (ppm or ppm·m)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (calibration_id) REFERENCES calibration(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_calfile_calibration ON calibration_file(calibration_id);
+</code></pre>
+<hr />
+<h3 id="7-calmodel">7. CalModel</h3>
+<p>Fitted calibration models (versioned).</p>
+<pre><code class="language-sql">CREATE TABLE cal_model (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    calibration_id INTEGER NOT NULL,
+    version_name VARCHAR(100) NOT NULL,  -- v1_linear, v2_saturation
+    model_type VARCHAR(50) NOT NULL,      -- linear, saturation, hybrid
+    model_path VARCHAR(500) NOT NULL,     -- Path to JSON model file
+    r_squared REAL,                       -- Fit quality (0-1)
+    rmse REAL,                            -- Root mean squared error
+    is_active BOOLEAN DEFAULT 0,          -- Current production model
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (calibration_id) REFERENCES calibration(id) ON DELETE CASCADE,
+
+    UNIQUE(calibration_id, version_name)
+);
+
+CREATE INDEX idx_calmodel_calibration ON cal_model(calibration_id);
+CREATE INDEX idx_calmodel_active ON cal_model(is_active);
+</code></pre>
+<p><strong>Model JSON format</strong> (stored in filesystem):</p>
+<pre><code class="language-json">{
+  &quot;label&quot;: &quot;CF4&quot;,
+  &quot;model_type&quot;: &quot;saturation&quot;,
+  &quot;concentration_mode&quot;: &quot;product&quot;,
+  &quot;x_unit&quot;: &quot;ppm·m&quot;,
+  &quot;pathlength_m&quot;: 1.0,
+  &quot;reference_concentration&quot;: 1000.0,
+  &quot;wavenumbers&quot;: [400.0, 401.0, ...],
+  &quot;s&quot;: [0.50, 0.55, ...],
+  &quot;p&quot;: [1.0, 1.0, ...],
+  &quot;c&quot;: [0.001, 0.002, ...]
+}
+</code></pre>
+<hr />
+<h3 id="8-nistlibrary">8. NISTLibrary</h3>
+<p>Downloaded NIST spectra catalog.</p>
+<pre><code class="language-sql">CREATE TABLE nist_library (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cas_number VARCHAR(50) NOT NULL,
+    compound_name VARCHAR(255) NOT NULL,
+    resolution VARCHAR(20) NOT NULL,      -- 2, 1, 0.5, 0.25, 0.125 cm-1
+    file_path VARCHAR(500) NOT NULL,      -- Relative to data/nist_library/downloaded/
+    downloaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE(cas_number, resolution)
+);
+
+CREATE INDEX idx_nist_cas ON nist_library(cas_number);
+CREATE INDEX idx_nist_compound ON nist_library(compound_name);
+</code></pre>
+<hr />
+<h3 id="9-backgroundjob">9. BackgroundJob</h3>
+<p>Track long-running tasks (MCR-ALS, NIST downloads, blending).</p>
+<pre><code class="language-sql">CREATE TABLE background_job (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    job_type VARCHAR(50) NOT NULL,        -- mcr_als, nist_download, blend, preprocess
+    status VARCHAR(50) DEFAULT 'pending', -- pending, running, completed, failed, cancelled
+    progress INTEGER DEFAULT 0,           -- 0-100
+    progress_message TEXT,                -- Current step description
+    result_path VARCHAR(500),             -- Path to output file/directory
+    error_message TEXT,
+    compute_location VARCHAR(20) DEFAULT 'local',  -- local, nist_api, deepseek_api
+    compute_node VARCHAR(100),            -- Hostname or API endpoint
+    last_heartbeat TIMESTAMP,             -- Updated every 30s during execution (for stale job detection)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP,
+
+    FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_job_user ON background_job(user_id);
+CREATE INDEX idx_job_status ON background_job(status);
+CREATE INDEX idx_job_created ON background_job(created_at DESC);
+CREATE INDEX idx_job_compute_location ON background_job(compute_location);
+CREATE INDEX idx_job_heartbeat ON background_job(last_heartbeat);
+</code></pre>
+<p><strong>Job Types:</strong>
+- <code>mcr_als</code>: MCR-ALS decomposition (Phase 2)
+- <code>nist_download</code>: Download spectrum from NIST
+- <code>blend</code>: Multi-species blending (if long-running)
+- <code>preprocess</code>: Batch preprocessing
+- <code>calibration_fit</code>: Fit calibration model</p>
+<p><strong>Compute Location Values:</strong>
+- <code>local</code>: Scientific computation on local machine (default)
+- <code>nist_api</code>: NIST database download
+- <code>deepseek_api</code>: LLM query (auxiliary service)</p>
+<p><strong>Performance Note:</strong> WAL mode prevents UI freezes from frequent job progress updates (1/sec write rate). Multiple readers can access UI data concurrently while jobs update.</p>
+<hr />
+<h3 id="10-apikey">10. APIKey</h3>
+<p>Encrypted storage for external API keys (DeepSeek, etc.).</p>
+<pre><code class="language-sql">CREATE TABLE api_key (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    service_name VARCHAR(100) NOT NULL,  -- deepseek, openai, etc.
+    key_encrypted TEXT NOT NULL,         -- AES-256 encrypted
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_used_at TIMESTAMP,
+
+    FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE,
+
+    UNIQUE(user_id, service_name)
+);
+
+CREATE INDEX idx_apikey_user ON api_key(user_id);
+</code></pre>
+<p><strong>Encryption Details:</strong>
+- <strong>Algorithm:</strong> AES-256-CBC
+- <strong>Key Derivation:</strong> PBKDF2 from user password (100,000 iterations)
+- <strong>Salt:</strong> Stored alongside encrypted key
+- <strong>Format:</strong> <code>{salt}:{iv}:{ciphertext}</code> (all base64-encoded)</p>
+<hr />
+<h2 id="relationships">🔗 Relationships</h2>
+<h3 id="entity-relationship-diagram">Entity Relationship Diagram</h3>
+<pre><code>User (1) ─────────── (N) Experiment
+                          │
+                          ├── (N) ExperimentFile
+                          └── (N) ExpVersion ──┐
+                                    │          │
+                                    └──────────┘
+                                  (parent_version_id)
+
+User (1) ─────────── (N) Calibration
+                          │
+                          ├── (N) CalibrationFile
+                          └── (N) CalModel
+
+User (1) ─────────── (N) BackgroundJob
+
+User (1) ─────────── (N) APIKey
+
+(No FK) ─────────── NISTLibrary (shared across users)
+</code></pre>
+<hr />
+<h2 id="version-branching-example">🔄 Version Branching Example</h2>
+<p><strong>Git-like workflow:</strong></p>
+<pre><code>Experiment: &quot;Methanol Study&quot;
+│
+├── v1_initial (parent: NULL)
+│   └── files: raw/sample_01.csv, raw/sample_02.csv
+│
+├── v2_cosmic_ray_removed (parent: v1)
+│   └── files: preprocessed/sample_01_cleaned.csv
+│
+├── v3_smoothed (parent: v2)
+│   └── files: preprocessed/sample_01_smoothed.csv
+│
+└── v2b_alternative_method (parent: v1) ← Branch!
+    └── files: preprocessed/sample_01_alt.csv
+</code></pre>
+<p><strong>SQL Representation:</strong></p>
+<pre><code class="language-sql">| id | version_name           | parent_version_id |
+|----|------------------------|-------------------|
+| 1  | v1_initial             | NULL              |
+| 2  | v2_cosmic_ray_removed  | 1                 |
+| 3  | v3_smoothed            | 2                 |
+| 4  | v2b_alternative_method | 1                 | ← Branch
+</code></pre>
+<hr />
+<h2 id="migration-to-postgresql-future">🚀 Migration to PostgreSQL (Future)</h2>
+<p>SQLite-compatible design for easy migration:</p>
+<ol>
+<li><strong>Auto-increment → SERIAL:</strong> <code>AUTOINCREMENT</code> → <code>SERIAL</code> in PostgreSQL</li>
+<li><strong>TIMESTAMP:</strong> Compatible in both (use UTC)</li>
+<li><strong>Boolean:</strong> SQLite uses <code>INTEGER 0/1</code>, PostgreSQL has native <code>BOOLEAN</code></li>
+<li><strong>JSON:</strong> Future use of PostgreSQL <code>JSONB</code> for metadata (instead of file-based)</li>
+</ol>
+<p><strong>Migration Script (when ready):</strong></p>
+<pre><code class="language-bash"># Export from SQLite
+sqlite3 data/spectra_platform.db .dump &gt; dump.sql
+
+# Convert to PostgreSQL syntax
+sed -i 's/AUTOINCREMENT/SERIAL/g' dump.sql
+
+# Import to PostgreSQL
+psql -U postgres -d spectra_platform &lt; dump.sql
+</code></pre>
+<hr />
+<h2 id="sample-queries">📝 Sample Queries</h2>
+<h3 id="get-all-experiments-with-latest-version">Get all experiments with latest version</h3>
+<pre><code class="language-sql">SELECT
+    e.id,
+    e.name,
+    e.created_at,
+    v.version_name,
+    v.created_at AS version_created_at
+FROM experiment e
+LEFT JOIN exp_version v ON e.id = v.experiment_id
+WHERE v.id = (
+    SELECT MAX(id)
+    FROM exp_version
+    WHERE experiment_id = e.id
+)
+ORDER BY e.created_at DESC;
+</code></pre>
+<h3 id="get-active-calibration-model-for-compound">Get active calibration model for compound</h3>
+<pre><code class="language-sql">SELECT
+    c.compound_name,
+    m.model_type,
+    m.model_path,
+    m.r_squared
+FROM calibration c
+JOIN cal_model m ON c.id = m.calibration_id
+WHERE c.compound_name = 'CF4'
+  AND m.is_active = 1;
+</code></pre>
+<h3 id="get-running-jobs">Get running jobs</h3>
+<pre><code class="language-sql">SELECT
+    id,
+    job_type,
+    progress,
+    started_at,
+    (strftime('%s', 'now') - strftime('%s', started_at)) AS seconds_elapsed
+FROM background_job
+WHERE status = 'running'
+ORDER BY started_at ASC;
+</code></pre>
+<h3 id="version-history-tree">Version history tree</h3>
+<pre><code class="language-sql">WITH RECURSIVE version_tree AS (
+    SELECT id, version_name, parent_version_id, 0 AS depth
+    FROM exp_version
+    WHERE experiment_id = 1 AND parent_version_id IS NULL
+
+    UNION ALL
+
+    SELECT v.id, v.version_name, v.parent_version_id, t.depth + 1
+    FROM exp_version v
+    JOIN version_tree t ON v.parent_version_id = t.id
+)
+SELECT
+    PRINTF('%*s%s', depth * 2, '', version_name) AS tree
+FROM version_tree
+ORDER BY id;
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code>v1_initial
+  v2_cosmic_ray_removed
+    v3_smoothed
+  v2b_alternative_method
+</code></pre>
+<hr />
+<h2 id="database-initialization">🛠️ Database Initialization</h2>
+<p><strong>Location:</strong> <code>app/core/database.py</code></p>
+<pre><code class="language-python">from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import event
+
+# Single database with WAL mode for concurrent access
+DB_URL = &quot;sqlite+aiosqlite:///data/spectra_platform.db&quot;
+engine = create_async_engine(DB_URL, echo=True)
+SessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+# Enable WAL mode for concurrent readers + 1 writer
+@event.listens_for(engine.sync_engine, &quot;connect&quot;)
+def set_wal_mode(dbapi_conn, connection_record):
+    cursor = dbapi_conn.cursor()
+    cursor.execute(&quot;PRAGMA journal_mode=WAL&quot;)          # Write-Ahead Logging
+    cursor.execute(&quot;PRAGMA synchronous=NORMAL&quot;)        # Faster writes (safe with WAL)
+    cursor.execute(&quot;PRAGMA busy_timeout=5000&quot;)         # Wait 5s on lock contention
+    cursor.execute(&quot;PRAGMA cache_size=-64000&quot;)         # 64MB cache
+    cursor.execute(&quot;PRAGMA wal_autocheckpoint=1000&quot;)   # Checkpoint after 1000 pages (~4 MB)
+    cursor.close()
+
+async def get_db():
+    &quot;&quot;&quot;Database dependency for all API endpoints&quot;&quot;&quot;
+    async with SessionLocal() as session:
+        yield session
+</code></pre>
+<p><strong>Usage in API:</strong></p>
+<pre><code class="language-python">from app.core.database import get_db
+
+@router.get(&quot;/experiments&quot;)
+async def list_experiments(db: AsyncSession = Depends(get_db)):
+    return await db.execute(select(Experiment))
+
+@router.post(&quot;/jobs/{id}/progress&quot;)
+async def update_job_progress(
+    id: int,
+    progress: int,
+    db: AsyncSession = Depends(get_db)
+):
+    # WAL mode prevents blocking UI reads during job updates
+    await db.execute(
+        update(BackgroundJob)
+        .where(BackgroundJob.id == id)
+        .values(progress=progress)
+    )
+</code></pre>
+<p><strong>Schema Creation:</strong> Automatic at startup via <code>Base.metadata.create_all</code>.</p>
+<p><strong>Migration Tool (production only):</strong> Alembic — for incremental schema changes
+on existing databases with live data.</p>
+<pre><code class="language-bash"># Create a new migration after changing models
+poetry run alembic revision --autogenerate -m &quot;Describe the change&quot;
+
+# Apply to an existing production database
+poetry run alembic upgrade heads
+</code></pre>
+<hr />
+<p><strong>Document Version:</strong> 1.2
+<strong>Last Updated:</strong> 2026-01-02</p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../PARAMETER_MAPPING/" class="btn btn-neutral float-left" title="Parameter Mapping"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../AUTHENTICATION/" class="btn btn-neutral float-right" title="Authentication">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+    
+      <span><a href="../PARAMETER_MAPPING/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../AUTHENTICATION/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

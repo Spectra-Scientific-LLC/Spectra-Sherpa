@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../../img/favicon.ico" />
+    <title>Installation Guide - SpectraSherpa Documentation</title>
+    <link rel="stylesheet" href="../../../css/theme.css" />
+    <link rel="stylesheet" href="../../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Installation Guide";
+        var mkdocs_page_input_path = "current/project1/INSTALLATION_GUIDE.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../../.." class="icon icon-home"> SpectraSherpa Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Current</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../../">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Getting Started</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../../getting_started/installation/">Installation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../../getting_started/quickstart/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../../getting_started/modes/">Modes & Configuration</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >User Guide</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../../user_guide/experiments/">Experiments</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../../user_guide/library/">Library (NIST)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../../user_guide/doe/">DOE (96-Well)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../../user_guide/synthesis/">Synthesis Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../../user_guide/workflow/">Workflow Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" >Reproduction Study</a>
+    <ul>
+                <li class="toctree-l3"><a class="reference internal" href="../../../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
+                </li>
+                <li class="toctree-l3"><a class="reference internal" href="../../../user_guide/reproduction_methodology/">Methodology</a>
+                </li>
+    </ul>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../../USER_MANUAL/">User Manual</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >SpectrochemPy Examples</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../../examples/01_loading_data/">01. Loading Data</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../../examples/02_dataset_manipulation/">02. Manipulation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../../examples/03_plotting/">03. Plotting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../../examples/04_preprocessing_smoothing/">04. Smoothing</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../../examples/05_preprocessing_baseline/">05. Baseline</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../../examples/06_peak_finding/">06. Peak Finding</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../../examples/07_peak_fitting/">07. Integration</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../../examples/08_pca/">08. PCA</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../../examples/09_mcr_als/">09. MCR-ALS</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../../examples/10_pls_regression/">10. PLS</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reference</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../../reference/nodes/">Node Library</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Architecture & System</a>
+    <ul>
+                <li class="toctree-l2"><a class="" href="../../README.md">Repository Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../SYSTEM_OVERVIEW/">System Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../ARCHITECTURE/">Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../INFORMATION_ARCHITECTURE/">Information Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../FUNCTIONAL_MAPPING/">Functional Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../DATA_SOURCES/">Data Sources</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../NODE_CAPABILITIES/">Node Capabilities</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../PARAMETER_MAPPING/">Parameter Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../DATABASE_SCHEMA/">Database Schema</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../AUTHENTICATION/">Authentication</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../PHASE1_SETUP_GUIDE/">Phase 1 Setup Guide</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Workflow & Analysis</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../QUICKSTART_ANALYSIS/">Quickstart Analysis</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../MULTI_PORT_GUIDE/">Multi-Port Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../FOLDER_AND_PATTERN_LOADING/">Folder & Pattern Loading</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../DOE_MANUAL/">DOE Manual</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../PROBLEM_REPORT/">Workflow Bench Gap Analysis</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Deployment</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../../deployment/DIGITAL_OCEAN/">DigitalOcean</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Quality & Validation</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../ALGORITHM_AUDIT/">Algorithm Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../SYNTHETIC_FALLBACK_AUDIT/">Synthetic Fallback Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../TEST_FRAMEWORK/">Test Framework</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../BACKEND_TESTING_GUIDE/">Backend Testing Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../TESTING_CHECKLIST/">Testing Checklist</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../VERIFICATION_PROCEDURE/">Verification Procedure</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" >Project1 (Standalone Tool)</a>
+    <ul class="current">
+                <li class="toctree-l2"><a class="reference internal" href="../">Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../QUICKSTART/">Quickstart</a>
+                </li>
+                <li class="toctree-l2 current"><a class="reference internal current" href="#">Installation Guide</a>
+    <ul class="current">
+    <li class="toctree-l3"><a class="reference internal" href="#table-of-contents">Table of Contents</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#overview">Overview</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#system-requirements">System Requirements</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#required-software">Required Software</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#required-python-packages">Required Python Packages</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#installation-steps">Installation Steps</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#step-1-install-python">Step 1: Install Python</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#step-2-install-required-packages">Step 2: Install Required Packages</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#step-3-download-the-analysis-scripts">Step 3: Download the Analysis Scripts</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#data-preparation">Data Preparation</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#file-organization">File Organization</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#csv-file-format-ftir-spectra">CSV File Format (FTIR Spectra)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#optional-excel-file-eigenvector-metadata">Optional Excel File (Eigenvector Metadata)</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#running-the-analysis">Running the Analysis</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#basic-usage">Basic Usage</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#selecting-concentration-mode-ppm-vs-concentrationpathlength">Selecting Concentration Mode (ppm vs concentration×pathlength)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#example-commands">Example Commands</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#expected-output">Expected Output</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#viewing-results">Viewing Results</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#opening-the-html-file">Opening the HTML File</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#interactive-features">Interactive Features</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#multi-species-settings-management">Multi-Species Settings Management</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#settings-storage-mechanisms">Settings Storage Mechanisms</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#customizing-settings">Customizing Settings</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#loading-saved-settings">Loading Saved Settings</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#resetting-settings">Resetting Settings</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#important-notes">Important Notes</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#troubleshooting">Troubleshooting</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#error-no-module-named-pandas">Error: "No module named 'pandas'"</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#error-file-not-found-or-no-csv-files-found">Error: "File not found" or "No CSV files found"</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#species-missing-or-skipped">Species missing or skipped</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#charts-not-displaying">Charts not displaying</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#very-slow-performance">Very slow performance</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#settings-not-syncing-between-selector-and-viewer">Settings not syncing between selector and viewer</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#settings-lost-after-closing-browser">Settings lost after closing browser</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#colleague-cant-see-my-custom-settings">Colleague can't see my custom settings</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#file-descriptions">File Descriptions</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#input-files">Input Files</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#output-files">Output Files</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#script-files">Script Files</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#vendor-files">Vendor Files</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#advanced-usage">Advanced Usage</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#batch-processing-multiple-datasets">Batch Processing Multiple Datasets</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#programmatic-usage">Programmatic Usage</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#support">Support</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#for-questions-or-issues">For Questions or Issues</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#reporting-bugs">Reporting Bugs</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#license-intellectual-property">License &amp; Intellectual Property</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#appendix-quick-reference">Appendix: Quick Reference</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#command-syntax">Command Syntax</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#minimum-example">Minimum Example</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#file-size-guidelines">File Size Guidelines</a>
+    </li>
+        </ul>
+    </li>
+    </ul>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../TROUBLESHOOTING/">Troubleshooting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../NOTICE/">Notice</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Past</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../../past/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../../past/RELEASE_NOTES/">Release Notes</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../../past/IMPLEMENTATION_SUMMARY/">Implementation Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../../past/FINAL_FIXES_SUMMARY/">Final Fixes Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../../past/SESSION_SUMMARY_2026-01-21/">Session Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../../past/NODE_STANDARDIZATION_2026-01-26/">Node Standardization (2026-01-26)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Fixes</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../../past/3D_CONCATENATION_FIX/">3D Concatenation Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../../past/QUICK_PLOT_Y_AXIS_LABELS_FIX/">Quick Plot Y-Axis Labels Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../../past/CASE_SENSITIVITY_AND_UI_FIXES/">Case Sensitivity and UI Fixes</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../../past/DEDICATED_LOAD_GROUP_ENFORCEMENT/">Dedicated Load Group Enforcement</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../../past/LOAD_GROUP_NODE_IMPLEMENTATION/">Load Group Node Implementation</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reviews & Testing</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../../past/CODE_REVIEW_FINDINGS/">Code Review Findings</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../../past/WEEK7_TESTING/">Week 7 Testing</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Future</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../../future/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../../future/ROADMAP/">Roadmap</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../../future/DOE_ENHANCEMENTS/">DOE Enhancements</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../../future/ANALYSIS_CANVAS_WIREFRAME/">Analysis Canvas Wireframe</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../../future/plugin_plan_011525/">Plugin Plan (2025-01-15)</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../..">SpectraSherpa Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../../.." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Current</li>
+          <li class="breadcrumb-item">Project1 (Standalone Tool)</li>
+      <li class="breadcrumb-item active">Installation Guide</li>
+    <li class="wy-breadcrumbs-aside">
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="ftir-chemometrics-analysis-tool-installation-usage-guide">FTIR Chemometrics Analysis Tool - Installation &amp; Usage Guide</h1>
+<p><strong>Copyright © Spectra Scientific LLC</strong></p>
+<p>Provided to Intel Corporation for internal research and demonstration use only under the Statement of Work (Oct 15, 2025). No redistribution, sublicensing, or commercial deployment rights are granted.</p>
+<hr />
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol>
+<li><a href="#overview">Overview</a></li>
+<li><a href="#system-requirements">System Requirements</a></li>
+<li><a href="#installation-steps">Installation Steps</a></li>
+<li><a href="#data-preparation">Data Preparation</a></li>
+<li><a href="#running-the-analysis">Running the Analysis</a></li>
+<li><a href="#viewing-results">Viewing Results</a></li>
+<li><a href="#troubleshooting">Troubleshooting</a></li>
+<li><a href="#support">Support</a></li>
+</ol>
+<hr />
+<h2 id="overview">Overview</h2>
+<p>This tool generates interactive HTML visualizations for FTIR spectral analysis with chemometric modeling. It analyzes multiple FTIR spectra at different concentrations and fits linear or saturation models to predict concentration from absorbance.</p>
+<p><strong>Key Features:</strong>
+- Interactive wavenumber exploration
+- Automatic model selection (linear vs saturation)
+- Quality metrics (NRMSE, R², slope/c, eigenvectors)
+- Full-spectra validation plots
+- Model parameter export (JSON)</p>
+<hr />
+<h2 id="system-requirements">System Requirements</h2>
+<h3 id="required-software">Required Software</h3>
+<ul>
+<li><strong>Python</strong>: 3.8 or higher</li>
+<li><strong>Web Browser</strong>: Chrome, Firefox, Safari, or Edge (modern version)</li>
+<li><strong>Operating System</strong>: Windows, macOS, or Linux</li>
+</ul>
+<h3 id="required-python-packages">Required Python Packages</h3>
+<pre><code>pandas &gt;= 1.3.0
+numpy &gt;= 1.20.0
+plotly &gt;= 5.0.0
+scipy &gt;= 1.7.0
+</code></pre>
+<hr />
+<h2 id="installation-steps">Installation Steps</h2>
+<h3 id="step-1-install-python">Step 1: Install Python</h3>
+<p><strong>Windows:</strong>
+1. Download Python from <a href="https://www.python.org/downloads/">python.org</a>
+2. Run installer and <strong>check "Add Python to PATH"</strong>
+3. Verify installation:
+   <code>cmd
+   python --version</code></p>
+<p><strong>macOS:</strong></p>
+<pre><code class="language-bash">brew install python3
+python3 --version
+</code></pre>
+<p><strong>Linux (Ubuntu/Debian):</strong></p>
+<pre><code class="language-bash">sudo apt update
+sudo apt install python3 python3-pip
+python3 --version
+</code></pre>
+<h3 id="step-2-install-required-packages">Step 2: Install Required Packages</h3>
+<p>Open a terminal/command prompt and run:</p>
+<pre><code class="language-bash">pip install pandas numpy plotly scipy
+</code></pre>
+<p>Or use a requirements file (if provided):</p>
+<pre><code class="language-bash">pip install -r requirements.txt
+</code></pre>
+<h3 id="step-3-download-the-analysis-scripts">Step 3: Download the Analysis Scripts</h3>
+<p>Copy these files to your working directory:
+- <code>plot_ftir_spectra.py</code> (main analysis script)
+- <code>ftir_controls.js</code> (interactive controls - embedded automatically)</p>
+<hr />
+<h2 id="data-preparation">Data Preparation</h2>
+<h3 id="file-organization">File Organization</h3>
+<p>Create a folder with your FTIR data organized as follows (one folder can contain one or multiple species):</p>
+<pre><code>my_ftir_data/
+├── Water [H2O] [7732-18-5] (5000ppm_5-10m_150C).csv
+├── Water [H2O] [7732-18-5] (12000ppm_5-10m_150C).csv
+├── Carbon Dioxide [CO2] [124-38-9] (4000ppm_5-10m_150C).csv
+├── Carbon Dioxide [CO2] [124-38-9] (8000ppm_5-11m_150C).csv
+└── Water_EV_Intensity_20251016.xlsx  (optional; first XLSX with species prefix is used)
+</code></pre>
+<h3 id="csv-file-format-ftir-spectra">CSV File Format (FTIR Spectra)</h3>
+<p>Each CSV file contains one spectrum with two columns:</p>
+<pre><code class="language-csv">499.96,0.0234
+500.20,0.0241
+500.44,0.0245
+...
+</code></pre>
+<p><strong>Requirements:</strong>
+- Column headers not needed
+- Wavenumber in cm⁻¹ (descending or ascending order)
+- One spectrum per file
+- File naming convention (parsed by the script):
+  - <code>ChemicalName [...metadata...] (###ppm)_path1_path2.csv</code>
+  - Chemical name: text before the first <code>" ["</code>
+  - Concentration: parsed from <code>(###ppm)</code>
+  - Pathlength: <strong>second-to-last</strong> underscore segment; hyphen → decimal; trailing letters trimmed (e.g., <code>_5-10m_</code> → 5.10)
+  - At least <strong>3 CSVs per species</strong> are required; species with fewer files are skipped with a warning</p>
+<h3 id="optional-excel-file-eigenvector-metadata">Optional Excel File (Eigenvector Metadata)</h3>
+<p>To overlay a legacy eigenvector in the diagnostics panel, place an Excel workbook (<code>.xlsx</code>) in the data folder. The tool picks the <strong>first</strong> <code>.xlsx</code> whose filename starts with the species name (alphabetical order) and reads the first worksheet as two columns of numeric pairs:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">Wavenumber</th>
+<th style="text-align: right;">Eigenvector_Intensity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">499.96</td>
+<td style="text-align: right;">0.014</td>
+</tr>
+<tr>
+<td style="text-align: right;">500.20</td>
+<td style="text-align: right;">-0.032</td>
+</tr>
+<tr>
+<td style="text-align: right;">500.44</td>
+<td style="text-align: right;">0.021</td>
+</tr>
+</tbody>
+</table>
+<p>Specifications:
+- First worksheet only; one header row is expected (column names are not enforced).
+- Column A: Wavenumber (cm⁻¹), numeric.
+- Column B: Eigenvector value, numeric (unitless).
+- Rows may be unsorted; the script sorts and linearly interpolates values to the golden grid.
+- Blank/non‑numeric rows are ignored; out‑of‑range values are treated as 0 during interpolation.</p>
+<hr />
+<h2 id="running-the-analysis">Running the Analysis</h2>
+<h3 id="basic-usage">Basic Usage</h3>
+<pre><code class="language-bash">python plot_ftir_spectra.py --directory &lt;data_folder&gt; --output &lt;output.html&gt;
+</code></pre>
+<p><strong>Example:</strong></p>
+<pre><code class="language-bash">python plot_ftir_spectra.py --directory ./my_ftir_data --output ./results/ftir_analysis.html
+</code></pre>
+<p><strong>Parameters:</strong>
+- <code>--directory</code> (required): Path to folder containing CSV and XLSX files
+- <code>--output</code> (optional): Output HTML filename; defaults to <code>ftir_spectra.html</code> (and <code>ftir_spectra_selector.html</code> when multiple species are present)</p>
+<h3 id="selecting-concentration-mode-ppm-vs-concentrationpathlength">Selecting Concentration Mode (ppm vs concentration×pathlength)</h3>
+<p>Use the <code>--concentration-mode</code> flag to pick the X-axis used for sorting, fitting, and plotting:</p>
+<ul>
+<li>
+<p><strong>Product (concentration × pathlength, ppm·m) - RECOMMENDED:</strong>
+  <code>python plot_ftir_spectra.py --directory ./data --output ./results.html --concentration-mode product</code></p>
+</li>
+<li>
+<p><strong>Concentration (ppm only) - LEGACY:</strong>
+  <code>python plot_ftir_spectra.py --directory ./data --output ./results.html --concentration-mode concentration</code></p>
+</li>
+</ul>
+<p><strong>IMPORTANT:</strong>
+- <strong>Always use <code>--concentration-mode product</code></strong> for libraries intended for MCR analysis (Project2)
+- Product mode is required for cross-project compatibility
+- Concentration-only mode produces libraries that will be rejected by Project2
+- If pathlength is constant, product mode with pathlength=1.0m gives equivalent ppm units</p>
+<p>When to choose:
+- <strong>Product mode (default):</strong> Use for all new calibrations, especially when pathlength varies or for Project2 compatibility
+- <strong>Concentration mode (legacy):</strong> Only for standalone analysis or legacy compatibility (not usable in Project2)</p>
+<p>Filename parsing (unchanged):
+- Concentration parsed from <code>(###ppm)</code> in the filename.
+- Pathlength parsed from the second-to-last underscore segment (<code>_5-10m_</code> → 5.10). If missing/unparseable, defaults to 1.0 m (warning logged), so product falls back to concentration.</p>
+<h3 id="example-commands">Example Commands</h3>
+<p><strong>Windows:</strong></p>
+<pre><code class="language-cmd">python plot_ftir_spectra.py --directory C:\Users\YourName\ftir_data --output C:\Users\YourName\Desktop\analysis.html
+</code></pre>
+<p><strong>macOS/Linux:</strong></p>
+<pre><code class="language-bash">python3 plot_ftir_spectra.py --directory ~/ftir_data --output ~/Desktop/analysis.html
+</code></pre>
+<h3 id="expected-output">Expected Output</h3>
+<p>When successful, you'll see species grouping and (for multi-species folders) selector + per-species pages generation. Example:</p>
+<pre><code>Scanning directory: /path/to/multi_species_folder
+
+Species Summary:
+  Including 'Carbon Dioxide': 12 files
+  Including 'Water': 18 files
+
+Building species datasets:
+  Species 'Carbon Dioxide': processing 12 file(s)
+    Eigenvector: found Carbon Dioxide_EV_Intensity_20251016.xlsx
+    Eigenvector pairs mapped: 18669 points
+  Species 'Water': processing 18 file(s)
+    Eigenvector: not found (rendering empty eigenvector trace)
+Species ready: Carbon Dioxide
+Species ready: Water
+Auto-selecting single species: Carbon Dioxide
+Wrote viewer: /.../viewer.html
+Wrote selector: /.../viewer_selector.html
+</code></pre>
+<hr />
+<h2 id="viewing-results">Viewing Results</h2>
+<h3 id="opening-the-html-file">Opening the HTML File</h3>
+<ul>
+<li>Single-species folder: open the generated species HTML (e.g., <code>ftir_spectra_Water.html</code>). The selector page is not generated when only one species exists.</li>
+<li>Multi-species folder: open the selector HTML (e.g., <code>output_selector.html</code>), choose a species, then continue to that per-species viewer (each species has its own HTML; no in-viewer dropdown).</li>
+</ul>
+<h3 id="interactive-features">Interactive Features</h3>
+<p><strong>Navigation:</strong>
+- Use slider or input box to change wavenumber
+- Click on diagnostic plots to jump to that wavenumber
+- Vertical lines show current wavenumber across all subplots</p>
+<p><strong>Controls:</strong>
+- <strong>Species</strong>: Use the selector page to swap species (per-species viewers contain only one species’ data; no in-viewer dropdown)
+- <strong>Saturation Level</strong>: Adjust maximum absorbance threshold
+- <strong>Wavenumber Range</strong>: Filter to specific spectral region
+- <strong>NRMSE Threshold</strong>: Quality filter for model acceptance
+- <strong>Model Selection</strong>: View parameters from linear, saturation, or winner models
+- <strong>Concentration</strong>: Select spectrum for validation plots</p>
+<p><strong>Color Legend:</strong>
+- 🟢 Green = Linear model
+- 🔴 Red = Saturation model</p>
+<p><strong>Exporting:</strong>
+- Click "Export Model Parameters (JSON)" to save fitted parameters
+- Downloads <code>ftir_model_parameters.json</code> with all wavenumber data</p>
+<hr />
+<h2 id="multi-species-settings-management">Multi-Species Settings Management</h2>
+<p>When working with multiple species, the selector page (<code>ftir_spectra_selector.html</code>) provides centralized settings management.</p>
+<h3 id="settings-storage-mechanisms">Settings Storage Mechanisms</h3>
+<p>The tool uses two complementary storage methods:</p>
+<ol>
+<li><strong>Browser Storage (Automatic)</strong></li>
+<li>Settings automatically save to your browser's localStorage</li>
+<li>Persists across browser sessions</li>
+<li>Provides instant synchronization between selector and viewer pages</li>
+<li>
+<p><strong>Critical requirement:</strong> All HTML files must remain in the same directory</p>
+</li>
+<li>
+<p><strong>JSON File (Manual Export/Import)</strong></p>
+</li>
+<li>Portable backup of all species settings</li>
+<li>Shareable with colleagues</li>
+<li>Survives browser cache clearing</li>
+<li>Click "Save Multi-Species Settings" to export</li>
+</ol>
+<h3 id="customizing-settings">Customizing Settings</h3>
+<p><strong>For individual species:</strong>
+1. Open <code>ftir_spectra_selector.html</code>
+2. Find the species row in the table
+3. Modify threshold values or wavenumber ranges
+4. Changes save automatically to browser storage
+5. Open the species viewer → settings load immediately</p>
+<p><strong>For all species:</strong>
+1. Modify multiple rows in the selector table
+2. Click "Save Multi-Species Settings" → exports JSON file
+3. Store JSON file for backup or sharing</p>
+<h3 id="loading-saved-settings">Loading Saved Settings</h3>
+<p><strong>From browser storage:</strong>
+- Automatic on page load if HTML files are in the same directory
+- No user action required</p>
+<p><strong>From JSON file:</strong>
+1. Open selector page
+2. Click "Load Settings from File"
+3. Select your saved JSON file
+4. Settings apply to all species immediately</p>
+<p><strong>From clipboard:</strong>
+1. Copy JSON text from email, document, etc.
+2. Click "Paste Settings from Clipboard" in selector
+3. Settings import and apply automatically</p>
+<h3 id="resetting-settings">Resetting Settings</h3>
+<p><strong>Single species:</strong> Click "Reset to Defaults" in the species row (selector table)</p>
+<p><strong>All species:</strong> Click "Reset All to Defaults" button at top of selector page</p>
+<h3 id="important-notes">Important Notes</h3>
+<p>⚠️ <strong>File Location Matters</strong>
+- Keep all generated HTML files in the same directory
+- Moving files to different folders breaks browser storage sync
+- Always use "Save Multi-Species Settings" before reorganizing files</p>
+<p>⚠️ <strong>Browser Cache Clearing</strong>
+- Clearing browser data erases localStorage settings
+- Keep JSON backups for important configurations
+- JSON files are not affected by browser cache clearing</p>
+<p>⚠️ <strong>Sharing with Colleagues</strong>
+- Recipients must load the JSON file manually
+- Browser storage does not transfer between computers
+- Include the JSON file when sharing HTML files</p>
+<hr />
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="error-no-module-named-pandas">Error: "No module named 'pandas'"</h3>
+<p><strong>Solution:</strong> Install required packages:</p>
+<pre><code class="language-bash">pip install pandas numpy plotly scipy
+</code></pre>
+<h3 id="error-file-not-found-or-no-csv-files-found">Error: "File not found" or "No CSV files found"</h3>
+<p><strong>Solution:</strong>
+- Check that data folder path is correct
+- Verify CSV files have <code>.csv</code> extension
+- At least one CSV file must be present</p>
+<h3 id="species-missing-or-skipped">Species missing or skipped</h3>
+<p><strong>Solution:</strong>
+- Ensure the filename follows the required pattern (<code>ChemicalName [...] (###ppm)_path1_path2.csv</code>)
+- Provide at least <strong>3 CSVs per species</strong> or the species will be skipped
+- Check logs for detailed warnings (pathlength parsing, missing files)</p>
+<h3 id="charts-not-displaying">Charts not displaying</h3>
+<p><strong>Solution:</strong>
+- HTML generated by the current script is self-contained (Plotly is embedded; works offline)
+- If you are viewing an older/prebuilt HTML that references a CDN, point it to the local vendor file:
+  - Replace the CDN script with <code>./vendor/plotly-3.2.0.min.js</code> (or regenerate HTML with the latest script)
+- Try a different web browser
+- Check browser console for errors (F12 → Console tab)</p>
+<h3 id="very-slow-performance">Very slow performance</h3>
+<p><strong>Possible causes:</strong>
+- HTML file size too large (&gt;20 MB)
+- Too many spectra (&gt;50) or wavenumbers (&gt;50000)
+- Old browser version</p>
+<p><strong>Solutions:</strong>
+- Reduce wavenumber range with <code>--range</code> parameter (if available)
+- Use fewer spectra
+- Update browser to latest version</p>
+<h3 id="settings-not-syncing-between-selector-and-viewer">Settings not syncing between selector and viewer</h3>
+<p><strong>Cause:</strong> HTML files were moved to different directories</p>
+<p><strong>Symptoms:</strong>
+- Selector shows custom settings but viewer shows defaults
+- Changes in selector don't appear in viewer</p>
+<p><strong>Solution:</strong>
+1. Keep all HTML files in the same directory
+2. If you've already moved files:
+   - Click "Save Multi-Species Settings" in selector
+   - Move the JSON file to the new directory
+   - Click "Load Settings from File" to restore settings</p>
+<h3 id="settings-lost-after-closing-browser">Settings lost after closing browser</h3>
+<p><strong>Cause:</strong> Browser cache was cleared or private browsing mode was used</p>
+<p><strong>Prevention:</strong>
+- Regularly click "Save Multi-Species Settings" to create JSON backups
+- Store JSON files with your data for long-term archival</p>
+<p><strong>Recovery:</strong>
+- Load the most recent JSON backup using "Load Settings from File"</p>
+<h3 id="colleague-cant-see-my-custom-settings">Colleague can't see my custom settings</h3>
+<p><strong>Cause:</strong> Browser storage doesn't transfer with HTML files</p>
+<p><strong>Solution:</strong>
+1. Before sharing, click "Save Multi-Species Settings"
+2. Send both the HTML files AND the JSON file
+3. Instruct recipient to:
+   - Save all files to same directory
+   - Open selector page
+   - Click "Load Settings from File"
+   - Select the JSON file you provided</p>
+<hr />
+<h2 id="file-descriptions">File Descriptions</h2>
+<h3 id="input-files">Input Files</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Purpose</th>
+<th>Required</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>*.csv</code></td>
+<td>Individual FTIR spectra</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>*.xlsx</code></td>
+<td>Eigenvector overlay (optional)</td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<h3 id="output-files">Output Files</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>viewer.html</code> (name follows <code>--output</code>)</td>
+<td>Main per-species viewer (auto-loads first species; in-viewer dropdown available)</td>
+</tr>
+<tr>
+<td><code>viewer_selector.html</code> (only when multiple species)</td>
+<td>Lightweight dropdown to choose a species and open the main viewer</td>
+</tr>
+<tr>
+<td><code>ftir_model_parameters.json</code></td>
+<td>Exported model parameters (per selected species; optional)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="script-files">Script Files</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>plot_ftir_spectra.py</code></td>
+<td>Main analysis script</td>
+</tr>
+<tr>
+<td><code>ftir_controls.js</code></td>
+<td>Interactive controls (embedded in HTML)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="vendor-files">Vendor Files</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>vendor/plotly-3.2.0.min.js</code></td>
+<td>Offline Plotly runtime for legacy/prebuilt HTML that expects a separate Plotly script. New HTML embeds Plotly automatically.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="advanced-usage">Advanced Usage</h2>
+<h3 id="batch-processing-multiple-datasets">Batch Processing Multiple Datasets</h3>
+<p>Create a batch script to process multiple folders:</p>
+<p><strong>Windows (batch.bat):</strong></p>
+<pre><code class="language-cmd">@echo off
+python plot_ftir_spectra.py --directory data\CO2 --output output\CO2_analysis.html
+python plot_ftir_spectra.py --directory data\H2O --output output\H2O_analysis.html
+python plot_ftir_spectra.py --directory data\CF4 --output output\CF4_analysis.html
+echo All analyses complete!
+</code></pre>
+<p><strong>macOS/Linux (batch.sh):</strong></p>
+<pre><code class="language-bash">#!/bin/bash
+python3 plot_ftir_spectra.py --directory data/CO2 --output output/CO2_analysis.html
+python3 plot_ftir_spectra.py --directory data/H2O --output output/H2O_analysis.html
+python3 plot_ftir_spectra.py --directory data/CF4 --output output/CF4_analysis.html
+echo &quot;All analyses complete!&quot;
+</code></pre>
+<h3 id="programmatic-usage">Programmatic Usage</h3>
+<pre><code class="language-python">from plot_ftir_spectra import main
+from pathlib import Path
+
+# Process data
+main(
+    directory=Path(&quot;./my_data&quot;),
+    output_html=Path(&quot;./output.html&quot;)
+)
+</code></pre>
+<hr />
+<h2 id="support">Support</h2>
+<h3 id="for-questions-or-issues">For Questions or Issues</h3>
+<p>Contact: Spectra Scientific LLC
+Email: info@spectrascientific.ai
+Reference: Intel SOW (Oct 15, 2025)</p>
+<h3 id="reporting-bugs">Reporting Bugs</h3>
+<p>Please provide:
+1. Python version (<code>python --version</code>)
+2. Package versions (<code>pip list | grep -E "pandas|numpy|plotly|scipy"</code>)
+3. Error message (full traceback)
+4. Sample data (if possible)</p>
+<hr />
+<h2 id="license-intellectual-property">License &amp; Intellectual Property</h2>
+<p><strong>Copyright © Spectra Scientific LLC</strong></p>
+<p>This software is provided to Intel Corporation for internal research and demonstration use only under the Statement of Work dated Oct 15, 2025.</p>
+<p><strong>Restrictions:</strong>
+- ❌ No redistribution outside Intel Corporation
+- ❌ No sublicensing to third parties
+- ❌ No commercial deployment or production use
+- ✅ Internal research and evaluation permitted
+- ✅ Modification for internal use permitted</p>
+<p><strong>Deliverables included:</strong>
+- <code>plot_ftir_spectra.py</code> - Analysis script
+- <code>ftir_controls.js</code> - Interactive controls
+- Supporting documentation</p>
+<p>For licensing inquiries or commercial use, contact Spectra Scientific LLC.</p>
+<hr />
+<h2 id="appendix-quick-reference">Appendix: Quick Reference</h2>
+<h3 id="command-syntax">Command Syntax</h3>
+<pre><code class="language-bash">python plot_ftir_spectra.py --directory &lt;DATA_FOLDER&gt; --output &lt;OUTPUT.html&gt;
+</code></pre>
+<h3 id="minimum-example">Minimum Example</h3>
+<pre><code class="language-bash"># 1. Prepare data folder with CSV files (optional: add eigenvector.xlsx)
+# 2. Run analysis
+python plot_ftir_spectra.py --directory ./data --output ./analysis.html
+# 3. Open analysis.html in browser
+</code></pre>
+<h3 id="file-size-guidelines">File Size Guidelines</h3>
+<table>
+<thead>
+<tr>
+<th>Spectra Count</th>
+<th>Wavenumbers</th>
+<th>Expected HTML Size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>5-10</td>
+<td>~3000</td>
+<td>8-12 MB</td>
+</tr>
+<tr>
+<td>10-20</td>
+<td>~3000</td>
+<td>12-18 MB</td>
+</tr>
+<tr>
+<td>20-50</td>
+<td>~3000</td>
+<td>18-30 MB</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Note:</strong> Files &gt;20 MB may be slow to load. Consider reducing wavenumber range if needed.</p>
+<hr />
+<p><strong>Document Version:</strong> 1.0
+<strong>Last Updated:</strong> 2025-11-11
+<strong>Compatible with:</strong> plot_ftir_spectra.py v2.0+</p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../QUICKSTART/" class="btn btn-neutral float-left" title="Quickstart"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../TROUBLESHOOTING/" class="btn btn-neutral float-right" title="Troubleshooting">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+    
+      <span><a href="../QUICKSTART/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../TROUBLESHOOTING/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../../..";</script>
+    <script src="../../../js/theme_extra.js"></script>
+    <script src="../../../js/theme.js"></script>
+      <script src="../../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

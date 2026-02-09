@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Dedicated Load Group Enforcement - SpectraSherpa Documentation</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Dedicated Load Group Enforcement";
+        var mkdocs_page_input_path = "past/DEDICATED_LOAD_GROUP_ENFORCEMENT.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> SpectraSherpa Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Current</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../current/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Getting Started</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/installation/">Installation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/quickstart/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/modes/">Modes & Configuration</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >User Guide</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/experiments/">Experiments</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/library/">Library (NIST)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/doe/">DOE (96-Well)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/synthesis/">Synthesis Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/workflow/">Workflow Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" >Reproduction Study</a>
+    <ul>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
+                </li>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/reproduction_methodology/">Methodology</a>
+                </li>
+    </ul>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../USER_MANUAL/">User Manual</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >SpectrochemPy Examples</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/01_loading_data/">01. Loading Data</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/02_dataset_manipulation/">02. Manipulation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/03_plotting/">03. Plotting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/04_preprocessing_smoothing/">04. Smoothing</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/05_preprocessing_baseline/">05. Baseline</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/06_peak_finding/">06. Peak Finding</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/07_peak_fitting/">07. Integration</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/08_pca/">08. PCA</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/09_mcr_als/">09. MCR-ALS</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/10_pls_regression/">10. PLS</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reference</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../reference/nodes/">Node Library</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Architecture & System</a>
+    <ul>
+                <li class="toctree-l2"><a class="" href="../../current/README.md">Repository Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/SYSTEM_OVERVIEW/">System Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/ARCHITECTURE/">Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/INFORMATION_ARCHITECTURE/">Information Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/FUNCTIONAL_MAPPING/">Functional Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/DATA_SOURCES/">Data Sources</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/NODE_CAPABILITIES/">Node Capabilities</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/PARAMETER_MAPPING/">Parameter Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/DATABASE_SCHEMA/">Database Schema</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/AUTHENTICATION/">Authentication</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/PHASE1_SETUP_GUIDE/">Phase 1 Setup Guide</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Workflow & Analysis</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/QUICKSTART_ANALYSIS/">Quickstart Analysis</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/MULTI_PORT_GUIDE/">Multi-Port Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/FOLDER_AND_PATTERN_LOADING/">Folder & Pattern Loading</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/DOE_MANUAL/">DOE Manual</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/PROBLEM_REPORT/">Workflow Bench Gap Analysis</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Deployment</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../deployment/DIGITAL_OCEAN/">DigitalOcean</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Quality & Validation</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/ALGORITHM_AUDIT/">Algorithm Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/SYNTHETIC_FALLBACK_AUDIT/">Synthetic Fallback Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/TEST_FRAMEWORK/">Test Framework</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/BACKEND_TESTING_GUIDE/">Backend Testing Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/TESTING_CHECKLIST/">Testing Checklist</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/VERIFICATION_PROCEDURE/">Verification Procedure</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Project1 (Standalone Tool)</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/project1/">Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/project1/QUICKSTART/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/project1/INSTALLATION_GUIDE/">Installation Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/project1/TROUBLESHOOTING/">Troubleshooting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../current/project1/NOTICE/">Notice</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Past</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../RELEASE_NOTES/">Release Notes</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../IMPLEMENTATION_SUMMARY/">Implementation Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../FINAL_FIXES_SUMMARY/">Final Fixes Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../SESSION_SUMMARY_2026-01-21/">Session Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../NODE_STANDARDIZATION_2026-01-26/">Node Standardization (2026-01-26)</a>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" >Fixes</a>
+    <ul class="current">
+                <li class="toctree-l2"><a class="reference internal" href="../3D_CONCATENATION_FIX/">3D Concatenation Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../QUICK_PLOT_Y_AXIS_LABELS_FIX/">Quick Plot Y-Axis Labels Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../CASE_SENSITIVITY_AND_UI_FIXES/">Case Sensitivity and UI Fixes</a>
+                </li>
+                <li class="toctree-l2 current"><a class="reference internal current" href="#">Dedicated Load Group Enforcement</a>
+    <ul class="current">
+    <li class="toctree-l3"><a class="reference internal" href="#problem-statement">Problem Statement</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#solution-enforce-dedicated-load-group-only">Solution: Enforce "Dedicated Load Group Only"</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#changes-made">Changes Made</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#architecture-after-fix">Architecture After Fix</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#clear-separation-of-concerns">Clear Separation of Concerns</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#user-flow">User Flow</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#benefits">Benefits</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#1-clear-mental-model">1. Clear Mental Model</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#2-reduced-code-duplication">2. Reduced Code Duplication</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#3-better-user-experience">3. Better User Experience</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#4-maintainability">4. Maintainability</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#5-extensibility">5. Extensibility</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#migration-guide">Migration Guide</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#for-users">For Users</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#for-developers">For Developers</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#error-messages">Error Messages</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#when-user-tries-pattern-in-datasourcenode">When User Tries Pattern in DataSourceNode</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#files-modified">Files Modified</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#backend-2-files">Backend (2 files)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#frontend-1-file">Frontend (1 file)</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#testing">Testing</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#test-case-1-datasourcenode-rejects-patterns">Test Case 1: DataSourceNode Rejects Patterns</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#test-case-2-datasourcenode-loads-single-file">Test Case 2: DataSourceNode Loads Single File</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#test-case-3-loadgroupnode-handles-patterns">Test Case 3: LoadGroupNode Handles Patterns</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#test-case-4-ui-shows-no-folder-shortcuts">Test Case 4: UI Shows No Folder Shortcuts</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#backward-compatibility">Backward Compatibility</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#breaking-changes">⚠️ Breaking Changes</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#mitigation">Mitigation</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#future-enhancements">Future Enhancements</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#phase-1-cleanup-immediate">Phase 1: Cleanup (Immediate)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#phase-2-documentation-short-term">Phase 2: Documentation (Short-term)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#phase-3-enhancements-long-term">Phase 3: Enhancements (Long-term)</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#summary">Summary</a>
+    </li>
+    </ul>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../LOAD_GROUP_NODE_IMPLEMENTATION/">Load Group Node Implementation</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reviews & Testing</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../CODE_REVIEW_FINDINGS/">Code Review Findings</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../WEEK7_TESTING/">Week 7 Testing</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Future</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ROADMAP/">Roadmap</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/DOE_ENHANCEMENTS/">DOE Enhancements</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ANALYSIS_CANVAS_WIREFRAME/">Analysis Canvas Wireframe</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/plugin_plan_011525/">Plugin Plan (2025-01-15)</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">SpectraSherpa Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Past</li>
+          <li class="breadcrumb-item">Fixes</li>
+      <li class="breadcrumb-item active">Dedicated Load Group Enforcement</li>
+    <li class="wy-breadcrumbs-aside">
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="dedicated-load-group-enforcement">Dedicated Load Group Enforcement</h1>
+<p><strong>Date:</strong> 2026-01-21
+<strong>Status:</strong> ✅ FIXED
+<strong>Priority:</strong> HIGH - Architectural improvement</p>
+<hr />
+<h2 id="problem-statement">Problem Statement</h2>
+<p><strong>Original Issue:</strong>
+DataSourceNode had group loading logic (<code>_load_spectrochempy_group</code>) that was triggered when a pattern or trailing <code>/</code> was detected in <code>example_file</code>. This created:</p>
+<ol>
+<li><strong>Duplication</strong>: Same logic in both DataSourceNode and LoadGroupNode</li>
+<li><strong>Confusion</strong>: Users unsure which node to use for group loading</li>
+<li><strong>Inconsistent Parameters</strong>: LoadGroupNode has advanced options (sort_by, validate_axes, recursive) that DataSourceNode didn't expose</li>
+<li><strong>Maintenance Burden</strong>: Same functionality in two places</li>
+<li><strong>UI Mismatch</strong>: UI suggested pattern input but backend behavior was inconsistent</li>
+</ol>
+<p><strong>Architectural Violation:</strong>
+- DataSourceNode: Should load <strong>single files only</strong>
+- LoadGroupNode: Should load <strong>multiple files</strong> (dedicated purpose)</p>
+<p>Allowing DataSourceNode to do group loading violated the single responsibility principle.</p>
+<hr />
+<h2 id="solution-enforce-dedicated-load-group-only">Solution: Enforce "Dedicated Load Group Only"</h2>
+<h3 id="changes-made">Changes Made</h3>
+<h4 id="1-backend-datasourcenode-pattern-detection-now-raises-error">1. Backend: DataSourceNode - Pattern Detection Now Raises Error</h4>
+<p><strong>File:</strong> <a href="backend/app/services/dag/nodes/data.py#L335-L352">data.py:335-352</a></p>
+<p><strong>Before:</strong></p>
+<pre><code class="language-python">if source == &quot;spectrochempy&quot;:
+    if example_file and self._is_pattern(example_file):
+        # Pattern detected - use group loading
+        dataset = self._load_spectrochempy_group(example_dataset, example_file)
+    else:
+        # Single file loading
+        dataset = self._load_spectrochempy_example(example_dataset, example_file)
+</code></pre>
+<p><strong>After:</strong></p>
+<pre><code class="language-python">if source == &quot;spectrochempy&quot;:
+    # Single file loading only - use LoadGroupNode for multiple files
+    if example_file and self._is_pattern(example_file):
+        raise ValueError(
+            f&quot;Pattern detected in example_file: '{example_file}'\n\n&quot;
+            f&quot;DataSourceNode is for loading single files only.\n&quot;
+            f&quot;For loading multiple files with patterns, use the LoadGroupNode instead:\n&quot;
+            f&quot;  - Drag 'Load Group' node from the node palette\n&quot;
+            f&quot;  - Set folder_path to the folder (e.g., 'irdata/carroucell_samp')\n&quot;
+            f&quot;  - Set pattern to your desired pattern (e.g., '*.spa', 'sample_*')\n\n&quot;
+            f&quot;LoadGroupNode provides additional features:\n&quot;
+            f&quot;  - Sort options (filename, numeric suffix, modification time)\n&quot;
+            f&quot;  - X-axis validation\n&quot;
+            f&quot;  - Recursive subdirectory scanning\n&quot;
+            f&quot;  - Custom group titles&quot;
+        )
+    dataset = self._load_spectrochempy_example(example_dataset, example_file)
+</code></pre>
+<p><strong>Impact:</strong>
+- Patterns like <code>*.spa</code>, <code>sample_*</code>, <code>irdata/</code> now raise helpful error
+- Error message directs users to LoadGroupNode
+- Clear separation: DataSourceNode = single file, LoadGroupNode = multiple files</p>
+<h4 id="2-frontend-removed-pattern-input-ui">2. Frontend: Removed Pattern Input UI</h4>
+<p><strong>File:</strong> <a href="frontend/src/views/workflow-builder/WorkflowInspector.vue#L157-L172">WorkflowInspector.vue:157-172</a></p>
+<p><strong>Before:</strong></p>
+<pre><code class="language-vue">&lt;label&gt;Example File or Pattern (Optional)&lt;/label&gt;
+&lt;Dropdown
+  placeholder=&quot;Select file or type pattern (*.spa, irdata/)&quot;
+  editable  &lt;!-- ❌ Allowed typing patterns --&gt;
+  ...
+/&gt;
+&lt;small class=&quot;param-hint&quot;&gt;
+  Select a file, folder shortcut (📁), or type a pattern (*.spa, sample_*, irdata/).
+&lt;/small&gt;
+</code></pre>
+<p><strong>After:</strong></p>
+<pre><code class="language-vue">&lt;label&gt;Example File (Optional)&lt;/label&gt;
+&lt;Dropdown
+  placeholder=&quot;Select a single file or leave empty for default&quot;
+  &lt;!-- editable removed ✅ --&gt;
+  ...
+/&gt;
+&lt;small class=&quot;param-hint&quot;&gt;
+  Select a single file from {{ localParams.example_dataset || 'dataset' }} ({{ scpFileOptions.length }} files available).
+  Leave empty for default. &lt;strong&gt;For loading multiple files, use the Load Group node instead.&lt;/strong&gt;
+&lt;/small&gt;
+</code></pre>
+<p><strong>Impact:</strong>
+- Users can no longer type patterns in DataSourceNode
+- Help text clarifies "single file" and directs to Load Group node
+- UI matches backend behavior</p>
+<h4 id="3-api-removed-folder-shortcuts">3. API: Removed Folder Shortcuts</h4>
+<p><strong>File:</strong> <a href="backend/app/api/v1/routes/workflows.py#L587-L590">workflows.py:587-590</a></p>
+<p><strong>Before:</strong></p>
+<pre><code class="language-python">if files_dict:
+    # Add folder entry at the beginning for &quot;load all files&quot; shortcut
+    file_count = len(files_dict)
+    folder_entry = {
+        &quot;label&quot;: f&quot;📁 Load all {dataset_name} files ({file_count} files)&quot;,
+        &quot;value&quot;: f&quot;{dataset_name}/&quot;,  # Trailing slash indicates folder
+        &quot;is_folder&quot;: True,
+        ...
+    }
+    result[dataset_name] = [folder_entry] + list(files_dict.values())
+</code></pre>
+<p><strong>After:</strong></p>
+<pre><code class="language-python">if files_dict:
+    # DataSourceNode is for single files only
+    # For loading multiple files, users should use LoadGroupNode
+    result[dataset_name] = list(files_dict.values())
+</code></pre>
+<p><strong>Impact:</strong>
+- Folder shortcuts (📁 Load all...) removed from dropdown
+- Dropdown now shows only individual files
+- No confusion about which node to use for group loading</p>
+<hr />
+<h2 id="architecture-after-fix">Architecture After Fix</h2>
+<h3 id="clear-separation-of-concerns">Clear Separation of Concerns</h3>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>Purpose</th>
+<th>Input</th>
+<th>Output</th>
+<th>Parameters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>DataSourceNode</strong></td>
+<td>Load <strong>single</strong> spectral file</td>
+<td>Single file path</td>
+<td>NDDataset (1 spectrum)</td>
+<td><code>example_dataset</code>, <code>example_file</code></td>
+</tr>
+<tr>
+<td><strong>LoadGroupNode</strong></td>
+<td>Load <strong>multiple</strong> files from folder</td>
+<td>Folder + pattern</td>
+<td>NDDataset (N spectra)</td>
+<td><code>folder_path</code>, <code>pattern</code>, <code>sort_by</code>, <code>validate_axes</code>, <code>recursive</code>, <code>group_title</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="user-flow">User Flow</h3>
+<p><strong>Before (Confusing):</strong></p>
+<pre><code>User wants to load multiple files
+  → Option 1: Use DataSourceNode with pattern &quot;*.spa&quot;
+  → Option 2: Use DataSourceNode with folder shortcut &quot;📁 Load all...&quot;
+  → Option 3: Use LoadGroupNode
+
+❌ Three ways to do the same thing!
+❌ Users don't know which to use
+❌ Different parameter sets for same task
+</code></pre>
+<p><strong>After (Clear):</strong></p>
+<pre><code>User wants to load single file
+  → Use DataSourceNode
+
+User wants to load multiple files
+  → Use LoadGroupNode (only option)
+
+✅ One clear path for each use case
+✅ Dedicated nodes for dedicated purposes
+✅ Consistent parameters for group loading
+</code></pre>
+<hr />
+<h2 id="benefits">Benefits</h2>
+<h3 id="1-clear-mental-model">1. Clear Mental Model</h3>
+<ul>
+<li><strong>DataSourceNode</strong> = Single file loading</li>
+<li><strong>LoadGroupNode</strong> = Multiple file loading (batch/group)</li>
+<li>No overlap, no confusion</li>
+</ul>
+<h3 id="2-reduced-code-duplication">2. Reduced Code Duplication</h3>
+<ul>
+<li>Group loading logic exists <strong>only in LoadGroupNode</strong></li>
+<li><code>_load_spectrochempy_group()</code> method removed from DataSourceNode</li>
+<li>Single source of truth for group loading behavior</li>
+</ul>
+<h3 id="3-better-user-experience">3. Better User Experience</h3>
+<ul>
+<li><strong>Clear error messages</strong>: If user accidentally uses pattern, they get helpful guidance</li>
+<li><strong>Consistent UI</strong>: UI labels and behavior match backend logic</li>
+<li><strong>No hidden features</strong>: All group loading parameters visible in LoadGroupNode</li>
+</ul>
+<h3 id="4-maintainability">4. Maintainability</h3>
+<ul>
+<li><strong>Single place to fix bugs</strong>: Only LoadGroupNode needs updates for group loading</li>
+<li><strong>No synchronization</strong>: Don't need to keep two implementations in sync</li>
+<li><strong>Clear ownership</strong>: Each node has a clear, focused responsibility</li>
+</ul>
+<h3 id="5-extensibility">5. Extensibility</h3>
+<ul>
+<li><strong>Easy to add features</strong>: New group loading features go only in LoadGroupNode</li>
+<li><strong>No parameter proliferation</strong>: DataSourceNode stays simple</li>
+<li><strong>Future-proof</strong>: Clear architecture supports future enhancements</li>
+</ul>
+<hr />
+<h2 id="migration-guide">Migration Guide</h2>
+<h3 id="for-users">For Users</h3>
+<p><strong>If you were using folder shortcuts (📁):</strong></p>
+<pre><code class="language-diff">- DataSourceNode:
+-   source: spectrochempy
+-   example_dataset: irdata
+-   example_file: irdata/  ❌ No longer works
+
++ LoadGroupNode:
++   folder_path: irdata
++   pattern: *
++   sort_by: filename
++   validate_axes: true
+</code></pre>
+<p><strong>If you were typing patterns:</strong></p>
+<pre><code class="language-diff">- DataSourceNode:
+-   example_file: &quot;*.spa&quot;  ❌ No longer works
+-   example_file: &quot;sample_*&quot;  ❌ No longer works
+
++ LoadGroupNode:
++   folder_path: irdata
++   pattern: &quot;*.spa&quot;  ✅ Works
++   pattern: &quot;sample_*&quot;  ✅ Works
+</code></pre>
+<p><strong>If you were loading single files:</strong></p>
+<pre><code>DataSourceNode:
+  source: spectrochempy
+  example_dataset: irdata
+  example_file: CO@Mo_Al2O3.SPG  ✅ Still works (no change)
+</code></pre>
+<h3 id="for-developers">For Developers</h3>
+<p><strong>Backend:</strong>
+- <code>_load_spectrochempy_group()</code> can be removed from DataSourceNode (currently kept but unused)
+- Only LoadGroupNode implements group loading
+- DataSourceNode raises clear error if pattern detected</p>
+<p><strong>Frontend:</strong>
+- Folder shortcuts no longer appear in DataSourceNode dropdown
+- Pattern input disabled in DataSourceNode
+- LoadGroupNode is the only way to do group loading</p>
+<p><strong>Testing:</strong>
+- Test that DataSourceNode rejects patterns with helpful error
+- Test that LoadGroupNode handles all group loading scenarios
+- Verify UI shows only individual files in DataSourceNode</p>
+<hr />
+<h2 id="error-messages">Error Messages</h2>
+<h3 id="when-user-tries-pattern-in-datasourcenode">When User Tries Pattern in DataSourceNode</h3>
+<p><strong>Scenario:</strong> User types <code>*.spa</code> in DataSourceNode's example_file field</p>
+<p><strong>Error:</strong></p>
+<pre><code>ValueError: Pattern detected in example_file: '*.spa'
+
+DataSourceNode is for loading single files only.
+For loading multiple files with patterns, use the LoadGroupNode instead:
+  - Drag 'Load Group' node from the node palette
+  - Set folder_path to the folder (e.g., 'irdata/carroucell_samp')
+  - Set pattern to your desired pattern (e.g., '*.spa', 'sample_*')
+
+LoadGroupNode provides additional features:
+  - Sort options (filename, numeric suffix, modification time)
+  - X-axis validation
+  - Recursive subdirectory scanning
+  - Custom group titles
+</code></pre>
+<p><strong>Benefits:</strong>
+- Clear explanation of what went wrong
+- Step-by-step guidance to correct solution
+- Lists additional benefits of LoadGroupNode
+- Educational (teaches users about architecture)</p>
+<hr />
+<h2 id="files-modified">Files Modified</h2>
+<h3 id="backend-2-files">Backend (2 files)</h3>
+<ol>
+<li><strong><a href="backend/app/services/dag/nodes/data.py">backend/app/services/dag/nodes/data.py</a></strong></li>
+<li>Lines 335-352: Added pattern detection error in DataSourceNode</li>
+<li>
+<p>Removed group loading from DataSourceNode.execute()</p>
+</li>
+<li>
+<p><strong><a href="backend/app/api/v1/routes/workflows.py">backend/app/api/v1/routes/workflows.py</a></strong></p>
+</li>
+<li>Lines 587-590: Removed folder shortcuts from API response</li>
+</ol>
+<h3 id="frontend-1-file">Frontend (1 file)</h3>
+<ol>
+<li><strong><a href="frontend/src/views/workflow-builder/WorkflowInspector.vue">frontend/src/views/workflow-builder/WorkflowInspector.vue</a></strong></li>
+<li>Lines 157-172: Removed <code>editable</code> property, updated labels/hints</li>
+<li>Changed from "Example File or Pattern" to "Example File"</li>
+<li>Removed pattern input guidance</li>
+</ol>
+<hr />
+<h2 id="testing">Testing</h2>
+<h3 id="test-case-1-datasourcenode-rejects-patterns">Test Case 1: DataSourceNode Rejects Patterns</h3>
+<pre><code class="language-python"># Test: Try to load with pattern
+node = DataSourceNode(node_id=&quot;test&quot;)
+node.parameters = {
+    'source': 'spectrochempy',
+    'example_dataset': 'irdata',
+    'example_file': '*.spa'  # Pattern
+}
+
+try:
+    await node.execute()
+    assert False, &quot;Should have raised ValueError&quot;
+except ValueError as e:
+    assert &quot;Pattern detected&quot; in str(e)
+    assert &quot;LoadGroupNode&quot; in str(e)
+    print(&quot;✅ DataSourceNode correctly rejects patterns&quot;)
+</code></pre>
+<h3 id="test-case-2-datasourcenode-loads-single-file">Test Case 2: DataSourceNode Loads Single File</h3>
+<pre><code class="language-python"># Test: Load single file (should work)
+node = DataSourceNode(node_id=&quot;test&quot;)
+node.parameters = {
+    'source': 'spectrochempy',
+    'example_dataset': 'irdata',
+    'example_file': 'CO@Mo_Al2O3.SPG'  # Single file
+}
+
+dataset = await node.execute()
+assert dataset is not None
+print(&quot;✅ DataSourceNode loads single files correctly&quot;)
+</code></pre>
+<h3 id="test-case-3-loadgroupnode-handles-patterns">Test Case 3: LoadGroupNode Handles Patterns</h3>
+<pre><code class="language-python"># Test: Load with pattern using LoadGroupNode
+node = LoadGroupNode(node_id=&quot;test&quot;)
+node.parameters = {
+    'folder_path': 'irdata',
+    'pattern': '*.spa',
+    'validate_axes': True
+}
+
+dataset = await node.execute()
+assert dataset.shape[0] &gt; 1  # Multiple spectra
+print(&quot;✅ LoadGroupNode handles patterns correctly&quot;)
+</code></pre>
+<h3 id="test-case-4-ui-shows-no-folder-shortcuts">Test Case 4: UI Shows No Folder Shortcuts</h3>
+<pre><code class="language-bash"># Test: API returns no folder shortcuts
+curl http://localhost:8000/api/v1/workflows/spectrochempy-examples | \
+  jq '.irdata[] | select(.is_folder == true)'
+
+# Expected: No results (folder shortcuts removed)
+</code></pre>
+<hr />
+<h2 id="backward-compatibility">Backward Compatibility</h2>
+<h3 id="breaking-changes">⚠️ Breaking Changes</h3>
+<p><strong>Breaking for users who:</strong>
+1. Used folder shortcuts (📁 Load all...) in DataSourceNode
+2. Typed patterns (<em>.spa, sample_</em>) in DataSourceNode</p>
+<p><strong>Migration path:</strong>
+- Switch to LoadGroupNode for all multi-file loading
+- Error messages provide clear guidance</p>
+<p><strong>Not breaking for users who:</strong>
+- Used DataSourceNode for single files (still works)
+- Used LoadGroupNode for multiple files (still works)</p>
+<h3 id="mitigation">Mitigation</h3>
+<p><strong>Clear error messages:</strong>
+- Errors explain exactly what changed
+- Provide step-by-step migration instructions
+- List benefits of LoadGroupNode</p>
+<p><strong>Documentation updates:</strong>
+- Update user guide to clarify node purposes
+- Add examples showing LoadGroupNode usage
+- Create migration guide for existing workflows</p>
+<hr />
+<h2 id="future-enhancements">Future Enhancements</h2>
+<h3 id="phase-1-cleanup-immediate">Phase 1: Cleanup (Immediate)</h3>
+<ol>
+<li>Remove <code>_load_spectrochempy_group()</code> method from DataSourceNode (currently unused)</li>
+<li>Remove <code>_is_pattern()</code> helper if only used for validation</li>
+<li>Update tests to reflect new architecture</li>
+</ol>
+<h3 id="phase-2-documentation-short-term">Phase 2: Documentation (Short-term)</h3>
+<ol>
+<li>Update user documentation with clear node purposes</li>
+<li>Add LoadGroupNode tutorial</li>
+<li>Create workflow migration guide</li>
+</ol>
+<h3 id="phase-3-enhancements-long-term">Phase 3: Enhancements (Long-term)</h3>
+<ol>
+<li>Add LoadGroupNode to "Getting Started" examples</li>
+<li>Create LoadGroupNode presets (common patterns)</li>
+<li>Add validation hints in UI (suggest LoadGroupNode when appropriate)</li>
+</ol>
+<hr />
+<h2 id="summary">Summary</h2>
+<p><strong>Problem:</strong>
+- DataSourceNode did both single-file AND multi-file loading
+- Confused users, duplicated code, violated single responsibility</p>
+<p><strong>Solution:</strong>
+- <strong>Enforce</strong>: DataSourceNode = single files ONLY
+- <strong>Enforce</strong>: LoadGroupNode = multiple files ONLY
+- Clear error messages guide users to correct node</p>
+<p><strong>Impact:</strong>
+- ✅ Clear separation of concerns
+- ✅ Reduced code duplication
+- ✅ Better user experience
+- ✅ Easier to maintain and extend
+- ⚠️ Breaking change for pattern/folder shortcut users</p>
+<p><strong>Status:</strong> READY FOR DEPLOYMENT ✅</p>
+<p><strong>Migration effort:</strong>
+- Low for most users (single file loading unchanged)
+- Medium for users using patterns/folder shortcuts (need to switch to LoadGroupNode)
+- Clear error messages guide migration</p>
+<hr />
+<p><strong>Next Steps:</strong>
+1. Test error messages with real users
+2. Update documentation
+3. Monitor for confusion/issues after deployment
+4. Remove unused <code>_load_spectrochempy_group()</code> from DataSourceNode (cleanup)</p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../CASE_SENSITIVITY_AND_UI_FIXES/" class="btn btn-neutral float-left" title="Case Sensitivity and UI Fixes"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../LOAD_GROUP_NODE_IMPLEMENTATION/" class="btn btn-neutral float-right" title="Load Group Node Implementation">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+    
+      <span><a href="../CASE_SENSITIVITY_AND_UI_FIXES/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../LOAD_GROUP_NODE_IMPLEMENTATION/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../img/favicon.ico" />
+    <title>User Manual - SpectraSherpa Documentation</title>
+    <link rel="stylesheet" href="../css/theme.css" />
+    <link rel="stylesheet" href="../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "User Manual";
+        var mkdocs_page_input_path = "USER_MANUAL.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href=".." class="icon icon-home"> SpectraSherpa Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Current</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../current/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Getting Started</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../getting_started/installation/">Installation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../getting_started/quickstart/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../getting_started/modes/">Modes & Configuration</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >User Guide</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../user_guide/experiments/">Experiments</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../user_guide/library/">Library (NIST)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../user_guide/doe/">DOE (96-Well)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../user_guide/synthesis/">Synthesis Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../user_guide/workflow/">Workflow Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" >Reproduction Study</a>
+    <ul>
+                <li class="toctree-l3"><a class="reference internal" href="../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
+                </li>
+                <li class="toctree-l3"><a class="reference internal" href="../user_guide/reproduction_methodology/">Methodology</a>
+                </li>
+    </ul>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" href="#">User Manual</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#overview">Overview</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#table-of-contents">Table of Contents</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#1-loading-spectrochempy-data-experiments">1. Loading SpectroChemPy Data (Experiments)</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#creating-a-new-experiment">Creating a New Experiment</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#uploading-spectra-files">Uploading Spectra Files</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#version-management">Version Management</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#loading-experiment-data-in-builder">Loading Experiment Data in Builder</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#2-loading-nist-reference-spectra">2. Loading NIST Reference Spectra</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#searching-nist-database">Searching NIST Database</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#downloading-spectra">Downloading Spectra</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#viewing-library-entries">Viewing Library Entries</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#using-library-spectra-in-synthesis">Using Library Spectra in Synthesis</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#3-loading-96-well-essential-oil-data">3. Loading 96-Well Essential Oil Data</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#setting-up-the-sample-database">Setting Up the Sample Database</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#creating-mixtures">Creating Mixtures</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#assigning-wells-on-the-96-well-plate">Assigning Wells on the 96-Well Plate</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#matching-acquisition-files-to-wells">Matching Acquisition Files to Wells</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#loading-96-well-data-in-builder">Loading 96-Well Data in Builder</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#4-loading-doe-calibration-data-project-1">4. Loading DOE Calibration Data (Project 1)</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#creating-a-doe-configuration">Creating a DOE Configuration</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#defining-experimental-factors">Defining Experimental Factors</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#setting-up-run-sequences">Setting Up Run Sequences</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#loading-calibration-data">Loading Calibration Data</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#using-calibration-data-in-builder">Using Calibration Data in Builder</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#5-synthesizing-data-with-the-builder">5. Synthesizing Data with the Builder</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#preprocess-tab">Preprocess Tab</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#loading-spectra">Loading Spectra</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#preprocessing-settings">Preprocessing Settings</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#running-preprocessing">Running Preprocessing</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#blend-tab">Blend Tab</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#selecting-species">Selecting Species</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#defining-concentration-profiles">Defining Concentration Profiles</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#blending-options">Blending Options</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#running-the-blend">Running the Blend</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#export-tab">Export Tab</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#export-formats">Export Formats</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#export-options">Export Options</a>
+    </li>
+        </ul>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#6-workflow-builder">6. Workflow Builder</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#adding-nodes">Adding Nodes</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#connecting-nodes">Connecting Nodes</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#configuring-nodes">Configuring Nodes</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#executing-workflows">Executing Workflows</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#exporting-python-code">Exporting Python Code</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#7-status-indicators">7. Status Indicators</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#quick-start-workflow">Quick Start Workflow</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#example-essential-oil-blend-analysis">Example: Essential Oil Blend Analysis</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#keyboard-shortcuts">Keyboard Shortcuts</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#troubleshooting">Troubleshooting</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#common-issues">Common Issues</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#support">Support</a>
+    </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >SpectrochemPy Examples</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../examples/01_loading_data/">01. Loading Data</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../examples/02_dataset_manipulation/">02. Manipulation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../examples/03_plotting/">03. Plotting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../examples/04_preprocessing_smoothing/">04. Smoothing</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../examples/05_preprocessing_baseline/">05. Baseline</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../examples/06_peak_finding/">06. Peak Finding</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../examples/07_peak_fitting/">07. Integration</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../examples/08_pca/">08. PCA</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../examples/09_mcr_als/">09. MCR-ALS</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../examples/10_pls_regression/">10. PLS</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reference</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../reference/nodes/">Node Library</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Architecture & System</a>
+    <ul>
+                <li class="toctree-l2"><a class="" href="../current/README.md">Repository Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../current/SYSTEM_OVERVIEW/">System Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../current/ARCHITECTURE/">Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../current/INFORMATION_ARCHITECTURE/">Information Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../current/FUNCTIONAL_MAPPING/">Functional Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../current/DATA_SOURCES/">Data Sources</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../current/NODE_CAPABILITIES/">Node Capabilities</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../current/PARAMETER_MAPPING/">Parameter Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../current/DATABASE_SCHEMA/">Database Schema</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../current/AUTHENTICATION/">Authentication</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../current/PHASE1_SETUP_GUIDE/">Phase 1 Setup Guide</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Workflow & Analysis</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../current/QUICKSTART_ANALYSIS/">Quickstart Analysis</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../current/MULTI_PORT_GUIDE/">Multi-Port Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../current/FOLDER_AND_PATTERN_LOADING/">Folder & Pattern Loading</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../current/DOE_MANUAL/">DOE Manual</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../current/PROBLEM_REPORT/">Workflow Bench Gap Analysis</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Deployment</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../deployment/DIGITAL_OCEAN/">DigitalOcean</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Quality & Validation</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../current/ALGORITHM_AUDIT/">Algorithm Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../current/SYNTHETIC_FALLBACK_AUDIT/">Synthetic Fallback Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../current/TEST_FRAMEWORK/">Test Framework</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../current/BACKEND_TESTING_GUIDE/">Backend Testing Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../current/TESTING_CHECKLIST/">Testing Checklist</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../current/VERIFICATION_PROCEDURE/">Verification Procedure</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Project1 (Standalone Tool)</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../current/project1/">Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../current/project1/QUICKSTART/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../current/project1/INSTALLATION_GUIDE/">Installation Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../current/project1/TROUBLESHOOTING/">Troubleshooting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../current/project1/NOTICE/">Notice</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Past</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../past/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../past/RELEASE_NOTES/">Release Notes</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../past/IMPLEMENTATION_SUMMARY/">Implementation Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../past/FINAL_FIXES_SUMMARY/">Final Fixes Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../past/SESSION_SUMMARY_2026-01-21/">Session Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../past/NODE_STANDARDIZATION_2026-01-26/">Node Standardization (2026-01-26)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Fixes</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../past/3D_CONCATENATION_FIX/">3D Concatenation Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../past/QUICK_PLOT_Y_AXIS_LABELS_FIX/">Quick Plot Y-Axis Labels Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../past/CASE_SENSITIVITY_AND_UI_FIXES/">Case Sensitivity and UI Fixes</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../past/DEDICATED_LOAD_GROUP_ENFORCEMENT/">Dedicated Load Group Enforcement</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../past/LOAD_GROUP_NODE_IMPLEMENTATION/">Load Group Node Implementation</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reviews & Testing</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../past/CODE_REVIEW_FINDINGS/">Code Review Findings</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../past/WEEK7_TESTING/">Week 7 Testing</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Future</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../future/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../future/ROADMAP/">Roadmap</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../future/DOE_ENHANCEMENTS/">DOE Enhancements</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../future/ANALYSIS_CANVAS_WIREFRAME/">Analysis Canvas Wireframe</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../future/plugin_plan_011525/">Plugin Plan (2025-01-15)</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="..">SpectraSherpa Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Current</li>
+      <li class="breadcrumb-item active">User Manual</li>
+    <li class="wy-breadcrumbs-aside">
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="spectrasherpa-user-manual">SpectraSherpa User Manual</h1>
+<h2 id="overview">Overview</h2>
+<p>SpectraSherpa is an integrated platform for spectroscopic data analysis, synthesis, and workflow automation. This manual covers how to load different data sources and synthesize spectral data.</p>
+<hr />
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol>
+<li><a href="#1-loading-spectrochempy-data-experiments">Loading SpectroChemPy Data (Experiments)</a></li>
+<li><a href="#2-loading-nist-reference-spectra">Loading NIST Reference Spectra</a></li>
+<li><a href="#3-loading-96-well-essential-oil-data">Loading 96-Well Essential Oil Data</a></li>
+<li><a href="#4-loading-doe-calibration-data-project-1">Loading DOE Calibration Data (Project 1)</a></li>
+<li><a href="#5-synthesizing-data-with-the-builder">Synthesizing Data with the Builder</a></li>
+<li><a href="#6-workflow-builder">Workflow Builder</a></li>
+<li><a href="#7-status-indicators">Status Indicators</a></li>
+</ol>
+<hr />
+<h2 id="1-loading-spectrochempy-data-experiments">1. Loading SpectroChemPy Data (Experiments)</h2>
+<p>The <strong>Experiments</strong> module manages experimental spectra with versioning and metadata tracking.</p>
+<h3 id="creating-a-new-experiment">Creating a New Experiment</h3>
+<ol>
+<li>Navigate to <strong>Experiments</strong> in the sidebar</li>
+<li>Click the <strong>Create</strong> tab</li>
+<li>Fill in the experiment details:</li>
+<li><strong>Name</strong>: Descriptive name for your experiment</li>
+<li><strong>Description</strong>: Purpose and notes</li>
+<li><strong>Hardware</strong>: Spectrometer used (optional)</li>
+<li><strong>DOE Setup</strong>: Link to Design of Experiments configuration (optional)</li>
+<li>Click <strong>Create Experiment</strong></li>
+</ol>
+<h3 id="uploading-spectra-files">Uploading Spectra Files</h3>
+<ol>
+<li>Select an experiment from the <strong>Overview</strong> tab</li>
+<li>Switch to the <strong>Files</strong> tab</li>
+<li>Choose the file stage:</li>
+<li><strong>Raw</strong>: Original unprocessed spectra</li>
+<li><strong>Preprocessed</strong>: Cleaned/corrected spectra</li>
+<li><strong>Synthetic</strong>: Generated/blended spectra</li>
+<li>Drag and drop files or click to browse</li>
+<li>Supported formats:</li>
+<li>CSV (wavenumber, absorbance columns)</li>
+<li>JCAMP-DX (.jdx, .dx)</li>
+<li>SPC files</li>
+<li>SpectroChemPy native formats</li>
+</ol>
+<h3 id="version-management">Version Management</h3>
+<ol>
+<li>Go to the <strong>Versions</strong> tab</li>
+<li>Click <strong>Create Version</strong> to snapshot current state</li>
+<li>Enter version name and description</li>
+<li>To restore: click the restore icon on any version</li>
+</ol>
+<h3 id="loading-experiment-data-in-builder">Loading Experiment Data in Builder</h3>
+<p>Once files are uploaded, they become available in the <strong>Synthesis</strong> module:
+1. Go to <strong>Synthesis</strong> &gt; <strong>Preprocess</strong> tab
+2. Select your experiment from the dropdown
+3. Choose files to preprocess</p>
+<hr />
+<h2 id="2-loading-nist-reference-spectra">2. Loading NIST Reference Spectra</h2>
+<p>The <strong>Library</strong> module provides access to NIST WebBook reference spectra.</p>
+<h3 id="searching-nist-database">Searching NIST Database</h3>
+<ol>
+<li>Navigate to <strong>Library</strong> in the sidebar</li>
+<li>Use the <strong>Search</strong> tab</li>
+<li>Type a compound name (e.g., "ethanol", "limonene")</li>
+<li>Results show:</li>
+<li>Compound name</li>
+<li>CAS number</li>
+<li>NIST identifier</li>
+</ol>
+<h3 id="downloading-spectra">Downloading Spectra</h3>
+<ol>
+<li>From search results, click <strong>Download</strong> for standard resolution</li>
+<li>Or click <strong>High-Res</strong> for higher resolution data</li>
+<li>Download progress appears in the right panel</li>
+<li>Downloads are queued and processed in background</li>
+</ol>
+<h3 id="viewing-library-entries">Viewing Library Entries</h3>
+<ol>
+<li>Switch to the <strong>Library</strong> tab</li>
+<li>Browse all downloaded spectra</li>
+<li>Click any entry to view:</li>
+<li>Interactive spectrum plot</li>
+<li>Wavenumber range</li>
+<li>Resolution details</li>
+<li>Download date</li>
+</ol>
+<h3 id="using-library-spectra-in-synthesis">Using Library Spectra in Synthesis</h3>
+<ol>
+<li>In the <strong>Library</strong> tab, select spectra for blending</li>
+<li>Click <strong>Add to Builder</strong></li>
+<li>Navigate to <strong>Synthesis</strong> to use them</li>
+</ol>
+<hr />
+<h2 id="3-loading-96-well-essential-oil-data">3. Loading 96-Well Essential Oil Data</h2>
+<p>The <strong>DOE</strong> (Design of Experiments) tab in Experiments manages 96-well plate configurations for essential oil analysis.</p>
+<h3 id="setting-up-the-sample-database">Setting Up the Sample Database</h3>
+<ol>
+<li>Navigate to <strong>Experiments</strong> &gt; select your experiment</li>
+<li>Go to the <strong>DOE</strong> tab</li>
+<li>In the <strong>Sample Database</strong> section:</li>
+<li>Click <strong>Import CSV</strong> to bulk import samples</li>
+<li>Or manually add samples with:<ul>
+<li>Sample ID</li>
+<li>Name (e.g., "Lavender EO", "Peppermint EO")</li>
+<li>Type (essential_oil, carrier, standard)</li>
+<li>Brand/Source</li>
+<li>CAS Number (if applicable)</li>
+</ul>
+</li>
+</ol>
+<h3 id="creating-mixtures">Creating Mixtures</h3>
+<ol>
+<li>In the <strong>Mixtures</strong> section, click <strong>New Mixture</strong></li>
+<li>Select component samples from the database</li>
+<li>Specify composition:</li>
+<li><strong>Weight %</strong>: Mass-based percentages</li>
+<li><strong>Mole %</strong>: Molar percentages</li>
+<li><strong>Volume %</strong>: Volume-based percentages</li>
+<li>Name the mixture (e.g., "Blend A - 50% Lavender, 50% Peppermint")</li>
+</ol>
+<h3 id="assigning-wells-on-the-96-well-plate">Assigning Wells on the 96-Well Plate</h3>
+<ol>
+<li>In the <strong>96-Well Plate Map</strong> section:</li>
+<li>Visual grid shows all 96 wells (A1-H12)</li>
+<li>Select a mixture from the dropdown</li>
+<li>Click wells to assign that mixture</li>
+<li>Color coding shows different mixtures</li>
+<li><strong>Plate Statistics</strong> show:</li>
+<li>Assigned wells count</li>
+<li>Empty wells count</li>
+<li>Mixture distribution</li>
+</ol>
+<h3 id="matching-acquisition-files-to-wells">Matching Acquisition Files to Wells</h3>
+<ol>
+<li>Upload your spectra files in the <strong>Files</strong> tab</li>
+<li>Return to <strong>DOE</strong> &gt; <strong>Acquisition Matching</strong> section</li>
+<li>Click <strong>Auto-Match</strong> to automatically match files to wells</li>
+<li>Matching uses filename patterns to identify:</li>
+<li>Well position (e.g., "A1", "B12")</li>
+<li>Sequence number</li>
+<li>Replicate information</li>
+<li>Review and manually correct any mismatches</li>
+</ol>
+<h3 id="loading-96-well-data-in-builder">Loading 96-Well Data in Builder</h3>
+<ol>
+<li>Go to <strong>Synthesis</strong> &gt; <strong>Preprocess</strong> tab</li>
+<li>Select your 96-well experiment</li>
+<li>Files are organized by well position</li>
+<li>Select wells/files to preprocess together</li>
+</ol>
+<hr />
+<h2 id="4-loading-doe-calibration-data-project-1">4. Loading DOE Calibration Data (Project 1)</h2>
+<p>DOE Configurations store structured experimental designs for calibration studies.</p>
+<h3 id="creating-a-doe-configuration">Creating a DOE Configuration</h3>
+<ol>
+<li>Navigate to <strong>Experiments</strong> &gt; <strong>DOE</strong> tab</li>
+<li>Or access <strong>DOE Configs</strong> directly</li>
+</ol>
+<h3 id="defining-experimental-factors">Defining Experimental Factors</h3>
+<ol>
+<li>In the <strong>Experimental Factors</strong> section:</li>
+<li>Add <strong>Sample Factors</strong>:</li>
+<li>Concentration levels</li>
+<li>Component ratios</li>
+<li>Sample types</li>
+<li>Add <strong>Method Factors</strong>:</li>
+<li>Temperature</li>
+<li>Integration time</li>
+<li>Number of scans</li>
+<li>For each factor, specify:</li>
+<li>Name</li>
+<li>Type (categorical or continuous)</li>
+<li>Levels (e.g., [0, 25, 50, 75, 100] for concentration %)</li>
+</ol>
+<h3 id="setting-up-run-sequences">Setting Up Run Sequences</h3>
+<ol>
+<li>In the <strong>Run Sequence</strong> section:</li>
+<li>Define the order of experimental runs</li>
+<li>Each run includes:</li>
+<li>Sequence order</li>
+<li>Factor level values</li>
+<li>Folder path for data files</li>
+<li>Batch identifier</li>
+</ol>
+<h3 id="loading-calibration-data">Loading Calibration Data</h3>
+<ol>
+<li>Upload calibration spectra files to the experiment</li>
+<li>Match files to run sequences in <strong>Acquisition Matching</strong></li>
+<li>The system links:</li>
+<li>Spectra files</li>
+<li>Well positions (if applicable)</li>
+<li>Factor values (concentrations, conditions)</li>
+</ol>
+<h3 id="using-calibration-data-in-builder">Using Calibration Data in Builder</h3>
+<ol>
+<li>Go to <strong>Synthesis</strong> &gt; <strong>Preprocess</strong> tab</li>
+<li>Select the calibration experiment</li>
+<li>Files are available with their associated metadata</li>
+<li>Use for:</li>
+<li>Building calibration curves</li>
+<li>Creating synthetic mixtures</li>
+<li>Validating models</li>
+</ol>
+<hr />
+<h2 id="5-synthesizing-data-with-the-builder">5. Synthesizing Data with the Builder</h2>
+<p>The <strong>Synthesis</strong> module creates synthetic spectra by blending reference species.</p>
+<h3 id="preprocess-tab">Preprocess Tab</h3>
+<p><strong>Purpose</strong>: Clean and prepare spectra before blending.</p>
+<h4 id="loading-spectra">Loading Spectra</h4>
+<ol>
+<li><strong>From Experiments</strong>: Select experiment and files</li>
+<li><strong>From Library</strong>: Add NIST reference spectra</li>
+<li>Both sources can be combined</li>
+</ol>
+<h4 id="preprocessing-settings">Preprocessing Settings</h4>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Alignment Method</strong></td>
+<td>Wavenumber interpolation (pchip, linear, sinc)</td>
+<td>pchip</td>
+</tr>
+<tr>
+<td><strong>Apply Range Limit</strong></td>
+<td>Clip to wavenumber range</td>
+<td>Off</td>
+</tr>
+<tr>
+<td><strong>Min/Max Wavenumber</strong></td>
+<td>Range bounds (cm^-1)</td>
+<td>400-4000</td>
+</tr>
+<tr>
+<td><strong>Cosmic Ray Removal</strong></td>
+<td>Remove spike artifacts</td>
+<td>On</td>
+</tr>
+<tr>
+<td><strong>Savitzky-Golay Smoothing</strong></td>
+<td>Noise reduction filter</td>
+<td>On</td>
+</tr>
+<tr>
+<td><strong>Clip Floor</strong></td>
+<td>Set minimum absorbance value</td>
+<td>Off</td>
+</tr>
+</tbody>
+</table>
+<h4 id="running-preprocessing">Running Preprocessing</h4>
+<ol>
+<li>Configure settings</li>
+<li>Click <strong>Run Preprocessing</strong></li>
+<li>View results in the plot panel</li>
+<li>Each spectrum shows as a separate trace</li>
+</ol>
+<h3 id="blend-tab">Blend Tab</h3>
+<p><strong>Purpose</strong>: Combine species spectra with concentration profiles.</p>
+<h4 id="selecting-species">Selecting Species</h4>
+<ol>
+<li>Preprocessed spectra appear as available species</li>
+<li>Check species to include in blend</li>
+<li>Each species represents a pure component</li>
+</ol>
+<h4 id="defining-concentration-profiles">Defining Concentration Profiles</h4>
+<p>Create time-series concentrations for each species:</p>
+<pre><code>Species A: [100, 80, 60, 40, 20, 0]    (decreasing)
+Species B: [0, 20, 40, 60, 80, 100]    (increasing)
+Species C: [50, 50, 50, 50, 50, 50]    (constant)
+</code></pre>
+<p><strong>Concentration Curve Editor</strong>:
+1. Select a species
+2. Draw curve points on the canvas
+3. Or enter values numerically
+4. Curves are interpolated between points</p>
+<h4 id="blending-options">Blending Options</h4>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Pathlength (m)</strong></td>
+<td>Optical pathlength for Beer's Law</td>
+</tr>
+<tr>
+<td><strong>Absorption Coefficient</strong></td>
+<td>Molar absorptivity</td>
+</tr>
+<tr>
+<td><strong>Time Steps</strong></td>
+<td>Number of blend time points</td>
+</tr>
+</tbody>
+</table>
+<h4 id="running-the-blend">Running the Blend</h4>
+<ol>
+<li>Configure concentrations for all species</li>
+<li>Click <strong>Blend Spectra</strong></li>
+<li>Result shows:</li>
+<li>Time-series of blended spectra</li>
+<li>3D surface plot (wavenumber x time x absorbance)</li>
+<li>Individual time slices</li>
+</ol>
+<h3 id="export-tab">Export Tab</h3>
+<p><strong>Purpose</strong>: Save synthetic data for external use.</p>
+<h4 id="export-formats">Export Formats</h4>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Use Case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>CSV</strong></td>
+<td>Spreadsheet analysis, simple import</td>
+</tr>
+<tr>
+<td><strong>JSON</strong></td>
+<td>Web applications, metadata preservation</td>
+</tr>
+<tr>
+<td><strong>NetCDF</strong></td>
+<td>Scientific computing, large datasets</td>
+</tr>
+<tr>
+<td><strong>Python Script</strong></td>
+<td>Reproducibility, automation</td>
+</tr>
+</tbody>
+</table>
+<h4 id="export-options">Export Options</h4>
+<ol>
+<li>Select output format</li>
+<li>Choose data to include:</li>
+<li>Preprocessed spectra</li>
+<li>Blended results</li>
+<li>Concentration profiles</li>
+<li>Full metadata</li>
+<li>Click <strong>Export</strong></li>
+<li>File downloads to your system</li>
+</ol>
+<hr />
+<h2 id="6-workflow-builder">6. Workflow Builder</h2>
+<p>The <strong>Workflow Builder</strong> creates visual analysis pipelines.</p>
+<h3 id="adding-nodes">Adding Nodes</h3>
+<p>From the left toolbar, click to add nodes:</p>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>Nodes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Data</strong></td>
+<td>Load Data</td>
+</tr>
+<tr>
+<td><strong>Preprocess</strong></td>
+<td>Normalize, Scale, Baseline, Smooth</td>
+</tr>
+<tr>
+<td><strong>Analysis</strong></td>
+<td>PCA, PLS, MCR-ALS</td>
+</tr>
+<tr>
+<td><strong>Stats</strong></td>
+<td>Statistics</td>
+</tr>
+<tr>
+<td><strong>Visualize</strong></td>
+<td>Scatter Plot</td>
+</tr>
+<tr>
+<td><strong>Export</strong></td>
+<td>Export</td>
+</tr>
+</tbody>
+</table>
+<h3 id="connecting-nodes">Connecting Nodes</h3>
+<ol>
+<li>Click <strong>Connect</strong> on a source node</li>
+<li>Click <strong>Connect Here</strong> on the target node</li>
+<li>Arrow shows data flow direction</li>
+</ol>
+<h3 id="configuring-nodes">Configuring Nodes</h3>
+<ol>
+<li>Click a node to select it</li>
+<li>Inspector panel shows parameters</li>
+<li>Adjust settings as needed:</li>
+<li>Normalization method</li>
+<li>Number of components</li>
+<li>Output format</li>
+</ol>
+<h3 id="executing-workflows">Executing Workflows</h3>
+<ol>
+<li>Click <strong>Execute Workflow</strong></li>
+<li>Nodes process in topological order</li>
+<li>Status shows:</li>
+<li>Pending (gray circle)</li>
+<li>Processing (yellow, animated)</li>
+<li>Complete (green checkmark)</li>
+<li>Results display in inspector panel</li>
+</ol>
+<h3 id="exporting-python-code">Exporting Python Code</h3>
+<ol>
+<li>Click <strong>Export Python</strong></li>
+<li>Downloads executable Python script</li>
+<li>Uses SpectroChemPy for full compatibility</li>
+</ol>
+<hr />
+<h2 id="7-status-indicators">7. Status Indicators</h2>
+<p>The top bar shows four status lights:</p>
+<table>
+<thead>
+<tr>
+<th>Position</th>
+<th>Indicator</th>
+<th>Colors</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1st</td>
+<td><strong>Data</strong></td>
+<td>Green: Sources available / Gray: No experiments</td>
+</tr>
+<tr>
+<td>2nd</td>
+<td><strong>Workflow</strong></td>
+<td>Green: Ready / Yellow: Unsaved changes / Gray: Empty</td>
+</tr>
+<tr>
+<td>3rd</td>
+<td><strong>LLM</strong></td>
+<td>Green: Connected / Yellow: Connecting / Red: Disconnected</td>
+</tr>
+<tr>
+<td>4th</td>
+<td><strong>Compute</strong></td>
+<td>Blue: Local</td>
+</tr>
+</tbody>
+</table>
+<p>Hover over any indicator for detailed status.</p>
+<hr />
+<h2 id="quick-start-workflow">Quick Start Workflow</h2>
+<h3 id="example-essential-oil-blend-analysis">Example: Essential Oil Blend Analysis</h3>
+<ol>
+<li><strong>Create Experiment</strong></li>
+<li>
+<p>Experiments &gt; Create &gt; "Essential Oil Study"</p>
+</li>
+<li>
+<p><strong>Set Up 96-Well Plate</strong></p>
+</li>
+<li>DOE tab &gt; Import samples</li>
+<li>Create mixtures</li>
+<li>
+<p>Assign wells</p>
+</li>
+<li>
+<p><strong>Upload Spectra</strong></p>
+</li>
+<li>Files tab &gt; Upload raw spectra</li>
+<li>
+<p>Match to wells in DOE &gt; Acquisition Matching</p>
+</li>
+<li>
+<p><strong>Add Reference Spectra</strong></p>
+</li>
+<li>Library &gt; Search "limonene", "linalool"</li>
+<li>
+<p>Download reference spectra</p>
+</li>
+<li>
+<p><strong>Preprocess</strong></p>
+</li>
+<li>Synthesis &gt; Preprocess tab</li>
+<li>Select experiment files + library references</li>
+<li>Apply smoothing, baseline correction</li>
+<li>
+<p>Run Preprocessing</p>
+</li>
+<li>
+<p><strong>Blend</strong></p>
+</li>
+<li>Blend tab &gt; Select species</li>
+<li>Define concentration profiles</li>
+<li>
+<p>Run Blend</p>
+</li>
+<li>
+<p><strong>Analyze</strong></p>
+</li>
+<li>Workflow Builder &gt; Add PCA node</li>
+<li>Connect to data</li>
+<li>
+<p>Execute and view results</p>
+</li>
+<li>
+<p><strong>Export</strong></p>
+</li>
+<li>Export tab &gt; Download CSV/Python script</li>
+</ol>
+<hr />
+<h2 id="keyboard-shortcuts">Keyboard Shortcuts</h2>
+<table>
+<thead>
+<tr>
+<th>Shortcut</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Ctrl+S</code></td>
+<td>Save current work</td>
+</tr>
+<tr>
+<td><code>Ctrl+Z</code></td>
+<td>Undo</td>
+</tr>
+<tr>
+<td><code>Ctrl+Shift+Z</code></td>
+<td>Redo</td>
+</tr>
+<tr>
+<td><code>Delete</code></td>
+<td>Remove selected node</td>
+</tr>
+<tr>
+<td><code>Escape</code></td>
+<td>Cancel current operation</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="common-issues">Common Issues</h3>
+<p><strong>"No experiments loaded"</strong>
+- Create an experiment first
+- Check that files are uploaded</p>
+<p><strong>"LLM Disconnected"</strong>
+- Check backend server is running
+- Verify WebSocket connection</p>
+<p><strong>"Workflow execution failed"</strong>
+- Check node connections
+- Verify data node has valid source
+- Review error message in toast</p>
+<p><strong>"NIST download stuck"</strong>
+- Check internet connection
+- NIST may rate-limit requests
+- Try again after a few minutes</p>
+<hr />
+<h2 id="support">Support</h2>
+<p>For issues and feature requests, visit:
+https://github.com/anthropics/claude-code/issues</p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../user_guide/reproduction_methodology/" class="btn btn-neutral float-left" title="Methodology"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../examples/00_case_study_notebook.ipynb" class="btn btn-neutral float-right" title="00. Case Study Notebook">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+    
+      <span><a href="../user_guide/reproduction_methodology/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../examples/00_case_study_notebook.ipynb" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "..";</script>
+    <script src="../js/theme_extra.js"></script>
+    <script src="../js/theme.js"></script>
+      <script src="../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

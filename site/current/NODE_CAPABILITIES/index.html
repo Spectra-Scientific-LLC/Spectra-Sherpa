@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Node Capabilities - SpectraSherpa Documentation</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Node Capabilities";
+        var mkdocs_page_input_path = "current/NODE_CAPABILITIES.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> SpectraSherpa Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Current</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Getting Started</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/installation/">Installation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/quickstart/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/modes/">Modes & Configuration</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >User Guide</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/experiments/">Experiments</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/library/">Library (NIST)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/doe/">DOE (96-Well)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/synthesis/">Synthesis Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/workflow/">Workflow Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" >Reproduction Study</a>
+    <ul>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
+                </li>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/reproduction_methodology/">Methodology</a>
+                </li>
+    </ul>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../USER_MANUAL/">User Manual</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >SpectrochemPy Examples</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/01_loading_data/">01. Loading Data</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/02_dataset_manipulation/">02. Manipulation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/03_plotting/">03. Plotting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/04_preprocessing_smoothing/">04. Smoothing</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/05_preprocessing_baseline/">05. Baseline</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/06_peak_finding/">06. Peak Finding</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/07_peak_fitting/">07. Integration</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/08_pca/">08. PCA</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/09_mcr_als/">09. MCR-ALS</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/10_pls_regression/">10. PLS</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reference</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../reference/nodes/">Node Library</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" >Architecture & System</a>
+    <ul class="current">
+                <li class="toctree-l2"><a class="" href="../README.md">Repository Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SYSTEM_OVERVIEW/">System Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../ARCHITECTURE/">Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../INFORMATION_ARCHITECTURE/">Information Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../FUNCTIONAL_MAPPING/">Functional Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DATA_SOURCES/">Data Sources</a>
+                </li>
+                <li class="toctree-l2 current"><a class="reference internal current" href="#">Node Capabilities</a>
+    <ul class="current">
+    <li class="toctree-l3"><a class="reference internal" href="#preprocessing-21-nodes-477">📊 PREPROCESSING (21 nodes - 47.7%)</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#baseline-correction">Baseline Correction</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#smoothing">Smoothing</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#normalization">Normalization</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#derivatives">Derivatives</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#spectral-preprocessing">Spectral Preprocessing</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#chemometric-scaling">Chemometric Scaling</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#time-series">Time Series</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#modeling-8-nodes-182">🔬 MODELING (8 nodes - 18.2%)</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#dimensionality-reduction">Dimensionality Reduction</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#regressioncalibration">Regression/Calibration</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#mixture-analysis">Mixture Analysis</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#peak-analysis">Peak Analysis</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#diagnostics">Diagnostics</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#classification-3-nodes-68">🎯 CLASSIFICATION (3 nodes - 6.8%)</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#data-4-nodes-91">💾 DATA (4 nodes - 9.1%)</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#output-4-nodes-91">📤 OUTPUT (4 nodes - 9.1%)</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#analysis-1-node-23">📊 ANALYSIS (1 node - 2.3%)</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#synthesis-3-nodes-68">🧪 SYNTHESIS (3 nodes - 6.8%)</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#verification-status">✅ Verification Status</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#backend-registration">Backend Registration</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#api-exposure">API Exposure</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#frontend-access">Frontend Access</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#how-to-find-nodes-in-frontend">🔍 How to Find Nodes in Frontend</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#notes">📝 Notes</a>
+    </li>
+    </ul>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PARAMETER_MAPPING/">Parameter Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DATABASE_SCHEMA/">Database Schema</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../AUTHENTICATION/">Authentication</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PHASE1_SETUP_GUIDE/">Phase 1 Setup Guide</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Workflow & Analysis</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../QUICKSTART_ANALYSIS/">Quickstart Analysis</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../MULTI_PORT_GUIDE/">Multi-Port Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../FOLDER_AND_PATTERN_LOADING/">Folder & Pattern Loading</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DOE_MANUAL/">DOE Manual</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PROBLEM_REPORT/">Workflow Bench Gap Analysis</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Deployment</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../deployment/DIGITAL_OCEAN/">DigitalOcean</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Quality & Validation</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../ALGORITHM_AUDIT/">Algorithm Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SYNTHETIC_FALLBACK_AUDIT/">Synthetic Fallback Audit</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../TEST_FRAMEWORK/">Test Framework</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../BACKEND_TESTING_GUIDE/">Backend Testing Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../TESTING_CHECKLIST/">Testing Checklist</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../VERIFICATION_PROCEDURE/">Verification Procedure</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Project1 (Standalone Tool)</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/">Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/QUICKSTART/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/INSTALLATION_GUIDE/">Installation Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/TROUBLESHOOTING/">Troubleshooting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/NOTICE/">Notice</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Past</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/RELEASE_NOTES/">Release Notes</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/IMPLEMENTATION_SUMMARY/">Implementation Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/FINAL_FIXES_SUMMARY/">Final Fixes Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/SESSION_SUMMARY_2026-01-21/">Session Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/NODE_STANDARDIZATION_2026-01-26/">Node Standardization (2026-01-26)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Fixes</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/3D_CONCATENATION_FIX/">3D Concatenation Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/QUICK_PLOT_Y_AXIS_LABELS_FIX/">Quick Plot Y-Axis Labels Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CASE_SENSITIVITY_AND_UI_FIXES/">Case Sensitivity and UI Fixes</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/DEDICATED_LOAD_GROUP_ENFORCEMENT/">Dedicated Load Group Enforcement</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/LOAD_GROUP_NODE_IMPLEMENTATION/">Load Group Node Implementation</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reviews & Testing</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CODE_REVIEW_FINDINGS/">Code Review Findings</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/WEEK7_TESTING/">Week 7 Testing</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Future</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ROADMAP/">Roadmap</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/DOE_ENHANCEMENTS/">DOE Enhancements</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ANALYSIS_CANVAS_WIREFRAME/">Analysis Canvas Wireframe</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/plugin_plan_011525/">Plugin Plan (2025-01-15)</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">SpectraSherpa Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Current</li>
+          <li class="breadcrumb-item">Architecture & System</li>
+      <li class="breadcrumb-item active">Node Capabilities</li>
+    <li class="wy-breadcrumbs-aside">
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="complete-node-capabilities-spectral-analysis-platform">Complete Node Capabilities - Spectral Analysis Platform</h1>
+<p><strong>Total Nodes</strong>: 44 registered algorithms
+<strong>Last Updated</strong>: 2026-01-16
+<strong>Status</strong>: All nodes accessible via frontend Add Node dropdown</p>
+<hr />
+<h2 id="preprocessing-21-nodes-477">📊 PREPROCESSING (21 nodes - 47.7%)</h2>
+<h3 id="baseline-correction">Baseline Correction</h3>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Baseline (ALS)</strong></td>
+<td><code>baseline.als</code></td>
+<td>Asymmetric Least Squares baseline correction</td>
+</tr>
+<tr>
+<td><strong>Baseline (Rubberband)</strong></td>
+<td><code>baseline.rubberband</code></td>
+<td>Rubberband (convex hull) baseline correction</td>
+</tr>
+</tbody>
+</table>
+<h3 id="smoothing">Smoothing</h3>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Smooth (Savitzky-Golay)</strong></td>
+<td><code>smooth.savitzky_golay</code></td>
+<td>Savitzky-Golay polynomial smoothing filter</td>
+</tr>
+</tbody>
+</table>
+<h3 id="normalization">Normalization</h3>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Normalize (SNV)</strong></td>
+<td><code>normalize.snv</code></td>
+<td>Standard Normal Variate normalization</td>
+</tr>
+<tr>
+<td><strong>Normalize (Scale)</strong></td>
+<td><code>normalize.scale</code></td>
+<td>Scale normalization (to max, area, or range)</td>
+</tr>
+<tr>
+<td><strong>Normalize (MSC)</strong></td>
+<td><code>normalize.msc</code></td>
+<td>Multiplicative Scatter Correction</td>
+</tr>
+</tbody>
+</table>
+<h3 id="derivatives">Derivatives</h3>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>1st Derivative</strong></td>
+<td><code>derivative.first</code></td>
+<td>First derivative using Savitzky-Golay</td>
+</tr>
+<tr>
+<td><strong>2nd Derivative</strong></td>
+<td><code>derivative.second</code></td>
+<td>Second derivative using Savitzky-Golay</td>
+</tr>
+<tr>
+<td><strong>SG Derivative</strong></td>
+<td><code>preprocess.sg_derivative</code></td>
+<td>Savitzky-Golay smoothing + derivative (combined)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="spectral-preprocessing">Spectral Preprocessing</h3>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Cosmic Ray Removal</strong></td>
+<td><code>preprocess.cosmic_ray</code></td>
+<td>Remove spike outliers using local median and MAD</td>
+</tr>
+<tr>
+<td><strong>Clip Range</strong></td>
+<td><code>preprocess.clip_range</code></td>
+<td>Crop spectrum to specified wavenumber range</td>
+</tr>
+<tr>
+<td><strong>Clip Floor</strong></td>
+<td><code>preprocess.clip_floor</code></td>
+<td>Clip values below floor (remove negatives)</td>
+</tr>
+<tr>
+<td><strong>Wavenumber Align</strong></td>
+<td><code>preprocess.wavenumber_align</code></td>
+<td>Align spectra to common wavenumber grid</td>
+</tr>
+<tr>
+<td><strong>Scale to Max</strong></td>
+<td><code>preprocess.scale_max</code></td>
+<td>Normalize each spectrum to target maximum</td>
+</tr>
+<tr>
+<td><strong>Mean Center</strong></td>
+<td><code>preprocess.center_mean</code></td>
+<td>Subtract mean spectrum from all spectra</td>
+</tr>
+</tbody>
+</table>
+<h3 id="chemometric-scaling">Chemometric Scaling</h3>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Pareto Scaling</strong></td>
+<td><code>preprocess.pareto_scaling</code></td>
+<td>Scale by sqrt of standard deviation</td>
+</tr>
+<tr>
+<td><strong>Autoscaling</strong></td>
+<td><code>preprocess.autoscaling</code></td>
+<td>Mean centering + unit variance scaling</td>
+</tr>
+<tr>
+<td><strong>OSC Filter</strong></td>
+<td><code>preprocess.osc</code></td>
+<td>Orthogonal Signal Correction</td>
+</tr>
+<tr>
+<td><strong>EMSC</strong></td>
+<td><code>preprocess.emsc</code></td>
+<td>Extended MSC with polynomial baseline</td>
+</tr>
+</tbody>
+</table>
+<h3 id="time-series">Time Series</h3>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Trend Removal</strong></td>
+<td><code>time_series.trend_removal</code></td>
+<td>Remove systematic trends and drift</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="modeling-8-nodes-182">🔬 MODELING (8 nodes - 18.2%)</h2>
+<h3 id="dimensionality-reduction">Dimensionality Reduction</h3>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>PCA</strong></td>
+<td><code>model.pca</code></td>
+<td>Principal Component Analysis</td>
+</tr>
+<tr>
+<td><strong>EFA</strong></td>
+<td><code>model.efa</code></td>
+<td>Evolving Factor Analysis for rank determination</td>
+</tr>
+</tbody>
+</table>
+<h3 id="regressioncalibration">Regression/Calibration</h3>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>PLS</strong></td>
+<td><code>model.pls</code></td>
+<td>Partial Least Squares regression</td>
+</tr>
+<tr>
+<td><strong>Linear Regression</strong></td>
+<td><code>model.linear_regression</code></td>
+<td>Simple linear regression</td>
+</tr>
+</tbody>
+</table>
+<h3 id="mixture-analysis">Mixture Analysis</h3>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>MCR-ALS</strong></td>
+<td><code>model.mcr_als</code></td>
+<td>Multivariate Curve Resolution</td>
+</tr>
+</tbody>
+</table>
+<h3 id="peak-analysis">Peak Analysis</h3>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Peak Finding</strong></td>
+<td><code>analysis.peak_finding</code></td>
+<td>Find peaks with domain-specific algorithms</td>
+</tr>
+</tbody>
+</table>
+<h3 id="diagnostics">Diagnostics</h3>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Outlier Detection</strong></td>
+<td><code>diagnostics.outliers</code></td>
+<td>Hotelling T² and Q statistics</td>
+</tr>
+<tr>
+<td><strong>Cross-Validation</strong></td>
+<td><code>diagnostics.cross_validation</code></td>
+<td>Calculate cross-validation metrics</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="classification-3-nodes-68">🎯 CLASSIFICATION (3 nodes - 6.8%)</h2>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>PLS-DA</strong></td>
+<td><code>classification.plsda</code></td>
+<td>Partial Least Squares Discriminant Analysis</td>
+</tr>
+<tr>
+<td><strong>KNN Classifier</strong></td>
+<td><code>classification.knn</code></td>
+<td>K-Nearest Neighbors classification</td>
+</tr>
+<tr>
+<td><strong>SIMCA</strong></td>
+<td><code>classification.simca</code></td>
+<td>Soft Independent Modeling of Class Analogy</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="data-4-nodes-91">💾 DATA (4 nodes - 9.1%)</h2>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Data Source</strong></td>
+<td><code>data.source</code></td>
+<td>Load from experiments, files, or synthetic</td>
+</tr>
+<tr>
+<td><strong>File Load</strong></td>
+<td><code>data.file_load</code></td>
+<td>Load from experiment files</td>
+</tr>
+<tr>
+<td><strong>NIST Library</strong></td>
+<td><code>data.nist_library</code></td>
+<td>Load reference spectra from NIST</td>
+</tr>
+<tr>
+<td><strong>Synthetic Curve</strong></td>
+<td><code>data.synthetic_curve</code></td>
+<td>Generate synthetic concentration curves</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="output-4-nodes-91">📤 OUTPUT (4 nodes - 9.1%)</h2>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Plot</strong></td>
+<td><code>output.plot</code></td>
+<td>Create plot visualization</td>
+</tr>
+<tr>
+<td><strong>Contour Plot</strong></td>
+<td><code>output.contour</code></td>
+<td>Create 2D contour/heatmap visualization</td>
+</tr>
+<tr>
+<td><strong>Export</strong></td>
+<td><code>output.export</code></td>
+<td>Export data to file</td>
+</tr>
+<tr>
+<td><strong>Data Table</strong></td>
+<td><code>output.data_table</code></td>
+<td>Interactive table with sorting and filtering</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="analysis-1-node-23">📊 ANALYSIS (1 node - 2.3%)</h2>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Statistics</strong></td>
+<td><code>stats.summary</code></td>
+<td>Compute adaptive statistics</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="synthesis-3-nodes-68">🧪 SYNTHESIS (3 nodes - 6.8%)</h2>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Blend</strong></td>
+<td><code>synthesis.blend</code></td>
+<td>Create synthetic mixtures with concentration curves</td>
+</tr>
+<tr>
+<td><strong>Species</strong></td>
+<td><code>synthesis.species</code></td>
+<td>Mark spectrum as species for blending</td>
+</tr>
+<tr>
+<td><strong>Merge Spectra</strong></td>
+<td><code>synthesis.merge</code></td>
+<td>Combine multiple spectra into stacked dataset</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="verification-status">✅ Verification Status</h2>
+<h3 id="backend-registration">Backend Registration</h3>
+<ul>
+<li>✅ <strong>44 nodes</strong> registered with <code>@register_node</code> decorator</li>
+<li>✅ All nodes have complete metadata (type, category, label, description, parameters)</li>
+<li>✅ Distributed across <strong>9 Python modules</strong> in <code>app/services/dag/nodes/</code></li>
+</ul>
+<h3 id="api-exposure">API Exposure</h3>
+<ul>
+<li>✅ All nodes exposed via <code>/api/v1/workflows/nodes/library</code> endpoint</li>
+<li>✅ Dynamic node library loading implemented</li>
+<li>✅ Node metadata includes parameters, input/output types, descriptions</li>
+</ul>
+<h3 id="frontend-access">Frontend Access</h3>
+<ul>
+<li>✅ Frontend loads nodes dynamically from backend API (<a href="/Users/fe2val/Documents/Spectra Scientific/Component_code/Refactored/frontend/src/views/analysis/NodeLibrary.vue#L89-L109">NodeLibrary.vue:89-109</a>)</li>
+<li>✅ All categories displayed: Preprocessing, Modeling, Classification, Diagnostics, Data, Output, Synthesis</li>
+<li>✅ Search functionality available across all nodes</li>
+</ul>
+<hr />
+<h2 id="how-to-find-nodes-in-frontend">🔍 How to Find Nodes in Frontend</h2>
+<ol>
+<li><strong>By Category</strong>: Nodes are organized in collapsible sections:</li>
+<li>Data (4 nodes)</li>
+<li>Preprocessing (21 nodes)</li>
+<li>Modeling (8 nodes)</li>
+<li>Classification (3 nodes)</li>
+<li>Analysis (1 node)</li>
+<li>Synthesis (3 nodes)</li>
+<li>
+<p>Output (4 nodes)</p>
+</li>
+<li>
+<p><strong>By Search</strong>: Use the search bar at top of Node Library panel to filter by:</p>
+</li>
+<li>Node label (e.g., "PCA", "Baseline")</li>
+<li>Description text (e.g., "normalization", "derivative")</li>
+<li>
+<p>Node type (e.g., "model.pca")</p>
+</li>
+<li>
+<p><strong>Common Algorithms</strong>:</p>
+</li>
+<li><strong>MCR-ALS</strong>: Look under "Modeling" → "MCR-ALS"</li>
+<li><strong>PLS-DA</strong>: Look under "Classification" → "PLS-DA"</li>
+<li><strong>Outlier Detection</strong>: Look under "Modeling" → "Outlier Detection"</li>
+<li><strong>EMSC</strong>: Look under "Preprocessing" → "EMSC"</li>
+<li><strong>OSC</strong>: Look under "Preprocessing" → "OSC Filter"</li>
+</ol>
+<hr />
+<h2 id="notes">📝 Notes</h2>
+<ul>
+<li>All nodes are fully functional with parameter validation</li>
+<li>Some advanced nodes (MCR-ALS, SIMCA) require specific input formats</li>
+<li>Nodes support both single spectra and multi-spectrum datasets</li>
+<li>Most preprocessing nodes can be chained for complex workflows</li>
+<li>All modeling nodes return serializable results (no raw sklearn/numpy objects)</li>
+</ul>
+<hr />
+<p><strong>If you still cannot find a specific node</strong>, please:
+1. Restart the backend server to ensure latest node registry
+2. Clear browser cache and reload frontend
+3. Check browser console for API errors
+4. Verify backend is running: <code>curl http://localhost:8000/api/v1/workflows/nodes/library</code></p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../DATA_SOURCES/" class="btn btn-neutral float-left" title="Data Sources"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../PARAMETER_MAPPING/" class="btn btn-neutral float-right" title="Parameter Mapping">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+    
+      <span><a href="../DATA_SOURCES/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../PARAMETER_MAPPING/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

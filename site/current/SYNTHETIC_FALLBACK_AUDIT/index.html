@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Synthetic Fallback Audit - SpectraSherpa Documentation</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Synthetic Fallback Audit";
+        var mkdocs_page_input_path = "current/SYNTHETIC_FALLBACK_AUDIT.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> SpectraSherpa Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Current</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Getting Started</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/installation/">Installation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/quickstart/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/modes/">Modes & Configuration</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >User Guide</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/experiments/">Experiments</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/library/">Library (NIST)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/doe/">DOE (96-Well)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/synthesis/">Synthesis Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/workflow/">Workflow Builder</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" >Reproduction Study</a>
+    <ul>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
+                </li>
+                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/reproduction_methodology/">Methodology</a>
+                </li>
+    </ul>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../USER_MANUAL/">User Manual</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >SpectrochemPy Examples</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/01_loading_data/">01. Loading Data</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/02_dataset_manipulation/">02. Manipulation</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/03_plotting/">03. Plotting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/04_preprocessing_smoothing/">04. Smoothing</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/05_preprocessing_baseline/">05. Baseline</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/06_peak_finding/">06. Peak Finding</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/07_peak_fitting/">07. Integration</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/08_pca/">08. PCA</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/09_mcr_als/">09. MCR-ALS</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../examples/10_pls_regression/">10. PLS</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reference</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../reference/nodes/">Node Library</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Architecture & System</a>
+    <ul>
+                <li class="toctree-l2"><a class="" href="../README.md">Repository Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SYSTEM_OVERVIEW/">System Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../ARCHITECTURE/">Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../INFORMATION_ARCHITECTURE/">Information Architecture</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../FUNCTIONAL_MAPPING/">Functional Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DATA_SOURCES/">Data Sources</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../NODE_CAPABILITIES/">Node Capabilities</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PARAMETER_MAPPING/">Parameter Mapping</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DATABASE_SCHEMA/">Database Schema</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../AUTHENTICATION/">Authentication</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PHASE1_SETUP_GUIDE/">Phase 1 Setup Guide</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Workflow & Analysis</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../QUICKSTART_ANALYSIS/">Quickstart Analysis</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../MULTI_PORT_GUIDE/">Multi-Port Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../FOLDER_AND_PATTERN_LOADING/">Folder & Pattern Loading</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DOE_MANUAL/">DOE Manual</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../PROBLEM_REPORT/">Workflow Bench Gap Analysis</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Deployment</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../deployment/DIGITAL_OCEAN/">DigitalOcean</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" >Quality & Validation</a>
+    <ul class="current">
+                <li class="toctree-l2"><a class="reference internal" href="../ALGORITHM_AUDIT/">Algorithm Audit</a>
+                </li>
+                <li class="toctree-l2 current"><a class="reference internal current" href="#">Synthetic Fallback Audit</a>
+    <ul class="current">
+    <li class="toctree-l3"><a class="reference internal" href="#problem-statement">Problem Statement</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#example-of-the-problem">Example of the Problem</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#all-synthetic-data-generation-methods">All Synthetic Data Generation Methods</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#1-_generate_synthetic-lines-471-528">1. _generate_synthetic() (Lines 471-528)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#2-_generate_ftir_synthetic-lines-244-313">2. _generate_ftir_synthetic() (Lines 244-313)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#3-_generate_raman_synthetic-lines-315-366">3. _generate_raman_synthetic() (Lines 315-366)</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#all-fallback-locations-in-datasourcenode">All Fallback Locations in DataSourceNode</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#in-_load_spectrochempy_example-method">In _load_spectrochempy_example() method:</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#in-_load_from_experiment-method">In _load_from_experiment() method:</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#in-_load_from_file-method">In _load_from_file() method:</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#nodes-that-do-it-right">Nodes That Do It RIGHT</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#fileloadnode-lines-538-694">✅ FileLoadNode (Lines 538-694)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#nistlibrarynode-lines-697-796">✅ NISTLibraryNode (Lines 697-796)</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#recommended-changes">Recommended Changes</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#phase-1-remove-all-silent-fallbacks">Phase 1: Remove All Silent Fallbacks</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#phase-2-remove-synthetic-generation-methods">Phase 2: Remove Synthetic Generation Methods</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#phase-3-keep-only-legitimate-synthetic-generation">Phase 3: Keep Only Legitimate Synthetic Generation</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#files-to-modify">Files to Modify</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#primary-file">Primary File</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#other-files-with-synthetic-data-from-grep-results">Other Files with Synthetic Data (from grep results)</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#testing-after-changes">Testing After Changes</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#risk-assessment">Risk Assessment</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#before-current-state">Before (Current State)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#after-with-changes">After (With Changes)</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#implementation-plan">Implementation Plan</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#code-locations-summary">Code Locations Summary</a>
+    </li>
+    </ul>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../TEST_FRAMEWORK/">Test Framework</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../BACKEND_TESTING_GUIDE/">Backend Testing Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../TESTING_CHECKLIST/">Testing Checklist</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../VERIFICATION_PROCEDURE/">Verification Procedure</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Project1 (Standalone Tool)</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/">Overview</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/QUICKSTART/">Quickstart</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/INSTALLATION_GUIDE/">Installation Guide</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/TROUBLESHOOTING/">Troubleshooting</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../project1/NOTICE/">Notice</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Past</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/RELEASE_NOTES/">Release Notes</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/IMPLEMENTATION_SUMMARY/">Implementation Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/FINAL_FIXES_SUMMARY/">Final Fixes Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/SESSION_SUMMARY_2026-01-21/">Session Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/NODE_STANDARDIZATION_2026-01-26/">Node Standardization (2026-01-26)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Fixes</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/3D_CONCATENATION_FIX/">3D Concatenation Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/QUICK_PLOT_Y_AXIS_LABELS_FIX/">Quick Plot Y-Axis Labels Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CASE_SENSITIVITY_AND_UI_FIXES/">Case Sensitivity and UI Fixes</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/DEDICATED_LOAD_GROUP_ENFORCEMENT/">Dedicated Load Group Enforcement</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/LOAD_GROUP_NODE_IMPLEMENTATION/">Load Group Node Implementation</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reviews & Testing</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CODE_REVIEW_FINDINGS/">Code Review Findings</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/WEEK7_TESTING/">Week 7 Testing</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Future</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ROADMAP/">Roadmap</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/DOE_ENHANCEMENTS/">DOE Enhancements</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ANALYSIS_CANVAS_WIREFRAME/">Analysis Canvas Wireframe</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/plugin_plan_011525/">Plugin Plan (2025-01-15)</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">SpectraSherpa Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Current</li>
+          <li class="breadcrumb-item">Quality & Validation</li>
+      <li class="breadcrumb-item active">Synthetic Fallback Audit</li>
+    <li class="wy-breadcrumbs-aside">
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="synthetic-data-fallback-audit">Synthetic Data Fallback Audit</h1>
+<h2 id="problem-statement">Problem Statement</h2>
+<p>The system currently generates synthetic/fallback data when real data files cannot be loaded. This is dangerous because:</p>
+<ol>
+<li><strong>Scientific Integrity</strong>: Users may unknowingly analyze fabricated data thinking it's real</li>
+<li><strong>Hidden Failures</strong>: File path errors, missing files, and format issues are masked</li>
+<li><strong>Loss of Trust</strong>: Discovery of silent fallbacks destroys confidence in the system</li>
+<li><strong>Incorrect Conclusions</strong>: Analysis on fake data leads to meaningless results</li>
+</ol>
+<h2 id="example-of-the-problem">Example of the Problem</h2>
+<pre><code>File not found: /Users/fe2val/.spectrochempy/testdata/matlabdata/als2004dataset.MAT
+[DATA] Transposed data: 50 samples × 1000 wavenumbers → 1000 samples × 50 wavenumbers
+</code></pre>
+<p>The file doesn't exist, but the system <strong>silently generated synthetic data</strong> and proceeded as if everything was fine.</p>
+<hr />
+<h2 id="all-synthetic-data-generation-methods">All Synthetic Data Generation Methods</h2>
+<h3 id="1-_generate_synthetic-lines-471-528">1. <code>_generate_synthetic()</code> (Lines 471-528)</h3>
+<p><strong>Purpose</strong>: Generic fallback synthetic data
+<strong>Generates</strong>: 50 samples × 1000 wavenumbers, FTIR-like peaks at [3400, 2900, 1700, 1500, 1000] cm⁻¹</p>
+<h3 id="2-_generate_ftir_synthetic-lines-244-313">2. <code>_generate_ftir_synthetic()</code> (Lines 244-313)</h3>
+<p><strong>Purpose</strong>: Realistic FTIR fallback data simulating NH4Y zeolite activation
+<strong>Generates</strong>: 55 samples × 5549 wavenumbers, temperature series 25-300°C</p>
+<h3 id="3-_generate_raman_synthetic-lines-315-366">3. <code>_generate_raman_synthetic()</code> (Lines 315-366)</h3>
+<p><strong>Purpose</strong>: Raman spectroscopy fallback data
+<strong>Generates</strong>: 30 samples × 1024 wavenumbers, concentration series</p>
+<hr />
+<h2 id="all-fallback-locations-in-datasourcenode">All Fallback Locations in DataSourceNode</h2>
+<h3 id="in-_load_spectrochempy_example-method">In <code>_load_spectrochempy_example()</code> method:</h3>
+<table>
+<thead>
+<tr>
+<th>Line</th>
+<th>Condition</th>
+<th>Fallback Method</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>216</td>
+<td>OMNIC IR data load exception</td>
+<td><code>_generate_ftir_synthetic()</code></td>
+</tr>
+<tr>
+<td>226</td>
+<td>Raman example load exception</td>
+<td><code>_generate_raman_synthetic()</code></td>
+</tr>
+<tr>
+<td>236</td>
+<td>NMR example load exception</td>
+<td><code>_generate_synthetic()</code></td>
+</tr>
+<tr>
+<td>238</td>
+<td>Default case (unknown example)</td>
+<td><code>_generate_synthetic()</code></td>
+</tr>
+<tr>
+<td>242</td>
+<td>Any exception in method</td>
+<td><code>_generate_synthetic()</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="in-_load_from_experiment-method">In <code>_load_from_experiment()</code> method:</h3>
+<table>
+<thead>
+<tr>
+<th>Line</th>
+<th>Condition</th>
+<th>Fallback Method</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>385</td>
+<td>No files found in experiment</td>
+<td><code>_generate_synthetic()</code></td>
+</tr>
+<tr>
+<td>394</td>
+<td>No valid file paths exist</td>
+<td><code>_generate_synthetic()</code></td>
+</tr>
+<tr>
+<td>397</td>
+<td>Exception loading from DB</td>
+<td><code>_generate_synthetic()</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="in-_load_from_file-method">In <code>_load_from_file()</code> method:</h3>
+<table>
+<thead>
+<tr>
+<th>Line</th>
+<th>Condition</th>
+<th>Fallback Method</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>404</td>
+<td><strong>File not found</strong> ⚠️</td>
+<td><code>_generate_synthetic()</code></td>
+</tr>
+<tr>
+<td>428</td>
+<td>Exception reading file</td>
+<td><code>_generate_synthetic()</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Total Fallback Locations: 10</strong></p>
+<hr />
+<h2 id="nodes-that-do-it-right">Nodes That Do It RIGHT</h2>
+<p>These nodes <strong>properly raise exceptions</strong> instead of silently falling back:</p>
+<h3 id="fileloadnode-lines-538-694">✅ FileLoadNode (Lines 538-694)</h3>
+<ul>
+<li>Line 630: <code>raise ValueError(f"Error loading file: {e}")</code></li>
+<li>Line 636: <code>raise ValueError(f"File not found: {file_path}")</code></li>
+<li>Line 674: <code>raise ValueError(f"No datasets found in {file_path}")</code></li>
+</ul>
+<h3 id="nistlibrarynode-lines-697-796">✅ NISTLibraryNode (Lines 697-796)</h3>
+<ul>
+<li>Line 750: <code>raise ValueError(f"Library entry {library_id} not found")</code></li>
+<li>Line 796: <code>raise ValueError(f"Error loading NIST library entry: {e}")</code></li>
+</ul>
+<hr />
+<h2 id="recommended-changes">Recommended Changes</h2>
+<h3 id="phase-1-remove-all-silent-fallbacks">Phase 1: Remove All Silent Fallbacks</h3>
+<p>Replace all <code>return self._generate_*()</code> with proper exceptions:</p>
+<pre><code class="language-python"># BEFORE (Line 404):
+if not os.path.exists(file_path):
+    print(f&quot;File not found: {file_path}&quot;)
+    return self._generate_synthetic()
+
+# AFTER:
+if not os.path.exists(file_path):
+    raise FileNotFoundError(f&quot;File not found: {file_path}&quot;)
+</code></pre>
+<h3 id="phase-2-remove-synthetic-generation-methods">Phase 2: Remove Synthetic Generation Methods</h3>
+<p>Once all fallbacks are removed, delete these methods entirely:
+- <code>_generate_synthetic()</code> (Lines 471-528)
+- <code>_generate_ftir_synthetic()</code> (Lines 244-313)
+- <code>_generate_raman_synthetic()</code> (Lines 315-366)</p>
+<h3 id="phase-3-keep-only-legitimate-synthetic-generation">Phase 3: Keep Only Legitimate Synthetic Generation</h3>
+<p>The <strong>SyntheticCurveNode</strong> (Lines 799-932) is legitimate because:
+- User explicitly selects "synthetic" source
+- It's for generating concentration curves, not masking failures
+- No silent fallbacks involved</p>
+<hr />
+<h2 id="files-to-modify">Files to Modify</h2>
+<h3 id="primary-file">Primary File</h3>
+<ul>
+<li><code>app/services/dag/nodes/data.py</code></li>
+</ul>
+<h3 id="other-files-with-synthetic-data-from-grep-results">Other Files with Synthetic Data (from grep results)</h3>
+<p>May contain test data or legitimate synthetic generation:
+- <code>app/services/dag/nodes/blend.py</code> (blending synthetic spectra)
+- <code>libs/project0/curves.py</code> (curve generation utilities)
+- <code>tests/test_*.py</code> files (test fixtures - OK to keep)</p>
+<hr />
+<h2 id="testing-after-changes">Testing After Changes</h2>
+<p>After removing fallbacks, these should <strong>fail with clear error messages</strong>:</p>
+<ol>
+<li>Missing file path → <code>FileNotFoundError: File not found: /path/to/file</code></li>
+<li>Invalid experiment ID → <code>ValueError: File X not found in experiment Y</code></li>
+<li>Corrupted file → <code>ValueError: Error loading file: [specific error]</code></li>
+<li>Missing example data → <code>FileNotFoundError: SpectroChemPy example 'X' not found</code></li>
+</ol>
+<p>Users should see <strong>explicit errors</strong>, not silent synthetic data.</p>
+<hr />
+<h2 id="risk-assessment">Risk Assessment</h2>
+<h3 id="before-current-state">Before (Current State)</h3>
+<ul>
+<li><strong>Risk Level</strong>: 🔴 <strong>CRITICAL</strong></li>
+<li><strong>Issue</strong>: Users unknowingly analyze fake data</li>
+<li><strong>Impact</strong>: Complete loss of scientific integrity</li>
+</ul>
+<h3 id="after-with-changes">After (With Changes)</h3>
+<ul>
+<li><strong>Risk Level</strong>: 🟢 <strong>LOW</strong></li>
+<li><strong>Issue</strong>: Users see clear error messages</li>
+<li><strong>Impact</strong>: Users fix actual problems (file paths, permissions, format issues)</li>
+</ul>
+<hr />
+<h2 id="implementation-plan">Implementation Plan</h2>
+<ol>
+<li><strong>Backup</strong>: Commit current state before changes</li>
+<li><strong>Replace Fallbacks</strong>: Convert all <code>return self._generate_*()</code> to <code>raise</code> statements</li>
+<li><strong>Delete Methods</strong>: Remove the 3 synthetic generation methods</li>
+<li><strong>Test</strong>: Verify all error paths work correctly</li>
+<li><strong>Document</strong>: Update user docs to explain error messages</li>
+</ol>
+<hr />
+<h2 id="code-locations-summary">Code Locations Summary</h2>
+<p><strong>File</strong>: <code>app/services/dag/nodes/data.py</code></p>
+<p><strong>Methods to Delete</strong> (279 lines total):
+- Lines 244-313: <code>_generate_ftir_synthetic()</code>
+- Lines 315-366: <code>_generate_raman_synthetic()</code>
+- Lines 471-528: <code>_generate_synthetic()</code></p>
+<p><strong>Fallback Calls to Replace with Exceptions</strong> (10 locations):
+- Lines: 216, 226, 236, 238, 242, 385, 394, 397, 404, 428</p>
+<p><strong>Keep As-Is</strong>:
+- Lines 799-932: <code>SyntheticCurveNode</code> (legitimate synthetic curve generation)
+- Lines 538-694: <code>FileLoadNode</code> (already raises proper exceptions)
+- Lines 697-796: <code>NISTLibraryNode</code> (already raises proper exceptions)</p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../ALGORITHM_AUDIT/" class="btn btn-neutral float-left" title="Algorithm Audit"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../TEST_FRAMEWORK/" class="btn btn-neutral float-right" title="Test Framework">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+    
+      <span><a href="../ALGORITHM_AUDIT/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../TEST_FRAMEWORK/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>
