@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import argparse
 import os
-import sys
-import threading
+import shutil
+import signal
+import subprocess
 import time
+import threading
 import webbrowser
 
 
@@ -21,6 +23,126 @@ def _open_browser(url: str, delay: float = 2.0) -> None:
     """Open the browser after a short delay (daemon thread)."""
     time.sleep(delay)
     webbrowser.open(url)
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
+def _find_listening_pids(port: int) -> list[int]:
+    """Return process IDs listening on *port* (POSIX via ``lsof``).
+
+    Returns an empty list when no process is listening or when ``lsof``
+    is unavailable.
+    """
+    try:
+        result = subprocess.run(
+            ["lsof", "-ti", f"tcp:{port}", "-sTCP:LISTEN"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return []
+
+    # lsof returns 1 when no matches were found.
+    if result.returncode not in {0, 1}:
+        return []
+
+    self_pid = os.getpid()
+    pids: set[int] = set()
+    for raw in result.stdout.splitlines():
+        value = raw.strip()
+        if not value.isdigit():
+            continue
+        pid = int(value)
+        if pid != self_pid:
+            pids.add(pid)
+    return sorted(pids)
+
+
+def _safe_kill(pid: int, sig: int) -> bool:
+    """Attempt to signal *pid*. Returns False on permission errors."""
+    try:
+        os.kill(pid, sig)
+        return True
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        return False
+
+
+def _clear_port(
+    port: int,
+    *,
+    grace_seconds: float,
+    force_kill: bool,
+) -> bool:
+    """Try to free a TCP port by terminating listeners.
+
+    Returns True when no blocking listener remains.
+    """
+    if shutil.which("lsof") is None:
+        print(
+            "Warning: KILL_PORT_ON_START is enabled but `lsof` is not available; "
+            "skipping automatic port cleanup.",
+        )
+        return False
+
+    initial = _find_listening_pids(port)
+    if not initial:
+        return True
+
+    print(
+        f"Port {port} is already in use by PID(s): "
+        + ", ".join(str(pid) for pid in initial),
+    )
+    print("Attempting to free the port before startup...")
+
+    for pid in initial:
+        if not _safe_kill(pid, signal.SIGTERM):
+            print(f"  Warning: no permission to terminate PID {pid}.")
+
+    deadline = time.time() + max(0.0, grace_seconds)
+    while time.time() < deadline:
+        remaining = [pid for pid in _find_listening_pids(port) if pid in initial]
+        if not remaining:
+            return True
+        time.sleep(0.1)
+
+    remaining = [pid for pid in _find_listening_pids(port) if pid in initial]
+    if remaining and force_kill:
+        print(
+            "Port still busy after grace period. Sending SIGKILL to PID(s): "
+            + ", ".join(str(pid) for pid in remaining),
+        )
+        for pid in remaining:
+            if not _safe_kill(pid, signal.SIGKILL):
+                print(f"  Warning: no permission to force-kill PID {pid}.")
+        time.sleep(0.1)
+        remaining = [pid for pid in _find_listening_pids(port) if pid in initial]
+
+    if remaining:
+        print(
+            "Warning: port remains occupied by PID(s): "
+            + ", ".join(str(pid) for pid in remaining),
+        )
+        return False
+
+    return True
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -76,6 +198,18 @@ def main(argv: list[str] | None = None) -> None:
     # Limit threads for single-user local mode
     os.environ.setdefault("OPENBLAS_NUM_THREADS", "4")
     os.environ.setdefault("MKL_NUM_THREADS", "4")
+
+    # Optional startup behavior: clear any process listening on the requested
+    # port before starting uvicorn (configured via .env).
+    if _env_bool("KILL_PORT_ON_START", False):
+        grace = _env_float("KILL_PORT_GRACE_SECONDS", 2.0)
+        force = _env_bool("KILL_PORT_FORCE", True)
+        cleared = _clear_port(args.port, grace_seconds=grace, force_kill=force)
+        if not cleared:
+            print(
+                "Continuing startup. If the port is still occupied, "
+                "uvicorn may fail to bind.",
+            )
 
     # Auto-open browser
     url = f"http://{args.host}:{args.port}"

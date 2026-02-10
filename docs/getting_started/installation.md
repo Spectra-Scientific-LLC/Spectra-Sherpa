@@ -44,6 +44,22 @@ No login needed — local mode runs as a single-user desktop tool (like Jupyter)
 
 *API docs are available at [http://localhost:8000/docs](http://localhost:8000/docs).*
 
+### Optional: auto-clear busy port on startup
+
+If another process is already bound to your selected CLI port, you can opt in
+to automatic port cleanup via `.env`:
+
+```bash
+# .env
+KILL_PORT_ON_START=true
+KILL_PORT_GRACE_SECONDS=2.0
+KILL_PORT_FORCE=true
+```
+
+With this enabled, `spectra-sherpa` will attempt `SIGTERM`, wait for the grace
+period, then optionally send `SIGKILL` if the port remains busy.
+This feature uses `lsof`; if `lsof` is unavailable, startup continues with a warning.
+
 ---
 
 ## Choosing a Mode

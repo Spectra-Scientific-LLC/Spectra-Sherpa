@@ -11,7 +11,8 @@ spectra-sherpa
 
 Your browser opens automatically to `http://localhost:8000`. No login required — SpectraSherpa runs as a local tool (like Jupyter). You're immediately on the Workspace page, ready to work.
 
-> **Tip:** Use `spectra-sherpa --port 9000` to pick a different port, or `--no-browser` if you prefer to open the URL yourself.
+> **Tip:** Use `spectra-sherpa --port 9000` to pick a different port, or `--no-browser` if you prefer to open the URL yourself.  
+> If you frequently hit port conflicts, set `KILL_PORT_ON_START=true` in `.env` to auto-clear the selected port.
 
 ---
 
