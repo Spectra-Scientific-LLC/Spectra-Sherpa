@@ -339,11 +339,18 @@ async def api_key_middleware(request: Request, call_next) -> Response:
     ]
 
     path = request.url.path
+
+    # Allow static frontend and SPA routes through without auth.
+    # The SPA catchall serves index.html for any non-API path — these
+    # contain no sensitive data. Actual data is protected by /api/ auth.
+    is_frontend_path = (
+        not path.startswith("/api/")
+        and not path.startswith("/ws")
+    )
     if (path in public_paths
+            or is_frontend_path
             or path.startswith("/docs")
-            or path.startswith("/redoc")
-            or path.startswith("/assets/")
-            or path == "/favicon.ico"):
+            or path.startswith("/redoc")):
         return await call_next(request)
 
     # Mode-based auth bypass: local always passes, hybrid loopback passes.

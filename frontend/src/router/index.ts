@@ -94,15 +94,21 @@ router.beforeEach(async (to, from, next) => {
     return next()
   }
 
-  // Hybrid mode: no login needed, but fetch user profile for admin/identity
+  // Hybrid mode: loopback clients skip login, remote clients need JWT.
+  // initHybridUser() calls /auth/me without a token — succeeds for
+  // loopback (middleware exempts 127.0.0.1) but 401s for remote clients.
   if (appMode.value === 'hybrid') {
-    if (!authStore.user) {
+    if (!authStore.user && !authStore.isAuthenticated) {
       await authStore.initHybridUser()
     }
-    if (to.path === '/login') {
-      return next('/')
+    if (authStore.user) {
+      // Loopback or already authenticated — no login needed
+      if (to.path === '/login') {
+        return next('/')
+      }
+      return next()
     }
-    return next()
+    // Remote client: fall through to normal auth check below
   }
 
   // Public pages (non-local modes)
