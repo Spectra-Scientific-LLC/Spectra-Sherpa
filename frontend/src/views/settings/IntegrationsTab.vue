@@ -1,67 +1,70 @@
 <template>
   <div class="integrations-tab">
-    <!-- SpectraSherpa Cloud (hidden in local mode — no cloud connectivity) -->
-    <div v-if="appMode !== 'local'" class="section">
+    <div class="section">
       <div class="section-header">
         <h3>SpectraSherpa Cloud</h3>
         <Tag v-if="connectionStatus" :severity="connectionSeverity" :value="connectionLabel" />
       </div>
       <p class="muted-text">
-        Connect to SpectraSherpa for managed LLM keys and cloud synchronization.
+        Connect to SpectraSherpa for managed LLM keys, cloud sync, and hybrid identity linking.
       </p>
 
       <div class="connection-panel">
         <div v-if="!isConfigured" class="setup-form">
-          <div class="env-notice">
-            <i class="pi pi-info-circle"></i>
-            <div>
-              <p><strong>Environment Configuration Required</strong></p>
-              <p>SpectraSherpa connection is configured via environment variables for security.</p>
-              <p>Add to your <code>.env</code> file:</p>
-              <pre>SPECTRASHERPA_API_URL=https://endpoint.spectrascientific.ai/api/v1
-SPECTRASHERPA_API_KEY=ss_your-key-here</pre>
-            </div>
-          </div>
-
-          <div class="divider">
-            <span>Test Connection</span>
-          </div>
-
           <div class="field">
-            <label for="server-url">Server URL (for testing)</label>
+            <label for="server-url">Server URL</label>
             <InputText
               id="server-url"
               v-model="serverUrl"
               placeholder="https://endpoint.spectrascientific.ai"
-              :disabled="testing"
+              :disabled="testing || connecting || modeSwitchLocked"
             />
           </div>
+
           <div class="field">
-            <label for="api-key">API Key (for testing)</label>
+            <label for="api-key">API Key</label>
             <div class="p-inputgroup">
               <InputText
                 id="api-key"
                 v-model="apiKey"
                 :type="showKey ? 'text' : 'password'"
                 placeholder="ss_..."
-                :disabled="testing"
+                :disabled="testing || connecting || modeSwitchLocked"
               />
               <Button
                 :icon="showKey ? 'pi pi-eye-slash' : 'pi pi-eye'"
                 @click="showKey = !showKey"
                 class="p-button-secondary"
+                :disabled="testing || connecting || modeSwitchLocked"
               />
             </div>
-            <small class="help-text">Test your credentials before adding to environment</small>
+            <small class="help-text">
+              The server must be in the allowlist (`endpoint.spectrascientific.ai`, `api.spectrascientific.ai`, `localhost`, `127.0.0.1`).
+            </small>
           </div>
+
           <div class="actions">
             <Button
               label="Test Connection"
               icon="pi pi-check-circle"
               @click="testConnection"
               :loading="testing"
-              :disabled="!apiKey"
+              :disabled="!canSubmitCredentials || modeSwitchLocked"
+              class="p-button-secondary"
             />
+            <Button
+              label="Connect & Enable Hybrid"
+              icon="pi pi-cloud"
+              @click="activateHybrid"
+              :loading="connecting"
+              :disabled="!canSubmitCredentials || modeSwitchLocked"
+              class="p-button-success"
+            />
+          </div>
+
+          <div v-if="modeSwitchLocked" class="env-notice small">
+            <i class="pi pi-lock"></i>
+            <span>Mode switching is disabled in demo mode.</span>
           </div>
         </div>
 
@@ -75,11 +78,11 @@ SPECTRASHERPA_API_KEY=ss_your-key-here</pre>
               <span class="label">API Key</span>
               <span class="value">{{ maskedKey }}</span>
             </div>
-            <div class="info-item" v-if="userInfo">
+            <div class="info-item" v-if="userInfo?.email">
               <span class="label">Account</span>
               <span class="value">{{ userInfo.email }}</span>
             </div>
-            <div class="info-item" v-if="userInfo">
+            <div class="info-item" v-if="typeof userInfo?.llm_quota === 'number'">
               <span class="label">Quota</span>
               <span class="value">{{ userInfo.llm_quota }} requests/hour</span>
             </div>
@@ -104,17 +107,24 @@ SPECTRASHERPA_API_KEY=ss_your-key-here</pre>
               :loading="refreshing"
               class="p-button-secondary"
             />
+            <Button
+              label="Disconnect & Return Local"
+              icon="pi pi-power-off"
+              @click="deactivateHybrid"
+              :loading="disconnecting"
+              :disabled="modeSwitchLocked"
+              class="p-button-danger"
+            />
           </div>
 
-          <div class="env-notice small">
-            <i class="pi pi-info-circle"></i>
-            <span>To disconnect, remove <code>SPECTRASHERPA_API_KEY</code> from your environment.</span>
+          <div v-if="modeSwitchLocked" class="env-notice small">
+            <i class="pi pi-lock"></i>
+            <span>Disconnect is disabled in demo mode.</span>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Mode Info -->
     <div class="section" v-if="appMode">
       <h3>Application Mode</h3>
       <div class="mode-panel">
@@ -139,14 +149,13 @@ SPECTRASHERPA_API_KEY=ss_your-key-here</pre>
       </div>
     </div>
 
-    <!-- Connection Test Dialog -->
-    <Dialog v-model:visible="showTestResult" header="Connection Test" modal :style="{ width: '400px' }">
+    <Dialog v-model:visible="showTestResult" header="Connection Test" modal :style="{ width: '420px' }">
       <div class="test-result">
         <div v-if="testResult?.success" class="success">
           <i class="pi pi-check-circle"></i>
           <div class="details">
             <p><strong>Connection successful!</strong></p>
-            <p v-if="testResult.user">Logged in as: {{ testResult.user.email }}</p>
+            <p v-if="testResult.user">Logged in as: {{ testResult.user.email || testResult.user.username }}</p>
             <p v-if="testResult.keys?.length">{{ testResult.keys.length }} managed LLM provider(s) available</p>
           </div>
         </div>
@@ -179,32 +188,30 @@ import Dialog from 'primevue/dialog';
 const toast = useToast();
 const { appConfig, loadConfig } = useAppConfig();
 
-// State
 const serverUrl = ref('https://endpoint.spectrascientific.ai');
 const apiKey = ref('');
 const showKey = ref(false);
 const testing = ref(false);
+const connecting = ref(false);
+const disconnecting = ref(false);
 const refreshing = ref(false);
-const connectionTested = ref(false);
 const showTestResult = ref(false);
 const testResult = ref<any>(null);
 
-// Connection state
 const config = ref<any>(null);
 const userInfo = ref<any>(null);
 const managedKeys = ref<any[]>([]);
 const connectionStatus = ref<'connected' | 'disconnected' | 'error' | null>(null);
 
-// Computed
-const isConfigured = computed(() => config.value?.configured);
+const isConfigured = computed(() => Boolean(config.value?.configured));
+const canSubmitCredentials = computed(() => Boolean(serverUrl.value.trim() && apiKey.value.trim()));
+const appMode = computed(() => appConfig.value?.mode);
+const modeSwitchLocked = computed(() => appMode.value === 'demo');
 
 const maskedKey = computed(() => {
   if (!config.value?.apiKey) return '';
-  // API now returns masked key directly
   return config.value.apiKey;
 });
-
-const appMode = computed(() => appConfig.value?.mode);
 
 const connectionSeverity = computed(() => {
   if (connectionStatus.value === 'connected') return 'success';
@@ -236,44 +243,44 @@ const modeDescription = computed(() => {
   if (appMode.value === 'demo') {
     return 'Cloud-hosted demonstration deployment.';
   }
-  return 'Fully local deployment. Configure SpectraSherpa to enable hybrid mode.';
+  return 'Fully local deployment. Connect SpectraSherpa to enable hybrid mode.';
 });
 
-// Lifecycle
 onMounted(async () => {
   await loadConfig();
   await loadConnectionState();
 });
 
-// Methods
 const loadConnectionState = async () => {
   try {
     const response = await api.get('/config/spectrasherpa');
     config.value = response.data;
 
-    if (config.value?.apiKey) {
+    if (config.value?.configured) {
       connectionStatus.value = 'connected';
       await refreshConnection();
-    } else {
-      connectionStatus.value = 'disconnected';
+      return;
     }
-  } catch (error) {
+
+    userInfo.value = null;
+    managedKeys.value = [];
+    connectionStatus.value = 'disconnected';
+  } catch {
+    userInfo.value = null;
+    managedKeys.value = [];
     connectionStatus.value = 'disconnected';
   }
 };
 
 const testConnection = async () => {
   testing.value = true;
-  connectionTested.value = false;
-
   try {
     const response = await api.post('/config/spectrasherpa/test', {
-      server_url: serverUrl.value,
-      api_key: apiKey.value,
+      server_url: serverUrl.value.trim(),
+      api_key: apiKey.value.trim(),
     });
 
     testResult.value = response.data;
-    connectionTested.value = response.data.success;
     showTestResult.value = true;
   } catch (error: any) {
     testResult.value = {
@@ -286,20 +293,82 @@ const testConnection = async () => {
   }
 };
 
+const activateHybrid = async () => {
+  connecting.value = true;
+  try {
+    const response = await api.post('/config/activate-hybrid', {
+      server_url: serverUrl.value.trim(),
+      api_key: apiKey.value.trim(),
+    });
+
+    apiKey.value = '';
+    await loadConfig();
+    await loadConnectionState();
+
+    toast.add({
+      severity: 'success',
+      summary: 'Hybrid Enabled',
+      detail: response.data?.secret_key_generated
+        ? 'Hybrid mode activated. SECRET_KEY was generated and persisted.'
+        : 'Hybrid mode activated successfully.',
+      life: 3500,
+    });
+  } catch (error: any) {
+    connectionStatus.value = 'error';
+    toast.add({
+      severity: 'error',
+      summary: 'Activation Failed',
+      detail: error.response?.data?.detail || 'Unable to activate hybrid mode.',
+      life: 4500,
+    });
+  } finally {
+    connecting.value = false;
+  }
+};
+
+const deactivateHybrid = async () => {
+  if (!window.confirm('Disconnect SpectraSherpa and return to local mode?')) {
+    return;
+  }
+
+  disconnecting.value = true;
+  try {
+    await api.post('/config/deactivate-hybrid');
+
+    await loadConfig();
+    await loadConnectionState();
+
+    toast.add({
+      severity: 'success',
+      summary: 'Disconnected',
+      detail: 'Hybrid mode disabled. Running in local mode.',
+      life: 3000,
+    });
+  } catch (error: any) {
+    toast.add({
+      severity: 'error',
+      summary: 'Disconnect Failed',
+      detail: error.response?.data?.detail || 'Unable to disable hybrid mode.',
+      life: 4500,
+    });
+  } finally {
+    disconnecting.value = false;
+  }
+};
+
 const refreshConnection = async () => {
   refreshing.value = true;
-
   try {
-    // Get user info
     const userResponse = await api.get('/config/spectrasherpa/user');
-    userInfo.value = userResponse.data;
+    userInfo.value = userResponse.data?.error ? null : userResponse.data;
 
-    // Get managed keys
     const keysResponse = await api.get('/config/spectrasherpa/keys');
-    managedKeys.value = keysResponse.data.keys || [];
+    managedKeys.value = Array.isArray(keysResponse.data?.keys) ? keysResponse.data.keys : [];
 
     connectionStatus.value = 'connected';
-  } catch (error) {
+  } catch {
+    userInfo.value = null;
+    managedKeys.value = [];
     connectionStatus.value = 'error';
     toast.add({
       severity: 'warn',
@@ -311,7 +380,6 @@ const refreshConnection = async () => {
     refreshing.value = false;
   }
 };
-
 </script>
 
 <style scoped>
@@ -368,6 +436,7 @@ const refreshConnection = async () => {
 
 .setup-form .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.75rem;
   margin-top: 1.5rem;
 }
@@ -423,26 +492,6 @@ const refreshConnection = async () => {
   color: var(--text-color-secondary);
 }
 
-.divider {
-  display: flex;
-  align-items: center;
-  margin: 1.5rem 0;
-  color: var(--text-color-secondary);
-  font-size: 0.85rem;
-}
-
-.divider::before,
-.divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--surface-border);
-}
-
-.divider span {
-  padding: 0 1rem;
-}
-
 .connected-info .info-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -494,6 +543,7 @@ const refreshConnection = async () => {
 
 .connected-info .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.75rem;
   margin-top: 1.5rem;
   padding-top: 1.5rem;

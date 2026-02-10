@@ -1,7 +1,6 @@
 from app.api.v1.routes import (
     analysis,
     api_keys,
-    auth,
     builder,
     calibrations,
     compute,

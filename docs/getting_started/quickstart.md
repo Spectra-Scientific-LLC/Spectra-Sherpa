@@ -155,7 +155,37 @@ Restart SpectraSherpa after editing `.env`. The configured provider(s) will appe
 
 ---
 
-## 7. What's Next
+## 7. Connect to SpectraSherpa Cloud (Optional)
+
+SpectraSherpa starts in **local mode** — fully offline, single-user, SQLite. You can upgrade to **hybrid mode** at any time to get managed LLM keys, the Sherpa AI advisor, and cloud sync, all without restarting.
+
+### What You Need
+
+- A SpectraSherpa API key (starts with `ss_...`)
+- The server URL (default: `https://endpoint.spectrascientific.ai`)
+
+### Activate Hybrid Mode
+
+1. Open **Settings** > **Integrations**.
+2. Enter your **Server URL** and **API Key**.
+3. *(Optional)* Click **Test Connection** to verify credentials.
+4. Click **Connect & Enable Hybrid**.
+
+That's it. The app switches to hybrid mode immediately:
+
+- The Sherpa AI advisor tab appears in the chat panel.
+- Managed LLM keys from your account are available (no need to set your own).
+- Your `.env` file is updated automatically so hybrid mode persists across restarts.
+
+### Disconnect
+
+To revert to local mode, go to **Settings** > **Integrations** and click **Disconnect & Return Local**. Cloud features are removed and the app returns to fully offline operation.
+
+> **Data stays local.** In hybrid mode, your spectral data never leaves your machine. Only metadata (workflow structure, LLM prompts) is sent to the cloud when you use cloud features.
+
+---
+
+## 8. What's Next
 
 - **Experiment Management**: Organize spectra with version tracking — see the [User Guide](../user_guide/experiments.md).
 - **NIST Search**: Download reference spectra from NIST WebBook directly in the app (requires `EGRESS_ENABLED=true`).

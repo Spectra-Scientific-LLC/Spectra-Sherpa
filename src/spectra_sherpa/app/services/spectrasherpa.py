@@ -160,13 +160,14 @@ class SpectraSherpaService:
 
         try:
             client = await self._get_client()
-            # Health endpoint is at the server root, not under /api/v1
+            # Health endpoint is at /api/health (registered on the FastAPI app,
+            # not under the /api/v1 router).  Strip the /api/v1 suffix from the
+            # configured base URL so we hit the correct path.
             base = self.config.api_base_url.rstrip("/")
-            # Strip /api/v1 suffix to get the server root URL
             if base.endswith("/api/v1"):
-                health_url = base[: -len("/api/v1")] + "/health"
+                health_url = base[: -len("/api/v1")] + "/api/health"
             else:
-                health_url = base + "/health"
+                health_url = base + "/api/health"
             response = await client.get(health_url)
 
             if response.status_code == 200:
@@ -388,6 +389,14 @@ def get_spectrasherpa_service() -> SpectraSherpaService:
 
 async def close_spectrasherpa_service():
     """Close the singleton service (call on app shutdown)"""
+    global _service_instance
+    if _service_instance:
+        await _service_instance.close()
+        _service_instance = None
+
+
+async def reset_spectrasherpa_service():
+    """Close and reset singleton so next access picks up new config."""
     global _service_instance
     if _service_instance:
         await _service_instance.close()

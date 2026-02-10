@@ -8,15 +8,19 @@ Returns client-safe configuration including:
 - Rate limits (if demo mode)
 """
 
+import logging
 import os
-from fastapi import APIRouter, Depends
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import APIKeyHeader
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+logger = logging.getLogger(__name__)
+
 from app.api.deps import get_session, get_user_from_credentials
 from app.core.config import app_config
-from app.core.security import is_egress_enabled, oauth2_scheme_optional
+from app.core.security import oauth2_scheme_optional
 from app.core.llm_registry import PROVIDERS, get_provider
 from app.models.api_key import APIKey
 from app.models.user import User
@@ -217,7 +221,6 @@ async def get_unit_options():
 # ============================================================================
 
 from pydantic import BaseModel
-from typing import Optional
 import httpx
 
 
@@ -304,16 +307,8 @@ async def test_spectrasherpa_connection(request: SpectraSherpaTestRequest):
     Returns user info and available managed keys if successful.
 
     SECURITY:
-    - Requires egress to be enabled (blocked in LOCAL mode by default)
     - Only allows requests to allowlisted SpectraSherpa hosts (SSRF protection)
     """
-    # Check if egress is enabled (enforces LOCAL mode restriction)
-    if not is_egress_enabled():
-        return {
-            "success": False,
-            "error": "Network egress is disabled. Enable egress or use HYBRID/DEMO mode to test SpectraSherpa connections."
-        }
-
     # SSRF Protection: Only allow requests to known SpectraSherpa hosts
     if not _is_allowed_url(request.server_url):
         return {
@@ -374,7 +369,6 @@ async def save_spectrasherpa_config(request: SpectraSherpaSaveRequest):
 
     This endpoint is disabled for security (prevents runtime config tampering).
     """
-    from fastapi import HTTPException
     raise HTTPException(
         status_code=403,
         detail="SpectraSherpa configuration is environment-only. "
@@ -391,7 +385,6 @@ async def delete_spectrasherpa_config():
 
     This endpoint is disabled for security (prevents runtime config tampering).
     """
-    from fastapi import HTTPException
     raise HTTPException(
         status_code=403,
         detail="SpectraSherpa configuration is environment-only. "
@@ -450,3 +443,201 @@ async def get_spectrasherpa_keys():
             for k in keys
         ]
     }
+
+
+# ============================================================================
+# Hybrid Mode Activation / Deactivation
+# ============================================================================
+
+class ActivateHybridRequest(BaseModel):
+    server_url: str
+    api_key: str
+
+
+def _find_or_create_env_path() -> str:
+    """Return path to the .env file, creating one if none exists."""
+    from spectra_sherpa._paths import get_env_file_search_paths, get_project_root, get_default_data_dir
+
+    for candidate in get_env_file_search_paths():
+        if candidate.is_file():
+            return str(candidate)
+
+    # No .env found — create at project root (dev) or data dir (pip)
+    root = get_project_root()
+    if root is not None:
+        env_path = root / ".env"
+    else:
+        data_dir = get_default_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        env_path = data_dir / ".env"
+    env_path.touch()
+    return str(env_path)
+
+
+@router.post("/activate-hybrid")
+async def activate_hybrid(request: ActivateHybridRequest, http_request: Request):
+    """
+    Activate hybrid mode by connecting to a SpectraSherpa cloud server.
+
+    Tests the connection, persists config to .env, hot-reloads in-memory
+    singletons, and runs identity linking — all without a restart.
+
+    Security: blocked in demo mode; restricted to loopback in local/hybrid.
+    """
+    from app.core.mode_policy import is_demo
+    from app.core.security import get_client_host, _is_loopback
+
+    if is_demo():
+        raise HTTPException(status_code=403, detail="Mode switching is disabled in demo mode.")
+    if not _is_loopback(get_client_host(http_request)):
+        raise HTTPException(status_code=403, detail="Mode switching is only available from localhost.")
+
+    import secrets
+    from dotenv import set_key as dotenv_set_key
+
+    # ── 1. SSRF validation ──
+    if not _is_allowed_url(request.server_url):
+        raise HTTPException(status_code=400, detail="Server URL not in allowed hosts list.")
+
+    base_url = _normalize_spectrasherpa_url(request.server_url)
+
+    # ── 2. Validate API key via /auth/me ──
+    # This verifies both connectivity and credentials before persisting config.
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{base_url}/auth/me",
+                headers={"X-API-Key": request.api_key},
+            )
+            if response.status_code == 401:
+                raise HTTPException(status_code=400, detail="Invalid API key")
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Server validation returned {response.status_code}",
+                )
+    except httpx.ConnectError:
+        raise HTTPException(status_code=400, detail="Cannot connect to server")
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=400, detail="Connection timed out")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # ── 3. Find or create .env ──
+    env_path = _find_or_create_env_path()
+
+    # ── 4. Generate SECRET_KEY if still default ──
+    from app.core.config import settings
+    from app.core.startup import DEFAULT_SECRET_KEY
+
+    secret_key_generated = False
+    if settings.secret_key == DEFAULT_SECRET_KEY:
+        new_secret = secrets.token_urlsafe(32)
+        dotenv_set_key(env_path, "SECRET_KEY", new_secret)
+        os.environ["SECRET_KEY"] = new_secret
+        secret_key_generated = True
+        logger.info("Generated SECRET_KEY for hybrid mode (persisted to .env)")
+
+    # ── 5. Persist to .env ──
+    dotenv_set_key(env_path, "APP_MODE", "hybrid")
+    dotenv_set_key(env_path, "SPECTRASHERPA_API_URL", base_url)
+    dotenv_set_key(env_path, "SPECTRASHERPA_API_KEY", request.api_key)
+    dotenv_set_key(env_path, "EGRESS_ENABLED", "true")
+
+    # ── 6. Update os.environ ──
+    os.environ["APP_MODE"] = "hybrid"
+    os.environ["SPECTRASHERPA_API_URL"] = base_url
+    os.environ["SPECTRASHERPA_API_KEY"] = request.api_key
+    os.environ["EGRESS_ENABLED"] = "true"
+
+    # ── 7. Mutate in-memory singletons ──
+    app_config.mode = "hybrid"
+    app_config.egress_enabled = True
+
+    from app.services.spectrasherpa import spectrasherpa_config
+    spectrasherpa_config.api_base_url = base_url
+    spectrasherpa_config.api_key = request.api_key
+
+    # ── 8. Reset SpectraSherpaService singleton ──
+    from app.services.spectrasherpa import reset_spectrasherpa_service
+    await reset_spectrasherpa_service()
+
+    # ── 9. Run hybrid startup tasks ──
+    from app.core.startup import ensure_egress_defaults, link_hybrid_identity
+    await ensure_egress_defaults()
+    await link_hybrid_identity()
+
+    # ── 10. Start network health monitoring ──
+    from app.services.network_health import start_network_health_service
+    await start_network_health_service()
+
+    logger.info("Hybrid mode activated: connected to %s", base_url)
+
+    return {
+        "success": True,
+        "config": app_config.to_client_safe(),
+        "env_path": env_path,
+        "secret_key_generated": secret_key_generated,
+    }
+
+
+@router.post("/deactivate-hybrid")
+async def deactivate_hybrid(http_request: Request):
+    """
+    Revert to local mode by disconnecting from SpectraSherpa cloud.
+
+    Clears credentials from memory and .env, reverts mode to local.
+
+    Security: blocked in demo mode; restricted to loopback in local/hybrid.
+    """
+    from app.core.mode_policy import is_demo
+    from app.core.security import get_client_host, _is_loopback
+
+    if is_demo():
+        raise HTTPException(status_code=403, detail="Mode switching is disabled in demo mode.")
+    if not _is_loopback(get_client_host(http_request)):
+        raise HTTPException(status_code=403, detail="Mode switching is only available from localhost.")
+
+    from dotenv import set_key as dotenv_set_key
+
+    # ── 1. Update .env ──
+    from spectra_sherpa._paths import get_env_file_search_paths
+    env_path = None
+    for candidate in get_env_file_search_paths():
+        if candidate.is_file():
+            env_path = str(candidate)
+            break
+
+    if env_path:
+        dotenv_set_key(env_path, "APP_MODE", "local")
+        dotenv_set_key(env_path, "EGRESS_ENABLED", "false")
+        dotenv_set_key(env_path, "SPECTRASHERPA_API_KEY", "")
+        dotenv_set_key(env_path, "SPECTRASHERPA_API_URL", "")
+
+    # ── 2. Update os.environ ──
+    os.environ["APP_MODE"] = "local"
+    os.environ["EGRESS_ENABLED"] = "false"
+    os.environ.pop("SPECTRASHERPA_API_KEY", None)
+    os.environ.pop("SPECTRASHERPA_API_URL", None)
+
+    # ── 3. Mutate in-memory singletons ──
+    app_config.mode = "local"
+    app_config.egress_enabled = False
+
+    from app.services.spectrasherpa import SPECTRASHERPA_API_BASE, spectrasherpa_config
+    spectrasherpa_config.api_key = None
+    spectrasherpa_config.api_base_url = SPECTRASHERPA_API_BASE
+
+    # ── 4. Reset service singleton ──
+    from app.services.spectrasherpa import reset_spectrasherpa_service
+    await reset_spectrasherpa_service()
+
+    # ── 5. Stop network health monitoring ──
+    from app.services.network_health import stop_network_health_service
+    await stop_network_health_service()
+
+    logger.info("Reverted to local mode")
+
+    return {"success": True, "config": app_config.to_client_safe()}
