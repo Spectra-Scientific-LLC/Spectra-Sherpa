@@ -327,6 +327,7 @@ async def api_key_middleware(request: Request, call_next) -> Response:
     public_paths = [
         "/",
         "/health",
+        "/api/health",
         "/api/v1/health",
         "/api/v1/auth/login",
         "/api/v1/auth/register",

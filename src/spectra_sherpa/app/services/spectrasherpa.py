@@ -222,7 +222,7 @@ class SpectraSherpaService:
                     id=data["id"],
                     email=data.get("email", ""),
                     username=data.get("username", data.get("email", "")),
-                    is_admin=data.get("is_admin", False),
+                    is_admin=data.get("is_admin", data.get("is_superuser", False)),
                     is_active=data.get("is_active", True),
                     llm_quota=data.get("llm_quota", 100),
                 )
