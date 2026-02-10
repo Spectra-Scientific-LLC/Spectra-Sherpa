@@ -567,6 +567,25 @@ async def activate_hybrid(request: ActivateHybridRequest, http_request: Request)
     # ── 9. Run hybrid startup tasks ──
     from app.core.startup import ensure_egress_defaults, link_hybrid_identity
     await ensure_egress_defaults()
+
+    # Auto-enable spectrasherpa sync for all users — hybrid mode needs it
+    # for Sherpa Advisor to work. Without this, users must manually toggle
+    # via sqlite3 since there's no Data & Privacy UI yet.
+    try:
+        from app.db.session import async_session
+        from app.models.data_egress import UserEgressDefaults
+        async with async_session() as session:
+            result = await session.execute(
+                select(UserEgressDefaults).where(
+                    UserEgressDefaults.allow_spectrasherpa_sync == False  # noqa: E712
+                )
+            )
+            for egress in result.scalars().all():
+                egress.allow_spectrasherpa_sync = True
+            await session.commit()
+    except Exception:
+        logger.warning("Could not auto-enable spectrasherpa sync", exc_info=True)
+
     await link_hybrid_identity()
 
     # ── 10. Start network health monitoring ──
