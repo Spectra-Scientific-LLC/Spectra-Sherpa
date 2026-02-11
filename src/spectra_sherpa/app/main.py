@@ -196,6 +196,8 @@ def _make_lifespan(
                 logger.info("Phase 2: leader one-time startup tasks ...")
                 logger.info("  → ensure_database_ready")
                 await ensure_database_ready()
+                # Restore logging config (Alembic's fileConfig may reset root→WARN)
+                configure_logging()
                 logger.info("  → ensure_default_user")
                 await ensure_default_user()
                 logger.info("  → ensure_egress_defaults")

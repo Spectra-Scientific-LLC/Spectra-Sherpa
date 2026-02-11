@@ -45,6 +45,8 @@ async def init_db() -> None:
         cfg = Config(str(alembic_ini))
         cfg.set_main_option("script_location", str(alembic_dir))
         cfg.set_main_option("sqlalchemy.url", str(engine.url))
+        # Prevent Alembic env.py from reconfiguring logging (root→WARN)
+        cfg.set_main_option("_skip_logging_config", "true")
         await asyncio.to_thread(command.upgrade, cfg, "head")
         logger.info("Alembic migrations applied successfully")
     except Exception as exc:

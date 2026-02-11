@@ -15,7 +15,11 @@ import app.models  # noqa: F401
 
 config = context.config
 
-if config.config_file_name is not None:
+# Only apply alembic.ini logging config when Alembic is run standalone (CLI).
+# When invoked programmatically from init_db (config_file_name is still set
+# but the app has already configured logging), fileConfig would reset the
+# root logger to WARN and suppress all INFO messages for the rest of startup.
+if config.config_file_name is not None and not config.get_main_option("_skip_logging_config"):
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
