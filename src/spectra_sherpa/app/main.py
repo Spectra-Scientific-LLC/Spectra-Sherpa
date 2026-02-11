@@ -231,6 +231,17 @@ def _make_lifespan(
             # Start network health monitoring (HYBRID mode only)
             from app.services.network_health import start_network_health_service
             await start_network_health_service()
+
+            # Check Sherpa Engine availability (fires warning if misconfigured)
+            from app.services.sherpa_engine import get_sherpa_engine
+            _engine = get_sherpa_engine()
+            if _engine.is_available:
+                logger.info("Sherpa Engine: available (model=%s)", settings.sherpa_engine_model)
+            elif settings.sherpa_engine_api_key:
+                pass  # warning already logged by is_available
+            else:
+                logger.info("Sherpa Engine: disabled (no SHERPA_ENGINE_API_KEY)")
+
             logger.info("Phase 3 complete")
 
             # Phase 4: extension hooks (Repo 2 injects server-only startup here)

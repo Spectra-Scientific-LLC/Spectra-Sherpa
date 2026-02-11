@@ -18,51 +18,50 @@
 
       <div class="header-actions">
         <Button
-          :label="isWorkflowStale ? 'Execute Workflow (Modified)' : 'Execute Workflow'"
+          :label="isWorkflowStale ? 'Execute (Modified)' : 'Execute'"
           icon="pi pi-play"
-          :class="isWorkflowStale ? 'p-button-warning execute-stale' : 'p-button-success'"
+          :class="['toolbar-btn', isWorkflowStale ? 'p-button-warning' : '']"
           :loading="isExecuting"
           :disabled="nodes.length === 0"
           @click="executeWorkflow"
           :title="isWorkflowStale ? 'Workflow has been modified since last execution' : 'Execute workflow'"
         />
-        <div class="auto-execute-toggle">
-          <ToggleButton
-            v-model="autoExecute"
-            onLabel="Auto-Execute: ON"
-            offLabel="Auto-Execute: OFF"
-            onIcon="pi pi-bolt"
-            offIcon="pi pi-bolt"
-            class="p-button-sm"
-            :title="autoExecute ? 'Workflow will auto-execute when nodes connect or parameters change' : 'Manual execution mode - click Execute Workflow to run'"
-            @change="onAutoExecuteChange"
-          />
-        </div>
+        <ToggleButton
+          v-model="autoExecute"
+          onLabel="Auto"
+          offLabel="Auto"
+          onIcon="pi pi-bolt"
+          offIcon="pi pi-bolt"
+          class="toolbar-btn"
+          :title="autoExecute ? 'Workflow will auto-execute when nodes connect or parameters change' : 'Manual execution mode - click Execute to run'"
+          @change="onAutoExecuteChange"
+        />
         <Button
           label="New"
           icon="pi pi-plus"
-          class="p-button-secondary"
+          class="toolbar-btn"
           @click="createNewWorkflow"
         />
         <Button
           :label="saveButtonLabel"
           icon="pi pi-save"
+          class="toolbar-btn"
           :disabled="!hasChanges && autosaveStatus !== 'saving'"
           @click="saveWorkflow"
         />
         <span v-if="autosaveStatus === 'saved'" class="autosave-indicator">
-          <i class="pi pi-check"></i> Autosaved
+          <i class="pi pi-check"></i> Saved
         </span>
         <Button
-          label="Export Python"
+          label="Export"
           icon="pi pi-download"
-          class="p-button-outlined"
+          class="toolbar-btn"
           @click="exportToPython"
         />
         <Button
           label="Report"
           icon="pi pi-file"
-          class="p-button-outlined"
+          class="toolbar-btn"
           :disabled="!workflowStore.lastExecutionResults"
           title="Generate provenance report (requires execution results)"
           @click="generateReport"
@@ -1090,33 +1089,53 @@ const onDeleteNode = (nodeId: number) => {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
-.auto-execute-toggle {
-  display: flex;
-  align-items: center;
-}
-
-.auto-execute-toggle :deep(.p-togglebutton) {
+/* Uniform toolbar button styling */
+.header-actions :deep(.toolbar-btn) {
+  height: 36px;
   font-size: 0.85rem;
-  padding: 0.5rem 0.75rem;
-}
-
-.auto-execute-toggle :deep(.p-togglebutton.p-highlight) {
-  background: linear-gradient(135deg, #a855f7, #9333ea);
-  border-color: #a855f7;
-}
-
-.auto-execute-toggle :deep(.p-togglebutton:not(.p-highlight)) {
+  font-weight: 500;
+  padding: 0 14px;
+  border-radius: 6px;
   background: #334155;
-  border-color: #475569;
-  color: #94a3b8;
+  border: 1px solid #475569;
+  color: #e2e8f0;
+  white-space: nowrap;
 }
 
-.auto-execute-toggle :deep(.p-togglebutton:not(.p-highlight):hover) {
+.header-actions :deep(.toolbar-btn:hover:not(:disabled)) {
   background: #475569;
   border-color: #64748b;
+  color: #f8fafc;
+}
+
+.header-actions :deep(.toolbar-btn:disabled) {
+  opacity: 0.45;
+}
+
+.header-actions :deep(.toolbar-btn.p-button-warning) {
+  background: #92400e;
+  border-color: #b45309;
+  color: #fbbf24;
+}
+
+.header-actions :deep(.toolbar-btn.p-button-warning:hover:not(:disabled)) {
+  background: #b45309;
+  border-color: #d97706;
+}
+
+/* ToggleButton active state */
+.header-actions :deep(.toolbar-btn.p-highlight) {
+  background: #7c3aed;
+  border-color: #8b5cf6;
+  color: #f5f3ff;
+}
+
+.header-actions :deep(.toolbar-btn.p-highlight:hover) {
+  background: #6d28d9;
+  border-color: #7c3aed;
 }
 
 .autosave-indicator {

@@ -58,7 +58,7 @@ import { useAppConfig } from "@/composables/useAppConfig";
 const { appMode } = useAppConfig();
 
 const navCollapsed = ref(localStorage.getItem("navCollapsed") === "true");
-const chatCollapsed = ref(localStorage.getItem("chatCollapsed") === "true");
+const chatCollapsed = ref(localStorage.getItem("chatCollapsed") !== "false");
 const chatWidth = ref(360);
 const isResizing = ref(false);
 

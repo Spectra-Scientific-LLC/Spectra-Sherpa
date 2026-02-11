@@ -111,6 +111,10 @@ class SherpaEngine:
             import anthropic  # noqa: F401
             return True
         except ImportError:
+            logger.warning(
+                "SHERPA_ENGINE_API_KEY is set but the 'anthropic' package is not installed. "
+                "Sherpa Engine will be DISABLED. Install it with: pip install anthropic"
+            )
             return False
 
     def _get_client(self) -> Any:

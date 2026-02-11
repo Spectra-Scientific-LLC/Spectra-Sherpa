@@ -31,7 +31,11 @@ pyarrow>=17.0.0,<18.0.0
 openai>=1.40.0,<2.0.0
 python-jose[cryptography]>=3.3.0,<4.0.0
 passlib[bcrypt]>=1.7.4,<2.0.0
+bcrypt>=4.0.1,<4.1
 
-# Optional: cloud/server deployment extras
+# Optional: server deployment extras (uncomment as needed)
 # asyncpg>=0.29.0,<0.30.0
 # gunicorn>=22.0.0,<23.0.0
+
+# Sherpa Engine (required for AI-guided analysis via Anthropic Claude)
+anthropic>=0.39.0,<1.0.0

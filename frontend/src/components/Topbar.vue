@@ -192,10 +192,13 @@ const backendStatus = computed(() => {
 
 const dataStatus = computed(() => {
   const hasExperiments = experimentStore.experiments.length > 0;
-  if (hasExperiments) {
-    return { class: 'status-green', tooltip: 'Data: Sources available' };
+  const hasNodeOutput = workflowStore.nodes.some(
+    (n) => n.executionState?.status === "completed"
+  );
+  if (hasExperiments || hasNodeOutput) {
+    return { class: 'status-green', tooltip: 'Data: Loaded' };
   }
-  return { class: 'status-gray', tooltip: 'Data: No experiments loaded' };
+  return { class: 'status-gray', tooltip: 'Data: No data loaded' };
 });
 
 const workflowStatus = computed(() => {
