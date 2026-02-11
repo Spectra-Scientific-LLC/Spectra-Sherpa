@@ -164,12 +164,15 @@ async def handle_sherpa_sync(
 
         # Path 1: Local SherpaEngine (SHERPA_ENGINE_API_KEY set on this server)
         if engine.is_available:
-            # Engine sends workflow context to Anthropic — gate by allow_llm_context
+            # Engine sends workflow context to Anthropic — gate by allow_llm_context.
+            # skip_global_check: admin explicitly configured the Anthropic key;
+            # degraded SpectraSherpa cloud should not block direct LLM calls.
             async with async_session() as permission_session:
                 allowed = await check_egress_permission(
                     user, "allow_llm_context",
                     data_type="workflow", destination="llm_context",
                     session=permission_session,
+                    skip_global_check=True,
                 )
             if not allowed:
                 await ws.send_json({"type": "sherpa_error", "detail": "Sherpa analysis requires LLM context permission. Enable it in Settings > Data & Privacy."})
@@ -256,12 +259,15 @@ async def handle_sherpa_chat(
 
         # Path 1: Local SherpaEngine
         if engine.is_available:
-            # Engine sends context to Anthropic — gate by allow_llm_context
+            # Engine sends context to Anthropic — gate by allow_llm_context.
+            # skip_global_check: admin explicitly configured the Anthropic key;
+            # degraded SpectraSherpa cloud should not block direct LLM calls.
             async with async_session() as permission_session:
                 allowed = await check_egress_permission(
                     user, "allow_llm_context",
                     data_type="chat", destination="llm_context",
                     session=permission_session,
+                    skip_global_check=True,
                 )
             if not allowed:
                 await ws.send_json({"type": "sherpa_error", "detail": "Sherpa chat requires LLM context permission."})
