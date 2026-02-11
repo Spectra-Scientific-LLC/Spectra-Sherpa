@@ -86,15 +86,16 @@ async def handle_llm_chat(
             await ws.send_json({"type": "error", "detail": "Missing message"})
             return
 
-        # Egress permission
+        # Per-user permission check (skip global egress flag — BYOK is user-initiated consent)
         async with async_session() as permission_session:
             allowed = await check_egress_permission(
                 user, "allow_llm_context",
                 data_type="metadata", destination="llm_context",
                 session=permission_session,
+                skip_global_check=True,
             )
         if not allowed:
-            await ws.send_json({"type": "error", "detail": "LLM access is disabled for this user or mode"})
+            await ws.send_json({"type": "error", "detail": "LLM access is disabled for this user"})
             return
 
         # Rate limit
@@ -163,6 +164,17 @@ async def handle_sherpa_sync(
 
         # Path 1: Local SherpaEngine (SHERPA_ENGINE_API_KEY set on this server)
         if engine.is_available:
+            # Engine sends workflow context to Anthropic — gate by allow_llm_context
+            async with async_session() as permission_session:
+                allowed = await check_egress_permission(
+                    user, "allow_llm_context",
+                    data_type="workflow", destination="llm_context",
+                    session=permission_session,
+                )
+            if not allowed:
+                await ws.send_json({"type": "sherpa_error", "detail": "Sherpa analysis requires LLM context permission. Enable it in Settings > Data & Privacy."})
+                return
+
             sync_data = dict(payload.get("payload", {}))
             tier = EgressTier(sync_data.pop("tier", "structure"))
             sync_msg = WorkflowStateSync(**sync_data)
@@ -181,6 +193,7 @@ async def handle_sherpa_sync(
             await ws.send_json({"type": "sherpa_status", "payload": {"connected": False, "reason": "not_configured"}})
             return
 
+        # Cloud proxy sends workflow data to SpectraSherpa — gate by allow_spectrasherpa_sync
         async with async_session() as permission_session:
             allowed = await check_egress_permission(
                 user, "allow_spectrasherpa_sync",
@@ -243,7 +256,18 @@ async def handle_sherpa_chat(
 
         # Path 1: Local SherpaEngine
         if engine.is_available:
-            # Rebuild workflow context from the last sync payload if available
+            # Engine sends context to Anthropic — gate by allow_llm_context
+            async with async_session() as permission_session:
+                allowed = await check_egress_permission(
+                    user, "allow_llm_context",
+                    data_type="chat", destination="llm_context",
+                    session=permission_session,
+                )
+            if not allowed:
+                await ws.send_json({"type": "sherpa_error", "detail": "Sherpa chat requires LLM context permission."})
+                return
+
+            # Rebuild workflow context from payload if available
             workflow_context = None
             sync_payload = chat_data.get("workflow_context")
             if sync_payload:
@@ -267,6 +291,7 @@ async def handle_sherpa_chat(
             await ws.send_json({"type": "sherpa_status", "payload": {"connected": False, "reason": "not_configured"}})
             return
 
+        # Cloud proxy sends chat to SpectraSherpa — gate by allow_spectrasherpa_sync
         async with async_session() as permission_session:
             allowed = await check_egress_permission(
                 user, "allow_spectrasherpa_sync",
@@ -278,10 +303,13 @@ async def handle_sherpa_chat(
             return
 
         workflow_id = chat_data.get("workflow_id")
+        # Forward workflow_context so server-side engine has graph for follow-up
+        workflow_context_raw = chat_data.get("workflow_context")
 
         await ws.send_json({"type": "sherpa_chat_start"})
         async for chunk in advisor.chat_followup(
             message=message, workflow_id=workflow_id, history=history,
+            workflow_context=workflow_context_raw,
         ):
             await ws.send_json({"type": "sherpa_chat_chunk", "chunk": chunk})
         await ws.send_json({"type": "sherpa_chat_done"})

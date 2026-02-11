@@ -242,6 +242,7 @@ class SpectraSherpaSaveRequest(BaseModel):
 ALLOWED_SPECTRASHERPA_HOSTS = [
     "endpoint.spectrascientific.ai",
     "api.spectrascientific.ai",
+    "demo.spectrascientific.ai",
     "localhost",
     "127.0.0.1",
 ]

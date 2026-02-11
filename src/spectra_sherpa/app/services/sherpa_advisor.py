@@ -283,11 +283,13 @@ class SherpaAdvisorService:
         message: str,
         workflow_id: int | None = None,
         history: list[dict[str, str]] | None = None,
+        workflow_context: dict[str, Any] | None = None,
     ) -> AsyncIterator[str]:
         """Stream a follow-up answer from the cloud Sherpa.
 
-        Sends ``POST /sherpa/chat`` with the question, workflow id and
-        recent conversation history.  Yields text chunks as they arrive.
+        Sends ``POST /sherpa/chat`` with the question, workflow id,
+        recent conversation history, and optional workflow context so the
+        server-side engine has the full graph for follow-up analysis.
 
         Gracefully yields a single fallback message when the cloud is
         unreachable or the endpoint does not exist yet (404).
@@ -303,6 +305,8 @@ class SherpaAdvisorService:
                 "workflow_id": workflow_id,
                 "history": history or [],
             }
+            if workflow_context:
+                body["workflow_context"] = workflow_context
             async with client.stream("POST", "/sherpa/chat", json=body) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():

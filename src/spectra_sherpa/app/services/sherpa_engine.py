@@ -105,7 +105,13 @@ class SherpaEngine:
 
     @property
     def is_available(self) -> bool:
-        return bool(settings.sherpa_engine_api_key)
+        if not settings.sherpa_engine_api_key:
+            return False
+        try:
+            import anthropic  # noqa: F401
+            return True
+        except ImportError:
+            return False
 
     def _get_client(self) -> Any:
         if self._client is None:
