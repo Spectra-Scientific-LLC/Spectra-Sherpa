@@ -121,8 +121,14 @@ def _try_leader_lock() -> bool:
         fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT)
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         # Keep fd open for process lifetime (lock released on exit)
+        logger.info("Leader lock acquired: %s", lock_path)
         return True
-    except OSError:
+    except OSError as exc:
+        logger.warning(
+            "Could not acquire leader lock %s: %s — running as follower. "
+            "If no leader is running, delete the lock file and restart.",
+            lock_path, exc,
+        )
         return False
 
 
@@ -171,47 +177,72 @@ def _make_lifespan(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         # === STARTUP ===
-        # Phase 1: per-worker setup (safe to run in every worker)
-        configure_logging()
-        validate_security_settings()  # Fail fast if security config is invalid
-        validate_concurrency_settings()  # Log concurrency model info
-        ensure_data_dirs()
+        import traceback as _tb
 
-        # Phase 2: DB-mutating tasks — only the leader worker runs these.
-        # Other workers skip (the leader will have completed before requests arrive
-        # because Gunicorn's --preload or sequential worker spawn ensures ordering).
-        is_leader = _try_leader_lock()
-        if is_leader:
-            logger.info("Leader worker: running one-time startup tasks")
-            await ensure_database_ready()
-            await ensure_default_user()
-            await ensure_egress_defaults()
-            await link_hybrid_identity()
-            await reconcile_stale_jobs()
-            await ensure_spectrochempy_testdata()
-            await ensure_workflow_templates()
-        else:
-            logger.info("Follower worker: skipping one-time startup tasks (leader handles them)")
-            # Wait for leader to finish DB schema setup (no DB writes on followers).
-            await wait_for_database_ready()
+        try:
+            # Phase 1: per-worker setup (safe to run in every worker)
+            logger.info("Phase 1: per-worker setup ...")
+            configure_logging()
+            validate_security_settings()  # Fail fast if security config is invalid
+            validate_concurrency_settings()  # Log concurrency model info
+            ensure_data_dirs()
+            logger.info("Phase 1 complete")
 
-        # Phase 3: per-worker setup that depends on DB being ready
-        # Register built-in MCP tools (import triggers @register_tool decorators)
-        import app.services.tools.builtin  # noqa: F401
-        from app.services.tools import tool_registry as _tool_reg
-        logger.info("Registered %d built-in tool(s)", len(_tool_reg))
+            # Phase 2: DB-mutating tasks — only the leader worker runs these.
+            # Other workers skip (the leader will have completed before requests arrive
+            # because Gunicorn's --preload or sequential worker spawn ensures ordering).
+            is_leader = _try_leader_lock()
+            if is_leader:
+                logger.info("Phase 2: leader one-time startup tasks ...")
+                logger.info("  → ensure_database_ready")
+                await ensure_database_ready()
+                logger.info("  → ensure_default_user")
+                await ensure_default_user()
+                logger.info("  → ensure_egress_defaults")
+                await ensure_egress_defaults()
+                logger.info("  → link_hybrid_identity")
+                await link_hybrid_identity()
+                logger.info("  → reconcile_stale_jobs")
+                await reconcile_stale_jobs()
+                logger.info("  → ensure_spectrochempy_testdata")
+                await ensure_spectrochempy_testdata()
+                logger.info("  → ensure_workflow_templates")
+                await ensure_workflow_templates()
+                logger.info("Phase 2 complete")
+            else:
+                logger.info("Follower worker: waiting for leader to finish DB setup ...")
+                # Wait for leader to finish DB schema setup (no DB writes on followers).
+                await wait_for_database_ready()
+                logger.info("Follower: DB ready")
 
-        # Discover and load third-party plugins (may register additional tools)
-        from app.services.plugin_loader import discover_plugins
-        discover_plugins()
+            # Phase 3: per-worker setup that depends on DB being ready
+            logger.info("Phase 3: tools + plugins ...")
+            # Register built-in MCP tools (import triggers @register_tool decorators)
+            import app.services.tools.builtin  # noqa: F401
+            from app.services.tools import tool_registry as _tool_reg
+            logger.info("Registered %d built-in tool(s)", len(_tool_reg))
 
-        # Start network health monitoring (HYBRID mode only)
-        from app.services.network_health import start_network_health_service
-        await start_network_health_service()
+            # Discover and load third-party plugins (may register additional tools)
+            from app.services.plugin_loader import discover_plugins
+            discover_plugins()
 
-        # Phase 4: extension hooks (Repo 2 injects server-only startup here)
-        for hook in (extra_startup or []):
-            await hook()
+            # Start network health monitoring (HYBRID mode only)
+            from app.services.network_health import start_network_health_service
+            await start_network_health_service()
+            logger.info("Phase 3 complete")
+
+            # Phase 4: extension hooks (Repo 2 injects server-only startup here)
+            if extra_startup:
+                logger.info("Phase 4: %d extension hook(s) ...", len(extra_startup))
+            for hook in (extra_startup or []):
+                await hook()
+
+            logger.info("Application startup complete")
+        except Exception:
+            logger.critical(
+                "STARTUP FAILED — lifespan exception:\n%s", _tb.format_exc(),
+            )
+            raise
 
         yield
 
