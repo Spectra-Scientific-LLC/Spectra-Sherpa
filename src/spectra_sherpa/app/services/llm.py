@@ -18,7 +18,7 @@ from app.models.llm_config import LLMConfig
 from app.models.user import User
 from app.services.encryption import decrypt_value
 from app.core.llm_registry import get_provider, get_default_provider
-from app.core.security import check_egress_permission, is_egress_enabled
+from app.core.security import check_egress_permission
 
 # Anthropic import - will be available when installed
 try:
@@ -191,20 +191,18 @@ class LLMService:
         metadata: Optional[dict[str, Any]] = None,
     ) -> tuple[str, str]:
         """Send chat message and get response (non-streaming)"""
-        # Egress check for external LLM providers
+        # Egress check for external LLM providers.
+        # User-initiated BYOK chat bypasses the global egress flag — the user
+        # explicitly provided their API key and typed a message, which is consent.
         config = await self._get_llm_config()
         if not self._is_local_provider(config["provider"]):
-            if not is_egress_enabled():
-                raise ValueError(
-                    "Network egress is disabled. Enable EGRESS_ENABLED=true or set APP_MODE=hybrid "
-                    "to use external LLM providers."
-                )
             if not await check_egress_permission(
                 self.user,
                 "allow_llm_context",
                 data_type="metadata",
                 destination="llm_context",
                 session=self.session,
+                skip_global_check=True,
             ):
                 raise ValueError("LLM context sharing is disabled in user privacy settings.")
 
@@ -254,20 +252,17 @@ class LLMService:
         metadata: Optional[dict[str, Any]] = None,
     ) -> tuple[str, AsyncIterator[str]]:
         """Stream chat response"""
-        # Egress check for external LLM providers
+        # Egress check for external LLM providers.
+        # User-initiated BYOK chat bypasses the global egress flag.
         config = await self._get_llm_config()
         if not self._is_local_provider(config["provider"]):
-            if not is_egress_enabled():
-                raise ValueError(
-                    "Network egress is disabled. Enable EGRESS_ENABLED=true or set APP_MODE=hybrid "
-                    "to use external LLM providers."
-                )
             if not await check_egress_permission(
                 self.user,
                 "allow_llm_context",
                 data_type="metadata",
                 destination="llm_context",
                 session=self.session,
+                skip_global_check=True,
             ):
                 raise ValueError("LLM context sharing is disabled in user privacy settings.")
 
@@ -360,19 +355,16 @@ class LLMService:
         _logger = _logging.getLogger(__name__)
 
         # ---- egress guard (same as chat()) ----
+        # User-initiated BYOK chat bypasses the global egress flag.
         config = await self._get_llm_config()
         if not self._is_local_provider(config["provider"]):
-            if not is_egress_enabled():
-                raise ValueError(
-                    "Network egress is disabled. Enable EGRESS_ENABLED=true or set "
-                    "APP_MODE=hybrid to use external LLM providers."
-                )
             if not await check_egress_permission(
                 self.user,
                 "allow_llm_context",
                 data_type="metadata",
                 destination="llm_context",
                 session=self.session,
+                skip_global_check=True,
             ):
                 raise ValueError("LLM context sharing is disabled in user privacy settings.")
 
@@ -596,20 +588,17 @@ class LLMService:
 
     async def _single_turn(self, prompt: str) -> str:
         """Single-turn LLM request (used for utility functions)"""
-        # Egress check for external LLM providers
+        # Egress check for external LLM providers.
+        # User-initiated BYOK chat bypasses the global egress flag.
         config = await self._get_llm_config()
         if not self._is_local_provider(config["provider"]):
-            if not is_egress_enabled():
-                raise ValueError(
-                    "Network egress is disabled. Enable EGRESS_ENABLED=true or set APP_MODE=hybrid "
-                    "to use external LLM providers."
-                )
             if not await check_egress_permission(
                 self.user,
                 "allow_llm_context",
                 data_type="metadata",
                 destination="llm_context",
                 session=self.session,
+                skip_global_check=True,
             ):
                 raise ValueError("LLM context sharing is disabled in user privacy settings.")
 

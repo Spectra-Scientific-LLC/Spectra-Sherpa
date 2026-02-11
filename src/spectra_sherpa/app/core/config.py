@@ -74,6 +74,11 @@ class Settings:
     max_concurrent_jobs: int = _get_int("MAX_CONCURRENT_JOBS", 2)
     max_nist_downloads_per_hour: int = _get_int("MAX_NIST_DOWNLOADS_PER_HOUR", 50)
     max_llm_requests_per_hour: int = _get_int("MAX_LLM_REQUESTS_PER_HOUR", 100)
+
+    # Sherpa Engine — server-side Anthropic Claude for AI-guided analysis
+    sherpa_engine_api_key: str = os.getenv("SHERPA_ENGINE_API_KEY", "")
+    sherpa_engine_model: str = os.getenv("SHERPA_ENGINE_MODEL", "claude-sonnet-4-5-20250929")
+
     max_file_size_mb: int = _get_int("MAX_FILE_SIZE_MB", 200)
     max_job_duration_sec: int = _get_int("MAX_JOB_DURATION_SEC", 3600)
     max_export_size_mb: int = _get_int("MAX_EXPORT_SIZE_MB", 1024)
@@ -314,11 +319,14 @@ class AppConfig(BaseModel):
 
     def to_client_safe(self) -> dict:
         """Return client-safe configuration (no secrets)"""
-        # Sherpa is available when cloud key is configured and mode allows it
+        # Sherpa is available when cloud key is configured and mode allows it,
+        # OR when the server has a local Sherpa engine key.
         sherpa_configured = (
-            self.mode in ("hybrid", "demo")
-            and bool(os.getenv("SPECTRASHERPA_API_KEY"))
+            (self.mode in ("hybrid", "demo") and bool(os.getenv("SPECTRASHERPA_API_KEY")))
+            or bool(os.getenv("SHERPA_ENGINE_API_KEY"))
         )
+
+        has_llm = len(self.get_configured_llms()) > 0
 
         return {
             "mode": self.mode,
@@ -328,8 +336,8 @@ class AppConfig(BaseModel):
                 "apiTokenSettings": self.mode in ["local", "hybrid"],
                 "cloudOffload": self.execution.mode == "hybrid",
                 "demoMode": self.mode == "demo",
-                "agenticWorkflow": len(self.get_configured_llms()) > 0 and self.egress_enabled,
-                "chatAssistant": False,  # Phase 4
+                "agenticWorkflow": has_llm and self.egress_enabled,
+                "chatAssistant": has_llm,
                 "nistDownloads": self.egress_enabled,
                 "sherpaAdvisor": sherpa_configured,
                 "pluginSystem": True,  # Always available (local discovery)

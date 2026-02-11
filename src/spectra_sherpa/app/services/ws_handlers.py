@@ -156,8 +156,25 @@ async def handle_sherpa_sync(
     rate_limiter: RateLimiter,
 ) -> None:
     try:
-        from app.services.sherpa_advisor import get_sherpa_advisor
         from app.schemas.sherpa import EgressTier, WorkflowStateSync
+        from app.services.sherpa_engine import get_sherpa_engine
+
+        engine = get_sherpa_engine()
+
+        # Path 1: Local SherpaEngine (SHERPA_ENGINE_API_KEY set on this server)
+        if engine.is_available:
+            sync_data = dict(payload.get("payload", {}))
+            tier = EgressTier(sync_data.pop("tier", "structure"))
+            sync_msg = WorkflowStateSync(**sync_data)
+            logger.info("sherpa_sync (engine): %d nodes, technique=%s", len(sync_msg.nodes), sync_msg.spectral_technique)
+            await ws.send_json({"type": "sherpa_chat_start"})
+            async for chunk in engine.analyze_workflow(sync_msg):
+                await ws.send_json({"type": "sherpa_chat_chunk", "chunk": chunk})
+            await ws.send_json({"type": "sherpa_chat_done"})
+            return
+
+        # Path 2: Cloud proxy (hybrid mode → remote SpectraSherpa server)
+        from app.services.sherpa_advisor import get_sherpa_advisor
 
         advisor = get_sherpa_advisor()
         if not advisor.is_available:
@@ -178,7 +195,7 @@ async def handle_sherpa_sync(
         tier = EgressTier(sync_data.pop("tier", "structure"))
         sync_msg = WorkflowStateSync(**sync_data)
         recommendations = await advisor.sync_workflow(sync_msg, tier=tier)
-        logger.info("sherpa_sync: %d nodes → %d recommendations", len(sync_msg.nodes), len(recommendations))
+        logger.info("sherpa_sync (proxy): %d nodes → %d recommendations", len(sync_msg.nodes), len(recommendations))
         await ws.send_json({
             "type": "sherpa_recommendations",
             "payload": [r.model_dump(mode="json") for r in recommendations],
@@ -216,28 +233,51 @@ async def handle_sherpa_chat(
     user: Any,
     rate_limiter: RateLimiter,
 ) -> None:
-    from app.services.sherpa_advisor import get_sherpa_advisor
-
-    advisor = get_sherpa_advisor()
-    if not advisor.is_available:
-        await ws.send_json({"type": "sherpa_status", "payload": {"connected": False, "reason": "not_configured"}})
-        return
-
-    async with async_session() as permission_session:
-        allowed = await check_egress_permission(
-            user, "allow_spectrasherpa_sync",
-            data_type="chat", destination="spectrasherpa",
-            session=permission_session,
-        )
-    if not allowed:
-        await ws.send_json({"type": "sherpa_error", "detail": "Sherpa chat not permitted for this user"})
-        return
-
     try:
+        from app.services.sherpa_engine import get_sherpa_engine
+
+        engine = get_sherpa_engine()
         chat_data = payload.get("payload", {})
         message = chat_data.get("message", "")
-        workflow_id = chat_data.get("workflow_id")
         history = chat_data.get("history", [])
+
+        # Path 1: Local SherpaEngine
+        if engine.is_available:
+            # Rebuild workflow context from the last sync payload if available
+            workflow_context = None
+            sync_payload = chat_data.get("workflow_context")
+            if sync_payload:
+                from app.schemas.sherpa import WorkflowStateSync
+                workflow_context = WorkflowStateSync(**sync_payload)
+
+            logger.info("sherpa_chat (engine): %s", message[:80])
+            await ws.send_json({"type": "sherpa_chat_start"})
+            async for chunk in engine.chat(
+                message=message, workflow_context=workflow_context, history=history,
+            ):
+                await ws.send_json({"type": "sherpa_chat_chunk", "chunk": chunk})
+            await ws.send_json({"type": "sherpa_chat_done"})
+            return
+
+        # Path 2: Cloud proxy
+        from app.services.sherpa_advisor import get_sherpa_advisor
+
+        advisor = get_sherpa_advisor()
+        if not advisor.is_available:
+            await ws.send_json({"type": "sherpa_status", "payload": {"connected": False, "reason": "not_configured"}})
+            return
+
+        async with async_session() as permission_session:
+            allowed = await check_egress_permission(
+                user, "allow_spectrasherpa_sync",
+                data_type="chat", destination="spectrasherpa",
+                session=permission_session,
+            )
+        if not allowed:
+            await ws.send_json({"type": "sherpa_error", "detail": "Sherpa chat not permitted for this user"})
+            return
+
+        workflow_id = chat_data.get("workflow_id")
 
         await ws.send_json({"type": "sherpa_chat_start"})
         async for chunk in advisor.chat_followup(

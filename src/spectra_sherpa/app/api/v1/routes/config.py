@@ -109,9 +109,10 @@ async def get_config(
         if provider_id in config["llms"]:
             config["llms"][provider_id]["enabled"] = is_available
 
-    # Preserve egress gating from base config while reflecting true provider availability.
+    # Recalculate feature flags with true provider availability.
     has_llm = any(llm["enabled"] for llm in config["llms"].values())
-    config["features"]["agenticWorkflow"] = has_llm and config["features"].get("agenticWorkflow", False)
+    config["features"]["agenticWorkflow"] = has_llm and config["egress_enabled"]
+    config["features"]["chatAssistant"] = has_llm
 
     return config
 

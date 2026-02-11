@@ -417,6 +417,8 @@ async def check_egress_permission(
     data_type: str | None = None,
     destination: str | None = None,
     session: "AsyncSession | None" = None,
+    *,
+    skip_global_check: bool = False,
 ) -> bool:
     """
     Check if a user has permission for a specific egress operation.
@@ -431,18 +433,21 @@ async def check_egress_permission(
         data_type: Optional fine-grained data type (e.g. "spectra", "models")
         destination: Optional fine-grained destination (e.g. "llm_context", "export")
         session: AsyncSession required when data_type + destination are provided
+        skip_global_check: When True, skip the global is_egress_enabled() check.
+            Used for user-initiated actions (e.g. BYOK LLM chat) where the user
+            explicitly consented by providing their own API key and message.
 
     Returns:
         True if the permission is granted, False otherwise
 
     Egress permissions are checked in this order:
-    1. Global egress flag (if disabled, all egress is blocked)
+    1. Global egress flag (if disabled, all egress is blocked — unless skip_global_check)
     2. Fine-grained DataEgressPermission (when data_type + destination + session provided)
     3. User's egress_defaults settings (from UserEgressDefaults model)
     4. Apply sensible defaults for users without egress_defaults configured
     """
-    # First check global egress flag
-    if not is_egress_enabled():
+    # First check global egress flag (skippable for user-initiated actions)
+    if not skip_global_check and not is_egress_enabled():
         return False
 
     # If no user context, allow (system operation in hybrid/demo mode)

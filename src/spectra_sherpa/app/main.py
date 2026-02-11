@@ -231,9 +231,11 @@ def _make_lifespan(
         from app.services.spectrasherpa import close_spectrasherpa_service
         await close_spectrasherpa_service()
 
-        # Close Sherpa advisor
+        # Close Sherpa advisor and engine
         from app.services.sherpa_advisor import close_sherpa_advisor
         await close_sherpa_advisor()
+        from app.services.sherpa_engine import close_sherpa_engine
+        await close_sherpa_engine()
 
     return lifespan
 

@@ -110,17 +110,18 @@ export const useSherpaStore = defineStore("sherpa", () => {
       })
     );
 
-    // Timeout: if no response within 15s, reset state
+    // Timeout: if no response within 30s, reset state.
+    // Engine analysis with tool calls may take longer than simple cloud sync.
     const syncTimeout = window.setTimeout(() => {
       if (state.value === "syncing") {
         state.value = "idle";
         messages.value.push({
           role: "system",
           content:
-            "Sherpa sync timed out. The cloud service may be unavailable.",
+            "Sherpa sync timed out. The service may be unavailable.",
         });
       }
-    }, 15_000);
+    }, 30_000);
 
     const unwatch = watch(
       () => state.value,
@@ -166,6 +167,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
         payload: {
           message,
           workflow_id: workflow.workflowId,
+          workflow_context: buildSyncPayload(),
           history: messages.value
             .slice(-10)
             .map((m) => ({ role: m.role, content: m.content })),
@@ -216,6 +218,10 @@ export const useSherpaStore = defineStore("sherpa", () => {
         }
       }
     } else if (payload.type === "sherpa_chat_start") {
+      // Transition from "syncing" to "chatting" so the sync timeout is cleared
+      if (state.value === "syncing" || state.value === "idle") {
+        state.value = "chatting";
+      }
       streamingIndex.value = messages.value.length;
       messages.value.push({ role: "assistant", content: "" });
     } else if (payload.type === "sherpa_chat_chunk") {
