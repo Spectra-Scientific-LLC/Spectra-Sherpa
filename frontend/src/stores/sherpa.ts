@@ -110,8 +110,8 @@ export const useSherpaStore = defineStore("sherpa", () => {
       })
     );
 
-    // Timeout: if no response within 30s, reset state.
-    // Engine analysis with tool calls may take longer than simple cloud sync.
+    // Timeout: if no response within 90s, reset state.
+    // Engine analysis with multi-round tool calls can take 30-60s.
     const syncTimeout = window.setTimeout(() => {
       if (state.value === "syncing") {
         state.value = "idle";
@@ -121,7 +121,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
             "Sherpa sync timed out. The service may be unavailable.",
         });
       }
-    }, 30_000);
+    }, 90_000);
 
     const unwatch = watch(
       () => state.value,

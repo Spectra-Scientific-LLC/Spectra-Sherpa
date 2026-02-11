@@ -239,6 +239,11 @@ class SherpaEngine:
                     yield block.text
                 return
 
+            # Yield any intermediate text before tool calls
+            for block in text_blocks:
+                if block.text.strip():
+                    yield block.text
+
             # Execute tool calls
             # First, append the assistant's response (with tool_use blocks)
             messages.append({
@@ -248,6 +253,10 @@ class SherpaEngine:
                     for b in response.content
                 ],
             })
+
+            # Yield progress indicator so the frontend shows activity
+            tool_names = [b.name for b in tool_use_blocks]
+            yield f"\n\n*Using tools: {', '.join(tool_names)}…*\n\n"
 
             # Execute each tool and build tool_result blocks
             tool_results: list[dict[str, Any]] = []
