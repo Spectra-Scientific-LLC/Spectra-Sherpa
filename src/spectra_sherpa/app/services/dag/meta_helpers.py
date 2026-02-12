@@ -24,12 +24,8 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
 import numpy as np
 
-try:
-    from spectrochempy import NDDataset
-    HAS_NDDATASET = True
-except ImportError:
-    NDDataset = None
-    HAS_NDDATASET = False
+from app.lib.scp_compat import NDDataset, HAS_SCP
+HAS_NDDATASET = HAS_SCP
 
 
 # =============================================================================

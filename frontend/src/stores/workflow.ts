@@ -99,6 +99,21 @@ export interface WorkflowTemplate {
   edges: WorkflowEdge[];
 }
 
+interface TypeRegistryEntry {
+  uri: string;
+  version: string;
+  parent: string | null;
+  parent_uri: string | null;
+  category: string;
+  description: string;
+}
+
+interface TypeRegistryPayload {
+  version: string;
+  types: Record<string, TypeRegistryEntry>;
+  subtypes: Record<string, string[]>;
+}
+
 // Map frontend node types to backend DAG node types
 export const NODE_TYPE_MAP: Record<string, string> = {
   // Data source nodes
@@ -377,6 +392,7 @@ interface WorkflowExecuteResponse {
   workflow_id: number;
   status: string;
   results: UnknownRecord;
+  diagnostics?: Record<string, UnknownRecord>;
   node_statuses: Record<string, string>;
   executed_at: string;
   error?: string;
@@ -714,6 +730,8 @@ export const useWorkflowStore = defineStore("workflow", () => {
   const workflowHash = ref<string | null>(null);
   const isLoading = ref(false);
   const lastExecutionResults = ref<UnknownRecord | null>(null);
+  const lastExecutionDiagnostics = ref<Record<string, UnknownRecord>>({});
+  const workflowWarnings = ref<string[]>([]);
   const availableDatasets = ref<AvailableDatasets | null>(null);
   // Maps frontend canvas node IDs <-> backend workflow node_id strings.
   // Needed to correctly correlate status/result payloads when backend IDs are non-numeric.
@@ -725,6 +743,9 @@ export const useWorkflowStore = defineStore("workflow", () => {
   const isLoadingNodeLibrary = ref(false);
   const nodeLibraryLoadError = ref<string | null>(null);
   const nodeLibraryVersion = ref<string | null>(null); // Track backend version for cache invalidation
+  const typeRegistry = ref<TypeRegistryPayload | null>(null);
+  const isLoadingTypeRegistry = ref(false);
+  const typeRegistryLoadError = ref<string | null>(null);
 
   // Workflow has been modified since last execution (stale state)
   const isWorkflowStale = ref(false);
@@ -752,6 +773,122 @@ export const useWorkflowStore = defineStore("workflow", () => {
       return "pending";
     }
     return null;
+  };
+
+  const parseTypeRef = (
+    typeRef: string
+  ): { name: string; major: number; minor: number } | null => {
+    const match = typeRef.match(
+      /^spectrasherpa:\/\/types\/(?<name>[A-Za-z0-9_]+)\/(?<major>\d+)\.(?<minor>\d+)$/
+    );
+    if (!match?.groups) {
+      return null;
+    }
+    return {
+      name: match.groups.name,
+      major: Number.parseInt(match.groups.major, 10),
+      minor: Number.parseInt(match.groups.minor, 10),
+    };
+  };
+
+  const typeRefToDisplayName = (typeRef: string): string => {
+    const parsed = parseTypeRef(typeRef);
+    if (!parsed) return typeRef;
+    return `${parsed.name}@${parsed.major}.${parsed.minor}`;
+  };
+
+  /** Derive visual category (dataset, model, target, ...) from a type_ref URI. */
+  const getCategoryFromTypeRef = (typeRef: string): string => {
+    const parsed = parseTypeRef(typeRef);
+    if (!parsed) return "dataset";
+    const registry = typeRegistry.value;
+    if (registry?.types?.[parsed.name]?.category) {
+      return registry.types[parsed.name].category;
+    }
+    return "dataset";
+  };
+
+  const isSubtypeName = (childName: string, parentName: string): boolean => {
+    const fallbackSubtypeMap: Record<string, string | null> = {
+      Spectrum: "Array1D",
+      SpectralDataset: "Array2D",
+      ScoreMatrix: "Array2D",
+      LoadingMatrix: "Array2D",
+    };
+
+    const registry = typeRegistry.value;
+    if (!registry) {
+      let current: string | null = childName;
+      const seen = new Set<string>();
+      while (current && !seen.has(current)) {
+        seen.add(current);
+        if (current === parentName) return childName !== parentName;
+        current = fallbackSubtypeMap[current] ?? null;
+      }
+      return false;
+    }
+
+    const seen = new Set<string>();
+    let currentName: string | null = childName;
+
+    while (currentName && !seen.has(currentName)) {
+      seen.add(currentName);
+      if (currentName === parentName) {
+        return childName !== parentName;
+      }
+      const currentEntry: TypeRegistryEntry | undefined = registry.types[currentName];
+      currentName = currentEntry?.parent ?? null;
+    }
+    return false;
+  };
+
+  const validateTypeRefs = (
+    sourceTypeRef: string,
+    targetTypeRef: string
+  ): { isValid: boolean; error?: string; dataType?: string } => {
+    const source = parseTypeRef(sourceTypeRef);
+    const target = parseTypeRef(targetTypeRef);
+
+    if (!source) {
+      return {
+        isValid: false,
+        error: `Malformed source type_ref: ${sourceTypeRef}`,
+      };
+    }
+    if (!target) {
+      return {
+        isValid: false,
+        error: `Malformed target type_ref: ${targetTypeRef}`,
+      };
+    }
+
+    if (source.name === target.name) {
+      if (source.major === target.major) {
+        return {
+          isValid: true,
+          dataType: `${source.name}@${source.major}.${source.minor}`,
+        };
+      }
+      return {
+        isValid: false,
+        error: `Version mismatch: ${typeRefToDisplayName(sourceTypeRef)} cannot connect to ${typeRefToDisplayName(targetTypeRef)} (major version differs)`,
+        dataType: `${source.name}@${source.major}.${source.minor}`,
+      };
+    }
+
+    // Subtype compatibility (child output to parent input).
+    if (isSubtypeName(source.name, target.name)) {
+      return {
+        isValid: true,
+        dataType: `${source.name}@${source.major}.${source.minor}`,
+      };
+    }
+
+    return {
+      isValid: false,
+      error: `Type mismatch: ${typeRefToDisplayName(sourceTypeRef)} cannot connect to ${typeRefToDisplayName(targetTypeRef)}`,
+      dataType: `${source.name}@${source.major}.${source.minor}`,
+    };
   };
 
   function resolveBackendNodeId(frontendNodeId: number): string {
@@ -880,6 +1017,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
       resolveBackendNodeId(node.id);
     }
     edges.value = JSON.parse(JSON.stringify(template.edges));
+    validateAllEdges();
     currentTemplateId.value = templateId;
     workflowName.value = template.name;
     hasUnsavedChanges.value = false;
@@ -898,6 +1036,8 @@ export const useWorkflowStore = defineStore("workflow", () => {
     workflowHash.value = null;
     hasUnsavedChanges.value = false;
     lastExecutionResults.value = null;
+    lastExecutionDiagnostics.value = {};
+    workflowWarnings.value = [];
   }
 
   // API Methods
@@ -948,10 +1088,14 @@ export const useWorkflowStore = defineStore("workflow", () => {
       workflowName.value = data.name;
       workflowDescription.value = data.description || "";
       workflowHash.value = data.integrity_hash || null;
+      workflowWarnings.value = Array.isArray(data.warnings)
+        ? data.warnings.filter((w: unknown): w is string => typeof w === "string")
+        : [];
 
       const converted = fromBackendFormat(data.nodes || [], data.edges || []);
       nodes.value = converted.nodes;
       edges.value = converted.edges;
+      validateAllEdges();
 
       currentTemplateId.value = null;
       hasUnsavedChanges.value = false;
@@ -993,6 +1137,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
 
       // Store results and integrity hash
       lastExecutionResults.value = response.data.results;
+      lastExecutionDiagnostics.value = response.data.diagnostics || {};
       if (response.data.integrity_hash) {
         workflowHash.value = response.data.integrity_hash;
       }
@@ -1102,6 +1247,12 @@ export const useWorkflowStore = defineStore("workflow", () => {
         lastExecutionResults.value = {};
       }
       Object.assign(lastExecutionResults.value, response.data.results);
+      if (response.data.diagnostics) {
+        lastExecutionDiagnostics.value = {
+          ...lastExecutionDiagnostics.value,
+          ...response.data.diagnostics,
+        };
+      }
 
       // Process node statuses from backend response
       const nodeStatuses = response.data.node_statuses || {};
@@ -1317,6 +1468,33 @@ export const useWorkflowStore = defineStore("workflow", () => {
   }
 
   /**
+   * Fetch type registry metadata used for connection compatibility checks.
+   */
+  async function fetchTypeRegistry(force: boolean = false): Promise<void> {
+    if (isLoadingTypeRegistry.value) return;
+    if (!force && typeRegistry.value) return;
+
+    isLoadingTypeRegistry.value = true;
+    typeRegistryLoadError.value = null;
+
+    try {
+      const response = await api.get<TypeRegistryPayload>("/workflows/types/registry", {
+        headers: {
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache",
+        },
+      });
+      typeRegistry.value = response.data;
+    } catch (error: unknown) {
+      const errMsg = getErrorMessage(error, "Failed to load type registry");
+      typeRegistryLoadError.value = errMsg;
+      console.error("[WorkflowStore] Failed to load type registry:", errMsg);
+    } finally {
+      isLoadingTypeRegistry.value = false;
+    }
+  }
+
+  /**
    * Fetch node library from backend (validation schemas, parameter definitions).
    * Call this on app initialization.
    */
@@ -1350,6 +1528,9 @@ export const useWorkflowStore = defineStore("workflow", () => {
       } else {
         console.log(`[WorkflowStore] Loaded ${library.size} node types from backend (v${newVersion})`);
       }
+
+      // Keep type compatibility registry aligned with node metadata refresh.
+      await fetchTypeRegistry(force || !typeRegistry.value);
     } catch (error: unknown) {
       const errMsg = getErrorMessage(error, "Failed to load node library");
       nodeLibraryLoadError.value = errMsg;
@@ -1621,7 +1802,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
       if (edge.toPort) {
         inputPort = targetMetadata.input_ports.find(p => p.name === edge.toPort);
         if (!inputPort) {
-          const availablePorts = targetMetadata.input_ports.map(p => `"${p.label}" (${p.port_type})`).join(', ');
+          const availablePorts = targetMetadata.input_ports.map(p => `"${p.label}" (${typeRefToDisplayName(p.type_ref)})`).join(', ');
           return {
             isValid: false,
             error: `❌ Invalid Port: "${edge.toPort}" doesn't exist on ${targetMetadata.label}. Available ports: ${availablePorts}`
@@ -1632,35 +1813,33 @@ export const useWorkflowStore = defineStore("workflow", () => {
         inputPort = targetMetadata.input_ports[0];
       } else {
         // Multi-input node but no port specified
-        const availablePorts = targetMetadata.input_ports.map(p => `"${p.label}" (${p.port_type})`).join(', ');
+        const availablePorts = targetMetadata.input_ports.map(p => `"${p.label}" (${typeRefToDisplayName(p.type_ref)})`).join(', ');
         return {
           isValid: false,
           error: `🔌 Select Input Port: ${targetMetadata.label} has multiple inputs. Please click the specific port: ${availablePorts}`
         };
       }
 
-      // Check port type compatibility
-      if (outputPort && inputPort && outputPort.port_type !== inputPort.port_type) {
-        const portTypeEmoji: Record<string, string> = {
-          dataset: '🔵',
-          target: '🟠',
-          model: '🟣',
-          config: '⚪',
-          array: '🟤',
-          number: '🟡',
-          visualization: '🟢'
-        };
-        const outputEmoji = portTypeEmoji[outputPort.port_type] || '●';
-        const inputEmoji = portTypeEmoji[inputPort.port_type] || '●';
-
+      if (!outputPort || !inputPort) {
         return {
           isValid: false,
-          error: `❌ Type Mismatch: Cannot connect ${outputEmoji} ${outputPort.port_type} → ${inputEmoji} ${inputPort.port_type}. ${sourceMetadata.label}'s "${outputPort.label}" outputs ${outputPort.port_type} data, but ${targetMetadata.label}'s "${inputPort.label}" requires ${inputPort.port_type} data. Try connecting to a compatible port instead.`,
-          dataType: outputPort.port_type
+          error: "❌ Missing source or target port metadata for this connection.",
         };
       }
 
-      return { isValid: true, dataType: outputPort?.port_type || sourceMetadata.output_type };
+      // type_ref-based validation
+      const typeValidation = validateTypeRefs(outputPort.type_ref, inputPort.type_ref);
+      if (!typeValidation.isValid) {
+        return {
+          isValid: false,
+          error: `❌ ${typeValidation.error}. ${sourceMetadata.label}'s "${outputPort.label}" (${typeRefToDisplayName(outputPort.type_ref)}) cannot connect to ${targetMetadata.label}'s "${inputPort.label}" (${typeRefToDisplayName(inputPort.type_ref)}).`,
+          dataType: typeValidation.dataType ?? typeRefToDisplayName(outputPort.type_ref),
+        };
+      }
+      return {
+        isValid: true,
+        dataType: typeValidation.dataType ?? typeRefToDisplayName(outputPort.type_ref),
+      };
     }
 
     // Hybrid validation: multi-output source (with output_ports) → legacy target (without input_ports)
@@ -1678,20 +1857,20 @@ export const useWorkflowStore = defineStore("workflow", () => {
         };
       }
 
-      // Validate the output port type against legacy input_types
-      // Map generic port_type to specific class names used in input_types
-      const portTypeToClassNames: Record<string, string[]> = {
-        'dataset': ['NDDataset', 'array'],  // dataset port → NDDataset or array classes
-        'target': ['array', 'list', 'any'],  // target port → array-like classes
-        'model': ['PCAModel', 'PLSModel', 'PLSDAModel', 'HCAResult', 'any'],  // model ports
-        'config': ['dict', 'config', 'any'],  // config ports
+      // Derive category from type_ref to validate against legacy input_types
+      const outputCategory = getCategoryFromTypeRef(outputPort.type_ref);
+      const categoryToClassNames: Record<string, string[]> = {
+        'dataset': ['NDDataset', 'array'],
+        'target': ['array', 'list', 'any'],
+        'model': ['PCAModel', 'PLSModel', 'PLSDAModel', 'HCAResult', 'any'],
+        'config': ['dict', 'config', 'any'],
         'array': ['array', 'list', 'any'],
         'number': ['number', 'float', 'int', 'any'],
         'visualization': ['dict', 'plot', 'any'],
       };
 
       const inputTypes = targetMetadata.input_types;
-      const compatibleClassNames = portTypeToClassNames[outputPort.port_type] || [outputPort.port_type];
+      const compatibleClassNames = categoryToClassNames[outputCategory] || [outputCategory];
 
       // Check if any compatible class name is accepted by target
       const isCompatible = compatibleClassNames.some(className => inputTypes.includes(className))
@@ -1700,12 +1879,12 @@ export const useWorkflowStore = defineStore("workflow", () => {
       if (!isCompatible) {
         return {
           isValid: false,
-          error: `❌ Type Mismatch: ${sourceMetadata.label}'s "${outputPort.label}" port outputs "${outputPort.port_type}" data, but ${targetMetadata.label} only accepts ${inputTypes.map(t => `"${t}"`).join(" or ")}. Try connecting from a different output port.`,
-          dataType: outputPort.port_type
+          error: `❌ Type Mismatch: ${sourceMetadata.label}'s "${outputPort.label}" port outputs "${typeRefToDisplayName(outputPort.type_ref)}" data, but ${targetMetadata.label} only accepts ${inputTypes.map(t => `"${t}"`).join(" or ")}. Try connecting from a different output port.`,
+          dataType: typeRefToDisplayName(outputPort.type_ref),
         };
       }
 
-      return { isValid: true, dataType: outputPort.port_type };
+      return { isValid: true, dataType: typeRefToDisplayName(outputPort.type_ref) };
     }
 
     // Legacy validation (backward compatibility for nodes without port metadata)
@@ -1791,7 +1970,15 @@ export const useWorkflowStore = defineStore("workflow", () => {
   }
 
   function setEdges(newEdges: WorkflowEdge[]) {
-    edges.value = newEdges;
+    edges.value = newEdges.map((edge) => {
+      const validation = validateEdge(edge);
+      return {
+        ...edge,
+        isValid: validation.isValid,
+        validationError: validation.error || null,
+        dataType: validation.dataType || null,
+      };
+    });
     hasUnsavedChanges.value = true;
     markWorkflowStale();
   }
@@ -1808,12 +1995,17 @@ export const useWorkflowStore = defineStore("workflow", () => {
     workflowHash,
     isLoading,
     lastExecutionResults,
+    lastExecutionDiagnostics,
+    workflowWarnings,
     availableDatasets,
 
     // Node library state
     nodeLibrary,
     isLoadingNodeLibrary,
     nodeLibraryLoadError,
+    typeRegistry,
+    isLoadingTypeRegistry,
+    typeRegistryLoadError,
     isWorkflowStale,
 
     // Getters
@@ -1834,11 +2026,13 @@ export const useWorkflowStore = defineStore("workflow", () => {
 
     // Node library & validation
     fetchNodeLibrary,
+    fetchTypeRegistry,
     checkAndRefreshNodeLibrary,
     getNodeMetadata,
     normalizeNodeType,
     getLegacyNodeType,
     getReverseParamMapping,
+    validateTypeRefs,
     validateNodeParams,
     validateEdge,
     validateAllEdges,

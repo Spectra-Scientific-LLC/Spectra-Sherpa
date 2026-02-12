@@ -12,8 +12,7 @@ from typing import Any, Optional
 import numpy as np
 
 logger = logging.getLogger(__name__)
-import spectrochempy as scp
-from spectrochempy import NDDataset
+from app.lib.scp_compat import scp, NDDataset
 
 from app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
 

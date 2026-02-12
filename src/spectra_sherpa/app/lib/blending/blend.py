@@ -28,7 +28,7 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from spectrochempy import NDDataset
+    from app.lib.scp_compat import NDDataset
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -401,7 +401,7 @@ def blend_datasets(
     NDDataset
         Blended mixture with ground truth in meta["blend_ground_truth"]
     """
-    import spectrochempy as scp
+    from app.lib.scp_compat import scp
     from ..spectral.dataset import create_spectral_dataset, SpectralUnit
 
     if not species_datasets:

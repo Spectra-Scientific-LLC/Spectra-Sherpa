@@ -29,13 +29,7 @@ except ImportError:
     HAS_PLOTLY = False
     go = None
 
-try:
-    from spectrochempy import NDDataset
-
-    HAS_SCP = True
-except ImportError:
-    HAS_SCP = False
-    NDDataset = None
+from app.lib.scp_compat import NDDataset, HAS_SCP
 
 
 def check_plotly() -> None:

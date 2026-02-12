@@ -12,7 +12,7 @@ from typing import Any, Optional
 import numpy as np
 
 logger = logging.getLogger(__name__)
-from spectrochempy import NDDataset
+from app.lib.scp_compat import NDDataset
 
 from ..node_base import Node, NodeMetadata, NodeParameter, InputPort, PortMetadata, register_node
 
@@ -53,28 +53,28 @@ class OutlierDetectionNode(Node):
         output_ports=[
             PortMetadata(
                 name="model",
-                port_type="model",
+                type_ref="spectrasherpa://types/DecompositionResult/1.0",
                 required=True,
                 label="PCA Model",
                 description="Original model with outlier flags",
             ),
             PortMetadata(
                 name="flags",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Outlier Flags",
                 description="Boolean mask (True=Outlier)",
             ),
             PortMetadata(
                 name="T2",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Hotelling T²",
                 description="T² statistics for each sample",
             ),
             PortMetadata(
                 name="Q",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Q Residuals",
                 description="Q (SPE) statistics for each sample",
@@ -250,14 +250,14 @@ class CrossValidationNode(Node):
         input_ports=[
             PortMetadata(
                 name="y_true",
-                port_type="target",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="True Values (y)",
                 description="True target values",
             ),
             PortMetadata(
                 name="y_pred",
-                port_type="target",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Predicted Values (ŷ)",
                 description="Predicted target values (from CV)",
@@ -266,28 +266,28 @@ class CrossValidationNode(Node):
         output_ports=[
             PortMetadata(
                 name="model",
-                port_type="model",
+                type_ref="spectrasherpa://types/FittedModel/1.0",
                 required=False,
                 label="CV Model",
                 description="CV Model (optional)",
             ),
             PortMetadata(
                 name="cv_metrics",
-                port_type="config",
+                type_ref="spectrasherpa://types/ValidationResult/1.0",
                 required=True,
                 label="CV Metrics",
                 description="Performance metrics (RMSE, R², etc.)",
             ),
             PortMetadata(
                 name="predictions",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Predictions",
                 description="CV Predicted values",
             ),
             PortMetadata(
                 name="plots",
-                port_type="config",
+                type_ref="spectrasherpa://types/Visualization/1.0",
                 required=False,
                 label="Plots",
                 description="Plot plotting plotting data",

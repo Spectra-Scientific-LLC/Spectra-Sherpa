@@ -16,15 +16,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 
-try:
-    import spectrochempy as scp
-    from spectrochempy import NDDataset
-
-    HAS_SCP = True
-except ImportError:
-    HAS_SCP = False
-    scp = None
-    NDDataset = None
+from app.lib.scp_compat import scp, NDDataset, HAS_SCP
 
 from .spectral.dataset import create_spectral_dataset, SpectralUnit
 

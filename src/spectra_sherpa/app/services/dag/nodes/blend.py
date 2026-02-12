@@ -22,8 +22,7 @@ from typing import Any, List, Dict, Optional
 import numpy as np
 
 logger = logging.getLogger(__name__)
-import spectrochempy as scp
-from spectrochempy import NDDataset
+from app.lib.scp_compat import scp, NDDataset
 
 from ..node_base import Node, NodeMetadata, NodeParameter, register_node
 from app.models.spectra_meta import (

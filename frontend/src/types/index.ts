@@ -221,7 +221,7 @@ export interface NodeParameterMetadata {
 // Port metadata for node inputs/outputs
 export interface NodePortMetadata {
   name: string;  // Port identifier (e.g., "X_train", "y_class", "model")
-  port_type: "dataset" | "target" | "model" | "config" | "array" | "number" | "visualization";  // Port type for visual/validation
+  type_ref: string;  // Canonical type URI from backend type registry
   required: boolean;
   label: string;  // Display label (e.g., "Training Spectra")
   description?: string;
@@ -238,6 +238,7 @@ export interface NodeTypeMetadata {
   output_type: string;  // Legacy - for backwards compatibility
   input_ports?: NodePortMetadata[];  // Named input ports (if multi-input node)
   output_ports?: NodePortMetadata[];  // Named output ports (if multi-output node)
+  diagnostics?: string[];  // Diagnostic metric names emitted by this node
 }
 
 // Node library response from backend

@@ -41,10 +41,11 @@ async def test_pcr_node_regression_fit():
     )
 
     result = await node.run(X=X_dataset, y=y)
+    outputs = result.outputs
 
-    scores = np.array(result["scores"])
+    scores = np.array(outputs["scores"])
     assert scores.shape == (X_dataset.shape[0], 4)
-    assert result["r2"] > 0.9
+    assert outputs["r2"] > 0.9
 
 
 @pytest.mark.asyncio
@@ -57,9 +58,10 @@ async def test_svr_node_regression_fit():
     )
 
     result = await node.run(X=X_dataset, y=y)
+    outputs = result.outputs
 
-    assert len(result["y_pred"]) == X_dataset.shape[0]
-    assert result["r2"] > 0.9
+    assert len(outputs["y_pred"]) == X_dataset.shape[0]
+    assert outputs["r2"] > 0.9
 
 
 @pytest.mark.asyncio
@@ -72,9 +74,10 @@ async def test_hca_node_clusters():
     )
 
     result = await node.run(dataset)
+    outputs = result.outputs
 
-    assert result["n_clusters"] == 2
-    assert len(result["labels"]) == dataset.shape[0]
+    assert outputs["n_clusters"] == 2
+    assert len(outputs["labels"]) == dataset.shape[0]
 
 
 @pytest.mark.asyncio
@@ -87,10 +90,11 @@ async def test_kmeans_node_clusters():
     )
 
     result = await node.run(dataset)
+    outputs = result.outputs
 
-    assert result["n_clusters"] == 2
-    assert len(result["labels"]) == dataset.shape[0]
-    assert len(result["centroids"]) == 2
+    assert outputs["n_clusters"] == 2
+    assert len(outputs["labels"]) == dataset.shape[0]
+    assert len(outputs["centroids"]) == 2
 
 
 @pytest.mark.asyncio
@@ -103,6 +107,7 @@ async def test_dbscan_node_clusters():
     )
 
     result = await node.run(dataset)
+    outputs = result.outputs
 
-    assert result["n_clusters"] == 2
-    assert len(result["labels"]) == dataset.shape[0]
+    assert outputs["n_clusters"] == 2
+    assert len(outputs["labels"]) == dataset.shape[0]

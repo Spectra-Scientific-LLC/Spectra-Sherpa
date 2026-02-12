@@ -9,8 +9,7 @@ from __future__ import annotations
 from typing import Any, Optional
 import re
 import numpy as np
-import spectrochempy as scp
-from spectrochempy import NDDataset
+from app.lib.scp_compat import scp, NDDataset
 
 import logging
 
@@ -216,14 +215,14 @@ class PLSDANode(Node):
         input_ports=[
             PortMetadata(
                 name="X",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Spectra (X)",
                 description="Spectral data matrix (n_samples × n_wavenumbers)",
             ),
             PortMetadata(
                 name="y",
-                port_type="target",
+                type_ref="spectrasherpa://types/Categorical/1.0",
                 required=False,
                 label="Class Labels (y)",
                 description="Class labels for each sample (auto-extracted from X if not provided)",
@@ -232,21 +231,21 @@ class PLSDANode(Node):
         output_ports=[
             PortMetadata(
                 name="model",
-                port_type="model",
+                type_ref="spectrasherpa://types/ClassificationModel/1.0",
                 required=True,
                 label="PLS-DA Model",
                 description="Trained PLS-DA classifier",
             ),
             PortMetadata(
                 name="predictions",
-                port_type="array",
+                type_ref="spectrasherpa://types/Categorical/1.0",
                 required=True,
                 label="CV Predictions",
                 description="Cross-validated class predictions",
             ),
             PortMetadata(
                 name="probabilities",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
                 label="Class Probabilities",
                 description="Cross-validated class probabilities",
@@ -265,7 +264,7 @@ class PLSDANode(Node):
         Returns:
             PLS-DA model with classification results
         """
-        import spectrochempy as scp
+        from app.lib.scp_compat import scp
         from sklearn.model_selection import cross_val_score, cross_val_predict
         from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, balanced_accuracy_score, f1_score
 
@@ -549,7 +548,7 @@ class PLSDANode(Node):
             y_pred: Predicted class labels
             Y_pred_prob: Prediction probabilities
         """
-        import spectrochempy as scp
+        from app.lib.scp_compat import scp
         from sklearn.model_selection import StratifiedKFold
 
         # Get numpy array from NDDataset
@@ -604,7 +603,7 @@ class PLSDANode(Node):
 
         Note: This method is currently unused but maintained for consistency.
         """
-        import spectrochempy as scp
+        from app.lib.scp_compat import scp
         from sklearn.model_selection import StratifiedKFold
 
         # Extract numpy array if X is NDDataset
@@ -1062,14 +1061,14 @@ class KNNNode(Node):
         input_ports=[
             PortMetadata(
                 name="X",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Features (X)",
                 description="Feature matrix (spectral data or scores)",
             ),
             PortMetadata(
                 name="y",
-                port_type="target",
+                type_ref="spectrasherpa://types/Categorical/1.0",
                 required=False,
                 label="Class Labels (y)",
                 description="Class labels for each sample (auto-extracted from X if not provided)",
@@ -1078,28 +1077,28 @@ class KNNNode(Node):
         output_ports=[
             PortMetadata(
                 name="model",
-                port_type="model",
+                type_ref="spectrasherpa://types/ClassificationModel/1.0",
                 required=True,
                 label="KNN Model",
                 description="Trained K-Nearest Neighbors classifier",
             ),
             PortMetadata(
                 name="predictions",
-                port_type="array",
+                type_ref="spectrasherpa://types/Categorical/1.0",
                 required=True,
                 label="CV Predictions",
                 description="Cross-validated class predictions",
             ),
             PortMetadata(
                 name="probabilities",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
                 label="Class Probabilities",
                 description="Class probabilities (if weights=distance)",
             ),
             PortMetadata(
                 name="plots",
-                port_type="config",
+                type_ref="spectrasherpa://types/Visualization/1.0",
                 required=False,
                 label="Plots",
                 description="Visualization plots (K-tuning, Confusion Matrix, Decision Boundary)",
@@ -1545,14 +1544,14 @@ class SIMCANode(Node):
         input_ports=[
             PortMetadata(
                 name="X",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Features (X)",
                 description="Feature matrix (spectral data or scores)",
             ),
             PortMetadata(
                 name="y",
-                port_type="target",
+                type_ref="spectrasherpa://types/Categorical/1.0",
                 required=False,
                 label="Class Labels (y)",
                 description="Class labels for each sample (auto-extracted from X if not provided)",
@@ -1561,42 +1560,42 @@ class SIMCANode(Node):
         output_ports=[
             PortMetadata(
                 name="class_models",
-                port_type="model",
+                type_ref="spectrasherpa://types/ClassificationModel/1.0",
                 required=True,
                 label="Class Models",
                 description="Dictionary of PCA models (one per class)",
             ),
             PortMetadata(
                 name="predictions",
-                port_type="array",
+                type_ref="spectrasherpa://types/Categorical/1.0",
                 required=True,
                 label="Predictions",
                 description="Predicted class labels for training data",
             ),
             PortMetadata(
                 name="distances",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Class Distances",
                 description="Distance metrics to each class model (combined T² and Q)",
             ),
             PortMetadata(
                 name="train_accuracy",
-                port_type="number",
+                type_ref="spectrasherpa://types/Scalar/1.0",
                 required=False,
                 label="Training Accuracy",
                 description="Classification accuracy on training set",
             ),
             PortMetadata(
                 name="confusion_matrix",
-                port_type="array",
+                type_ref="spectrasherpa://types/ConfusionMatrix/1.0",
                 required=False,
                 label="Confusion Matrix",
                 description="Classification confusion matrix",
             ),
             PortMetadata(
                 name="plots",
-                port_type="config",
+                type_ref="spectrasherpa://types/Visualization/1.0",
                 required=False,
                 label="Plots",
                 description="Visualization plots (Confusion Matrix, etc.)",
@@ -1615,7 +1614,7 @@ class SIMCANode(Node):
         Returns:
             SIMCA model with classification results
         """
-        import spectrochempy as scp
+        from app.lib.scp_compat import scp
         from scipy.stats import f
 
         # Handle both positional and keyword arguments
@@ -1916,14 +1915,14 @@ class PLSDAPredictNode(Node):
         input_ports=[
             PortMetadata(
                 name="X_new",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="New Spectra",
                 description="New spectral data to classify",
             ),
             PortMetadata(
                 name="model",
-                port_type="model",
+                type_ref="spectrasherpa://types/ClassificationModel/1.0",
                 required=True,
                 label="PLS-DA Model",
                 description="Trained PLS-DA model from training node",
@@ -1932,14 +1931,14 @@ class PLSDAPredictNode(Node):
         output_ports=[
             PortMetadata(
                 name="y_pred",
-                port_type="target",
+                type_ref="spectrasherpa://types/Categorical/1.0",
                 required=True,
                 label="Predicted Classes",
                 description="Predicted class labels",
             ),
             PortMetadata(
                 name="y_prob",
-                port_type="target",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
                 label="Class Probabilities",
                 description="Predicted class probabilities",
@@ -1984,7 +1983,7 @@ class PLSDAPredictNode(Node):
         # Make predictions
         # PLS-DA returns continuous predictions for each class (dummy variables)
         # SpectroChemPy may return NDDataset, so handle both cases
-        import spectrochempy as scp
+        from app.lib.scp_compat import scp
         from scipy.special import softmax
         X_dataset = scp.NDDataset(X_array) if not isinstance(X_array, scp.NDDataset) else X_array
         Y_pred_raw = pls_model.predict(X_dataset)
@@ -2034,14 +2033,14 @@ class KNNPredictNode(Node):
         input_ports=[
             PortMetadata(
                 name="X_new",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="New Features",
                 description="New feature data to classify (spectra or scores)",
             ),
             PortMetadata(
                 name="model",
-                port_type="model",
+                type_ref="spectrasherpa://types/ClassificationModel/1.0",
                 required=True,
                 label="KNN Model",
                 description="Trained KNN model from training node",
@@ -2050,14 +2049,14 @@ class KNNPredictNode(Node):
         output_ports=[
             PortMetadata(
                 name="y_pred",
-                port_type="target",
+                type_ref="spectrasherpa://types/Categorical/1.0",
                 required=True,
                 label="Predicted Classes",
                 description="Predicted class labels",
             ),
             PortMetadata(
                 name="y_prob",
-                port_type="target",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
                 label="Class Probabilities",
                 description="Predicted class probabilities",
@@ -2131,14 +2130,14 @@ class SIMCAPredictNode(Node):
         input_ports=[
             PortMetadata(
                 name="X_new",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="New Spectra",
                 description="New spectral data to classify",
             ),
             PortMetadata(
                 name="model",
-                port_type="model",
+                type_ref="spectrasherpa://types/ClassificationModel/1.0",
                 required=True,
                 label="SIMCA Model",
                 description="Trained SIMCA model from training node",
@@ -2147,14 +2146,14 @@ class SIMCAPredictNode(Node):
         output_ports=[
             PortMetadata(
                 name="y_pred",
-                port_type="target",
+                type_ref="spectrasherpa://types/Categorical/1.0",
                 required=True,
                 label="Predicted Classes",
                 description="Predicted class labels",
             ),
             PortMetadata(
                 name="distances",
-                port_type="target",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Class Distances",
                 description="Normalized distances to each class (T²/T²_lim + Q/Q_lim)",

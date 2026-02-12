@@ -18,14 +18,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 import numpy as np
 
-try:
-    import spectrochempy as scp
-    from spectrochempy import NDDataset
-
-    HAS_SCP = True
-except ImportError:
-    HAS_SCP = False
-    NDDataset = None
+from app.lib.scp_compat import scp, NDDataset, HAS_SCP
 
 from ..node_base import Node, NodeMetadata, NodeParameter, register_node
 from app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord

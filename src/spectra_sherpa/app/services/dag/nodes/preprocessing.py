@@ -14,10 +14,18 @@ from __future__ import annotations
 
 from typing import Any, Optional, List, Dict
 import numpy as np
-import spectrochempy as scp
-from spectrochempy import NDDataset
+from app.lib.scp_compat import scp, NDDataset
 
-from ..node_base import Node, NodeMetadata, NodeParameter, InputPort, PortMetadata, register_node, _format_value
+from ..node_base import (
+    Node,
+    NodeMetadata,
+    NodeParameter,
+    InputPort,
+    PortMetadata,
+    NodeResult,
+    register_node,
+    _format_value,
+)
 from ..meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
 from app.lib.preprocessing import remove_cosmic_rays
 
@@ -73,6 +81,16 @@ class BaselineALSNode(Node):
         p = self.parameters.get("p", 0.001)
 
         result = input_data.copy()
+
+        # basc() requires coordinates; synthesize if absent
+        x_coord = safe_get_coord(result, "x")
+        if x_coord is None or x_coord.data is None:
+            from app.lib.scp_compat import Coord
+            coords = {"x": Coord(np.arange(result.shape[-1]), title="pixels")}
+            if result.ndim >= 2:
+                coords["y"] = Coord(np.arange(result.shape[-2]), title="samples")
+            result.set_coordset(**coords)
+
         result.basc(lamb=lam, asymmetry=p)
         add_processing_step(result, "baseline.als", {"lam": lam, "p": p}, node_id=self.node_id)
 
@@ -191,6 +209,30 @@ class NormalizeSNVNode(Node):
         parameters=[],
         input_types=["NDDataset"],
         output_type="NDDataset",
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Input spectral dataset",
+            )
+        ],
+        output_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="SNV Spectra",
+                description="SNV-normalized spectral dataset",
+            )
+        ],
+        diagnostics=[
+            "snr_before",
+            "snr_after",
+            "mean_spectrum_shift",
+            "max_absolute_change",
+        ],
     )
 
     python_extra_imports = ["import numpy as np"]
@@ -215,9 +257,10 @@ class NormalizeSNVNode(Node):
             f"{indent}    results['{self.node_id}'].x = {inp}.x.copy()",
         ]
 
-    async def execute(self, input_data: NDDataset) -> NDDataset:
+    async def execute(self, input_data: NDDataset) -> NodeResult:
         """Execute SNV normalization."""
         data = np.array(input_data.data, dtype=np.float64)
+        before = data.copy()
 
         if data.ndim == 1:
             mean_val = np.mean(data)
@@ -245,7 +288,21 @@ class NormalizeSNVNode(Node):
         copy_processing_history(input_data, result)
         add_processing_step(result, "normalize.snv", {}, node_id=self.node_id)
 
-        return result
+        eps = 1e-12
+        snr_before = float(np.mean(np.abs(before)) / (np.std(before) + eps))
+        snr_after = float(np.mean(np.abs(normalized_data)) / (np.std(normalized_data) + eps))
+        mean_spectrum_shift = float(np.mean(normalized_data) - np.mean(before))
+        max_absolute_change = float(np.max(np.abs(normalized_data - before)))
+
+        return NodeResult(
+            outputs={"default": result},
+            diagnostics={
+                "snr_before": snr_before,
+                "snr_after": snr_after,
+                "mean_spectrum_shift": mean_spectrum_shift,
+                "max_absolute_change": max_absolute_change,
+            },
+        )
 
 
 @register_node
@@ -418,7 +475,7 @@ class DerivativeFirstNode(Node):
                 max_value=51,
                 step=2,
                 description="Window size for derivative calculation",
-                required=True,
+                required=False,
             ),
             NodeParameter(
                 name="order",
@@ -429,7 +486,7 @@ class DerivativeFirstNode(Node):
                 max_value=5,
                 step=1,
                 description="Order of polynomial fit",
-                required=True,
+                required=False,
             ),
         ],
         input_types=["NDDataset"],
@@ -442,19 +499,20 @@ class DerivativeFirstNode(Node):
         order = self.parameters.get("order", 2)
 
         result = input_data.copy()
-        result.deriv(size=size, order=order, deriv=1)
+        result.savgol(size=size, order=order, deriv=1)
 
-        # Update units
-        original_units = str(input_data.units) if hasattr(input_data, 'units') and input_data.units else None
-        x_coord = safe_get_coord(input_data, 'x')
-        x_units = str(x_coord.units) if x_coord is not None and x_coord and hasattr(x_coord, 'units') else None
+        # Update units — only when meaningful units exist on both axes
+        try:
+            original_units = str(input_data.units) if hasattr(input_data, 'units') and input_data.units else None
+            x_coord = safe_get_coord(input_data, 'x')
+            x_units = str(x_coord.units) if x_coord is not None and x_coord and hasattr(x_coord, 'units') else None
 
-        if original_units and x_units and original_units != "dimensionless":
-            result.units = f"d({original_units})/d({x_units})"
-        elif original_units and original_units != "dimensionless":
-            result.units = f"d({original_units})/dx"
-        else:
-            result.units = "d/dx"
+            if original_units and x_units and original_units != "dimensionless":
+                result.units = f"d({original_units})/d({x_units})"
+            elif original_units and original_units != "dimensionless":
+                result.units = f"d({original_units})/dx"
+        except Exception:
+            pass  # leave units unchanged if assignment fails
 
         add_processing_step(result, "derivative.first", {"size": size, "order": order}, node_id=self.node_id)
 
@@ -487,7 +545,7 @@ class DerivativeSecondNode(Node):
                 max_value=51,
                 step=2,
                 description="Window size for derivative calculation",
-                required=True,
+                required=False,
             ),
             NodeParameter(
                 name="order",
@@ -498,7 +556,7 @@ class DerivativeSecondNode(Node):
                 max_value=5,
                 step=1,
                 description="Order of polynomial fit",
-                required=True,
+                required=False,
             ),
         ],
         input_types=["NDDataset"],
@@ -511,19 +569,20 @@ class DerivativeSecondNode(Node):
         order = self.parameters.get("order", 2)
 
         result = input_data.copy()
-        result.deriv(size=size, order=order, deriv=2)
+        result.savgol(size=size, order=order, deriv=2)
 
-        # Update units
-        original_units = str(input_data.units) if hasattr(input_data, 'units') and input_data.units else None
-        x_coord = safe_get_coord(input_data, 'x')
-        x_units = str(x_coord.units) if x_coord is not None and x_coord and hasattr(x_coord, 'units') else None
+        # Update units — only when meaningful units exist on both axes
+        try:
+            original_units = str(input_data.units) if hasattr(input_data, 'units') and input_data.units else None
+            x_coord = safe_get_coord(input_data, 'x')
+            x_units = str(x_coord.units) if x_coord is not None and x_coord and hasattr(x_coord, 'units') else None
 
-        if original_units and x_units and original_units != "dimensionless":
-            result.units = f"d²({original_units})/d({x_units})²"
-        elif original_units and original_units != "dimensionless":
-            result.units = f"d²({original_units})/dx²"
-        else:
-            result.units = "d²/dx²"
+            if original_units and x_units and original_units != "dimensionless":
+                result.units = f"d²({original_units})/d({x_units})²"
+            elif original_units and original_units != "dimensionless":
+                result.units = f"d²({original_units})/dx²"
+        except Exception:
+            pass  # leave units unchanged if assignment fails
 
         add_processing_step(result, "derivative.second", {"size": size, "order": order}, node_id=self.node_id)
 
@@ -1138,14 +1197,14 @@ class OSCNode(Node):
         input_ports=[
             PortMetadata(
                 name="X",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Spectra (X)",
                 description="Spectral data matrix to correct",
             ),
             PortMetadata(
                 name="y",
-                port_type="target",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Target (y)",
                 description="Target values (concentrations, class labels, etc.)",
@@ -1435,7 +1494,7 @@ class SGDerivativeNode(Node):
         return [
             f"{indent}# --- SG Derivative ({self.node_id}) ---",
             f"{indent}data = {inp}.copy()",
-            f"{indent}data.deriv(size={size}, order={order}, deriv={deriv_order})",
+            f"{indent}data.savgol(size={size}, order={order}, deriv={deriv_order})",
             f"{indent}results['{self.node_id}'] = data",
         ]
 
@@ -1449,7 +1508,7 @@ class SGDerivativeNode(Node):
             size += 1
 
         result = input_data.copy()
-        result.deriv(size=size, order=order, deriv=deriv_order)
+        result.savgol(size=size, order=order, deriv=deriv_order)
 
         # Update units
         if deriv_order > 0:

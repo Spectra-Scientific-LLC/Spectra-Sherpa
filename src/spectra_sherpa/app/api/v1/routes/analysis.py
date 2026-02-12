@@ -205,7 +205,7 @@ async def run_pca(
         n_components = min(n_components, max_components)
 
         try:
-            import spectrochempy as scp
+            from app.lib.scp_compat import scp
 
             # Create NDDataset
             dataset = scp.NDDataset(intensities)
@@ -294,7 +294,7 @@ async def run_mcr_als(
         n_components = min(n_components, n_samples, n_features)
 
         try:
-            import spectrochempy as scp
+            from app.lib.scp_compat import scp
 
             # Create NDDataset from the data matrix
             dataset = scp.NDDataset(intensities)

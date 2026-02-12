@@ -26,7 +26,7 @@ except ImportError:
     scipy_savgol = None
 
 if TYPE_CHECKING:
-    from spectrochempy import NDDataset
+    from app.lib.scp_compat import NDDataset
 
 
 @dataclass
@@ -180,7 +180,7 @@ def interpolate_to_grid(
     NDDataset
         Interpolated dataset with new x-coordinates and resolution metadata
     """
-    import spectrochempy as scp
+    from app.lib.scp_compat import scp
     import warnings
     from .spectral.dataset import add_provenance
 
@@ -321,7 +321,7 @@ def remove_cosmic_rays(
     NDDataset
         Dataset with cosmic rays replaced by local median
     """
-    import spectrochempy as scp
+    from app.lib.scp_compat import scp
     from .spectral.dataset import add_provenance
 
     if window_size % 2 == 0:
@@ -406,7 +406,7 @@ def smooth_savgol(
     NDDataset
         Smoothed dataset
     """
-    import spectrochempy as scp
+    from app.lib.scp_compat import scp
     from .spectral.dataset import add_provenance
 
     if not HAS_SCIPY:
@@ -471,7 +471,7 @@ def clip_range(
     NDDataset
         Clipped dataset
     """
-    import spectrochempy as scp
+    from app.lib.scp_compat import scp
     from .spectral.dataset import add_provenance
 
     wavenumber = dataset.x.data if hasattr(dataset.x, "data") else np.array(dataset.x)

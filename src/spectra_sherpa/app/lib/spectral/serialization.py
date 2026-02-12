@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 if TYPE_CHECKING:
-    from spectrochempy import NDDataset
+    from app.lib.scp_compat import NDDataset
 
 
 def _serialize_meta(meta: Dict[str, Any]) -> Dict[str, Any]:
@@ -115,7 +115,7 @@ def load_dataset_parquet(path: Path) -> "NDDataset":
     NDDataset
         Loaded dataset with coordinates and metadata
     """
-    import spectrochempy as scp
+    from app.lib.scp_compat import scp
 
     path = Path(path)
 

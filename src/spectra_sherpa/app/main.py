@@ -242,6 +242,12 @@ def _make_lifespan(
             else:
                 logger.info("Sherpa Engine: disabled (no SHERPA_ENGINE_API_KEY)")
 
+            # Load the type registry (JSON schemas for port type validation)
+            from pathlib import Path as _Path
+            from app.types import type_registry as _type_reg
+            _type_reg.load(_Path(__file__).parent / "types")
+            logger.info("Type registry: %d types loaded", len(_type_reg._types))
+
             logger.info("Phase 3 complete")
 
             # Phase 4: extension hooks (Repo 2 injects server-only startup here)

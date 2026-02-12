@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 import numpy as np
-from spectrochempy import NDDataset
+from app.lib.scp_compat import NDDataset
 
 from ..node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
 from app.services.dag.meta_helpers import safe_get_coord
@@ -59,7 +59,7 @@ class PlotNode(Node):
         output_ports=[
             PortMetadata(
                 name="visualization",
-                port_type="visualization",
+                type_ref="spectrasherpa://types/Visualization/1.0",
                 required=True,
                 label="Plot Data",
                 description="Plotly configuration and data",
@@ -252,7 +252,7 @@ class ExportNode(Node):
         output_ports=[
             PortMetadata(
                 name="file_info",
-                port_type="config",
+                type_ref="spectrasherpa://types/ValidationResult/1.0",
                 required=True,
                 label="File Info",
                 description="Status and path of exported file",
@@ -347,7 +347,7 @@ class StatsSummaryNode(Node):
         output_ports=[
             PortMetadata(
                 name="statistics",
-                port_type="config",
+                type_ref="spectrasherpa://types/ValidationResult/1.0",
                 required=True,
                 label="Statistics",
                 description="Computed statistics and summary",
@@ -710,7 +710,7 @@ class ContourPlotNode(Node):
         output_ports=[
             PortMetadata(
                 name="visualization",
-                port_type="visualization",
+                type_ref="spectrasherpa://types/Visualization/1.0",
                 required=True,
                 label="Contour Plot",
                 description="Contour/Heatmap configuration",
@@ -940,7 +940,7 @@ class DataTableNode(Node):
         output_ports=[
             PortMetadata(
                 name="visualization",
-                port_type="visualization",
+                type_ref="spectrasherpa://types/Visualization/1.0",
                 required=True,
                 label="Table Data",
                 description="Table configuration and data",

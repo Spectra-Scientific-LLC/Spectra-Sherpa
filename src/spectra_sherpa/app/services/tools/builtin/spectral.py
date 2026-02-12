@@ -126,7 +126,7 @@ def describe_node(node_type: str) -> dict[str, Any]:
         result["input_ports"] = [
             {
                 "name": port.name,
-                "type": port.port_type,
+                "type_ref": port.type_ref,
                 "required": port.required,
                 "label": port.label,
             }
@@ -137,7 +137,7 @@ def describe_node(node_type: str) -> dict[str, Any]:
         result["output_ports"] = [
             {
                 "name": port.name,
-                "type": port.port_type,
+                "type_ref": port.type_ref,
                 "label": port.label,
             }
             for port in meta.output_ports

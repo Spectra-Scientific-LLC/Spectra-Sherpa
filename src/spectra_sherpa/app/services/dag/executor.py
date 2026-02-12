@@ -19,17 +19,27 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-from .node_base import Node, NodeStatus, node_registry
+from .node_base import Node, NodeResult, NodeStatus, node_registry
 from .meta_helpers import safe_get_coord
 from .graph_utils import Edge as _Edge, build_dependency_map, topological_sort
 
-# Try to import NDDataset for type checking
-try:
-    from spectrochempy import NDDataset
-    HAS_NDDATASET = True
-except ImportError:
-    NDDataset = None
-    HAS_NDDATASET = False
+from app.lib.scp_compat import NDDataset, HAS_SCP
+from app.types.registry import parse_type_ref
+HAS_NDDATASET = HAS_SCP
+
+
+def _category_from_type_ref(type_ref: str) -> str:
+    """Derive the visual category from a type_ref URI.
+
+    Resolves through the loaded type registry when available, otherwise
+    falls back to ``"dataset"``.
+    """
+    try:
+        from app.types import type_registry
+        td = type_registry.resolve(type_ref)
+        return td.category
+    except Exception:
+        return "dataset"
 
 # SpectralResult removed - using NDDataset-only
 HAS_SPECTRAL_RESULT = False
@@ -267,6 +277,7 @@ class DAGExecutor:
         self.nodes: Dict[str, Node] = {}
         self.edges: List[WorkflowEdge] = []
         self.results: Dict[str, Any] = {}
+        self.diagnostics: Dict[str, Dict[str, Any]] = {}
         self.status: WorkflowStatus = WorkflowStatus.IDLE
         # Caching: store hash of params when node was last executed
         self._param_hashes: Dict[str, str] = {}
@@ -521,7 +532,7 @@ class DAGExecutor:
         port_types: Dict[str, str] = {}
         if node.metadata and node.metadata.input_ports:
             for port in node.metadata.input_ports:
-                port_types[port.name] = port.port_type
+                port_types[port.name] = _category_from_type_ref(port.type_ref)
 
         # Find all edges that connect to this node
         incoming_edges = [e for e in self.edges if e.to_node == node_id]
@@ -741,8 +752,13 @@ class DAGExecutor:
                         f"Reduce dataset size or simplify parameters."
                     )
 
-                # Store result and param hash for caching
-                self.results[node_id] = result
+                # Unpack NodeResult: store outputs for downstream, diagnostics separately
+                if isinstance(result, NodeResult):
+                    self.results[node_id] = result.outputs
+                    self.diagnostics[node_id] = result.diagnostics
+                else:
+                    self.results[node_id] = result
+                    self.diagnostics[node_id] = {}
                 self._param_hashes[node_id] = self._compute_param_hash(node_id)
                 logger.debug("Completed: %s (status: %s)", node_id, node.status.value)
 
@@ -808,8 +824,13 @@ class DAGExecutor:
             else:
                 result = await node.run(*positional_inputs)
 
-            # Store result and param hash
-            self.results[dep_node_id] = result
+            # Unpack NodeResult
+            if isinstance(result, NodeResult):
+                self.results[dep_node_id] = result.outputs
+                self.diagnostics[dep_node_id] = result.diagnostics
+            else:
+                self.results[dep_node_id] = result
+                self.diagnostics[dep_node_id] = {}
             self._param_hashes[dep_node_id] = self._compute_param_hash(dep_node_id)
             executed_in_this_run.append(dep_node_id)
             logger.debug("Completed: %s (status: %s)", dep_node_id, node.status.value)

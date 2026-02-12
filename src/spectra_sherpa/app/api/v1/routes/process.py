@@ -131,7 +131,7 @@ async def baseline_als(
     await _verify_experiment_ownership(request.experiment_id, session, current_user)
 
     try:
-        import spectrochempy as scp
+        from app.lib.scp_compat import scp
 
         wavenumbers, intensities = load_experiment_data(request.experiment_id)
 
