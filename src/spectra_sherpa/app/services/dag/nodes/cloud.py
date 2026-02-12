@@ -79,10 +79,10 @@ class CloudComputeNode(Node):
             )
         ],
         input_ports=[
-            PortMetadata(name="input_data", port_type="dataset", label="Input Spectra"),
+            PortMetadata(name="input_data", type_ref="spectrasherpa://types/SpectralDataset/1.0", label="Input Spectra"),
         ],
         output_ports=[
-            PortMetadata(name="output_data", port_type="dataset", label="Result"),
+            PortMetadata(name="output_data", type_ref="spectrasherpa://types/SpectralDataset/1.0", label="Result"),
         ]
     )
 

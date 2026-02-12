@@ -209,6 +209,9 @@ class WorkflowExecuteResponse(BaseModel):
     results: dict[str, Any] = Field(
         default_factory=dict, description="Node results (node_id -> result)"
     )
+    diagnostics: dict[str, dict[str, Any]] = Field(
+        default_factory=dict, description="Per-node diagnostic measurements (node_id -> metrics)"
+    )
     node_statuses: dict[str, str] = Field(
         default_factory=dict, description="Individual node statuses"
     )
@@ -238,9 +241,9 @@ class NodePortInfo(BaseModel):
     """Schema for node port metadata (input/output connectors)."""
 
     name: str = Field(..., description="Port identifier (e.g., 'X_train', 'y_class')")
-    port_type: str = Field(
+    type_ref: str = Field(
         ...,
-        description="Port type: dataset, target, model, config, array, number, visualization"
+        description="Type registry URI (e.g., 'spectrasherpa://types/SpectralDataset/1.0')"
     )
     required: bool = Field(True, description="Whether this port must be connected")
     label: str = Field(..., description="Display label for UI")
@@ -259,6 +262,10 @@ class NodeMetadataInfo(BaseModel):
     output_type: str  # Legacy - for backwards compatibility
     input_ports: list[NodePortInfo] | None = Field(None, description="Named input ports")
     output_ports: list[NodePortInfo] | None = Field(None, description="Named output ports")
+    diagnostics: list[str] = Field(
+        default_factory=list,
+        description="Diagnostic metric keys emitted by this node at execution time",
+    )
 
 
 class NodeLibraryResponse(BaseModel):

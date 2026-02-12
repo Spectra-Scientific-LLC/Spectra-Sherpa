@@ -1,0 +1,120 @@
+{
+  "version": "1.0",
+  "description": "SpectraSherpa type registry — canonical data types for graph node ports",
+  "types": {
+    "Scalar": {
+      "uri": "spectrasherpa://types/Scalar/1.0",
+      "category": "number",
+      "parent": null,
+      "description": "Single numeric value"
+    },
+    "Array1D": {
+      "uri": "spectrasherpa://types/Array1D/1.0",
+      "category": "array",
+      "parent": null,
+      "description": "One-dimensional numeric array"
+    },
+    "Array2D": {
+      "uri": "spectrasherpa://types/Array2D/1.0",
+      "category": "array",
+      "parent": null,
+      "description": "Two-dimensional numeric matrix"
+    },
+    "Categorical": {
+      "uri": "spectrasherpa://types/Categorical/1.0",
+      "category": "target",
+      "parent": null,
+      "description": "Categorical labels (class names, sample IDs)"
+    },
+    "Spectrum": {
+      "uri": "spectrasherpa://types/Spectrum/1.0",
+      "category": "dataset",
+      "parent": "Array1D",
+      "description": "Single spectrum with wavelength axis and metadata"
+    },
+    "SpectralDataset": {
+      "uri": "spectrasherpa://types/SpectralDataset/1.0",
+      "category": "dataset",
+      "parent": "Array2D",
+      "description": "Multi-sample spectral matrix (n_samples x n_features) with coupled coordinates"
+    },
+    "ScoreMatrix": {
+      "uri": "spectrasherpa://types/ScoreMatrix/1.0",
+      "category": "dataset",
+      "parent": "Array2D",
+      "description": "Score matrix from decomposition (n_samples x n_components)"
+    },
+    "LoadingMatrix": {
+      "uri": "spectrasherpa://types/LoadingMatrix/1.0",
+      "category": "dataset",
+      "parent": "Array2D",
+      "description": "Loading matrix from decomposition (n_components x n_features)"
+    },
+    "SpectralImage": {
+      "uri": "spectrasherpa://types/SpectralImage/1.0",
+      "category": "dataset",
+      "parent": "Array2D",
+      "description": "Hyperspectral image (spatial x spectral)"
+    },
+    "TimeSeries": {
+      "uri": "spectrasherpa://types/TimeSeries/1.0",
+      "category": "dataset",
+      "parent": "Array2D",
+      "description": "Time-resolved spectral data (n_timepoints x n_features)"
+    },
+    "FittedModel": {
+      "uri": "spectrasherpa://types/FittedModel/1.0",
+      "category": "model",
+      "parent": null,
+      "description": "Generic fitted model object"
+    },
+    "DecompositionResult": {
+      "uri": "spectrasherpa://types/DecompositionResult/1.0",
+      "category": "model",
+      "parent": "FittedModel",
+      "description": "Result from matrix decomposition (PCA, MCR-ALS, EFA)"
+    },
+    "RegressionModel": {
+      "uri": "spectrasherpa://types/RegressionModel/1.0",
+      "category": "model",
+      "parent": "FittedModel",
+      "description": "Fitted regression model (PLS, PCR, SVR, linear)"
+    },
+    "ClassificationModel": {
+      "uri": "spectrasherpa://types/ClassificationModel/1.0",
+      "category": "model",
+      "parent": "FittedModel",
+      "description": "Fitted classification model (PLS-DA, KNN, SIMCA)"
+    },
+    "ValidationResult": {
+      "uri": "spectrasherpa://types/ValidationResult/1.0",
+      "category": "config",
+      "parent": null,
+      "description": "Model validation metrics and diagnostics"
+    },
+    "ConfusionMatrix": {
+      "uri": "spectrasherpa://types/ConfusionMatrix/1.0",
+      "category": "config",
+      "parent": null,
+      "description": "Classification confusion matrix"
+    },
+    "Visualization": {
+      "uri": "spectrasherpa://types/Visualization/1.0",
+      "category": "visualization",
+      "parent": null,
+      "description": "Plotly or visualization payload"
+    },
+    "Comparison": {
+      "uri": "spectrasherpa://types/Comparison/1.0",
+      "category": "config",
+      "parent": null,
+      "description": "Side-by-side comparison result"
+    },
+    "WorkflowSnapshot": {
+      "uri": "spectrasherpa://types/WorkflowSnapshot/1.0",
+      "category": "config",
+      "parent": null,
+      "description": "Serialized workflow state snapshot"
+    }
+  }
+}

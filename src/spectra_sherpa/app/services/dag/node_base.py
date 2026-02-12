@@ -14,6 +14,33 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 
+@dataclass
+class NodeResult:
+    """
+    Structured result from node execution.
+
+    Wraps node outputs with optional diagnostic measurements.
+    Diagnostics are ephemeral — recomputed on every run, not saved
+    with the workflow definition.
+    """
+    outputs: Dict[str, Any] = field(default_factory=dict)
+    diagnostics: Dict[str, Any] = field(default_factory=dict)
+
+    @staticmethod
+    def wrap(raw: Any) -> "NodeResult":
+        """Wrap a legacy execute() return value into NodeResult.
+
+        - Already a NodeResult → return as-is
+        - dict with string keys → treat as named outputs
+        - anything else → wrap as ``{"default": raw}``
+        """
+        if isinstance(raw, NodeResult):
+            return raw
+        if isinstance(raw, dict):
+            return NodeResult(outputs=raw)
+        return NodeResult(outputs={"default": raw})
+
+
 class NodeStatus(str, Enum):
     """Node execution status."""
     PENDING = "pending"
@@ -43,17 +70,13 @@ class PortMetadata:
     """
     Definition of an input or output port for nodes.
 
-    Port types enable smart connection validation and visual distinction:
-    - dataset: NDDataset (spectral data, multi-dimensional arrays)
-    - target: array (y values, class labels, concentrations)
-    - model: Trained model objects (PCAModel, PLSModel, etc.)
-    - config: Configuration dicts, metadata
-    - array: Numeric arrays (metrics, loadings, scores, etc.)
-    - number: Scalar numeric values
-    - visualization: Plotly/visualization payloads
+    Each port declares a ``type_ref`` — a URI from the type registry
+    (e.g. ``spectrasherpa://types/SpectralDataset/1.0``).  The registry
+    resolves URIs and checks subtype / version compatibility at connection
+    time.
     """
     name: str  # Port identifier (e.g., "X_train", "y_class", "model")
-    port_type: str  # "dataset", "target", "model", "config", "array", "number", "visualization"
+    type_ref: str  # "spectrasherpa://types/SpectralDataset/1.0"
     required: bool = True
     label: str = ""  # Display label (e.g., "Training Spectra")
     description: Optional[str] = None
@@ -84,6 +107,8 @@ class NodeMetadata:
     # Named output ports for multi-output nodes (e.g., train/test split)
     # If None, single output on "default" port
     output_ports: Optional[List[PortMetadata]] = None
+    # Diagnostic keys this node emits during execution
+    diagnostics: List[str] = field(default_factory=list)
 
 
 def _format_value(value: Any) -> str:
@@ -278,7 +303,7 @@ class Node(ABC):
 
         return lines
 
-    async def run(self, *inputs: Any, **kwargs: Any) -> Any:
+    async def run(self, *inputs: Any, **kwargs: Any) -> NodeResult:
         """
         Run the node with error handling.
 
@@ -287,12 +312,21 @@ class Node(ABC):
             **kwargs: Input data by port name (for multi-input nodes)
 
         Returns:
-            Output data
+            NodeResult wrapping outputs and diagnostics
         """
         try:
             self.status = NodeStatus.RUNNING
             self.validate_parameters()
-            self.result = await (self.execute(**kwargs) if kwargs else self.execute(*inputs))
+            if kwargs:
+                # Single "default" port → pass as first positional arg
+                # (most execute() signatures use execute(self, input_data))
+                if list(kwargs.keys()) == ["default"]:
+                    raw = await self.execute(kwargs["default"])
+                else:
+                    raw = await self.execute(**kwargs)
+            else:
+                raw = await self.execute(*inputs)
+            self.result = NodeResult.wrap(raw)
             self.status = NodeStatus.COMPLETED
             return self.result
         except Exception as e:
@@ -362,6 +396,12 @@ class NodeRegistry:
         if node_type not in self._nodes:
             raise KeyError(f"Unknown node type: {node_type}")
         return self._nodes[node_type].get_metadata()
+
+    def get_node_class(self, node_type: str) -> Type[Node]:
+        """Get the registered Node class for a node type."""
+        if node_type not in self._nodes:
+            raise KeyError(f"Unknown node type: {node_type}")
+        return self._nodes[node_type]
 
     def list_nodes(self) -> List[NodeMetadata]:
         """List all registered node types."""

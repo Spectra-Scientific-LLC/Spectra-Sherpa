@@ -22,13 +22,8 @@ from app.services.dag.serialize import serialize_for_api
 
 logger = logging.getLogger(__name__)
 
-# Import for NDDataset type checking
-try:
-    from spectrochempy import NDDataset
-    HAS_NDDATASET = True
-except ImportError:
-    NDDataset = None
-    HAS_NDDATASET = False
+from app.lib.scp_compat import NDDataset, HAS_SCP
+HAS_NDDATASET = HAS_SCP
 
 
 def _is_model_object(obj: Any) -> bool:
@@ -417,9 +412,11 @@ async def create_workflow(
         session.add(edge)
 
     # Compute integrity hash from nodes/edges
+    node_dicts = [n.model_dump() for n in payload.nodes]
+    edge_dicts = [e.model_dump() for e in payload.edges]
     workflow.integrity_hash = compute_workflow_hash(
-        nodes=[n.model_dump() for n in payload.nodes],
-        edges=[e.model_dump() for e in payload.edges],
+        nodes=node_dicts,
+        edges=edge_dicts,
     )
 
     await session.commit()
@@ -458,7 +455,7 @@ async def list_spectrochempy_examples(
     to lists of available files with their labels, paths, and metadata.
     """
     from pathlib import Path
-    import spectrochempy as scp
+    from app.lib.scp_compat import scp
 
     try:
         # Scan multiple data directories
@@ -1132,6 +1129,7 @@ async def execute_workflow(
             workflow_id=workflow_id,
             status=final_status,
             results=serialized_results,
+            diagnostics=getattr(executor, "diagnostics", {}),
             node_statuses=node_statuses,
             executed_at=datetime.utcnow(),
             error=error_msg,
@@ -1166,6 +1164,7 @@ async def execute_workflow(
             workflow_id=workflow_id,
             status=response_status,
             results=partial_results,
+            diagnostics=getattr(executor, "diagnostics", {}) if executor else {},
             node_statuses=executor.get_status()["node_statuses"] if executor else {},
             executed_at=datetime.utcnow(),
             error=error_msg,
@@ -1211,7 +1210,8 @@ async def get_node_library(
             input_ports = [
                 NodePortInfo(
                     name=port.name,
-                    port_type=port.port_type,
+                    type_ref=port.type_ref,
+
                     required=port.required,
                     label=port.label,
                     description=port.description,
@@ -1225,7 +1225,8 @@ async def get_node_library(
             output_ports = [
                 NodePortInfo(
                     name=port.name,
-                    port_type=port.port_type,
+                    type_ref=port.type_ref,
+
                     required=port.required,
                     label=port.label,
                     description=port.description,
@@ -1244,6 +1245,7 @@ async def get_node_library(
                 output_type=node_meta.output_type,
                 input_ports=input_ports,
                 output_ports=output_ports,
+                diagnostics=node_meta.diagnostics,
             )
         )
 
@@ -1252,6 +1254,20 @@ async def get_node_library(
         total=len(node_infos),
         version=settings.app_version  # For cache invalidation
     )
+
+
+@router.get("/types/registry")
+async def get_type_registry(
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Get the type registry for client-side type validation.
+
+    Returns all type definitions, subtype relationships, and version info
+    so the frontend can validate connections without per-edge API calls.
+    """
+    from app.types import type_registry
+    return type_registry.to_api_json()
 
 
 @router.get("/{workflow_id}/export/python")

@@ -19,12 +19,8 @@ from datetime import datetime, date
 from typing import Any, Dict, Optional
 import numpy as np
 
-try:
-    from spectrochempy import NDDataset
-    HAS_NDDATASET = True
-except ImportError:
-    NDDataset = None
-    HAS_NDDATASET = False
+from app.lib.scp_compat import NDDataset, HAS_SCP
+HAS_NDDATASET = HAS_SCP
 
 from .meta_helpers import (
     get_processing_history,

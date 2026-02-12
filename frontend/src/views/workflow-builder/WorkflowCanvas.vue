@@ -161,18 +161,31 @@
           :key="`input-${port.name}`"
           class="port port-input"
           :class="{
-            'port-compatible': isConnecting && isPortCompatible(node.type, port.name),
-            'port-incompatible': isConnecting && !isPortCompatible(node.type, port.name)
+            'port-compatible': isConnecting && isPortCompatible(node.id, port.name),
+            'port-incompatible': isConnecting && !isPortCompatible(node.id, port.name)
           }"
           :style="{
             top: `${30 + idx * 20}px`,
-            backgroundColor: getPortColor(port.port_type)
+            backgroundColor: getPortColor(getPortCategory(port.type_ref))
           }"
-          :title="`${port.label} (${port.port_type})`"
+          :title="isConnecting ? getPortCompatibilityReason(node.id, port.name) || `${port.label} (${port.type_ref})` : `${port.label} (${port.type_ref})`"
         >
+          <span
+            v-if="isConnecting"
+            class="port-compat-indicator"
+            :class="isPortCompatible(node.id, port.name) ? 'ok' : 'bad'"
+          >
+            {{ isPortCompatible(node.id, port.name) ? "✓" : "✕" }}
+          </span>
           <div class="port-tooltip">
             <div class="port-tooltip-label">{{ port.label }}</div>
-            <div class="port-tooltip-type">{{ port.port_type }}</div>
+            <div class="port-tooltip-type">{{ port.type_ref }}</div>
+            <div
+              v-if="isConnecting && getPortCompatibilityReason(node.id, port.name)"
+              class="port-tooltip-desc"
+            >
+              {{ getPortCompatibilityReason(node.id, port.name) }}
+            </div>
             <div v-if="port.description" class="port-tooltip-desc">{{ port.description }}</div>
           </div>
         </div>
@@ -186,13 +199,13 @@
           class="port port-output"
           :style="{
             top: `${30 + idx * 20}px`,
-            backgroundColor: getPortColor(port.port_type)
+            backgroundColor: getPortColor(getPortCategory(port.type_ref))
           }"
-          :title="`${port.label} (${port.port_type})`"
+          :title="`${port.label} (${port.type_ref})`"
         >
           <div class="port-tooltip">
             <div class="port-tooltip-label">{{ port.label }}</div>
-            <div class="port-tooltip-type">{{ port.port_type }}</div>
+            <div class="port-tooltip-type">{{ port.type_ref }}</div>
             <div v-if="port.description" class="port-tooltip-desc">{{ port.description }}</div>
           </div>
         </div>
@@ -294,7 +307,7 @@
                 v-for="port in getNodeOutputPorts(node.type)"
                 :key="port.name"
                 class="port-btn"
-                :style="{ backgroundColor: getPortColor(port.port_type) }"
+                :style="{ backgroundColor: getPortColor(getPortCategory(port.type_ref)) }"
                 :title="port.description"
                 @click.stop="startConnect(node.id, port.name)"
               >
@@ -349,11 +362,14 @@ const emit = defineEmits<{
   (e: 'copy-node', nodeId: number): void;
 }>();
 
-// Port color scheme by type
+// Port color scheme by category
 const PORT_COLORS: Record<string, string> = {
   dataset: '#3b82f6',  // Blue - spectral data, NDDataset
+  array: '#3b82f6',    // Blue - array types
   target: '#f59e0b',   // Orange/amber - y values, labels
   model: '#a855f7',    // Purple - trained models
+  number: '#10b981',   // Green - scalar values
+  visualization: '#ec4899', // Pink - plots
   config: '#64748b',   // Gray - configuration dicts
   default: '#64748b',  // Fallback gray
 };
@@ -361,9 +377,22 @@ const PORT_COLORS: Record<string, string> = {
 // Get workflow store for node metadata
 const workflowStore = useWorkflowStore();
 
-// Get port color based on port type
-const getPortColor = (portType: string): string => {
-  return PORT_COLORS[portType] || PORT_COLORS.default;
+// Derive visual category from a type_ref URI using the fetched type registry.
+const getPortCategory = (typeRef: string): string => {
+  const match = typeRef.match(/^spectrasherpa:\/\/types\/([A-Za-z0-9_]+)\/\d+\.\d+$/);
+  if (!match) return 'dataset';
+  const typeName = match[1];
+  // Look up in the fetched type registry (has category per type)
+  const registry = workflowStore.typeRegistry;
+  if (registry?.types?.[typeName]?.category) {
+    return registry.types[typeName].category;
+  }
+  return 'dataset'; // safe fallback
+};
+
+// Get port color based on type_ref category
+const getPortColor = (category: string): string => {
+  return PORT_COLORS[category] || PORT_COLORS.default;
 };
 
 // Get input ports for a node (from node library metadata)
@@ -385,7 +414,7 @@ const getNodeOutputPorts = (nodeType: string): NodePortMetadata[] => {
   // Fallback to legacy single-output nodes (default port)
   return [{
     name: 'default',
-    port_type: 'dataset',
+    type_ref: 'spectrasherpa://types/SpectralDataset/1.0',
     required: true,
     label: 'Output',
   }];
@@ -556,39 +585,30 @@ const contextMenu = ref({
 // Connection compatibility tracking
 const isConnecting = computed(() => connecting.value !== null);
 
-const connectingPortType = computed(() => {
-  if (connecting.value === null) return null;
-
-  const sourceNode = props.nodes.find(n => n.id === connecting.value);
-  if (!sourceNode) return null;
-
-  const outputPorts = getNodeOutputPorts(sourceNode.type);
-
-  // If fromPort is specified, find that port's type
-  if (connectingFromPort.value) {
-    const port = outputPorts.find(p => p.name === connectingFromPort.value);
-    return port?.port_type || null;
+const getEdgeValidation = (targetNodeId: number, targetPortName?: string) => {
+  if (connecting.value === null) {
+    return { isValid: false, error: "No source selected" };
   }
-
-  // Otherwise use default output port type
-  return outputPorts[0]?.port_type || null;
-});
-
-// Check if a target node/port is compatible with current connection
-const isPortCompatible = (targetNodeType: string, targetPortName?: string): boolean => {
-  if (!connectingPortType.value) return false;
-
-  const targetMetadata = workflowStore.getNodeMetadata(targetNodeType);
-  if (!targetMetadata?.input_ports) return true; // Legacy nodes assumed compatible
-
-  // If targeting specific port, check that port's type
-  if (targetPortName) {
-    const targetPort = targetMetadata.input_ports.find(p => p.name === targetPortName);
-    return targetPort ? targetPort.port_type === connectingPortType.value : false;
+  if (connecting.value === targetNodeId) {
+    return { isValid: false, error: "Cannot connect a node to itself" };
   }
+  return workflowStore.validateEdge({
+    from: connecting.value,
+    to: targetNodeId,
+    fromPort: connectingFromPort.value || undefined,
+    toPort: targetPortName,
+  });
+};
 
-  // Otherwise, check if ANY input port is compatible
-  return targetMetadata.input_ports.some(p => p.port_type === connectingPortType.value);
+// Check if a target node/port is compatible with current connection.
+const isPortCompatible = (targetNodeId: number, targetPortName?: string): boolean => {
+  const validation = getEdgeValidation(targetNodeId, targetPortName);
+  return validation.isValid;
+};
+
+const getPortCompatibilityReason = (targetNodeId: number, targetPortName?: string): string => {
+  const validation = getEdgeValidation(targetNodeId, targetPortName);
+  return validation.error || "";
 };
 
 // Check if node is a valid connection target
@@ -598,7 +618,12 @@ const isNodeCompatibleTarget = (nodeId: number): boolean => {
   const targetNode = props.nodes.find(n => n.id === nodeId);
   if (!targetNode) return false;
 
-  return isPortCompatible(targetNode.type);
+  const targetMetadata = workflowStore.getNodeMetadata(targetNode.type);
+  if (targetMetadata?.input_ports && targetMetadata.input_ports.length > 0) {
+    return targetMetadata.input_ports.some((port) => isPortCompatible(nodeId, port.name));
+  }
+
+  return isPortCompatible(nodeId);
 };
 
 // Get node center position for edge drawing
@@ -698,10 +723,8 @@ const cancelConnect = () => {
 const completeConnect = (toNodeId: number, toPort?: string) => {
   if (connecting.value !== null && connecting.value !== toNodeId) {
     const fromNodeId = connecting.value;
-    // Validate connection before emitting
-    const sourceNode = props.nodes.find(n => n.id === fromNodeId);
-    const targetNode = props.nodes.find(n => n.id === toNodeId);
-
+    const sourceNode = props.nodes.find((n) => n.id === fromNodeId);
+    const targetNode = props.nodes.find((n) => n.id === toNodeId);
     if (!sourceNode || !targetNode) {
       emit('connection-error', 'Source or target node not found');
       connecting.value = null;
@@ -709,64 +732,18 @@ const completeConnect = (toNodeId: number, toPort?: string) => {
       return;
     }
 
-    // Check port compatibility
-    const sourceMetadata = workflowStore.getNodeMetadata(sourceNode.type);
-    const targetMetadata = workflowStore.getNodeMetadata(targetNode.type);
+    const validation = workflowStore.validateEdge({
+      from: fromNodeId,
+      to: toNodeId,
+      fromPort: connectingFromPort.value || undefined,
+      toPort,
+    });
 
-    if (sourceMetadata && targetMetadata) {
-      if (!toPort && targetMetadata.input_ports && targetMetadata.input_ports.length > 1) {
-        emit('connection-error', `❌ ${targetMetadata.label} requires selecting an input port.`);
-        connecting.value = null;
-        connectingFromPort.value = null;
-        return;
-      }
-      // Port-level validation
-      if (sourceMetadata.output_ports && targetMetadata.input_ports) {
-        const outputPortName = connectingFromPort.value || "default";
-        const outputPort = sourceMetadata.output_ports.find(p => p.name === outputPortName)
-                           || sourceMetadata.output_ports[0];
-
-        // Check if target port is specified for multi-input nodes
-        let inputPort;
-        if (toPort) {
-          inputPort = targetMetadata.input_ports.find(p => p.name === toPort);
-          if (!inputPort) {
-            const availablePorts = targetMetadata.input_ports.map(p => `"${p.label}" (${p.port_type})`).join(', ');
-            emit('connection-error', `❌ Invalid Port: "${toPort}" doesn't exist on ${targetMetadata.label}. Available ports: ${availablePorts}`);
-            connecting.value = null;
-            connectingFromPort.value = null;
-            return;
-          }
-        } else if (targetMetadata.input_ports.length === 1) {
-          // Single input port - auto-connect
-          inputPort = targetMetadata.input_ports[0];
-        } else if (targetMetadata.input_ports.length > 1) {
-          // Multi-input node but no port specified - connection is not complete yet
-          // User needs to click a specific port, so don't show error, just return
-          connecting.value = null;
-          connectingFromPort.value = null;
-          return;
-        }
-
-        // Check port type compatibility
-        if (outputPort && inputPort && outputPort.port_type !== inputPort.port_type) {
-          const portTypeEmoji: Record<string, string> = {
-            dataset: '🔵',
-            target: '🟠',
-            model: '🟣',
-            config: '⚪'
-          };
-          const outputEmoji = portTypeEmoji[outputPort.port_type] || '●';
-          const inputEmoji = portTypeEmoji[inputPort.port_type] || '●';
-
-          emit('connection-error',
-            `❌ Type Mismatch: Cannot connect ${outputEmoji} ${outputPort.port_type} → ${inputEmoji} ${inputPort.port_type}. ${sourceMetadata.label}'s "${outputPort.label}" outputs ${outputPort.port_type} data, but ${targetMetadata.label}'s "${inputPort.label}" requires ${inputPort.port_type} data.`
-          );
-          connecting.value = null;
-          connectingFromPort.value = null;
-          return;
-        }
-      }
+    if (!validation.isValid) {
+      emit('connection-error', validation.error || '❌ Invalid connection');
+      connecting.value = null;
+      connectingFromPort.value = null;
+      return;
     }
 
     // Connection is valid, emit the event
@@ -1278,6 +1255,31 @@ watch(() => props.nodes, () => {
   display: block;
 }
 
+.port-compat-indicator {
+  position: absolute;
+  top: -9px;
+  right: -12px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid rgba(15, 23, 42, 0.8);
+  background: #0f172a;
+  pointer-events: none;
+}
+
+.port-compat-indicator.ok {
+  color: #4ade80;
+}
+
+.port-compat-indicator.bad {
+  color: #ef4444;
+}
+
 .port-tooltip {
   display: none;
   position: absolute;
@@ -1307,8 +1309,8 @@ watch(() => props.nodes, () => {
   font-weight: 500;
   color: #94a3b8;
   font-family: 'SF Mono', Monaco, monospace;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.2px;
+  word-break: break-all;
 }
 
 .port-tooltip-desc {

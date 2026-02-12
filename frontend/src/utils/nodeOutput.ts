@@ -88,9 +88,15 @@ const selectPrimaryPort = (
   }
 
   if (outputPorts && outputPorts.length > 0) {
-    const datasetPort = outputPorts.find(
-      (port) => port.port_type === "dataset" && ports[port.name]
-    );
+    // Prefer a dataset-category port by inspecting the type_ref URI
+    const datasetTypeNames = new Set([
+      "SpectralDataset", "Spectrum", "ScoreMatrix", "LoadingMatrix",
+      "SpectralImage", "TimeSeries", "Array2D",
+    ]);
+    const datasetPort = outputPorts.find((port) => {
+      const nameMatch = port.type_ref?.match(/\/([A-Za-z0-9_]+)\/\d+\.\d+$/);
+      return nameMatch && datasetTypeNames.has(nameMatch[1]) && ports[port.name];
+    });
     if (datasetPort) {
       return datasetPort.name;
     }

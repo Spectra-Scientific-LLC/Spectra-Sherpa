@@ -20,7 +20,7 @@ import numpy as np
 from .dataset import SpectralUnit, parse_spectral_unit, add_provenance
 
 if TYPE_CHECKING:
-    from spectrochempy import NDDataset
+    from app.lib.scp_compat import NDDataset
 
 logger = logging.getLogger(__name__)
 

@@ -24,13 +24,8 @@ from app.api.deps import get_current_user, get_session
 from app.models.user import User
 from app.models.workflow import Workflow
 
-# NDDataset — required for prediction
-try:
-    from spectrochempy import NDDataset
-    HAS_NDDATASET = True
-except ImportError:
-    NDDataset = None
-    HAS_NDDATASET = False
+from app.lib.scp_compat import NDDataset, HAS_SCP
+HAS_NDDATASET = HAS_SCP
 
 router = APIRouter(prefix="/workflows")
 
@@ -151,7 +146,7 @@ async def predict(
     # --- 3. Build NDDataset from payload ---------------------------------
     dataset = NDDataset(data_array)
     if payload.wavenumbers is not None:
-        from spectrochempy import Coord
+        from app.lib.scp_compat import Coord
         dataset.set_coordset(x=Coord(payload.wavenumbers, title="Wavenumbers"))
 
     # --- 4. Build DAGExecutor --------------------------------------------

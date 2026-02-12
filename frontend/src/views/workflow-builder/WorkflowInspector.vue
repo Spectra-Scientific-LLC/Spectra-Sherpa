@@ -690,6 +690,16 @@
             </span>
           </div>
 
+          <div v-if="diagnosticEntries.length > 0" class="diagnostics-card">
+            <span class="diagnostics-title">Diagnostics</span>
+            <div class="diagnostics-grid">
+              <div v-for="entry in diagnosticEntries" :key="entry.key" class="diagnostics-item">
+                <span class="diagnostics-key">{{ entry.key }}</span>
+                <span class="diagnostics-value">{{ formatDiagnosticValue(entry.value) }}</span>
+              </div>
+            </div>
+          </div>
+
           <!-- Universal Quick Plot and View Data buttons -->
           <div class="output-actions">
             <Button
@@ -1334,6 +1344,7 @@ interface InspectorMetadata extends Record<string, unknown> {
   spectra?: SpectraSnapshot;
   provenance?: MetadataProvenance;
   processing_history?: Array<Record<string, unknown> | string>;
+  diagnostics?: Record<string, unknown>;
   instrument_metadata?: Record<string, unknown>;
   acquisition_params?: Record<string, unknown>;
   isPCA?: boolean;
@@ -1402,6 +1413,39 @@ const outputMetadata = computed<InspectorMetadata>(() => {
   const metadata = asObject(props.nodeOutput?.metadata);
   return (metadata as InspectorMetadata) ?? {};
 });
+
+const diagnosticEntries = computed<Array<{ key: string; value: unknown }>>(() => {
+  const diagnostics = asObject(outputMetadata.value.diagnostics);
+  if (!diagnostics) {
+    return [];
+  }
+  return Object.entries(diagnostics).map(([key, value]) => ({ key, value }));
+});
+
+const formatDiagnosticValue = (value: unknown): string => {
+  if (typeof value === "number") {
+    if (Number.isInteger(value)) return String(value);
+    return value.toFixed(4);
+  }
+  if (Array.isArray(value)) {
+    const preview = value.slice(0, 4).map((item) => {
+      if (typeof item === "number") {
+        return Number.isInteger(item) ? String(item) : item.toFixed(4);
+      }
+      return String(item);
+    });
+    const suffix = value.length > 4 ? `, ... (${value.length})` : "";
+    return `[${preview.join(", ")}${suffix}]`;
+  }
+  if (value && typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+};
 
 const outputStatsRows = computed<StatsRow[]>(() => {
   if (!Array.isArray(props.nodeOutput?.data)) {
@@ -3015,6 +3059,50 @@ onUnmounted(() => {
 .shape-stat strong {
   color: #f8fafc;
   font-weight: 600;
+}
+
+.diagnostics-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.diagnostics-title {
+  font-size: 0.78rem;
+  color: #cbd5e1;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.diagnostics-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.diagnostics-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.diagnostics-key {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  font-family: 'SF Mono', Monaco, monospace;
+}
+
+.diagnostics-value {
+  font-size: 0.8rem;
+  color: #f8fafc;
+  text-align: right;
+  font-family: 'SF Mono', Monaco, monospace;
 }
 
 /* Output action buttons - vertical stack */

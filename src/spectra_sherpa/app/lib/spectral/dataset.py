@@ -11,15 +11,8 @@ from enum import Enum
 from typing import Optional, List
 import numpy as np
 
-try:
-    import spectrochempy as scp
-    from spectrochempy import NDDataset, Coord
-
-    HAS_SPECTROCHEMPY = True
-except ImportError:
-    HAS_SPECTROCHEMPY = False
-    NDDataset = None
-    Coord = None
+from app.lib.scp_compat import scp, NDDataset, Coord, HAS_SCP
+HAS_SPECTROCHEMPY = HAS_SCP
 
 
 class SpectralUnit(Enum):

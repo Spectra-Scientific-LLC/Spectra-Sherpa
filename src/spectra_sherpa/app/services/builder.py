@@ -24,7 +24,7 @@ from app.lib.spectral.dataset import create_spectral_dataset, SpectralUnit
 from app.lib.preprocessing import preprocess_pipeline
 
 if TYPE_CHECKING:
-    from spectrochempy import NDDataset
+    from app.lib.scp_compat import NDDataset
 
 
 def _dataset_to_payload(dataset: "NDDataset") -> Dict[str, Any]:

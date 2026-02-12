@@ -13,8 +13,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 import numpy as np
-import spectrochempy as scp
-from spectrochempy import NDDataset
+from app.lib.scp_compat import scp, NDDataset
 
 from ..node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
 from app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
@@ -424,14 +423,14 @@ class DataSourceNode(Node):
         output_ports=[
             PortMetadata(
                 name="default",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Dataset",
                 description="Loaded dataset",
             ),
             PortMetadata(
                 name="target",
-                port_type="target",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=False,
                 label="Target Labels",
                 description="Class/target labels if available (e.g., sklearn datasets)",
@@ -2599,14 +2598,14 @@ class TrainTestSplitNode(Node):
         input_ports=[
             PortMetadata(
                 name="X",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Input Data",
                 description="Full dataset to split into train/test",
             ),
             PortMetadata(
                 name="y",
-                port_type="target",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=False,
                 label="Target Values (optional)",
                 description="Target array for stratified splitting",
@@ -2615,28 +2614,28 @@ class TrainTestSplitNode(Node):
         output_ports=[
             PortMetadata(
                 name="X_train",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Training Data",
                 description="Training subset of input data",
             ),
             PortMetadata(
                 name="X_test",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Test Data",
                 description="Test subset of input data",
             ),
             PortMetadata(
                 name="y_train",
-                port_type="target",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=False,
                 label="Training Targets",
                 description="Training subset of targets",
             ),
             PortMetadata(
                 name="y_test",
-                port_type="target",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=False,
                 label="Test Targets",
                 description="Test subset of targets",
@@ -2715,7 +2714,7 @@ class TrainTestSplitNode(Node):
         X_test_array = X_array[test_idx]
         
         # Convert back to NDDataset
-        import spectrochempy as scp
+        from app.lib.scp_compat import scp
         X_train = scp.NDDataset(X_train_array)
         X_test = scp.NDDataset(X_test_array)
         

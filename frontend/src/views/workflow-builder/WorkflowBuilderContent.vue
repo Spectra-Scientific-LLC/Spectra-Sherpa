@@ -214,6 +214,13 @@ const handleBroadcastMessage = async (event: MessageEvent) => {
           continue;
         }
         const output = buildOutputForNode(resolvedNodeId, result);
+        const diagnostics = response.diagnostics?.[nId];
+        if (diagnostics && typeof diagnostics === "object") {
+          output.metadata = {
+            ...output.metadata,
+            diagnostics,
+          };
+        }
         newOutputs.set(resolvedNodeId, output);
 
         // Track the specific node's output for the broadcast response
@@ -536,6 +543,17 @@ const autoloadMostRecentWorkflow = async () => {
 
     await workflowStore.loadWorkflow(mostRecent.id);
 
+    if (workflowStore.workflowWarnings.length > 0) {
+      for (const warning of workflowStore.workflowWarnings) {
+        toast.add({
+          severity: "warn",
+          summary: "Workflow Warning",
+          detail: warning,
+          life: 6000,
+        });
+      }
+    }
+
     // Update nextNodeId based on loaded nodes
     if (workflowStore.nodes.length > 0) {
       const maxId = Math.max(...workflowStore.nodes.map(n => n.id));
@@ -745,6 +763,13 @@ const executeWorkflow = async () => {
         continue;
       }
       const output = buildOutputForNode(resolvedNodeId, result);
+      const diagnostics = response.diagnostics?.[nodeId];
+      if (diagnostics && typeof diagnostics === "object") {
+        output.metadata = {
+          ...output.metadata,
+          diagnostics,
+        };
+      }
       // Debug: log what we're receiving from backend
       console.log(`[Workflow] Node ${nodeId} result:`, {
         hasData: !!output.data,
@@ -989,6 +1014,13 @@ const onExecuteNode = async (nodeId: number) => {
         continue;
       }
       const output = buildOutputForNode(resolvedNodeId, result);
+      const diagnostics = response.diagnostics?.[nId];
+      if (diagnostics && typeof diagnostics === "object") {
+        output.metadata = {
+          ...output.metadata,
+          diagnostics,
+        };
+      }
       // Debug: log what we're receiving from backend
       console.log(`[Workflow] Node ${nId} result:`, {
         hasData: !!output.data,

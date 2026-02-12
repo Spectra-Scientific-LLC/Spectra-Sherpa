@@ -31,15 +31,7 @@ except ImportError:
     HAS_SCIPY = False
     loadmat = None
 
-try:
-    import spectrochempy as scp
-    from spectrochempy import NDDataset
-
-    HAS_SCP = True
-except ImportError:
-    HAS_SCP = False
-    scp = None
-    NDDataset = None
+from app.lib.scp_compat import scp, NDDataset, HAS_SCP
 
 
 # Filename pattern for extracting species labels

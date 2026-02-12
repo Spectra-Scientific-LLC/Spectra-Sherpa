@@ -1,7 +1,7 @@
 """SpectraSherpa — local-first spectroscopy platform."""
 from __future__ import annotations
 
-__version__ = "1.3.3"
+__version__ = "1.4.0"
 
 import importlib
 import importlib.abc
@@ -13,8 +13,8 @@ class _AppAliasFinder(importlib.abc.MetaPathFinder):
     """Redirect ``import app.*`` to ``import spectra_sherpa.app.*``.
 
     Only activates when ``app`` is NOT already importable on its own
-    (i.e. when pip-installed to site-packages, not when running from the
-    ``backend/`` source tree).
+    (i.e. when pip-installed to site-packages rather than running from
+    the source tree with ``spectra_sherpa/app`` on sys.path).
     """
 
     _ACTIVE: bool | None = None  # tri-state: None = not yet checked

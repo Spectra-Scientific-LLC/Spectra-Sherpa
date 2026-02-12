@@ -9,10 +9,17 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 import numpy as np
-import spectrochempy as scp
-from spectrochempy import NDDataset
+from app.lib.scp_compat import scp, NDDataset
 
-from ..node_base import Node, NodeMetadata, NodeParameter, InputPort, PortMetadata, register_node
+from ..node_base import (
+    Node,
+    NodeMetadata,
+    NodeParameter,
+    InputPort,
+    PortMetadata,
+    NodeResult,
+    register_node,
+)
 from app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
 
 logger = logging.getLogger(__name__)
@@ -207,35 +214,53 @@ class PCANode(Node):
         ],
         input_types=["NDDataset"],
         output_type="dict",
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Input spectral dataset for PCA decomposition",
+            )
+        ],
         output_ports=[
             PortMetadata(
                 name="model",
-                port_type="model",
+                type_ref="spectrasherpa://types/DecompositionResult/1.0",
                 required=True,
                 label="PCA Model",
                 description="Trained PCA model object",
             ),
             PortMetadata(
                 name="scores",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/ScoreMatrix/1.0",
                 required=True,
                 label="Scores",
                 description="Transformed scores as NDDataset (n_samples × n_components) with sample labels",
             ),
             PortMetadata(
                 name="loadings",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/LoadingMatrix/1.0",
                 required=True,
                 label="Loadings",
                 description="Principal component loadings as NDDataset (n_components × n_features) with wavenumber axis",
             ),
             PortMetadata(
                 name="explained_variance",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Explained Variance",
                 description="Variance explained by each component",
             ),
+        ],
+        diagnostics=[
+            "explained_variance_ratio",
+            "cumulative_variance",
+            "n_components_95pct",
+            "hotelling_t2",
+            "q_residuals",
+            "t2_critical_95",
+            "q_critical_95",
         ],
     )
 
@@ -465,14 +490,35 @@ class PCANode(Node):
         logger.debug("[PCA Node] Requested n_components=%s, fitted with %s components", n_components_parsed, actual_n_components)
         logger.debug("[PCA Node] Scores shape: %s, Loadings shape: %s", scores_dataset.shape, loadings_dataset.shape)
 
-        return {
-            "default": scores_dataset,      # NDDataset: scores + sample labels (y) + PC coords (x)
-            "loadings": loadings_dataset,    # NDDataset: loadings + wavenumbers (x) + PC coords (y)
-            "model": pca,                    # Model port for Apply PCA Transform
-            "_internal": {
-                "input_data": input_data,
-            },
+        cumulative_variance = np.cumsum(evr_ratio).tolist()
+        n_components_95pct = None
+        above_95 = np.where(np.cumsum(evr_ratio) >= 0.95)[0]
+        if len(above_95) > 0:
+            n_components_95pct = int(above_95[0]) + 1
+
+        diagnostics = {
+            "explained_variance_ratio": evr_ratio.tolist(),
+            "cumulative_variance": cumulative_variance,
+            "n_components_95pct": n_components_95pct,
+            "hotelling_t2": t2_stats.tolist() if t2_stats is not None else [],
+            "q_residuals": spe_stats.tolist() if spe_stats is not None else [],
+            "t2_critical_95": float(np.percentile(t2_stats, 95)) if t2_stats is not None else None,
+            "q_critical_95": float(np.percentile(spe_stats, 95)) if spe_stats is not None else None,
         }
+
+        return NodeResult(
+            outputs={
+                "default": scores_dataset,      # Backwards-compatible default port
+                "scores": scores_dataset,
+                "loadings": loadings_dataset,
+                "model": pca,
+                "explained_variance": evr_ratio.tolist(),
+                "_internal": {
+                    "input_data": input_data,
+                },
+            },
+            diagnostics=diagnostics,
+        )
 
 
 @register_node
@@ -517,14 +563,14 @@ class PLSNode(Node):
         input_ports=[
             PortMetadata(
                 name="X",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Spectra (X)",
                 description="Spectral data matrix (n_samples × n_wavenumbers)",
             ),
             PortMetadata(
                 name="y",
-                port_type="target",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Concentrations (y)",
                 description="Target concentration values",
@@ -533,35 +579,35 @@ class PLSNode(Node):
         output_ports=[
             PortMetadata(
                 name="model",
-                port_type="model",
+                type_ref="spectrasherpa://types/RegressionModel/1.0",
                 required=True,
                 label="PLS Model",
                 description="Trained PLS regression model",
             ),
             PortMetadata(
                 name="X_scores",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/ScoreMatrix/1.0",
                 required=True,
                 label="X Scores",
                 description="Scores for X block as NDDataset (samples × components) with sample labels",
             ),
             PortMetadata(
                 name="Y_scores",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/ScoreMatrix/1.0",
                 required=True,
                 label="Y Scores",
                 description="Scores for Y block as NDDataset (samples × components) with sample labels",
             ),
             PortMetadata(
                 name="X_loadings",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/LoadingMatrix/1.0",
                 required=True,
                 label="X Loadings",
                 description="Loadings for X block as NDDataset (features × components) with wavenumber axis",
             ),
             PortMetadata(
                 name="Y_loadings",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/LoadingMatrix/1.0",
                 required=True,
                 label="Y Loadings",
                 description="Loadings for Y block as NDDataset (targets × components)",
@@ -809,14 +855,14 @@ class PCRNode(Node):
         input_ports=[
             PortMetadata(
                 name="X",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Spectra (X)",
                 description="Spectral data matrix (n_samples × n_wavenumbers)",
             ),
             PortMetadata(
                 name="y",
-                port_type="target",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Targets (y)",
                 description="Target values for regression",
@@ -825,21 +871,21 @@ class PCRNode(Node):
         output_ports=[
             PortMetadata(
                 name="model",
-                port_type="model",
+                type_ref="spectrasherpa://types/RegressionModel/1.0",
                 required=True,
                 label="PCR Model",
                 description="Trained PCR model object",
             ),
             PortMetadata(
                 name="scores",
-                port_type="array",
+                type_ref="spectrasherpa://types/ScoreMatrix/1.0",
                 required=True,
                 label="Scores",
                 description="PCA Scores (n_samples × n_components)",
             ),
             PortMetadata(
                 name="loadings",
-                port_type="array",
+                type_ref="spectrasherpa://types/LoadingMatrix/1.0",
                 required=True,
                 label="Loadings",
                 description="PCA Loadings (n_features × n_components)",
@@ -1103,14 +1149,14 @@ class SVRNode(Node):
         input_ports=[
             PortMetadata(
                 name="X",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Spectra (X)",
                 description="Spectral data matrix (n_samples × n_wavenumbers)",
             ),
             PortMetadata(
                 name="y",
-                port_type="target",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Targets (y)",
                 description="Target values for regression",
@@ -1119,21 +1165,21 @@ class SVRNode(Node):
         output_ports=[
             PortMetadata(
                 name="model",
-                port_type="model",
+                type_ref="spectrasherpa://types/FittedModel/1.0",
                 required=True,
                 label="SVR Model",
                 description="Trained SVR model object",
             ),
             PortMetadata(
                 name="predictions",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Predictions",
                 description="Predicted values (y_pred)",
             ),
             PortMetadata(
                 name="residuals",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Residuals",
                 description="Regression residuals (y_true - y_pred)",
@@ -1304,14 +1350,14 @@ class LinearRegressionNode(Node):
         input_ports=[
             PortMetadata(
                 name="X",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Features (X)",
                 description="Feature matrix (predictors)",
             ),
             PortMetadata(
                 name="y",
-                port_type="target",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Targets (y)",
                 description="Target values",
@@ -1320,21 +1366,21 @@ class LinearRegressionNode(Node):
         output_ports=[
             PortMetadata(
                 name="model",
-                port_type="model",
+                type_ref="spectrasherpa://types/RegressionModel/1.0",
                 required=True,
                 label="Linear Model",
                 description="Trained Linear Regression model",
             ),
             PortMetadata(
                 name="predictions",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Predictions",
                 description="Predicted values (y_pred)",
             ),
             PortMetadata(
                 name="residuals",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Residuals",
                 description="Regression residuals (y_true - y_pred)",
@@ -1469,28 +1515,28 @@ class MCRNode(Node):
         output_ports=[
             PortMetadata(
                 name="model",
-                port_type="model",
+                type_ref="spectrasherpa://types/DecompositionResult/1.0",
                 required=True,
                 label="MCR Model",
                 description="Fitted MCR-ALS model object",
             ),
             PortMetadata(
                 name="C",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Concentrations",
                 description="Resolved concentration profiles (C) as NDDataset with sample/component axes",
             ),
             PortMetadata(
                 name="St",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Pure Spectra",
                 description="Resolved pure component spectra (S^T)",
             ),
             PortMetadata(
                 name="residuals",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=False,
                 label="Residuals",
                 description="Modeling residuals",
@@ -1707,21 +1753,21 @@ class EFANode(Node):
         output_ports=[
             PortMetadata(
                 name="model",
-                port_type="model",
+                type_ref="spectrasherpa://types/FittedModel/1.0",
                 required=True,
                 label="EFA Model",
                 description="EFA model object",
             ),
             PortMetadata(
                 name="forward_eigenvalues",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Forward Eigenvalues",
                 description="Eigenvalues from forward EFA as NDDataset (samples × components)",
             ),
             PortMetadata(
                 name="backward_eigenvalues",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Backward Eigenvalues",
                 description="Eigenvalues from backward EFA as NDDataset (samples × components)",
@@ -1882,21 +1928,21 @@ class HCANode(Node):
         output_ports=[
             PortMetadata(
                 name="model",
-                port_type="model",
+                type_ref="spectrasherpa://types/FittedModel/1.0",
                 required=True,
                 label="HCA Model",
                 description="Cluster hierarchy (Linkage Matrix)",
             ),
             PortMetadata(
                 name="labels",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Cluster Labels",
                 description="Assigned cluster labels for each sample",
             ),
             PortMetadata(
                 name="linkage_matrix",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
                 label="Linkage Matrix",
                 description="SciPy linkage matrix (Z)",
@@ -2180,21 +2226,21 @@ class KMeansNode(Node):
         output_ports=[
             PortMetadata(
                 name="model",
-                port_type="model",
+                type_ref="spectrasherpa://types/FittedModel/1.0",
                 required=True,
                 label="KMeans Model",
                 description="Fitted KMeans model object",
             ),
             PortMetadata(
                 name="labels",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Cluster Labels",
                 description="Assigned cluster labels",
             ),
             PortMetadata(
                 name="centroids",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
                 label="Centroids",
                 description="Cluster centers coordinates",
@@ -2340,14 +2386,14 @@ class DBSCANNode(Node):
         output_ports=[
             PortMetadata(
                 name="model",
-                port_type="model",
+                type_ref="spectrasherpa://types/FittedModel/1.0",
                 required=True,
                 label="DBSCAN Model",
                 description="Fitted DBSCAN model object",
             ),
             PortMetadata(
                 name="labels",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Cluster Labels",
                 description="Assigned cluster labels (noise=-1)",
@@ -2513,21 +2559,21 @@ class PeakFindingNode(Node):
         output_ports=[
             PortMetadata(
                 name="peaks",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Peak List",
                 description="Detected peaks with positions, heights, widths, areas",
             ),
             PortMetadata(
                 name="annotated_spectrum",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Annotated Spectrum",
                 description="Spectrum with peak markers and labels",
             ),
             PortMetadata(
                 name="spectrum",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=False,
                 label="Original Spectrum",
                 description="Input spectrum (for comparison)",
@@ -2716,28 +2762,28 @@ class SIMPLISMANode(Node):
         output_ports=[
             PortMetadata(
                 name="model",
-                port_type="model",
+                type_ref="spectrasherpa://types/DecompositionResult/1.0",
                 required=True,
                 label="SIMPLISMA Model",
                 description="Fitted SIMPLISMA model object",
             ),
             PortMetadata(
                 name="concentrations",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Concentrations",
                 description="Resolved concentration profiles (C)",
             ),
             PortMetadata(
                 name="spectra",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Pure Spectra",
                 description="Resolved pure component spectra (St)",
             ),
             PortMetadata(
                 name="purity_values",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=False,
                 label="Purity Values",
                 description="Purity values for resolved components",
@@ -2962,28 +3008,28 @@ class NMFNode(Node):
         output_ports=[
             PortMetadata(
                 name="model",
-                port_type="model",
+                type_ref="spectrasherpa://types/DecompositionResult/1.0",
                 required=True,
                 label="NMF Model",
                 description="Fitted NMF model object",
             ),
             PortMetadata(
                 name="concentrations",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Concentrations",
                 description="Concentration profiles (W matrix) as NDDataset with sample/component axes",
             ),
             PortMetadata(
                 name="spectra",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Pure Spectra",
                 description="Pure component spectra (H matrix) as NDDataset with wavenumber axis",
             ),
             PortMetadata(
                 name="reconstruction_error",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=False,
                 label="Reconstruction Error",
                 description="Final reconstruction error value",
@@ -3226,28 +3272,28 @@ class FastICANode(Node):
         output_ports=[
             PortMetadata(
                 name="model",
-                port_type="model",
+                type_ref="spectrasherpa://types/DecompositionResult/1.0",
                 required=True,
                 label="ICA Model",
                 description="Fitted FastICA model object",
             ),
             PortMetadata(
                 name="sources",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
                 label="Source Signals",
                 description="Independent source signals (S)",
             ),
             PortMetadata(
                 name="mixing_matrix",
-                port_type="array",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
                 label="Mixing Matrix",
                 description="Mixing matrix (A)",
             ),
             PortMetadata(
                 name="components",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Components",
                 description="Independent components (St)",
@@ -3485,14 +3531,14 @@ class PLSPredictNode(Node):
         input_ports=[
             PortMetadata(
                 name="X_new",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="New Spectra",
                 description="Spectral data to predict (preprocessed same as training data)",
             ),
             PortMetadata(
                 name="model",
-                port_type="model",
+                type_ref="spectrasherpa://types/RegressionModel/1.0",
                 required=True,
                 label="PLS Model",
                 description="Trained PLS model from PLS training node",
@@ -3501,7 +3547,7 @@ class PLSPredictNode(Node):
         output_ports=[
             PortMetadata(
                 name="y_pred",
-                port_type="target",
+                type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
                 label="Predictions",
                 description="Predicted concentration values",
@@ -3581,14 +3627,14 @@ class PCATransformNode(Node):
         input_ports=[
             PortMetadata(
                 name="X_new",
-                port_type="dataset",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="New Spectra",
                 description="Spectral data to transform",
             ),
             PortMetadata(
                 name="model",
-                port_type="model",
+                type_ref="spectrasherpa://types/DecompositionResult/1.0",
                 required=True,
                 label="PCA Model",
                 description="Trained PCA model from PCA training node",
@@ -3597,7 +3643,7 @@ class PCATransformNode(Node):
         output_ports=[
             PortMetadata(
                 name="scores",
-                port_type="target",
+                type_ref="spectrasherpa://types/ScoreMatrix/1.0",
                 required=True,
                 label="PC Scores",
                 description="Scores in principal component space",
