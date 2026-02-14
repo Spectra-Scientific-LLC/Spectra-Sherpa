@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from app.services.dag.graph_utils import Edge, topological_sort, build_input_map
 from app.services.dag.node_base import node_registry
+from app.lib.scp_compat import HAS_SCP
 
 if TYPE_CHECKING:
     from app.models.workflow import Workflow
@@ -107,6 +108,9 @@ def generate_python_code(workflow: Workflow) -> str:
             wf_node.node_type, wf_node.node_id, wf_node.parameters
         )
 
+    # --- backend mode (SCP vs numpy) --------------------------------------
+    use_scp = HAS_SCP
+
     # --- collect extra imports -------------------------------------------
     extra_imports: set[str] = set()
     for node in node_map.values():
@@ -129,16 +133,37 @@ def generate_python_code(workflow: Workflow) -> str:
     lines.append('"""')
     lines.append("")
 
-    # Imports (always needed)
+    # Imports
     lines.append("import numpy as np")
-    lines.append("import spectrochempy as scp")
-    lines.append("from spectrochempy import NDDataset")
+    if use_scp:
+        lines.append("import spectrochempy as scp")
+        lines.append("from spectrochempy import NDDataset")
+    lines.append("")
 
     # Extra imports collected from nodes (deduplicated, skip already-present)
-    base_imports = {"import numpy as np", "import spectrochempy as scp",
-                    "from spectrochempy import NDDataset"}
+    base_imports = {"import numpy as np"}
+    if use_scp:
+        base_imports |= {"import spectrochempy as scp",
+                         "from spectrochempy import NDDataset"}
     for imp in sorted(extra_imports - base_imports):
+        # Skip SCP imports when not using SCP
+        if not use_scp and "spectrochempy" in imp:
+            continue
         lines.append(imp)
+
+    if not use_scp:
+        # Lightweight data container so downstream .data / .x access works
+        lines.append("")
+        lines.append("")
+        lines.append("class _Result:")
+        lines.append('    """Lightweight data container for pipeline results."""')
+        lines.append("    def __init__(self, data, x=None):")
+        lines.append("        self.data = np.atleast_2d(np.asarray(data, dtype=np.float64))")
+        lines.append("        self.x = x")
+        lines.append("        self.shape = self.data.shape")
+        lines.append("        self.ndim = self.data.ndim")
+        lines.append("    def copy(self):")
+        lines.append("        return _Result(self.data.copy(), x=self.x)")
     lines.append("")
 
     # Main function
@@ -164,13 +189,18 @@ def generate_python_code(workflow: Workflow) -> str:
             # Source node — no upstream edges
             lines.append(f"{indent}# --- Source: {node_id} ({node.metadata.node_type}) ---")
             lines.append(f"{indent}# >>> EDIT: provide your data below <<<")
-            lines.append(f"{indent}# results['{node_id}'] = scp.read('your_file.scp')")
-            lines.append(f"{indent}# results['{node_id}'] = scp.load_iris()")
+            if use_scp:
+                lines.append(f"{indent}# results['{node_id}'] = scp.read('your_file.scp')")
+                lines.append(f"{indent}# results['{node_id}'] = scp.load_iris()")
+            else:
+                lines.append(f"{indent}# from sklearn.datasets import load_iris")
+                lines.append(f"{indent}# _bunch = load_iris()")
+                lines.append(f"{indent}# results['{node_id}'] = _Result(_bunch.data)")
             lines.append("")
             continue
 
         # Delegate to node's generate_python()
-        node_lines = node.generate_python(input_map, indent=indent)
+        node_lines = node.generate_python(input_map, indent=indent, use_scp=use_scp)
         lines.extend(node_lines)
         lines.append("")
 

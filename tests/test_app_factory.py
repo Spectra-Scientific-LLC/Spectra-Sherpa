@@ -55,6 +55,14 @@ def test_build_api_router_includes_server_routes_when_enabled():
     assert "/auth/whoami" in _paths(router.routes)
 
 
+def test_build_api_router_exposes_auth_me_for_multi_user_mode(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("app.core.mode_policy.is_multi_user", lambda: True)
+
+    router = api_v1.build_api_router(include_server_routers=True)
+
+    assert "/auth/me" in _paths(router.routes)
+
+
 def test_create_app_accepts_extra_router_prefix_string():
     extra = APIRouter()
 

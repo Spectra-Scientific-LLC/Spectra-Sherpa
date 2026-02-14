@@ -31,6 +31,7 @@ from app.schemas.builder import (
     SynthesizeResponse,
 )
 from app.services.builder import BuilderService
+from app.services.experiments import experiment_dir
 
 async def _validate_file_path_ownership(
     file_path: str,
@@ -119,6 +120,12 @@ service = BuilderService()
 
 class FileInfoRequest(BaseModel):
     file_path: str
+    experiment_id: int | None = None
+
+
+class SpectrumPreview(BaseModel):
+    label: str
+    absorbance: list[float]
 
 
 class FileInfoResponse(BaseModel):
@@ -131,6 +138,8 @@ class FileInfoResponse(BaseModel):
     absorbance_max: float | None
     labels: list[str]
     source: str
+    preview_wavenumber: list[float] | None = None
+    preview_spectra: list[SpectrumPreview] | None = None
 
 
 async def _validate_payload_file_paths(
@@ -174,11 +183,19 @@ async def get_file_info(
     current_user: User = Depends(get_current_user),
 ) -> FileInfoResponse:
     """Get basic info about a spectral file without preprocessing."""
+    # If experiment_id provided, construct the full data_dir-relative path
+    # (ExperimentFile.file_path is stored relative to experiment dir)
+    file_path = payload.file_path
+    if payload.experiment_id is not None:
+        exp_dir = experiment_dir(payload.experiment_id)
+        full_path = (exp_dir / file_path).resolve()
+        file_path = str(full_path.relative_to(settings.data_dir))
+
     # Validate user has access to this file path
-    await _validate_file_path_ownership(payload.file_path, session, current_user)
+    await _validate_file_path_ownership(file_path, session, current_user)
 
     try:
-        datasets = service._load_datasets_from_file({"file_path": payload.file_path})
+        datasets = service._load_datasets_from_file({"file_path": file_path})
         if not datasets:
             raise ValueError("No spectra found in file")
 
@@ -203,12 +220,31 @@ async def get_file_info(
 
         # Extract labels
         labels = []
-        for ds in datasets[:10]:
+        for ds in datasets:
             label = ds.title if hasattr(ds, "title") and ds.title else "UNKNOWN"
             labels.append(label)
 
         # Get source type
         source = datasets[0].meta.get("source_type", "csv") if hasattr(datasets[0], "meta") else "csv"
+
+        # Build preview data (all spectra, downsampled to max 500 pts)
+        max_pts = 500
+        preview_wn = None
+        preview_spectra = None
+        try:
+            wn = all_wavenumbers[0]
+            step = max(1, len(wn) // max_pts)
+            preview_wn = wn[::step].tolist()
+            preview_spectra = []
+            for i, ds in enumerate(datasets):
+                lbl = labels[i] if i < len(labels) else f"Spectrum_{i+1}"
+                y = all_absorbances[i]
+                preview_spectra.append(SpectrumPreview(
+                    label=lbl,
+                    absorbance=y[::step].tolist(),
+                ))
+        except Exception:
+            pass  # Preview is best-effort
 
         return FileInfoResponse(
             status="ok",
@@ -220,6 +256,8 @@ async def get_file_info(
             absorbance_max=abs_max,
             labels=labels,
             source=source,
+            preview_wavenumber=preview_wn,
+            preview_spectra=preview_spectra,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -406,3 +444,77 @@ async def synthesize_spectra(
         statistics=statistics,
         ground_truth=ground_truth,
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Reference Dataset Catalog
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@router.get("/reference-datasets")
+async def list_reference_datasets() -> dict[str, list[dict[str, Any]]]:
+    """List all available reference datasets across all sources."""
+    from app.lib.eigenvector import DATASET_CATALOG
+    from app.lib.sklearn_info import SKLEARN_CATALOG
+    from app.lib.scp_catalog import SCP_CATALOG
+
+    return {
+        "eigenvector": [
+            {
+                "name": k,
+                "source": "eigenvector",
+                "label": v["label"],
+                "technique": v["technique"],
+                "description": v["description"],
+            }
+            for k, v in DATASET_CATALOG.items()
+        ],
+        "sklearn": [
+            {
+                "name": k,
+                "source": "sklearn",
+                "label": v["label"],
+                "technique": "ML/Statistics",
+                "description": f"Scikit-learn {k} dataset",
+            }
+            for k, v in SKLEARN_CATALOG.items()
+        ],
+        "spectrochempy": [
+            {
+                "name": k,
+                "source": "spectrochempy",
+                "label": v["label"],
+                "technique": v["technique"],
+                "description": v["description"],
+            }
+            for k, v in SCP_CATALOG.items()
+        ],
+    }
+
+
+@router.get("/reference-datasets/{source}/{name}")
+async def get_reference_dataset_info(source: str, name: str) -> dict[str, Any]:
+    """Get full metadata + statistics for a reference dataset."""
+    if source == "eigenvector":
+        from app.lib.eigenvector import DATASET_CATALOG, get_dataset_info
+
+        if name not in DATASET_CATALOG:
+            raise HTTPException(404, f"Dataset '{name}' not found")
+        return get_dataset_info(name)
+
+    elif source == "sklearn":
+        from app.lib.sklearn_info import SKLEARN_CATALOG, get_sklearn_dataset_info
+
+        if name not in SKLEARN_CATALOG:
+            raise HTTPException(404, f"Dataset '{name}' not found")
+        return get_sklearn_dataset_info(name)
+
+    elif source == "spectrochempy":
+        from app.lib.scp_catalog import SCP_CATALOG, get_scp_dataset_info
+
+        if name not in SCP_CATALOG:
+            raise HTTPException(404, f"Dataset '{name}' not found")
+        return get_scp_dataset_info(name)
+
+    else:
+        raise HTTPException(400, f"Unknown source: {source}")

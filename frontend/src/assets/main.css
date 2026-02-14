@@ -129,6 +129,10 @@ a {
   padding: 24px;
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  min-height: 0;
 }
 
 .card {
@@ -255,31 +259,6 @@ body.chat-resizing {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-/* Page-level tabs (larger, prominent) */
-.main-content-wrapper .p-tabview-nav {
-  border-bottom: 2px solid #e2e8f0;
-  padding: 0 24px;
-  background: #ffffff;
-}
-
-.main-content-wrapper .p-tabview-nav-link {
-  font-size: 1rem;
-  font-weight: 500;
-  padding: 14px 20px;
-  color: #64748b;
-}
-
-.main-content-wrapper .p-tabview-nav-link:hover {
-  color: #1d4ed8;
-  border-bottom-color: #1d4ed8;
-}
-
-/* Tab content spacing */
-.main-content-wrapper .p-tabview-panels {
-  padding: 24px;
-  background: #f5f7fa;
 }
 
 /* Section layouts within tabs */

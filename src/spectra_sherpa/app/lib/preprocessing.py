@@ -180,7 +180,8 @@ def interpolate_to_grid(
     NDDataset
         Interpolated dataset with new x-coordinates and resolution metadata
     """
-    from app.lib.scp_compat import scp
+    from app.lib.scp_compat import scp, require_scp
+    require_scp("Spectral interpolation")
     import warnings
     from .spectral.dataset import add_provenance
 
@@ -321,7 +322,8 @@ def remove_cosmic_rays(
     NDDataset
         Dataset with cosmic rays replaced by local median
     """
-    from app.lib.scp_compat import scp
+    from app.lib.scp_compat import scp, require_scp
+    require_scp("Spectral preprocessing")
     from .spectral.dataset import add_provenance
 
     if window_size % 2 == 0:
@@ -406,7 +408,8 @@ def smooth_savgol(
     NDDataset
         Smoothed dataset
     """
-    from app.lib.scp_compat import scp
+    from app.lib.scp_compat import scp, require_scp
+    require_scp("Spectral preprocessing")
     from .spectral.dataset import add_provenance
 
     if not HAS_SCIPY:
@@ -471,7 +474,8 @@ def clip_range(
     NDDataset
         Clipped dataset
     """
-    from app.lib.scp_compat import scp
+    from app.lib.scp_compat import scp, require_scp
+    require_scp("Spectral preprocessing")
     from .spectral.dataset import add_provenance
 
     wavenumber = dataset.x.data if hasattr(dataset.x, "data") else np.array(dataset.x)

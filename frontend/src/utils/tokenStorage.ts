@@ -1,9 +1,11 @@
 /**
  * API token storage utilities
  *
- * Stores LLM API tokens in localStorage with base64 encoding
- * Note: This is NOT secure encryption, just obfuscation for MVP
- * TODO: Upgrade to proper encryption in production
+ * Stores LLM API tokens in localStorage with base64 encoding.
+ * Client-side encryption would not add real security here — any JS
+ * running on the page could read the decryption key too. The actual
+ * security boundary is HTTPS transport + server-side validation.
+ * Base64 encoding prevents casual shoulder-surfing in DevTools.
  */
 
 import type { LLMProvider, StoredToken } from '@/types/config'

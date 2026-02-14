@@ -192,6 +192,25 @@
               </small>
             </div>
 
+            <!-- Eigenvector Research dataset selector -->
+            <div v-if="localParams.source === 'eigenvector'" class="field">
+              <label>Eigenvector Dataset</label>
+              <Dropdown
+                v-model="localParams.eigenvector_dataset"
+                :options="eigenvectorDatasetOptions"
+                optionLabel="label"
+                optionValue="value"
+                placeholder="Select dataset"
+                appendTo="body"
+                @change="emitParams"
+              />
+              <small class="param-hint">
+                Bundled NIR reference datasets from
+                <a href="https://eigenvector.com/resources/data-sets/" target="_blank">Eigenvector Research</a>.
+                Properties output on the Target port.
+              </small>
+            </div>
+
             <!-- Selected dataset info -->
             <div v-if="localParams.dataset_ref" class="field dataset-info">
               <span class="dataset-badge" :class="localParams.dataset_ref.source">
@@ -720,7 +739,7 @@
 
           <!-- Statistics output (compact inline) -->
           <template v-if="selectedNodeType === 'STATS' && Array.isArray(nodeOutput.data)">
-            <div class="stats-table">
+            <div class="stats-table" style="max-height: 200px; overflow-y: auto;">
               <div
                 v-for="(stat, index) in outputStatsRows"
                 :key="index"
@@ -1452,8 +1471,7 @@ const outputStatsRows = computed<StatsRow[]>(() => {
     return [];
   }
   return props.nodeOutput.data
-    .filter((row): row is StatsRow => !!asObject(row))
-    .slice(0, 5);
+    .filter((row): row is StatsRow => !!asObject(row));
 });
 
 const spectraMetadata = computed<SpectraSnapshot>(() => {
@@ -2187,6 +2205,7 @@ const dataSourceOptions = [
   { label: 'Library', value: 'library' },
   { label: 'SpectroChemPy Example', value: 'spectrochempy' },
   { label: 'Sklearn Dataset', value: 'sklearn' },
+  { label: 'Eigenvector Dataset', value: 'eigenvector' },
   { label: 'Synthetic', value: 'synthetic' },
 ];
 
@@ -2196,6 +2215,14 @@ const sklearnDatasetOptions = [
   { label: 'Wine (3 classes, 13 features, 178 samples)', value: 'wine' },
   { label: 'Breast Cancer (2 classes, 30 features, 569 samples)', value: 'breast_cancer' },
   { label: 'Digits (10 classes, 64 features, 1797 samples)', value: 'digits' },
+];
+
+// Eigenvector Research public dataset options (bundled NIR reference data)
+const eigenvectorDatasetOptions = [
+  { label: 'Diesel NIR (784 samples, 401 wavelengths, 750-1550 nm)', value: 'diesel_nir' },
+  { label: 'Corn M5 NIR (80 samples, 700 channels)', value: 'corn_m5' },
+  { label: 'Corn MP5 NIR (80 samples, 700 channels)', value: 'corn_mp5' },
+  { label: 'Corn MP6 NIR (80 samples, 700 channels)', value: 'corn_mp6' },
 ];
 
 // Dynamic dataset options from API (populated on initial file fetch)
@@ -2234,6 +2261,16 @@ const onSourceChange = () => {
     localParams.value.example_dataset = undefined;
     if (!localParams.value.sklearn_dataset) {
       localParams.value.sklearn_dataset = 'iris';
+    }
+  } else if (localParams.value.source === 'eigenvector') {
+    localParams.value.file_path = undefined;
+    localParams.value.experiment_id = undefined;
+    localParams.value.file_id = undefined;
+    localParams.value.dataset_ref = undefined;
+    localParams.value.example_dataset = undefined;
+    localParams.value.sklearn_dataset = undefined;
+    if (!localParams.value.eigenvector_dataset) {
+      localParams.value.eigenvector_dataset = 'diesel_nir';
     }
   }
   emitParams();
@@ -2568,7 +2605,7 @@ const openInNewTab = () => {
   }
 
   // Open new tab
-  const url = `/workspace/node/${props.selectedNode.id}`;
+  const url = `/workflow/node/${props.selectedNode.id}`;
   window.open(url, '_blank');
 };
 

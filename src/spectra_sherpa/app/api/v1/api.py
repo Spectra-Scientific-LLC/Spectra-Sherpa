@@ -7,25 +7,25 @@ from typing import Any, TypeAlias
 from fastapi import APIRouter
 
 from app.api.v1.routes import (
-    analysis,
     api_keys,
     builder,
-    calibrations,
     compute,
     config,
     datasets,
+    deploy,
     doe,
     doe_config,
     egress,
+    execution_runs,
     experiments,
     health,
     jobs,
     llm,
     llm_config,
     logs,
-    nist,
     predict,
-    process,
+    project_scripts,
+    projects,
     workflow_export,
     workflow_organization,
     workflow_templates,
@@ -48,17 +48,34 @@ def get_server_routers() -> list[RouterInclude]:
     if not is_multi_user():
         return []
 
-    try:
-        from app.api.v1.routes import admin, auth
-    except ImportError:
-        # After repo split, Repo 1 may not carry these modules.
-        logger.info("Server routes unavailable in this distribution; skipping auth/admin routers")
-        return []
+    routers: list[RouterInclude] = []
+    auth_loaded = False
 
-    return [
-        (auth.router, {"prefix": "/auth", "tags": ["auth"]}),
-        (admin.router, {"prefix": "/admin", "tags": ["admin"]}),
-    ]
+    try:
+        from app.api.v1.routes import auth
+    except ImportError:
+        # After repo split, Repo 1 may not carry full auth routes.
+        from app.api.v1.routes import auth_compat
+
+        logger.info(
+            "Server auth routes unavailable in this distribution; "
+            "registering OSS auth compatibility router",
+        )
+        routers.append((auth_compat.router, {"prefix": "/auth", "tags": ["auth"]}))
+    else:
+        auth_loaded = True
+        routers.append((auth.router, {"prefix": "/auth", "tags": ["auth"]}))
+
+    try:
+        from app.api.v1.routes import admin
+    except ImportError:
+        logger.info("Server admin routes unavailable in this distribution; skipping admin router")
+    else:
+        routers.append((admin.router, {"prefix": "/admin", "tags": ["admin"]}))
+
+    if not auth_loaded:
+        logger.debug("Using auth compatibility router for /auth endpoints")
+    return routers
 
 
 def build_api_router(
@@ -82,6 +99,7 @@ def build_api_router(
     router.include_router(doe.router, tags=["doe"])
     router.include_router(doe_config.router, prefix="/doe-configs", tags=["doe-configs"])
     router.include_router(workflows.router, tags=["workflows"])
+    router.include_router(execution_runs.router, tags=["execution-runs"])
     router.include_router(
         workflow_organization.router, prefix="/workflows", tags=["workflow-organization"]
     )
@@ -89,15 +107,14 @@ def build_api_router(
     router.include_router(workflow_export.router, tags=["workflow-export"])
     router.include_router(predict.router, tags=["predict"])
     router.include_router(builder.router, tags=["builder"])
-    router.include_router(calibrations.router, tags=["calibrations"])
     router.include_router(compute.router, prefix="/compute", tags=["compute"])
     router.include_router(datasets.router, tags=["datasets"])
-    router.include_router(nist.router, tags=["nist"])
     router.include_router(llm.router, tags=["llm"])
     router.include_router(jobs.router, tags=["jobs"])
-    router.include_router(process.router, tags=["process"])
-    router.include_router(analysis.router, tags=["analysis"])
     router.include_router(egress.router, tags=["egress"])
+    router.include_router(deploy.router, tags=["deploy"])
+    router.include_router(projects.router, tags=["projects"])
+    router.include_router(project_scripts.router, tags=["project-scripts"])
 
     # API key management (BYOK) — available in all modes
     router.include_router(api_keys.router, tags=["api-keys"])

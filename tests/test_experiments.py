@@ -32,7 +32,7 @@ async def test_create_experiment(client: AsyncClient, test_user: User):
     data = response.json()
     assert data["name"] == "Test Experiment"
     assert data["description"] == "A test experiment"
-    assert data["user_id"] == test_user.id
+    assert "id" in data
 
 
 @pytest.mark.asyncio

@@ -22,7 +22,6 @@ numpy>=1.26.4,<2.0.0
 scipy>=1.13.1,<2.0.0
 pandas>=2.2.2,<3.0.0
 scikit-learn>=1.5.0,<2.0.0
-spectrochempy>=0.6.9,<0.7.0
 plotly>=5.22.0,<6.0.0
 beautifulsoup4>=4.12.3,<5.0.0
 pypdf>=4.0.0,<5.0.0
@@ -32,6 +31,10 @@ openai>=1.40.0,<2.0.0
 python-jose[cryptography]>=3.3.0,<4.0.0
 passlib[bcrypt]>=1.7.4,<2.0.0
 bcrypt>=4.0.1,<4.1
+
+# Optional: spectral file I/O via SpectroChemPy (CeCILL-B license, not AGPL-compatible)
+# Install with: pip install spectra-sherpa[scp]
+# spectrochempy>=0.6.9,<0.7.0
 
 # Optional: server deployment extras (uncomment as needed)
 # asyncpg>=0.29.0,<0.30.0

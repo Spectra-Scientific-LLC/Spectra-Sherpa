@@ -150,7 +150,9 @@ import { ref, computed, watch } from "vue";
 import Button from "primevue/button";
 import Dropdown from "primevue/dropdown";
 import { useToast } from "primevue/usetoast";
-import { useProjectStore, type Project } from "@/stores/project";
+import { useProjectStore } from "@/stores/project";
+import type { ProjectSummary } from "@/types";
+import type { ProjectFormData } from "./ProjectDialog.vue";
 import { useWorkflowStore } from "@/stores/workflow";
 import { useExperimentStore } from "@/stores/experiment";
 import { useLlmStore } from "@/stores/llm";
@@ -227,7 +229,7 @@ const computeStatus = computed(() => {
 });
 
 // Project selection
-const selectedProjectId = ref<string | null>(projectStore.currentProjectId);
+const selectedProjectId = ref<number | null>(projectStore.currentProjectId);
 
 // Sync with store
 watch(
@@ -237,20 +239,20 @@ watch(
   }
 );
 
-const getProjectName = (projectId: string): string => {
+const getProjectName = (projectId: number): string => {
   const project = projectStore.projectList.find((p) => p.id === projectId);
   return project?.name || "Unknown Project";
 };
 
-const onProjectChange = () => {
+const onProjectChange = async () => {
   if (selectedProjectId.value) {
-    projectStore.selectProject(selectedProjectId.value);
+    await projectStore.selectProject(selectedProjectId.value);
     const project = projectStore.currentProject;
     if (project) {
       toast.add({
         severity: "info",
         summary: "Project Loaded",
-        detail: `Switched to "${project.metadata.name}"`,
+        detail: `Switched to "${project.name}"`,
         life: 2000,
       });
     }
@@ -259,7 +261,7 @@ const onProjectChange = () => {
 
 // Project dialog
 const projectDialogVisible = ref(false);
-const editingProject = ref<Project | null>(null);
+const editingProject = ref<ProjectSummary | null>(null);
 
 // Project details drawer
 const projectDetailsVisible = ref(false);
@@ -274,44 +276,52 @@ const showNewProjectDialog = () => {
 };
 
 const showEditProjectDialog = () => {
-  editingProject.value = projectStore.currentProject;
+  if (projectStore.currentProject) {
+    editingProject.value = projectStore.currentProject;
+  }
   projectDialogVisible.value = true;
 };
 
-const onCreateProject = (data: {
-  name: string;
-  description: string;
-  tags: string[];
-}) => {
-  const project = projectStore.createProject(data.name, data.description, data.tags);
-  toast.add({
-    severity: "success",
-    summary: "Project Created",
-    detail: `Created "${project.metadata.name}"`,
-    life: 2000,
+const onCreateProject = async (data: ProjectFormData) => {
+  const project = await projectStore.createProject({
+    name: data.name,
+    description: data.description || null,
+    technique: data.technique,
+    sample_type: data.sample_type,
   });
-};
-
-const onUpdateProject = (data: {
-  name: string;
-  description: string;
-  tags: string[];
-}) => {
-  if (projectStore.currentProjectId) {
-    projectStore.updateProject(projectStore.currentProjectId, data);
+  if (project) {
     toast.add({
       severity: "success",
-      summary: "Project Updated",
-      detail: "Changes saved successfully",
+      summary: "Project Created",
+      detail: `Created "${project.name}"`,
       life: 2000,
     });
   }
 };
 
-// Export/Import
-const exportCurrentProject = () => {
+const onUpdateProject = async (data: ProjectFormData) => {
   if (projectStore.currentProjectId) {
-    projectStore.exportProjectToFile(projectStore.currentProjectId);
+    const updated = await projectStore.updateProject(projectStore.currentProjectId, {
+      name: data.name,
+      description: data.description || null,
+      technique: data.technique,
+      sample_type: data.sample_type,
+    });
+    if (updated) {
+      toast.add({
+        severity: "success",
+        summary: "Project Updated",
+        detail: "Changes saved successfully",
+        life: 2000,
+      });
+    }
+  }
+};
+
+// Export/Import
+const exportCurrentProject = async () => {
+  if (projectStore.currentProjectId) {
+    await projectStore.exportProject(projectStore.currentProjectId);
     toast.add({
       severity: "success",
       summary: "Project Exported",
@@ -330,12 +340,12 @@ const onFileSelected = async (event: Event) => {
   const file = input.files?.[0];
   if (!file) return;
 
-  const project = await projectStore.importProjectFromFile(file);
+  const project = await projectStore.importProject(file);
   if (project) {
     toast.add({
       severity: "success",
       summary: "Project Imported",
-      detail: `Imported "${project.metadata.name}"`,
+      detail: `Imported "${project.name}"`,
       life: 2000,
     });
   } else {

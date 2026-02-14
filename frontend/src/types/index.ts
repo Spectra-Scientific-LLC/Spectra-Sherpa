@@ -56,6 +56,11 @@ export interface PreprocessResponse {
   metadata?: Record<string, unknown> | null;
 }
 
+export interface SpectrumPreview {
+  label: string;
+  absorbance: number[];
+}
+
 export interface FileInfoResponse {
   status: string;
   num_spectra: number;
@@ -66,6 +71,8 @@ export interface FileInfoResponse {
   absorbance_max: number | null;
   labels: string[];
   source: string;
+  preview_wavenumber: number[] | null;
+  preview_spectra: SpectrumPreview[] | null;
 }
 
 export interface PreprocessSettings {
@@ -262,4 +269,182 @@ export interface NodeExecutionState {
 export interface ValidationError {
   param_name: string;
   message: string;
+}
+
+// ── Execution Runs (Experiments page) ───────────────────────────
+
+export interface ExecutionRunSummary {
+  id: number;
+  workflow_id: number;
+  workflow_version_id: number | null;
+  name: string;
+  status: string;
+  results_summary: Record<string, Record<string, unknown>>;
+  integrity_hash: string | null;
+  executed_at: string;
+  created_at: string;
+  error: string | null;
+  notes: string | null;
+  labels: string[] | null;
+  source_type: string | null;
+  source_metadata: Record<string, unknown> | null;
+}
+
+export interface ExecutionRunDetail extends ExecutionRunSummary {
+  user_id: number;
+  params_snapshot: Record<string, Record<string, unknown>>;
+  diagnostics: Record<string, Record<string, unknown>> | null;
+  node_statuses: Record<string, string> | null;
+}
+
+export interface ComparisonResult {
+  runs: ExecutionRunDetail[];
+  metric_keys: string[];
+  diff: Record<string, Record<string, unknown>>;
+}
+
+// ── Deploy (Batch Predictions + Folder Watches) ──────────────────
+
+export interface BatchPredictionResult {
+  id: number;
+  run_id: number;
+  file_name: string;
+  file_path: string;
+  status: string;
+  results: Record<string, unknown> | null;
+  error_message: string | null;
+  processing_time_ms: number | null;
+  created_at: string;
+}
+
+export interface FolderWatch {
+  id: number;
+  user_id: number;
+  workflow_id: number;
+  name: string;
+  folder_path: string;
+  file_pattern: string;
+  poll_interval_sec: number;
+  is_enabled: boolean;
+  processed_files: Record<string, string> | null;
+  last_poll_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface BatchPredictRequest {
+  folder_path: string;
+  file_pattern?: string;
+  run_name?: string;
+}
+
+export interface BatchPredictResponse {
+  job_id: number;
+  run_id: number;
+  message: string;
+}
+
+// ── Projects ────────────────────────────────────────────────────────
+
+export interface ProjectSummary {
+  id: number;
+  name: string;
+  description: string | null;
+  parent_id: number | null;
+  technique: string | null;
+  sample_type: string | null;
+  experiment_count: number;
+  workflow_count: number;
+  script_count: number;
+  children_count: number;
+  version_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExperimentBrief {
+  id: number;
+  name: string;
+  description: string | null;
+  file_count: number;
+}
+
+export interface WorkflowBrief {
+  id: number;
+  name: string;
+  description: string | null;
+  status: string;
+  integrity_hash: string | null;
+}
+
+export interface ScriptBrief {
+  id: number;
+  name: string;
+  description: string | null;
+  language: string;
+  priority: number;
+  source_workflow_id: number | null;
+  code_length: number;
+}
+
+export interface ProjectScriptSummary {
+  id: number;
+  project_id: number;
+  name: string;
+  description: string | null;
+  language: string;
+  priority: number;
+  source_workflow_id: number | null;
+  code_length: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectScriptDetail extends ProjectScriptSummary {
+  code: string;
+}
+
+export interface ProjectDetail extends ProjectSummary {
+  metadata: Record<string, unknown>;
+  experiments: ExperimentBrief[];
+  workflows: WorkflowBrief[];
+  scripts: ScriptBrief[];
+  children: ProjectSummary[];
+}
+
+export interface ProjectCreate {
+  name: string;
+  description?: string | null;
+  parent_id?: number | null;
+  metadata?: Record<string, unknown>;
+  technique?: string | null;
+  sample_type?: string | null;
+}
+
+export interface ProjectUpdate {
+  name?: string | null;
+  description?: string | null;
+  parent_id?: number | null;
+  metadata?: Record<string, unknown>;
+  technique?: string | null;
+  sample_type?: string | null;
+}
+
+export interface ProjectVersionSummary {
+  id: number;
+  version_number: number;
+  change_description: string | null;
+  include_raw_data: boolean;
+  created_at: string;
+  created_by: number;
+}
+
+export interface ProjectVersionDetail extends ProjectVersionSummary {
+  snapshot: Record<string, unknown>;
+}
+
+export interface SaveProjectRequest {
+  change_description?: string | null;
+  include_raw_data?: boolean;
 }

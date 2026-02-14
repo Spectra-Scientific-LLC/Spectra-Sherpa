@@ -9,7 +9,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import Plotly from "plotly.js-dist-min";
 
 type PlotlyData = Record<string, unknown>;
@@ -79,6 +79,15 @@ const render = () => {
 
 onMounted(() => {
   render();
+  // Plotly computes width at render time; container may not be laid out yet.
+  // Resize after the browser paints so the chart fills the full width.
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      if (chartEl.value) {
+        Plotly.Plots.resize(chartEl.value);
+      }
+    });
+  });
 });
 
 watch(

@@ -371,6 +371,7 @@ function removeSpecies(index: number) {
 // Curve preview
 const curvePreviewData = ref<any[]>([]);
 const curvePreviewLayout = {
+  autosize: true,
   template: "plotly_dark",
   paper_bgcolor: "#0f172a",
   plot_bgcolor: "#0f172a",

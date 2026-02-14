@@ -115,7 +115,8 @@ def load_dataset_parquet(path: Path) -> "NDDataset":
     NDDataset
         Loaded dataset with coordinates and metadata
     """
-    from app.lib.scp_compat import scp
+    from app.lib.scp_compat import scp, require_scp
+    require_scp("Dataset deserialization")
 
     path = Path(path)
 

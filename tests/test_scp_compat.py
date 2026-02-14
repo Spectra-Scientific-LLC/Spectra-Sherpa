@@ -35,6 +35,12 @@ class TestScpCompatExports:
         assert hasattr(scp_compat, "NDDataset")
         assert hasattr(scp_compat, "Coord")
         assert hasattr(scp_compat, "HAS_SCP")
+        assert hasattr(scp_compat, "require_scp")
+
+    @pytest.mark.skipif(not HAS_SCP, reason="spectrochempy not installed")
+    def test_require_scp_passes_when_available(self):
+        from app.lib.scp_compat import require_scp
+        require_scp("test")  # Should not raise
 
     @pytest.mark.skipif(not HAS_SCP, reason="spectrochempy not installed")
     def test_scp_is_module_when_available(self):
@@ -46,6 +52,26 @@ class TestScpCompatExports:
     def test_nddataset_is_class_when_available(self):
         from app.lib.scp_compat import NDDataset
         assert isinstance(NDDataset, type)
+
+    def test_nddataset_is_always_a_type(self):
+        """NDDataset must always be a type (real or stub) so isinstance() never crashes."""
+        from app.lib.scp_compat import NDDataset, Coord
+        assert isinstance(NDDataset, type)
+        assert isinstance(Coord, type)
+
+    def test_isinstance_safe_without_scp(self):
+        """isinstance(x, NDDataset) must never raise TypeError, even without SCP."""
+        from app.lib.scp_compat import NDDataset, Coord
+        # These must evaluate to False for arbitrary objects, never raise
+        assert not isinstance("hello", NDDataset)
+        assert not isinstance(42, NDDataset)
+        assert not isinstance({}, Coord)
+
+    def test_require_scp_raises_when_absent(self, monkeypatch):
+        import app.lib.scp_compat as scp_mod
+        monkeypatch.setattr(scp_mod, "HAS_SCP", False)
+        with pytest.raises(ImportError, match="requires SpectroChemPy"):
+            scp_mod.require_scp("Test feature")
 
 
 class TestNoDirectScpImports:

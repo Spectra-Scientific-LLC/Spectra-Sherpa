@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 import numpy as np
 from app.lib.scp_compat import NDDataset
+from app.lib.analysis_dataset import AnalysisDataset
 
 from ..node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
 from app.services.dag.meta_helpers import safe_get_coord
@@ -81,8 +82,8 @@ class PlotNode(Node):
         x_axis = self.parameters.get("x_axis", 0)
         y_axis = self.parameters.get("y_axis", 1)
 
-        # Handle NDDataset input
-        if isinstance(input_data, NDDataset):
+        # Handle NDDataset / AnalysisDataset input
+        if isinstance(input_data, (NDDataset, AnalysisDataset)):
             return self._plot_spectra(input_data)
 
         # Handle dict input (e.g., from PCA node)
@@ -169,8 +170,8 @@ class PlotNode(Node):
         if scores is None:
             return {"plot_type": "scores", "data": [], "layout": {}}
 
-        # Convert to numpy if NDDataset
-        if isinstance(scores, NDDataset):
+        # Convert to numpy if NDDataset/AnalysisDataset
+        if isinstance(scores, (NDDataset, AnalysisDataset)):
             scores_array = np.array(scores.data)
         else:
             scores_array = np.array(scores)
@@ -276,7 +277,7 @@ class ExportNode(Node):
         # For now, just return metadata about what would be exported
         # Actual file writing would happen here in production
 
-        if isinstance(input_data, NDDataset):
+        if isinstance(input_data, (NDDataset, AnalysisDataset)):
             shape = input_data.shape
             n_points = np.prod(shape)
         elif isinstance(input_data, dict):
@@ -374,7 +375,7 @@ class StatsSummaryNode(Node):
             elif "data" in input_data:
                 return await self._stats_array(input_data["data"], input_data.get("metadata"))
 
-        if isinstance(input_data, NDDataset):
+        if isinstance(input_data, (NDDataset, AnalysisDataset)):
             return await self._stats_nddataset(input_data)
 
         # Fallback to array statistics
@@ -733,8 +734,8 @@ class ContourPlotNode(Node):
         reverse_x = self.parameters.get("reverse_x", True)
         transpose = self.parameters.get("transpose", False)
 
-        # Handle NDDataset input
-        if isinstance(input_data, NDDataset):
+        # Handle NDDataset / AnalysisDataset input
+        if isinstance(input_data, (NDDataset, AnalysisDataset)):
             return self._create_contour(input_data, colorscale, plot_type, reverse_x, transpose)
 
         # Handle dict with data field
@@ -963,7 +964,7 @@ class DataTableNode(Node):
         show_index = self.parameters.get("show_index", True)
 
         # Convert input to table format
-        if isinstance(input_data, NDDataset):
+        if isinstance(input_data, (NDDataset, AnalysisDataset)):
             table_data = self._table_from_dataset(input_data, max_rows, transpose, show_index)
         elif isinstance(input_data, dict):
             table_data = self._table_from_dict(input_data, max_rows, transpose, show_index)

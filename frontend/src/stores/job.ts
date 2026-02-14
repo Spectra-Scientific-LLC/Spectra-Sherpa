@@ -120,6 +120,10 @@ export const useJobStore = defineStore("job", () => {
               progress_message: payload.message,
             });
           }
+          // Dispatch DOM event so BatchRunTab and other listeners can react
+          window.dispatchEvent(
+            new CustomEvent("job-update", { detail: payload })
+          );
         }
       } catch {
         // Ignore malformed payloads

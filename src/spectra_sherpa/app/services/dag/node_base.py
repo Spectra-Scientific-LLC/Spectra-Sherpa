@@ -8,10 +8,13 @@ Nodes can be connected to form directed acyclic graphs (DAGs).
 from __future__ import annotations
 
 import asyncio
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Type
 from dataclasses import dataclass, field
 from enum import Enum
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -109,6 +112,8 @@ class NodeMetadata:
     output_ports: Optional[List[PortMetadata]] = None
     # Diagnostic keys this node emits during execution
     diagnostics: List[str] = field(default_factory=list)
+    # Per-node SCP gate: True = requires SpectroChemPy at runtime
+    requires_scp: bool = False
 
 
 def _format_value(value: Any) -> str:
@@ -253,7 +258,8 @@ class Node(ABC):
         return type(self).generate_python is not Node.generate_python
 
     def generate_python(
-        self, inputs: Dict[str, str], indent: str = "    "
+        self, inputs: Dict[str, str], indent: str = "    ",
+        use_scp: bool = True,
     ) -> List[str]:
         """
         Generate Python code lines for this node.
@@ -270,6 +276,8 @@ class Node(ABC):
             inputs: Mapping of input name -> Python expression
                 (e.g. ``{"input": "results['node_1']"}``)
             indent: Whitespace prefix for each line
+            use_scp: If True, emit SpectroChemPy code; if False, emit
+                numpy/scipy code for standalone scripts.
 
         Returns:
             List of Python code lines (already indented)
@@ -279,6 +287,15 @@ class Node(ABC):
                 f"{indent}# TODO: {self.metadata.node_type} does not support Python export yet",
                 f"{indent}raise NotImplementedError("
                 f"'{self.metadata.node_type} export not implemented')",
+            ]
+
+        # SCP-only nodes can't generate no-SCP code
+        if not use_scp and self.metadata and self.metadata.requires_scp:
+            return [
+                f"{indent}# --- {self.metadata.label} ({self.node_id}) ---",
+                f"{indent}# This node requires SpectroChemPy (pip install spectra-sherpa[scp])",
+                f"{indent}raise ImportError("
+                f"'{self.metadata.label} requires spectrochempy')",
             ]
 
         lines: List[str] = []
@@ -316,6 +333,14 @@ class Node(ABC):
         """
         try:
             self.status = NodeStatus.RUNNING
+            # Per-node SCP gate (replaces former blanket _SCP_CATEGORIES check)
+            if self.metadata and self.metadata.requires_scp:
+                from app.lib.scp_compat import HAS_SCP
+                if not HAS_SCP:
+                    raise ImportError(
+                        f"{self.metadata.label} requires SpectroChemPy. "
+                        f"Install with: pip install spectra-sherpa[scp]"
+                    )
             self.validate_parameters()
             if kwargs:
                 # Single "default" port → pass as first positional arg
@@ -357,16 +382,53 @@ class NodeRegistry:
 
     def __init__(self):
         self._nodes: Dict[str, Type[Node]] = {}
+        self._builtin_types: set[str] = set()
+        self._frozen: bool = False
+
+    def freeze_builtins(self) -> None:
+        """Mark all currently registered nodes as built-in.
+
+        Call this once after all built-in nodes have been imported.
+        After freezing, plugins cannot overwrite built-in node types.
+        """
+        self._builtin_types = set(self._nodes.keys())
+        self._frozen = True
+        logger.info(
+            "Node registry frozen: %d built-in types", len(self._builtin_types)
+        )
 
     def register(self, node_class: Type[Node]) -> None:
         """
         Register a node type.
 
+        After ``freeze_builtins()`` is called, attempting to overwrite a
+        built-in node type raises ``ValueError``.  Plugin-to-plugin
+        overwrites emit a warning but are allowed.
+
         Args:
             node_class: Node class to register
+
+        Raises:
+            ValueError: If trying to overwrite a built-in node type
         """
         metadata = node_class.get_metadata()
-        self._nodes[metadata.node_type] = node_class
+        node_type = metadata.node_type
+
+        if node_type in self._nodes:
+            if self._frozen and node_type in self._builtin_types:
+                raise ValueError(
+                    f"Cannot overwrite built-in node type {node_type!r}. "
+                    f"Plugins must use a unique namespaced type "
+                    f"(e.g. 'vendor.my_operation')."
+                )
+            logger.warning(
+                "Node type %r re-registered (overwriting %s with %s)",
+                node_type,
+                self._nodes[node_type].__name__,
+                node_class.__name__,
+            )
+
+        self._nodes[node_type] = node_class
 
     def create_node(
         self, node_type: str, node_id: str, parameters: Optional[Dict[str, Any]] = None

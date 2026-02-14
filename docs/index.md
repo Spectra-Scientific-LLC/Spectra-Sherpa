@@ -11,7 +11,7 @@ spectra-sherpa
 
 Your browser opens to `http://localhost:8000`. No login required — start analyzing immediately.
 
-See the [Quickstart Guide](getting_started/quickstart.md) for a 2-minute walkthrough.
+See the [Quickstart Guide](user_guide/quickstart.md) for a 2-minute walkthrough.
 
 ## Key Features
 
@@ -31,13 +31,13 @@ SpectraSherpa runs in three modes to fit different use cases:
 | **Hybrid** | Local app with cloud identity linking and GPU offload |
 | **Demo** | Cloud-hosted multi-user server with JWT auth and rate limiting |
 
-See [Modes & Configuration](getting_started/modes.md) for details.
+See [Configuration](user_guide/configuration.md) for details.
 
 ## Documentation
 
-*   [**Installation**](getting_started/installation.md): Install and launch SpectraSherpa.
-*   [**Quickstart**](getting_started/quickstart.md): Load data and run your first workflow.
-*   [**Modes & Configuration**](getting_started/modes.md): Configure local, hybrid, or demo mode.
+*   [**Installation**](user_guide/installation.md): Install and launch SpectraSherpa.
+*   [**Quickstart**](user_guide/quickstart.md): Load data and run your first workflow.
+*   [**Configuration**](user_guide/configuration.md): Configure local, hybrid, or demo mode.
 *   [**User Guide**](user_guide/experiments.md): Detailed instructions for all modules.
 *   [**Node Reference**](reference/nodes.md): Complete catalog of available analysis nodes.
 *   [**Deployment**](deployment/DIGITAL_OCEAN.md): Deploy to DigitalOcean with Docker.

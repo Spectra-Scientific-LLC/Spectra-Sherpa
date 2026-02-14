@@ -13,12 +13,14 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.project import Project
     from app.models.user import User
     from app.models.workflow_node import WorkflowNode
     from app.models.workflow_edge import WorkflowEdge
     from app.models.workflow_version import WorkflowVersion
     from app.models.workflow_tag import WorkflowTag
     from app.models.workflow_folder import WorkflowFolder
+    from app.models.execution_run import ExecutionRun
 
 
 class Workflow(Base):
@@ -55,8 +57,20 @@ class Workflow(Base):
     last_executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     integrity_hash: Mapped[str | None] = mapped_column(String(64), index=True)
 
+    # Spectral context (Sherpa hook — provides technique/sample context for AI guidance)
+    technique: Mapped[str | None] = mapped_column(
+        String(50)
+    )  # e.g. "FTIR", "Raman", "NMR", "UV-Vis", "NIR"
+    sample_type: Mapped[str | None] = mapped_column(
+        String(100)
+    )  # e.g. "polymer blend", "pharmaceutical tablet", "wine"
+    project_id: Mapped[int | None] = mapped_column(
+        ForeignKey("project.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+
     # Relationships
     user = relationship("User", back_populates="workflows")
+    project = relationship("Project", back_populates="workflows")
     nodes = relationship(
         "WorkflowNode", back_populates="workflow", cascade="all, delete-orphan"
     )
@@ -70,6 +84,12 @@ class Workflow(Base):
         order_by="WorkflowVersion.version_number.desc()",
     )
     folder = relationship("WorkflowFolder", back_populates="workflows")
+    runs = relationship(
+        "ExecutionRun",
+        back_populates="workflow",
+        cascade="all, delete-orphan",
+        order_by="ExecutionRun.created_at.desc()",
+    )
     tags = relationship(
         "WorkflowTag",
         secondary="workflow_tag_association",

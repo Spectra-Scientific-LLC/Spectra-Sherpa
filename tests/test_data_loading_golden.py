@@ -11,7 +11,7 @@ import pytest
 from pathlib import Path
 import spectrochempy as scp
 
-from app.services.dag.nodes.data import DataNode
+from app.services.dag.nodes.data import DataSourceNode
 
 
 # Reference file metadata (expected properties)
@@ -94,7 +94,7 @@ class TestGoldenDataLoading:
         if full_path is None:
             pytest.skip(f"Reference file not found: {file_path}")
 
-        node = DataNode()
+        node = DataSourceNode("test_golden")
         dataset = node._load_spectrochempy_custom_file(file_path)
 
         # Verify dataset loaded
@@ -126,7 +126,7 @@ class TestGoldenDataLoading:
         if full_path is None:
             pytest.skip(f"Test file not found: {test_file}")
 
-        node = DataNode()
+        node = DataSourceNode("test_golden")
 
         # Path 1: Custom loader
         ds1 = node._load_spectrochempy_custom_file(test_file)
@@ -150,7 +150,7 @@ class TestGoldenDataLoading:
         if full_path is None:
             pytest.skip(f"Test file not found: {test_file}")
 
-        node = DataNode()
+        node = DataSourceNode("test_golden")
 
         # Path 1: Custom loader
         ds1 = node._load_spectrochempy_custom_file(test_file)
@@ -189,7 +189,7 @@ class TestGoldenDataLoading:
         if full_path is None:
             pytest.skip(f"Test file not found: {test_file}")
 
-        node = DataNode()
+        node = DataSourceNode("test_golden")
         dataset = node._load_from_file(str(full_path))
 
         # Verify dataset loaded
@@ -226,7 +226,7 @@ class TestGoldenDataLoading:
             # Should have issued a warning
             assert len(w) == 1
             assert "no explicit reader" in str(w[0].message).lower()
-            assert "fallback" in str(w[0].message).lower()
+            assert "falling back" in str(w[0].message).lower()
 
 
 class TestAPIFileDiscovery:

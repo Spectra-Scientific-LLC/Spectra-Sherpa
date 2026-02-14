@@ -23,6 +23,7 @@ from app.services.dag.serialize import serialize_for_api
 logger = logging.getLogger(__name__)
 
 from app.lib.scp_compat import NDDataset, HAS_SCP
+from app.lib.analysis_dataset import AnalysisDataset
 HAS_NDDATASET = HAS_SCP
 
 
@@ -62,7 +63,11 @@ def serialize_result(obj: Any) -> Any:
     6. numpy scalars → Python native
     7. Everything else → pass through
     """
-    # 1. NDDataset — primary path for all spectral data
+    # 1a. AnalysisDataset — primary path for no-SCP spectral data
+    if isinstance(obj, AnalysisDataset):
+        return serialize_for_api(obj, sanitize_paths=settings.sanitize_paths)
+
+    # 1b. NDDataset — primary path for SCP spectral data
     if HAS_NDDATASET and isinstance(obj, NDDataset):
         return serialize_for_api(obj, sanitize_paths=settings.sanitize_paths)
 
@@ -83,11 +88,11 @@ def serialize_result(obj: Any) -> Any:
         for k, v in obj.items():
             if k == "_internal":
                 continue
-            # NDDataset MUST be serialized via serialize_for_api, never as a model placeholder.
-            # Check NDDataset before _is_model_object because NDDataset is a spectrochempy
+            # Dataset MUST be serialized via serialize_for_api, never as a model placeholder.
+            # Check dataset types before _is_model_object because NDDataset is a spectrochempy
             # object that may have .transform/.fit attributes, which would incorrectly
             # trigger the model placeholder path.
-            if HAS_NDDATASET and isinstance(v, NDDataset):
+            if isinstance(v, AnalysisDataset) or (HAS_NDDATASET and isinstance(v, NDDataset)):
                 result_dict[k] = serialize_for_api(v, sanitize_paths=settings.sanitize_paths)
                 continue
             # Model objects in dicts get placeholder treatment
@@ -98,7 +103,7 @@ def serialize_result(obj: Any) -> Any:
             if k == 'models' and isinstance(v, dict):
                 serialized_models = {}
                 for model_key, model_val in v.items():
-                    if HAS_NDDATASET and isinstance(model_val, NDDataset):
+                    if isinstance(model_val, AnalysisDataset) or (HAS_NDDATASET and isinstance(model_val, NDDataset)):
                         serialized_models[model_key] = serialize_for_api(model_val, sanitize_paths=settings.sanitize_paths)
                     elif _is_model_object(model_val):
                         serialized_models[model_key] = {"__model_placeholder__": type(model_val).__name__}
@@ -267,6 +272,8 @@ async def list_workflows(
                 "updated_at": workflow.updated_at,
                 "last_executed_at": workflow.last_executed_at,
                 "integrity_hash": workflow.integrity_hash,
+                "technique": workflow.technique,
+                "sample_type": workflow.sample_type,
                 "node_count": node_count or 0,
                 "edge_count": edge_count or 0,
                 "tags": workflow.tags,
@@ -383,6 +390,8 @@ async def create_workflow(
         description=payload.description,
         status=payload.status,
         canvas_state=payload.canvas_state,
+        technique=payload.technique,
+        sample_type=payload.sample_type,
     )
     session.add(workflow)
     await session.flush()  # Get workflow ID
@@ -455,7 +464,17 @@ async def list_spectrochempy_examples(
     to lists of available files with their labels, paths, and metadata.
     """
     from pathlib import Path
-    from app.lib.scp_compat import scp
+    from app.lib.scp_compat import scp, HAS_SCP
+
+    if not HAS_SCP:
+        raise HTTPException(
+            status_code=501,
+            detail=(
+                "SpectroChemPy is not installed. "
+                "Example datasets are unavailable. "
+                "Install with: pip install spectra-sherpa[scp]"
+            ),
+        )
 
     try:
         # Scan multiple data directories
@@ -634,6 +653,10 @@ async def update_workflow(
         workflow.notes = payload.notes
     if payload.folder_id is not None:
         workflow.folder_id = payload.folder_id
+    if payload.technique is not None:
+        workflow.technique = payload.technique
+    if payload.sample_type is not None:
+        workflow.sample_type = payload.sample_type
 
     # Update tags if provided
     if payload.tag_ids is not None:
@@ -746,6 +769,8 @@ async def update_workflow(
         "canvas_state": workflow_with_relationships.canvas_state,
         "notes": workflow_with_relationships.notes,
         "integrity_hash": workflow_with_relationships.integrity_hash,
+        "technique": workflow_with_relationships.technique,
+        "sample_type": workflow_with_relationships.sample_type,
         "nodes": [
             {
                 "node_id": n.node_id,
@@ -929,6 +954,12 @@ async def restore_workflow_version(
         workflow.status = snapshot["status"]
     if "canvas_state" in snapshot:
         workflow.canvas_state = snapshot["canvas_state"]
+    if "notes" in snapshot:
+        workflow.notes = snapshot["notes"]
+    if "technique" in snapshot:
+        workflow.technique = snapshot["technique"]
+    if "sample_type" in snapshot:
+        workflow.sample_type = snapshot["sample_type"]
 
     # Delete existing nodes and edges
     await session.execute(
@@ -1315,4 +1346,53 @@ async def export_workflow_to_python(
         logger.exception("Unexpected error exporting workflow %s", workflow_id)
         raise HTTPException(
             status_code=500, detail="Failed to export workflow. Check server logs."
+        )
+
+
+@router.get("/{workflow_id}/export/notebook")
+async def export_workflow_to_notebook(
+    workflow_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Export a workflow as a Jupyter notebook (.ipynb) for the authenticated user."""
+    if not await check_export_allowed(current_user):
+        raise HTTPException(status_code=403, detail="Export not permitted for this user")
+
+    user_id = current_user.id
+
+    query = (
+        select(Workflow)
+        .where(Workflow.id == workflow_id)
+        .where(Workflow.user_id == user_id)
+        .options(
+            selectinload(Workflow.nodes),
+            selectinload(Workflow.edges),
+            selectinload(Workflow.tags),
+            selectinload(Workflow.folder),
+        )
+    )
+    result = await session.execute(query)
+    workflow = result.scalar_one_or_none()
+
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    try:
+        from app.services.notebook_export import generate_notebook
+
+        notebook = generate_notebook(workflow)
+        safe_name = workflow.name.lower().replace(" ", "_")
+        return {
+            "workflow_id": workflow_id,
+            "workflow_name": workflow.name,
+            "notebook": notebook,
+            "filename": f"{safe_name}_workflow.ipynb",
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.exception("Unexpected error exporting notebook for workflow %s", workflow_id)
+        raise HTTPException(
+            status_code=500, detail="Failed to export notebook. Check server logs."
         )

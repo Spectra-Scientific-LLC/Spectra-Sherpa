@@ -130,6 +130,32 @@
           </div>
         </div>
       </div>
+
+      <!-- Dynamic sections for plugin/custom categories not in the built-in list -->
+      <div
+        v-for="extra in extraCategories"
+        :key="extra.key"
+        class="section"
+        @mouseenter="!clickCooldown && (activeSection = extra.key)"
+      >
+        <div class="section-header" :class="{ active: activeSection === extra.key }">
+          <span>{{ extra.label }}</span>
+          <i class="pi pi-chevron-right" :class="{ rotated: activeSection === extra.key }"></i>
+        </div>
+        <div class="section-nodes" :class="{ expanded: activeSection === extra.key }">
+          <div
+            v-for="(config, type) in extra.nodes"
+            :key="type"
+            class="node-button"
+            :class="config.colorClass"
+            @click="addNode(type)"
+          >
+            <span class="node-icon">{{ config.icon }}</span>
+            <span class="node-label">{{ config.label }}</span>
+            <i class="pi pi-plus add-icon"></i>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="toolbar-help">
@@ -264,7 +290,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 // Convert backend metadata to NodeConfig
 const metadataToConfig = (metadata: NodeTypeMetadata): NodeConfig => {
-  const baseColor = CATEGORY_COLOR[metadata.category] || 'node-data';
+  const baseColor = CATEGORY_COLOR[metadata.category] || 'node-plugin';
   const colorClass = metadata.node_type === 'output.export' ? 'node-export' : baseColor;
   return {
     label: metadata.label,
@@ -274,25 +300,44 @@ const metadataToConfig = (metadata: NodeTypeMetadata): NodeConfig => {
   };
 };
 
+// Built-in category keys handled by dedicated template sections
+const BUILTIN_CATEGORIES = new Set(Object.keys(CATEGORY_LABELS));
+
 // Dynamically group nodes by category from backend
 const nodesByCategory = computed(() => {
   const groups: Record<string, Record<string, NodeConfig>> = {};
 
-  // Initialize all categories
-  for (const category of Object.keys(CATEGORY_LABELS)) {
+  // Initialize built-in categories
+  for (const category of BUILTIN_CATEGORIES) {
     groups[category] = {};
   }
 
-  // Populate from node library
+  // Populate from node library — accept ALL categories, not just built-in
   workflowStore.nodeLibrary.forEach((metadata, nodeType) => {
     const category = metadata.category;
-    if (groups[category]) {
-      const normalizedType = workflowStore.normalizeNodeType(nodeType);
-      groups[category][normalizedType] = metadataToConfig(metadata);
+    if (!groups[category]) {
+      groups[category] = {};
     }
+    const normalizedType = workflowStore.normalizeNodeType(nodeType);
+    groups[category][normalizedType] = metadataToConfig(metadata);
   });
 
   return groups;
+});
+
+// Extra categories from backend that aren't covered by the built-in template sections
+const extraCategories = computed(() => {
+  const extras: Array<{ key: string; label: string; nodes: Record<string, NodeConfig> }> = [];
+  for (const [category, nodes] of Object.entries(nodesByCategory.value)) {
+    if (!BUILTIN_CATEGORIES.has(category) && Object.keys(nodes).length > 0) {
+      // Generate display label: "custom" -> "Custom", "spectral_analysis" -> "Spectral Analysis"
+      const label = category
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+      extras.push({ key: category, label, nodes });
+    }
+  }
+  return extras;
 });
 
 // Fallback to hardcoded nodes if backend library hasn't loaded yet
@@ -574,6 +619,10 @@ const addNode = (nodeType: string) => {
 
 .node-export {
   background: linear-gradient(135deg, #64748b, #475569);
+}
+
+.node-plugin {
+  background: linear-gradient(135deg, #ec4899, #be185d);
 }
 
 .toolbar-help {

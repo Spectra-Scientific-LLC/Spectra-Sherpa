@@ -1,43 +1,21 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
-
-export interface ProjectMetadata {
-  name: string;
-  description: string;
-  author: string;
-  created: string;
-  modified: string;
-  version: string;
-  tags: string[];
-}
-
-export interface ProjectData {
-  experiments: number[];
-  workflows: string[];
-  calibrations: number[];
-  settings: Record<string, any>;
-}
-
-export interface Project {
-  id: string;
-  metadata: ProjectMetadata;
-  data: ProjectData;
-}
-
-export interface ProjectExport {
-  format: "spectrapy-project";
-  version: "1.0";
-  project: Project;
-  exportedAt: string;
-}
-
-// Generate unique ID
-const generateId = () => {
-  return `proj_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-};
+import api from "@/api/client";
+import { getErrorMessage } from "@/utils/errors";
+import type {
+  ProjectSummary,
+  ProjectDetail,
+  ProjectCreate,
+  ProjectUpdate,
+  ProjectVersionSummary,
+  ProjectScriptSummary,
+  ProjectScriptDetail,
+  SaveProjectRequest,
+} from "@/types";
 
 // Format date for display
-const formatDate = (date: Date): string => {
+const formatDate = (iso: string): string => {
+  const date = new Date(iso);
   const now = new Date();
   const diff = now.getTime() - date.getTime();
   const days = Math.floor(diff / (1000 * 60 * 60 * 24));
@@ -55,431 +33,391 @@ const formatDate = (date: Date): string => {
 
 export const useProjectStore = defineStore("project", () => {
   // State
-  const projects = ref<Project[]>([]);
-  const currentProjectId = ref<string | null>(null);
+  const projects = ref<ProjectSummary[]>([]);
+  const currentProjectId = ref<number | null>(null);
+  const currentProject = ref<ProjectDetail | null>(null);
+  const versions = ref<ProjectVersionSummary[]>([]);
   const isLoading = ref(false);
   const error = ref<string | null>(null);
 
-  // Initialize with SpectrochemPy-based sample projects
-  const initializeDefaultProjects = () => {
-    const now = new Date();
-    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
-    const lastWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
-
-    projects.value = [
-      // === Active Research Projects ===
-      {
-        id: generateId(),
-        metadata: {
-          name: "FTIR Calibration Study",
-          description: "Wavenumber-specific absorption calibration for ethanol-water mixtures using PLS regression",
-          author: "Lab User",
-          created: lastWeek.toISOString(),
-          modified: now.toISOString(),
-          version: "1.0",
-          tags: ["FTIR", "calibration", "PLS", "ethanol"],
-        },
-        data: {
-          experiments: [1, 2],
-          workflows: ["project1", "pls_regression"],
-          calibrations: [],
-          settings: { defaultPreprocessing: "asls", baselineMethod: "asls" },
-        },
-      },
-      {
-        id: generateId(),
-        metadata: {
-          name: "MCR-ALS Kinetics Study",
-          description: "Time-resolved MCR-ALS analysis with kinetic constraints for reaction mechanism elucidation",
-          author: "Lab User",
-          created: twoDaysAgo.toISOString(),
-          modified: yesterday.toISOString(),
-          version: "1.0",
-          tags: ["MCR-ALS", "kinetics", "time-resolved", "reaction"],
-        },
-        data: {
-          experiments: [3, 4],
-          workflows: ["project2", "efa_analysis"],
-          calibrations: [],
-          settings: { mcrComponents: 3, constraints: ["non_neg", "closure"] },
-        },
-      },
-
-      // === SpectrochemPy Example Projects ===
-      {
-        id: generateId(),
-        metadata: {
-          name: "IR OPUS Analysis Demo",
-          description: "Demonstration of Bruker OPUS file import and IR spectral analysis workflow",
-          author: "Lab User",
-          created: lastWeek.toISOString(),
-          modified: twoDaysAgo.toISOString(),
-          version: "1.0",
-          tags: ["IR", "OPUS", "Bruker", "demo"],
-        },
-        data: {
-          experiments: [5],
-          workflows: ["ir_opus_analysis", "preprocessing"],
-          calibrations: [],
-          settings: { wavenumberRange: [4000, 400] },
-        },
-      },
-      {
-        id: generateId(),
-        metadata: {
-          name: "Raman Pharmaceutical Analysis",
-          description: "Raman spectroscopy workflow with cosmic ray removal and fluorescence baseline correction",
-          author: "Lab User",
-          created: yesterday.toISOString(),
-          modified: yesterday.toISOString(),
-          version: "1.0",
-          tags: ["Raman", "pharma", "cosmic ray", "fluorescence"],
-        },
-        data: {
-          experiments: [6],
-          workflows: ["raman_processing", "peaks"],
-          calibrations: [],
-          settings: { cosmicRayThreshold: 5 },
-        },
-      },
-      {
-        id: generateId(),
-        metadata: {
-          name: "NMR Metabolomics Study",
-          description: "NMR processing pipeline for metabolomic profiling with phase correction and peak fitting",
-          author: "Lab User",
-          created: twoWeeksAgo.toISOString(),
-          modified: lastWeek.toISOString(),
-          version: "1.0",
-          tags: ["NMR", "metabolomics", "peak fitting", "1H"],
-        },
-        data: {
-          experiments: [7, 8],
-          workflows: ["nmr_processing"],
-          calibrations: [],
-          settings: { ppmRange: [12, -2], phaseCorrection: "auto" },
-        },
-      },
-      {
-        id: generateId(),
-        metadata: {
-          name: "PCA Exploratory Analysis",
-          description: "Principal Component Analysis for spectral data exploration and outlier detection",
-          author: "Lab User",
-          created: twoWeeksAgo.toISOString(),
-          modified: twoWeeksAgo.toISOString(),
-          version: "1.0",
-          tags: ["PCA", "exploratory", "multivariate", "outliers"],
-        },
-        data: {
-          experiments: [1, 2, 3],
-          workflows: ["pca"],
-          calibrations: [],
-          settings: { pcaComponents: 5 },
-        },
-      },
-      {
-        id: generateId(),
-        metadata: {
-          name: "IRIS Relaxation Analysis",
-          description: "Integral Regularized Inversion of Spectra for T2 relaxation distribution analysis",
-          author: "Lab User",
-          created: lastWeek.toISOString(),
-          modified: lastWeek.toISOString(),
-          version: "1.0",
-          tags: ["IRIS", "relaxation", "T2", "distribution"],
-        },
-        data: {
-          experiments: [9],
-          workflows: ["iris_decomposition"],
-          calibrations: [],
-          settings: { regularization: "tikhonov", alpha: 0.01 },
-        },
-      },
-      {
-        id: generateId(),
-        metadata: {
-          name: "EFA Component Analysis",
-          description: "Evolving Factor Analysis to determine component rank in time-resolved spectroscopy",
-          author: "Lab User",
-          created: twoDaysAgo.toISOString(),
-          modified: twoDaysAgo.toISOString(),
-          version: "1.0",
-          tags: ["EFA", "rank", "evolving", "factor analysis"],
-        },
-        data: {
-          experiments: [10],
-          workflows: ["efa_analysis", "simplisma"],
-          calibrations: [],
-          settings: { efaDirection: "both" },
-        },
-      },
-    ];
-
-    // Set first project as current
-    if (projects.value.length > 0 && !currentProjectId.value) {
-      currentProjectId.value = projects.value[0].id;
-    }
-  };
-
   // Getters
-  const currentProject = computed(() => {
-    if (!currentProjectId.value) return null;
-    return projects.value.find((p) => p.id === currentProjectId.value) || null;
-  });
-
-  const projectList = computed(() => {
-    return projects.value.map((p) => ({
+  const projectList = computed(() =>
+    projects.value.map((p) => ({
       id: p.id,
-      name: p.metadata.name,
-      modified: formatDate(new Date(p.metadata.modified)),
-      description: p.metadata.description,
-      tags: p.metadata.tags,
-    }));
-  });
+      name: p.name,
+      modified: formatDate(p.updated_at),
+      description: p.description,
+      technique: p.technique,
+      sample_type: p.sample_type,
+      experiment_count: p.experiment_count,
+      workflow_count: p.workflow_count,
+      script_count: p.script_count,
+      children_count: p.children_count,
+    }))
+  );
 
-  const recentProjects = computed(() => {
-    return [...projects.value]
+  const recentProjects = computed(() =>
+    [...projects.value]
       .sort(
         (a, b) =>
-          new Date(b.metadata.modified).getTime() -
-          new Date(a.metadata.modified).getTime()
+          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
       )
-      .slice(0, 5);
-  });
+      .slice(0, 5)
+  );
 
-  // Actions
-  function createProject(
-    name: string,
-    description: string = "",
-    tags: string[] = []
-  ): Project {
-    const now = new Date().toISOString();
-    const project: Project = {
-      id: generateId(),
-      metadata: {
-        name,
-        description,
-        author: "Lab User",
-        created: now,
-        modified: now,
-        version: "1.0",
-        tags,
-      },
-      data: {
-        experiments: [],
-        workflows: [],
-        calibrations: [],
-        settings: {},
-      },
-    };
+  // ── CRUD ───────────────────────────────────────────────────────
 
-    projects.value.unshift(project);
-    currentProjectId.value = project.id;
-
-    return project;
-  }
-
-  function updateProject(
-    projectId: string,
-    updates: Partial<ProjectMetadata>
-  ): boolean {
-    const project = projects.value.find((p) => p.id === projectId);
-    if (!project) return false;
-
-    project.metadata = {
-      ...project.metadata,
-      ...updates,
-      modified: new Date().toISOString(),
-    };
-
-    return true;
-  }
-
-  function deleteProject(projectId: string): boolean {
-    const index = projects.value.findIndex((p) => p.id === projectId);
-    if (index === -1) return false;
-
-    projects.value.splice(index, 1);
-
-    // If deleted project was current, select another
-    if (currentProjectId.value === projectId) {
-      currentProjectId.value =
-        projects.value.length > 0 ? projects.value[0].id : null;
-    }
-
-    return true;
-  }
-
-  function selectProject(projectId: string): boolean {
-    const project = projects.value.find((p) => p.id === projectId);
-    if (!project) return false;
-
-    currentProjectId.value = projectId;
-
-    // Update modified time
-    project.metadata.modified = new Date().toISOString();
-
-    return true;
-  }
-
-  function duplicateProject(projectId: string): Project | null {
-    const original = projects.value.find((p) => p.id === projectId);
-    if (!original) return null;
-
-    const now = new Date().toISOString();
-    const duplicate: Project = {
-      id: generateId(),
-      metadata: {
-        ...original.metadata,
-        name: `${original.metadata.name} (Copy)`,
-        created: now,
-        modified: now,
-      },
-      data: { ...original.data },
-    };
-
-    projects.value.unshift(duplicate);
-    return duplicate;
-  }
-
-  // Export/Import
-  function exportProject(projectId: string): ProjectExport | null {
-    const project = projects.value.find((p) => p.id === projectId);
-    if (!project) return null;
-
-    return {
-      format: "spectrapy-project",
-      version: "1.0",
-      project: JSON.parse(JSON.stringify(project)),
-      exportedAt: new Date().toISOString(),
-    };
-  }
-
-  function importProject(data: ProjectExport): Project | null {
-    if (data.format !== "spectrapy-project") {
-      error.value = "Invalid project format";
-      return null;
-    }
-
-    const now = new Date().toISOString();
-    const imported: Project = {
-      ...data.project,
-      id: generateId(),
-      metadata: {
-        ...data.project.metadata,
-        modified: now,
-      },
-    };
-
-    projects.value.unshift(imported);
-    currentProjectId.value = imported.id;
-
-    return imported;
-  }
-
-  function exportProjectToFile(projectId: string): void {
-    const exportData = exportProject(projectId);
-    if (!exportData) return;
-
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${exportData.project.metadata.name
-      .replace(/[^a-z0-9]/gi, "_")
-      .toLowerCase()}.spectrapy`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  async function importProjectFromFile(file: File): Promise<Project | null> {
+  async function fetchProjects(): Promise<void> {
+    isLoading.value = true;
+    error.value = null;
     try {
-      const text = await file.text();
-      const data = JSON.parse(text) as ProjectExport;
-      return importProject(data);
+      const { data } = await api.get<ProjectSummary[]>("/projects");
+      projects.value = data;
     } catch (e) {
-      error.value = "Failed to parse project file";
+      error.value = getErrorMessage(e);
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  async function fetchProject(id: number): Promise<ProjectDetail | null> {
+    isLoading.value = true;
+    error.value = null;
+    try {
+      const { data } = await api.get<ProjectDetail>(`/projects/${id}`);
+      currentProject.value = data;
+      currentProjectId.value = id;
+      return data;
+    } catch (e) {
+      error.value = getErrorMessage(e);
+      return null;
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  async function createProject(payload: ProjectCreate): Promise<ProjectDetail | null> {
+    isLoading.value = true;
+    error.value = null;
+    try {
+      const { data } = await api.post<ProjectDetail>("/projects", payload);
+      currentProject.value = data;
+      currentProjectId.value = data.id;
+      await fetchProjects();
+      return data;
+    } catch (e) {
+      error.value = getErrorMessage(e);
+      return null;
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  async function updateProject(id: number, payload: ProjectUpdate): Promise<ProjectDetail | null> {
+    error.value = null;
+    try {
+      const { data } = await api.put<ProjectDetail>(`/projects/${id}`, payload);
+      currentProject.value = data;
+      await fetchProjects();
+      return data;
+    } catch (e) {
+      error.value = getErrorMessage(e);
       return null;
     }
   }
 
-  // Project data management
-  function addExperimentToProject(experimentId: number): void {
-    if (!currentProject.value) return;
-    if (!currentProject.value.data.experiments.includes(experimentId)) {
-      currentProject.value.data.experiments.push(experimentId);
-      currentProject.value.metadata.modified = new Date().toISOString();
+  async function deleteProject(id: number): Promise<boolean> {
+    error.value = null;
+    try {
+      await api.delete(`/projects/${id}`);
+      if (currentProjectId.value === id) {
+        currentProjectId.value = null;
+        currentProject.value = null;
+      }
+      await fetchProjects();
+      return true;
+    } catch (e) {
+      error.value = getErrorMessage(e);
+      return false;
     }
   }
 
-  function removeExperimentFromProject(experimentId: number): void {
-    if (!currentProject.value) return;
-    const idx = currentProject.value.data.experiments.indexOf(experimentId);
-    if (idx !== -1) {
-      currentProject.value.data.experiments.splice(idx, 1);
-      currentProject.value.metadata.modified = new Date().toISOString();
+  async function selectProject(id: number): Promise<void> {
+    currentProjectId.value = id;
+    await fetchProject(id);
+  }
+
+  // ── Link / Unlink ─────────────────────────────────────────────
+
+  async function linkExperiment(projectId: number, experimentId: number): Promise<void> {
+    error.value = null;
+    try {
+      const { data } = await api.post<ProjectDetail>(
+        `/projects/${projectId}/experiments/${experimentId}`
+      );
+      if (currentProjectId.value === projectId) currentProject.value = data;
+      await fetchProjects();
+    } catch (e) {
+      error.value = getErrorMessage(e);
     }
   }
 
-  function addWorkflowToProject(workflowId: string): void {
-    if (!currentProject.value) return;
-    if (!currentProject.value.data.workflows.includes(workflowId)) {
-      currentProject.value.data.workflows.push(workflowId);
-      currentProject.value.metadata.modified = new Date().toISOString();
+  async function unlinkExperiment(projectId: number, experimentId: number): Promise<void> {
+    error.value = null;
+    try {
+      const { data } = await api.delete<ProjectDetail>(
+        `/projects/${projectId}/experiments/${experimentId}`
+      );
+      if (currentProjectId.value === projectId) currentProject.value = data;
+      await fetchProjects();
+    } catch (e) {
+      error.value = getErrorMessage(e);
     }
   }
 
-  function updateProjectSettings(settings: Record<string, any>): void {
-    if (!currentProject.value) return;
-    currentProject.value.data.settings = {
-      ...currentProject.value.data.settings,
-      ...settings,
-    };
-    currentProject.value.metadata.modified = new Date().toISOString();
+  async function linkWorkflow(projectId: number, workflowId: number): Promise<void> {
+    error.value = null;
+    try {
+      const { data } = await api.post<ProjectDetail>(
+        `/projects/${projectId}/workflows/${workflowId}`
+      );
+      if (currentProjectId.value === projectId) currentProject.value = data;
+      await fetchProjects();
+    } catch (e) {
+      error.value = getErrorMessage(e);
+    }
   }
 
-  // Initialize on first use
-  if (projects.value.length === 0) {
-    initializeDefaultProjects();
+  async function unlinkWorkflow(projectId: number, workflowId: number): Promise<void> {
+    error.value = null;
+    try {
+      const { data } = await api.delete<ProjectDetail>(
+        `/projects/${projectId}/workflows/${workflowId}`
+      );
+      if (currentProjectId.value === projectId) currentProject.value = data;
+      await fetchProjects();
+    } catch (e) {
+      error.value = getErrorMessage(e);
+    }
+  }
+
+  // ── Save All + Versioning ─────────────────────────────────────
+
+  async function saveProject(
+    id: number,
+    payload: SaveProjectRequest
+  ): Promise<ProjectVersionSummary | null> {
+    error.value = null;
+    try {
+      const { data } = await api.post<ProjectVersionSummary>(
+        `/projects/${id}/save`,
+        payload
+      );
+      await fetchVersions(id);
+      await fetchProjects();
+      return data;
+    } catch (e) {
+      error.value = getErrorMessage(e);
+      return null;
+    }
+  }
+
+  async function fetchVersions(id: number): Promise<void> {
+    error.value = null;
+    try {
+      const { data } = await api.get<{ versions: ProjectVersionSummary[]; total: number }>(
+        `/projects/${id}/versions`
+      );
+      versions.value = data.versions;
+    } catch (e) {
+      error.value = getErrorMessage(e);
+    }
+  }
+
+  // ── Scripts ──────────────────────────────────────────────────
+
+  async function fetchScripts(
+    projectId: number
+  ): Promise<ProjectScriptSummary[]> {
+    try {
+      const { data } = await api.get<ProjectScriptSummary[]>(
+        `/projects/${projectId}/scripts`
+      );
+      return data;
+    } catch (e) {
+      error.value = getErrorMessage(e);
+      return [];
+    }
+  }
+
+  async function createScript(
+    projectId: number,
+    payload: { name: string; description?: string; code: string; language?: string; priority?: number }
+  ): Promise<ProjectScriptDetail | null> {
+    error.value = null;
+    try {
+      const { data } = await api.post<ProjectScriptDetail>(
+        `/projects/${projectId}/scripts`,
+        payload
+      );
+      if (currentProjectId.value === projectId) await fetchProject(projectId);
+      return data;
+    } catch (e) {
+      error.value = getErrorMessage(e);
+      return null;
+    }
+  }
+
+  async function generateScript(
+    projectId: number,
+    payload: { workflow_id: number; name: string; description?: string; priority?: number }
+  ): Promise<ProjectScriptDetail | null> {
+    error.value = null;
+    try {
+      const { data } = await api.post<ProjectScriptDetail>(
+        `/projects/${projectId}/scripts/generate`,
+        payload
+      );
+      if (currentProjectId.value === projectId) await fetchProject(projectId);
+      return data;
+    } catch (e) {
+      error.value = getErrorMessage(e);
+      return null;
+    }
+  }
+
+  async function fetchScript(
+    projectId: number,
+    scriptId: number
+  ): Promise<ProjectScriptDetail | null> {
+    try {
+      const { data } = await api.get<ProjectScriptDetail>(
+        `/projects/${projectId}/scripts/${scriptId}`
+      );
+      return data;
+    } catch (e) {
+      error.value = getErrorMessage(e);
+      return null;
+    }
+  }
+
+  async function updateScript(
+    projectId: number,
+    scriptId: number,
+    payload: { name?: string; description?: string; code?: string; priority?: number }
+  ): Promise<ProjectScriptDetail | null> {
+    error.value = null;
+    try {
+      const { data } = await api.put<ProjectScriptDetail>(
+        `/projects/${projectId}/scripts/${scriptId}`,
+        payload
+      );
+      if (currentProjectId.value === projectId) await fetchProject(projectId);
+      return data;
+    } catch (e) {
+      error.value = getErrorMessage(e);
+      return null;
+    }
+  }
+
+  async function deleteScript(
+    projectId: number,
+    scriptId: number
+  ): Promise<boolean> {
+    error.value = null;
+    try {
+      await api.delete(`/projects/${projectId}/scripts/${scriptId}`);
+      if (currentProjectId.value === projectId) await fetchProject(projectId);
+      return true;
+    } catch (e) {
+      error.value = getErrorMessage(e);
+      return false;
+    }
+  }
+
+  // ── Export / Import ───────────────────────────────────────────
+
+  async function exportProject(id: number): Promise<void> {
+    error.value = null;
+    try {
+      const response = await api.get(`/projects/${id}/export`, {
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(response.data);
+      const a = document.createElement("a");
+      a.href = url;
+      // Extract filename from content-disposition or use project name
+      const disposition = response.headers["content-disposition"];
+      const match = disposition?.match(/filename="?(.+)"?/);
+      a.download = match?.[1] || "project.spectrapy";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      error.value = getErrorMessage(e);
+    }
+  }
+
+  async function importProject(file: File): Promise<ProjectDetail | null> {
+    error.value = null;
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const { data } = await api.post<ProjectDetail>(
+        "/projects/import",
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+      currentProject.value = data;
+      currentProjectId.value = data.id;
+      await fetchProjects();
+      return data;
+    } catch (e) {
+      error.value = getErrorMessage(e);
+      return null;
+    }
   }
 
   return {
     // State
     projects,
     currentProjectId,
+    currentProject,
+    versions,
     isLoading,
     error,
 
     // Getters
-    currentProject,
     projectList,
     recentProjects,
 
-    // Actions
+    // CRUD
+    fetchProjects,
+    fetchProject,
     createProject,
     updateProject,
     deleteProject,
     selectProject,
-    duplicateProject,
 
-    // Export/Import
+    // Link / Unlink
+    linkExperiment,
+    unlinkExperiment,
+    linkWorkflow,
+    unlinkWorkflow,
+
+    // Save All + Versioning
+    saveProject,
+    fetchVersions,
+
+    // Scripts
+    fetchScripts,
+    createScript,
+    generateScript,
+    fetchScript,
+    updateScript,
+    deleteScript,
+
+    // Export / Import
     exportProject,
     importProject,
-    exportProjectToFile,
-    importProjectFromFile,
-
-    // Project data
-    addExperimentToProject,
-    removeExperimentFromProject,
-    addWorkflowToProject,
-    updateProjectSettings,
-
-    // Initialize
-    initializeDefaultProjects,
   };
 });

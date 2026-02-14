@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 from app.lib.scp_compat import scp, NDDataset, HAS_SCP
+from app.lib.analysis_dataset import AnalysisDataset, AxisInfo
 
 from ..node_base import Node, NodeMetadata, NodeParameter, register_node
 from app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
@@ -401,7 +402,7 @@ class SystemSaturationNode(Node):
         saturated = apply_system_saturation(data.T, s_system, p_system).T
 
         # Create result
-        result = scp.NDDataset(saturated)
+        result = AnalysisDataset(X=saturated)
 
         x_coord = safe_get_coord(input_data, 'x')
         if x_coord is not None:
@@ -591,7 +592,7 @@ class HybridSelectorNode(Node):
         hybrid_data = np.where(sat_mask, sat_data, linear_data)
 
         # Create result
-        result = scp.NDDataset(hybrid_data)
+        result = AnalysisDataset(X=hybrid_data)
 
         x_coord = safe_get_coord(linear_result, 'x')
         if x_coord is not None:
@@ -872,7 +873,7 @@ class NoiseInjectionNode(Node):
         noisy_data = data + noise
 
         # Create result
-        result = scp.NDDataset(noisy_data)
+        result = AnalysisDataset(X=noisy_data)
 
         x_coord = safe_get_coord(input_data, 'x')
         if x_coord is not None:

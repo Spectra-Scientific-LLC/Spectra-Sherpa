@@ -1,24 +1,22 @@
 <template>
   <section class="workflow-builder-content">
     <div class="section-header">
-      <div>
+      <div class="section-title-row">
         <h1>Workflow Builder</h1>
-        <p class="section-subtitle">
-          Visual graph-based analysis pipeline for spectral data
-          <span
-            v-if="workflowStore.workflowHash"
-            class="integrity-hash-badge"
-            :title="`Integrity Hash: ${workflowStore.workflowHash}`"
-          >
-            <i class="pi pi-lock"></i>
-            {{ workflowStore.workflowHash.slice(0, 12) }}
-          </span>
-        </p>
+        <span
+          v-if="workflowStore.workflowHash"
+          class="integrity-hash-badge"
+          :title="`Integrity Hash: ${workflowStore.workflowHash}`"
+        >
+          <i class="pi pi-lock"></i>
+          {{ workflowStore.workflowHash.slice(0, 12) }}
+        </span>
       </div>
 
       <div class="header-actions">
+        <!-- Run controls -->
         <Button
-          :label="isWorkflowStale ? 'Execute (Modified)' : 'Execute'"
+          :label="isWorkflowStale ? 'Run (Modified)' : 'Run'"
           icon="pi pi-play"
           :class="['toolbar-btn', isWorkflowStale ? 'p-button-warning' : '']"
           :loading="isExecuting"
@@ -33,9 +31,12 @@
           onIcon="pi pi-bolt"
           offIcon="pi pi-bolt"
           class="toolbar-btn"
-          :title="autoExecute ? 'Workflow will auto-execute when nodes connect or parameters change' : 'Manual execution mode - click Execute to run'"
+          :title="autoExecute ? 'Auto-execute on connect/param change' : 'Manual execution mode'"
           @change="onAutoExecuteChange"
         />
+        <span class="toolbar-separator" />
+
+        <!-- Workflow management -->
         <Button
           label="New"
           icon="pi pi-plus"
@@ -43,28 +44,39 @@
           @click="createNewWorkflow"
         />
         <Button
+          label="Templates"
+          icon="pi pi-th-large"
+          class="toolbar-btn"
+          @click="templateDrawerVisible = true"
+        />
+        <Button
           :label="saveButtonLabel"
           icon="pi pi-save"
           class="toolbar-btn"
           :disabled="!hasChanges && autosaveStatus !== 'saving'"
           @click="saveWorkflow"
+          title="Save workflow definition"
         />
         <span v-if="autosaveStatus === 'saved'" class="autosave-indicator">
           <i class="pi pi-check"></i> Saved
         </span>
-        <Button
+        <span class="toolbar-separator" />
+
+        <!-- Export & results -->
+        <SplitButton
           label="Export"
           icon="pi pi-download"
           class="toolbar-btn"
           @click="exportToPython"
+          :model="exportMenuItems"
         />
         <Button
-          label="Report"
-          icon="pi pi-file"
+          label="Bookmark Run"
+          icon="pi pi-bookmark"
           class="toolbar-btn"
           :disabled="!workflowStore.lastExecutionResults"
-          title="Generate provenance report (requires execution results)"
-          @click="generateReport"
+          title="Bookmark current execution results as a named run for comparison"
+          @click="openSaveRunDialog"
         />
       </div>
     </div>
@@ -108,21 +120,88 @@
         @close="onCloseInspector"
       />
     </div>
+
+    <!-- Template Gallery Drawer -->
+    <Sidebar
+      v-model:visible="templateDrawerVisible"
+      position="right"
+      :style="{ width: '440px' }"
+      class="template-drawer"
+    >
+      <template #header>
+        <div class="drawer-header">
+          <i class="pi pi-th-large drawer-header-icon"></i>
+          <span class="drawer-header-title">Workflow Templates</span>
+        </div>
+      </template>
+      <TemplateGallery @select="onTemplateSelect" />
+    </Sidebar>
+
+    <!-- Save Run Dialog -->
+    <Dialog
+      v-model:visible="showSaveRunDialog"
+      header="Save Execution Run"
+      :modal="true"
+      :style="{ width: '450px' }"
+    >
+      <div class="save-run-form">
+        <div class="save-run-field">
+          <label for="builder-run-name">Run Name</label>
+          <InputText
+            id="builder-run-name"
+            v-model="saveRunName"
+            placeholder="e.g. Baseline - SNV + 3 comp"
+            style="width: 100%"
+          />
+        </div>
+        <div class="save-run-field">
+          <label for="builder-run-notes">Notes (optional)</label>
+          <Textarea
+            id="builder-run-notes"
+            v-model="saveRunNotes"
+            rows="3"
+            placeholder="Describe what you changed or why this run matters..."
+            style="width: 100%"
+          />
+        </div>
+      </div>
+      <template #footer>
+        <Button
+          label="Cancel"
+          class="p-button-text"
+          @click="showSaveRunDialog = false"
+        />
+        <Button
+          label="Save Run"
+          icon="pi pi-check"
+          :loading="savingRun"
+          :disabled="!saveRunName.trim()"
+          @click="handleSaveRun"
+        />
+      </template>
+    </Dialog>
   </section>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, provide, watch, onMounted, onUnmounted } from "vue";
 import Button from "primevue/button";
+import SplitButton from "primevue/splitbutton";
 import ToggleButton from "primevue/togglebutton";
+import Sidebar from "primevue/sidebar";
+import Dialog from "primevue/dialog";
+import InputText from "primevue/inputtext";
+import Textarea from "primevue/textarea";
 import { useToast } from "primevue/usetoast";
 import { useWorkflowStore, type WorkflowNode, type WorkflowEdge } from "@/stores/workflow";
 import { useExperimentStore } from "@/stores/experiment";
+import { useRunsStore } from "@/stores/runs";
 import WorkflowToolbar from "./WorkflowToolbar.vue";
 import WorkflowCanvas from "./WorkflowCanvas.vue";
 import WorkflowInspector from "./WorkflowInspector.vue";
+import TemplateGallery from "./TemplateGallery.vue";
 import { buildNodeOutput, type NodeOutput } from "@/utils/nodeOutput";
-import { useReportExport } from "@/composables/useReportExport";
+import { downloadText } from "@/utils/download";
 import { getErrorMessage } from "@/utils/errors";
 
 type ParamsMap = Record<string, unknown>;
@@ -130,7 +209,7 @@ type ParamsMap = Record<string, unknown>;
 const toast = useToast();
 const workflowStore = useWorkflowStore();
 const experimentStore = useExperimentStore();
-const { exportReport } = useReportExport();
+const runsStore = useRunsStore();
 const canvasRef = ref();
 
 // Use store for workflow state
@@ -151,6 +230,13 @@ const nodeOutputs = ref<Map<number, NodeOutput>>(new Map());
 const nextNodeId = ref(2);
 const inspectorOpen = ref(false);
 const autoExecute = ref(false); // Auto-execute workflow when nodes connect or parameters change
+const templateDrawerVisible = ref(false);
+
+// Save run state
+const showSaveRunDialog = ref(false);
+const saveRunName = ref("");
+const saveRunNotes = ref("");
+const savingRun = ref(false);
 
 // Autosave state
 const autosaveStatus = ref<'idle' | 'saving' | 'saved'>('idle');
@@ -460,7 +546,9 @@ provide('workflowContext', {
 // Workflow actions
 const createNewWorkflow = () => {
   if (hasChanges.value) {
-    // TODO: Prompt save confirmation
+    if (!window.confirm("You have unsaved changes. Discard and create a new workflow?")) {
+      return;
+    }
   }
   workflowStore.clearWorkflow();
   workflowStore.addNode({ id: 1, type: workflowStore.normalizeNodeType('DATA'), x: 50, y: 150, params: { source: 'experiment' } });
@@ -474,6 +562,36 @@ const createNewWorkflow = () => {
     detail: "Created new workflow canvas",
     life: 2000,
   });
+};
+
+const onTemplateSelect = (templateId: string) => {
+  const success = workflowStore.loadTemplate(templateId);
+  templateDrawerVisible.value = false;
+
+  if (success) {
+    // Update nextNodeId based on loaded template nodes
+    if (workflowStore.nodes.length > 0) {
+      const maxId = Math.max(...workflowStore.nodes.map(n => n.id));
+      nextNodeId.value = maxId + 1;
+    }
+    selectedNode.value = null;
+    nodeOutputs.value.clear();
+    executionCount.value = 0;
+
+    toast.add({
+      severity: "success",
+      summary: "Template Loaded",
+      detail: `Loaded "${workflowStore.workflowName}" into Builder`,
+      life: 2000,
+    });
+  } else {
+    toast.add({
+      severity: "error",
+      summary: "Template Not Found",
+      detail: `Could not find template: ${templateId}`,
+      life: 3000,
+    });
+  }
 };
 
 const saveWorkflow = async () => {
@@ -572,22 +690,92 @@ const autoloadMostRecentWorkflow = async () => {
   }
 };
 
-const generateReport = async () => {
+// --- Save Run ---
+const METRIC_KEYS = [
+  "r2", "rmsecv", "rmse", "mse", "accuracy", "n_components",
+  "n_samples", "n_features", "explained_variance", "n_clusters",
+  "inertia", "silhouette_score",
+];
+
+function extractMetrics(
+  results: Record<string, unknown>
+): Record<string, Record<string, unknown>> {
+  const summary: Record<string, Record<string, unknown>> = {};
+  for (const [nodeId, result] of Object.entries(results)) {
+    if (!result || typeof result !== "object") continue;
+    const r = result as Record<string, unknown>;
+    const primary =
+      r.default && typeof r.default === "object"
+        ? (r.default as Record<string, unknown>)
+        : r;
+    const metrics: Record<string, unknown> = {};
+    for (const key of METRIC_KEYS) {
+      if (key in primary) metrics[key] = primary[key];
+    }
+    if ("shape" in primary) metrics["output_shape"] = primary.shape;
+    if ("type" in primary) metrics["output_type"] = primary.type;
+    if (Object.keys(metrics).length > 0) {
+      summary[nodeId] = metrics;
+    }
+  }
+  return summary;
+}
+
+const openSaveRunDialog = () => {
+  const base = workflowStore.workflowName || "Workflow";
+  const count = runsStore.runs.length + 1;
+  saveRunName.value = `${base} - Run ${count}`;
+  saveRunNotes.value = "";
+  showSaveRunDialog.value = true;
+};
+
+const handleSaveRun = async () => {
+  if (!workflowStore.workflowId || !workflowStore.lastExecutionResults) return;
+  savingRun.value = true;
   try {
-    await exportReport(nodeOutputs.value);
+    const results = workflowStore.lastExecutionResults as Record<string, unknown>;
+    const diagnostics = workflowStore.lastExecutionDiagnostics as Record<string, Record<string, unknown>>;
+
+    const nodeStatuses: Record<string, string> = {};
+    for (const node of nodes.value) {
+      const state = workflowStore.getNodeExecutionState(node.id);
+      if (state) {
+        const backendId = workflowStore.resolveBackendNodeId(node.id);
+        nodeStatuses[backendId] = state.status;
+      }
+    }
+
+    const hasError = Object.values(nodeStatuses).some((s) => s === "error");
+    const allCompleted = Object.values(nodeStatuses).every((s) => s === "completed");
+    const status = hasError ? "error" : allCompleted ? "completed" : "partial";
+
+    await runsStore.saveRun(workflowStore.workflowId, {
+      name: saveRunName.value.trim(),
+      notes: saveRunNotes.value.trim() || undefined,
+      status,
+      results_summary: extractMetrics(results),
+      diagnostics: Object.keys(diagnostics).length > 0 ? diagnostics : undefined,
+      node_statuses: nodeStatuses,
+      integrity_hash: workflowStore.workflowHash || undefined,
+      executed_at: new Date().toISOString(),
+    });
+
+    showSaveRunDialog.value = false;
     toast.add({
       severity: "success",
-      summary: "Report Generated",
-      detail: "Provenance report downloaded",
-      life: 2000,
+      summary: "Run Saved",
+      detail: `"${saveRunName.value}" saved to experiment history`,
+      life: 3000,
     });
   } catch (err: unknown) {
     toast.add({
       severity: "error",
-      summary: "Report Failed",
-      detail: getErrorMessage(err, "Failed to generate report"),
-      life: 3000,
+      summary: "Save Failed",
+      detail: getErrorMessage(err, "Could not save run"),
+      life: 5000,
     });
+  } finally {
+    savingRun.value = false;
   }
 };
 
@@ -630,6 +818,42 @@ const exportToPython = async () => {
     });
   }
 };
+
+const exportToNotebook = async () => {
+  try {
+    const notebook = await workflowStore.exportToNotebook();
+    const content = JSON.stringify(notebook, null, 1);
+    const safeName = workflowStore.workflowName.replace(/\s+/g, "_").toLowerCase();
+    downloadText(content, `${safeName}_workflow.ipynb`, "application/x-ipynb+json");
+
+    toast.add({
+      severity: "success",
+      summary: "Exported",
+      detail: "Jupyter notebook downloaded",
+      life: 2000,
+    });
+  } catch {
+    toast.add({
+      severity: "error",
+      summary: "Export Failed",
+      detail: "Could not generate notebook",
+      life: 3000,
+    });
+  }
+};
+
+const exportMenuItems = [
+  {
+    label: "Python Script (.py)",
+    icon: "pi pi-file",
+    command: exportToPython,
+  },
+  {
+    label: "Jupyter Notebook (.ipynb)",
+    icon: "pi pi-book",
+    command: exportToNotebook,
+  },
+];
 
 // Fallback local Python code generator
 const generateLocalPythonCode = (): string => {
@@ -1082,8 +1306,14 @@ const onDeleteNode = (nodeId: number) => {
 .section-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 16px;
+}
+
+.section-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .section-header h1 {
@@ -1092,17 +1322,10 @@ const onDeleteNode = (nodeId: number) => {
   font-weight: 600;
 }
 
-.section-subtitle {
-  margin-top: 4px;
-  color: #94a3b8;
-  font-size: 0.95rem;
-}
-
 .integrity-hash-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  margin-left: 12px;
   padding: 2px 8px;
   background: rgba(34, 197, 94, 0.15);
   border: 1px solid rgba(34, 197, 94, 0.3);
@@ -1121,15 +1344,24 @@ const onDeleteNode = (nodeId: number) => {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.toolbar-separator {
+  display: inline-block;
+  width: 1px;
+  height: 20px;
+  background: #475569;
+  margin: 0 4px;
 }
 
 /* Uniform toolbar button styling */
 .header-actions :deep(.toolbar-btn) {
-  height: 36px;
-  font-size: 0.85rem;
+  height: 32px;
+  font-size: 0.8rem;
   font-weight: 500;
-  padding: 0 14px;
+  padding: 0 10px;
   border-radius: 6px;
   background: #334155;
   border: 1px solid #475569;
@@ -1173,13 +1405,13 @@ const onDeleteNode = (nodeId: number) => {
 .autosave-indicator {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
+  gap: 4px;
+  padding: 4px 8px;
   background: rgba(34, 197, 94, 0.15);
   border: 1px solid rgba(34, 197, 94, 0.3);
   border-radius: 6px;
   color: #4ade80;
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   font-weight: 500;
 }
 
@@ -1241,5 +1473,41 @@ const onDeleteNode = (nodeId: number) => {
   .workflow-workspace.inspector-open {
     grid-template-columns: 1fr;
   }
+}
+
+/* Template drawer header (Sidebar renders outside scoped context) */
+.drawer-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.drawer-header-icon {
+  font-size: 1.1rem;
+  color: #3b82f6;
+}
+
+.drawer-header-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.save-run-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.save-run-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.save-run-field label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #475569;
 }
 </style>

@@ -140,6 +140,14 @@ class WorkflowBase(BaseModel):
         None, description="UI state (zoom, pan, etc.)"
     )
     notes: str | None = Field(None, description="Markdown notes/documentation for workflow")
+    technique: str | None = Field(
+        None, max_length=50,
+        description="Spectral technique (e.g. FTIR, Raman, NMR, UV-Vis, NIR)"
+    )
+    sample_type: str | None = Field(
+        None, max_length=100,
+        description="Sample type (e.g. polymer blend, pharmaceutical tablet, wine)"
+    )
 
 
 class WorkflowCreate(WorkflowBase):
@@ -157,6 +165,8 @@ class WorkflowUpdate(BaseModel):
     status: str | None = Field(None)
     canvas_state: dict[str, Any] | None = Field(None)
     notes: str | None = Field(None, description="Markdown notes/documentation for workflow")
+    technique: str | None = Field(None, max_length=50)
+    sample_type: str | None = Field(None, max_length=100)
     folder_id: int | None = Field(None, description="Folder ID to organize workflow")
     nodes: list[WorkflowNodeCreate] | None = Field(None)
     edges: list[WorkflowEdgeCreate] | None = Field(None)

@@ -238,6 +238,7 @@
 
       <!-- Data Table (when viewMode === 'data') -->
       <div v-else class="data-table-container">
+        <span v-if="dataPreviewSummary" class="data-summary">{{ dataPreviewSummary }}</span>
         <DataTable
           v-if="dataPreview.length > 0"
           :value="dataPreview"
@@ -805,6 +806,18 @@ const dataPreview = computed(() => {
     }
     return obj;
   });
+});
+
+const dataPreviewSummary = computed(() => {
+  const data = props.nodeOutput?.data;
+  if (!data || !Array.isArray(data)) return "";
+  const totalRows = data.length;
+  const totalCols = Array.isArray(data[0]) ? data[0].length : 1;
+  const shownRows = Math.min(totalRows, previewRowLimit);
+  const shownCols = Math.min(totalCols, 10);
+  let summary = `${shownRows} of ${totalRows} rows`;
+  if (totalCols > 10) summary += `, ${shownCols} of ${totalCols} columns`;
+  return summary;
 });
 
 // Data preview columns (DRY with NodeDetailView.vue outputPreviewColumns)
@@ -1801,6 +1814,7 @@ const plotLayout = computed(() => {
   const metadata = output?.metadata || {};
 
   const baseLayout = {
+    autosize: true,
     template: "plotly_dark",
     paper_bgcolor: "#0f172a",
     plot_bgcolor: "#0f172a",
@@ -2371,6 +2385,13 @@ function downloadPlot() {
   padding: 16px;
   overflow: auto;
   background: #0f172a;
+}
+
+.data-summary {
+  display: block;
+  font-size: 0.8rem;
+  color: #94a3b8;
+  margin-bottom: 8px;
 }
 
 .preview-datatable {

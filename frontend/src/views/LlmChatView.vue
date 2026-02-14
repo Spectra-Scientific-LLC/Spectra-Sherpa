@@ -54,7 +54,7 @@ const store = useLlmStore();
 const toast = useToast();
 
 const goBack = () => {
-  router.push("/workspace");
+  router.push("/workflow");
 };
 
 // LLM Provider Menu

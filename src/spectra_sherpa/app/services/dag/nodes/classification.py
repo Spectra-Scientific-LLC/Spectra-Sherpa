@@ -10,6 +10,7 @@ from typing import Any, Optional
 import re
 import numpy as np
 from app.lib.scp_compat import scp, NDDataset
+from app.lib.analysis_dataset import AnalysisDataset, AxisInfo
 
 import logging
 
@@ -22,23 +23,19 @@ from .modeling import _create_spectral_dataset
 logger = logging.getLogger(__name__)
 
 
-def _make_labeled_coord(labels: Any, title: str) -> Any:
+def _make_labeled_coord(labels: Any, title: str) -> AxisInfo:
     """
-    Create a SpectroChemPy Coord with string labels in a robust way.
+    Create an AxisInfo with string labels and a numeric index axis.
 
-    SpectroChemPy 0.6.x fails when Coord is initialized directly from string
-    arrays (it internally applies `np.abs` to data). To avoid this, build a
-    numeric coordinate axis and attach human-readable labels separately.
+    This replaces the former SpectroChemPy Coord helper so that
+    classification nodes work without SCP installed.
     """
     labels_list = [str(v) for v in (labels or [])]
-    coord = scp.Coord(np.arange(len(labels_list), dtype=float), title=title)
-    try:
-        coord.labels = labels_list
-    except Exception:
-        # Labels are optional metadata for display; keep numeric coord if label
-        # assignment is not supported by the current SpectroChemPy build.
-        pass
-    return coord
+    return AxisInfo(
+        values=np.arange(len(labels_list), dtype=float),
+        labels=labels_list,
+        title=title,
+    )
 
 
 def _coerce_numeric_array(values: Any) -> np.ndarray:
@@ -251,6 +248,7 @@ class PLSDANode(Node):
                 description="Cross-validated class probabilities",
             ),
         ],
+        requires_scp=True,
     )
 
     async def execute(self, X: NDDataset = None, y: Any = None, **kwargs) -> Any:
@@ -276,12 +274,12 @@ class PLSDANode(Node):
 
         if X is None:
             raise ValueError("Missing required input: X (spectra)")
-        if not isinstance(X, NDDataset):
-            raise ValueError("X must be an NDDataset object")
+        if not isinstance(X, (NDDataset, AnalysisDataset)):
+            raise ValueError("X must be an NDDataset or AnalysisDataset object")
 
-        # Auto-extract labels from NDDataset
+        # Auto-extract labels from dataset
         # Case 1: y is None - extract from X
-        # Case 2: y is NDDataset - extract embedded labels from y (don't use raw dataset)
+        # Case 2: y is dataset - extract embedded labels from y
         # Case 3: y is array/list - use directly
         if y is None:
             y_coord = safe_get_coord(X, 'y')
@@ -293,16 +291,16 @@ class PLSDANode(Node):
                     y = y_coord.data
                 else:
                     raise ValueError(
-                        "NDDataset has y-axis but no labels or data found. "
+                        "Dataset has y-axis but no labels or data found. "
                         "Please provide class labels explicitly via the 'y' input port."
                     )
             else:
                 raise ValueError(
                     "Missing required input: y (class labels)\n"
-                    "Either provide labels via the 'y' input port, or use an NDDataset with labels in X.y"
+                    "Either provide labels via the 'y' input port, or use a dataset with labels in X.y"
                 )
-        elif isinstance(y, NDDataset):
-            # If y IS an NDDataset, extract embedded labels (don't use the dataset itself)
+        elif isinstance(y, (NDDataset, AnalysisDataset)):
+            # If y IS a dataset, extract embedded labels (don't use the dataset itself)
             y_coord = safe_get_coord(y, 'y')
             if y_coord is not None:
                 # Extract from y's own y-axis
@@ -312,12 +310,12 @@ class PLSDANode(Node):
                     y = y_coord.data
                 else:
                     raise ValueError(
-                        "NDDataset passed to y port has no embedded labels. "
+                        "Dataset passed to y port has no embedded labels. "
                         "Use the y-axis coordinate to store class labels."
                     )
             else:
                 raise ValueError(
-                    "NDDataset passed to y port has no y-axis coordinate. "
+                    "Dataset passed to y port has no y-axis coordinate. "
                     "Cannot extract class labels."
                 )
 
@@ -1129,16 +1127,16 @@ class KNNNode(Node):
 
         if X is None:
             raise ValueError("Missing required input: X (features)")
-        if not isinstance(X, NDDataset):
-            raise ValueError("X must be an NDDataset object")
+        if not isinstance(X, (NDDataset, AnalysisDataset)):
+            raise ValueError("X must be an NDDataset or AnalysisDataset object")
 
-        # Auto-extract labels from NDDataset
+        # Auto-extract labels from NDDataset/AnalysisDataset
         # Case 1: y is None - extract from X
-        # Case 2: y is NDDataset - extract embedded labels from y (don't use raw dataset)
+        # Case 2: y is NDDataset/AnalysisDataset - extract embedded labels from y (don't use raw dataset)
         # Case 3: y is array/list - use directly
         if y is None:
             logger.debug("No y input provided - extracting labels from X")
-            y_coord = safe_get_coord(X, 'y') if isinstance(X, NDDataset) else None
+            y_coord = safe_get_coord(X, 'y') if isinstance(X, (NDDataset, AnalysisDataset)) else None
             if y_coord is not None:
                 # Extract labels from X's y-axis (prefer labels over data)
                 if hasattr(y_coord, 'labels') and y_coord.labels is not None:
@@ -1157,9 +1155,9 @@ class KNNNode(Node):
                     "Missing required input: y (class labels)\n"
                     "Either provide labels via the 'y' input port, or use an NDDataset with labels in X.y"
                 )
-        elif isinstance(y, NDDataset):
-            # If y IS an NDDataset, extract embedded labels (don't use the dataset itself)
-            logger.debug("y is NDDataset - extracting embedded labels")
+        elif isinstance(y, (NDDataset, AnalysisDataset)):
+            # If y IS an NDDataset/AnalysisDataset, extract embedded labels (don't use the dataset itself)
+            logger.debug("y is NDDataset/AnalysisDataset - extracting embedded labels")
             y_coord = safe_get_coord(y, 'y')
             if y_coord is not None:
                 # Extract from y's own y-axis
@@ -1180,7 +1178,7 @@ class KNNNode(Node):
                     "Cannot extract class labels."
                 )
 
-        # Convert to numpy arrays - X is NDDataset
+        # Convert to numpy arrays - X is NDDataset or AnalysisDataset
         X_data = np.array(X.data)
         y_array = _prepare_class_labels(y, X_data.shape[0])
 
@@ -1248,18 +1246,15 @@ class KNNNode(Node):
 
         if n_features > 10:
             # Compute PCA for visualization only (doesn't affect KNN model)
+            # Use sklearn PCA (portable, no SCP dependency)
+            from sklearn.decomposition import PCA as SklearnPCA
             n_viz_components = min(5, n_features, X_data.shape[0])
 
-            # X is already NDDataset
-            X_for_pca = X
-
-            pca_viz = scp.PCA(n_components=n_viz_components, standardized=False, scaled=True)
-            pca_viz.fit(X_for_pca)
-            viz_scores = pca_viz.transform()
-            viz_data = np.array(viz_scores.data) if hasattr(viz_scores, "data") else np.array(viz_scores)
+            pca_viz = SklearnPCA(n_components=n_viz_components)
+            viz_data = pca_viz.fit_transform(X_data)
 
             # Get explained variance for labels
-            explained_var = np.array(pca_viz.explained_variance.data) if hasattr(pca_viz.explained_variance, "data") else np.array(pca_viz.explained_variance)
+            explained_var = pca_viz.explained_variance_ratio_
             viz_labels = [f"PC{i+1} ({explained_var[i]*100:.1f}%)" for i in range(n_viz_components)]
 
             logger.debug("High-dimensional data (%d features) - computed PCA for visualization (%d PCs)", n_features, n_viz_components)
@@ -1601,6 +1596,7 @@ class SIMCANode(Node):
                 description="Visualization plots (Confusion Matrix, etc.)",
             ),
         ],
+        requires_scp=True,
     )
 
     async def execute(self, X: NDDataset = None, y: Any = None, **kwargs) -> Any:
@@ -1625,16 +1621,16 @@ class SIMCANode(Node):
 
         if X is None:
             raise ValueError("Missing required input: X (features)")
-        if not isinstance(X, NDDataset):
-            raise ValueError("X must be an NDDataset object")
+        if not isinstance(X, (NDDataset, AnalysisDataset)):
+            raise ValueError("X must be an NDDataset or AnalysisDataset object")
 
-        # Auto-extract labels from NDDataset
+        # Auto-extract labels from dataset
         # Case 1: y is None - extract from X
-        # Case 2: y is NDDataset - extract embedded labels from y (don't use raw dataset)
+        # Case 2: y is dataset - extract embedded labels from y
         # Case 3: y is array/list - use directly
         if y is None:
             logger.debug("No y input provided - extracting labels from X")
-            y_coord = safe_get_coord(X, 'y') if isinstance(X, NDDataset) else None
+            y_coord = safe_get_coord(X, 'y')
             if y_coord is not None:
                 # Extract labels from X's y-axis (prefer labels over data)
                 if hasattr(y_coord, 'labels') and y_coord.labels is not None:
@@ -1645,17 +1641,17 @@ class SIMCANode(Node):
                     logger.debug("Auto-extracted class labels from X.y.data")
                 else:
                     raise ValueError(
-                        "NDDataset has y-axis but no labels or data found. "
+                        "Dataset has y-axis but no labels or data found. "
                         "Please provide class labels explicitly via the 'y' input port."
                     )
             else:
                 raise ValueError(
                     "Missing required input: y (class labels)\n"
-                    "Either provide labels via the 'y' input port, or use an NDDataset with labels in X.y"
+                    "Either provide labels via the 'y' input port, or use a dataset with labels in X.y"
                 )
-        elif isinstance(y, NDDataset):
-            # If y IS an NDDataset, extract embedded labels (don't use the dataset itself)
-            logger.debug("y is NDDataset - extracting embedded labels")
+        elif isinstance(y, (NDDataset, AnalysisDataset)):
+            # If y IS a dataset, extract embedded labels (don't use the dataset itself)
+            logger.debug("y is dataset - extracting embedded labels")
             y_coord = safe_get_coord(y, 'y')
             if y_coord is not None:
                 # Extract from y's own y-axis
@@ -1667,16 +1663,16 @@ class SIMCANode(Node):
                     logger.debug("Extracted labels from y.y.data")
                 else:
                     raise ValueError(
-                        "NDDataset passed to y port has no embedded labels. "
+                        "Dataset passed to y port has no embedded labels. "
                         "Use the y-axis coordinate to store class labels."
                     )
             else:
                 raise ValueError(
-                    "NDDataset passed to y port has no y-axis coordinate. "
+                    "Dataset passed to y port has no y-axis coordinate. "
                     "Cannot extract class labels."
                 )
 
-        # Convert to numpy arrays - X is NDDataset
+        # Convert to numpy arrays
         X_data = np.array(X.data)
         y_array = _prepare_class_labels(y, X_data.shape[0])
 
@@ -1946,16 +1942,17 @@ class PLSDAPredictNode(Node):
         ],
         input_types=["NDDataset", "dict"],
         output_type="dict",
+        requires_scp=True,
     )
-    
+
     async def execute(self, X_new: Any = None, model: Any = None, **kwargs: Any) -> dict[str, Any]:
         """
         Apply PLS-DA model to new data.
-        
+
         Args:
             X_new: New spectral data (NDDataset or array)
             model: Trained PLS-DA model dict from training node
-            
+
         Returns:
             Dict with predicted classes and probabilities
         """
@@ -1963,7 +1960,7 @@ class PLSDAPredictNode(Node):
             raise ValueError("Missing required input: X_new (new spectra)")
         if model is None:
             raise ValueError("Missing required input: model (trained PLS-DA model)")
-        
+
         # Extract model components from result dict
         if isinstance(model, dict):
             pls_model = model.get("model")
@@ -1971,21 +1968,19 @@ class PLSDAPredictNode(Node):
             n_classes = model.get("n_classes", 2)
         else:
             raise ValueError("Model must be a dict containing PLS-DA model and metadata")
-        
+
         if pls_model is None:
             raise ValueError("Model dict does not contain 'model' key with trained PLS-DA model")
 
-        # X_new is NDDataset directly
-        if not isinstance(X_new, NDDataset):
-            raise ValueError("X_new must be an NDDataset object")
+        # X_new can be NDDataset or AnalysisDataset
         X_array = np.array(X_new.data)
 
         # Make predictions
         # PLS-DA returns continuous predictions for each class (dummy variables)
-        # SpectroChemPy may return NDDataset, so handle both cases
+        # SpectroChemPy PLS model requires NDDataset input
         from app.lib.scp_compat import scp
         from scipy.special import softmax
-        X_dataset = scp.NDDataset(X_array) if not isinstance(X_array, scp.NDDataset) else X_array
+        X_dataset = scp.NDDataset(X_array)
         Y_pred_raw = pls_model.predict(X_dataset)
         Y_pred_raw_np = np.array(Y_pred_raw.data) if hasattr(Y_pred_raw, "data") else np.array(Y_pred_raw)
 
@@ -2092,15 +2087,15 @@ class KNNPredictNode(Node):
         if knn_model is None:
             raise ValueError("Model dict does not contain 'model' key with trained KNN model")
 
-        # X_new is NDDataset directly
-        if not isinstance(X_new, NDDataset):
-            raise ValueError("X_new must be an NDDataset object")
+        # X_new is NDDataset or AnalysisDataset directly
+        if not isinstance(X_new, (NDDataset, AnalysisDataset)):
+            raise ValueError("X_new must be an NDDataset or AnalysisDataset object")
         X_array = np.array(X_new.data)
 
         # Make predictions
         y_pred = knn_model.predict(X_array)
         y_prob = knn_model.predict_proba(X_array)
-        
+
         return {
             "y_pred": y_pred.tolist(),
             "y_prob": y_prob.tolist(),
@@ -2193,9 +2188,9 @@ class SIMCAPredictNode(Node):
         if not classes:
             raise ValueError("Model dict does not contain 'classes' list")
 
-        # X_new is NDDataset directly
-        if not isinstance(X_new, NDDataset):
-            raise ValueError("X_new must be an NDDataset object")
+        # X_new is NDDataset or AnalysisDataset directly
+        if not isinstance(X_new, (NDDataset, AnalysisDataset)):
+            raise ValueError("X_new must be an NDDataset or AnalysisDataset object")
         X_array = np.array(X_new.data)
 
         # Ensure 2D

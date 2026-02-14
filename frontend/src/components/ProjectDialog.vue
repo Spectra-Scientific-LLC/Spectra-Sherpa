@@ -4,7 +4,7 @@
     :header="isEditMode ? 'Edit Project' : 'New Project'"
     :modal="true"
     :closable="true"
-    :style="{ width: '500px' }"
+    :style="{ width: '520px' }"
     @hide="onHide"
   >
     <div class="project-form">
@@ -31,29 +31,35 @@
         />
       </div>
 
-      <div class="field">
-        <label for="project-tags">Tags</label>
-        <Chips
-          id="project-tags"
-          v-model="form.tags"
-          separator=","
-          placeholder="Add tags (press Enter)"
-        />
-        <small class="field-hint">Press Enter or comma to add tags</small>
+      <div class="field-row">
+        <div class="field">
+          <label for="project-technique">Technique</label>
+          <Dropdown
+            id="project-technique"
+            v-model="form.technique"
+            :options="techniqueOptions"
+            placeholder="Select technique"
+            :showClear="true"
+          />
+        </div>
+        <div class="field">
+          <label for="project-sample-type">Sample Type</label>
+          <InputText
+            id="project-sample-type"
+            v-model="form.sample_type"
+            placeholder="e.g. polymer blend, wine"
+          />
+        </div>
       </div>
 
-      <div v-if="isEditMode" class="project-metadata">
+      <div v-if="isEditMode && editProject" class="project-metadata">
         <div class="metadata-row">
           <span class="metadata-label">Created:</span>
-          <span class="metadata-value">{{ formatDate(editProject?.metadata.created) }}</span>
+          <span class="metadata-value">{{ formatDate(editProject.created_at) }}</span>
         </div>
         <div class="metadata-row">
           <span class="metadata-label">Last Modified:</span>
-          <span class="metadata-value">{{ formatDate(editProject?.metadata.modified) }}</span>
-        </div>
-        <div class="metadata-row">
-          <span class="metadata-label">Version:</span>
-          <span class="metadata-value">{{ editProject?.metadata.version }}</span>
+          <span class="metadata-value">{{ formatDate(editProject.updated_at) }}</span>
         </div>
       </div>
     </div>
@@ -82,12 +88,14 @@ import Dialog from "primevue/dialog";
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
 import Textarea from "primevue/textarea";
-import Chips from "primevue/chips";
-import type { Project } from "@/stores/project";
+import Dropdown from "primevue/dropdown";
+import type { ProjectSummary } from "@/types";
+
+const techniqueOptions = ["FTIR", "Raman", "NMR", "UV-Vis", "NIR", "XRF", "MS"];
 
 interface Props {
   visible: boolean;
-  editProject?: Project | null;
+  editProject?: ProjectSummary | null;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -95,10 +103,17 @@ const props = withDefaults(defineProps<Props>(), {
   editProject: null,
 });
 
+export interface ProjectFormData {
+  name: string;
+  description: string;
+  technique: string | null;
+  sample_type: string | null;
+}
+
 const emit = defineEmits<{
   (e: "update:visible", value: boolean): void;
-  (e: "create", data: { name: string; description: string; tags: string[] }): void;
-  (e: "update", data: { name: string; description: string; tags: string[] }): void;
+  (e: "create", data: ProjectFormData): void;
+  (e: "update", data: ProjectFormData): void;
 }>();
 
 const dialogVisible = computed({
@@ -111,30 +126,31 @@ const isEditMode = computed(() => !!props.editProject);
 const form = ref({
   name: "",
   description: "",
-  tags: [] as string[],
+  technique: null as string | null,
+  sample_type: null as string | null,
 });
 
 const submitted = ref(false);
 
-// Define resetForm before watchers that use it
 const resetForm = () => {
   form.value = {
     name: "",
     description: "",
-    tags: [],
+    technique: null,
+    sample_type: null,
   };
   submitted.value = false;
 };
 
-// Watch for edit project changes
 watch(
   () => props.editProject,
   (project) => {
     if (project) {
       form.value = {
-        name: project.metadata.name,
-        description: project.metadata.description,
-        tags: [...project.metadata.tags],
+        name: project.name,
+        description: project.description || "",
+        technique: project.technique,
+        sample_type: project.sample_type,
       };
     } else {
       resetForm();
@@ -143,7 +159,6 @@ watch(
   { immediate: true }
 );
 
-// Watch for visibility changes
 watch(
   () => props.visible,
   (visible) => {
@@ -155,7 +170,7 @@ watch(
 );
 
 const formatDate = (dateStr?: string): string => {
-  if (!dateStr) return "—";
+  if (!dateStr) return "\u2014";
   return new Date(dateStr).toLocaleString();
 };
 
@@ -166,18 +181,17 @@ const onSubmit = () => {
     return;
   }
 
+  const data: ProjectFormData = {
+    name: form.value.name.trim(),
+    description: form.value.description.trim(),
+    technique: form.value.technique,
+    sample_type: form.value.sample_type?.trim() || null,
+  };
+
   if (isEditMode.value) {
-    emit("update", {
-      name: form.value.name.trim(),
-      description: form.value.description.trim(),
-      tags: form.value.tags,
-    });
+    emit("update", data);
   } else {
-    emit("create", {
-      name: form.value.name.trim(),
-      description: form.value.description.trim(),
-      tags: form.value.tags,
-    });
+    emit("create", data);
   }
 
   dialogVisible.value = false;
@@ -203,6 +217,12 @@ const onHide = () => {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  flex: 1;
+}
+
+.field-row {
+  display: flex;
+  gap: 16px;
 }
 
 .field label {
@@ -213,11 +233,6 @@ const onHide = () => {
 
 .required {
   color: #ef4444;
-}
-
-.field-hint {
-  color: #94a3b8;
-  font-size: 0.8rem;
 }
 
 .project-metadata {
@@ -249,10 +264,5 @@ const onHide = () => {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-}
-
-:deep(.p-chips-token) {
-  background: #dbeafe;
-  color: #1e40af;
 }
 </style>

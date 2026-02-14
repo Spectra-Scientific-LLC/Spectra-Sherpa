@@ -401,7 +401,8 @@ def blend_datasets(
     NDDataset
         Blended mixture with ground truth in meta["blend_ground_truth"]
     """
-    from app.lib.scp_compat import scp
+    from app.lib.scp_compat import scp, require_scp
+    require_scp("Spectral blending")
     from ..spectral.dataset import create_spectral_dataset, SpectralUnit
 
     if not species_datasets:

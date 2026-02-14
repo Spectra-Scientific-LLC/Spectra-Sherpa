@@ -23,6 +23,7 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 from app.lib.scp_compat import scp, NDDataset
+from app.lib.analysis_dataset import AnalysisDataset, AxisInfo
 
 from ..node_base import Node, NodeMetadata, NodeParameter, register_node
 from app.models.spectra_meta import (
@@ -163,17 +164,17 @@ class BlendNode(Node):
         if len(input_data) == 0:
             raise ValueError("At least one input spectrum is required")
 
-        # Validate all inputs are NDDatasets and collect units
+        # Validate all inputs are datasets and collect units
         spectra = []
         input_units = []
         for inp in input_data:
-            if isinstance(inp, NDDataset):
+            if isinstance(inp, (AnalysisDataset, NDDataset)):
                 spectra.append(inp)
                 # Collect units from each spectrum
                 if hasattr(inp, 'units') and inp.units:
                     input_units.append(str(inp.units))
             else:
-                raise ValueError(f"Input must be NDDataset, got {type(inp)}")
+                raise ValueError(f"Input must be NDDataset or AnalysisDataset, got {type(inp)}")
 
         # Determine output units from input spectra
         # Inherit from first spectrum, or use "absorbance" as default
@@ -245,10 +246,10 @@ class BlendNode(Node):
             D += noise
 
         # Create output dataset
-        dataset = scp.NDDataset(D)
+        dataset = AnalysisDataset(X=D)
         dataset.set_coordset(
-            y=scp.Coord(np.arange(n_timepoints), title="Time", units="s"),
-            x=scp.Coord(wavenumbers, title="Wavenumber", units="cm^-1"),
+            y=AxisInfo(values=np.arange(n_timepoints), title="Time", units="s"),
+            x=AxisInfo(values=wavenumbers, title="Wavenumber", units="cm^-1"),
         )
         dataset.title = "Synthetic Mixture"
         dataset.units = output_units  # Inherit from input spectra, not hardcoded
@@ -411,8 +412,8 @@ class SpeciesSelectorNode(Node):
         Returns:
             NDDataset with species metadata attached
         """
-        if not isinstance(input_data, NDDataset):
-            raise ValueError("Input must be an NDDataset object")
+        if not isinstance(input_data, (AnalysisDataset, NDDataset)):
+            raise ValueError("Input must be an NDDataset or AnalysisDataset object")
 
         species_name = self.parameters.get("species_name", "Species")
         molar_abs = self.parameters.get("molar_absorptivity", 1.0)
@@ -516,8 +517,8 @@ class MergeSpectraNode(Node):
         input_units = []
 
         for inp in input_data:
-            if not isinstance(inp, NDDataset):
-                raise ValueError(f"Input must be NDDataset, got {type(inp)}")
+            if not isinstance(inp, (AnalysisDataset, NDDataset)):
+                raise ValueError(f"Input must be NDDataset or AnalysisDataset, got {type(inp)}")
 
             # Collect units from each input
             if hasattr(inp, 'units') and inp.units:
@@ -549,10 +550,10 @@ class MergeSpectraNode(Node):
             output_units = "absorbance"  # Default fallback
 
         # Create output dataset
-        dataset = scp.NDDataset(stacked)
+        dataset = AnalysisDataset(X=stacked)
         dataset.set_coordset(
-            y=scp.Coord(np.arange(len(spectra)), title="Sample"),
-            x=scp.Coord(ref_wn, title="Wavenumber", units="cm^-1"),
+            y=AxisInfo(values=np.arange(len(spectra)), title="Sample"),
+            x=AxisInfo(values=ref_wn, title="Wavenumber", units="cm^-1"),
         )
         dataset.title = "Merged Spectra"
         dataset.units = output_units  # Inherit from input spectra, not hardcoded

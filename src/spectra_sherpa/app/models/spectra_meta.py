@@ -84,6 +84,7 @@ class SourceType(str, Enum):
     BLEND = "blend"                # Synthetic mixture
     CALIBRATION = "calibration"    # From calibration model
     SIMULATION = "simulation"      # Computational / DFT
+    EIGENVECTOR = "eigenvector"    # Eigenvector Research public dataset
     UNKNOWN = "unknown"
 
 

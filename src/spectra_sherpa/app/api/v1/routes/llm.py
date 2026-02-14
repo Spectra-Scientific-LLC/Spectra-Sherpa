@@ -10,6 +10,7 @@ from app.schemas.llm import (
     LLMChatRequest,
     LLMChatResponse,
     LLMConversation,
+    LLMDataStoryRequest,
     LLMGenerateCodeRequest,
     LLMMessage,
     LLMNameResponse,
@@ -181,6 +182,22 @@ async def write_report(
     service = LLMService(session, user=current_user)
     try:
         response = await service.write_report(payload.experiment)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return LLMTextResponse(response=response)
+
+
+@router.post("/data-story", response_model=LLMTextResponse)
+async def generate_data_story(
+    payload: LLMDataStoryRequest,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> LLMTextResponse:
+    """Generate a narrative 'data story' for a reference dataset."""
+    _check_llm_rate_limit(current_user)
+    service = LLMService(session, user=current_user)
+    try:
+        response = await service.write_data_story(payload.dataset_info)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return LLMTextResponse(response=response)

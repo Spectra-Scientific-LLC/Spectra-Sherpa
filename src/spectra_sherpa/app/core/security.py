@@ -1,14 +1,15 @@
 from datetime import datetime, timedelta, timezone
 import ipaddress
 import hashlib
+import logging
 import os
 import time
 from typing import Any, Optional, TYPE_CHECKING
 
+import bcrypt
 from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
-from passlib.context import CryptContext
 
 from app.core.config import app_config, settings
 
@@ -16,8 +17,9 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
     from app.models.user import User
 
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+logger = logging.getLogger(__name__)
+
+# Password hashing — using bcrypt directly (passlib is unmaintained, incompatible with bcrypt >= 4.1)
 
 # ============================================================================
 # API Key Validation Cache (for gateway middleware / websocket auth)
@@ -114,12 +116,18 @@ oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", aut
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against a hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    return bcrypt.checkpw(
+        plain_password.encode("utf-8"),
+        hashed_password.encode("utf-8"),
+    )
 
 
 def get_password_hash(password: str) -> str:
     """Generate a password hash."""
-    return pwd_context.hash(password)
+    return bcrypt.hashpw(
+        password.encode("utf-8"),
+        bcrypt.gensalt(),
+    ).decode("utf-8")
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:

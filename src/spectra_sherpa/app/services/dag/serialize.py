@@ -20,6 +20,7 @@ from typing import Any, Dict, Optional
 import numpy as np
 
 from app.lib.scp_compat import NDDataset, HAS_SCP
+from app.lib.analysis_dataset import AnalysisDataset
 HAS_NDDATASET = HAS_SCP
 
 from .meta_helpers import (
@@ -217,22 +218,29 @@ def _meta_items(meta: Any) -> list[tuple[Any, Any]]:
 
 
 def serialize_for_api(
-    dataset: NDDataset,
+    dataset,
     sanitize_paths: bool = False,
 ) -> Dict[str, Any]:
     """
-    Serialize NDDataset to API-compatible JSON format.
+    Serialize dataset to API-compatible JSON format.
+
+    Accepts both AnalysisDataset and NDDataset. AnalysisDataset uses its
+    own to_dict() which emits the same wire format (type: "NDDataset",
+    x_axis.data, etc.) so the frontend renders identically.
 
     This is the SINGLE SOURCE OF TRUTH for serialization.
     Called only at API boundary, not inside nodes.
 
     Args:
-        dataset: NDDataset to serialize
+        dataset: AnalysisDataset or NDDataset to serialize
         sanitize_paths: If True, strip file paths to basenames
 
     Returns:
         Dict ready for JSON response
     """
+    # AnalysisDataset has its own wire-format-compatible serializer
+    if isinstance(dataset, AnalysisDataset):
+        return dataset.to_dict()
     # Convert data, replacing NaN/Inf with None for JSON safety
     try:
         raw_data = np.asarray(dataset.data, dtype=float)

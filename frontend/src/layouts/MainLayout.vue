@@ -54,8 +54,10 @@ import Topbar from "@/components/Topbar.vue";
 import Toast from "primevue/toast";
 import { useBackendStatus } from "@/composables/useBackendStatus";
 import { useAppConfig } from "@/composables/useAppConfig";
+import { useJobStore } from "@/stores/job";
 
 const { appMode } = useAppConfig();
+const jobStore = useJobStore();
 
 const navCollapsed = ref(localStorage.getItem("navCollapsed") === "true");
 const chatCollapsed = ref(localStorage.getItem("chatCollapsed") !== "false");
@@ -137,10 +139,21 @@ onBeforeUnmount(() => {
   window.removeEventListener("mouseup", stopResize);
   window.removeEventListener("resize", handleWindowResize);
   stopHealthCheck();
+  jobStore.disconnect();
 });
 
 watch(chatWidth, (value) => {
   localStorage.setItem("chatWidth", String(value));
+});
+
+// Connect the job store WS when the backend becomes available so that
+// background job progress (batch predict, folder watches) reaches the UI.
+watch(backendConnected, (isConnected) => {
+  if (isConnected) {
+    jobStore.connect().catch(() => undefined);
+  } else {
+    jobStore.disconnect();
+  }
 });
 </script>
 

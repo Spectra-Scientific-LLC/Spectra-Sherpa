@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Any, Optional, List, Dict
 import numpy as np
 from app.lib.scp_compat import scp, NDDataset
+from app.lib.analysis_dataset import AnalysisDataset
 
 from ..node_base import (
     Node,
@@ -28,6 +29,26 @@ from ..node_base import (
 )
 from ..meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
 from app.lib.preprocessing import remove_cosmic_rays
+
+
+def _wrap_result_lines(
+    node_id: str, data_expr: str, input_expr: str,
+    indent: str, use_scp: bool,
+) -> list[str]:
+    """Generate result-wrapping code lines for Python export.
+
+    SCP mode:  ``scp.NDDataset(data) + coordinate copy``
+    numpy mode: ``_Result(data, x=...)``
+    """
+    if use_scp:
+        return [
+            f"{indent}results['{node_id}'] = scp.NDDataset({data_expr})",
+            f"{indent}if hasattr({input_expr}, 'x') and {input_expr}.x is not None:",
+            f"{indent}    results['{node_id}'].x = {input_expr}.x.copy()",
+        ]
+    return [
+        f"{indent}results['{node_id}'] = _Result({data_expr}, x=getattr({input_expr}, 'x', None))",
+    ]
 
 
 @register_node
@@ -73,6 +94,7 @@ class BaselineALSNode(Node):
         ],
         input_types=["NDDataset"],
         output_type="NDDataset",
+        requires_scp=True,
     )
 
     async def execute(self, input_data: NDDataset) -> NDDataset:
@@ -125,6 +147,7 @@ class BaselineRubberbandNode(Node):
         ],
         input_types=["NDDataset"],
         output_type="NDDataset",
+        requires_scp=True,
     )
 
     async def execute(self, input_data: NDDataset) -> NDDataset:
@@ -181,13 +204,44 @@ class SmoothSavitzkyGolayNode(Node):
         output_type="NDDataset",
     )
 
+    python_extra_imports = ["from scipy.signal import savgol_filter"]
+
+    def generate_python(self, inputs, indent="    ", use_scp=True):
+        inp = next(iter(inputs.values())) if inputs else "input_data"
+        params = self._resolve_params()
+        size = params.get("size", 11)
+        order = params.get("order", 2)
+        if use_scp:
+            return [
+                f"{indent}# --- Smooth (Savitzky-Golay) ({self.node_id}) ---",
+                f"{indent}data = {inp}.copy()",
+                f"{indent}data.smooth(size={size}, order={order})",
+                f"{indent}results['{self.node_id}'] = data",
+            ]
+        return [
+            f"{indent}# --- Smooth (Savitzky-Golay) ({self.node_id}) ---",
+            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
+            f"{indent}if _data.ndim >= 2:",
+            f"{indent}    _data = np.apply_along_axis(savgol_filter, -1, _data, window_length={size}, polyorder={order})",
+            f"{indent}else:",
+            f"{indent}    _data = savgol_filter(_data, window_length={size}, polyorder={order})",
+        ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
+
     async def execute(self, input_data: NDDataset) -> NDDataset:
         """Execute Savitzky-Golay smoothing."""
         size = self.parameters.get("size", 11)
         order = self.parameters.get("order", 2)
 
         result = input_data.copy()
-        result.smooth(size=size, order=order)
+        if hasattr(result, 'smooth'):
+            result.smooth(size=size, order=order)
+        else:
+            from scipy.signal import savgol_filter
+            raw = np.asarray(result.data, dtype=np.float64)
+            smoothed = np.apply_along_axis(
+                savgol_filter, -1, raw, window_length=int(size), polyorder=int(order)
+            ) if raw.ndim >= 2 else savgol_filter(raw, window_length=int(size), polyorder=int(order))
+            result.X = smoothed
         add_processing_step(result, "smooth.savitzky_golay", {"size": size, "order": order}, node_id=self.node_id)
 
         return result
@@ -237,7 +291,7 @@ class NormalizeSNVNode(Node):
 
     python_extra_imports = ["import numpy as np"]
 
-    def generate_python(self, inputs, indent="    "):
+    def generate_python(self, inputs, indent="    ", use_scp=True):
         inp = next(iter(inputs.values())) if inputs else "input_data"
         return [
             f"{indent}# --- SNV Normalization ({self.node_id}) ---",
@@ -252,10 +306,7 @@ class NormalizeSNVNode(Node):
             f"{indent}    _std = np.std(_data, axis=1, keepdims=True)",
             f"{indent}    _std[_std == 0] = 1.0",
             f"{indent}    _data = (_data - _mean) / _std",
-            f"{indent}results['{self.node_id}'] = scp.NDDataset(_data)",
-            f"{indent}if hasattr({inp}, 'x') and {inp}.x is not None:",
-            f"{indent}    results['{self.node_id}'].x = {inp}.x.copy()",
-        ]
+        ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
 
     async def execute(self, input_data: NDDataset) -> NodeResult:
         """Execute SNV normalization."""
@@ -274,7 +325,7 @@ class NormalizeSNVNode(Node):
             std_vals[std_vals == 0] = 1.0
             normalized_data = (data - mean_vals) / std_vals
 
-        result = scp.NDDataset(normalized_data)
+        result = AnalysisDataset(X=normalized_data)
         x_coord = safe_get_coord(input_data, 'x')
         if x_coord is not None:
             result.x = x_coord.copy()
@@ -335,7 +386,7 @@ class NormalizeScaleNode(Node):
 
     python_extra_imports = ["import numpy as np"]
 
-    def generate_python(self, inputs, indent="    "):
+    def generate_python(self, inputs, indent="    ", use_scp=True):
         inp = next(iter(inputs.values())) if inputs else "input_data"
         method = self._resolve_params().get("method", "max")
         lines = [
@@ -362,11 +413,7 @@ class NormalizeScaleNode(Node):
                 f"{indent}_range[_range == 0] = 1",
                 f"{indent}_data = (_data - _min) / _range",
             ]
-        lines += [
-            f"{indent}results['{self.node_id}'] = scp.NDDataset(_data)",
-            f"{indent}if hasattr({inp}, 'x') and {inp}.x is not None:",
-            f"{indent}    results['{self.node_id}'].x = {inp}.x.copy()",
-        ]
+        lines += _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
         return lines
 
     async def execute(self, input_data: NDDataset) -> NDDataset:
@@ -389,7 +436,7 @@ class NormalizeScaleNode(Node):
             range_vals[range_vals == 0] = 1
             data = (data - min_vals) / range_vals
 
-        result = scp.NDDataset(data)
+        result = AnalysisDataset(X=data)
         x_coord = safe_get_coord(input_data, 'x')
         if x_coord is not None:
             result.x = x_coord.copy()
@@ -434,6 +481,7 @@ class NormalizeMSCNode(Node):
         ],
         input_types=["NDDataset"],
         output_type="NDDataset",
+        requires_scp=True,
     )
 
     async def execute(self, input_data: NDDataset) -> NDDataset:
@@ -493,13 +541,44 @@ class DerivativeFirstNode(Node):
         output_type="NDDataset",
     )
 
+    python_extra_imports = ["from scipy.signal import savgol_filter"]
+
+    def generate_python(self, inputs, indent="    ", use_scp=True):
+        inp = next(iter(inputs.values())) if inputs else "input_data"
+        params = self._resolve_params()
+        size = params.get("size", 11)
+        order = params.get("order", 2)
+        if use_scp:
+            return [
+                f"{indent}# --- 1st Derivative ({self.node_id}) ---",
+                f"{indent}data = {inp}.copy()",
+                f"{indent}data.savgol(size={size}, order={order}, deriv=1)",
+                f"{indent}results['{self.node_id}'] = data",
+            ]
+        return [
+            f"{indent}# --- 1st Derivative ({self.node_id}) ---",
+            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
+            f"{indent}if _data.ndim >= 2:",
+            f"{indent}    _data = np.apply_along_axis(savgol_filter, -1, _data, window_length={size}, polyorder={order}, deriv=1)",
+            f"{indent}else:",
+            f"{indent}    _data = savgol_filter(_data, window_length={size}, polyorder={order}, deriv=1)",
+        ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
+
     async def execute(self, input_data: NDDataset) -> NDDataset:
         """Execute first derivative calculation."""
         size = self.parameters.get("size", 11)
         order = self.parameters.get("order", 2)
 
         result = input_data.copy()
-        result.savgol(size=size, order=order, deriv=1)
+        if hasattr(result, 'savgol'):
+            result.savgol(size=size, order=order, deriv=1)
+        else:
+            from scipy.signal import savgol_filter
+            raw = np.asarray(result.data, dtype=np.float64)
+            derived = np.apply_along_axis(
+                savgol_filter, -1, raw, window_length=int(size), polyorder=int(order), deriv=1
+            ) if raw.ndim >= 2 else savgol_filter(raw, window_length=int(size), polyorder=int(order), deriv=1)
+            result.X = derived
 
         # Update units — only when meaningful units exist on both axes
         try:
@@ -563,13 +642,44 @@ class DerivativeSecondNode(Node):
         output_type="NDDataset",
     )
 
+    python_extra_imports = ["from scipy.signal import savgol_filter"]
+
+    def generate_python(self, inputs, indent="    ", use_scp=True):
+        inp = next(iter(inputs.values())) if inputs else "input_data"
+        params = self._resolve_params()
+        size = params.get("size", 11)
+        order = params.get("order", 2)
+        if use_scp:
+            return [
+                f"{indent}# --- 2nd Derivative ({self.node_id}) ---",
+                f"{indent}data = {inp}.copy()",
+                f"{indent}data.savgol(size={size}, order={order}, deriv=2)",
+                f"{indent}results['{self.node_id}'] = data",
+            ]
+        return [
+            f"{indent}# --- 2nd Derivative ({self.node_id}) ---",
+            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
+            f"{indent}if _data.ndim >= 2:",
+            f"{indent}    _data = np.apply_along_axis(savgol_filter, -1, _data, window_length={size}, polyorder={order}, deriv=2)",
+            f"{indent}else:",
+            f"{indent}    _data = savgol_filter(_data, window_length={size}, polyorder={order}, deriv=2)",
+        ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
+
     async def execute(self, input_data: NDDataset) -> NDDataset:
         """Execute second derivative calculation."""
         size = self.parameters.get("size", 11)
         order = self.parameters.get("order", 2)
 
         result = input_data.copy()
-        result.savgol(size=size, order=order, deriv=2)
+        if hasattr(result, 'savgol'):
+            result.savgol(size=size, order=order, deriv=2)
+        else:
+            from scipy.signal import savgol_filter
+            raw = np.asarray(result.data, dtype=np.float64)
+            derived = np.apply_along_axis(
+                savgol_filter, -1, raw, window_length=int(size), polyorder=int(order), deriv=2
+            ) if raw.ndim >= 2 else savgol_filter(raw, window_length=int(size), polyorder=int(order), deriv=2)
+            result.X = derived
 
         # Update units — only when meaningful units exist on both axes
         try:
@@ -640,7 +750,7 @@ class CosmicRayRemovalNode(Node):
         "from scipy.ndimage import median_filter",
     ]
 
-    def generate_python(self, inputs, indent="    "):
+    def generate_python(self, inputs, indent="    ", use_scp=True):
         inp = next(iter(inputs.values())) if inputs else "input_data"
         params = self._resolve_params()
         window = params.get("window", 7)
@@ -661,10 +771,7 @@ class CosmicRayRemovalNode(Node):
             f"{indent}else:",
             f"{indent}    for _i in range(_data.shape[0]):",
             f"{indent}        _data[_i] = _remove_cosmic_rays(_data[_i])",
-            f"{indent}results['{self.node_id}'] = scp.NDDataset(_data)",
-            f"{indent}if hasattr({inp}, 'x') and {inp}.x is not None:",
-            f"{indent}    results['{self.node_id}'].x = {inp}.x.copy()",
-        ]
+        ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
 
     async def execute(self, input_data: NDDataset) -> NDDataset:
         """Execute cosmic ray removal."""
@@ -682,7 +789,7 @@ class CosmicRayRemovalNode(Node):
             for i in range(data.shape[0]):
                 data[i] = remove_cosmic_rays(data[i], window=window, zscore_threshold=zscore)
 
-        result = scp.NDDataset(data)
+        result = AnalysisDataset(X=data)
         x_coord = safe_get_coord(input_data, 'x')
         if x_coord is not None:
             result.x = x_coord.copy()
@@ -739,22 +846,43 @@ class ClipRangeNode(Node):
         output_type="NDDataset",
     )
 
-    def generate_python(self, inputs, indent="    "):
+    python_extra_imports = ["import numpy as np"]
+
+    def generate_python(self, inputs, indent="    ", use_scp=True):
         inp = next(iter(inputs.values())) if inputs else "input_data"
         params = self._resolve_params()
         min_wn = params.get("min_wavenumber")
         max_wn = params.get("max_wavenumber")
-        lines = [
-            f"{indent}# --- Clip Range ({self.node_id}) ---",
-            f"{indent}_clipped = {inp}.copy()",
-        ]
-        if min_wn is not None and max_wn is not None:
-            lines.append(f"{indent}_clipped = _clipped[:, {min_wn}:{max_wn}]")
-        elif min_wn is not None:
-            lines.append(f"{indent}_clipped = _clipped[:, {min_wn}:]")
-        elif max_wn is not None:
-            lines.append(f"{indent}_clipped = _clipped[:, :{max_wn}]")
-        lines.append(f"{indent}results['{self.node_id}'] = _clipped")
+        lines = [f"{indent}# --- Clip Range ({self.node_id}) ---"]
+        if use_scp:
+            # SCP coordinate-aware slicing
+            lines.append(f"{indent}_clipped = {inp}.copy()")
+            if min_wn is not None and max_wn is not None:
+                lines.append(f"{indent}_clipped = _clipped[:, {min_wn}:{max_wn}]")
+            elif min_wn is not None:
+                lines.append(f"{indent}_clipped = _clipped[:, {min_wn}:]")
+            elif max_wn is not None:
+                lines.append(f"{indent}_clipped = _clipped[:, :{max_wn}]")
+            lines.append(f"{indent}results['{self.node_id}'] = _clipped")
+        else:
+            # numpy path: find column indices from x-axis values
+            lines.append(f"{indent}_x = getattr({inp}, 'x', None)")
+            lines.append(f"{indent}_x_vals = np.asarray(_x.data) if _x is not None and _x.data is not None else None")
+            lines.append(f"{indent}if _x_vals is not None:")
+            lines.append(f"{indent}    _mask = np.ones(len(_x_vals), dtype=bool)")
+            if min_wn is not None:
+                lines.append(f"{indent}    _mask &= _x_vals >= {min_wn}")
+            if max_wn is not None:
+                lines.append(f"{indent}    _mask &= _x_vals <= {max_wn}")
+            lines.append(f"{indent}    _new_data = np.array({inp}.data)[:, _mask]")
+            lines.append(f"{indent}    results['{self.node_id}'] = _Result(_new_data, x=type('Ax', (), {{'data': _x_vals[_mask]}}))")
+            lines.append(f"{indent}else:")
+            # No axis info — integer column slicing fallback
+            lo = int(min_wn) if min_wn is not None else 0
+            hi = int(max_wn) if max_wn is not None else None
+            hi_str = str(hi) if hi is not None else ""
+            lines.append(f"{indent}    _new_data = np.array({inp}.data)[:, {lo}:{hi_str}]")
+            lines.append(f"{indent}    results['{self.node_id}'] = _Result(_new_data)")
         return lines
 
     async def execute(self, input_data: NDDataset) -> NDDataset:
@@ -762,18 +890,23 @@ class ClipRangeNode(Node):
         min_wn = self.parameters.get("min_wavenumber")
         max_wn = self.parameters.get("max_wavenumber")
 
-        result = input_data.copy()
         input_shape = input_data.shape
 
-        # Apply range limit using SpectroChemPy slicing
-        if min_wn is not None and max_wn is not None:
-            if min_wn > max_wn:
-                min_wn, max_wn = max_wn, min_wn
-            result = result[:, min_wn:max_wn]
-        elif min_wn is not None:
-            result = result[:, min_wn:]
-        elif max_wn is not None:
-            result = result[:, :max_wn]
+        if min_wn is not None and max_wn is not None and min_wn > max_wn:
+            min_wn, max_wn = max_wn, min_wn
+
+        # NDDataset: coordinate-aware slicing ([:, 400:4000] selects by wavenumber)
+        # AnalysisDataset: find column indices from x_axis.values, then integer-slice
+        if isinstance(input_data, AnalysisDataset):
+            result = self._clip_by_index(input_data, min_wn, max_wn)
+        else:
+            result = input_data.copy()
+            if min_wn is not None and max_wn is not None:
+                result = result[:, min_wn:max_wn]
+            elif min_wn is not None:
+                result = result[:, min_wn:]
+            elif max_wn is not None:
+                result = result[:, :max_wn]
 
         copy_processing_history(input_data, result)
         add_processing_step(
@@ -784,6 +917,43 @@ class ClipRangeNode(Node):
         )
 
         return result
+
+    @staticmethod
+    def _clip_by_index(ds: AnalysisDataset, min_wn, max_wn) -> AnalysisDataset:
+        """Clip AnalysisDataset columns by x_axis values (wavenumber range)."""
+        x_vals = ds.x_axis.values if ds.x_axis is not None else None
+        if x_vals is None:
+            # No axis info — fall back to integer column slicing
+            lo = int(min_wn) if min_wn is not None else 0
+            hi = int(max_wn) if max_wn is not None else ds.shape[1]
+            return ds[:, lo:hi]
+
+        # Build boolean mask: keep columns within [min_wn, max_wn]
+        mask = np.ones(len(x_vals), dtype=bool)
+        if min_wn is not None:
+            mask &= x_vals >= min_wn
+        if max_wn is not None:
+            mask &= x_vals <= max_wn
+
+        from app.lib.analysis_dataset import AxisInfo
+        new_x = AxisInfo(
+            values=x_vals[mask],
+            labels=([l for l, m in zip(ds.x_axis.labels, mask) if m]
+                    if ds.x_axis.labels else None),
+            units=ds.x_axis.units,
+            title=ds.x_axis.title,
+        )
+        return AnalysisDataset(
+            X=ds.X[:, mask],
+            x_axis=new_x,
+            y_axis=ds.y_axis.copy() if ds.y_axis else None,
+            target=ds.target,
+            meta={k: v for k, v in ds.meta.items()},
+            provenance=list(ds.provenance),
+            backend=ds.backend,
+            title=ds.title,
+            units=ds.units,
+        )
 
 
 @register_node
@@ -818,16 +988,13 @@ class ClipFloorNode(Node):
 
     python_extra_imports = ["import numpy as np"]
 
-    def generate_python(self, inputs, indent="    "):
+    def generate_python(self, inputs, indent="    ", use_scp=True):
         inp = next(iter(inputs.values())) if inputs else "input_data"
         floor_val = self._resolve_params().get("floor", 0.0)
         return [
             f"{indent}# --- Clip Floor ({self.node_id}) ---",
             f"{indent}_data = np.maximum(np.array({inp}.data, dtype=np.float64), {_format_value(floor_val)})",
-            f"{indent}results['{self.node_id}'] = scp.NDDataset(_data)",
-            f"{indent}if hasattr({inp}, 'x') and {inp}.x is not None:",
-            f"{indent}    results['{self.node_id}'].x = {inp}.x.copy()",
-        ]
+        ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
 
     async def execute(self, input_data: NDDataset) -> NDDataset:
         """Execute floor clipping."""
@@ -836,7 +1003,7 @@ class ClipFloorNode(Node):
         data = np.array(input_data.data, dtype=np.float64)
         data = np.maximum(data, floor)
 
-        result = scp.NDDataset(data)
+        result = AnalysisDataset(X=data)
         x_coord = safe_get_coord(input_data, 'x')
         if x_coord is not None:
             result.x = x_coord.copy()
@@ -893,7 +1060,7 @@ class WavenumberAlignNode(Node):
         output_type="NDDataset",
     )
 
-    def generate_python(self, inputs, indent="    "):
+    def generate_python(self, inputs, indent="    ", use_scp=True):
         inp = next(iter(inputs.values())) if inputs else "input_data"
         return [
             f"{indent}# --- Wavenumber Align ({self.node_id}) ---",
@@ -944,7 +1111,7 @@ class ScaleMaxNode(Node):
 
     python_extra_imports = ["import numpy as np"]
 
-    def generate_python(self, inputs, indent="    "):
+    def generate_python(self, inputs, indent="    ", use_scp=True):
         inp = next(iter(inputs.values())) if inputs else "input_data"
         target = self._resolve_params().get("target_max", 1.0)
         return [
@@ -957,10 +1124,7 @@ class ScaleMaxNode(Node):
             f"{indent}    for _i in range(_data.shape[0]):",
             f"{indent}        _cmax = np.abs(_data[_i]).max()",
             f"{indent}        if _cmax > 0: _data[_i] = _data[_i] * ({_format_value(target)} / _cmax)",
-            f"{indent}results['{self.node_id}'] = scp.NDDataset(_data)",
-            f"{indent}if hasattr({inp}, 'x') and {inp}.x is not None:",
-            f"{indent}    results['{self.node_id}'].x = {inp}.x.copy()",
-        ]
+        ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
 
     async def execute(self, input_data: NDDataset) -> NDDataset:
         """Execute scale to maximum normalization."""
@@ -978,7 +1142,7 @@ class ScaleMaxNode(Node):
                 if current_max > 0:
                     data[i] = data[i] * (target_max / current_max)
 
-        result = scp.NDDataset(data)
+        result = AnalysisDataset(X=data)
         x_coord = safe_get_coord(input_data, 'x')
         if x_coord is not None:
             result.x = x_coord.copy()
@@ -1015,7 +1179,7 @@ class CenterMeanNode(Node):
 
     python_extra_imports = ["import numpy as np"]
 
-    def generate_python(self, inputs, indent="    "):
+    def generate_python(self, inputs, indent="    ", use_scp=True):
         inp = next(iter(inputs.values())) if inputs else "input_data"
         return [
             f"{indent}# --- Mean Center ({self.node_id}) ---",
@@ -1024,10 +1188,7 @@ class CenterMeanNode(Node):
             f"{indent}    _data = _data - np.mean(_data)",
             f"{indent}else:",
             f"{indent}    _data = _data - np.mean(_data, axis=0)",
-            f"{indent}results['{self.node_id}'] = scp.NDDataset(_data)",
-            f"{indent}if hasattr({inp}, 'x') and {inp}.x is not None:",
-            f"{indent}    results['{self.node_id}'].x = {inp}.x.copy()",
-        ]
+        ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
 
     async def execute(self, input_data: NDDataset) -> NDDataset:
         """Execute mean centering."""
@@ -1039,7 +1200,7 @@ class CenterMeanNode(Node):
             mean_spectrum = np.mean(data, axis=0)
             data = data - mean_spectrum
 
-        result = scp.NDDataset(data)
+        result = AnalysisDataset(X=data)
         x_coord = safe_get_coord(input_data, 'x')
         if x_coord is not None:
             result.x = x_coord.copy()
@@ -1086,7 +1247,7 @@ class ParetoScalingNode(Node):
 
     python_extra_imports = ["import numpy as np"]
 
-    def generate_python(self, inputs, indent="    "):
+    def generate_python(self, inputs, indent="    ", use_scp=True):
         inp = next(iter(inputs.values())) if inputs else "input_data"
         center = self._resolve_params().get("center", True)
         lines = [
@@ -1100,10 +1261,8 @@ class ParetoScalingNode(Node):
             f"{indent}_sf = np.sqrt(_std)",
             f"{indent}_sf[_sf == 0] = 1.0",
             f"{indent}_data = _data / _sf",
-            f"{indent}results['{self.node_id}'] = scp.NDDataset(_data)",
-            f"{indent}if hasattr({inp}, 'x') and {inp}.x is not None:",
-            f"{indent}    results['{self.node_id}'].x = {inp}.x.copy()",
         ]
+        lines += _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
         return lines
 
     async def execute(self, input_data: NDDataset) -> NDDataset:
@@ -1124,7 +1283,7 @@ class ParetoScalingNode(Node):
 
         data_scaled = data_centered / scaling_factor
 
-        result = scp.NDDataset(data_scaled)
+        result = AnalysisDataset(X=data_scaled)
         x_coord = safe_get_coord(input_data, 'x')
         if x_coord is not None:
             result.x = x_coord.copy()
@@ -1210,6 +1369,7 @@ class OSCNode(Node):
                 description="Target values (concentrations, class labels, etc.)",
             ),
         ],
+        requires_scp=True,
     )
 
     python_extra_imports = [
@@ -1217,7 +1377,7 @@ class OSCNode(Node):
         "import spectrochempy as scp",
     ]
 
-    def generate_python(self, inputs, indent="    "):
+    def generate_python(self, inputs, indent="    ", use_scp=True):
         x_expr = inputs.get("X", "X")
         y_expr = inputs.get("y", "y")
         params = self._resolve_params()
@@ -1380,7 +1540,7 @@ class AutoscalingNode(Node):
 
     python_extra_imports = ["import numpy as np"]
 
-    def generate_python(self, inputs, indent="    "):
+    def generate_python(self, inputs, indent="    ", use_scp=True):
         inp = next(iter(inputs.values())) if inputs else "input_data"
         center = self._resolve_params().get("center", True)
         lines = [
@@ -1393,10 +1553,8 @@ class AutoscalingNode(Node):
             f"{indent}_std = np.std(np.array({inp}.data, dtype=np.float64), axis=0, keepdims=True)",
             f"{indent}_std[_std == 0] = 1.0",
             f"{indent}_data = _data / _std",
-            f"{indent}results['{self.node_id}'] = scp.NDDataset(_data)",
-            f"{indent}if hasattr({inp}, 'x') and {inp}.x is not None:",
-            f"{indent}    results['{self.node_id}'].x = {inp}.x.copy()",
         ]
+        lines += _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
         return lines
 
     async def execute(self, input_data: NDDataset) -> NDDataset:
@@ -1416,7 +1574,7 @@ class AutoscalingNode(Node):
 
         data_scaled = data_centered / std
 
-        result = scp.NDDataset(data_scaled)
+        result = AnalysisDataset(X=data_scaled)
         x_coord = safe_get_coord(input_data, 'x')
         if x_coord is not None:
             result.x = x_coord.copy()
@@ -1485,18 +1643,29 @@ class SGDerivativeNode(Node):
 
     scp_method = "deriv"
 
-    def generate_python(self, inputs, indent="    "):
+    python_extra_imports = ["from scipy.signal import savgol_filter"]
+
+    def generate_python(self, inputs, indent="    ", use_scp=True):
         inp = next(iter(inputs.values())) if inputs else "input_data"
         params = self._resolve_params()
         size = params.get("size", 11)
         order = params.get("order", 2)
         deriv_order = int(params.get("deriv", "1"))
+        if use_scp:
+            return [
+                f"{indent}# --- SG Derivative ({self.node_id}) ---",
+                f"{indent}data = {inp}.copy()",
+                f"{indent}data.savgol(size={size}, order={order}, deriv={deriv_order})",
+                f"{indent}results['{self.node_id}'] = data",
+            ]
         return [
             f"{indent}# --- SG Derivative ({self.node_id}) ---",
-            f"{indent}data = {inp}.copy()",
-            f"{indent}data.savgol(size={size}, order={order}, deriv={deriv_order})",
-            f"{indent}results['{self.node_id}'] = data",
-        ]
+            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
+            f"{indent}if _data.ndim >= 2:",
+            f"{indent}    _data = np.apply_along_axis(savgol_filter, -1, _data, window_length={size}, polyorder={order}, deriv={deriv_order})",
+            f"{indent}else:",
+            f"{indent}    _data = savgol_filter(_data, window_length={size}, polyorder={order}, deriv={deriv_order})",
+        ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
 
     async def execute(self, input_data: NDDataset) -> NDDataset:
         """Execute Savitzky-Golay derivative."""
@@ -1508,7 +1677,15 @@ class SGDerivativeNode(Node):
             size += 1
 
         result = input_data.copy()
-        result.savgol(size=size, order=order, deriv=deriv_order)
+        if hasattr(result, 'savgol'):
+            result.savgol(size=size, order=order, deriv=deriv_order)
+        else:
+            from scipy.signal import savgol_filter
+            raw = np.asarray(result.data, dtype=np.float64)
+            derived = np.apply_along_axis(
+                savgol_filter, -1, raw, window_length=int(size), polyorder=int(order), deriv=int(deriv_order)
+            ) if raw.ndim >= 2 else savgol_filter(raw, window_length=int(size), polyorder=int(order), deriv=int(deriv_order))
+            result.X = derived
 
         # Update units
         if deriv_order > 0:
@@ -1577,7 +1754,7 @@ class EMSCNode(Node):
 
     python_extra_imports = ["import numpy as np"]
 
-    def generate_python(self, inputs, indent="    "):
+    def generate_python(self, inputs, indent="    ", use_scp=True):
         inp = next(iter(inputs.values())) if inputs else "input_data"
         params = self._resolve_params()
         ref = params.get("reference", "mean")
@@ -1610,10 +1787,8 @@ class EMSCNode(Node):
             f"{indent}    _c, _, _, _ = np.linalg.lstsq(_design, _data[_i], rcond=None)",
             f"{indent}    _bl = _design[:, 1:] @ _c[1:] if {poly} > 0 else 0",
             f"{indent}    _corrected[_i] = (_data[_i] - _bl) / _c[0] if abs(_c[0]) > 1e-8 else _data[_i]",
-            f"{indent}results['{self.node_id}'] = scp.NDDataset(_corrected)",
-            f"{indent}if hasattr({inp}, 'x') and {inp}.x is not None:",
-            f"{indent}    results['{self.node_id}'].x = {inp}.x.copy()",
         ]
+        lines += _wrap_result_lines(self.node_id, "_corrected", inp, indent, use_scp)
         return lines
 
     async def execute(self, input_data: NDDataset) -> NDDataset:
@@ -1662,7 +1837,7 @@ class EMSCNode(Node):
 
             corrected_data[i] = corrected_spectrum
 
-        result = scp.NDDataset(corrected_data)
+        result = AnalysisDataset(X=corrected_data)
         x_coord = safe_get_coord(input_data, 'x')
         if x_coord is not None:
             result.x = x_coord.copy()

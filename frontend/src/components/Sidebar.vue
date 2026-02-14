@@ -1,49 +1,22 @@
 <template>
   <aside class="sidebar" :class="{ collapsed }">
     <div class="sidebar-header">
-      <h2 v-if="!collapsed">Spectra Platform</h2>
-      <div v-else class="sidebar-mark">SP</div>
+      <img src="/logo.png" alt="Spectra Sherpa" class="sidebar-logo" />
+      <h2 v-if="!collapsed">Spectra Sherpa</h2>
     </div>
     <nav class="nav-list">
-      <!-- Workspace (Main Hub) -->
+      <!-- Main Navigation (6 pages) -->
       <RouterLink
-        class="nav-link workspace-link"
-        to="/workspace"
-        title="Workspace"
-        aria-label="Workspace"
+        v-for="item in mainNavItems"
+        :key="item.to"
+        class="nav-link"
+        :to="item.to"
+        :title="item.label"
+        :aria-label="item.label"
       >
-        <i class="pi pi-th-large" aria-hidden="true"></i>
-        <span v-if="!collapsed" class="nav-label">Workspace</span>
+        <i :class="item.icon" aria-hidden="true"></i>
+        <span v-if="!collapsed" class="nav-label">{{ item.label }}</span>
       </RouterLink>
-
-      <!-- Operations Section -->
-      <div class="nav-section">
-        <span v-if="!collapsed" class="nav-section-label">Operations</span>
-        <RouterLink
-          v-for="item in operationsNavItems"
-          :key="item.to"
-          class="nav-link"
-          :to="item.to"
-          :title="item.label"
-          :aria-label="item.label"
-        >
-          <i :class="item.icon" aria-hidden="true"></i>
-          <span v-if="!collapsed" class="nav-label">{{ item.label }}</span>
-        </RouterLink>
-      </div>
-
-      <!-- Templates -->
-      <div class="nav-section">
-        <RouterLink
-          class="nav-link"
-          to="/templates"
-          title="Templates"
-          aria-label="Templates"
-        >
-          <i class="pi pi-file" aria-hidden="true"></i>
-          <span v-if="!collapsed" class="nav-label">Templates</span>
-        </RouterLink>
-      </div>
 
       <!-- Separator -->
       <div class="nav-separator"></div>
@@ -69,11 +42,14 @@ defineProps<{
   collapsed: boolean;
 }>();
 
-// Operations section
-const operationsNavItems = [
-  { label: "Calibration", to: "/operations/calibration", icon: "pi pi-sliders-v" },
-  { label: "Process", to: "/operations/process", icon: "pi pi-cog" },
-  { label: "Analysis", to: "/operations/analysis", icon: "pi pi-chart-line" },
+// Main navigation — chemometrician workflow
+const mainNavItems = [
+  { label: "Project", to: "/project", icon: "pi pi-folder" },
+  { label: "Data", to: "/data", icon: "pi pi-database" },
+  { label: "Workflow", to: "/workflow", icon: "pi pi-sitemap" },
+  { label: "Experiments", to: "/experiments", icon: "pi pi-chart-bar" },
+  { label: "Deploy", to: "/deploy", icon: "pi pi-cloud-upload" },
+  { label: "Report", to: "/report", icon: "pi pi-file-pdf" },
 ];
 
 // Secondary navigation
@@ -98,21 +74,30 @@ const secondaryNavItems = [
 }
 
 .sidebar-header {
-  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
   border-bottom: 1px solid #334155;
+}
+
+.collapsed .sidebar-header {
+  justify-content: center;
+  padding: 16px 12px;
+}
+
+.sidebar-logo {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
 }
 
 .sidebar-header h2 {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 1.05rem;
   font-weight: 600;
   white-space: nowrap;
-}
-
-.sidebar-mark {
-  font-size: 1.25rem;
-  font-weight: 700;
-  text-align: center;
+  color: #f1f5f9;
 }
 
 .nav-list {
@@ -156,22 +141,6 @@ const secondaryNavItems = [
   font-weight: 500;
 }
 
-.nav-section {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-bottom: 8px;
-}
-
-.nav-section-label {
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #64748b;
-  padding: 8px 16px 4px;
-}
-
 .nav-separator {
   margin: 12px 8px;
   border-top: 1px solid #334155;
@@ -197,15 +166,5 @@ const secondaryNavItems = [
 
 .collapsed .nav-link i {
   margin: 0;
-}
-
-/* Workspace link - primary hub */
-.workspace-link {
-  font-weight: 600;
-  margin-bottom: 12px;
-}
-
-.workspace-link i {
-  font-size: 1.35rem;
 }
 </style>

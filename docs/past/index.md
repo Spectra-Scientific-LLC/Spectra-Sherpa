@@ -9,6 +9,14 @@ Closed issues, completed fixes, and historical context live here.
 - [Final Fixes Summary](FINAL_FIXES_SUMMARY.md)
 - [Session Summary (2026-01-21)](SESSION_SUMMARY_2026-01-21.md)
 
+## Completed Plans
+
+- [Roadmap](ROADMAP.md)
+- [3-Repo Refactor Strategy](REFACTOR_3_REPO_STRATEGY.md)
+- [Sherpa Implementation Plan V2](SHERPA_IMPLEMENTATION_PLAN_V2.md)
+- [DOE Enhancements](DOE_ENHANCEMENTS.md)
+- [Navigation Redesign](NAVIGATION_REDESIGN.md)
+
 ## Fixes & Enforcement
 
 - [3D Concatenation Fix](3D_CONCATENATION_FIX.md)

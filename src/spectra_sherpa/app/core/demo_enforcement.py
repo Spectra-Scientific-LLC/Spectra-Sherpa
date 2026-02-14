@@ -45,7 +45,7 @@ class DemoEnforcementMiddleware(BaseHTTPMiddleware):
         "/api/v1/jobs",
         "/api/v1/workflows",
         "/api/v1/compute",
-        "/api/v1/process",
+        "/api/v1/deploy",
     ]
 
     # Auth endpoints get stricter per-IP rate limiting

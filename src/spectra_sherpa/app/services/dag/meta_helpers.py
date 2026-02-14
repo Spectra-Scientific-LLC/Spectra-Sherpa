@@ -92,6 +92,18 @@ def add_processing_step(
 
     dataset.meta["processing_history"].append(step)
 
+    # Sync to provenance list if AnalysisDataset
+    # NOTE: Cannot use hasattr() here — NDDataset.__getattr__ raises KeyError
+    # (not AttributeError) for unknown attributes, which hasattr doesn't catch.
+    # Guard: skip if provenance IS the same list object (AnalysisDataset links
+    # them in __init__ via setdefault) to avoid double-appending.
+    try:
+        prov = dataset.provenance
+        if isinstance(prov, list) and prov is not dataset.meta.get("processing_history"):
+            prov.append(step)
+    except (KeyError, AttributeError):
+        pass
+
 
 def get_processing_history(dataset: NDDataset) -> List[Dict[str, Any]]:
     """
@@ -109,6 +121,9 @@ def copy_processing_history(source: NDDataset, target: NDDataset) -> None:
     """
     Copy processing history from source to target dataset.
 
+    For AnalysisDataset, also syncs the .provenance attribute so that
+    meta["processing_history"] and provenance stay in lockstep.
+
     Args:
         source: Dataset to copy history from
         target: Dataset to copy history to
@@ -117,13 +132,33 @@ def copy_processing_history(source: NDDataset, target: NDDataset) -> None:
         target.meta = {}
 
     history = get_processing_history(source)
-    target.meta["processing_history"] = [step.copy() for step in history]
+    copied = [step.copy() for step in history]
+    target.meta["processing_history"] = copied
+
+    # Keep AnalysisDataset.provenance in sync (it may be a separate list
+    # after meta["processing_history"] was replaced above).
+    try:
+        prov = target.provenance
+        if isinstance(prov, list) and prov is not copied:
+            prov.clear()
+            prov.extend(copied)
+            # Re-link so they're the same object going forward
+            target.meta["processing_history"] = prov
+    except (KeyError, AttributeError):
+        pass
 
 
 def clear_processing_history(dataset: NDDataset) -> None:
     """Clear processing history (useful for creating derived datasets)."""
     if hasattr(dataset, 'meta') and dataset.meta:
         dataset.meta["processing_history"] = []
+    # Sync AnalysisDataset.provenance
+    try:
+        prov = dataset.provenance
+        if isinstance(prov, list):
+            prov.clear()
+    except (KeyError, AttributeError):
+        pass
 
 
 # =============================================================================

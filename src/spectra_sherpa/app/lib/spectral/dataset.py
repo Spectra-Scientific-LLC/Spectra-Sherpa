@@ -11,8 +11,7 @@ from enum import Enum
 from typing import Optional, List
 import numpy as np
 
-from app.lib.scp_compat import scp, NDDataset, Coord, HAS_SCP
-HAS_SPECTROCHEMPY = HAS_SCP
+from app.lib.scp_compat import scp, NDDataset, Coord, HAS_SCP, require_scp
 
 
 class SpectralUnit(Enum):
@@ -146,8 +145,7 @@ def create_spectral_dataset(
     NDDataset
         Fully configured dataset with coordinates and units
     """
-    if not HAS_SPECTROCHEMPY:
-        raise ImportError("SpectroChemPy is required for create_spectral_dataset")
+    require_scp("Spectral dataset creation")
 
     # Ensure 2D
     if data.ndim == 1:

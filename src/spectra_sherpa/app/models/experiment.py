@@ -22,8 +22,12 @@ class Experiment(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+    project_id: Mapped[int | None] = mapped_column(
+        ForeignKey("project.id", ondelete="SET NULL"), index=True, nullable=True
+    )
 
     user = relationship("User", back_populates="experiments")
+    project = relationship("Project", back_populates="experiments")
     files = relationship(
         "ExperimentFile", back_populates="experiment", cascade="all, delete-orphan"
     )

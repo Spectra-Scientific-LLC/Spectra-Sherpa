@@ -85,7 +85,7 @@
 
               <!-- Preview table -->
               <div v-if="inputPreview.length" class="preview-table">
-                <h4>Data Preview (first {{ previewRowLimit }} rows)</h4>
+                <h4>Input Preview ({{ inputDataSummary }})</h4>
                 <DataTable
                   :value="inputPreview"
                   :scrollable="true"
@@ -542,7 +542,7 @@
 
               <!-- Preview table -->
               <div v-if="outputPreview.length" class="preview-table">
-                <h4>Data Preview (first {{ previewRowLimit }} rows)</h4>
+                <h4>Output Preview ({{ outputDataSummary }})</h4>
                 <DataTable
                   :value="outputPreview"
                   :scrollable="true"
@@ -561,7 +561,7 @@
               </div>
 
               <div v-if="pcaDiagnosticsPreview.length" class="preview-table">
-                <h4>PCA Diagnostics Preview (first {{ previewRowLimit }} rows)</h4>
+                <h4>PCA Diagnostics ({{ pcaDiagSummary }})</h4>
                 <DataTable
                   :value="pcaDiagnosticsPreview"
                   :scrollable="true"
@@ -1724,6 +1724,18 @@ const inputPreview = computed(() => {
   });
 });
 
+const inputDataSummary = computed(() => {
+  const data = nodeData.value?.inputData?.data;
+  if (!data || !Array.isArray(data)) return "";
+  const totalRows = data.length;
+  const totalCols = Array.isArray(data[0]) ? data[0].length : 1;
+  const shownRows = Math.min(totalRows, previewRowLimit);
+  const shownCols = Math.min(totalCols, 10);
+  let summary = `${shownRows} of ${totalRows} rows`;
+  if (totalCols > 10) summary += `, ${shownCols} of ${totalCols} columns`;
+  return summary;
+});
+
 const inputPreviewColumns = computed(() => {
   if (!inputPreview.value.length) return [];
   const first = inputPreview.value[0];
@@ -1842,6 +1854,18 @@ const outputPreviewColumns = computed(() => {
   });
 });
 
+const outputDataSummary = computed(() => {
+  const data = nodeOutput.value?.data;
+  if (!data || !Array.isArray(data)) return "";
+  const totalRows = data.length;
+  const totalCols = Array.isArray(data[0]) ? data[0].length : 1;
+  const shownRows = Math.min(totalRows, previewRowLimit);
+  const shownCols = Math.min(totalCols, 10);
+  let summary = `${shownRows} of ${totalRows} rows`;
+  if (totalCols > 10) summary += `, ${shownCols} of ${totalCols} columns`;
+  return summary;
+});
+
 const pcaDiagnosticsPreview = computed(() => {
   if (!isPCAOutput.value || !hasOutput.value) return [];
   const metadata = nodeOutput.value?.metadata || {};
@@ -1860,6 +1884,16 @@ const pcaDiagnosticsPreview = computed(() => {
     });
   }
   return rows;
+});
+
+const pcaDiagSummary = computed(() => {
+  if (!isPCAOutput.value || !hasOutput.value) return "";
+  const metadata = nodeOutput.value?.metadata || {};
+  const t2 = Array.isArray(metadata.t2) ? metadata.t2 : [];
+  const spe = Array.isArray(metadata.spe) ? metadata.spe : [];
+  const totalRows = Math.max(t2.length, spe.length);
+  const shownRows = Math.min(totalRows, previewRowLimit);
+  return `${shownRows} of ${totalRows} rows`;
 });
 
 const pcaDiagnosticsColumns = computed(() => ([
@@ -1975,6 +2009,7 @@ const availablePlots = computed(() => {
 
 // Base plot layout for dark theme
 const basePlotLayout = {
+  autosize: true,
   paper_bgcolor: "#1e293b",
   plot_bgcolor: "#0f172a",
   font: { color: "#f8fafc", size: 12 },

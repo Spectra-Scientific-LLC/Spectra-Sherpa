@@ -64,88 +64,100 @@ class JobManager:
         return result.scalar() or 0
 
     async def run_job(
-        self, session: AsyncSession, job_id: int, work: Callable[[], Awaitable[None]]
+        self, job_id: int, work: Callable[[], Awaitable[None]]
     ) -> None:
-        # Admission step: serialize check-and-start in PostgreSQL deployments.
-        if self._uses_postgres:
-            await session.execute(
-                text("SELECT pg_advisory_xact_lock(:k)"),
-                {"k": self._admission_lock_key},
-            )
+        """Execute a background job with full session ownership.
 
-        running_count = await self._count_running_jobs(session)
-        if running_count >= settings.max_concurrent_jobs:
-            block_result = await session.execute(
+        This method is designed to run as a detached ``asyncio.create_task``
+        after the originating HTTP request has already returned, so it must
+        never use a request-scoped session.  All DB access goes through
+        ``async_session()`` which creates short-lived, self-contained sessions.
+        """
+        # --- Admission: check concurrency limits and claim the job ----------
+        async with async_session() as session:
+            if self._uses_postgres:
+                await session.execute(
+                    text("SELECT pg_advisory_xact_lock(:k)"),
+                    {"k": self._admission_lock_key},
+                )
+
+            running_count = await self._count_running_jobs(session)
+            if running_count >= settings.max_concurrent_jobs:
+                block_result = await session.execute(
+                    update(BackgroundJob)
+                    .where(BackgroundJob.id == job_id)
+                    .where(BackgroundJob.status == "pending")
+                    .values(
+                        status="failed",
+                        error_message="Max concurrent jobs exceeded",
+                        completed_at=datetime.now(timezone.utc),
+                    )
+                )
+                await session.commit()
+                if (block_result.rowcount or 0) > 0:
+                    await self._broadcast_job(
+                        job_id,
+                        status="failed",
+                        message="Max concurrent jobs exceeded",
+                    )
+                self._job_owners.pop(job_id, None)
+                return
+
+            start_result = await session.execute(
                 update(BackgroundJob)
                 .where(BackgroundJob.id == job_id)
                 .where(BackgroundJob.status == "pending")
                 .values(
-                    status="failed",
-                    error_message="Max concurrent jobs exceeded",
-                    completed_at=datetime.now(timezone.utc),
+                    status="running",
+                    started_at=datetime.now(timezone.utc),
+                    last_heartbeat=datetime.now(timezone.utc),
                 )
             )
+            if (start_result.rowcount or 0) == 0:
+                await session.rollback()
+                self._job_owners.pop(job_id, None)
+                return
+
+            self._local_jobs.add(job_id)
             await session.commit()
-            if (block_result.rowcount or 0) > 0:
-                await self._broadcast_job(
-                    job_id,
-                    status="failed",
-                    message="Max concurrent jobs exceeded",
-                    session=session,
-                )
-            self._job_owners.pop(job_id, None)
-            return
 
-        start_result = await session.execute(
-            update(BackgroundJob)
-            .where(BackgroundJob.id == job_id)
-            .where(BackgroundJob.status == "pending")
-            .values(
-                status="running",
-                started_at=datetime.now(timezone.utc),
-                last_heartbeat=datetime.now(timezone.utc),
-            )
-        )
-        if (start_result.rowcount or 0) == 0:
-            await session.rollback()
-            self._job_owners.pop(job_id, None)
-            return
-
-        self._local_jobs.add(job_id)
-        await session.commit()
-        await self._broadcast_job(job_id, status="running", progress=0, session=session)
+        # Broadcast outside the admission session (uses its own session if needed)
+        await self._broadcast_job(job_id, status="running", progress=0)
 
         heartbeat_task = asyncio.create_task(self._heartbeat_loop(job_id))
         self._heartbeat_tasks[job_id] = heartbeat_task
 
+        # --- Execute work and record outcome --------------------------------
         try:
             await work()
-            await session.execute(
-                update(BackgroundJob)
-                .where(BackgroundJob.id == job_id)
-                .values(
-                    status="completed",
-                    progress=100,
-                    completed_at=datetime.now(timezone.utc),
+            async with async_session() as done_session:
+                await done_session.execute(
+                    update(BackgroundJob)
+                    .where(BackgroundJob.id == job_id)
+                    .values(
+                        status="completed",
+                        progress=100,
+                        completed_at=datetime.now(timezone.utc),
+                    )
                 )
-            )
-            await session.commit()
+                await done_session.commit()
             await self._broadcast_job(
-                job_id, status="completed", progress=100, session=session
+                job_id, status="completed", progress=100
             )
         except Exception as exc:
-            await session.execute(
-                update(BackgroundJob)
-                .where(BackgroundJob.id == job_id)
-                .values(
-                    status="failed",
-                    error_message=str(exc),
-                    completed_at=datetime.now(timezone.utc),
+            async with async_session() as err_session:
+                await err_session.execute(
+                    update(BackgroundJob)
+                    .where(BackgroundJob.id == job_id)
+                    .values(
+                        status="failed",
+                        error_message=str(exc),
+                        completed_at=datetime.now(timezone.utc),
+                    )
                 )
-            )
-            await session.commit()
+                await err_session.commit()
             await self._broadcast_job(
-                job_id, status="failed", message=str(exc), session=session
+                job_id, status="failed", message=str(exc)
             )
         finally:
             self._local_jobs.discard(job_id)

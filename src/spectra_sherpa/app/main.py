@@ -232,6 +232,10 @@ def _make_lifespan(
             from app.services.network_health import start_network_health_service
             await start_network_health_service()
 
+            # Start folder watch polling service
+            from app.services.folder_watch_service import start_folder_watch_service
+            await start_folder_watch_service()
+
             # Check Sherpa Engine availability (fires warning if misconfigured)
             from app.services.sherpa_engine import get_sherpa_engine
             _engine = get_sherpa_engine()
@@ -272,6 +276,10 @@ def _make_lifespan(
             await hook()
 
         await job_manager.shutdown()
+
+        # Stop folder watch polling
+        from app.services.folder_watch_service import stop_folder_watch_service
+        await stop_folder_watch_service()
 
         # Stop network health monitoring
         from app.services.network_health import stop_network_health_service

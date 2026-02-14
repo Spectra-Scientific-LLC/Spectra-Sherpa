@@ -31,7 +31,7 @@ except ImportError:
     HAS_SCIPY = False
     loadmat = None
 
-from app.lib.scp_compat import scp, NDDataset, HAS_SCP
+from app.lib.scp_compat import scp, NDDataset, HAS_SCP, require_scp
 
 
 # Filename pattern for extracting species labels
@@ -453,8 +453,7 @@ def read_spectral_file(filepath: Path) -> "NDDataset":
     NDDataset
         Spectrum data
     """
-    if not HAS_SCP:
-        raise ImportError("spectrochempy is required to read spectral files")
+    require_scp("Spectral file reading")
 
     ext = filepath.suffix.lower()
     label = _extract_label_from_filename(filepath.name)
@@ -463,8 +462,10 @@ def read_spectral_file(filepath: Path) -> "NDDataset":
         dataset = scp.read_jdx(str(filepath))
     elif ext == ".spc":
         dataset = scp.read_spc(str(filepath))
-    elif ext in [".spa", ".spg"]:
+    elif ext == ".spa":
         dataset = scp.read_spa(str(filepath))
+    elif ext == ".spg":
+        dataset = scp.read_omnic(str(filepath))
     elif ext == ".opus":
         dataset = scp.read_opus(str(filepath))
     else:

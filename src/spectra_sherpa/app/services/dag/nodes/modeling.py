@@ -9,7 +9,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 import numpy as np
-from app.lib.scp_compat import scp, NDDataset
+from app.lib.scp_compat import scp, NDDataset, to_nddataset
+from app.lib.analysis_dataset import AnalysisDataset, AxisInfo
 
 from ..node_base import (
     Node,
@@ -27,41 +28,49 @@ logger = logging.getLogger(__name__)
 
 def _make_safe_coord(values: Any, title: Optional[str] = None) -> Any:
     """
-    Build a SpectroChemPy Coord safely for numeric and categorical values.
+    Build axis metadata safely for numeric and categorical values.
 
-    SpectroChemPy 0.6.x can fail when creating Coord directly from string arrays
-    (internal numeric ops such as ``np.abs`` on string dtype). For non-numeric
-    labels, create a numeric index coordinate and attach labels separately.
+    Returns an AxisInfo (pure-Python) so that downstream nodes work without
+    SpectroChemPy.  Accepts AxisInfo, Coord-like objects, numeric arrays,
+    and string/categorical arrays.
     """
     if values is None:
         return None
 
-    if hasattr(values, "data") and hasattr(values, "copy"):
+    # Already an AxisInfo — copy and optionally set title
+    if isinstance(values, AxisInfo):
         coord = values.copy()
-        if title:
-            try:
-                if not getattr(coord, "title", None):
-                    coord.title = title
-            except Exception:
-                pass
+        if title and not coord.title:
+            coord.title = title
         return coord
 
-    try:
-        return scp.Coord(values, title=title) if title is not None else scp.Coord(values)
-    except Exception:
-        labels_obj = np.asarray(values, dtype=object)
-        if labels_obj.ndim == 0:
-            labels_list = [labels_obj.item()]
-        else:
-            labels_list = labels_obj.reshape(-1).tolist()
+    # Coord-like object (NDDataset coordinate) — convert to AxisInfo
+    if hasattr(values, "data") and hasattr(values, "copy"):
+        return AxisInfo(
+            values=np.asarray(values.data) if values.data is not None else None,
+            units=str(values.units) if hasattr(values, "units") and values.units else None,
+            title=title or (str(values.title) if hasattr(values, "title") and values.title else None),
+            labels=(
+                list(values.labels)
+                if hasattr(values, "labels") and values.labels is not None
+                else None
+            ),
+        )
 
-        labels_str = [str(v) for v in labels_list]
-        coord = scp.Coord(np.arange(len(labels_str), dtype=float), title=title)
-        try:
-            coord.labels = labels_str
-        except Exception:
-            pass
-        return coord
+    # Try numeric array
+    arr = np.asarray(values)
+    if arr.ndim == 0:
+        arr = arr.reshape(1)
+    if np.issubdtype(arr.dtype, np.number):
+        return AxisInfo(values=arr, title=title)
+
+    # String / categorical — store as labels with numeric index
+    labels_str = [str(v) for v in arr.reshape(-1).tolist()]
+    return AxisInfo(
+        values=np.arange(len(labels_str), dtype=float),
+        labels=labels_str,
+        title=title,
+    )
 
 
 def _create_spectral_dataset(
@@ -71,63 +80,40 @@ def _create_spectral_dataset(
     units: Optional[str] = None,
     title: Optional[str] = None,
     meta: Optional[dict] = None,
-) -> NDDataset:
+) -> AnalysisDataset:
     """
-    Create an NDDataset with proper coordinate preservation.
+    Create an AnalysisDataset with proper coordinate preservation.
 
     This ensures that spectral data always carries its coordinate system,
     enabling "smart array" behavior where slicing data also slices coordinates.
 
     Args:
         data: The spectral data array (1D or 2D)
-        x_coord: X-axis coordinate (wavenumbers, wavelengths, etc.) - can be Coord or NDDataset.x
-        y_coord: Y-axis coordinate (sample labels, time points) - can be Coord or NDDataset.y
-        units: Y-axis units (e.g., "absorbance", "a.u.")
+        x_coord: X-axis coordinate — AxisInfo, Coord, or array-like
+        y_coord: Y-axis coordinate — AxisInfo, Coord, or array-like
+        units: Data-value units (e.g., "absorbance", "score")
         title: Dataset title
         meta: Metadata dictionary to attach
 
     Returns:
-        NDDataset with coordinates properly attached
+        AnalysisDataset with coordinates properly attached
     """
-    dataset = scp.NDDataset(data)
-    invalid_units_label: Optional[str] = None
+    x_axis = _make_safe_coord(x_coord) if x_coord is not None else None
+    y_axis = _make_safe_coord(y_coord) if y_coord is not None else None
 
-    if x_coord is not None:
-        dataset.x = _make_safe_coord(x_coord)
+    return AnalysisDataset(
+        X=data,
+        x_axis=x_axis,
+        y_axis=y_axis,
+        units=units,
+        title=title,
+        meta=meta.copy() if meta is not None else None,
+    )
 
-    if y_coord is not None:
-        dataset.y = _make_safe_coord(y_coord)
 
-    if units is not None:
-        try:
-            dataset.units = units
-        except Exception:
-            # Some semantic unit labels used for chemometric outputs
-            # (e.g., "score", "loading") are not part of Pint's registry.
-            # Keep dataset dimensionless and preserve the label in metadata.
-            invalid_units_label = str(units)
-
-    if title is not None:
-        dataset.title = title
-
-    if meta is not None:
-        dataset.meta = meta.copy() if hasattr(meta, 'copy') else dict(meta)
-
-    if invalid_units_label:
-        if not hasattr(dataset, "meta") or dataset.meta is None:
-            dataset.meta = {}
-        try:
-            existing = dataset.meta.get("value_units_label")
-        except Exception:
-            existing = None
-        if not existing:
-            try:
-                dataset.meta["value_units_label"] = invalid_units_label
-            except Exception:
-                # Last-resort fallback: replace with plain dict metadata
-                dataset.meta = {"value_units_label": invalid_units_label}
-
-    return dataset
+def _is_dataset(obj: Any) -> bool:
+    """Check if obj is a dataset (AnalysisDataset or NDDataset)."""
+    return isinstance(obj, (AnalysisDataset, NDDataset))
 
 
 def _is_sequential_numeric(values: list) -> bool:
@@ -262,6 +248,7 @@ class PCANode(Node):
             "t2_critical_95",
             "q_critical_95",
         ],
+        requires_scp=True,
     )
 
     async def execute(self, input_data: Any) -> Any:
@@ -274,7 +261,20 @@ class PCANode(Node):
         Returns:
             PCA model object with scores, loadings, and explained variance
         """
-        # Input should already be NDDataset from DAG pipeline
+        # SpectroChemPy PCA expects an NDDataset. Preprocessing nodes may emit
+        # AnalysisDataset (e.g., SNV), so adapt explicitly to avoid SCP trait
+        # errors when auto-conversion sees string units like "dimensionless".
+        if isinstance(input_data, AnalysisDataset):
+            try:
+                input_data = to_nddataset(input_data)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Failed to convert AnalysisDataset to NDDataset for PCA: {exc}"
+                ) from exc
+        elif not isinstance(input_data, NDDataset):
+            raise TypeError(
+                f"PCA expects AnalysisDataset or NDDataset input, got {type(input_data).__name__}"
+            )
 
         # Get parameters
         n_components_str = self.parameters.get("n_components", "5")
@@ -613,6 +613,7 @@ class PLSNode(Node):
                 description="Loadings for Y block as NDDataset (targets × components)",
             ),
         ],
+        requires_scp=True,
     )
 
     async def execute(self, X: Any = None, y: Any = None, **kwargs) -> Any:
@@ -923,7 +924,7 @@ class PCRNode(Node):
 
         # Convert to numpy arrays - accept NDDataset or array
         X_orig = X
-        if isinstance(X, NDDataset):
+        if _is_dataset(X):
             X_data = np.array(X.data)
         else:
             X_data = np.array(X)
@@ -970,7 +971,7 @@ class PCRNode(Node):
 
         # Extract label_categories for categorical coloring
         label_categories = None
-        _y_coord = safe_get_coord(X, 'y') if isinstance(X, NDDataset) else None
+        _y_coord = safe_get_coord(X, 'y') if _is_dataset(X) else None
         if _y_coord is not None:
             try:
                 if hasattr(_y_coord, 'labels') and _y_coord.labels is not None:
@@ -986,7 +987,7 @@ class PCRNode(Node):
                 label_categories = None
 
         # Get input coordinates for NDDataset creation
-        _x_coord = safe_get_coord(X, 'x') if isinstance(X, NDDataset) else None
+        _x_coord = safe_get_coord(X, 'x') if _is_dataset(X) else None
 
         # Build PC labels with explained variance ratio
         evr = pca.explained_variance_ratio_
@@ -1015,7 +1016,7 @@ class PCRNode(Node):
         )
 
         # Add processing history to NDDataset outputs
-        if isinstance(X, NDDataset):
+        if _is_dataset(X):
             copy_processing_history(X, scores_dataset)
             copy_processing_history(X, loadings_dataset)
         add_processing_step(
@@ -1215,7 +1216,7 @@ class SVRNode(Node):
             raise ValueError("Missing required input: y (targets)")
 
         # Convert to numpy arrays - accept NDDataset or array
-        if isinstance(X, NDDataset):
+        if _is_dataset(X):
             X_data = np.array(X.data)
         else:
             X_data = np.array(X)
@@ -1262,7 +1263,7 @@ class SVRNode(Node):
         label_categories = None
         n_observations = X_data.shape[0]
 
-        if isinstance(X, NDDataset) and X.y is not None:
+        if _is_dataset(X) and X.y is not None:
             if hasattr(X.y, "labels") and X.y.labels is not None:
                 try:
                     labels = X.y.labels
@@ -1416,7 +1417,7 @@ class LinearRegressionNode(Node):
         fit_intercept = self.parameters.get("fit_intercept", True)
 
         # Ensure X is 2D - accept NDDataset or array
-        if isinstance(X, NDDataset):
+        if _is_dataset(X):
             X = np.array(X.data)
         X_array = np.array(X)
         if X_array.ndim == 1:
@@ -1542,6 +1543,7 @@ class MCRNode(Node):
                 description="Modeling residuals",
             ),
         ],
+        requires_scp=True,
     )
 
     async def execute(self, input_data: Any) -> Any:
@@ -1773,6 +1775,7 @@ class EFANode(Node):
                 description="Eigenvalues from backward EFA as NDDataset (samples × components)",
             ),
         ],
+        requires_scp=True,
     )
 
     async def execute(self, input_data: Any) -> Any:
@@ -1965,7 +1968,7 @@ class HCANode(Node):
         from sklearn.decomposition import PCA as SkPCA
 
         # Convert input to numpy array - accept NDDataset or array
-        if isinstance(input_data, NDDataset):
+        if _is_dataset(input_data):
             X_data = np.array(input_data.data)
         else:
             X_data = np.array(input_data)
@@ -2014,7 +2017,7 @@ class HCANode(Node):
         label_categories = sorted(list(set(sample_labels)))
 
         source_labels = None
-        _y_coord = safe_get_coord(input_data, 'y') if isinstance(input_data, NDDataset) else None
+        _y_coord = safe_get_coord(input_data, 'y') if _is_dataset(input_data) else None
         if _y_coord is not None:
             if hasattr(_y_coord, "labels") and _y_coord.labels is not None:
                 labels_data = _y_coord.labels
@@ -2262,7 +2265,7 @@ class KMeansNode(Node):
         from sklearn.decomposition import PCA as SkPCA
 
         # Accept NDDataset or array
-        if isinstance(input_data, NDDataset):
+        if _is_dataset(input_data):
             X_data = np.array(input_data.data)
         else:
             X_data = np.array(input_data)
@@ -2304,7 +2307,7 @@ class KMeansNode(Node):
         label_categories = sorted(list(set(sample_labels)))
 
         source_labels = None
-        _y_coord = safe_get_coord(input_data, 'y') if isinstance(input_data, NDDataset) else None
+        _y_coord = safe_get_coord(input_data, 'y') if _is_dataset(input_data) else None
         if _y_coord is not None:
             if hasattr(_y_coord, "labels") and _y_coord.labels is not None:
                 labels_data = _y_coord.labels
@@ -2415,7 +2418,7 @@ class DBSCANNode(Node):
         from sklearn.decomposition import PCA as SkPCA
 
         # Accept NDDataset or array
-        if isinstance(input_data, NDDataset):
+        if _is_dataset(input_data):
             X_data = np.array(input_data.data)
         else:
             X_data = np.array(input_data)
@@ -2452,7 +2455,7 @@ class DBSCANNode(Node):
         n_clusters = len([label for label in label_categories if label != "-1"])
 
         source_labels = None
-        _y_coord = safe_get_coord(input_data, 'y') if isinstance(input_data, NDDataset) else None
+        _y_coord = safe_get_coord(input_data, 'y') if _is_dataset(input_data) else None
         if _y_coord is not None:
             if hasattr(_y_coord, "labels") and _y_coord.labels is not None:
                 labels_data = _y_coord.labels
@@ -2789,6 +2792,7 @@ class SIMPLISMANode(Node):
                 description="Purity values for resolved components",
             ),
         ],
+        requires_scp=True,
     )
 
     async def execute(self, input_data: Any) -> Any:
@@ -3074,7 +3078,6 @@ class NMFNode(Node):
         if np.any(data_array < 0):
             logger.warning("[NMF Node] Input contains negative values, shifting to non-negative range")
             data_array = data_array - data_array.min()
-            input_data = scp.NDDataset(data_array)
 
         logger.debug("[NMF Node] Executing with:")
         logger.debug("  - n_components: %s", n_components)
@@ -3083,21 +3086,11 @@ class NMFNode(Node):
         logger.debug("  - tol: %s", tol)
         logger.debug("  - Data shape: %s samples x %s features", n_samples, n_features)
 
-        # Perform NMF using SpectroChemPy
-        nmf = scp.NMF(n_components=n_components, solver=solver, max_iter=max_iter, tol=tol)
-        nmf.fit(input_data)
-
-        # Extract results (W = concentration, H = spectra)
-        # NMF.transform() returns W matrix (basis coefficients)
-        W = nmf.transform(input_data)
-        W_data = np.array(W.data) if hasattr(W, "data") else np.array(W)
-
-        # NMF.components_ returns H matrix (components)
-        if hasattr(nmf, "components_"):
-            H_data = np.array(nmf.components_.data) if hasattr(nmf.components_, "data") else np.array(nmf.components_)
-        else:
-            # Fallback if components_ is not available
-            H_data = np.zeros((n_components, n_features))
+        # Perform NMF using sklearn
+        from sklearn.decomposition import NMF
+        nmf = NMF(n_components=n_components, solver=solver, max_iter=max_iter, tol=tol)
+        W_data = nmf.fit_transform(data_array)
+        H_data = nmf.components_
 
         # Get input coordinates for NDDataset creation
         _x_coord = safe_get_coord(input_data, 'x')
@@ -3342,38 +3335,19 @@ class FastICANode(Node):
         logger.debug("  - tol: %s", tol)
         logger.debug("  - Data shape: %s samples x %s features", n_samples, n_features)
 
-        # Perform FastICA using SpectroChemPy
-        ica = scp.FastICA(
+        # Perform FastICA using sklearn
+        from sklearn.decomposition import FastICA
+        data_array = np.array(input_data.data)
+        ica = FastICA(
             n_components=n_components,
             algorithm=algorithm,
             fun=fun,
             max_iter=max_iter,
-            tol=tol
+            tol=tol,
         )
-        ica.fit(input_data)
-
-        # Extract results
-        # St = source spectral profiles (n_components, n_features) - transpose of sources
-        # A = mixing matrix (n_samples, n_components)
-        # Sources: extract from transform
-        sources = ica.transform(input_data)
-        S_data = np.array(sources.data) if hasattr(sources, "data") else np.array(sources)
-
-        # Get spectral profiles (St attribute)
-        if hasattr(ica, "St"):
-            St_data = np.array(ica.St.data) if hasattr(ica.St, "data") else np.array(ica.St)
-        elif hasattr(ica, "components_"):
-            St_data = np.array(ica.components_)
-        else:
-            St_data = None
-
-        # Get mixing matrix
-        if hasattr(ica, "A"):
-            A_data = np.array(ica.A.data) if hasattr(ica.A, "data") else np.array(ica.A)
-        elif hasattr(ica, "mixing_"):
-            A_data = np.array(ica.mixing_)
-        else:
-            A_data = None
+        S_data = ica.fit_transform(data_array)
+        St_data = ica.components_ if hasattr(ica, "components_") else None
+        A_data = ica.mixing_ if hasattr(ica, "mixing_") else None
 
         # Get input coordinates for NDDataset creation
         _x_coord = safe_get_coord(input_data, 'x')
@@ -3584,7 +3558,7 @@ class PLSPredictNode(Node):
         # Make predictions - SpectroChemPy PLSRegression can accept NDDataset or array
         try:
             # Prefer passing NDDataset for SpectroChemPy models (preserves metadata)
-            if isinstance(X_new, NDDataset):
+            if _is_dataset(X_new):
                 y_pred = pls_model.predict(X_new)
             else:
                 # Fallback to array for non-NDDataset inputs

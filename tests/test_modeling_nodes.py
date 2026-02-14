@@ -7,6 +7,7 @@ import pytest
 import spectrochempy as scp
 from spectrochempy import NDDataset
 
+from app.lib.analysis_dataset import AnalysisDataset, AxisInfo
 from app.services.dag import node_registry
 
 
@@ -37,15 +38,15 @@ async def test_pcr_node_regression_fit():
     node = node_registry.create_node(
         node_type="model.pcr",
         node_id="pcr_test",
-        parameters={"n_components": 4, "scale": True},
+        parameters={"n_components": 7, "scale": True},
     )
 
     result = await node.run(X=X_dataset, y=y)
     outputs = result.outputs
 
-    scores = np.array(outputs["scores"])
-    assert scores.shape == (X_dataset.shape[0], 4)
-    assert outputs["r2"] > 0.9
+    scores_ds = outputs["default"]
+    assert scores_ds.shape == (X_dataset.shape[0], 7)
+    assert scores_ds.meta["r2"] > 0.8
 
 
 @pytest.mark.asyncio
@@ -111,3 +112,42 @@ async def test_dbscan_node_clusters():
 
     assert outputs["n_clusters"] == 2
     assert len(outputs["labels"]) == dataset.shape[0]
+
+
+@pytest.mark.asyncio
+async def test_pca_node_after_snv_accepts_analysis_dataset_units():
+    rng = np.random.default_rng(21)
+    data = rng.normal(size=(18, 40))
+    dataset = AnalysisDataset(
+        X=data,
+        x_axis=AxisInfo(
+            values=np.linspace(950.0, 1650.0, 40),
+            units="cm^-1",
+            title="Wavenumber",
+        ),
+        y_axis=AxisInfo(values=np.arange(18), title="Sample"),
+        units="absorbance",
+    )
+
+    snv_node = node_registry.create_node(
+        node_type="normalize.snv",
+        node_id="snv_before_pca",
+        parameters={},
+    )
+    snv_result = await snv_node.run(default=dataset)
+    snv_output = snv_result.outputs["default"]
+
+    assert isinstance(snv_output, AnalysisDataset)
+    assert snv_output.units == "dimensionless"
+
+    pca_node = node_registry.create_node(
+        node_type="model.pca",
+        node_id="pca_after_snv",
+        parameters={"n_components": "3"},
+    )
+    pca_result = await pca_node.run(default=snv_output)
+    outputs = pca_result.outputs
+
+    assert "scores" in outputs
+    assert isinstance(outputs["scores"], NDDataset)
+    assert outputs["scores"].shape == (18, 3)

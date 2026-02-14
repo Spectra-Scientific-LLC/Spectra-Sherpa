@@ -24,8 +24,18 @@ from .meta_helpers import safe_get_coord
 from .graph_utils import Edge as _Edge, build_dependency_map, topological_sort
 
 from app.lib.scp_compat import NDDataset, HAS_SCP
+from app.lib.analysis_dataset import AnalysisDataset
 from app.types.registry import parse_type_ref
 HAS_NDDATASET = HAS_SCP
+
+
+def _is_dataset(obj: Any) -> bool:
+    """Check if obj is a dataset (AnalysisDataset or NDDataset)."""
+    if isinstance(obj, AnalysisDataset):
+        return True
+    if HAS_SCP and isinstance(obj, NDDataset):
+        return True
+    return False
 
 
 def _category_from_type_ref(type_ref: str) -> str:
@@ -75,8 +85,8 @@ def _validate_spectral_units(
     if not HAS_UNIT_VALIDATION or not HAS_NDDATASET:
         return datasets
 
-    # Filter to only NDDataset objects
-    nddatasets = [d for d in datasets if isinstance(d, NDDataset)]
+    # Filter to only NDDataset objects (unit validation is SCP-specific)
+    nddatasets = [d for d in datasets if HAS_NDDATASET and isinstance(d, NDDataset)]
     if len(nddatasets) < 2:
         return datasets
 
@@ -87,7 +97,7 @@ def _validate_spectral_units(
     result = []
     norm_idx = 0
     for d in datasets:
-        if isinstance(d, NDDataset):
+        if HAS_NDDATASET and isinstance(d, NDDataset):
             result.append(normalized[norm_idx])
             norm_idx += 1
         else:
@@ -128,10 +138,10 @@ def _validate_port_type(
     import numpy as np
 
     type_checks = {
-        "dataset": lambda d: HAS_NDDATASET and isinstance(d, NDDataset),
-        "array": lambda d: isinstance(d, (list, tuple, np.ndarray)) or (HAS_NDDATASET and isinstance(d, NDDataset)),
+        "dataset": lambda d: _is_dataset(d),
+        "array": lambda d: isinstance(d, (list, tuple, np.ndarray)) or _is_dataset(d),
         "model": lambda d: hasattr(d, "fit") or hasattr(d, "transform") or hasattr(d, "predict"),
-        "target": lambda d: isinstance(d, (list, tuple, np.ndarray)) or (HAS_NDDATASET and isinstance(d, NDDataset)),
+        "target": lambda d: isinstance(d, (list, tuple, np.ndarray)) or _is_dataset(d),
         "config": lambda d: isinstance(d, dict),
     }
 
@@ -149,11 +159,9 @@ def _validate_port_type(
             f"expects '{expected_type}' but received '{actual_type}' from node '{source_node_id}'. "
         )
 
-        if expected_type == "dataset" and not HAS_NDDATASET:
-            msg += "SpectroChemPy NDDataset not available."
-        elif expected_type == "dataset":
+        if expected_type == "dataset":
             msg += (
-                "Upstream node should return NDDataset with coordinates attached, "
+                "Upstream node should return AnalysisDataset or NDDataset with coordinates attached, "
                 "not raw arrays. This ensures X-axis (wavenumbers) stays coupled with data."
             )
 
@@ -164,7 +172,7 @@ def _validate_port_type(
 
     # Additional coordinate validation for datasets
     # This catches mismatched axes that could cause cryptic errors downstream
-    if is_valid and expected_type == "dataset" and HAS_NDDATASET and isinstance(data, NDDataset):
+    if is_valid and expected_type == "dataset" and _is_dataset(data):
         coord_issues = []
 
         try:
@@ -765,8 +773,17 @@ class DAGExecutor:
             self.status = WorkflowStatus.COMPLETED
             return self.results
 
+        except ImportError as e:
+            self.status = WorkflowStatus.ERROR
+            raise ValueError(str(e)) from e
         except Exception as e:
             self.status = WorkflowStatus.ERROR
+            if not HAS_SCP and "NoneType" in str(e):
+                raise ValueError(
+                    f"Workflow execution failed: {e}. "
+                    f"SpectroChemPy is not installed — install with: "
+                    f"pip install spectra-sherpa[scp]"
+                ) from e
             raise ValueError(f"Workflow execution failed: {str(e)}") from e
 
     async def execute_node(

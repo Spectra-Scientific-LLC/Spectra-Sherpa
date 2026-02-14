@@ -586,6 +586,18 @@ class LLMService:
         )
         return await self._single_turn(prompt)
 
+    async def write_data_story(self, dataset_info: dict[str, Any]) -> str:
+        """Generate a narrative 'data story' for a reference dataset."""
+        prompt = (
+            "Write a concise, informative narrative about the following spectroscopy dataset. "
+            "Include what the data measures, its scientific context, typical applications, "
+            "and any notable characteristics (sample count, spectral range, reference properties). "
+            "Write 2-3 paragraphs in a professional scientific tone.\n\n"
+            "Dataset info:\n"
+            + json.dumps(dataset_info, default=str)[:6000]
+        )
+        return await self._single_turn(prompt)
+
     async def _single_turn(self, prompt: str) -> str:
         """Single-turn LLM request (used for utility functions)"""
         # Egress check for external LLM providers.

@@ -109,7 +109,7 @@
           <FileUpload
             mode="advanced"
             :multiple="true"
-            accept=".csv,.mat,.jdx,.spa,.spc"
+            accept=".csv,.mat,.jdx,.spa,.spc,.spg,.dx,.txt,.wdf,.opus,.dat"
             :maxFileSize="50000000"
             :auto="false"
             @select="onFileSelect"

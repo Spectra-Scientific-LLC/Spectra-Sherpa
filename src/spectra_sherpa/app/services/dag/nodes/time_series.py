@@ -13,6 +13,7 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 from app.lib.scp_compat import scp, NDDataset
+from app.lib.analysis_dataset import AnalysisDataset, AxisInfo
 
 from app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
 
@@ -117,7 +118,7 @@ class MovingWindowNode(Node):
             # No aggregation: flatten windows into (n_windows * window_size, n_features)
             windowed_data = np.vstack(windows)
 
-        result = scp.NDDataset(windowed_data)
+        result = AnalysisDataset(X=windowed_data)
         # Copy coords and meta from input_data
         x_coord = safe_get_coord(input_data, 'x')
         if x_coord is not None:
@@ -254,7 +255,7 @@ class TrendRemovalNode(Node):
 
         logger.debug(f"[Trend Removal] Applied {method} detrending")
 
-        result = scp.NDDataset(detrended_data)
+        result = AnalysisDataset(X=detrended_data)
         # Copy coords and meta from input_data
         x_coord = safe_get_coord(input_data, 'x')
         if x_coord is not None:

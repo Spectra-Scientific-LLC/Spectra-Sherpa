@@ -5,7 +5,9 @@ API endpoints for workflow export and documentation.
 from __future__ import annotations
 
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +15,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user, get_session
 from app.core.security import check_export_allowed
+from app.models.execution_run import ExecutionRun
 from app.models.user import User
 from app.models.workflow import Workflow
 
@@ -92,7 +95,7 @@ async def export_workflow_to_markdown(
         md_lines.append(f"Total versions: {len(workflow.versions)}\n")
         md_lines.append("| Version | Date | Description |")
         md_lines.append("|---------|------|-------------|")
-        for version in workflow.versions[:5]:  # Show last 5 versions
+        for version in workflow.versions:
             date_str = version.created_at.strftime("%Y-%m-%d %H:%M")
             desc = version.change_description or "No description"
             md_lines.append(f"| {version.version_number} | {date_str} | {desc} |")
@@ -165,6 +168,7 @@ async def export_workflow_to_markdown(
 @router.get("/{workflow_id}/export/report-data")
 async def get_report_data(
     workflow_id: int,
+    run_ids: str | None = Query(None, description="Comma-separated run IDs"),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -172,10 +176,19 @@ async def get_report_data(
     Structural data for provenance report.
 
     Returns workflow metadata, topologically sorted nodes with parameters,
-    edges, and integrity hash. Plots are generated client-side.
+    edges, and integrity hash. Optionally includes execution run data and
+    comparison metrics when ``run_ids`` are provided.
     """
     if not await check_export_allowed(current_user):
         raise HTTPException(status_code=403, detail="Export not permitted for this user")
+
+    # Parse comma-separated run IDs
+    parsed_run_ids: list[int] | None = None
+    if run_ids:
+        try:
+            parsed_run_ids = [int(x.strip()) for x in run_ids.split(",") if x.strip()]
+        except ValueError:
+            raise HTTPException(status_code=422, detail="run_ids must be comma-separated integers")
 
     user_id = current_user.id
 
@@ -231,10 +244,12 @@ async def get_report_data(
         if nid in node_map
     ]
 
-    return {
+    response: dict[str, Any] = {
         "workflow_id": workflow.id,
         "name": workflow.name,
         "description": workflow.description,
+        "technique": getattr(workflow, "technique", None),
+        "sample_type": getattr(workflow, "sample_type", None),
         "integrity_hash": workflow.integrity_hash,
         "created_at": workflow.created_at.isoformat() if workflow.created_at else None,
         "updated_at": workflow.updated_at.isoformat() if workflow.updated_at else None,
@@ -249,3 +264,59 @@ async def get_report_data(
             for e in workflow.edges
         ],
     }
+
+    # Optionally include execution run data
+    if parsed_run_ids:
+        run_query = select(ExecutionRun).where(
+            ExecutionRun.workflow_id == workflow_id,
+            ExecutionRun.id.in_(parsed_run_ids),
+        ).order_by(ExecutionRun.id)
+        run_result = await session.execute(run_query)
+        runs = list(run_result.scalars().all())
+
+        response["runs"] = [
+            {
+                "id": r.id,
+                "name": r.name,
+                "status": r.status,
+                "executed_at": r.executed_at.isoformat() if r.executed_at else None,
+                "results_summary": r.results_summary or {},
+                "diagnostics": r.diagnostics,
+                "params_snapshot": r.params_snapshot or {},
+                "node_statuses": r.node_statuses,
+                "integrity_hash": r.integrity_hash,
+                "labels": r.labels,
+            }
+            for r in runs
+        ]
+
+        # Compute comparison diff when 2+ runs
+        if len(runs) >= 2:
+            response["comparison"] = _build_comparison(runs)
+        else:
+            response["comparison"] = None
+
+    return response
+
+
+def _build_comparison(runs: list[ExecutionRun]) -> dict[str, Any]:
+    """Build metric comparison across runs (same logic as compare_runs)."""
+    metric_keys: set[str] = set()
+    for run in runs:
+        for node_id, metrics in (run.results_summary or {}).items():
+            if isinstance(metrics, dict):
+                for key in metrics:
+                    metric_keys.add(f"{node_id}.{key}")
+
+    sorted_keys = sorted(metric_keys)
+
+    diff: dict[str, dict[str, object]] = {}
+    for key in sorted_keys:
+        node_id, metric_name = key.split(".", 1)
+        diff[key] = {}
+        for run in runs:
+            node_metrics = (run.results_summary or {}).get(node_id, {})
+            if isinstance(node_metrics, dict) and metric_name in node_metrics:
+                diff[key][str(run.id)] = node_metrics[metric_name]
+
+    return {"metric_keys": sorted_keys, "diff": diff}

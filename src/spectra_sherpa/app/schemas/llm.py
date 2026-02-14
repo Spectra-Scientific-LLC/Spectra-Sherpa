@@ -51,6 +51,10 @@ class LLMWriteReportRequest(BaseModel):
     experiment: Dict[str, Any] = Field(default_factory=dict)
 
 
+class LLMDataStoryRequest(BaseModel):
+    dataset_info: Dict[str, Any] = Field(..., description="Dataset metadata for narrative generation")
+
+
 class LLMTextResponse(BaseModel):
     response: str
 

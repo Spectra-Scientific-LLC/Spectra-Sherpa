@@ -1389,6 +1389,15 @@ export const useWorkflowStore = defineStore("workflow", () => {
     return response.data.python_code;
   }
 
+  async function exportToNotebook(): Promise<Record<string, unknown>> {
+    if (!workflowId.value) {
+      await saveWorkflow();
+    }
+
+    const response = await api.get(`/workflows/${workflowId.value}/export/notebook`);
+    return response.data.notebook;
+  }
+
   async function fetchAvailableDatasets(): Promise<AvailableDatasets> {
     const response = await api.get("/datasets/available");
     availableDatasets.value = response.data;
@@ -2052,6 +2061,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
     executeNode,
     executeTrial,
     exportToPython,
+    exportToNotebook,
     fetchAvailableDatasets,
     fetchSpectroChemPyFiles,
     availableSpectroChemPyDatasets,

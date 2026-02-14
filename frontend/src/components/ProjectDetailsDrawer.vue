@@ -15,38 +15,33 @@
     <div v-if="project" class="drawer-content">
       <!-- Project Metadata -->
       <section class="section">
-        <h3 class="section-title">{{ project.metadata.name }}</h3>
-        <p v-if="project.metadata.description" class="project-description">
-          {{ project.metadata.description }}
+        <h3 class="section-title">{{ project.name }}</h3>
+        <p v-if="project.description" class="project-description">
+          {{ project.description }}
         </p>
 
         <div class="meta-grid">
           <div class="meta-item">
-            <span class="meta-label">Author</span>
-            <span class="meta-value">{{ project.metadata.author }}</span>
+            <span class="meta-label">Technique</span>
+            <span class="meta-value">{{ project.technique || "\u2014" }}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Sample Type</span>
+            <span class="meta-value">{{ project.sample_type || "\u2014" }}</span>
           </div>
           <div class="meta-item">
             <span class="meta-label">Created</span>
-            <span class="meta-value">{{ formatDate(project.metadata.created) }}</span>
+            <span class="meta-value">{{ formatDate(project.created_at) }}</span>
           </div>
           <div class="meta-item">
             <span class="meta-label">Modified</span>
-            <span class="meta-value">{{ formatDate(project.metadata.modified) }}</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">Version</span>
-            <span class="meta-value">{{ project.metadata.version }}</span>
+            <span class="meta-value">{{ formatDate(project.updated_at) }}</span>
           </div>
         </div>
 
-        <div v-if="project.metadata.tags.length" class="tags-container">
-          <Tag
-            v-for="tag in project.metadata.tags"
-            :key="tag"
-            :value="tag"
-            severity="info"
-            class="project-tag"
-          />
+        <div class="tags-container">
+          <Tag v-if="project.technique" :value="project.technique" severity="info" class="project-tag" />
+          <Tag v-if="project.sample_type" :value="project.sample_type" severity="secondary" class="project-tag" />
         </div>
       </section>
 
@@ -55,29 +50,24 @@
         <div class="section-header">
           <h4 class="section-subtitle">
             <i class="pi pi-flask"></i>
-            Experiments ({{ projectExperiments.length }})
+            Experiments ({{ project.experiments.length }})
           </h4>
           <Button
             icon="pi pi-external-link"
             class="p-button-text p-button-sm"
-            title="Go to Experiments"
-            @click="navigateToExperiments"
+            title="Go to Data"
+            @click="navigateToData"
           />
         </div>
 
-        <div v-if="loading" class="loading-state">
-          <ProgressSpinner style="width: 30px; height: 30px" />
-          <span>Loading experiments...</span>
-        </div>
-
-        <div v-else-if="projectExperiments.length === 0" class="empty-state">
+        <div v-if="project.experiments.length === 0" class="empty-state">
           <i class="pi pi-inbox"></i>
           <span>No experiments linked to this project</span>
         </div>
 
         <div v-else class="experiments-list">
           <div
-            v-for="exp in projectExperiments"
+            v-for="exp in project.experiments"
             :key="exp.id"
             class="experiment-card"
             @click="openExperiment(exp.id)"
@@ -86,11 +76,8 @@
               <span class="exp-name">{{ exp.name }}</span>
               <Badge :value="exp.file_count || 0" severity="info" />
             </div>
-            <div class="exp-details">
-              <span v-if="exp.description" class="exp-description">
-                {{ truncate(exp.description, 60) }}
-              </span>
-              <span class="exp-date">{{ formatDate(exp.created_at) }}</span>
+            <div v-if="exp.description" class="exp-details">
+              <span class="exp-description">{{ truncate(exp.description, 60) }}</span>
             </div>
           </div>
         </div>
@@ -101,7 +88,7 @@
         <div class="section-header">
           <h4 class="section-subtitle">
             <i class="pi pi-sitemap"></i>
-            Workflows ({{ project.data.workflows.length }})
+            Workflows ({{ project.workflows.length }})
           </h4>
           <Button
             icon="pi pi-external-link"
@@ -111,38 +98,42 @@
           />
         </div>
 
-        <div v-if="project.data.workflows.length === 0" class="empty-state">
+        <div v-if="project.workflows.length === 0" class="empty-state">
           <i class="pi pi-inbox"></i>
           <span>No workflows in this project</span>
         </div>
 
         <div v-else class="workflows-list">
           <div
-            v-for="workflow in project.data.workflows"
-            :key="workflow"
+            v-for="wf in project.workflows"
+            :key="wf.id"
             class="workflow-item"
-            @click="openWorkflow(workflow)"
+            @click="openWorkflow(wf.id)"
           >
             <i class="pi pi-share-alt"></i>
-            <span>{{ formatWorkflowName(workflow) }}</span>
+            <div class="workflow-info">
+              <span class="workflow-name">{{ wf.name }}</span>
+              <span class="workflow-status">{{ wf.status }}</span>
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- Project Settings -->
-      <section v-if="Object.keys(project.data.settings).length" class="section">
+      <!-- Sub-Projects -->
+      <section v-if="project.children && project.children.length" class="section">
         <h4 class="section-subtitle">
-          <i class="pi pi-cog"></i>
-          Project Settings
+          <i class="pi pi-folder"></i>
+          Sub-Projects ({{ project.children.length }})
         </h4>
-        <div class="settings-list">
+        <div class="children-list">
           <div
-            v-for="(value, key) in project.data.settings"
-            :key="key"
-            class="setting-item"
+            v-for="child in project.children"
+            :key="child.id"
+            class="child-item"
+            @click="openSubProject(child.id)"
           >
-            <span class="setting-key">{{ formatSettingKey(String(key)) }}</span>
-            <span class="setting-value">{{ formatSettingValue(value) }}</span>
+            <i class="pi pi-folder"></i>
+            <span>{{ child.name }}</span>
           </div>
         </div>
       </section>
@@ -156,16 +147,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
+import { computed } from "vue";
 import { useRouter } from "vue-router";
 import Sidebar from "primevue/sidebar";
 import Button from "primevue/button";
 import Tag from "primevue/tag";
 import Badge from "primevue/badge";
-import ProgressSpinner from "primevue/progressspinner";
-import { useProjectStore, type Project } from "@/stores/project";
-import { useExperimentStore } from "@/stores/experiment";
-import type { ExperimentSummary } from "@/types";
+import { useProjectStore } from "@/stores/project";
+import type { ProjectDetail } from "@/types";
 
 const props = defineProps<{
   modelValue: boolean;
@@ -177,56 +166,13 @@ const emit = defineEmits<{
 
 const router = useRouter();
 const projectStore = useProjectStore();
-const experimentStore = useExperimentStore();
-
-const loading = ref(false);
-const projectExperiments = ref<ExperimentSummary[]>([]);
 
 const visible = computed({
   get: () => props.modelValue,
   set: (value) => emit("update:modelValue", value),
 });
 
-const project = computed<Project | null>(() => projectStore.currentProject);
-
-// Watch for project changes to load experiments
-watch(
-  () => project.value?.id,
-  async (newId) => {
-    if (newId && visible.value) {
-      await loadProjectExperiments();
-    }
-  }
-);
-
-// Watch for drawer opening
-watch(visible, async (isVisible) => {
-  if (isVisible && project.value) {
-    await loadProjectExperiments();
-  }
-});
-
-async function loadProjectExperiments() {
-  if (!project.value) return;
-
-  loading.value = true;
-  try {
-    // Make sure experiments are loaded
-    if (experimentStore.experiments.length === 0) {
-      await experimentStore.fetchExperiments();
-    }
-
-    // Filter experiments that belong to this project
-    const projectExpIds = project.value.data.experiments;
-    projectExperiments.value = experimentStore.experiments.filter((exp) =>
-      projectExpIds.includes(exp.id)
-    );
-  } catch (error) {
-    console.error("Failed to load project experiments:", error);
-  } finally {
-    loading.value = false;
-  }
-}
+const project = computed<ProjectDetail | null>(() => projectStore.currentProject);
 
 function formatDate(dateString: string): string {
   const date = new Date(dateString);
@@ -250,51 +196,29 @@ function truncate(text: string, maxLength: number): string {
   return text.slice(0, maxLength) + "...";
 }
 
-function formatWorkflowName(workflowId: string): string {
-  return workflowId
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function formatSettingKey(key: string): string {
-  return key
-    .replace(/([A-Z])/g, " $1")
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase())
-    .trim();
-}
-
-function formatSettingValue(value: unknown): string {
-  if (Array.isArray(value)) {
-    return value.join(", ");
-  }
-  if (typeof value === "object" && value !== null) {
-    return JSON.stringify(value);
-  }
-  return String(value);
-}
-
-function navigateToExperiments() {
+function navigateToData() {
   visible.value = false;
-  router.push("/experiments");
+  router.push("/data");
 }
 
 function navigateToWorkflows() {
   visible.value = false;
-  router.push("/workflow-builder");
+  router.push("/workflow");
 }
 
 function openExperiment(experimentId: number) {
   visible.value = false;
-  router.push("/experiments");
-  // Select the experiment in the store
-  experimentStore.selectExperiment(experimentId);
+  router.push("/data");
 }
 
-function openWorkflow(workflowId: string) {
+function openWorkflow(workflowId: number) {
   visible.value = false;
-  router.push("/workflow-builder");
-  // TODO: Load workflow when implemented
+  router.push("/workflow");
+}
+
+async function openSubProject(projectId: number) {
+  await projectStore.selectProject(projectId);
+  // Stay on drawer to see the sub-project details
 }
 </script>
 
@@ -401,7 +325,6 @@ function openWorkflow(workflowId: string) {
   color: #64748b;
 }
 
-.loading-state,
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -460,11 +383,6 @@ function openWorkflow(workflowId: string) {
   color: #64748b;
 }
 
-.exp-date {
-  font-size: 0.75rem;
-  color: #94a3b8;
-}
-
 .workflows-list {
   display: flex;
   flex-direction: column;
@@ -491,34 +409,45 @@ function openWorkflow(workflowId: string) {
   color: #64748b;
 }
 
-.settings-list {
+.workflow-info {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  background: #f8fafc;
-  border-radius: 8px;
 }
 
-.setting-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 4px 0;
-}
-
-.setting-key {
-  font-size: 0.85rem;
-  color: #64748b;
-}
-
-.setting-value {
-  font-size: 0.85rem;
-  color: #334155;
+.workflow-name {
   font-weight: 500;
-  max-width: 60%;
-  text-align: right;
-  word-break: break-word;
+  color: #1e293b;
+}
+
+.workflow-status {
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.children-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.child-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.child-item:hover {
+  background: #f1f5f9;
+  transform: translateX(4px);
+}
+
+.child-item i {
+  color: #d97706;
 }
 
 .drawer-empty {

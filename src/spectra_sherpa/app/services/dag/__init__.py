@@ -30,6 +30,9 @@ from .nodes import (
     time_series,
 )
 
+# Lock the registry — plugins loaded later cannot overwrite built-in types
+node_registry.freeze_builtins()
+
 __all__ = [
     "Node",
     "NodeMetadata",
