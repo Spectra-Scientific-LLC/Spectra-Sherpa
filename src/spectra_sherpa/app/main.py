@@ -260,6 +260,20 @@ def _make_lifespan(
             for hook in (extra_startup or []):
                 await hook()
 
+            # Phase 5: DAG worker pool for CPU-bound node execution
+            import multiprocessing
+            from concurrent.futures import ProcessPoolExecutor
+            from app.services.dag.executor import set_default_pool
+
+            pool_size = settings.dag_worker_pool_size
+            _dag_pool = ProcessPoolExecutor(
+                max_workers=pool_size,
+                mp_context=multiprocessing.get_context("spawn"),
+            )
+            app.state.dag_process_pool = _dag_pool
+            set_default_pool(_dag_pool)
+            logger.info("DAG worker pool: %d processes (spawn)", pool_size)
+
             logger.info("Application startup complete")
         except Exception:
             logger.critical(
@@ -274,6 +288,14 @@ def _make_lifespan(
         # access core services before they are torn down.
         for hook in (extra_shutdown or []):
             await hook()
+
+        # Shut down DAG worker pool
+        from app.services.dag.executor import set_default_pool as _clear_pool
+        _clear_pool(None)
+        pool = getattr(app.state, "dag_process_pool", None)
+        if pool is not None:
+            pool.shutdown(wait=True, cancel_futures=True)
+            logger.info("DAG worker pool shut down")
 
         await job_manager.shutdown()
 

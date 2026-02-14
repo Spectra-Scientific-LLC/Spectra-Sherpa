@@ -2,6 +2,8 @@
 DAG Workflow Executor.
 
 Handles execution of workflows represented as directed acyclic graphs.
+Supports offloading CPU-bound node execution to a ProcessPoolExecutor
+so the asyncio event loop stays responsive in multi-user deployments.
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ import hashlib
 import json
 import logging
 import warnings
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -242,6 +245,58 @@ def _validate_port_type(
 
 
 
+# ---------------------------------------------------------------------------
+# Process pool for CPU-bound node execution
+# ---------------------------------------------------------------------------
+
+_default_process_pool: Optional[ProcessPoolExecutor] = None
+
+
+def set_default_pool(pool: Optional[ProcessPoolExecutor]) -> None:
+    """Set the module-level default ProcessPoolExecutor.
+
+    Called once during app lifespan startup so that every ``DAGExecutor()``
+    created afterwards automatically offloads CPU-bound nodes.
+    """
+    global _default_process_pool
+    _default_process_pool = pool
+
+
+def _run_node_in_worker(
+    node_type: str,
+    node_id: str,
+    parameters: dict,
+    args: tuple,
+    kwargs: dict,
+) -> NodeResult:
+    """Execute a node in a worker process.
+
+    Top-level function (required for pickling by ProcessPoolExecutor).
+    Creates a fresh node instance in the worker process and runs it via
+    a throwaway event loop (the node's execute() is async-declared but
+    does only CPU-bound work — no real I/O awaits).
+    """
+    # Import node modules to populate the registry in the worker process.
+    # These are guarded at module scope in the main process by conftest /
+    # app startup, but spawned workers start fresh.
+    import app.services.dag.nodes.preprocessing  # noqa: F401
+    import app.services.dag.nodes.modeling  # noqa: F401
+    try:
+        import app.services.dag.nodes.output  # noqa: F401
+    except Exception:
+        pass  # output nodes are rarely offloaded
+
+    node = node_registry.create_node(node_type, node_id, parameters)
+    if kwargs:
+        if list(kwargs.keys()) == ["default"]:
+            result = asyncio.run(node.run(kwargs["default"]))
+        else:
+            result = asyncio.run(node.run(**kwargs))
+    else:
+        result = asyncio.run(node.run(*args))
+    return result
+
+
 class WorkflowStatus(str, Enum):
     """Workflow execution status."""
 
@@ -280,13 +335,20 @@ class DAGExecutor:
     Supports caching to avoid re-executing unchanged nodes.
     """
 
-    def __init__(self):
-        """Initialize executor."""
+    def __init__(self, process_pool: Optional[ProcessPoolExecutor] = None):
+        """Initialize executor.
+
+        Args:
+            process_pool: Optional ProcessPoolExecutor for offloading CPU-bound
+                nodes. When provided, nodes (except data-source nodes) run in
+                worker processes, keeping the event loop responsive.
+        """
         self.nodes: Dict[str, Node] = {}
         self.edges: List[WorkflowEdge] = []
         self.results: Dict[str, Any] = {}
         self.diagnostics: Dict[str, Dict[str, Any]] = {}
         self.status: WorkflowStatus = WorkflowStatus.IDLE
+        self._process_pool = process_pool if process_pool is not None else _default_process_pool
         # Caching: store hash of params when node was last executed
         self._param_hashes: Dict[str, str] = {}
         # Track which nodes are "dirty" (need re-execution)
@@ -520,6 +582,100 @@ class DAGExecutor:
             list(self.nodes.keys()), self._normalized_edges()
         )
 
+    def _should_offload(self, node: Node) -> bool:
+        """Whether a node should run in the process pool.
+
+        Data-source nodes may open async DB sessions inside execute(),
+        so they stay in-process.  Everything else is CPU-bound and safe
+        to offload.
+        """
+        if self._process_pool is None:
+            return False
+        if node.metadata and node.metadata.category == "data":
+            return False
+        return True
+
+    @staticmethod
+    def _sanitize_for_pool(value: Any) -> Any:
+        """Convert NDDataset values to AnalysisDataset for pickle safety.
+
+        Spawned worker processes may not have SpectroChemPy initialised,
+        so NDDataset objects can fail to unpickle.  AnalysisDataset
+        contains only numpy arrays and plain Python types.
+        """
+        if HAS_SCP and isinstance(value, NDDataset):
+            from app.lib.scp_compat import from_nddataset
+            return from_nddataset(value)
+        return value
+
+    async def _run_one_node(
+        self,
+        node: Node,
+        positional_inputs: List[Any],
+        named_inputs: Dict[str, Any],
+        timeout: float,
+    ) -> NodeResult:
+        """Execute a single node, offloading to the process pool when possible.
+
+        Falls back to in-process execution if the pool submission fails
+        (e.g. unpicklable input or broken worker).
+        """
+        if self._should_offload(node):
+            loop = asyncio.get_running_loop()
+            try:
+                # Sanitise inputs: convert NDDataset → AnalysisDataset so
+                # only numpy arrays cross the process boundary.
+                safe_pos = tuple(
+                    self._sanitize_for_pool(v) for v in positional_inputs
+                ) if not named_inputs else ()
+                safe_named = {
+                    k: self._sanitize_for_pool(v)
+                    for k, v in named_inputs.items()
+                } if named_inputs else {}
+
+                future = loop.run_in_executor(
+                    self._process_pool,
+                    _run_node_in_worker,
+                    node.metadata.node_type,
+                    node.node_id,
+                    dict(node.parameters),
+                    safe_pos,
+                    safe_named,
+                )
+                return await asyncio.wait_for(future, timeout=timeout)
+            except Exception as exc:
+                # If the failure looks like a pickle/serialization issue,
+                # a broken worker, or a shut-down pool, fall back to
+                # in-process execution.
+                from concurrent.futures.process import BrokenProcessPool
+                exc_str = str(exc)
+                is_pool_error = isinstance(exc, BrokenProcessPool) or any(
+                    kw in exc_str
+                    for kw in (
+                        "pickle", "Pickling", "serialize", "can't pickle",
+                        "after shutdown",
+                    )
+                )
+                if is_pool_error:
+                    logger.warning(
+                        "Pool offload failed for %s (%s), running in-process: %s",
+                        node.node_id,
+                        node.metadata.label if node.metadata else "?",
+                        exc_str,
+                    )
+                else:
+                    raise
+
+        # In-process path (data nodes, pool unavailable, or fallback)
+        if named_inputs:
+            return await asyncio.wait_for(
+                node.run(**named_inputs), timeout=timeout
+            )
+        else:
+            return await asyncio.wait_for(
+                node.run(*positional_inputs), timeout=timeout
+            )
+
     def _get_node_inputs(self, node_id: str, validate_types: bool = True) -> Tuple[List[Any], Dict[str, Any]]:
         """
         Get input data for a node from upstream node results.
@@ -740,20 +896,14 @@ class DAGExecutor:
                 # Get inputs from upstream nodes (positional or named)
                 positional_inputs, named_inputs = self._get_node_inputs(node_id)
 
-                # Execute node with timeout to prevent resource exhaustion
-                import asyncio
+                # Execute node (offloaded to process pool when available)
                 node_timeout = settings.max_job_duration_sec
                 label = node.metadata.label if node.metadata else node_id
                 logger.debug("Executing node: %s (%s)", node_id, label)
                 try:
-                    if named_inputs:
-                        result = await asyncio.wait_for(
-                            node.run(**named_inputs), timeout=node_timeout
-                        )
-                    else:
-                        result = await asyncio.wait_for(
-                            node.run(*positional_inputs), timeout=node_timeout
-                        )
+                    result = await self._run_one_node(
+                        node, positional_inputs, named_inputs, node_timeout
+                    )
                 except asyncio.TimeoutError:
                     raise ValueError(
                         f"Node '{label}' exceeded {node_timeout}s timeout. "
@@ -833,13 +983,20 @@ class DAGExecutor:
                     executed_in_this_run.append(dep_node_id)
                 continue
 
-            # Execute the node
+            # Execute the node (offloaded to process pool when available)
             positional_inputs, named_inputs = self._get_node_inputs(dep_node_id)
+            node_timeout = settings.max_job_duration_sec
             logger.debug("Executing node: %s (%s)", dep_node_id, node.metadata.label)
-            if named_inputs:
-                result = await node.run(**named_inputs)
-            else:
-                result = await node.run(*positional_inputs)
+            try:
+                result = await self._run_one_node(
+                    node, positional_inputs, named_inputs, node_timeout
+                )
+            except asyncio.TimeoutError:
+                label = node.metadata.label if node.metadata else dep_node_id
+                raise ValueError(
+                    f"Node '{label}' exceeded {node_timeout}s timeout. "
+                    f"Reduce dataset size or simplify parameters."
+                )
 
             # Unpack NodeResult
             if isinstance(result, NodeResult):

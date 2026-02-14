@@ -81,6 +81,7 @@ class Settings:
 
     max_file_size_mb: int = _get_int("MAX_FILE_SIZE_MB", 200)
     max_job_duration_sec: int = _get_int("MAX_JOB_DURATION_SEC", 3600)
+    dag_worker_pool_size: int = _get_int("DAG_WORKER_POOL_SIZE", min(4, os.cpu_count() or 2))
     max_export_size_mb: int = _get_int("MAX_EXPORT_SIZE_MB", 1024)
     log_buffer_size: int = _get_int("LOG_BUFFER_SIZE", 1000)
     log_file_path: Optional[str] = os.getenv("LOG_FILE_PATH")  # e.g., "logs/audit.log"
