@@ -141,7 +141,7 @@ async def _resolve_user(
 async def get_current_user(
     request: Request,
     session: AsyncSession = Depends(get_session),
-    token: Optional[str] = Depends(security.oauth2_scheme_optional),
+    token: Optional[str] = Depends(security.get_bearer_token_optional),
     api_key: Optional[str] = Depends(api_key_header),
 ) -> User:
     """FastAPI dependency that returns the authenticated user or raises 401."""

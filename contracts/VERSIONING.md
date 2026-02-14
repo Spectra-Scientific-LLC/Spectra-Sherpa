@@ -50,6 +50,22 @@ Current version: **v1.0** (initial freeze, 2026-02-09).
 6. Implement frontend changes.
 7. Update `openapi_v1.json` by running the export script (see below).
 
+## Distribution Variants
+
+The `openapi_v1.json` in this repository reflects the **OSS distribution**
+(repo 1). The **server distribution** (spectrasherpa-server, repo 2) extends
+the OSS spec with additional endpoints:
+
+| Endpoint Group | OSS | Server |
+|----------------|-----|--------|
+| `/auth/me` | Yes | Yes |
+| `/auth/login`, `/auth/register` | No | Yes |
+| `/admin/*` | No | Yes |
+
+When regenerating the spec, always run the export from the OSS runtime to
+keep this file accurate for the open source release. The server distribution
+should maintain its own `openapi_server_v1.json` in repo 2.
+
 ## Exporting the OpenAPI Spec
 
 ```bash

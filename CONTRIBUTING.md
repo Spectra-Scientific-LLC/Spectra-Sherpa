@@ -58,6 +58,8 @@ the PR description.
 - Preserve backward compatibility unless the PR explicitly documents a breaking
   change.
 - Keep docs in sync with product behavior.
+- Never move SpectroChemPy from optional extras to core dependencies. It must
+  remain opt-in via `pip install spectra-sherpa[scp]`.
 
 ## Pull Request Review Criteria
 
@@ -86,9 +88,10 @@ Pull requests may be blocked until CLA requirements are satisfied.
 
 ## Trivial Changes
 
-Maintainers may, at their sole discretion, merge very small edits without a
-signed CLA (for example, typo fixes). This does not create a waiver for future
-contributions.
+Maintainers may, at their sole discretion, merge changes that affect **only**
+whitespace, spelling, punctuation, or comment text — touching no executable
+code, configuration, or build files — without a signed CLA. This does not
+create a waiver for future contributions.
 
 ## Code of Conduct
 

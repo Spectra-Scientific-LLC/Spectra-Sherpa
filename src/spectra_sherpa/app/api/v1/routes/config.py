@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 from app.api.deps import get_session, get_user_from_credentials
 from app.core.config import app_config
-from app.core.security import oauth2_scheme_optional
+from app.core.security import get_bearer_token_optional
 from app.core.llm_registry import PROVIDERS, get_provider
 from app.models.api_key import APIKey
 from app.models.user import User
@@ -31,7 +31,7 @@ api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 async def get_optional_current_user(
     session: AsyncSession = Depends(get_session),
-    token: str | None = Depends(oauth2_scheme_optional),
+    token: str | None = Depends(get_bearer_token_optional),
     api_key: str | None = Depends(api_key_header),
 ) -> User | None:
     """

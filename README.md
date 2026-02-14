@@ -76,10 +76,19 @@ Full documentation is available at [docs/](docs/index.md):
 
 SpectraSherpa builds on [SpectroChemPy](https://www.spectrochempy.fr/) by CEA/CNRS/INRIA for spectral data handling. SpectroChemPy is licensed under [CeCILL-B](https://cecill.info/licences/Licence_CeCILL-B_V1-en.html) and is an optional dependency.
 
+## Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
+> [!IMPORTANT]
+> This project requires contributors to sign a Contributor License Agreement (CLA).
+> When you open a Pull Request, a bot will comment with instructions. You can sign by commenting:
+> `I have read the CLA Document and I hereby sign the CLA`
+
 ## License
 
-Copyright 2024-2026 Spectra Scientific LLC.
+SpectraSherpa is open source software licensed under the [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE).
 
-This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+Commercial licenses for OEM integration and cloud hosting are available from Spectra Scientific LLC.
 
 See [LICENSE](LICENSE) for the full text.

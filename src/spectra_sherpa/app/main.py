@@ -178,6 +178,7 @@ def _make_lifespan(
     async def lifespan(app: FastAPI):
         # === STARTUP ===
         import traceback as _tb
+        _dag_pool = None
 
         try:
             # Phase 1: per-worker setup (safe to run in every worker)
@@ -270,7 +271,6 @@ def _make_lifespan(
                 max_workers=pool_size,
                 mp_context=multiprocessing.get_context("spawn"),
             )
-            app.state.dag_process_pool = _dag_pool
             set_default_pool(_dag_pool)
             logger.info("DAG worker pool: %d processes (spawn)", pool_size)
 
@@ -292,9 +292,8 @@ def _make_lifespan(
         # Shut down DAG worker pool
         from app.services.dag.executor import set_default_pool as _clear_pool
         _clear_pool(None)
-        pool = getattr(app.state, "dag_process_pool", None)
-        if pool is not None:
-            pool.shutdown(wait=True, cancel_futures=True)
+        if _dag_pool is not None:
+            _dag_pool.shutdown(wait=True, cancel_futures=True)
             logger.info("DAG worker pool shut down")
 
         await job_manager.shutdown()

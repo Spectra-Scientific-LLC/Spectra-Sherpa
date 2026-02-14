@@ -8,7 +8,7 @@ from typing import Any, Optional, TYPE_CHECKING
 
 import bcrypt
 from fastapi import Depends, HTTPException, Request, Response, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import jwt, JWTError
 
 from app.core.config import app_config, settings
@@ -109,9 +109,28 @@ def invalidate_gateway_api_key_cache(api_key: Optional[str] = None) -> None:
     _api_key_cache = {}
     _invalid_api_key_cache = {}
 
-# OAuth2 scheme - use relative URL for tokenUrl
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
-oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
+# HTTP Bearer token extraction for Authorization header parsing.
+# We intentionally avoid OAuth2 password flow metadata in OSS OpenAPI because
+# login/register endpoints are provided only by the server distribution.
+http_bearer_optional = HTTPBearer(auto_error=False)
+
+
+def extract_bearer_token(
+    credentials: Optional[HTTPAuthorizationCredentials],
+) -> Optional[str]:
+    """Return the raw token from a Bearer auth header."""
+    if credentials is None:
+        return None
+    if credentials.scheme.lower() != "bearer":
+        return None
+    return credentials.credentials or None
+
+
+async def get_bearer_token_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(http_bearer_optional),
+) -> Optional[str]:
+    """FastAPI dependency that returns an optional Bearer token string."""
+    return extract_bearer_token(credentials)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:

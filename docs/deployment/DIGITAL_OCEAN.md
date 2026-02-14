@@ -121,11 +121,24 @@ frontend). Subsequent restarts are fast.
 
 ## 5. Verify Deployment
 
+### All Distributions
+
 ```bash
 # Health check
 curl https://your-domain.com/api/v1/health
 # Expected: {"status": "ok"}
 
+# Current user (works in all modes — returns implicit user in local/hybrid)
+curl https://your-domain.com/api/v1/auth/me
+```
+
+### Server Distribution Only
+
+The following endpoints require `spectrasherpa-server`. They are not available
+in the OSS distribution. See [OSS_SCOPE.md](../OSS_SCOPE.md) for the full
+endpoint matrix.
+
+```bash
 # Register a user
 curl -X POST https://your-domain.com/api/v1/auth/register \
   -H "Content-Type: application/json" \

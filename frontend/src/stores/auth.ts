@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import axios from 'axios'
+import api from '@/api/client'
 import router from '@/router'
 
 interface User {
@@ -22,11 +22,10 @@ export const useAuthStore = defineStore('auth', () => {
             formData.append('username', username)
             formData.append('password', password)
 
-            const response = await axios.post('/api/v1/auth/login', formData)
+            const response = await api.post('/auth/login', formData)
             token.value = response.data.access_token
             if (token.value) {
                 localStorage.setItem('token', token.value)
-                axios.defaults.headers.common['Authorization'] = `Bearer ${token.value}`
                 await fetchUser()
                 router.push('/')
             }
@@ -39,7 +38,7 @@ export const useAuthStore = defineStore('auth', () => {
     async function fetchUser() {
         if (!token.value) return
         try {
-            const response = await axios.get('/api/v1/auth/me')
+            const response = await api.get('/auth/me')
             user.value = response.data
         } catch (error) {
             console.error('Fetch user failed', error)
@@ -60,7 +59,6 @@ export const useAuthStore = defineStore('auth', () => {
         token.value = null
         localStorage.removeItem('token')
         localStorage.removeItem('api_key')
-        delete axios.defaults.headers.common['Authorization']
     }
 
     async function initHybridUser() {
@@ -70,7 +68,7 @@ export const useAuthStore = defineStore('auth', () => {
             clearCredentials()
         }
         try {
-            const response = await axios.get('/api/v1/auth/me')
+            const response = await api.get('/auth/me')
             user.value = response.data
         } catch {
             console.warn('Could not fetch hybrid user profile')
@@ -81,13 +79,11 @@ export const useAuthStore = defineStore('auth', () => {
         token.value = null
         user.value = null
         localStorage.removeItem('token')
-        delete axios.defaults.headers.common['Authorization']
         router.push('/login')
     }
 
-    // Initialize axio headers if token exists
+    // Restore session if token exists (interceptor adds header automatically)
     if (token.value) {
-        axios.defaults.headers.common['Authorization'] = `Bearer ${token.value}`
         fetchUser()
     }
 
