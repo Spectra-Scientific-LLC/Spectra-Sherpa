@@ -530,3 +530,64 @@ class TestDemoBackwardCompat:
         """from_env() maps APP_MODE=demo → enterprise (with deprecation warning)."""
         cfg = AppConfig.from_env()
         assert cfg.mode == "enterprise"
+
+
+# ===========================================================================
+# 10. Egress schema defaults
+# ===========================================================================
+
+
+class TestEgressSchemaDefaults:
+    """Verify egress permission defaults are all False (explicit opt-in)."""
+
+    def test_egress_schema_defaults_are_all_false(self):
+        """UserEgressDefaultsBase() with no args defaults everything to False."""
+        from app.schemas.data_egress import UserEgressDefaultsBase
+
+        defaults = UserEgressDefaultsBase()
+        assert defaults.allow_llm_context is False
+        assert defaults.allow_nist_queries is False
+        assert defaults.allow_export is False
+        assert defaults.allow_spectrasherpa_sync is False
+
+
+# ===========================================================================
+# 11. Config response contract enforcement
+# ===========================================================================
+
+
+class TestConfigResponseContract:
+    """Verify to_client_safe() meets the documented API contract."""
+
+    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
+    def test_to_client_safe_includes_all_expected_keys(self, mode: str):
+        """Response includes all required top-level and feature keys."""
+        cfg = _make_config(mode=mode)
+        safe = cfg.to_client_safe()
+
+        # Top-level keys
+        for key in ("mode", "egressEnabled", "apiBaseUrl", "siteProfile", "features", "llms"):
+            assert key in safe, f"Missing top-level key: {key}"
+
+        # Feature flags
+        features = safe["features"]
+        for key in (
+            "enterpriseMode",
+            "demoMode",
+            "chatAssistant",
+            "agenticWorkflow",
+            "nistDownloads",
+            "apiTokenSettings",
+            "cloudOffload",
+            "pluginSystem",
+        ):
+            assert key in features, f"Missing feature flag: {key}"
+
+    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
+    def test_to_client_safe_uses_camel_case_keys(self, mode: str):
+        """Top-level keys must use camelCase (no underscores)."""
+        cfg = _make_config(mode=mode)
+        safe = cfg.to_client_safe()
+
+        for key in safe:
+            assert "_" not in key, f"Top-level key '{key}' contains underscore — use camelCase"
