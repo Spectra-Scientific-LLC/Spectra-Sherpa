@@ -49,8 +49,8 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       const path = window.location.pathname;
-      // Don't redirect if already on login page (avoid loop)
-      if (!path.startsWith("/login")) {
+      // Don't redirect if on login or register page (avoid loop / breaking registration UX)
+      if (!path.startsWith("/login") && !path.startsWith("/register")) {
         localStorage.removeItem("token");
         localStorage.removeItem("api_key");
         window.location.href = "/login";

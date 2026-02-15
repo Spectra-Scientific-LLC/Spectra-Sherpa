@@ -38,6 +38,7 @@ export interface AppConfig {
   mode: AppMode
   siteProfile?: SiteProfile | null
   egressEnabled: boolean
+  registrationEnabled?: boolean
   apiBaseUrl: string
   features: AppFeatures
   llms: Record<string, LLMConfig>

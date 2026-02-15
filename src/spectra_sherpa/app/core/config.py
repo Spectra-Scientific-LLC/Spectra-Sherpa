@@ -372,11 +372,21 @@ class AppConfig(BaseModel):
 
         has_llm = len(self.get_configured_llms()) > 0
 
+        # Registration requires the full auth module (spectra-server) + mode policy.
+        try:
+            from app.api.v1.routes import auth as _auth_mod  # noqa: F401
+            _has_register = hasattr(_auth_mod, "router")
+        except ImportError:
+            _has_register = False
+        from app.core.mode_policy import allows_registration
+        registration_enabled = _has_register and allows_registration()
+
         return {
             "mode": self.mode,
             "egressEnabled": self.egress_enabled,
             "apiBaseUrl": self.api_base_url,
             "siteProfile": self.site_profile,
+            "registrationEnabled": registration_enabled,
             "features": {
                 "apiTokenSettings": self.mode in ["local", "hybrid"],
                 "cloudOffload": self.execution.mode == "hybrid",

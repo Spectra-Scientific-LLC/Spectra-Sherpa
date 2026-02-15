@@ -9,6 +9,7 @@ import { useAppConfig } from "@/composables/useAppConfig";
 
 const routes = [
   { path: "/login", component: LoginView, meta: { public: true } },
+  { path: "/register", component: () => import("@/views/RegisterView.vue"), meta: { public: true } },
   { path: "/", redirect: "/project" },
 
   // --- 6 main pages (chemometrician workflow) ---
@@ -115,7 +116,7 @@ router.beforeEach(async (to, from, next) => {
 
   // Public pages (non-local modes)
   if (to.meta.public) {
-    if (authStore.isAuthenticated && to.path === '/login') {
+    if (authStore.isAuthenticated && (to.path === '/login' || to.path === '/register')) {
       return next('/')
     }
     return next()

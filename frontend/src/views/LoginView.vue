@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { useAppConfig } from '@/composables/useAppConfig'
 import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import Password from 'primevue/password'
 import Card from 'primevue/card'
 
 const authStore = useAuthStore()
+const { registrationEnabled } = useAppConfig()
 
 const username = ref('')
 const password = ref('')
@@ -51,11 +53,20 @@ const handleLogin = async () => {
             />
           </div>
 
+          <div v-if="authStore.registerSuccess" class="text-green-500 text-sm">
+            {{ authStore.registerSuccess }}
+          </div>
+
           <div v-if="authStore.loginError" class="text-red-500 text-sm">
             {{ authStore.loginError }}
           </div>
 
           <Button label="Sign In" type="submit" :loading="loading" class="w-full mt-2" />
+
+          <div v-if="registrationEnabled" class="text-center mt-3">
+            <span class="text-600">Don't have an account? </span>
+            <router-link to="/register" class="font-medium no-underline text-blue-500 cursor-pointer">Create Account</router-link>
+          </div>
         </form>
       </template>
     </Card>

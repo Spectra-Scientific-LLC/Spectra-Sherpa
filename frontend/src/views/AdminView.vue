@@ -725,8 +725,17 @@ const getJobSeverity = (status: string) => {
 }
 
 /* Tab Content */
+.admin-view :deep(.p-tabview-panels) {
+  width: 100%;
+}
+
+.admin-view :deep(.p-tabview-panel) {
+  width: 100%;
+}
+
 .tab-content {
   padding: 1rem 0;
+  width: 100%;
 }
 
 .toolbar {

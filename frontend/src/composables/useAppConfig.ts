@@ -101,6 +101,11 @@ const siteProfile = computed(() => config.value?.siteProfile || null)
 const egressEnabled = computed(() => config.value?.egressEnabled ?? false)
 
 /**
+ * Check if user self-registration is available
+ */
+const registrationEnabled = computed(() => config.value?.registrationEnabled ?? false)
+
+/**
  * Check if specific feature is enabled
  */
 function isFeatureEnabled(feature: keyof AppConfig['features']): boolean {
@@ -133,6 +138,7 @@ export function useAppConfig() {
     appMode,
     siteProfile,
     egressEnabled,
+    registrationEnabled,
     isFeatureEnabled,
     formatProviderName,
   }

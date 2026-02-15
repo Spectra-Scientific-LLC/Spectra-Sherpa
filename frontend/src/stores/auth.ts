@@ -14,6 +14,8 @@ export const useAuthStore = defineStore('auth', () => {
     const user = ref<User | null>(null)
     const isAuthenticated = computed(() => !!token.value || !!user.value)
     const loginError = ref<string | null>(null)
+    const registerError = ref<string | null>(null)
+    const registerSuccess = ref<string | null>(null)
 
     async function login(username: string, password: string) {
         try {
@@ -32,6 +34,20 @@ export const useAuthStore = defineStore('auth', () => {
         } catch (error: any) {
             console.error('Login failed', error)
             loginError.value = error.response?.data?.detail || 'Login failed'
+        }
+    }
+
+    async function register(username: string, password: string, enterprisePassword: string) {
+        try {
+            registerError.value = null
+            registerSuccess.value = null
+            await api.post('/auth/register', { username, password }, {
+                headers: { 'X-Enterprise-Password': enterprisePassword }
+            })
+            registerSuccess.value = 'Account created successfully. You can now sign in.'
+            router.push('/login')
+        } catch (error: any) {
+            registerError.value = error.response?.data?.detail || 'Registration failed'
         }
     }
 
@@ -92,7 +108,10 @@ export const useAuthStore = defineStore('auth', () => {
         user,
         isAuthenticated,
         loginError,
+        registerError,
+        registerSuccess,
         login,
+        register,
         logout,
         clearCredentials,
         fetchUser,
