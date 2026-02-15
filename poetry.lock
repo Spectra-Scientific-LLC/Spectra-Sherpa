@@ -4666,4 +4666,4 @@ sherpa = ["anthropic"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "b005b51df60f530d2aa790aab96a269688cd625dd36736d237c55a4eee811096"
+content-hash = "b9a208821daeb1c3e202ce0c8804c98dd0b22ed3470c79637f2b7383d4b560cb"

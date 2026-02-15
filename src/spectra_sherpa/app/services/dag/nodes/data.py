@@ -15,6 +15,7 @@ from typing import Any, Optional
 import numpy as np
 from app.lib.scp_compat import scp, NDDataset, HAS_SCP, require_scp
 from app.lib.analysis_dataset import AnalysisDataset, AxisInfo, from_sklearn_bunch
+from app.lib.eigenvector import DATASET_CATALOG
 
 from ..node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
 from app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
@@ -366,12 +367,10 @@ class DataSourceNode(Node):
                 param_type="select",
                 default="diesel_nir",
                 options=[
-                    {"label": "Diesel NIR (784 samples, 401 wavelengths, 750-1550 nm)", "value": "diesel_nir"},
-                    {"label": "Corn M5 NIR (80 samples, 700 channels)", "value": "corn_m5"},
-                    {"label": "Corn MP5 NIR (80 samples, 700 channels)", "value": "corn_mp5"},
-                    {"label": "Corn MP6 NIR (80 samples, 700 channels)", "value": "corn_mp6"},
+                    {"label": v["label"], "value": k}
+                    for k, v in DATASET_CATALOG.items()
                 ],
-                description="Eigenvector Research public dataset (bundled NIR reference data with properties)",
+                description="Eigenvector Research public dataset (bundled reference data with properties)",
                 required=False,
                 category="basic",
             ),
@@ -894,7 +893,7 @@ class DataSourceNode(Node):
         Returns:
             NDDataset (with SCP) or numpy array (without SCP)
         """
-        from app.lib.eigenvector import load_eigenvector_dataset, DATASET_CATALOG
+        from app.lib.eigenvector import load_eigenvector_dataset
 
         result = load_eigenvector_dataset(dataset_name)
         spectra = result["spectra"]
