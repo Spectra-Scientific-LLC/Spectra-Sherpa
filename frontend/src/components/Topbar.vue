@@ -120,8 +120,13 @@
         icon="pi pi-user"
         class="p-button-text p-button-rounded"
         aria-label="User menu"
+        @click="toggleUserMenu"
       />
+      <Menu ref="userMenu" :model="userMenuItems" :popup="true" />
     </div>
+
+    <!-- Change Password Dialog -->
+    <ChangePasswordDialog v-model:visible="changePasswordVisible" />
 
     <!-- Project Dialog -->
     <ProjectDialog
@@ -149,6 +154,8 @@
 import { ref, computed, watch } from "vue";
 import Button from "primevue/button";
 import Dropdown from "primevue/dropdown";
+import Menu from "primevue/menu";
+import ChangePasswordDialog from "./ChangePasswordDialog.vue";
 import { useToast } from "primevue/usetoast";
 import { useProjectStore } from "@/stores/project";
 import type { ProjectSummary } from "@/types";
@@ -183,6 +190,40 @@ const router = useRouter();
 const { backendConnected } = useBackendStatus();
 const { appMode } = useAppConfig();
 const fileInput = ref<HTMLInputElement | null>(null);
+
+// User menu
+const userMenu = ref();
+const changePasswordVisible = ref(false);
+
+const userMenuItems = computed(() => [
+  {
+    label: authStore.user?.username || 'User',
+    icon: 'pi pi-user',
+    disabled: true,
+    class: 'user-menu-header',
+  },
+  { separator: true },
+  {
+    label: 'Change Password',
+    icon: 'pi pi-key',
+    command: () => { changePasswordVisible.value = true; },
+  },
+  {
+    label: 'Settings',
+    icon: 'pi pi-cog',
+    command: () => { router.push('/settings'); },
+  },
+  { separator: true },
+  {
+    label: 'Sign Out',
+    icon: 'pi pi-sign-out',
+    command: () => { authStore.logout(); },
+  },
+]);
+
+const toggleUserMenu = (event: Event) => {
+  userMenu.value.toggle(event);
+};
 
 // Status indicator computed properties (Traffic Lights)
 const backendStatus = computed(() => {

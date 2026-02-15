@@ -91,6 +91,18 @@ export const useAuthStore = defineStore('auth', () => {
         }
     }
 
+    async function changePassword(currentPassword: string, newPassword: string): Promise<{ success: boolean; error?: string }> {
+        try {
+            await api.put('/auth/password', {
+                current_password: currentPassword,
+                new_password: newPassword,
+            })
+            return { success: true }
+        } catch (error: any) {
+            return { success: false, error: error.response?.data?.detail || 'Password change failed' }
+        }
+    }
+
     function logout() {
         token.value = null
         user.value = null
@@ -112,6 +124,7 @@ export const useAuthStore = defineStore('auth', () => {
         registerSuccess,
         login,
         register,
+        changePassword,
         logout,
         clearCredentials,
         fetchUser,

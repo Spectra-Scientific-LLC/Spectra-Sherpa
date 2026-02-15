@@ -34,7 +34,7 @@ const handleLogin = async () => {
       </template>
 
       <template #content>
-        <form @submit.prevent="handleLogin" class="flex flex-column gap-3">
+        <form @submit.prevent="handleLogin" class="flex flex-column gap-4">
           <div class="flex flex-column gap-2">
             <label for="username" class="font-bold text-900">Username</label>
             <InputText id="username" v-model="username" placeholder="Enter your username" class="w-full" />
@@ -61,9 +61,9 @@ const handleLogin = async () => {
             {{ authStore.loginError }}
           </div>
 
-          <Button label="Sign In" type="submit" :loading="loading" class="w-full mt-2" />
+          <Button label="Sign In" type="submit" :loading="loading" class="w-full mt-4" />
 
-          <div v-if="registrationEnabled" class="text-center mt-3">
+          <div v-if="registrationEnabled" class="text-center mt-5">
             <span class="text-600">Don't have an account? </span>
             <router-link to="/register" class="font-medium no-underline text-blue-500 cursor-pointer">Create Account</router-link>
           </div>

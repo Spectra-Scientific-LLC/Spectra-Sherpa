@@ -61,7 +61,7 @@ const handleRegister = async () => {
       </template>
 
       <template #content>
-        <form @submit.prevent="handleRegister" class="flex flex-column gap-3">
+        <form @submit.prevent="handleRegister" class="flex flex-column gap-4">
           <div class="flex flex-column gap-2">
             <label for="username" class="font-bold text-900">Username</label>
             <InputText id="username" v-model="username" placeholder="Choose a username" class="w-full" />
@@ -110,9 +110,9 @@ const handleRegister = async () => {
             {{ authStore.registerSuccess }}
           </div>
 
-          <Button label="Create Account" type="submit" :loading="loading" class="w-full mt-2" />
+          <Button label="Create Account" type="submit" :loading="loading" class="w-full mt-4" />
 
-          <div class="text-center mt-3">
+          <div class="text-center mt-5">
             <span class="text-600">Already have an account? </span>
             <router-link to="/login" class="font-medium no-underline text-blue-500 cursor-pointer">Sign In</router-link>
           </div>
