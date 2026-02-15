@@ -131,17 +131,17 @@ return {
 
 ### 2. Preprocessing Nodes (18 nodes)
 
-All 18 nodes follow **consistent single-value pattern**:
+All 18 nodes follow **consistent single-value pattern** (note: `"NDDataset"` here refers to the string type tag in node metadata; the runtime type is `AnalysisDataset`):
 
 | Nodes | Input | Output | Pattern |
 |-------|-------|--------|---------|
-| Baseline (ALS, Rubberband) | NDDataset | NDDataset | ✅ Legacy single-value |
-| Smoothing (Savitzky-Golay) | NDDataset | NDDataset | ✅ Legacy single-value |
-| Normalization (SNV, Scale, MSC) | NDDataset | NDDataset | ✅ Legacy single-value |
-| Derivatives (1st, 2nd, SG) | NDDataset | NDDataset | ✅ Legacy single-value |
-| Clipping (Range, Floor) | NDDataset | NDDataset | ✅ Legacy single-value |
-| Scaling (Max, Mean Center, Pareto, Autoscaling) | NDDataset | NDDataset | ✅ Legacy single-value |
-| Advanced (EMSC, Cosmic Ray, Wavenumber Align) | NDDataset | NDDataset | ✅ Legacy single-value |
+| Baseline (ALS, Rubberband) | AnalysisDataset | AnalysisDataset | ✅ Legacy single-value |
+| Smoothing (Savitzky-Golay) | AnalysisDataset | AnalysisDataset | ✅ Legacy single-value |
+| Normalization (SNV, Scale, MSC) | AnalysisDataset | AnalysisDataset | ✅ Legacy single-value |
+| Derivatives (1st, 2nd, SG) | AnalysisDataset | AnalysisDataset | ✅ Legacy single-value |
+| Clipping (Range, Floor) | AnalysisDataset | AnalysisDataset | ✅ Legacy single-value |
+| Scaling (Max, Mean Center, Pareto, Autoscaling) | AnalysisDataset | AnalysisDataset | ✅ Legacy single-value |
+| Advanced (EMSC, Cosmic Ray, Wavenumber Align) | AnalysisDataset | AnalysisDataset | ✅ Legacy single-value |
 
 **Exception: OSCNode** (Orthogonal Signal Correction) [preprocessing.py:1051-1238]:
 ```python
@@ -152,7 +152,7 @@ input_ports=[
 output_type="NDDataset"
 ```
 - ✅ **Modern input_ports** (requires two inputs: data + target)
-- Returns single NDDataset (corrected X)
+- Returns single AnalysisDataset (corrected X)
 
 **Assessment**: ✅ **No issues** - Single-value transforms don't need multi-output
 
@@ -353,9 +353,9 @@ output_type="CVResult"  # ← Should be output_ports
 
 | Node | Input Pattern | Output Pattern | Status |
 |------|---------------|----------------|--------|
-| **BlendNode** | Variadic (*input_data) | Single NDDataset | ✅ Correct |
-| **SpeciesSelectorNode** | Single NDDataset | Single NDDataset | ✅ Correct |
-| **MergeSpectraNode** | Variadic (*input_data) | Single NDDataset | ✅ Correct |
+| **BlendNode** | Variadic (*input_data) | Single AnalysisDataset | ✅ Correct |
+| **SpeciesSelectorNode** | Single AnalysisDataset | Single AnalysisDataset | ✅ Correct |
+| **MergeSpectraNode** | Variadic (*input_data) | Single AnalysisDataset | ✅ Correct |
 
 **Assessment**: ✅ **Correct** - Merge operations produce single combined output
 
@@ -365,8 +365,8 @@ output_type="CVResult"  # ← Should be output_ports
 
 | Node | Input Pattern | Output Pattern | Status |
 |------|---------------|----------------|--------|
-| **MovingWindowNode** | Single NDDataset | Single NDDataset | ✅ Correct |
-| **TrendRemovalNode** | Single NDDataset | Single NDDataset | ✅ Correct |
+| **MovingWindowNode** | Single AnalysisDataset | Single AnalysisDataset | ✅ Correct |
+| **TrendRemovalNode** | Single AnalysisDataset | Single AnalysisDataset | ✅ Correct |
 
 **Assessment**: ✅ **Correct** - Single-purpose transformations
 

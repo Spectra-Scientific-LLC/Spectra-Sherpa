@@ -12,13 +12,13 @@ The platform uses a **three-mode deployment model** designed for flexible adopti
 
 1. **Local Mode** (`APP_MODE=local`) — Single-user, no auth, SQLite. Students, researchers, trial users.
 2. **Hybrid Mode** (`APP_MODE=hybrid`) — Local app + cloud identity via `SPECTRASHERPA_API_KEY`. Power users who want managed LLM keys, admin features, and server-linked identity without a login page.
-3. **Demo/Cloud Mode** (`APP_MODE=demo`) — Multi-user JWT auth, rate-limited. Enterprise subscribers with managed infrastructure.
+3. **Enterprise/Cloud Mode** (`APP_MODE=enterprise`) — Multi-user JWT auth, rate-limited. Enterprise subscribers with managed infrastructure.
 
 This architecture allows users to start free locally, upgrade to hybrid when ready for managed LLM keys and cloud identity, then migrate to full cloud for team collaboration and advanced agents.
 
 ### Deployment Mode Comparison
 
-| Property | Local | Hybrid | Demo/Cloud |
+| Property | Local | Hybrid | Enterprise/Cloud |
 |----------|-------|--------|------------|
 | **Auth method** | None (implicit user) | API-key linked identity | JWT (email + password) |
 | **User resolution** | First DB user | First DB user, enriched from server | JWT → user lookup |
@@ -200,7 +200,7 @@ The local `SpectraSherpaUser` dataclass must match the server's `UserResponse` s
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `APP_MODE` | Yes | `local` | Deployment mode: `local`, `hybrid`, `demo` |
+| `APP_MODE` | Yes | `local` | Deployment mode: `local`, `hybrid`, `enterprise` |
 | `SPECTRASHERPA_API_KEY` | Hybrid only | — | API key from spectrasherpa-server account |
 | `SPECTRASHERPA_SERVER_URL` | Hybrid only | — | URL of the spectrasherpa-server instance |
 

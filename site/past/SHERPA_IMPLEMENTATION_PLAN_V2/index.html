@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Sherpa Implementation Plan V2 - SpectraSherpa Documentation</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Sherpa Implementation Plan V2";
+        var mkdocs_page_input_path = "past/SHERPA_IMPLEMENTATION_PLAN_V2.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> SpectraSherpa Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">User Guide (OSS)</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/installation/">Installation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/configuration/">Configuration</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/quickstart/">Quickstart</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/experiments/">Experiments</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/library/">Library (NIST)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/doe/">DOE (96-Well)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/synthesis/">Synthesis Builder</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/workflow/">Workflow Builder</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reproduction Study</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/reproduction_methodology/">Methodology</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../USER_MANUAL/">User Manual</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Server Operator Guide</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../server/overview/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../server/hybrid_mode/">Hybrid Mode</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../server/enterprise_mode/">Enterprise Mode</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../deployment/DIGITAL_OCEAN/">Docker Deployment</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Developer Guide</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../developer/setup/">Setup & Contributing</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../developer/architecture/">Architecture</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Examples</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/01_loading_data/">01. Loading Data</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/02_dataset_manipulation/">02. Manipulation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/03_plotting/">03. Plotting</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/04_preprocessing_smoothing/">04. Smoothing</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/05_preprocessing_baseline/">05. Baseline</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/06_peak_finding/">06. Peak Finding</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/07_peak_fitting/">07. Integration</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/08_pca/">08. PCA</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/09_mcr_als/">09. MCR-ALS</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/10_pls_regression/">10. PLS</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Reference</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../reference/nodes/">Node Library</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Past</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../RELEASE_NOTES/">Release Notes</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../IMPLEMENTATION_SUMMARY/">Implementation Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../FINAL_FIXES_SUMMARY/">Final Fixes Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../SESSION_SUMMARY_2026-01-21/">Session Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../NODE_STANDARDIZATION_2026-01-26/">Node Standardization (2026-01-26)</a>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" >Completed Plans</a>
+    <ul class="current">
+                <li class="toctree-l2"><a class="reference internal" href="../ROADMAP/">Roadmap</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../REFACTOR_3_REPO_STRATEGY/">3-Repo Refactor Strategy</a>
+                </li>
+                <li class="toctree-l2 current"><a class="reference internal current" href="#">Sherpa Implementation Plan V2</a>
+    <ul class="current">
+    <li class="toctree-l3"><a class="reference internal" href="#status">Status</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#why-v2-exists">Why V2 Exists</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#legacy-to-v2-mapping">Legacy-to-V2 Mapping</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#execution-plan">Execution Plan</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#step-1-freeze-contracts-phase-0-1-2-days">Step 1: Freeze Contracts (Phase 0, 1-2 days)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#step-2-mode-matrix-tests-phase-1a-2-3-days">Step 2: Mode-Matrix Tests (Phase 1a, 2-3 days)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#step-3-centralize-mode-policy-phase-1b-1-2-days">Step 3: Centralize Mode Policy (Phase 1b, 1-2 days)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#step-4-mcp-and-tool-foundation-3-5-days">Step 4: MCP and Tool Foundation (3-5 days)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#step-5-extract-repositories-after-mcp-stabilization">Step 5: Extract Repositories After MCP Stabilization</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#acceptance-gates-before-split">Acceptance Gates Before Split</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#notes-for-mcp-and-skills-ownership">Notes for MCP and Skills Ownership</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#immediate-next-action">Immediate Next Action</a>
+    </li>
+    </ul>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DOE_ENHANCEMENTS/">DOE Enhancements</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../NAVIGATION_REDESIGN/">Navigation Redesign</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Fixes</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../3D_CONCATENATION_FIX/">3D Concatenation Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../QUICK_PLOT_Y_AXIS_LABELS_FIX/">Quick Plot Y-Axis Labels Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../CASE_SENSITIVITY_AND_UI_FIXES/">Case Sensitivity and UI Fixes</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DEDICATED_LOAD_GROUP_ENFORCEMENT/">Dedicated Load Group Enforcement</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../LOAD_GROUP_NODE_IMPLEMENTATION/">Load Group Node Implementation</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reviews & Testing</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../CODE_REVIEW_FINDINGS/">Code Review Findings</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../WEEK7_TESTING/">Week 7 Testing</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Future</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ANALYSIS_CANVAS_WIREFRAME/">Analysis Canvas Wireframe</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/plugin_plan_011525/">Plugin Plan (2025-01-15)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/FUTURE_CAPABILITIES/">Future Capabilities</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">SpectraSherpa Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Past</li>
+          <li class="breadcrumb-item">Completed Plans</li>
+      <li class="breadcrumb-item active">Sherpa Implementation Plan V2</li>
+    <li class="wy-breadcrumbs-aside">
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="sherpa-implementation-plan-v2">Sherpa Implementation Plan V2</h1>
+<h2 id="status">Status</h2>
+<p>This V2 plan supersedes the sequencing in <code>SHERPA_IMPLEMENTATION_PLAN.md</code>.</p>
+<p>The original plan has strong technical ideas, but V2 changes execution order to
+match current priorities:</p>
+<ol>
+<li>Contract discipline first</li>
+<li>Mode safety net second</li>
+<li>Policy centralization third</li>
+<li>MCP/tool capability build fourth</li>
+<li>Physical repo split last</li>
+</ol>
+<hr />
+<h2 id="why-v2-exists">Why V2 Exists</h2>
+<p>The original Sherpa plan assumed immediate server extraction and focused on
+building server-side intelligence first. The current strategy is monorepo-first
+to reduce migration risk and avoid speculative boundaries.</p>
+<p>V2 keeps what is valuable from the original:</p>
+<ul>
+<li>Sherpa endpoint and payload model concepts</li>
+<li>Skill taxonomy and structured <code>SKILL.md</code> approach</li>
+<li>Managed-key LLM provider model</li>
+<li>Verification mindset for round-trip behavior</li>
+</ul>
+<p>V2 changes the order so that contracts and mode behavior are stable before MCP
+expands the surface area.</p>
+<hr />
+<h2 id="legacy-to-v2-mapping">Legacy-to-V2 Mapping</h2>
+<table>
+<thead>
+<tr>
+<th>Legacy Plan Element</th>
+<th>Keep?</th>
+<th>V2 Placement</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Sherpa protocol models and endpoint contracts</td>
+<td>Yes</td>
+<td>Step 1 (<code>contracts/</code>)</td>
+</tr>
+<tr>
+<td>Skills directory + category taxonomy</td>
+<td>Yes</td>
+<td>Step 4 (tool/skill foundation)</td>
+</tr>
+<tr>
+<td>Server-side LLM provider with managed keys</td>
+<td>Yes</td>
+<td>Step 4 (after contracts + tests)</td>
+</tr>
+<tr>
+<td>Immediate separate <code>spectrasherpa-server</code> implementation</td>
+<td>Not yet</td>
+<td>Step 5 (post-stabilization extraction)</td>
+</tr>
+<tr>
+<td>“No local app changes needed” assumption</td>
+<td>No</td>
+<td>Replace with MCP-aware local + frontend integration in Step 4</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="execution-plan">Execution Plan</h2>
+<h3 id="step-1-freeze-contracts-phase-0-1-2-days">Step 1: Freeze Contracts (Phase 0, 1-2 days)</h3>
+<p>Create versioned contract artifacts in-repo before any major refactor.</p>
+<p>Suggested structure:</p>
+<pre><code class="language-text">contracts/
+├── openapi/
+│   └── v1/
+│       └── openapi.json
+├── websocket/
+│   └── v1/
+│       ├── actions.md
+│       └── message_schemas.json
+├── sherpa/
+│   └── v1/
+│       ├── sync_request.json
+│       ├── sync_response.json
+│       ├── decide_request.json
+│       └── health_response.json
+└── CHANGELOG.md
+</code></pre>
+<p>Actions:</p>
+<ol>
+<li>Export OpenAPI from current app (<code>/openapi.json</code>) and commit it.</li>
+<li>Document current WebSocket actions and payload shapes.</li>
+<li>Capture Sherpa sync/decide/chat contract schemas explicitly.</li>
+<li>Add contract versioning policy in <code>contracts/CHANGELOG.md</code>.</li>
+</ol>
+<p>Done criteria:</p>
+<ul>
+<li>Contract files exist and are reviewed.</li>
+<li>Backend and frontend references point to versioned artifacts, not implicit behavior.</li>
+</ul>
+<h3 id="step-2-mode-matrix-tests-phase-1a-2-3-days">Step 2: Mode-Matrix Tests (Phase 1a, 2-3 days)</h3>
+<p>Add parameterized tests that run the same behavior across <code>local</code>, <code>hybrid</code>,
+and <code>demo</code>.</p>
+<p>Minimum matrix:</p>
+<ol>
+<li>Auth behavior by mode</li>
+<li>Feature flags by mode</li>
+<li>Egress defaults by mode</li>
+<li>Rate-limiting activation by mode</li>
+</ol>
+<p>Suggested test entry points:</p>
+<ul>
+<li><code>tests/</code> for API/integration matrix coverage</li>
+<li>Existing auth/security routes and dependencies in:</li>
+<li><code>src/spectra_sherpa/app/api/deps.py</code></li>
+<li><code>src/spectra_sherpa/app/core/security.py</code></li>
+<li><code>src/spectra_sherpa/app/api/v1/routes/auth.py</code></li>
+<li><code>src/spectra_sherpa/app/api/v1/routes/config.py</code></li>
+</ul>
+<p>Done criteria:</p>
+<ul>
+<li>Matrix tests run in CI/local and fail on mode regressions.</li>
+</ul>
+<h3 id="step-3-centralize-mode-policy-phase-1b-1-2-days">Step 3: Centralize Mode Policy (Phase 1b, 1-2 days)</h3>
+<p>Create <code>src/spectra_sherpa/app/core/mode_policy.py</code> as the single source of
+truth for mode decisions.</p>
+<p>Policy API examples:</p>
+<ul>
+<li><code>requires_auth(mode, request_context)</code></li>
+<li><code>allows_export(mode, user)</code></li>
+<li><code>egress_default(mode)</code></li>
+<li><code>max_token_ttl(mode)</code></li>
+<li><code>rate_limits_enabled(mode)</code></li>
+</ul>
+<p>Actions:</p>
+<ol>
+<li>Move scattered mode branching into policy helpers.</li>
+<li>Replace direct <code>if app_config.mode == ...</code> checks in routes/services.</li>
+<li>Keep behavior unchanged while refactoring call sites.</li>
+</ol>
+<p>Done criteria:</p>
+<ul>
+<li>Major mode rules are invoked through policy functions.</li>
+<li>Branching is centralized and directly testable.</li>
+</ul>
+<h3 id="step-4-mcp-and-tool-foundation-3-5-days">Step 4: MCP and Tool Foundation (3-5 days)</h3>
+<p>Build MCP-ready tooling in the monorepo before extraction.</p>
+<p>Suggested backend layout:</p>
+<pre><code class="language-text">src/spectra_sherpa/app/services/
+└── tools/
+    ├── registry.py
+    ├── executor.py
+    ├── schemas.py
+    └── builtin/
+</code></pre>
+<p>Suggested frontend additions:</p>
+<ul>
+<li><code>frontend/src/stores/tools.ts</code></li>
+<li>Chat/workflow UI hooks for discovery and invocation</li>
+</ul>
+<p>Integration targets:</p>
+<ol>
+<li><code>src/spectra_sherpa/app/services/llm.py</code> for tool/function-calling context</li>
+<li><code>src/spectra_sherpa/app/main.py</code> for tool-related WebSocket actions</li>
+<li><code>src/spectra_sherpa/app/services/plugin_loader.py</code> for manifest loading</li>
+<li><code>src/spectra_sherpa/app/services/dag/node_base.py</code> for DAG-exposed tools</li>
+</ol>
+<p>Reuse from legacy plan:</p>
+<ul>
+<li>Skill category model from <code>SHERPA_IMPLEMENTATION_PLAN.md</code></li>
+<li>Structured skill manifests with explicit node/tool triggers</li>
+</ul>
+<p>Done criteria:</p>
+<ul>
+<li>Built-in tools can be discovered and invoked.</li>
+<li>Tool contracts are typed and versioned.</li>
+<li>Chat path can call at least one real tool end-to-end.</li>
+</ul>
+<h3 id="step-5-extract-repositories-after-mcp-stabilization">Step 5: Extract Repositories After MCP Stabilization</h3>
+<p>Split only after Steps 1-4 are stable and test-backed.</p>
+<p>Extraction order:</p>
+<ol>
+<li><code>spectrasherpa-server</code> (commercial server logic)</li>
+<li><code>spectra-ops</code> (deployment and infra)</li>
+<li>Cleanup <code>spectra-sherpa</code> to strict local-first OSS scope</li>
+</ol>
+<p>Done criteria:</p>
+<ul>
+<li>Split follows proven seams (contracts + policy + MCP ownership), not guesses.</li>
+</ul>
+<hr />
+<h2 id="acceptance-gates-before-split">Acceptance Gates Before Split</h2>
+<p>Do not begin physical extraction until all are true:</p>
+<ol>
+<li>Contract artifacts are versioned and reviewed.</li>
+<li>Mode matrix tests pass consistently.</li>
+<li>Mode policy centralization is complete for core auth/egress/export logic.</li>
+<li>MCP/tool foundation supports at least one production-meaningful tool flow.</li>
+<li>Sherpa contract compatibility checks are automated.</li>
+</ol>
+<hr />
+<h2 id="notes-for-mcp-and-skills-ownership">Notes for MCP and Skills Ownership</h2>
+<p>Boundary rule:</p>
+<ul>
+<li>Local-only tools/skills remain in Repo 1 scope.</li>
+<li>Tenant-aware or proprietary tools/skills move to Repo 2 scope.</li>
+<li>Deployment, auth gateway, secret injection, scaling, and observability stay in
+  Repo 3 scope.</li>
+</ul>
+<p>This rule should drive extraction decisions, not folder names.</p>
+<hr />
+<h2 id="immediate-next-action">Immediate Next Action</h2>
+<p>Start with Step 1 by adding <code>contracts/</code> artifacts from current
+<code>/openapi.json</code>, WebSocket actions, and Sherpa payload definitions.</p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../REFACTOR_3_REPO_STRATEGY/" class="btn btn-neutral float-left" title="3-Repo Refactor Strategy"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../DOE_ENHANCEMENTS/" class="btn btn-neutral float-right" title="DOE Enhancements">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+    
+      <span><a href="../REFACTOR_3_REPO_STRATEGY/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../DOE_ENHANCEMENTS/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

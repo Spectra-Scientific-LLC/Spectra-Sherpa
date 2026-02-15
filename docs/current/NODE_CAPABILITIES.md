@@ -153,7 +153,7 @@
 - ✅ Node metadata includes parameters, input/output types, descriptions
 
 ### Frontend Access
-- ✅ Frontend loads nodes dynamically from backend API ([NodeLibrary.vue:89-109](/Users/fe2val/Documents/Spectra Scientific/Component_code/Refactored/frontend/src/views/analysis/NodeLibrary.vue#L89-L109))
+- ✅ Frontend loads nodes dynamically from backend API ([NodeLibrary.vue:89-109](frontend/src/views/analysis/NodeLibrary.vue#L89-L109))
 - ✅ All categories displayed: Preprocessing, Modeling, Classification, Diagnostics, Data, Output, Synthesis
 - ✅ Search functionality available across all nodes
 

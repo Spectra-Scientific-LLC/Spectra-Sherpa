@@ -40,9 +40,9 @@ class DataEgressPermission(DataEgressPermissionBase):
 class UserEgressDefaultsBase(BaseModel):
     """Base schema for user egress defaults"""
     allow_spectrasherpa_sync: bool = Field(default=False, description="Allow syncing data to SpectraSherpa cloud")
-    allow_llm_context: bool = Field(default=True, description="Allow sending data as context to LLM providers")
-    allow_export: bool = Field(default=True, description="Allow exporting data to files")
-    allow_nist_queries: bool = Field(default=True, description="Allow NIST WebBook queries")
+    allow_llm_context: bool = Field(default=False, description="Allow sending data as context to LLM providers")
+    allow_export: bool = Field(default=False, description="Allow exporting data to files")
+    allow_nist_queries: bool = Field(default=False, description="Allow NIST WebBook queries")
 
 
 class UserEgressDefaultsCreate(UserEgressDefaultsBase):

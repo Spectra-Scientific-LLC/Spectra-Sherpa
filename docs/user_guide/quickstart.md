@@ -191,7 +191,7 @@ To revert to local mode, go to **Settings** > **Integrations** and click **Disco
 - **Experiment Management**: Organize spectra with version tracking — see the [User Guide](experiments.md).
 - **NIST Search**: Download reference spectra from NIST WebBook directly in the app (requires `EGRESS_ENABLED=true`).
 - **Calibration**: Build quantitative models from multi-concentration measurements.
-- **Modes**: Connect to cloud GPU or run a demo server — see [Server Overview](../server/overview.md).
+- **Modes**: Connect to cloud GPU or run an enterprise server — see [Server Overview](../server/overview.md).
 - **Export**: Send results to CSV, Excel, or Parquet for use in Origin/MATLAB.
 
 For the full node catalog, see the [Node Reference](../reference/nodes.md).

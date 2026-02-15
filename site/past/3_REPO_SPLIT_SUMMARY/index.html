@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>3-Repo Split: Architecture Summary - SpectraSherpa Documentation</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "3-Repo Split: Architecture Summary";
+        var mkdocs_page_input_path = "past/3_REPO_SPLIT_SUMMARY.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> SpectraSherpa Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">User Guide (OSS)</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/installation/">Installation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/configuration/">Configuration</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/quickstart/">Quickstart</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/experiments/">Experiments</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/library/">Library (NIST)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/doe/">DOE (96-Well)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/synthesis/">Synthesis Builder</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/workflow/">Workflow Builder</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reproduction Study</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/reproduction_methodology/">Methodology</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../USER_MANUAL/">User Manual</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Server Operator Guide</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../server/overview/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../server/hybrid_mode/">Hybrid Mode</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../server/enterprise_mode/">Enterprise Mode</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../deployment/DIGITAL_OCEAN/">Docker Deployment</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Developer Guide</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../developer/setup/">Setup & Contributing</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../developer/architecture/">Architecture</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Examples</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/01_loading_data/">01. Loading Data</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/02_dataset_manipulation/">02. Manipulation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/03_plotting/">03. Plotting</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/04_preprocessing_smoothing/">04. Smoothing</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/05_preprocessing_baseline/">05. Baseline</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/06_peak_finding/">06. Peak Finding</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/07_peak_fitting/">07. Integration</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/08_pca/">08. PCA</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/09_mcr_als/">09. MCR-ALS</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/10_pls_regression/">10. PLS</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Reference</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../reference/nodes/">Node Library</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Past</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../RELEASE_NOTES/">Release Notes</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../IMPLEMENTATION_SUMMARY/">Implementation Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../FINAL_FIXES_SUMMARY/">Final Fixes Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../SESSION_SUMMARY_2026-01-21/">Session Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../NODE_STANDARDIZATION_2026-01-26/">Node Standardization (2026-01-26)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Completed Plans</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../ROADMAP/">Roadmap</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../REFACTOR_3_REPO_STRATEGY/">3-Repo Refactor Strategy</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SHERPA_IMPLEMENTATION_PLAN_V2/">Sherpa Implementation Plan V2</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DOE_ENHANCEMENTS/">DOE Enhancements</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../NAVIGATION_REDESIGN/">Navigation Redesign</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Fixes</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../3D_CONCATENATION_FIX/">3D Concatenation Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../QUICK_PLOT_Y_AXIS_LABELS_FIX/">Quick Plot Y-Axis Labels Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../CASE_SENSITIVITY_AND_UI_FIXES/">Case Sensitivity and UI Fixes</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DEDICATED_LOAD_GROUP_ENFORCEMENT/">Dedicated Load Group Enforcement</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../LOAD_GROUP_NODE_IMPLEMENTATION/">Load Group Node Implementation</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reviews & Testing</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../CODE_REVIEW_FINDINGS/">Code Review Findings</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../WEEK7_TESTING/">Week 7 Testing</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Future</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ANALYSIS_CANVAS_WIREFRAME/">Analysis Canvas Wireframe</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/plugin_plan_011525/">Plugin Plan (2025-01-15)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/FUTURE_CAPABILITIES/">Future Capabilities</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">SpectraSherpa Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">3-Repo Split: Architecture Summary</li>
+    <li class="wy-breadcrumbs-aside">
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="3-repo-split-architecture-summary">3-Repo Split: Architecture Summary</h1>
+<p><strong>Date:</strong> 2026-02-09
+<strong>Version:</strong> 1.3.3
+<strong>Status:</strong> Complete (Steps 1-5 of refactor strategy)</p>
+<hr />
+<h2 id="overview">Overview</h2>
+<p>The SpectraSherpa monorepo has been split into three independent repositories, each with clear ownership boundaries:</p>
+<table>
+<thead>
+<tr>
+<th>Repo</th>
+<th>Directory</th>
+<th>Purpose</th>
+<th>License</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>spectra-sherpa</strong></td>
+<td><code>Refactored/</code></td>
+<td>OSS local-first spectroscopy platform</td>
+<td>MIT</td>
+</tr>
+<tr>
+<td><strong>spectrasherpa-server</strong></td>
+<td><code>spectrasherpa-server/</code></td>
+<td>Commercial multi-user backend</td>
+<td>Proprietary</td>
+</tr>
+<tr>
+<td><strong>spectra-ops</strong></td>
+<td><code>spectra-ops/</code></td>
+<td>Deployment &amp; operations (Docker, proxy, docs)</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h3 id="dependency-graph">Dependency Graph</h3>
+<pre><code>spectra-sherpa (Repo 1)          ← pip-installable, standalone
+     ↑
+spectrasherpa-server (Repo 2)    ← pip install spectra-sherpa[cloud]
+     ↑
+spectra-ops (Repo 3)             ← Docker/compose wrapping Repo 1 or 2
+</code></pre>
+<p>Repo 1 has <strong>zero dependencies</strong> on Repos 2 or 3.
+Repo 2 depends on Repo 1 as a pip package.
+Repo 3 is infrastructure-only — it containerizes and deploys Repo 1 or 2.</p>
+<hr />
+<h2 id="repo-1-spectra-sherpa-oss-client">Repo 1: spectra-sherpa (OSS Client)</h2>
+<h3 id="stats">Stats</h3>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Count</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Python files (<code>src/spectra_sherpa/</code>)</td>
+<td>179</td>
+</tr>
+<tr>
+<td>Frontend files (<code>frontend/src/</code>)</td>
+<td>103 (.ts + .vue)</td>
+</tr>
+<tr>
+<td>Test files (<code>tests/</code>)</td>
+<td>10</td>
+</tr>
+<tr>
+<td>Total source lines (approx.)</td>
+<td>~185,000</td>
+</tr>
+</tbody>
+</table>
+<h3 id="directory-structure">Directory Structure</h3>
+<pre><code>spectra-sherpa/
+├── src/
+│   └── spectra_sherpa/
+│       ├── __init__.py           # _AppAliasFinder import hook
+│       ├── __main__.py           # python -m spectra_sherpa
+│       ├── cli.py                # `spectra-sherpa` CLI entry point
+│       ├── _paths.py             # Dual-mode path resolution (dev/pip)
+│       ├── app/
+│       │   ├── main.py           # create_app() factory + WebSocket
+│       │   ├── api/
+│       │   │   ├── deps.py       # Shared dependency injection
+│       │   │   └── v1/
+│       │   │       ├── api.py    # build_api_router() + get_server_routers()
+│       │   │       └── routes/   # 22 route modules (auth/admin removed)
+│       │   ├── core/
+│       │   │   ├── config.py     # Settings + AppConfig
+│       │   │   ├── security.py   # JWT, passwords, egress, API key middleware
+│       │   │   ├── mode_policy.py # 13 centralized mode policy functions
+│       │   │   ├── startup.py    # DB init, seeds, hybrid linking
+│       │   │   ├── demo_enforcement.py
+│       │   │   ├── llm_registry.py
+│       │   │   └── logging.py
+│       │   ├── db/
+│       │   │   ├── session.py    # SQLite/Postgres conditional config
+│       │   │   ├── base.py       # SQLAlchemy Base
+│       │   │   └── seed_*.py     # Data seeds
+│       │   ├── models/           # SQLAlchemy ORM models
+│       │   ├── schemas/          # Pydantic request/response models
+│       │   ├── services/
+│       │   │   ├── llm.py        # LLM service (multi-provider)
+│       │   │   ├── spectrasherpa.py  # Hybrid cloud integration
+│       │   │   ├── sherpa_advisor.py # Cloud advisor
+│       │   │   ├── python_export.py  # Workflow → Python script
+│       │   │   ├── dag/          # Workflow DAG engine
+│       │   │   │   ├── executor.py
+│       │   │   │   ├── node_base.py
+│       │   │   │   ├── graph_utils.py
+│       │   │   │   ├── nodes/    # Preprocessing, modeling, classification
+│       │   │   │   └── serialize.py
+│       │   │   ├── tools/        # MCP tool system
+│       │   │   │   ├── schemas.py
+│       │   │   │   ├── registry.py
+│       │   │   │   ├── executor.py
+│       │   │   │   └── builtin/  # 6 built-in tools
+│       │   │   └── ws_handlers.py
+│       │   └── lib/              # Scientific libraries
+│       │       ├── spectral/     # Spectral analysis
+│       │       └── blending/     # Blending algorithms
+│       ├── alembic/              # DB migrations
+│       └── static/               # Bundled frontend (pip installs)
+├── frontend/
+│   └── src/
+│       ├── api/                  # HTTP client
+│       ├── components/           # Vue 3 components
+│       ├── stores/               # Pinia state (workflow, llm, sherpa, job)
+│       ├── views/                # Page views (workflow-builder, analysis, etc.)
+│       ├── utils/                # Utilities (ws.ts, plotLabels.ts)
+│       └── main.ts              # Vue entry point
+├── tests/                        # 10 test files, 164 passing
+├── contracts/                    # Frozen API contracts (OpenAPI, WS, Sherpa)
+├── docs/                         # Documentation
+├── pyproject.toml               # Package: spectra-sherpa v1.3.3
+└── poetry.lock
+</code></pre>
+<h3 id="entry-points">Entry Points</h3>
+<table>
+<thead>
+<tr>
+<th>Entry</th>
+<th>Path</th>
+<th>Usage</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CLI</td>
+<td><code>spectra_sherpa.cli:main</code></td>
+<td><code>spectra-sherpa</code> command</td>
+</tr>
+<tr>
+<td>Module</td>
+<td><code>spectra_sherpa.__main__</code></td>
+<td><code>python -m spectra_sherpa</code></td>
+</tr>
+<tr>
+<td>ASGI</td>
+<td><code>spectra_sherpa.app.main:app</code></td>
+<td>Uvicorn / Gunicorn</td>
+</tr>
+<tr>
+<td>Factory</td>
+<td><code>app.main.create_app()</code></td>
+<td>Programmatic / Repo 2</td>
+</tr>
+</tbody>
+</table>
+<h3 id="key-architectural-seams">Key Architectural Seams</h3>
+<p>These seams enable Repo 2 to extend Repo 1 without forking:</p>
+<p><strong><code>create_app()</code></strong> — <a href="src/spectra_sherpa/app/main.py#L390-L450">main.py:390-450</a></p>
+<pre><code class="language-python">def create_app(
+    *,
+    extra_routers: list[RouterMount] | None = None,
+    extra_startup: list[Callable[[], Awaitable[None]]] | None = None,
+    extra_shutdown: list[Callable[[], Awaitable[None]]] | None = None,
+    extra_middleware: list[Callable[[FastAPI], None]] | None = None,
+    include_server_routers: bool = True,
+) -&gt; FastAPI:
+</code></pre>
+<p><strong><code>build_api_router()</code></strong> — <a href="src/spectra_sherpa/app/api/v1/api.py#L64-L114">api.py:64-114</a></p>
+<pre><code class="language-python">def build_api_router(
+    *,
+    extra_routers: list[RouterInclude] | None = None,
+    include_server_routers: bool = True,
+) -&gt; APIRouter:
+</code></pre>
+<p><strong><code>get_server_routers()</code></strong> — <a href="src/spectra_sherpa/app/api/v1/api.py#L40-L61">api.py:40-61</a></p>
+<pre><code class="language-python">def get_server_routers() -&gt; list[RouterInclude]:
+    # Returns [] if auth/admin modules don't exist (ImportError guard)
+    # Returns [] if mode is not multi-user
+</code></pre>
+<p><strong><code>_make_lifespan()</code></strong> — <a href="src/spectra_sherpa/app/main.py#L160-L238">main.py:160-238</a></p>
+<pre><code class="language-python">def _make_lifespan(
+    extra_startup: list[Callable[[], Awaitable[None]]] | None = None,
+    extra_shutdown: list[Callable[[], Awaitable[None]]] | None = None,
+):
+</code></pre>
+<p><strong><code>_AppAliasFinder</code></strong> — <a href="src/spectra_sherpa/__init__.py#L12-L108"><strong>init</strong>.py:12-108</a>
+- Import hook on <code>sys.meta_path</code> that redirects <code>import app.*</code> → <code>import spectra_sherpa.app.*</code>
+- Only activates when pip-installed (not when running from source tree)
+- Enables Repo 2's auth.py/admin.py to use <code>from app.*</code> imports unchanged</p>
+<h3 id="what-stays-in-repo-1-and-why">What Stays in Repo 1 (and Why)</h3>
+<p>Everything except <code>auth.py</code>, <code>admin.py</code>, and <code>deploy/</code> stays:</p>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mode_policy.py</code></td>
+<td>Central abstraction — works for all modes</td>
+</tr>
+<tr>
+<td><code>security.py</code></td>
+<td>JWT, passwords, egress — used in all modes</td>
+</tr>
+<tr>
+<td><code>demo_enforcement.py</code></td>
+<td>Mode-gated (no-op in local)</td>
+</tr>
+<tr>
+<td><code>startup.py</code></td>
+<td>Server tasks mode-gated (no-op in local)</td>
+</tr>
+<tr>
+<td><code>spectrasherpa.py</code></td>
+<td>Hybrid cloud integration (optional, single-user)</td>
+</tr>
+<tr>
+<td><code>sherpa_advisor.py</code></td>
+<td>Cloud advisor (optional)</td>
+</tr>
+<tr>
+<td><code>encryption.py</code></td>
+<td>API key encryption (BYOK in local/hybrid)</td>
+</tr>
+<tr>
+<td>All models</td>
+<td>User model needed for implicit local user</td>
+</tr>
+<tr>
+<td>All schemas</td>
+<td>Token/User schemas used by multiple consumers</td>
+</tr>
+<tr>
+<td><code>api_keys.py</code> route</td>
+<td>BYOK key management — works in all modes</td>
+</tr>
+<tr>
+<td><code>egress.py</code> route</td>
+<td>Egress settings — works in all modes</td>
+</tr>
+<tr>
+<td>Frontend</td>
+<td>Bundled into static/ for pip installs</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="repo-2-spectrasherpa-server-commercial-backend">Repo 2: spectrasherpa-server (Commercial Backend)</h2>
+<h3 id="stats_1">Stats</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Lines</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pyproject.toml</code></td>
+<td>26</td>
+</tr>
+<tr>
+<td><code>src/spectrasherpa_server/__init__.py</code></td>
+<td>3</td>
+</tr>
+<tr>
+<td><code>src/spectrasherpa_server/app.py</code></td>
+<td>25</td>
+</tr>
+<tr>
+<td><code>src/spectrasherpa_server/routes/__init__.py</code></td>
+<td>0</td>
+</tr>
+<tr>
+<td><code>src/spectrasherpa_server/routes/auth.py</code></td>
+<td>141</td>
+</tr>
+<tr>
+<td><code>src/spectrasherpa_server/routes/admin.py</code></td>
+<td>347</td>
+</tr>
+<tr>
+<td><code>README.md</code></td>
+<td>47</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td><strong>589</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="directory-structure_1">Directory Structure</h3>
+<pre><code>spectrasherpa-server/
+├── pyproject.toml                      # depends on spectra-sherpa[cloud]
+├── README.md
+└── src/
+    └── spectrasherpa_server/
+        ├── __init__.py                 # __version__ = &quot;1.3.3&quot;
+        ├── app.py                      # create_app() with auth/admin routers
+        └── routes/
+            ├── __init__.py             # empty
+            ├── auth.py                 # login, register, /me
+            └── admin.py               # user CRUD, system LLM key management
+</code></pre>
+<h3 id="how-it-works">How It Works</h3>
+<p>The entire server is 25 lines of glue code in <code>app.py</code>:</p>
+<pre><code class="language-python">from app.main import create_app
+from spectrasherpa_server.routes import admin, auth
+
+app = create_app(
+    extra_routers=[
+        (auth.router, {&quot;prefix&quot;: &quot;/auth&quot;, &quot;tags&quot;: [&quot;auth&quot;]}),
+        (admin.router, {&quot;prefix&quot;: &quot;/admin&quot;, &quot;tags&quot;: [&quot;admin&quot;]}),
+    ],
+    include_server_routers=False,
+)
+</code></pre>
+<ul>
+<li><code>create_app()</code> builds the full FastAPI app from Repo 1</li>
+<li><code>include_server_routers=False</code> tells Repo 1 not to look for its own auth/admin modules</li>
+<li>The two routers are injected as <code>extra_routers</code>, mounted at <code>/auth</code> and <code>/admin</code></li>
+<li><code>_AppAliasFinder</code> ensures <code>from app.*</code> imports in auth.py and admin.py resolve to Repo 1's installed package</li>
+</ul>
+<h3 id="what-authpy-provides">What auth.py Provides</h3>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Method</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/auth/login</code></td>
+<td>POST</td>
+<td>OAuth2 password login → JWT token</td>
+</tr>
+<tr>
+<td><code>/auth/me</code></td>
+<td>GET</td>
+<td>Current user from JWT</td>
+</tr>
+<tr>
+<td><code>/auth/register</code></td>
+<td>POST</td>
+<td>Self-service registration (mode-gated)</td>
+</tr>
+</tbody>
+</table>
+<p>Security: constant-time password verification with dummy hash to prevent timing attacks on username enumeration.</p>
+<h3 id="what-adminpy-provides">What admin.py Provides</h3>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Method</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/admin/users</code></td>
+<td>GET</td>
+<td>List all users (paginated)</td>
+</tr>
+<tr>
+<td><code>/admin/users</code></td>
+<td>POST</td>
+<td>Create user</td>
+</tr>
+<tr>
+<td><code>/admin/users/{id}</code></td>
+<td>PATCH</td>
+<td>Toggle active status</td>
+</tr>
+<tr>
+<td><code>/admin/users/{id}</code></td>
+<td>DELETE</td>
+<td>Delete user</td>
+</tr>
+<tr>
+<td><code>/admin/users/{id}/rotate-key</code></td>
+<td>POST</td>
+<td>Generate new API key</td>
+</tr>
+<tr>
+<td><code>/admin/system-keys</code></td>
+<td>GET</td>
+<td>List system LLM keys</td>
+</tr>
+<tr>
+<td><code>/admin/system-keys</code></td>
+<td>POST</td>
+<td>Add/update system LLM key</td>
+</tr>
+<tr>
+<td><code>/admin/system-keys/{provider}</code></td>
+<td>DELETE</td>
+<td>Remove system key</td>
+</tr>
+</tbody>
+</table>
+<p>All admin endpoints require superuser role + non-local mode.</p>
+<h3 id="imports-from-repo-1">Imports from Repo 1</h3>
+<p>auth.py and admin.py import from these Repo 1 modules (resolved via <code>_AppAliasFinder</code>):</p>
+<ul>
+<li><code>app.api.deps</code> — <code>get_session</code>, <code>get_current_user</code>, <code>invalidate_api_key_cache</code></li>
+<li><code>app.core.security</code> — password hashing, JWT, gateway cache invalidation</li>
+<li><code>app.core.config</code> — <code>settings</code> (token expiry)</li>
+<li><code>app.core.mode_policy</code> — <code>allows_registration()</code>, <code>allows_admin()</code></li>
+<li><code>app.core.llm_registry</code> — <code>PROVIDERS</code> dict</li>
+<li><code>app.models.user</code> — <code>User</code> ORM model</li>
+<li><code>app.models.api_key</code> — <code>APIKey</code> ORM model</li>
+<li><code>app.models.data_egress</code> — <code>UserEgressDefaults</code> ORM model</li>
+<li><code>app.schemas</code> — <code>Token</code>, <code>User</code>, <code>UserCreate</code>, <code>UserStatusUpdate</code></li>
+<li><code>app.services.encryption</code> — <code>encrypt_value()</code></li>
+</ul>
+<hr />
+<h2 id="repo-3-spectra-ops-deployment-operations">Repo 3: spectra-ops (Deployment &amp; Operations)</h2>
+<h3 id="stats_2">Stats</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Lines</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>docker/Dockerfile.backend</code></td>
+<td>43</td>
+</tr>
+<tr>
+<td><code>docker/Dockerfile.frontend</code></td>
+<td>23</td>
+</tr>
+<tr>
+<td><code>docker/docker-compose.prod.yaml</code></td>
+<td>86</td>
+</tr>
+<tr>
+<td><code>proxy/nginx.conf</code></td>
+<td>60</td>
+</tr>
+<tr>
+<td><code>proxy/Caddyfile</code></td>
+<td>24</td>
+</tr>
+<tr>
+<td><code>docs/DIGITAL_OCEAN.md</code></td>
+<td>434</td>
+</tr>
+<tr>
+<td><code>.env.example</code></td>
+<td>133</td>
+</tr>
+<tr>
+<td><code>README.md</code></td>
+<td>26</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td><strong>829</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="directory-structure_2">Directory Structure</h3>
+<pre><code>spectra-ops/
+├── README.md
+├── .env.example                        # All env vars documented
+├── docker/
+│   ├── Dockerfile.backend              # Python 3.11 + Poetry + Gunicorn
+│   ├── Dockerfile.frontend             # Node 20 build → nginx
+│   └── docker-compose.prod.yaml        # 3-service stack
+├── proxy/
+│   ├── nginx.conf                      # Internal reverse proxy
+│   └── Caddyfile                       # TLS termination + security headers
+└── docs/
+    └── DIGITAL_OCEAN.md                # Full production deployment guide
+</code></pre>
+<h3 id="production-stack">Production Stack</h3>
+<pre><code>Internet → Caddy (TLS, HSTS, CSP) → nginx (SPA, gzip) → Backend (Gunicorn/Uvicorn)
+                                                       → /api → Backend
+                                                       → /ws  → Backend (WebSocket)
+</code></pre>
+<p><strong>docker-compose.prod.yaml</strong> defines three services:</p>
+<table>
+<thead>
+<tr>
+<th>Service</th>
+<th>Image</th>
+<th>Ports</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>backend</code></td>
+<td>Dockerfile.backend</td>
+<td>8000 (internal)</td>
+<td>Gunicorn + Uvicorn, health-checked</td>
+</tr>
+<tr>
+<td><code>frontend</code></td>
+<td>Dockerfile.frontend</td>
+<td>80 (internal)</td>
+<td>nginx serving Vue SPA</td>
+</tr>
+<tr>
+<td><code>caddy</code></td>
+<td>caddy:2-alpine</td>
+<td>80, 443 (public)</td>
+<td>TLS termination, Let's Encrypt</td>
+</tr>
+</tbody>
+</table>
+<h3 id="security-features">Security Features</h3>
+<ul>
+<li>Automatic Let's Encrypt TLS via Caddy</li>
+<li>HSTS (2 years, preload), X-Frame-Options: DENY, CSP</li>
+<li>Non-root container user</li>
+<li>200MB upload limit matching backend MAX_FILE_SIZE_MB</li>
+<li>WebSocket proxy with 86400s timeout</li>
+<li>Rate limiting at app level (file-backed state)</li>
+<li>Proxy trust (TRUSTED_PROXY_CIDRS for Docker bridge)</li>
+</ul>
+<h3 id="environment-variables-envexample">Environment Variables (.env.example)</h3>
+<p>134 lines covering:
+- App mode (local / hybrid / demo)
+- LLM providers (OpenAI, Anthropic, DeepSeek, Gemini)
+- Execution mode (local / hybrid GPU offload)
+- Demo settings (rate limits, session expiry, password gate)
+- Security (JWT secret, API key, encryption key)
+- Hybrid mode (SpectraSherpa server URL, API key)
+- CORS, domain, proxy trust
+- Resource limits (max spectra, memory, concurrent jobs)</p>
+<hr />
+<h2 id="deployment-modes">Deployment Modes</h2>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Repo(s)</th>
+<th>Auth</th>
+<th>Database</th>
+<th>Entry Point</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Local</strong></td>
+<td>1 only</td>
+<td>Implicit user, no login</td>
+<td>SQLite</td>
+<td><code>spectra-sherpa</code> CLI</td>
+</tr>
+<tr>
+<td><strong>Hybrid</strong></td>
+<td>1 only</td>
+<td>Implicit + optional cloud link</td>
+<td>SQLite</td>
+<td><code>spectra-sherpa</code> CLI</td>
+</tr>
+<tr>
+<td><strong>Demo</strong></td>
+<td>1 + 3</td>
+<td>JWT registration + login</td>
+<td>SQLite (or Postgres)</td>
+<td><code>docker-compose up</code></td>
+</tr>
+<tr>
+<td><strong>SaaS</strong></td>
+<td>1 + 2 + 3</td>
+<td>Full multi-user JWT</td>
+<td>PostgreSQL</td>
+<td><code>docker-compose up</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="mode-flow">Mode Flow</h3>
+<pre><code>Local:   pip install spectra-sherpa → spectra-sherpa → browser at localhost:8000
+Hybrid:  Same as local + SPECTRASHERPA_SERVER_URL in .env → cloud offload
+Demo:    docker-compose up → Caddy → nginx → backend (APP_MODE=demo)
+SaaS:    docker-compose up (with spectrasherpa-server) → full multi-user
+</code></pre>
+<hr />
+<h2 id="critical-implementation-details">Critical Implementation Details</h2>
+<h3 id="the-importerror-guard">The ImportError Guard</h3>
+<p>When Repo 1 runs standalone (no auth.py/admin.py), the <code>get_server_routers()</code> function in <a href="src/spectra_sherpa/app/api/v1/api.py#L40-L61">api.py:40-61</a> handles the missing modules gracefully:</p>
+<pre><code class="language-python">def get_server_routers() -&gt; list[RouterInclude]:
+    from app.core.mode_policy import is_multi_user
+    if not is_multi_user():
+        return []
+    try:
+        from app.api.v1.routes import admin, auth
+    except ImportError:
+        logger.info(&quot;Server routes unavailable in this distribution; skipping auth/admin routers&quot;)
+        return []
+    return [
+        (auth.router, {&quot;prefix&quot;: &quot;/auth&quot;, &quot;tags&quot;: [&quot;auth&quot;]}),
+        (admin.router, {&quot;prefix&quot;: &quot;/admin&quot;, &quot;tags&quot;: [&quot;admin&quot;]}),
+    ]
+</code></pre>
+<p><strong>Critical fix applied during split:</strong> <code>auth</code> was removed from the eager import list in <a href="src/spectra_sherpa/app/api/v1/routes/__init__.py">routes/<strong>init</strong>.py</a>. Without this fix, the entire routes package would crash on import before the ImportError guard could activate.</p>
+<h3 id="the-_appaliasfinder-hook">The _AppAliasFinder Hook</h3>
+<p>When Repo 1 is pip-installed (e.g., by Repo 2), <code>import app.xxx</code> doesn't work because the package is installed as <code>spectra_sherpa</code>, not <code>app</code>. The <code>_AppAliasFinder</code> in <a href="src/spectra_sherpa/__init__.py#L12-L108"><strong>init</strong>.py:12-108</a> intercepts these imports:</p>
+<pre><code>from app.core.security import verify_password
+  → _AppAliasFinder intercepts &quot;app.core.security&quot;
+  → redirects to &quot;spectra_sherpa.app.core.security&quot;
+  → import succeeds
+</code></pre>
+<p>This means auth.py and admin.py work identically in both repos with <strong>zero import changes</strong>.</p>
+<h3 id="version-alignment">Version Alignment</h3>
+<p>Both repos pin v1.3.3. Repo 2's <code>pyproject.toml</code> declares:</p>
+<pre><code class="language-toml">spectra-sherpa = {version = &quot;^1.3.3&quot;, extras = [&quot;cloud&quot;]}
+</code></pre>
+<p>The <code>cloud</code> extra installs <code>asyncpg</code> (PostgreSQL) and <code>gunicorn</code> (multi-worker).</p>
+<hr />
+<h2 id="test-results-post-split-verification">Test Results (Post-Split Verification)</h2>
+<pre><code>Repo 1: 164 passed, 4 failed (all pre-existing)
+  Pre-existing failures:
+  - test_data_loading_golden.py (ERROR — fixture issue)
+  - test_experiments.py (assertion — unrelated)
+  - test_gateway_user_api_key.py (auth flow — pre-existing)
+  - test_modeling_nodes.py::test_pcr_node (numerical — pre-existing)
+
+Smoke tests:
+  ✓ from app.main import app           → module singleton works
+  ✓ get_server_routers()               → returns [] with info log
+  ✓ Repo 2 app.py imports              → creates FastAPI with auth/admin
+  ✓ Repo 3 file structure              → all deploy files present
+</code></pre>
+<p>Zero regressions from the split.</p>
+<hr />
+<h2 id="refactor-steps-completed">Refactor Steps Completed</h2>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Description</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Freeze contracts (OpenAPI, WS, Sherpa, config)</td>
+<td>Done</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Mode-matrix regression tests (58 tests)</td>
+<td>Done</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Centralize mode policy (13 functions)</td>
+<td>Done</td>
+</tr>
+<tr>
+<td>4</td>
+<td>MCP tool foundation (schemas, registry, executor, 6 tools, LLM + WS)</td>
+<td>Done</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Physical 3-repo split</td>
+<td>Done</td>
+</tr>
+</tbody>
+</table>
+<h3 id="files-changed-in-repo-1-during-split">Files Changed in Repo 1 During Split</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>src/spectra_sherpa/app/api/v1/routes/__init__.py</code></td>
+<td>Removed <code>auth</code> from eager import</td>
+</tr>
+<tr>
+<td><code>src/spectra_sherpa/app/api/v1/routes/auth.py</code></td>
+<td>Deleted (→ Repo 2)</td>
+</tr>
+<tr>
+<td><code>src/spectra_sherpa/app/api/v1/routes/admin.py</code></td>
+<td>Deleted (→ Repo 2)</td>
+</tr>
+<tr>
+<td><code>deploy/</code></td>
+<td>Deleted (→ Repo 3)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="future-work">Future Work</h2>
+<p>Per the <a href="docs/future/REFACTOR_3_REPO_STRATEGY.md">strategy document</a>:</p>
+<ul>
+<li><strong>Governance:</strong> Semantic versioning per repo, compatibility matrix</li>
+<li><strong>CI:</strong> Cross-repo contract tests, mode-matrix in CI, smoke deploy from Repo 3</li>
+<li><strong>Plugin SDK:</strong> Formalize plugin interface for third-party MCP tools/skills</li>
+<li><strong>Each directory</strong> is ready for <code>git init</code> as an independent repository</li>
+</ul>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+    
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

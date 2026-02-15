@@ -13,7 +13,7 @@ This document defines the high-level information architecture for the Spectra Pl
 ### Core Principles
 1. **Project as Global Context** - Scientists think "I'm working on Project X"
 2. **3-Tab Navigation** - Data | Operations | Workflows (low cognitive load)
-3. **NDDataset Throughout** - All data flows as SpectroChemPy `NDDataset` (provenance in `meta["processing_history"]`, serialization at API boundary via `serialize_for_api()`)
+3. **AnalysisDataset Throughout** - All data flows as `AnalysisDataset` (the DAG's canonical runtime container). NDDataset (SpectroChemPy) is used only by SCP-only nodes via adapters. Provenance in `meta["processing_history"]`, serialization at API boundary via `serialize_for_api()`.
 4. **LLM as Technical Assistant** - Code generation and guidance, not scientific conclusions
 
 ---
@@ -550,7 +550,7 @@ project = Project(
 | Project1/2 | Workflow templates | Span multiple operations |
 | Process scope | 4 categories only | Essential preprocessing only |
 | LLM role | Technical assistant | Code gen, not scientific conclusions |
-| Data structure | NDDataset only | SpectroChemPy alignment with provenance in `meta["processing_history"]` |
+| Data structure | AnalysisDataset (NDDataset-compatible) | Provenance in `meta["processing_history"]`; NDDataset used only by SCP-only nodes via adapters |
 
 ---
 

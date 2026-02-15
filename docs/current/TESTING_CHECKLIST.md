@@ -36,7 +36,7 @@
 
 ### Backend Startup (User Action Required)
 ```bash
-cd Refactored/backend
+cd src/spectra_sherpa
 source venv/bin/activate  # or conda activate <env>
 uvicorn app.main:app --reload
 ```
@@ -50,7 +50,7 @@ uvicorn app.main:app --reload
 
 ### Database Schema Validation
 ```bash
-cd Refactored/backend
+cd src/spectra_sherpa
 alembic current
 alembic history
 ```

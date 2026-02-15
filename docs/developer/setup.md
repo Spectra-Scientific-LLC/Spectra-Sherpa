@@ -83,7 +83,7 @@ Create a `.env` file in `src/spectra_sherpa/` for local configuration:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `APP_MODE` | `local` | `local`, `hybrid`, or `demo` |
+| `APP_MODE` | `local` | `local`, `hybrid`, or `enterprise` (`demo` accepted as alias) |
 | `DATABASE_URL` | `sqlite:///./spectra_sherpa.db` | Database connection string |
 | `SHERPA_ENGINE_API_KEY` | (none) | Anthropic API key for Sherpa Engine |
-| `SECRET_KEY` | (auto-generated) | JWT signing key (required in hybrid/demo) |
+| `SECRET_KEY` | (auto-generated) | JWT signing key (required in hybrid/enterprise) |

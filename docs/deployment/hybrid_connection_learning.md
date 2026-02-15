@@ -28,8 +28,9 @@ surface.
   `OperationalError: no such table: experiment`
 - **FIX:** Delete the SQLite database file and restart
 
-### Demo mode rejects SQLite
-- `APP_MODE=demo` requires PostgreSQL — the app refuses to start with SQLite
+### Enterprise mode rejects SQLite
+- `APP_MODE=enterprise` requires PostgreSQL — the app refuses to start with SQLite
+  (note: `APP_MODE=demo` is accepted as a deprecated alias for `enterprise`)
 - **Use `APP_MODE=hybrid`** for single-server SQLite deployments
 
 ### DO Firewall

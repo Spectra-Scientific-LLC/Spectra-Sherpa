@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Plan: Server-Side Sherpa Agentic Analysis - SpectraSherpa Documentation</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Plan: Server-Side Sherpa Agentic Analysis";
+        var mkdocs_page_input_path = "past/SHERPA_IMPLEMENTATION_PLAN.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> SpectraSherpa Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">User Guide (OSS)</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/installation/">Installation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/configuration/">Configuration</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/quickstart/">Quickstart</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/experiments/">Experiments</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/library/">Library (NIST)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/doe/">DOE (96-Well)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/synthesis/">Synthesis Builder</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/workflow/">Workflow Builder</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reproduction Study</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/reproduction_methodology/">Methodology</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../USER_MANUAL/">User Manual</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Server Operator Guide</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../server/overview/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../server/hybrid_mode/">Hybrid Mode</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../server/enterprise_mode/">Enterprise Mode</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../deployment/DIGITAL_OCEAN/">Docker Deployment</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Developer Guide</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../developer/setup/">Setup & Contributing</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../developer/architecture/">Architecture</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Examples</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/01_loading_data/">01. Loading Data</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/02_dataset_manipulation/">02. Manipulation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/03_plotting/">03. Plotting</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/04_preprocessing_smoothing/">04. Smoothing</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/05_preprocessing_baseline/">05. Baseline</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/06_peak_finding/">06. Peak Finding</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/07_peak_fitting/">07. Integration</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/08_pca/">08. PCA</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/09_mcr_als/">09. MCR-ALS</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/10_pls_regression/">10. PLS</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Reference</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../reference/nodes/">Node Library</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Past</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../RELEASE_NOTES/">Release Notes</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../IMPLEMENTATION_SUMMARY/">Implementation Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../FINAL_FIXES_SUMMARY/">Final Fixes Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../SESSION_SUMMARY_2026-01-21/">Session Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../NODE_STANDARDIZATION_2026-01-26/">Node Standardization (2026-01-26)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Completed Plans</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../ROADMAP/">Roadmap</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../REFACTOR_3_REPO_STRATEGY/">3-Repo Refactor Strategy</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SHERPA_IMPLEMENTATION_PLAN_V2/">Sherpa Implementation Plan V2</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DOE_ENHANCEMENTS/">DOE Enhancements</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../NAVIGATION_REDESIGN/">Navigation Redesign</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Fixes</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../3D_CONCATENATION_FIX/">3D Concatenation Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../QUICK_PLOT_Y_AXIS_LABELS_FIX/">Quick Plot Y-Axis Labels Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../CASE_SENSITIVITY_AND_UI_FIXES/">Case Sensitivity and UI Fixes</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DEDICATED_LOAD_GROUP_ENFORCEMENT/">Dedicated Load Group Enforcement</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../LOAD_GROUP_NODE_IMPLEMENTATION/">Load Group Node Implementation</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reviews & Testing</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../CODE_REVIEW_FINDINGS/">Code Review Findings</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../WEEK7_TESTING/">Week 7 Testing</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Future</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ANALYSIS_CANVAS_WIREFRAME/">Analysis Canvas Wireframe</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/plugin_plan_011525/">Plugin Plan (2025-01-15)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/FUTURE_CAPABILITIES/">Future Capabilities</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">SpectraSherpa Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Plan: Server-Side Sherpa Agentic Analysis</li>
+    <li class="wy-breadcrumbs-aside">
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="plan-server-side-sherpa-agentic-analysis">Plan: Server-Side Sherpa Agentic Analysis</h1>
+<h2 id="context">Context</h2>
+<p>The local SpectraSherpa app already has a complete client layer for cloud Sherpa communication:
+- <a href="src/spectra_sherpa/app/services/sherpa_advisor.py">sherpa_advisor.py</a> — HTTP client that sends <code>WorkflowStateSync</code> and receives <code>SherpaRecommendation[]</code>
+- <a href="src/spectra_sherpa/app/schemas/sherpa.py">sherpa.py</a> — Pydantic models defining the protocol (tiers, patches, decisions)
+- Egress permission system — privacy-first filtering before data leaves the machine</p>
+<p><strong>Problem</strong>: The spectrasherpa-server has <strong>zero Sherpa endpoints</strong>. It only handles auth, keys, and health. When the local app calls <code>POST /api/v1/sherpa/sync</code>, it gets a 404.</p>
+<p><strong>Goal</strong>: Build the server-side Sherpa brain — receive workflow graphs, load domain knowledge ("skills"), call an LLM via managed keys, return structured <code>SherpaRecommendation[]</code>. Scope: <strong>suggest-only</strong> (no auto-execution).</p>
+<hr />
+<h2 id="architecture">Architecture</h2>
+<pre><code>Local App                         spectrasherpa-server (DO)
+─────────                         ──────────────────────
+sherpa_advisor.py                  routes/sherpa.py
+  POST /sherpa/sync ──────────►     receive WorkflowStateSync
+  (tier-filtered)                    │
+                                     ▼
+                                   services/sherpa_agent.py
+                                     load_skills(categories)
+                                     build_prompt(workflow + skills)
+                                     │
+                                     ▼
+                                   services/llm_provider.py
+                                     resolve managed key (DB)
+                                     call Anthropic/OpenAI API
+                                     │
+                                     ▼
+                                   parse LLM response → SherpaRecommendation[]
+  ◄──────────────────────────────  return JSON response
+</code></pre>
+<hr />
+<h2 id="step-1-create-skills-directory">Step 1: Create Skills Directory</h2>
+<p><strong>Path</strong>: <code>spectrasherpa-server/skills/</code></p>
+<p>One directory per domain category. Each contains a <code>SKILL.md</code> (YAML frontmatter listing which node_types it covers + markdown domain knowledge). The agent loads relevant skills based on node types present in the workflow.</p>
+<pre><code>spectrasherpa-server/skills/
+├── preprocessing/SKILL.md      # 21 nodes: baseline.*, derivative.*, normalize.*, smooth.*, preprocess.*
+├── modeling/SKILL.md           # 18 nodes: model.*, analysis.peak_finding, diagnostics.*
+├── classification/SKILL.md     # 6 nodes: classification.*
+├── data_loading/SKILL.md       # 6 nodes: data.*
+├── output/SKILL.md             # 5 nodes: output.*, stats.summary
+├── workflow_design/SKILL.md    # General pipeline patterns, technique-specific workflows
+├── spectral_techniques/SKILL.md # IR, NIR, Raman, UV-Vis specific guidance
+└── _system/SKILL.md            # ALWAYS loaded: response JSON schema, confidence rules, suggest-only constraints
+</code></pre>
+<p><strong>SKILL.md format</strong>:</p>
+<pre><code class="language-yaml">---
+name: preprocessing
+description: Spectral preprocessing operations
+node_types:
+  - baseline.als
+  - baseline.rubberband
+  - normalize.snv
+  - normalize.msc
+  # ... all 21 preprocessing node types
+triggers:
+  - any node_type in node_types appears in workflow
+---
+
+# Preprocessing Skill
+
+## When to suggest preprocessing
+[Domain knowledge...]
+
+## Parameter guidance
+[Defaults, ranges, technique-specific recommendations...]
+
+## Common mistakes
+[Anti-patterns to detect and flag...]
+</code></pre>
+<p>The <code>_system/SKILL.md</code> is always loaded — it defines the JSON response schema (matching <code>SherpaRecommendation</code>), confidence scoring rubric, and rules (suggest-only, no hallucinated node types, cite reasoning).</p>
+<p><strong>9 SKILL.md files to create.</strong> Content will be based on existing node docstrings/parameter definitions in <code>src/spectra_sherpa/app/services/dag/nodes/</code>.</p>
+<hr />
+<h2 id="step-2-mirror-schemas-on-server">Step 2: Mirror Schemas on Server</h2>
+<p><strong>Create</strong>: <code>spectrasherpa-server/app/schemas/sherpa.py</code></p>
+<p>Direct copy of models from local <a href="src/spectra_sherpa/app/schemas/sherpa.py">sherpa.py</a>:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>EgressTier</code></td>
+<td>Understand data tier</td>
+</tr>
+<tr>
+<td><code>WorkflowContextNode/Edge</code></td>
+<td>Deserialize incoming graph</td>
+</tr>
+<tr>
+<td><code>WorkflowStateSync</code></td>
+<td>Request body for <code>/sherpa/sync</code></td>
+</tr>
+<tr>
+<td><code>UserDecision</code></td>
+<td>Request body for <code>/sherpa/decide</code></td>
+</tr>
+<tr>
+<td><code>SuggestionCategory</code>, <code>SuggestionStatus</code></td>
+<td>Enums</td>
+</tr>
+<tr>
+<td><code>SherpaRecommendation</code></td>
+<td>What the LLM produces</td>
+</tr>
+<tr>
+<td><code>WorkflowPatch</code>, <code>NodePatch</code>, <code>EdgePatch</code></td>
+<td>Structured diffs</td>
+</tr>
+</tbody>
+</table>
+<p>Plus one server-specific wrapper:</p>
+<pre><code class="language-python">class SherpaResponse(BaseModel):
+    recommendations: list[SherpaRecommendation]
+    model_used: str       # e.g. &quot;claude-sonnet-4-5&quot;
+    processing_time_ms: float
+</code></pre>
+<hr />
+<h2 id="step-3-create-llm-provider-service">Step 3: Create LLM Provider Service</h2>
+<p><strong>Create</strong>: <code>spectrasherpa-server/app/services/llm_provider.py</code></p>
+<p>Resolves which LLM to use from managed keys and makes the API call.</p>
+<pre><code class="language-python">class LLMProvider:
+    async def complete(self, system_prompt: str, user_prompt: str, session: AsyncSession, user_id: int) -&gt; tuple[str, str]:
+        &quot;&quot;&quot;Call best available LLM. Returns (response_text, model_name).&quot;&quot;&quot;
+</code></pre>
+<p><strong>Key resolution</strong> (checked in order):
+1. <code>ManagedLLMKey</code> table — active keys, prefer <code>provider="anthropic"</code>
+2. Fallback to <code>settings.anthropic_api_key</code> / <code>settings.openai_api_key</code> from config</p>
+<p><strong>Rate limiting</strong>: Count <code>UsageLog</code> entries for user in last hour. If ≥ <code>settings.rate_limit_llm_requests_per_hour</code> (default 100), raise <code>HTTPException(429)</code>.</p>
+<p><strong>Usage logging</strong>: Insert <code>UsageLog(user_id, endpoint="sherpa/sync", provider="anthropic")</code> after each call.</p>
+<p><strong>Dependencies to add</strong>: <code>anthropic&gt;=0.40.0</code>, <code>openai&gt;=1.50.0</code>, <code>pyyaml&gt;=6.0</code>, <code>python-frontmatter</code></p>
+<p><strong>Reuses existing models</strong>:
+- <a href="spectrasherpa-server/app/models/managed_llm_key.py">managed_llm_key.py</a> — key storage with <code>provider</code>, <code>api_key_encrypted</code>, <code>is_active</code>, <code>rate_limit</code>
+- <a href="spectrasherpa-server/app/models/usage_log.py">usage_log.py</a> — <code>user_id</code>, <code>endpoint</code>, <code>provider</code>, <code>created_at</code></p>
+<hr />
+<h2 id="step-4-create-sherpa-agent-service">Step 4: Create Sherpa Agent Service</h2>
+<p><strong>Create</strong>: <code>spectrasherpa-server/app/services/sherpa_agent.py</code></p>
+<p>The core brain — loads skills, builds prompts, parses LLM output.</p>
+<pre><code class="language-python">class SherpaAgent:
+    def __init__(self, skills_dir: Path):
+        self._skills: dict[str, SkillDefinition] = {}
+        self._load_skills(skills_dir)
+
+    def _load_skills(self, skills_dir: Path):
+        &quot;&quot;&quot;Parse SKILL.md files (YAML frontmatter + markdown body).&quot;&quot;&quot;
+
+    def _select_skills(self, sync: WorkflowStateSync) -&gt; list[SkillDefinition]:
+        &quot;&quot;&quot;Pick relevant skills based on node_types in workflow.&quot;&quot;&quot;
+        # Always include _system
+        # Match node_types → skill's node_types list
+        # Include workflow_design if &gt;3 nodes
+        # Include spectral_techniques if technique is specified
+
+    def _build_prompt(self, sync: WorkflowStateSync, skills: list[SkillDefinition]) -&gt; tuple[str, str]:
+        &quot;&quot;&quot;Return (system_prompt, user_prompt).&quot;&quot;&quot;
+        # system = _system content + concatenated skill contents
+        # user = JSON-serialized workflow state
+
+    async def analyze(self, sync: WorkflowStateSync, llm: LLMProvider, session: AsyncSession, user_id: int) -&gt; tuple[list[SherpaRecommendation], str]:
+        &quot;&quot;&quot;Full pipeline: select skills → prompt → LLM → parse. Returns (recommendations, model_name).&quot;&quot;&quot;
+
+    def _parse_recommendations(self, llm_output: str, workflow_id: int) -&gt; list[SherpaRecommendation]:
+        &quot;&quot;&quot;Parse LLM JSON output into typed recommendations.&quot;&quot;&quot;
+        # Validate against schema, assign uuid4 suggestion_ids, clamp confidence
+</code></pre>
+<p>Singleton pattern with <code>get_sherpa_agent()</code> (consistent with local app patterns).</p>
+<hr />
+<h2 id="step-5-create-sherpa-routes">Step 5: Create Sherpa Routes</h2>
+<p><strong>Create</strong>: <code>spectrasherpa-server/app/api/routes/sherpa.py</code></p>
+<p>Three endpoints matching <a href="src/spectra_sherpa/app/services/sherpa_advisor.py">sherpa_advisor.py</a> client expectations:</p>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Method</th>
+<th>Auth</th>
+<th>Body</th>
+<th>Response</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/api/v1/sherpa/sync</code></td>
+<td>POST</td>
+<td><code>get_current_user</code></td>
+<td><code>WorkflowStateSync</code></td>
+<td><code>SherpaResponse</code></td>
+</tr>
+<tr>
+<td><code>/api/v1/sherpa/decide</code></td>
+<td>POST</td>
+<td><code>get_current_user</code></td>
+<td><code>UserDecision</code></td>
+<td><code>{"status": "recorded"}</code></td>
+</tr>
+<tr>
+<td><code>/api/v1/sherpa/health</code></td>
+<td>GET</td>
+<td><code>get_current_user</code></td>
+<td>—</td>
+<td><code>{"status": "ok", "skills_loaded": 8, "llm_available": true}</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Reuses</strong>: <a href="spectrasherpa-server/app/api/deps.py">deps.py</a> <code>get_current_user</code> dependency (authenticates via API key from local client).</p>
+<hr />
+<h2 id="step-6-wire-up-server-startup">Step 6: Wire Up Server Startup</h2>
+<p><strong>Modify</strong>: <a href="spectrasherpa-server/app/main.py">main.py</a></p>
+<ol>
+<li>Register sherpa router: <code>app.include_router(sherpa.router, prefix="/api/v1")</code></li>
+<li>Load skills in lifespan: <code>get_sherpa_agent()</code> during startup (triggers SKILL.md parsing)</li>
+</ol>
+<hr />
+<h2 id="step-7-update-dependencies">Step 7: Update Dependencies</h2>
+<p><strong>Modify</strong>: <a href="spectrasherpa-server/pyproject.toml">pyproject.toml</a></p>
+<p>Add to dependencies:</p>
+<pre><code class="language-toml">&quot;anthropic&gt;=0.40.0&quot;,
+&quot;openai&gt;=1.50.0&quot;,
+&quot;pyyaml&gt;=6.0&quot;,
+&quot;python-frontmatter&gt;=1.0.0&quot;,
+</code></pre>
+<hr />
+<h2 id="file-summary">File Summary</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>spectrasherpa-server/skills/*/SKILL.md</code> (×9)</td>
+<td><strong>Create</strong></td>
+</tr>
+<tr>
+<td><code>spectrasherpa-server/app/schemas/sherpa.py</code></td>
+<td><strong>Create</strong></td>
+</tr>
+<tr>
+<td><code>spectrasherpa-server/app/services/llm_provider.py</code></td>
+<td><strong>Create</strong></td>
+</tr>
+<tr>
+<td><code>spectrasherpa-server/app/services/sherpa_agent.py</code></td>
+<td><strong>Create</strong></td>
+</tr>
+<tr>
+<td><code>spectrasherpa-server/app/api/routes/sherpa.py</code></td>
+<td><strong>Create</strong></td>
+</tr>
+<tr>
+<td><code>spectrasherpa-server/app/main.py</code></td>
+<td><strong>Modify</strong> (add router + lifespan)</td>
+</tr>
+<tr>
+<td><code>spectrasherpa-server/pyproject.toml</code></td>
+<td><strong>Modify</strong> (add deps)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>No changes needed</strong> on the local app — <code>sherpa_advisor.py</code> already calls the right endpoints.</p>
+<hr />
+<h2 id="verification">Verification</h2>
+<ol>
+<li><strong>Server starts</strong>: <code>cd spectrasherpa-server &amp;&amp; python -m app.main</code> — no errors</li>
+<li><strong>Skills loaded</strong>: <code>GET /api/v1/sherpa/health</code> → <code>{"status": "ok", "skills_loaded": 8, "llm_available": true}</code></li>
+<li><strong>Round-trip</strong>: Local app in hybrid mode → load file → build workflow (File Load → SNV → PCA) → trigger Sherpa sync → verify <code>SherpaRecommendation[]</code> response with valid suggestion_ids, categories, explanations</li>
+<li><strong>Rate limiting</strong>: &gt;100 requests/hour → 429 response</li>
+<li><strong>Decide endpoint</strong>: <code>POST /api/v1/sherpa/decide</code> with <code>accepted=true</code> → 200 + UsageLog entry</li>
+<li><strong>Egress tiers</strong>: Send <code>tier=structure</code> → verify result summaries absent in server-received payload</li>
+</ol>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+    
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

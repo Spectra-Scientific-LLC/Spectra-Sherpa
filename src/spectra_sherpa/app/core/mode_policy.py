@@ -1,5 +1,5 @@
 """
-Centralized mode policy for local / hybrid / demo behavior.
+Centralized mode policy for local / hybrid / enterprise behavior.
 
 All runtime decisions that branch on ``app_config.mode`` should be expressed
 as calls into this module.  This keeps the mode semantics in one place so
@@ -30,13 +30,18 @@ def is_hybrid() -> bool:
     return app_config.mode == "hybrid"
 
 
+def is_enterprise() -> bool:
+    """True when running in enterprise / SaaS mode (JWT auth, rate-limits, PostgreSQL required)."""
+    return app_config.mode == "enterprise"
+
+
 def is_demo() -> bool:
-    """True when running in demo / SaaS mode."""
-    return app_config.mode == "demo"
+    """Deprecated: use is_enterprise(). Kept as alias for one release cycle."""
+    return is_enterprise()
 
 
 def is_multi_user() -> bool:
-    """True when the mode requires user management (hybrid or demo)."""
+    """True when the mode requires user management (hybrid or enterprise)."""
     return app_config.mode != "local"
 
 
@@ -47,14 +52,14 @@ def requires_http_auth(client_host: str | None) -> bool:
 
     - Local mode: never requires auth.
     - Hybrid mode: loopback clients are exempt; remote clients need auth.
-    - Demo mode: all clients need auth.
+    - Enterprise mode: all clients need auth.
     """
     if app_config.mode == "local":
         return False
     if app_config.mode == "hybrid":
         from app.core.security import _is_loopback
         return not _is_loopback(client_host)
-    # demo (and any future mode): always require auth
+    # enterprise (and any future mode): always require auth
     return True
 
 
@@ -110,7 +115,7 @@ def cors_allow_all() -> bool:
 
 def has_rate_limits() -> bool:
     """True when rate limiting / session expiry enforcement is active."""
-    return app_config.mode in ("hybrid", "demo")
+    return app_config.mode in ("hybrid", "enterprise")
 
 
 def token_ttl_minutes() -> int:

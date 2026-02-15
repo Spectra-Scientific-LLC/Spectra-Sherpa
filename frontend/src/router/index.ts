@@ -86,7 +86,7 @@ router.beforeEach(async (to, from, next) => {
 
   // Local mode: bypass all authentication (single-user, no login needed)
   if (appMode.value === 'local') {
-    // Clear stale credentials from prior demo/hybrid usage
+    // Clear stale credentials from prior enterprise/hybrid usage
     if (authStore.token || localStorage.getItem('token')) {
       authStore.clearCredentials()
     }
@@ -126,7 +126,7 @@ router.beforeEach(async (to, from, next) => {
     return next('/login')
   }
 
-  // Admin pages (requires superuser in demo mode)
+  // Admin pages (requires superuser in enterprise mode)
   if (to.meta.requiresAdmin) {
     if (!authStore.user?.is_superuser) {
       return next('/')

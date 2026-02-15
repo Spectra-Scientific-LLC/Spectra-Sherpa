@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Install dependencies
+        run: poetry install --with dev
+
+      - name: Run tests
+        run: |
+          poetry run python -m pytest tests/ -v --no-cov
+        env:
+          PYTHONPATH: src:src/spectra_sherpa
+
+  frontend:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: TypeScript check
+        run: npx vue-tsc --noEmit
+        working-directory: frontend
+
+      - name: Build
+        run: npm run build
+        working-directory: frontend
+
+      - name: Verify static bundle is fresh
+        run: |
+          # Extract asset references from both index.html files
+          DIST_ASSETS=$(grep -oP 'src="/assets/[^"]+"|href="/assets/[^"]+"' frontend/dist/index.html | sort)
+          STATIC_ASSETS=$(grep -oP 'src="/assets/[^"]+"|href="/assets/[^"]+"' src/spectra_sherpa/static/index.html | sort)
+
+          if [ "$DIST_ASSETS" != "$STATIC_ASSETS" ]; then
+            echo "::error::Static bundle is stale! Run: scripts/rebuild_static.sh"
+            echo "Expected (from build):"
+            echo "$DIST_ASSETS"
+            echo "Actual (in static/):"
+            echo "$STATIC_ASSETS"
+            exit 1
+          fi
+
+          # Verify every asset referenced in static/index.html exists
+          grep -oP '/assets/[^"]+' src/spectra_sherpa/static/index.html | while read -r asset; do
+            if [ ! -f "src/spectra_sherpa/static${asset}" ]; then
+              echo "::error::Missing asset: src/spectra_sherpa/static${asset}"
+              exit 1
+            fi
+          done
+
+          echo "Static bundle is fresh and all referenced assets exist."
+
+  docs:
+    name: Docs Build & Hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install mkdocs
+        run: pip install mkdocs
+
+      - name: Build docs
+        run: mkdocs build
+        # Note: --strict omitted because historical docs (past/, current/)
+        # contain ~140 relative links to source files that mkdocs can't resolve.
+        # The demo-string hygiene check below catches nomenclature drift.
+
+      - name: Demo-string hygiene check
+        run: |
+          # Fail if any current/server/deployment doc uses APP_MODE=demo or
+          # mode="demo" outside of clearly-marked deprecation notes.
+          # Allowed patterns: "deprecated alias", "accepted as deprecated",
+          # "backward compat", "maps to enterprise"
+          HITS=$(grep -rn 'APP_MODE=demo\|mode="demo"\|mode=demo\b' \
+            docs/current/ docs/server/ docs/deployment/ \
+            --include='*.md' \
+            | grep -iv 'deprecat\|backward.compat\|maps.*enterprise\|accepted.*alias' || true)
+
+          if [ -n "$HITS" ]; then
+            echo "::error::Stale 'demo' references found in release docs:"
+            echo "$HITS"
+            exit 1
+          fi
+          echo "No stale demo references in release docs."

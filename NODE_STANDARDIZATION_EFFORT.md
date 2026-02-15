@@ -57,12 +57,12 @@ class ExampleNode(Node):
         ],
 
         # OR for single-input/single-output:
-        input_types=["NDDataset"],     # Legacy pattern OK for simple cases
-        output_type="NDDataset",       # Single value
+        input_types=["NDDataset"],     # Wire-format string tag (data is AnalysisDataset at runtime)
+        output_type="NDDataset",       # Wire-format string tag (data is AnalysisDataset at runtime)
         # output_ports=None             # No ports needed
     )
 
-    async def execute(self, X: NDDataset = None, y: Any = None, **kwargs) -> dict:
+    async def execute(self, X: AnalysisDataset = None, y: Any = None, **kwargs) -> dict:
         # ... implementation ...
 
         # RETURN: Dict with keys matching output_port names

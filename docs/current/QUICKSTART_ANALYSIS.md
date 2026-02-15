@@ -19,7 +19,7 @@ This guide walks you through using the new DAG-based Analysis workflow system fo
 ### 1. Install Dependencies
 
 ```bash
-cd Refactored/src/spectra_sherpa
+cd src/spectra_sherpa
 /Users/fe2val/miniforge3/envs/scpy/bin/poetry install
 ```
 
@@ -41,7 +41,7 @@ cd Refactored/src/spectra_sherpa
 ### 1. Install Dependencies
 
 ```bash
-cd Refactored/frontend
+cd frontend
 npm install
 ```
 
@@ -161,14 +161,14 @@ curl -X POST http://localhost:8000/api/v1/workflows \
     ]
   }'
 
-# 2. Execute workflow (you'll need to provide actual NDDataset data)
+# 2. Execute workflow (you'll need to provide actual AnalysisDataset data)
 # See test_workflow_executor.py for a working example
 ```
 
 ### Option C: Via Python Test Script (Immediate)
 
 ```bash
-cd Refactored/src/spectra_sherpa
+cd src/spectra_sherpa
 /Users/fe2val/miniforge3/envs/scpy/bin/python test_workflow_executor.py
 ```
 
@@ -369,7 +369,7 @@ curl http://localhost:8000/api/v1/workflows/nodes/library
 ### Test Individual Node
 
 ```bash
-cd Refactored/src/spectra_sherpa
+cd src/spectra_sherpa
 /Users/fe2val/miniforge3/envs/scpy/bin/python test_pca_node.py
 ```
 
@@ -413,7 +413,7 @@ lsof -i :8000
 ```bash
 # Reset database (CAUTION: Deletes all data)
 # Delete the .db file and restart the server — tables are recreated automatically.
-rm -f Refactored/data/spectra_platform.db*
+rm -f data/spectra_platform.db*
 ```
 
 ---
@@ -447,7 +447,7 @@ Once the backend is running, visit:
 
 ## 📝 Notes
 
-- All workflows use **SpectroChemPy NDDataset** objects for data flow
+- All workflows use **AnalysisDataset** objects for data flow (NDDataset-compatible; SpectroChemPy optional)
 - Nodes are **automatically registered** via `@register_node` decorator
 - **Topological sorting** ensures correct execution order
 - **Python export** generates standalone, executable scripts
@@ -480,7 +480,7 @@ class MyCustomNode(Node):
         output_type="NDDataset",
     )
 
-    async def execute(self, input_data: NDDataset) -> Any:
+    async def execute(self, input_data: AnalysisDataset) -> Any:
         # Your logic here
         result = input_data.copy()
         # ... process result ...

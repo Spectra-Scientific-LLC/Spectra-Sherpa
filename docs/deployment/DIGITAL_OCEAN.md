@@ -57,7 +57,7 @@ Create a `.env` file in `/opt/spectra-platform/deploy/`:
 # /opt/spectra-platform/deploy/.env
 
 # === REQUIRED ===
-APP_MODE=demo
+APP_MODE=enterprise          # (APP_MODE=demo is accepted as a deprecated alias)
 SECRET_KEY=<paste your generated secret key>
 APP_API_KEY=<paste your generated API key>
 CORS_ORIGINS=https://your-domain.com
@@ -66,10 +66,14 @@ DOMAIN=your-domain.com
 # === RECOMMENDED ===
 MASTER_ENCRYPTION_KEY=<paste your generated encryption key>
 
-# === DEMO CONTROLS (defaults shown) ===
+# === ENTERPRISE CONTROLS (defaults shown) ===
 # RATE_LIMIT_EXECUTIONS=100        # Max workflow executions per user per hour
 # SESSION_EXPIRY_HOURS=24          # Force re-login after this many hours
-# DEMO_PASSWORD=                   # If set, required for user registration
+# ENTERPRISE_PASSWORD=             # If set, required for user registration
+#                                  # (DEMO_PASSWORD is accepted as a deprecated alias)
+
+# === SITE PROFILE (optional) ===
+# SITE_PROFILE=demo                # Show demo branding on login page
 
 # === PROXY TRUST (required — Caddy sits in front of the backend) ===
 TRUST_PROXY=true
@@ -86,9 +90,10 @@ TRUSTED_PROXY_CIDRS=172.18.0.0/16  # Docker bridge network CIDR
 # OPENAI_API_KEY=sk-...
 # ANTHROPIC_API_KEY=sk-...
 
-# === DATABASE (optional — defaults to SQLite) ===
-# For concurrent multi-user load, use PostgreSQL:
-# DATABASE_URL=postgresql+asyncpg://spectra:secretpassword@db:5432/spectra
+# === DATABASE (required for enterprise mode) ===
+# Enterprise mode hard-fails at startup with SQLite.
+# SQLite is only acceptable for local/hybrid single-user mode.
+DATABASE_URL=postgresql+asyncpg://spectra:secretpassword@db:5432/spectra
 
 # === AUDIT LOGGING (optional) ===
 # LOG_FILE_PATH=/app/data/audit.log
@@ -96,12 +101,13 @@ TRUSTED_PROXY_CIDRS=172.18.0.0/16  # Docker bridge network CIDR
 
 ### Startup Validation
 
-Demo mode validates security settings before booting. The app will **refuse
+Enterprise mode validates security settings before booting. The app will **refuse
 to start** if:
 
 - `SECRET_KEY` is still the default `"your-super-secret-key-change-in-production"`
 - `APP_API_KEY` is default **and** `ALLOW_SYSTEM_API_KEY_AUTH` is enabled
 - `CORS_ORIGINS` is not set
+- `DATABASE_URL` points to SQLite (enterprise requires PostgreSQL)
 
 These checks prevent accidentally exposing a server with known credentials.
 
@@ -156,7 +162,7 @@ curl https://your-domain.com/api/v1/experiments \
 
 ---
 
-## Demo Mode Security Features
+## Enterprise Mode Security Features
 
 ### Authentication
 
@@ -168,7 +174,7 @@ through the web UI. Tokens expire after `SESSION_EXPIRY_HOURS` (default 24).
 | JWT auth | Required on all endpoints | Always on |
 | Token lifetime | 60 minutes | `ACCESS_TOKEN_EXPIRE_MINUTES` |
 | Session expiry | 24 hours | `SESSION_EXPIRY_HOURS` |
-| Registration gate | Open | `DEMO_PASSWORD` |
+| Registration gate | Open | `ENTERPRISE_PASSWORD` (or `DEMO_PASSWORD`) |
 
 ### Rate Limiting
 
@@ -196,16 +202,18 @@ directory (`/app/data`) is owned by this user.
 
 ---
 
-## Database: SQLite vs PostgreSQL
+## Database: PostgreSQL (Required for Enterprise)
 
-The compose file defaults to **SQLite**. This is appropriate for demos and
-small deployments (single-digit concurrent users).
+Enterprise mode **requires PostgreSQL** — the app hard-fails at startup if
+`DATABASE_URL` points to SQLite. The `docker-compose.prod.yaml` enforces this
+via `${DATABASE_URL:?DATABASE_URL is required (PostgreSQL)}`.
 
-### When to upgrade to PostgreSQL
+SQLite is only acceptable for **local** and **hybrid** single-user desktop mode.
 
-- Multiple concurrent users running long jobs
-- Need point-in-time recovery or replication
-- Production deployment with uptime requirements
+### When SQLite is OK
+
+- Single user running `pip install spectra-sherpa` on their own machine
+- Local/hybrid mode with no concurrent access
 
 ### PostgreSQL setup
 
@@ -237,7 +245,7 @@ And add `postgres-data:` to the `volumes:` section.
 
 ### Schema Migrations
 
-In demo mode, Alembic migrations run automatically on startup. If migrations
+In enterprise mode, Alembic migrations run automatically on startup. If migrations
 fail, the app refuses to start (fail-fast). The migration runs in a worker
 thread to avoid event loop conflicts.
 
@@ -412,7 +420,7 @@ Wait 15 minutes or check the rate limit state file in the `app-data` volume.
 ### Admin Button Not Showing
 
 - Admin requires `is_superuser=true` on the user record.
-- In demo mode, the first user created or manually promoted in the DB is admin.
+- In enterprise mode, the first user created or manually promoted in the DB is admin.
 - Check: `curl /api/v1/auth/me -H "Authorization: Bearer <token>"`.
 
 ### Rate Limiting Reset After Restart
@@ -427,16 +435,16 @@ Wait 15 minutes or check the rate limit state file in the `app-data` volume.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `APP_MODE` | Yes | `local` | Set to `demo` for DO deployment |
+| `APP_MODE` | Yes | `local` | Set to `enterprise` for DO deployment (`demo` accepted as alias) |
 | `SECRET_KEY` | Yes | (fails) | JWT signing key — generate a random value |
 | `APP_API_KEY` | Yes | (fails) | Machine auth key — generate a random value |
 | `CORS_ORIGINS` | Yes | (fails) | Allowed origins, comma-separated |
 | `DOMAIN` | Yes | `localhost` | Domain for Caddy HTTPS provisioning |
-| `MASTER_ENCRYPTION_KEY` | Recommended | Auto-generated | Stable key for API key encryption |
-| `DATABASE_URL` | No | SQLite | PostgreSQL connection string |
+| `MASTER_ENCRYPTION_KEY` | Required* | Auto-generated | Encryption key for stored API keys. *Auto-generates if unset but stored keys are lost on container restart. |
+| `DATABASE_URL` | Yes (enterprise) | — | PostgreSQL connection string (SQLite OK for local/hybrid only) |
 | `RATE_LIMIT_EXECUTIONS` | No | `100` | Execution rate limit per user per hour |
 | `SESSION_EXPIRY_HOURS` | No | `24` | Force re-login after N hours |
-| `DEMO_PASSWORD` | No | (none) | Registration gate password |
+| `ENTERPRISE_PASSWORD` | No | (none) | Registration gate password (`DEMO_PASSWORD` accepted as alias) |
 | `WEB_CONCURRENCY` | No | `1` | Gunicorn worker count |
 | `TRUST_PROXY` | No | `false` | Trust X-Forwarded-For headers |
 | `TRUSTED_PROXY_CIDRS` | No | Loopback | Trusted proxy CIDR ranges |

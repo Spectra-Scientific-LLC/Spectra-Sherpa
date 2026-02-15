@@ -21,9 +21,9 @@ src/spectra_sherpa/
 ## Core Concepts
 
 ### 1. The Mode Contract
-The application behavior changes significantly based on `APP_MODE` (`local`, `hybrid`, `demo`). This logic is centralized in `app.core.mode_policy`.
+The application behavior changes significantly based on `APP_MODE` (`local`, `hybrid`, `enterprise`). This logic is centralized in `app.core.mode_policy`.
 - **Local:** No Auth, No Egress.
-- **Hybrid/Demo:** Strict Auth, Allowed Egress.
+- **Hybrid/Enterprise:** Strict Auth, Allowed Egress.
 See [Mode Policy](../server/overview.md) for details.
 
 ### 2. The Node Graph

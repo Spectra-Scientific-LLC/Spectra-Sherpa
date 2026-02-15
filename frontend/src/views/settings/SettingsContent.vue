@@ -14,6 +14,9 @@
       <TabPanel header="Integrations">
         <IntegrationsTab />
       </TabPanel>
+      <TabPanel header="Data & Privacy">
+        <DataPrivacyTab />
+      </TabPanel>
       <TabPanel header="Preferences">
         <PreferencesTab />
       </TabPanel>
@@ -27,6 +30,7 @@ import TabView from "primevue/tabview";
 import TabPanel from "primevue/tabpanel";
 import ApiKeysTab from "./ApiKeysTab.vue";
 import IntegrationsTab from "./IntegrationsTab.vue";
+import DataPrivacyTab from "./DataPrivacyTab.vue";
 import PreferencesTab from "./PreferencesTab.vue";
 
 const activeTab = ref(0);

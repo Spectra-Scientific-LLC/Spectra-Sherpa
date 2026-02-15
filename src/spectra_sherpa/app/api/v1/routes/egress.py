@@ -72,9 +72,9 @@ async def update_egress_defaults(
         defaults = UserEgressDefaultsModel(
             user_id=current_user.id,
             allow_spectrasherpa_sync=defaults_update.allow_spectrasherpa_sync or False,
-            allow_llm_context=defaults_update.allow_llm_context if defaults_update.allow_llm_context is not None else True,
-            allow_export=defaults_update.allow_export if defaults_update.allow_export is not None else True,
-            allow_nist_queries=defaults_update.allow_nist_queries if defaults_update.allow_nist_queries is not None else True,
+            allow_llm_context=defaults_update.allow_llm_context if defaults_update.allow_llm_context is not None else False,
+            allow_export=defaults_update.allow_export if defaults_update.allow_export is not None else False,
+            allow_nist_queries=defaults_update.allow_nist_queries if defaults_update.allow_nist_queries is not None else False,
         )
         session.add(defaults)
     else:

@@ -237,7 +237,7 @@ async def is_valid_api_key(api_key: Optional[str]) -> bool:
                     return True
     except Exception:
         # Fail closed if database lookup fails
-        pass
+        logger.warning("API key validation failed due to database error", exc_info=True)
 
     _cache_invalid_api_key(api_key)
     return False
@@ -343,7 +343,7 @@ async def api_key_middleware(request: Request, call_next) -> Response:
     In Local mode, all requests are allowed (single-user desktop).
     In Hybrid mode, loopback requests are allowed; non-loopback clients
     must provide valid credentials (JWT or API key).
-    In Demo mode, all non-public requests must be authenticated.
+    In Enterprise mode, all non-public requests must be authenticated.
 
     This middleware enforces authentication at the gateway level - requests
     without valid credentials are rejected with 401.
@@ -415,7 +415,7 @@ def is_egress_enabled() -> bool:
     Check if network egress is globally enabled.
 
     In local mode, egress is disabled by default unless explicitly enabled.
-    In hybrid/demo modes, egress is enabled by default.
+    In hybrid/enterprise modes, egress is enabled by default.
 
     IMPORTANT: In hybrid mode, if we're degraded (SpectraSherpa unreachable),
     egress is disabled to enforce local-only behavior during fallback.
@@ -433,7 +433,7 @@ def is_egress_enabled() -> bool:
                 return False
         except Exception:
             # If we can't check health, default to config setting
-            pass
+            logger.debug("Network health check failed, using config default", exc_info=True)
 
     return app_config.egress_enabled
 
@@ -477,7 +477,7 @@ async def check_egress_permission(
     if not skip_global_check and not is_egress_enabled():
         return False
 
-    # If no user context, allow (system operation in hybrid/demo mode)
+    # If no user context, allow (system operation in hybrid/enterprise mode)
     if user is None:
         return True
 
@@ -504,7 +504,7 @@ async def check_egress_permission(
                 return bool(permission_row.allowed)
         except Exception:
             # Fall back to coarse defaults if fine-grained lookup isn't available.
-            pass
+            logger.debug("Fine-grained egress permission lookup failed", exc_info=True)
 
     # Check user's egress_defaults relationship for the permission.
     # Wrapped in try/except because the user object may be detached from its
@@ -515,9 +515,10 @@ async def check_egress_permission(
             if hasattr(egress_defaults, permission):
                 return getattr(egress_defaults, permission, False)
     except Exception:
-        # Relationship access failed (DetachedInstanceError).  If we have a
+        # Relationship access failed (DetachedInstanceError, etc.).  If we have a
         # session and user id, query UserEgressDefaults directly so we never
         # silently fall through to permissive hardcoded defaults.
+        logger.debug("Egress defaults relationship access failed, trying DB fallback", exc_info=True)
         if session is not None and getattr(user, "id", None) is not None:
             try:
                 from sqlalchemy import select
@@ -542,9 +543,9 @@ async def check_egress_permission(
     # These are intentionally conservative: new users are created with
     # allow_spectrasherpa_sync=False, so the default here must match.
     DEFAULT_PERMISSIONS = {
-        "allow_llm_context": True,      # Allow LLM by default
-        "allow_nist_queries": True,     # Allow NIST by default
-        "allow_export": True,           # Allow export by default
+        "allow_llm_context": False,     # Explicit opt-in required
+        "allow_nist_queries": False,    # Explicit opt-in required
+        "allow_export": False,          # Explicit opt-in required
         "allow_spectrasherpa_sync": False,
     }
     return DEFAULT_PERMISSIONS.get(permission, False)
@@ -562,7 +563,7 @@ async def check_export_allowed(
     browser are local operations, not network egress.
 
     In local mode (single user) exports are always allowed.
-    In multi-user modes (hybrid, demo), the admin can restrict exports
+    In multi-user modes (hybrid, enterprise), the admin can restrict exports
     via the user's ``allow_export`` egress default.
     """
     from app.core.mode_policy import export_always_allowed
@@ -576,6 +577,7 @@ async def check_export_allowed(
         if hasattr(user, "egress_defaults") and user.egress_defaults is not None:
             return getattr(user.egress_defaults, "allow_export", True)
     except Exception:
+        logger.debug("Export permission relationship access failed, trying DB fallback", exc_info=True)
         if session is not None and getattr(user, "id", None) is not None:
             try:
                 from sqlalchemy import select
@@ -591,6 +593,6 @@ async def check_export_allowed(
                 if row is not None:
                     return getattr(row, "allow_export", True)
             except Exception:
-                pass
+                logger.debug("Export permission DB fallback failed for user %s", getattr(user, "id", "?"), exc_info=True)
 
     return True  # default: allow exports

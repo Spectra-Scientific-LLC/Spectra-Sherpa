@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>PCA vs PLS-DA Implementation Comparison - SpectraSherpa Documentation</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "PCA vs PLS-DA Implementation Comparison";
+        var mkdocs_page_input_path = "past/PCA_vs_PLSDA_Comparison.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> SpectraSherpa Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">User Guide (OSS)</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/installation/">Installation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/configuration/">Configuration</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/quickstart/">Quickstart</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/experiments/">Experiments</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/library/">Library (NIST)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/doe/">DOE (96-Well)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/synthesis/">Synthesis Builder</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/workflow/">Workflow Builder</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reproduction Study</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/reproduction_methodology/">Methodology</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../USER_MANUAL/">User Manual</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Server Operator Guide</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../server/overview/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../server/hybrid_mode/">Hybrid Mode</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../server/enterprise_mode/">Enterprise Mode</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../deployment/DIGITAL_OCEAN/">Docker Deployment</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Developer Guide</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../developer/setup/">Setup & Contributing</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../developer/architecture/">Architecture</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Examples</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/01_loading_data/">01. Loading Data</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/02_dataset_manipulation/">02. Manipulation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/03_plotting/">03. Plotting</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/04_preprocessing_smoothing/">04. Smoothing</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/05_preprocessing_baseline/">05. Baseline</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/06_peak_finding/">06. Peak Finding</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/07_peak_fitting/">07. Integration</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/08_pca/">08. PCA</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/09_mcr_als/">09. MCR-ALS</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/10_pls_regression/">10. PLS</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Reference</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../reference/nodes/">Node Library</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Past</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../RELEASE_NOTES/">Release Notes</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../IMPLEMENTATION_SUMMARY/">Implementation Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../FINAL_FIXES_SUMMARY/">Final Fixes Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../SESSION_SUMMARY_2026-01-21/">Session Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../NODE_STANDARDIZATION_2026-01-26/">Node Standardization (2026-01-26)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Completed Plans</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../ROADMAP/">Roadmap</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../REFACTOR_3_REPO_STRATEGY/">3-Repo Refactor Strategy</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../SHERPA_IMPLEMENTATION_PLAN_V2/">Sherpa Implementation Plan V2</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DOE_ENHANCEMENTS/">DOE Enhancements</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../NAVIGATION_REDESIGN/">Navigation Redesign</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Fixes</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../3D_CONCATENATION_FIX/">3D Concatenation Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../QUICK_PLOT_Y_AXIS_LABELS_FIX/">Quick Plot Y-Axis Labels Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../CASE_SENSITIVITY_AND_UI_FIXES/">Case Sensitivity and UI Fixes</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../DEDICATED_LOAD_GROUP_ENFORCEMENT/">Dedicated Load Group Enforcement</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../LOAD_GROUP_NODE_IMPLEMENTATION/">Load Group Node Implementation</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reviews & Testing</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../CODE_REVIEW_FINDINGS/">Code Review Findings</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../WEEK7_TESTING/">Week 7 Testing</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Future</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ANALYSIS_CANVAS_WIREFRAME/">Analysis Canvas Wireframe</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/plugin_plan_011525/">Plugin Plan (2025-01-15)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/FUTURE_CAPABILITIES/">Future Capabilities</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">SpectraSherpa Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">PCA vs PLS-DA Implementation Comparison</li>
+    <li class="wy-breadcrumbs-aside">
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="pca-vs-pls-da-implementation-comparison">PCA vs PLS-DA Implementation Comparison</h1>
+<h2 id="executive-summary">Executive Summary</h2>
+<p>This document compares PCA (Principal Component Analysis) and PLS-DA (Partial Least Squares Discriminant Analysis) implementations in this codebase, highlighting methodological differences, visualization approaches, and identifying discrepancies.</p>
+<p><strong>Critical Finding</strong>: PLS-DA loadings visualization is inconsistent with PCA - PCA shows loadings as line plots across features, while PLS-DA only shows a biplot. Both should be available for consistency.</p>
+<hr />
+<h2 id="1-core-methodology">1. Core Methodology</h2>
+<h3 id="pca-principal-component-analysis">PCA (Principal Component Analysis)</h3>
+<ul>
+<li><strong>Objective</strong>: Unsupervised dimensionality reduction - maximize variance in data</li>
+<li><strong>Algorithm</strong>: Eigenvalue decomposition of covariance matrix</li>
+<li><strong>Components</strong>: Ordered by explained variance (PC1 explains most variance)</li>
+<li><strong>Use case</strong>: Exploratory data analysis, noise reduction, visualization</li>
+</ul>
+<h3 id="pls-da-partial-least-squares-discriminant-analysis">PLS-DA (Partial Least Squares Discriminant Analysis)</h3>
+<ul>
+<li><strong>Objective</strong>: Supervised classification - maximize covariance between X and Y (class labels)</li>
+<li><strong>Algorithm</strong>: SIMPLS via scikit-learn wrapped by SpectroChemPy</li>
+<li><strong>Components</strong>: Ordered by predictive ability for class discrimination (LV1 optimized for classification)</li>
+<li><strong>Use case</strong>: Classification, feature selection for discrimination</li>
+</ul>
+<p><strong>Key Difference</strong>:
+- PCA finds directions of <strong>maximum variance</strong> (unsupervised)
+- PLS-DA finds directions of <strong>maximum class separation</strong> (supervised)</p>
+<hr />
+<h2 id="2-matrix-shapes-conventions">2. Matrix Shapes &amp; Conventions</h2>
+<h3 id="pca-from-modelingpy">PCA (from modeling.py)</h3>
+<pre><code class="language-python"># SpectroChemPy PCA components
+loadings_data = np.array(pca.components.data)
+# Shape: (n_components, n_features)
+# loadings_data[i] = PC i's loadings across all features
+</code></pre>
+<h3 id="pls-da-from-classificationpy">PLS-DA (from classification.py)</h3>
+<pre><code class="language-python"># SpectroChemPy PLSRegression x_loadings
+X_loadings = np.array(pls.x_loadings.data)
+# Shape: (n_components, n_features)  ← Same as PCA
+# X_loadings[i] = LV i's loadings across all features
+</code></pre>
+<p><strong>Important</strong>: SpectroChemPy uses <strong>(n_components, n_features)</strong> for both PCA and PLS, which is <strong>transposed</strong> from sklearn's convention of <strong>(n_features, n_components)</strong>.</p>
+<p>Evidence from <a href="Refactored/backend/app/services/dag/nodes/classification.py#L424-L426">classification.py:424-426</a>:</p>
+<pre><code class="language-python"># SpectroChemPy returns x_weights as (n_components, n_features)
+w_raw = np.array(pls_model.x_weights.data)
+w = w_raw.T  # Transpose to (n_features, n_components) for VIP calculation
+</code></pre>
+<hr />
+<h2 id="3-loadings-visualization-critical-issue-identified">3. Loadings Visualization - <strong>CRITICAL ISSUE IDENTIFIED</strong></h2>
+<h3 id="pca-loadings-plot-nodedetailviewvue1437-1463">PCA Loadings Plot (<a href="Refactored/frontend/src/views/workflow-builder/NodeDetailView.vue#L1437-L1463">NodeDetailView.vue:1437-1463</a>)</h3>
+<p><strong>Type</strong>: Line plots showing each PC as a spectrum/pattern across features</p>
+<pre><code class="language-typescript">const pcaLoadingsData = computed(() =&gt; {
+  const loadings = metadata.loadings || [];  // Shape: (n_components, n_features)
+
+  return loadings.map((loading: number[], i: number) =&gt; ({
+    type: &quot;scatter&quot;,
+    mode: &quot;lines&quot;,
+    x: x_values,           // Feature indices, wavenumbers, or feature names
+    y: loading,            // PC i's loadings (array of n_features values)
+    name: pcLabels[i],     // &quot;PC1 (45.2%)&quot;, &quot;PC2 (23.1%)&quot;, ...
+    line: { width: 2 },
+  }));
+});
+</code></pre>
+<p><strong>Purpose</strong>: Shows the "spectral pattern" or "signature" of each principal component</p>
+<p><strong>Interpretation</strong>:
+- High positive loading: feature positively contributes to this PC
+- High negative loading: feature negatively contributes to this PC
+- Near zero: feature doesn't contribute to this PC</p>
+<hr />
+<h3 id="pls-da-loadings-plot-classificationpy516-577">PLS-DA Loadings Plot (<a href="Refactored/backend/app/services/dag/nodes/classification.py#L516-L577">classification.py:516-577</a>)</h3>
+<p><strong>Type</strong>: Biplot (quiver plot) showing feature relationships in LV1-LV2 space</p>
+<pre><code class="language-python"># Current implementation: BIPLOT ONLY
+for i in range(n_features):
+    lv1 = float(loadings[0, i])  # Feature i's loading on LV1
+    lv2 = float(loadings[1, i])  # Feature i's loading on LV2
+
+    # Create arrow from origin to (lv1, lv2)
+    annotations.append({
+        &quot;x&quot;: lv1, &quot;y&quot;: lv2,
+        &quot;ax&quot;: 0, &quot;ay&quot;: 0,  # Arrow starts at origin
+        &quot;showarrow&quot;: True,
+        &quot;arrowhead&quot;: 2,
+        &quot;arrowcolor&quot;: &quot;steelblue&quot;,
+    })
+
+    # Feature label at arrow tip
+    annotations.append({
+        &quot;x&quot;: lv1 * 1.15,
+        &quot;y&quot;: lv2 * 1.15,
+        &quot;text&quot;: labels[i],  # Feature name
+    })
+</code></pre>
+<p><strong>Purpose</strong>: Shows which features correlate/anti-correlate in the discriminant space</p>
+<p><strong>Interpretation</strong>:
+- Arrow direction: how feature relates to LV1 and LV2 axes
+- Arrow length: strength of relationship
+- Arrows pointing same direction: features positively correlated
+- Arrows pointing opposite: features negatively correlated</p>
+<hr />
+<h2 id="4-the-problem-inconsistent-visualization-paradigms">4. THE PROBLEM: Inconsistent Visualization Paradigms</h2>
+<h3 id="current-state">Current State</h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>PCA</th>
+<th>PLS-DA</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Loadings visualization</strong></td>
+<td>Line plots (each PC = line)</td>
+<td>Biplot (arrows in 2D space)</td>
+</tr>
+<tr>
+<td><strong>Number of components shown</strong></td>
+<td>All components simultaneously</td>
+<td>Only 2 components (LV1 vs LV2)</td>
+</tr>
+<tr>
+<td><strong>Feature labels</strong></td>
+<td>On x-axis</td>
+<td>At arrow tips</td>
+</tr>
+<tr>
+<td><strong>Comparison across components</strong></td>
+<td>Easy (overlay lines)</td>
+<td>Difficult (only shows 2D projection)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="why-this-is-a-problem">Why This Is a Problem</h3>
+<ol>
+<li><strong>Inconsistent UX</strong>: Users expect similar visualization for similar data types</li>
+<li><strong>Limited information</strong>: PLS-DA biplot only shows LV1 and LV2 relationship, not individual LV patterns</li>
+<li><strong>Missing spectroscopic interpretation</strong>: In IR/Raman spectroscopy, loadings line plots show which wavelengths contribute to each component</li>
+<li><strong>No multi-component view</strong>: Can't see LV3, LV4, etc. in biplot</li>
+</ol>
+<h3 id="recommended-solution">Recommended Solution</h3>
+<p>PLS-DA should provide <strong>BOTH</strong> visualization types (like mixing PCA's approach with current biplot):</p>
+<p><strong>Option 1: Loadings Line Plot</strong> (like PCA)
+- Show LV1, LV2, LV3, ... as separate lines
+- X-axis: wavenumbers or feature names
+- Y-axis: loading magnitude
+- <strong>Use case</strong>: "What wavelengths contribute to each discriminant direction?"</p>
+<p><strong>Option 2: Loadings Biplot</strong> (current implementation)
+- Show features as arrows in LV1-LV2 space
+- <strong>Use case</strong>: "Which features correlate in the discriminant space?"</p>
+<p><strong>Option 3: Component Pair Selector</strong> (for biplot)
+- Allow selecting which components to plot (LV1 vs LV2, LV1 vs LV3, LV2 vs LV3, etc.)
+- <strong>Use case</strong>: Exploring relationships beyond just LV1-LV2</p>
+<hr />
+<h2 id="5-other-visualization-differences">5. Other Visualization Differences</h2>
+<h3 id="pca-outputs-modelingpy326-368">PCA Outputs (<a href="Refactored/backend/app/services/dag/nodes/modeling.py#L326-L368">modeling.py:326-368</a>)</h3>
+<table>
+<thead>
+<tr>
+<th>Plot Type</th>
+<th>Description</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Scores Plot</strong></td>
+<td>Samples in PC1-PC2 space</td>
+<td>Sample clustering/grouping</td>
+</tr>
+<tr>
+<td><strong>Loadings Line Plot</strong></td>
+<td>Each PC as line across features</td>
+<td>Component interpretation</td>
+</tr>
+<tr>
+<td><strong>Scree Plot</strong></td>
+<td>Variance explained by each PC</td>
+<td>Component selection</td>
+</tr>
+<tr>
+<td><strong>Diagnostics</strong></td>
+<td>Hotelling T² and SPE</td>
+<td>Outlier detection</td>
+</tr>
+</tbody>
+</table>
+<h3 id="pls-da-outputs-classificationpy267-270">PLS-DA Outputs (<a href="Refactored/backend/app/services/dag/nodes/classification.py#L267-L270">classification.py:267-270</a>)</h3>
+<table>
+<thead>
+<tr>
+<th>Plot Type</th>
+<th>Description</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Scores Plot</strong></td>
+<td>Samples in LV1-LV2 space with 95% confidence ellipses</td>
+<td>Class separation visualization</td>
+</tr>
+<tr>
+<td><strong>Loadings Biplot</strong></td>
+<td>Features as arrows in LV1-LV2 space</td>
+<td>Feature relationships</td>
+</tr>
+<tr>
+<td><strong>VIP Plot</strong></td>
+<td>Variable Importance in Projection scores</td>
+<td>Feature selection</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Missing from PLS-DA</strong>:
+- Loadings line plots (inconsistent with PCA)
+- Diagnostic plots (T², SPE for outlier detection)
+- Explained variance visualization (no scree plot equivalent)</p>
+<hr />
+<h2 id="6-data-flow-comparison">6. Data Flow Comparison</h2>
+<h3 id="pca-data-flow">PCA Data Flow</h3>
+<pre><code>Input: NDDataset (n_samples, n_features)
+  ↓
+PCA.fit() → components_ shape (n_components, n_features)
+  ↓
+Store in metadata.loadings (no transpose)
+  ↓
+Frontend: loadings[i] = PC i's pattern → LINE PLOT
+</code></pre>
+<h3 id="pls-da-data-flow">PLS-DA Data Flow</h3>
+<pre><code>Input: X (n_samples, n_features), y (class labels)
+  ↓
+PLSRegression.fit() → x_loadings shape (n_components, n_features)
+  ↓
+Store in metadata.loadings (no transpose)
+  ↓
+Backend: loadings[0, i], loadings[1, i] → BIPLOT
+Frontend: (NO LINE PLOT OPTION)
+</code></pre>
+<p><strong>Inconsistency</strong>: Both have same shape (n_components, n_features), but PCA uses for line plots while PLS-DA uses for biplot only.</p>
+<hr />
+<h2 id="7-metadata-structure-comparison">7. Metadata Structure Comparison</h2>
+<h3 id="pca-metadata">PCA Metadata</h3>
+<pre><code class="language-python">{
+    &quot;type&quot;: &quot;PCA&quot;,
+    &quot;n_components&quot;: int,
+    &quot;loadings&quot;: list,  # Shape: (n_components, n_features)
+    &quot;wavenumbers&quot;: list,
+    &quot;feature_names&quot;: list,
+    &quot;explained_variance_ratio&quot;: list,
+    &quot;pc_labels&quot;: [&quot;PC1 (45.2%)&quot;, &quot;PC2 (23.1%)&quot;, ...],
+    &quot;sample_labels&quot;: list,
+    &quot;label_categories&quot;: list,
+    &quot;t2&quot;: list,  # Hotelling T²
+    &quot;spe&quot;: list,  # SPE diagnostics
+}
+</code></pre>
+<h3 id="pls-da-metadata">PLS-DA Metadata</h3>
+<pre><code class="language-python">{
+    &quot;type&quot;: &quot;PLS_DA&quot;,
+    &quot;n_components&quot;: int,
+    &quot;loadings&quot;: list,  # Shape: (n_components, n_features) ← SAME SHAPE!
+    &quot;wavenumbers&quot;: list,
+    &quot;feature_names&quot;: list,
+    &quot;vip_scores&quot;: list,
+    &quot;pc_labels&quot;: [&quot;LV1&quot;, &quot;LV2&quot;, ...],  # No variance percentages
+    &quot;sample_labels&quot;: list,
+    &quot;label_categories&quot;: list,
+    &quot;classes&quot;: list,
+    &quot;train_accuracy&quot;: float,
+    &quot;cv_accuracy&quot;: float,
+}
+</code></pre>
+<p><strong>Similarities</strong>:
+- Both store loadings with same shape
+- Both have wavenumbers, feature_names, sample_labels
+- Both have pc_labels (though PLS-DA calls them "LV")</p>
+<p><strong>Differences</strong>:
+- PCA has explained_variance_ratio, PLS-DA doesn't
+- PLS-DA has vip_scores, classes, accuracy metrics
+- PCA has T²/SPE diagnostics, PLS-DA doesn't</p>
+<hr />
+<h2 id="8-quick-plot-modal-handling">8. Quick Plot Modal Handling</h2>
+<h3 id="pca-display-options">PCA Display Options</h3>
+<pre><code class="language-typescript">// No special display mode - always shows line plot
+const pcaLoadingsData = computed(() =&gt; {
+  return loadings.map((loading, i) =&gt; ({
+    type: &quot;scatter&quot;,
+    mode: &quot;lines&quot;,
+    ...
+  }));
+});
+</code></pre>
+<h3 id="pls-da-display-options-quickplotmodalvue300-305">PLS-DA Display Options (<a href="Refactored/frontend/src/views/workflow-builder/modals/QuickPlotModal.vue#L300-L305">QuickPlotModal.vue:300-305</a>)</h3>
+<pre><code class="language-typescript">const plsdaDisplayMode = ref&lt;&quot;scores&quot; | &quot;loadings&quot; | &quot;vip&quot;&gt;(&quot;scores&quot;);
+const plsdaDisplayOptions = [
+  { label: &quot;Scores Plot (with ellipses)&quot;, value: &quot;scores&quot; },
+  { label: &quot;Loadings Plot&quot;, value: &quot;loadings&quot; },  // Shows biplot
+  { label: &quot;VIP Scores&quot;, value: &quot;vip&quot; },
+];
+</code></pre>
+<p><strong>Issue</strong>: "Loadings Plot" in PLS-DA shows biplot, but in PCA context it would mean line plot. This is confusing.</p>
+<p><strong>Recommendation</strong>: Rename to:</p>
+<pre><code class="language-typescript">const plsdaDisplayOptions = [
+  { label: &quot;Scores Plot&quot;, value: &quot;scores&quot; },
+  { label: &quot;Loadings Line Plot&quot;, value: &quot;loadings_lines&quot; },  // NEW
+  { label: &quot;Loadings Biplot&quot;, value: &quot;loadings_biplot&quot; },    // Renamed
+  { label: &quot;VIP Scores&quot;, value: &quot;vip&quot; },
+];
+</code></pre>
+<hr />
+<h2 id="9-the-root-cause">9. The Root Cause</h2>
+<p>The core issue is that <strong>PLS-DA loadings are interpreted differently than PCA loadings</strong> in the visualization layer:</p>
+<ul>
+<li><strong>PCA</strong>: <code>loadings[i]</code> → "PC i's spectral pattern" → line plot</li>
+<li><strong>PLS-DA</strong>: <code>loadings[:, i]</code> → "Feature i's position in LV space" → biplot</li>
+</ul>
+<p>Both interpretations are mathematically valid, but having <strong>different defaults</strong> creates UX inconsistency.</p>
+<h3 id="why-this-happened">Why This Happened</h3>
+<ol>
+<li><strong>Chemometric tradition</strong>: PLS biplots are common in chemometrics literature for showing feature correlations</li>
+<li><strong>Different goals</strong>: PCA loadings show "what patterns exist", PLS-DA biplots show "which features discriminate together"</li>
+<li><strong>Missing awareness</strong>: Developer didn't realize PCA set the precedent for line plots</li>
+</ol>
+<hr />
+<h2 id="10-recommendations">10. Recommendations</h2>
+<h3 id="immediate-fix-high-priority">Immediate Fix (High Priority)</h3>
+<ol>
+<li><strong>Add loadings line plot option to PLS-DA</strong> (mirror PCA behavior)</li>
+<li>Create <code>_generate_plsda_loadings_lineplot()</code> method</li>
+<li>Show LV1, LV2, LV3, ... as separate lines</li>
+<li>
+<p>Use same x-axis logic (wavenumbers &gt; feature_names &gt; indices)</p>
+</li>
+<li>
+<p><strong>Rename current biplot</strong> to avoid confusion</p>
+</li>
+<li>
+<p>Change label from "Loadings Plot" to "Loadings Biplot" or "Feature Correlation Biplot"</p>
+</li>
+<li>
+<p><strong>Update Quick Plot Modal</strong></p>
+</li>
+<li>Add separate options for line plot vs biplot</li>
+<li>Default to line plot (consistent with PCA)</li>
+</ol>
+<h3 id="medium-priority">Medium Priority</h3>
+<ol>
+<li><strong>Add explained variance to PLS-DA</strong></li>
+<li>Calculate variance explained by each LV</li>
+<li>Add to pc_labels: "LV1 (34.5%)", "LV2 (22.1%)"</li>
+<li>
+<p>Add scree plot option</p>
+</li>
+<li>
+<p><strong>Add diagnostic plots to PLS-DA</strong></p>
+</li>
+<li>Hotelling T² for outlier detection in LV space</li>
+<li>SPE/Q-residuals for model fit</li>
+</ol>
+<h3 id="low-priority">Low Priority</h3>
+<ol>
+<li><strong>Add component pair selector for biplots</strong></li>
+<li>Allow viewing LV1 vs LV3, LV2 vs LV3, etc.</li>
+<li>Not just hardcoded to LV1 vs LV2</li>
+</ol>
+<hr />
+<h2 id="11-code-changes-required">11. Code Changes Required</h2>
+<h3 id="backend-classificationpy">Backend: classification.py</h3>
+<p><strong>Add new method for line plot</strong>:</p>
+<pre><code class="language-python">def _generate_plsda_loadings_lineplot(self, loadings, n_components, wavenumbers, feature_names):
+    &quot;&quot;&quot;Generate loadings line plot (like PCA) showing each LV as a line.&quot;&quot;&quot;
+    # Priority: feature_names &gt; wavenumbers &gt; indices
+    if feature_names and len(feature_names) == loadings.shape[1]:
+        x_values = feature_names
+        x_title = &quot;Feature&quot;
+    elif wavenumbers and len(wavenumbers) == loadings.shape[1]:
+        x_values = wavenumbers
+        x_title = &quot;Wavenumber (cm⁻¹)&quot;
+    else:
+        x_values = list(range(loadings.shape[1]))
+        x_title = &quot;Feature Index&quot;
+
+    traces = []
+    for i in range(n_components):
+        traces.append({
+            &quot;type&quot;: &quot;scatter&quot;,
+            &quot;mode&quot;: &quot;lines&quot;,
+            &quot;x&quot;: x_values,
+            &quot;y&quot;: loadings[i, :].tolist(),  # LV i's loadings across all features
+            &quot;name&quot;: f&quot;LV{i+1}&quot;,
+            &quot;line&quot;: {&quot;width&quot;: 2},
+        })
+
+    return {
+        &quot;data&quot;: traces,
+        &quot;layout&quot;: {
+            &quot;title&quot;: &quot;PLS-DA Loadings (Component Patterns)&quot;,
+            &quot;xaxis&quot;: {&quot;title&quot;: x_title, &quot;autorange&quot;: &quot;reversed&quot; if wavenumbers else True},
+            &quot;yaxis&quot;: {&quot;title&quot;: &quot;Loading&quot;},
+            &quot;showlegend&quot;: True,
+        }
+    }
+</code></pre>
+<p><strong>Modify _generate_plsda_plots()</strong>:</p>
+<pre><code class="language-python"># Add both biplot and line plot
+plots[&quot;loadings_biplot&quot;] = {...}  # Current biplot code
+plots[&quot;loadings_lines&quot;] = self._generate_plsda_loadings_lineplot(...)
+plots[&quot;loadings&quot;] = plots[&quot;loadings_lines&quot;]  # Default to line plot for consistency with PCA
+</code></pre>
+<h3 id="frontend-quickplotmodalvue">Frontend: QuickPlotModal.vue</h3>
+<p><strong>Update display options</strong>:</p>
+<pre><code class="language-typescript">const plsdaDisplayOptions = [
+  { label: &quot;Scores Plot&quot;, value: &quot;scores&quot; },
+  { label: &quot;Loadings (Lines)&quot;, value: &quot;loadings&quot; },
+  { label: &quot;Loadings (Biplot)&quot;, value: &quot;loadings_biplot&quot; },
+  { label: &quot;VIP Scores&quot;, value: &quot;vip&quot; },
+];
+</code></pre>
+<p><strong>Update buildPLSDAPlotData()</strong>:</p>
+<pre><code class="language-typescript">function buildPLSDAPlotData(output: any, mode: string) {
+  const plots = output.plots || {};
+
+  if (mode === &quot;loadings&quot;) {
+    return plots.loadings?.data || plots.loadings_lines?.data || [];
+  } else if (mode === &quot;loadings_biplot&quot;) {
+    return plots.loadings_biplot?.data || [];
+  }
+  // ... rest of modes
+}
+</code></pre>
+<h3 id="frontend-nodedetailviewvue">Frontend: NodeDetailView.vue</h3>
+<p><strong>Add toggle for loadings visualization</strong>:</p>
+<pre><code class="language-vue">&lt;div class=&quot;loadings-view-toggle&quot;&gt;
+  &lt;Button label=&quot;Line Plot&quot; @click=&quot;plsdaLoadingsView = 'lines'&quot; /&gt;
+  &lt;Button label=&quot;Biplot&quot; @click=&quot;plsdaLoadingsView = 'biplot'&quot; /&gt;
+&lt;/div&gt;
+&lt;PlotlyChart
+  :data=&quot;plsdaLoadingsView === 'lines' ? plsdaLoadingsLinesData : plsdaLoadingsBiplotData&quot;
+  :layout=&quot;plsdaLoadingsView === 'lines' ? plsdaLoadingsLinesLayout : plsdaLoadingsBiplotLayout&quot;
+/&gt;
+</code></pre>
+<hr />
+<h2 id="12-summary-table">12. Summary Table</h2>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>PCA</th>
+<th>PLS-DA (Current)</th>
+<th>PLS-DA (Recommended)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Loadings shape</strong></td>
+<td>(n_components, n_features)</td>
+<td>(n_components, n_features)</td>
+<td>✓ Same</td>
+</tr>
+<tr>
+<td><strong>Loadings line plot</strong></td>
+<td>✓ Yes</td>
+<td>✗ No</td>
+<td>✓ Add</td>
+</tr>
+<tr>
+<td><strong>Loadings biplot</strong></td>
+<td>✗ No</td>
+<td>✓ Yes</td>
+<td>✓ Keep</td>
+</tr>
+<tr>
+<td><strong>Explained variance</strong></td>
+<td>✓ Yes</td>
+<td>✗ No</td>
+<td>✓ Add</td>
+</tr>
+<tr>
+<td><strong>VIP scores</strong></td>
+<td>✗ No</td>
+<td>✓ Yes</td>
+<td>✓ Keep</td>
+</tr>
+<tr>
+<td><strong>Confidence ellipses</strong></td>
+<td>✗ No</td>
+<td>✓ Yes</td>
+<td>✓ Keep</td>
+</tr>
+<tr>
+<td><strong>Diagnostics (T², SPE)</strong></td>
+<td>✓ Yes</td>
+<td>✗ No</td>
+<td>✓ Add (optional)</td>
+</tr>
+<tr>
+<td><strong>Default visualization</strong></td>
+<td>Line plot</td>
+<td>Biplot</td>
+<td><strong>Line plot</strong> (for consistency)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="13-conclusion">13. Conclusion</h2>
+<p>The identified problem is that <strong>PLS-DA loadings visualization is inconsistent with PCA</strong>, providing only a biplot when users expect (based on PCA precedent) to see line plots showing each component's pattern across features.</p>
+<p><strong>Root cause</strong>: Different chemometric traditions led to different default visualizations, but both matrix shapes are identical and could support both views.</p>
+<p><strong>Solution</strong>: Provide both line plot and biplot options for PLS-DA loadings, defaulting to line plot for UX consistency with PCA.</p>
+<hr />
+<p><strong>Document Version</strong>: 1.0
+<strong>Date</strong>: 2026-01-24
+<strong>Status</strong>: Issue identified, solution proposed, implementation pending</p>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+    
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

@@ -1,8 +1,10 @@
 # Big Rollback Plan (BRB): Remove SpectralResult, Return to NDDataset
 
-**Status**: PLANNING
+**Status**: SUPERSEDED (2026-02-14)
 **Created**: 2026-02-05
 **Goal**: Remove SpectralResult wrapper entirely and return to NDDataset as the sole data type, with provenance/sample management handled via standardized `meta` dict conventions.
+
+> **Note (2026-02-14):** This plan was executed with a key deviation: instead of using SpectroChemPy's `NDDataset` directly as the sole data type, the team created **`AnalysisDataset`** (`app/lib/analysis_dataset.py`) — a lightweight, NDDataset-compatible runtime container that doesn't require SpectroChemPy. NDDataset is now used only by ~11 SCP-only nodes via round-trip adapters in `scp_compat.py`. See `docs/developer/architecture.md` for the current architecture.
 
 ---
 

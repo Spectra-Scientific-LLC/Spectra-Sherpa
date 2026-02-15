@@ -1,0 +1,1 @@
+const c=(n,e)=>{const o=URL.createObjectURL(n),t=document.createElement("a");t.href=o,t.download=e,document.body.appendChild(t),t.click(),document.body.removeChild(t),URL.revokeObjectURL(o)},d=(n,e,o)=>{c(new Blob([n],{type:o}),e)},l=(n,e)=>{const o=JSON.stringify(n,null,2);d(o,e,"application/json")};export{c as a,l as b,d};

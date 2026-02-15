@@ -4,7 +4,9 @@
  * These types match the backend AppConfig structure
  */
 
-export type AppMode = 'local' | 'hybrid' | 'demo'
+export type AppMode = 'local' | 'hybrid' | 'enterprise'
+
+export type SiteProfile = 'demo' | 'production' | 'internal'
 
 export type LLMProvider = 'openai' | 'anthropic' | 'deepseek' | 'gemini' | 'custom_llm'
 
@@ -17,7 +19,8 @@ export interface LLMConfig {
 export interface AppFeatures {
   apiTokenSettings: boolean
   cloudOffload: boolean
-  demoMode: boolean
+  enterpriseMode: boolean
+  demoMode: boolean  // Deprecated alias for enterpriseMode
   agenticWorkflow: boolean
   chatAssistant: boolean
   sherpaAdvisor?: boolean
@@ -33,6 +36,8 @@ export interface AppLimits {
 
 export interface AppConfig {
   mode: AppMode
+  siteProfile?: SiteProfile | null
+  egressEnabled: boolean
   apiBaseUrl: string
   features: AppFeatures
   llms: Record<string, LLMConfig>

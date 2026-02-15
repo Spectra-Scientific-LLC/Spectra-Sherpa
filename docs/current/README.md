@@ -30,7 +30,7 @@ Alternatively, you can browse the Markdown files directly in the `docs/` tree.
 ## Repository Layout
 
 ```
-Refactored/
+spectra-sherpa/
 ├── pyproject.toml                  # Package definition (pip install -e .)
 ├── src/spectra_sherpa/         # The pip-installable package
 │   ├── __init__.py                 # Version + meta-path finder
@@ -43,8 +43,7 @@ Refactored/
 ├── tests/                          # Test suite
 ├── scripts/                        # Build & migration scripts
 ├── deploy/                         # Docker / cloud infrastructure
-├── docs/                           # This documentation
-└── spectrasherpa-server/           # Paid cloud service (separate)
+└── docs/                           # This documentation
 ```
 
 ## Quick Links

@@ -84,7 +84,7 @@ Example File:
 - DataSourceNode detects trailing `/`
 - Automatically loads ALL files from irdata folder
 - Concatenates along sample axis
-- Returns single NDDataset with all spectra
+- Returns single AnalysisDataset with all spectra
 
 ### Frontend Integration (To Do)
 
@@ -275,7 +275,7 @@ Successfully loaded: 4/10 files
 
 **Backend Detects:** Pattern (trailing `/`)
 **Backend Loads:** All 55 files from irdata
-**Output:** NDDataset shape `(55, 5549)` - 55 spectra × 5549 wavenumbers
+**Output:** AnalysisDataset shape `(55, 5549)` - 55 spectra × 5549 wavenumbers
 
 ---
 
@@ -292,7 +292,7 @@ Successfully loaded: 4/10 files
 
 **Backend Detects:** Pattern (`*`)
 **Backend Loads:** Only .csv files from dataset
-**Output:** NDDataset with all .csv files concatenated
+**Output:** AnalysisDataset with all .csv files concatenated
 
 ---
 
@@ -319,7 +319,7 @@ Successfully loaded: 4/10 files
 - IR.CSV (using read_csv)
 - P350.SPC (using read_spc)
 
-**Output:** Single NDDataset with all files (if x-axes match)
+**Output:** Single AnalysisDataset with all files (if x-axes match)
 
 ---
 
@@ -377,13 +377,13 @@ if source == "spectrochempy":
 
 **4. Group Loading (data.py)**
 ```python
-def _load_spectrochempy_group(self, example_dataset: str, pattern: str) -> NDDataset:
+def _load_spectrochempy_group(self, example_dataset: str, pattern: str) -> AnalysisDataset:
     # Parse pattern
     # Find matching files
     # Load all files (fail-fast)
     # Validate x-axes
     # Concatenate
-    # Return NDDataset
+    # Return AnalysisDataset
 ```
 
 ---
@@ -413,7 +413,7 @@ def _load_spectrochempy_group(self, example_dataset: str, pattern: str) -> NDDat
 ### Backend Tests
 
 ```bash
-cd Refactored/src/spectra_sherpa
+cd src/spectra_sherpa
 
 # Test pattern detection
 python -c "

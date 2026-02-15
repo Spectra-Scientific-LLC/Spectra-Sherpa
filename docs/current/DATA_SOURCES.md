@@ -204,7 +204,7 @@ CREATE INDEX idx_molecule_wn ON hitran_lines(molecule_id, wavenumber);
 To enable **offline-first** usage and reduce cold-start API calls:
 
 ```
-Refactored/
+spectra-sherpa/
 ├── data/
 │   ├── bundled/                    # Shipped with app
 │   │   ├── hitran_core.db          # 100 MB - Top 50 molecules

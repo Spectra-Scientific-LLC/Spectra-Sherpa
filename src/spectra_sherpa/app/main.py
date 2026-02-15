@@ -29,7 +29,7 @@ from app.core.security import (
     is_valid_api_key,
     is_valid_bearer_token,
 )
-from app.core.demo_enforcement import DemoEnforcementMiddleware
+from app.core.enterprise_enforcement import EnterpriseEnforcementMiddleware
 from app.core.startup import (
     ensure_data_dirs,
     ensure_database_ready,
@@ -41,6 +41,7 @@ from app.core.startup import (
     ensure_spectrochempy_testdata,
     ensure_workflow_templates,
     validate_concurrency_settings,
+    validate_cors_settings,
     validate_security_settings,
 )
 from app.db.session import async_session
@@ -60,9 +61,9 @@ def get_cors_origins() -> list[str]:
     1. CORS_ORIGINS env var (comma-separated list)
     2. Mode-based defaults:
        - local: Allow all origins (development convenience)
-       - hybrid/demo: Localhost + configured domains
+       - hybrid/enterprise: Localhost + configured domains
 
-    NOTE: For hybrid/demo production deployments, CORS_ORIGINS must be set
+    NOTE: For hybrid/enterprise production deployments, CORS_ORIGINS must be set
     to your frontend domain(s). The localhost defaults are only for development.
     """
     # Check for explicit CORS configuration
@@ -85,11 +86,13 @@ def get_cors_origins() -> list[str]:
     if cors_allow_all():
         return ["*"]
 
-    # For hybrid/demo/cloud modes, note if CORS_ORIGINS is not explicitly set
-    if app_config.mode == "demo":
+    # Non-local modes without CORS_ORIGINS: use localhost defaults.
+    # validate_cors_settings() in startup.py enforces this as fatal for
+    # enterprise mode before the app starts serving requests.
+    if app_config.mode == "enterprise":
         logger.warning(
-            "CORS_ORIGINS not set for demo mode — using localhost defaults only. "
-            "Set CORS_ORIGINS to your production frontend domain(s).",
+            "CORS_ORIGINS not set for enterprise mode — using localhost defaults. "
+            "validate_cors_settings() will block startup before serving.",
         )
     else:
         logger.info(
@@ -97,7 +100,7 @@ def get_cors_origins() -> list[str]:
             app_config.mode,
         )
 
-    # For hybrid/demo/cloud modes, add production URL if configured
+    # Add production URL if configured
     if app_config.api_base_url and app_config.api_base_url not in default_origins:
         default_origins.append(app_config.api_base_url)
 
@@ -185,7 +188,8 @@ def _make_lifespan(
             logger.info("Phase 1: per-worker setup ...")
             configure_logging()
             validate_security_settings()  # Fail fast if security config is invalid
-            validate_concurrency_settings()  # Log concurrency model info
+            validate_cors_settings()  # Fail fast if CORS misconfigured for enterprise
+            validate_concurrency_settings()  # Fail fast if multi-worker without pub/sub
             ensure_data_dirs()
             logger.info("Phase 1 complete")
 
@@ -267,12 +271,20 @@ def _make_lifespan(
             from app.services.dag.executor import set_default_pool
 
             pool_size = settings.dag_worker_pool_size
-            _dag_pool = ProcessPoolExecutor(
-                max_workers=pool_size,
-                mp_context=multiprocessing.get_context("spawn"),
-            )
-            set_default_pool(_dag_pool)
-            logger.info("DAG worker pool: %d processes (spawn)", pool_size)
+            try:
+                _dag_pool = ProcessPoolExecutor(
+                    max_workers=pool_size,
+                    mp_context=multiprocessing.get_context("spawn"),
+                )
+                set_default_pool(_dag_pool)
+                logger.info("DAG worker pool: %d processes (spawn)", pool_size)
+            except (PermissionError, OSError) as exc:
+                logger.warning(
+                    "Could not create DAG worker pool (%s). "
+                    "CPU-bound nodes will run in-process.",
+                    exc,
+                )
+                _dag_pool = None
 
             logger.info("Application startup complete")
         except Exception:
@@ -404,11 +416,11 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     # Credentials were provided but didn't resolve to a user.
     if has_credentials and ws_user is None:
         if requires_ws_auth:
-            # Non-loopback / demo: reject invalid credentials.
+            # Non-loopback / enterprise: reject invalid credentials.
             await websocket.accept()
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
-        # Loopback local/hybrid: stale credentials from prior demo usage
+        # Loopback local/hybrid: stale credentials from prior session
         # shouldn't block the implicit user. Fall back gracefully.
         logger.debug("Stale WS credentials on loopback — falling back to implicit identity")
         async with async_session() as session:
@@ -497,7 +509,7 @@ def create_app(
 
     # --- Middleware (order matters: outermost first) ---
     _app.middleware("http")(api_key_middleware)
-    _app.add_middleware(DemoEnforcementMiddleware)
+    _app.add_middleware(EnterpriseEnforcementMiddleware)
     _app.add_middleware(
         CORSMiddleware,
         allow_origins=origins if not _allow_all else [],

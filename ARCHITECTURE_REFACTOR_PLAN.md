@@ -1,5 +1,7 @@
 # Architecture Refactor Plan: Unified Data Model & Legacy Retirement
 
+> **Status (2026-02-14): COMPLETED / SUPERSEDED.** This plan was executed. The dual data personality was resolved by creating `AnalysisDataset` (`app/lib/analysis_dataset.py`) as the canonical DAG runtime container. Legacy project0/project1 code was migrated to `app/lib/`. SpectroChemPy `NDDataset` is now an optional dependency used only by SCP-only nodes via adapters. See `docs/developer/architecture.md` for the current architecture.
+
 ## Executive Summary
 
 This plan addresses three architectural concerns:

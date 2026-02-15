@@ -33,10 +33,12 @@ async function loadConfig(force = false): Promise<void> {
     // Fallback to default local config
     config.value = {
       mode: 'local',
+      egressEnabled: false,
       apiBaseUrl: import.meta.env.VITE_API_BASE_URL || '/api/v1',
       features: {
         apiTokenSettings: true,
         cloudOffload: false,
+        enterpriseMode: false,
         demoMode: false,
         agenticWorkflow: false,
         chatAssistant: false,
@@ -89,6 +91,16 @@ const hasLLMConfigured = computed(() => {
 const appMode = computed(() => config.value?.mode || 'local')
 
 /**
+ * Get site profile (marketing label, independent of runtime mode)
+ */
+const siteProfile = computed(() => config.value?.siteProfile || null)
+
+/**
+ * Check if network egress is globally enabled
+ */
+const egressEnabled = computed(() => config.value?.egressEnabled ?? false)
+
+/**
  * Check if specific feature is enabled
  */
 function isFeatureEnabled(feature: keyof AppConfig['features']): boolean {
@@ -119,6 +131,8 @@ export function useAppConfig() {
     configuredLLMs,
     hasLLMConfigured,
     appMode,
+    siteProfile,
+    egressEnabled,
     isFeatureEnabled,
     formatProviderName,
   }

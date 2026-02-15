@@ -74,7 +74,7 @@ User → Frontend (Workflow Builder) → API → DAG Engine → Nodes → Scient
                                                 ↓
                                     SQLite (WAL) + File System (persistence)
                                                 ↓
-                              serialize_for_api(NDDataset) → API → Frontend (Visualization)
+                              serialize_for_api(AnalysisDataset) → API → Frontend (Visualization)
 ```
 
 ---
@@ -121,16 +121,17 @@ User → Frontend (Workflow Builder) → API → DAG Engine → Nodes → Scient
 
 ### Core Data Model (Big Rollback Plan Architecture)
 
-**NDDataset is the SOLE data type** throughout the DAG. No wrapper classes.
+**AnalysisDataset is the SOLE data type** throughout the DAG. NDDataset (SpectroChemPy) is used only by ~11 SCP-only nodes via round-trip adapters.
 
 | Layer | Component | Purpose |
 |-------|-----------|---------|
-| **Data Container** | `NDDataset` (SpectroChemPy) | The one and only data type — coordinates, units, slicing, array operations |
+| **Data Container** | `AnalysisDataset` (`app/lib/analysis_dataset.py`) | Canonical DAG runtime container — 2D numpy array with axes, metadata, provenance. NDDataset-compatible interface. |
+| **SCP Bridge** | `NDDataset` (SpectroChemPy, optional) | Used by SCP-only nodes; converted to/from AnalysisDataset at boundaries via `scp_compat.py` |
 | **Provenance** | `meta_helpers.py` (`app/services/dag/`) | Processing history stored in `dataset.meta["processing_history"]` via `add_processing_step()` |
 | **Serialization** | `serialize_for_api()` (`app/services/dag/serialize.py`) | Single source of truth for API responses — called ONLY at API boundary |
 | **Storage** | Parquet + JSON sidecar | Efficient persistent storage for spectral data via `save_dataset_parquet()` / `load_dataset_parquet()` |
 
-**Node pattern:** `input.copy()` → SCP method → `add_processing_step()` → return NDDataset
+**Node pattern:** `input.copy()` → process (numpy/scipy) → `add_processing_step()` → return AnalysisDataset
 
 ### Scientific Stack
 
@@ -490,7 +491,7 @@ See [DigitalOcean Deployment Guide](../deployment/DIGITAL_OCEAN.md) for cloud se
 ✅ **Path traversal protection** (symlink validation)
 ✅ **File type validation**
 ✅ **Error message sanitization**
-✅ **Mode-dependent auth** (local: implicit, hybrid: API-key identity, demo: JWT)
+✅ **Mode-dependent auth** (local: implicit, hybrid: API-key identity, enterprise: JWT)
 ✅ **API key encryption** (AES-256 for stored LLM keys)
 ✅ **Egress controls** (per-user data egress defaults)
 
@@ -500,7 +501,7 @@ See [DigitalOcean Deployment Guide](../deployment/DIGITAL_OCEAN.md) for cloud se
 |------|-------------|------------|--------------|
 | **Local** | None (implicit user) | Skipped | Hidden |
 | **Hybrid** | `SPECTRASHERPA_API_KEY` → server identity | Skipped | Enabled if server user is admin |
-| **Demo/Cloud** | JWT (email + password) | Required | Enabled if user is admin |
+| **Enterprise/Cloud** | JWT (email + password) | Required | Enabled if user is admin |
 
 ### Future Security Enhancements
 
@@ -541,7 +542,7 @@ See [DigitalOcean Deployment Guide](../deployment/DIGITAL_OCEAN.md) for cloud se
 ## File Structure
 
 ```
-Refactored/
+spectra-sherpa/
 ├── pyproject.toml                      # Root package definition (pip install -e .)
 ├── src/spectra_sherpa/             # The pip-installable package
 │   ├── __init__.py                     # Version + meta-path finder (app.* alias)
@@ -588,8 +589,7 @@ Refactored/
 │
 ├── tests/                              # Backend tests
 ├── scripts/                            # Build & migration scripts
-├── docs/                               # Documentation (mkdocs)
-└── spectrasherpa-server/               # Paid cloud service (separate)
+└── docs/                               # Documentation (mkdocs)
 ```
 
 ---

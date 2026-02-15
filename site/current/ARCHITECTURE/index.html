@@ -5,14 +5,14 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       <link rel="shortcut icon" href="../../img/favicon.ico" />
-    <title>Architecture - SpectraSherpa Documentation</title>
+    <title>Spectra Scientific Platform - Architecture Document - SpectraSherpa Documentation</title>
     <link rel="stylesheet" href="../../css/theme.css" />
     <link rel="stylesheet" href="../../css/theme_extra.css" />
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
     
       <script>
         // Current page data
-        var mkdocs_page_name = "Architecture";
+        var mkdocs_page_name = "Spectra Scientific Platform - Architecture Document";
         var mkdocs_page_input_path = "current/ARCHITECTURE.md";
         var mkdocs_page_url = null;
       </script>
@@ -43,265 +43,81 @@
                 <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
                 </li>
               </ul>
-              <p class="caption"><span class="caption-text">Current</span></p>
-              <ul class="current">
-                  <li class="toctree-l1"><a class="reference internal" href="../">Overview</a>
+              <p class="caption"><span class="caption-text">User Guide (OSS)</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/installation/">Installation</a>
                   </li>
-                  <li class="toctree-l1"><a class="reference internal" >Getting Started</a>
-    <ul>
-                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/installation/">Installation</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/quickstart/">Quickstart</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../../getting_started/modes/">Modes & Configuration</a>
-                </li>
-    </ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/configuration/">Configuration</a>
                   </li>
-                  <li class="toctree-l1"><a class="reference internal" >User Guide</a>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/quickstart/">Quickstart</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/experiments/">Experiments</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/library/">Library (NIST)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/doe/">DOE (96-Well)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/synthesis/">Synthesis Builder</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/workflow/">Workflow Builder</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reproduction Study</a>
     <ul>
-                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/experiments/">Experiments</a>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
                 </li>
-                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/library/">Library (NIST)</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/doe/">DOE (96-Well)</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/synthesis/">Synthesis Builder</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/workflow/">Workflow Builder</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" >Reproduction Study</a>
-    <ul>
-                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
-                </li>
-                <li class="toctree-l3"><a class="reference internal" href="../../user_guide/reproduction_methodology/">Methodology</a>
-                </li>
-    </ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/reproduction_methodology/">Methodology</a>
                 </li>
     </ul>
                   </li>
                   <li class="toctree-l1"><a class="reference internal" href="../../USER_MANUAL/">User Manual</a>
                   </li>
-                  <li class="toctree-l1"><a class="reference internal" >SpectrochemPy Examples</a>
-    <ul>
-                <li class="toctree-l2"><a class="reference internal" href="../../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../../examples/01_loading_data/">01. Loading Data</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../../examples/02_dataset_manipulation/">02. Manipulation</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../../examples/03_plotting/">03. Plotting</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../../examples/04_preprocessing_smoothing/">04. Smoothing</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../../examples/05_preprocessing_baseline/">05. Baseline</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../../examples/06_peak_finding/">06. Peak Finding</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../../examples/07_peak_fitting/">07. Integration</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../../examples/08_pca/">08. PCA</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../../examples/09_mcr_als/">09. MCR-ALS</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../../examples/10_pls_regression/">10. PLS</a>
-                </li>
-    </ul>
+              </ul>
+              <p class="caption"><span class="caption-text">Server Operator Guide</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../server/overview/">Overview</a>
                   </li>
-                  <li class="toctree-l1"><a class="reference internal" >Reference</a>
-    <ul>
-                <li class="toctree-l2"><a class="reference internal" href="../../reference/nodes/">Node Library</a>
-                </li>
-    </ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../server/hybrid_mode/">Hybrid Mode</a>
                   </li>
-                  <li class="toctree-l1 current"><a class="reference internal current" >Architecture & System</a>
-    <ul class="current">
-                <li class="toctree-l2"><a class="" href="../README.md">Repository Overview</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../SYSTEM_OVERVIEW/">System Overview</a>
-                </li>
-                <li class="toctree-l2 current"><a class="reference internal current" href="#">Architecture</a>
-    <ul class="current">
-    <li class="toctree-l3"><a class="reference internal" href="#executive-summary">🎯 Executive Summary</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#authentication-data-access">🔐 Authentication &amp; Data Access</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#system-architecture">📐 System Architecture</a>
-        <ul>
-    <li class="toctree-l4"><a class="reference internal" href="#high-level-overview">High-Level Overview</a>
-    </li>
-        </ul>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#file-system-structure">🗂️ File System Structure</a>
-        <ul>
-    <li class="toctree-l4"><a class="reference internal" href="#data-directory-layout">Data Directory Layout</a>
-    </li>
-    <li class="toctree-l4"><a class="reference internal" href="#hardware-design-of-experiment-doe-integration">Hardware &amp; Design-of-Experiment (DOE) Integration</a>
-    </li>
-        </ul>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#database-schema-sqlite">🗄️ Database Schema (SQLite)</a>
-        <ul>
-    <li class="toctree-l4"><a class="reference internal" href="#entity-relationship-diagram">Entity Relationship Diagram</a>
-    </li>
-    <li class="toctree-l4"><a class="reference internal" href="#key-design-decisions">Key Design Decisions</a>
-    </li>
-        </ul>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#api-specification">🔌 API Specification</a>
-        <ul>
-    <li class="toctree-l4"><a class="reference internal" href="#rest-endpoints">REST Endpoints</a>
-    </li>
-    <li class="toctree-l4"><a class="reference internal" href="#websocket-events">WebSocket Events</a>
-    </li>
-        </ul>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#module-breakdown">📦 Module Breakdown</a>
-        <ul>
-    <li class="toctree-l4"><a class="reference internal" href="#backend-services">Backend Services</a>
-    </li>
-    <li class="toctree-l4"><a class="reference internal" href="#frontend-components-vuejs">Frontend Components (Vue.js)</a>
-    </li>
-        </ul>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#technology-stack">🔧 Technology Stack</a>
-        <ul>
-    <li class="toctree-l4"><a class="reference internal" href="#backend">Backend</a>
-    </li>
-    <li class="toctree-l4"><a class="reference internal" href="#frontend">Frontend</a>
-    </li>
-    <li class="toctree-l4"><a class="reference internal" href="#development">Development</a>
-    </li>
-    <li class="toctree-l4"><a class="reference internal" href="#deployment-local">Deployment (Local)</a>
-    </li>
-        </ul>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#security-considerations">🔐 Security Considerations</a>
-        <ul>
-    <li class="toctree-l4"><a class="reference internal" href="#api-key-storage">API Key Storage</a>
-    </li>
-    <li class="toctree-l4"><a class="reference internal" href="#authentication">Authentication</a>
-    </li>
-    <li class="toctree-l4"><a class="reference internal" href="#file-access">File Access</a>
-    </li>
-        </ul>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#development-workflow">🚀 Development Workflow</a>
-        <ul>
-    <li class="toctree-l4"><a class="reference internal" href="#quick-start-pip-install">Quick Start (pip install)</a>
-    </li>
-    <li class="toctree-l4"><a class="reference internal" href="#development-setup-hot-reload">Development Setup (hot-reload)</a>
-    </li>
-    <li class="toctree-l4"><a class="reference internal" href="#development-flow">Development Flow</a>
-    </li>
-    <li class="toctree-l4"><a class="reference internal" href="#production-build-local-deployment">Production Build (Local Deployment)</a>
-    </li>
-    <li class="toctree-l4"><a class="reference internal" href="#docker-deployment">Docker Deployment</a>
-    </li>
-        </ul>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#testing-strategy">🧪 Testing Strategy</a>
-        <ul>
-    <li class="toctree-l4"><a class="reference internal" href="#backend-tests">Backend Tests</a>
-    </li>
-    <li class="toctree-l4"><a class="reference internal" href="#frontend-tests">Frontend Tests</a>
-    </li>
-        </ul>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#performance-considerations">📈 Performance Considerations</a>
-        <ul>
-    <li class="toctree-l4"><a class="reference internal" href="#core-optimizations-phase-1">Core Optimizations (Phase 1)</a>
-    </li>
-    <li class="toctree-l4"><a class="reference internal" href="#additional-optimizations">Additional Optimizations</a>
-    </li>
-    <li class="toctree-l4"><a class="reference internal" href="#scalability-path-future">Scalability Path (Future)</a>
-    </li>
-        </ul>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#migration-from-original-code">🔄 Migration from Original Code</a>
-        <ul>
-    <li class="toctree-l4"><a class="reference internal" href="#backwards-compatibility">Backwards Compatibility</a>
-    </li>
-    <li class="toctree-l4"><a class="reference internal" href="#migration-scripts">Migration Scripts</a>
-    </li>
-        </ul>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#next-steps">📝 Next Steps</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#library-migration-data-architecture-updated-2026-02-05">📦 Library Migration &amp; Data Architecture (Updated 2026-02-05)</a>
-        <ul>
-    <li class="toctree-l4"><a class="reference internal" href="#data-architecture-big-rollback-plan-brb">Data Architecture (Big Rollback Plan - BRB)</a>
-    </li>
-        </ul>
-    </li>
-    </ul>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../INFORMATION_ARCHITECTURE/">Information Architecture</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../FUNCTIONAL_MAPPING/">Functional Mapping</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../DATA_SOURCES/">Data Sources</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../NODE_CAPABILITIES/">Node Capabilities</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../PARAMETER_MAPPING/">Parameter Mapping</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../DATABASE_SCHEMA/">Database Schema</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../AUTHENTICATION/">Authentication</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../PHASE1_SETUP_GUIDE/">Phase 1 Setup Guide</a>
-                </li>
-    </ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../server/enterprise_mode/">Enterprise Mode</a>
                   </li>
-                  <li class="toctree-l1"><a class="reference internal" >Workflow & Analysis</a>
-    <ul>
-                <li class="toctree-l2"><a class="reference internal" href="../QUICKSTART_ANALYSIS/">Quickstart Analysis</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../MULTI_PORT_GUIDE/">Multi-Port Guide</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../FOLDER_AND_PATTERN_LOADING/">Folder & Pattern Loading</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../DOE_MANUAL/">DOE Manual</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../PROBLEM_REPORT/">Workflow Bench Gap Analysis</a>
-                </li>
-    </ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../deployment/DIGITAL_OCEAN/">Docker Deployment</a>
                   </li>
-                  <li class="toctree-l1"><a class="reference internal" >Deployment</a>
-    <ul>
-                <li class="toctree-l2"><a class="reference internal" href="../../deployment/DIGITAL_OCEAN/">DigitalOcean</a>
-                </li>
-    </ul>
+              </ul>
+              <p class="caption"><span class="caption-text">Developer Guide</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../developer/setup/">Setup & Contributing</a>
                   </li>
-                  <li class="toctree-l1"><a class="reference internal" >Quality & Validation</a>
-    <ul>
-                <li class="toctree-l2"><a class="reference internal" href="../ALGORITHM_AUDIT/">Algorithm Audit</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../SYNTHETIC_FALLBACK_AUDIT/">Synthetic Fallback Audit</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../TEST_FRAMEWORK/">Test Framework</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../BACKEND_TESTING_GUIDE/">Backend Testing Guide</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../TESTING_CHECKLIST/">Testing Checklist</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../VERIFICATION_PROCEDURE/">Verification Procedure</a>
-                </li>
-    </ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../developer/architecture/">Architecture</a>
                   </li>
-                  <li class="toctree-l1"><a class="reference internal" >Project1 (Standalone Tool)</a>
-    <ul>
-                <li class="toctree-l2"><a class="reference internal" href="../project1/">Overview</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../project1/QUICKSTART/">Quickstart</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../project1/INSTALLATION_GUIDE/">Installation Guide</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../project1/TROUBLESHOOTING/">Troubleshooting</a>
-                </li>
-                <li class="toctree-l2"><a class="reference internal" href="../project1/NOTICE/">Notice</a>
-                </li>
-    </ul>
+              </ul>
+              <p class="caption"><span class="caption-text">Examples</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/01_loading_data/">01. Loading Data</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/02_dataset_manipulation/">02. Manipulation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/03_plotting/">03. Plotting</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/04_preprocessing_smoothing/">04. Smoothing</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/05_preprocessing_baseline/">05. Baseline</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/06_peak_finding/">06. Peak Finding</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/07_peak_fitting/">07. Integration</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/08_pca/">08. PCA</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/09_mcr_als/">09. MCR-ALS</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/10_pls_regression/">10. PLS</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Reference</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../reference/nodes/">Node Library</a>
                   </li>
               </ul>
               <p class="caption"><span class="caption-text">Past</span></p>
@@ -317,6 +133,20 @@
                   <li class="toctree-l1"><a class="reference internal" href="../../past/SESSION_SUMMARY_2026-01-21/">Session Summary</a>
                   </li>
                   <li class="toctree-l1"><a class="reference internal" href="../../past/NODE_STANDARDIZATION_2026-01-26/">Node Standardization (2026-01-26)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Completed Plans</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/ROADMAP/">Roadmap</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/REFACTOR_3_REPO_STRATEGY/">3-Repo Refactor Strategy</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/SHERPA_IMPLEMENTATION_PLAN_V2/">Sherpa Implementation Plan V2</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/DOE_ENHANCEMENTS/">DOE Enhancements</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/NAVIGATION_REDESIGN/">Navigation Redesign</a>
+                </li>
+    </ul>
                   </li>
                   <li class="toctree-l1"><a class="reference internal" >Fixes</a>
     <ul>
@@ -345,13 +175,11 @@
               <ul>
                   <li class="toctree-l1"><a class="reference internal" href="../../future/">Summary</a>
                   </li>
-                  <li class="toctree-l1"><a class="reference internal" href="../../future/ROADMAP/">Roadmap</a>
-                  </li>
-                  <li class="toctree-l1"><a class="reference internal" href="../../future/DOE_ENHANCEMENTS/">DOE Enhancements</a>
-                  </li>
                   <li class="toctree-l1"><a class="reference internal" href="../../future/ANALYSIS_CANVAS_WIREFRAME/">Analysis Canvas Wireframe</a>
                   </li>
                   <li class="toctree-l1"><a class="reference internal" href="../../future/plugin_plan_011525/">Plugin Plan (2025-01-15)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/FUTURE_CAPABILITIES/">Future Capabilities</a>
                   </li>
               </ul>
       </div>
@@ -368,9 +196,7 @@
         <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
   <ul class="wy-breadcrumbs">
     <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
-          <li class="breadcrumb-item">Current</li>
-          <li class="breadcrumb-item">Architecture & System</li>
-      <li class="breadcrumb-item active">Architecture</li>
+      <li class="breadcrumb-item active">Spectra Scientific Platform - Architecture Document</li>
     <li class="wy-breadcrumbs-aside">
     </li>
   </ul>
@@ -390,7 +216,7 @@
 - <strong>Local-compute-first:</strong> All computation defaults to local machine; network only for NIST/LLM
 - <strong>File-based storage:</strong> Raw spectra remain as files (scientific tradition)
 - <strong>Git-like versioning:</strong> Content-addressable storage for efficient snapshots
-- <strong>Three deployment modes:</strong> Local (single-user, no auth), Hybrid (API-key linked identity from server), Demo/Cloud (multi-user JWT auth)
+- <strong>Three deployment modes:</strong> Local (single-user, no auth), Hybrid (API-key linked identity from server), Enterprise/Cloud (multi-user JWT auth)
 - <strong>Performance-focused:</strong> WAL mode, caching, resource limits, crash-safe jobs
 - <strong>Exportable:</strong> Scientists live in Excel/Origin/Matlab - export everything
 - <strong>Cloud-extensible:</strong> Architecture supports remote compute via spectrasherpa-server</p>
@@ -402,7 +228,7 @@
 <p><strong>Key Points:</strong>
 - <strong>Local mode:</strong> Implicit single user, no login, all features except admin/cloud
 - <strong>Hybrid mode:</strong> API-key linked identity — <code>SPECTRASHERPA_API_KEY</code> validates against spectrasherpa-server at startup, enriches the local user with server-side <code>username</code> and <code>is_admin</code>. No login page needed. Managed LLM keys flow from server.
-- <strong>Demo/Cloud mode:</strong> JWT-based multi-user auth (email + password login via spectrasherpa-server)
+- <strong>Enterprise/Cloud mode:</strong> JWT-based multi-user auth (email + password login via spectrasherpa-server)
 - <strong>Free Data:</strong> NIST, HITRAN, EPA - no authentication required in any mode
 - <strong>BYOK (Bring Your Own Key):</strong> Users can add their own LLM API keys in any mode</p>
 <hr />
@@ -464,7 +290,7 @@
 │  │  (OpenAI, etc.)  │  (Spectral data) │ server (hybrid)  │    │
 │  └──────────────────┴──────────────────┴──────────────────┘    │
 │  spectrasherpa-server provides: identity linking,              │
-│  managed LLM keys, usage quotas (hybrid/demo modes)            │
+│  managed LLM keys, usage quotas (hybrid/enterprise modes)            │
 └─────────────────────────────────────────────────────────────────┘
 </code></pre>
 <hr />
@@ -713,7 +539,7 @@
 <li><strong>Metadata in DB, Files on Disk:</strong> Database stores paths and metadata, actual spectral data stays as files</li>
 <li><strong>Content-Addressable Versioning:</strong> Files stored once by SHA-256 hash, versions reference via manifests (prevents storage explosion)</li>
 <li><strong>SQLite WAL Mode:</strong> Write-Ahead Logging allows concurrent readers + 1 writer (no UI freezes during job updates)</li>
-<li><strong>Mode-Dependent Auth:</strong> Local = implicit user; Hybrid = API-key linked identity from spectrasherpa-server; Demo/Cloud = JWT auth</li>
+<li><strong>Mode-Dependent Auth:</strong> Local = implicit user; Hybrid = API-key linked identity from spectrasherpa-server; Enterprise/Cloud = JWT auth</li>
 <li><strong>Local-Compute-First:</strong> All scientific compute runs locally; network only for auxiliary services (NIST, LLM)</li>
 <li><strong>Crash-Safe Jobs:</strong> BackgroundTasks with cleanup handlers mark jobs as failed on server crash</li>
 <li><strong>Compute Provenance:</strong> Track whether job ran locally or via API (compute_location field)</li>
@@ -982,7 +808,7 @@
 <tr>
 <td>POST</td>
 <td><code>/auth/login</code></td>
-<td>Login with credentials (demo/cloud mode)</td>
+<td>Login with credentials (enterprise/cloud mode)</td>
 </tr>
 <tr>
 <td>GET</td>
@@ -1004,7 +830,7 @@
 <p><strong>Auth by mode:</strong>
 - <strong>Local:</strong> No auth required — implicit user resolved from DB
 - <strong>Hybrid:</strong> No login needed — identity linked from server via <code>SPECTRASHERPA_API_KEY</code> at startup. <code>GET /auth/me</code> returns enriched local user.
-- <strong>Demo/Cloud:</strong> JWT auth via <code>Authorization: Bearer &lt;token&gt;</code> header</p>
+- <strong>Enterprise/Cloud:</strong> JWT auth via <code>Authorization: Bearer &lt;token&gt;</code> header</p>
 <h3 id="websocket-events">WebSocket Events</h3>
 <p><strong>Endpoint:</strong> <code>ws://localhost:8000/ws</code></p>
 <h4 id="client-server">Client → Server</h4>
@@ -1864,7 +1690,7 @@ uvicorn app.main:app --reload
 </ol>
 <hr />
 <h2 id="next-steps">📝 Next Steps</h2>
-<p>See <a href="../../future/ROADMAP/">ROADMAP.md</a> for detailed Phase 1 implementation plan.</p>
+<p>See <a href="../future/ROADMAP.md">ROADMAP.md</a> for detailed Phase 1 implementation plan.</p>
 <hr />
 <h2 id="library-migration-data-architecture-updated-2026-02-05">📦 Library Migration &amp; Data Architecture (Updated 2026-02-05)</h2>
 <p>The legacy <code>libs/project0/</code> and <code>libs/project1/</code> directories have been retired. All scientific code now lives in <code>app/lib/</code>:</p>
@@ -1895,7 +1721,7 @@ uvicorn app.main:app --reload
 </tbody>
 </table>
 <h3 id="data-architecture-big-rollback-plan-brb">Data Architecture (Big Rollback Plan - BRB)</h3>
-<p><strong>NDDataset is the SOLE data type</strong> throughout the DAG. No wrapper classes.</p>
+<p><strong>AnalysisDataset is the SOLE data type</strong> throughout the DAG. NDDataset (SpectroChemPy) is used only by ~11 SCP-only nodes via round-trip adapters in <code>scp_compat.py</code>.</p>
 <table>
 <thead>
 <tr>
@@ -1906,9 +1732,14 @@ uvicorn app.main:app --reload
 </thead>
 <tbody>
 <tr>
+<td><strong>AnalysisDataset</strong></td>
+<td><code>app/lib/analysis_dataset.py</code></td>
+<td>Canonical DAG runtime container — 2D numpy array with axes, metadata, provenance</td>
+</tr>
+<tr>
 <td><strong>NDDataset</strong></td>
-<td>SpectroChemPy</td>
-<td>The one and only data container - coordinates, units, slicing</td>
+<td>SpectroChemPy (optional)</td>
+<td>Used by SCP-only nodes; converted to/from AnalysisDataset at boundaries</td>
 </tr>
 <tr>
 <td><strong>meta_helpers.py</strong></td>
@@ -1923,15 +1754,15 @@ uvicorn app.main:app --reload
 </tbody>
 </table>
 <p><strong>Key architectural principles:</strong>
-- <strong>Single data type:</strong> NDDataset flows through all DAG nodes - no wrapping/unwrapping
+- <strong>Single data type:</strong> AnalysisDataset flows through all DAG nodes — NDDataset-compatible properties (<code>.data</code>, <code>.x</code>, <code>.y</code>, <code>.shape</code>, <code>.ndim</code>, <code>.copy()</code>) allow node code to work with either type
 - <strong>Provenance in meta:</strong> Processing history stored in <code>dataset.meta["processing_history"]</code> as structured dicts
 - <strong>API boundary serialization:</strong> <code>serialize_for_api(dataset)</code> called ONLY in routes/workflows.py
-- <strong>Human-readable history:</strong> SCP's built-in <code>dataset.history</code> kept alongside for audit trail
+- <strong>Wire-format compatibility:</strong> <code>AnalysisDataset.to_dict()</code> emits <code>type: "NDDataset"</code> so the frontend works without changes
 - <strong>Parquet + JSON sidecar</strong> serialization for efficient persistent caching</p>
 <p><strong>Node pattern (minimal):</strong></p>
-<pre><code class="language-python">async def execute(self, input_data: NDDataset) -&gt; NDDataset:
+<pre><code class="language-python">async def execute(self, input_data: AnalysisDataset) -&gt; AnalysisDataset:
     result = input_data.copy()
-    result.basc(lamb=lam, asymmetry=p)  # SCP handles 2D natively
+    # process using numpy/scipy directly
     add_processing_step(result, &quot;baseline.als&quot;, {&quot;lam&quot;: lam, &quot;p&quot;: p})
     return result
 </code></pre>
@@ -1947,10 +1778,6 @@ uvicorn app.main:app --reload
               
             </div>
           </div><footer>
-    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
-        <a href="../SYSTEM_OVERVIEW/" class="btn btn-neutral float-left" title="System Overview"><span class="icon icon-circle-arrow-left"></span> Previous</a>
-        <a href="../INFORMATION_ARCHITECTURE/" class="btn btn-neutral float-right" title="Information Architecture">Next <span class="icon icon-circle-arrow-right"></span></a>
-    </div>
 
   <hr/>
 
@@ -1972,10 +1799,6 @@ uvicorn app.main:app --reload
   <span class="rst-current-version" data-toggle="rst-current-version">
     
     
-      <span><a href="../SYSTEM_OVERVIEW/" style="color: #fcfcfc">&laquo; Previous</a></span>
-    
-    
-      <span><a href="../INFORMATION_ARCHITECTURE/" style="color: #fcfcfc">Next &raquo;</a></span>
     
   </span>
 </div>

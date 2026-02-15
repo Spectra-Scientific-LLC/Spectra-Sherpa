@@ -105,9 +105,9 @@ class UserEgressDefaults(Base):
 
     # Default policies
     allow_spectrasherpa_sync = Column(Boolean, nullable=False, default=False)
-    allow_llm_context = Column(Boolean, nullable=False, default=True)  # Default: allow LLM
-    allow_export = Column(Boolean, nullable=False, default=True)  # Default: allow export
-    allow_nist_queries = Column(Boolean, nullable=False, default=True)  # Default: allow NIST
+    allow_llm_context = Column(Boolean, nullable=False, default=False)  # Default: explicit opt-in
+    allow_export = Column(Boolean, nullable=False, default=False)  # Default: explicit opt-in
+    allow_nist_queries = Column(Boolean, nullable=False, default=False)  # Default: explicit opt-in
 
     created_at = Column(
         DateTime(timezone=True),

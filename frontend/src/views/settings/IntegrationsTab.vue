@@ -64,7 +64,7 @@
 
           <div v-if="modeSwitchLocked" class="env-notice small">
             <i class="pi pi-lock"></i>
-            <span>Mode switching is disabled in demo mode.</span>
+            <span>Mode switching is disabled in enterprise mode.</span>
           </div>
         </div>
 
@@ -119,7 +119,7 @@
 
           <div v-if="modeSwitchLocked" class="env-notice small">
             <i class="pi pi-lock"></i>
-            <span>Disconnect is disabled in demo mode.</span>
+            <span>Disconnect is disabled in enterprise mode.</span>
           </div>
         </div>
       </div>
@@ -206,7 +206,7 @@ const connectionStatus = ref<'connected' | 'disconnected' | 'error' | null>(null
 const isConfigured = computed(() => Boolean(config.value?.configured));
 const canSubmitCredentials = computed(() => Boolean(serverUrl.value.trim() && apiKey.value.trim()));
 const appMode = computed(() => appConfig.value?.mode);
-const modeSwitchLocked = computed(() => appMode.value === 'demo');
+const modeSwitchLocked = computed(() => appMode.value === 'enterprise');
 
 const maskedKey = computed(() => {
   if (!config.value?.apiKey) return '';
@@ -227,7 +227,7 @@ const connectionLabel = computed(() => {
 
 const modeSeverity = computed(() => {
   if (appMode.value === 'hybrid') return 'info';
-  if (appMode.value === 'demo') return 'warning';
+  if (appMode.value === 'enterprise') return 'warning';
   return 'secondary';
 });
 
@@ -240,8 +240,8 @@ const modeDescription = computed(() => {
   if (appMode.value === 'hybrid') {
     return 'Local compute with SpectraSherpa cloud for managed LLM keys and sync.';
   }
-  if (appMode.value === 'demo') {
-    return 'Cloud-hosted demonstration deployment.';
+  if (appMode.value === 'enterprise') {
+    return 'Cloud-hosted enterprise deployment with full auth and rate limits.';
   }
   return 'Fully local deployment. Connect SpectraSherpa to enable hybrid mode.';
 });

@@ -1,6 +1,6 @@
 # Manual QA Test Procedure — SpectraSherpa v1.3
 
-**Scope**: Local, Hybrid (with spectrasherpa-server on Digital Ocean), Demo
+**Scope**: Local, Hybrid (with spectrasherpa-server on Digital Ocean), Enterprise
 **Estimated total time**: ~2.5 hours
 **Prerequisites**: Python 3.11+, Docker, `jq`, a WebSocket client (`websocat` or browser console)
 
@@ -10,7 +10,7 @@
 - `$TOKEN` = JWT Bearer token from login
 - `$API_KEY` = user API key from admin rotate-key
 - **PASS** = described response received within 10s, no server tracebacks
-- `[UNIVERSAL]` = all modes; `[LOCAL-ONLY]`, `[HYBRID-ONLY]`, `[DEMO-ONLY]` = mode-specific
+- `[UNIVERSAL]` = all modes; `[LOCAL-ONLY]`, `[HYBRID-ONLY]`, `[ENTERPRISE-ONLY]` = mode-specific
 - `[EXPECTED FAILURE]` = known gap documented in CURRENT_CAPABILITIES.md
 
 ---
@@ -599,16 +599,16 @@ Key differences to verify:
 
 ---
 
-## Phase 4 — Demo Mode (~30 min)
+## Phase 4 — Enterprise Mode (~30 min)
 
 ### 4.1 Setup
 
 Update `.env`:
 ```env
-APP_MODE=demo
+APP_MODE=enterprise
 SECRET_KEY=<strong key>
 CORS_ORIGINS=https://demo.spectrascientific.ai,http://localhost:3000
-DEMO_PASSWORD=DemoAccess2025
+ENTERPRISE_PASSWORD=DemoAccess2025
 RATE_LIMIT_EXECUTIONS=20
 SESSION_EXPIRY_HOURS=4
 ```
@@ -618,45 +618,45 @@ cd deploy/
 DOMAIN=localhost docker compose -f docker-compose.prod.yaml up -d --build
 ```
 
-### 4.2 Smoke Tests (Demo)
+### 4.2 Smoke Tests (Enterprise)
 
 | # | Test | Command | PASS Criteria |
 |---|------|---------|---------------|
 | D-S1 | Health | `curl $BASE/api/v1/health` | `{"status":"ok"}` |
-| D-S2 | Config | `curl -s $BASE/api/v1/config \| jq .` | `mode:"demo"`, `demoMode:true`, `limits` populated |
+| D-S2 | Config | `curl -s $BASE/api/v1/config \| jq .` | `mode:"enterprise"`, `demoMode:true`, `limits` populated |
 | D-S3 | Auth required | `curl $BASE/api/v1/experiments` | 401 |
-| D-S4 | No demo pass | POST register without `X-Demo-Password` | 401 |
-| D-S5 | With demo pass | POST register with `X-Demo-Password: DemoAccess2025` | 201 |
-| D-S6 | Login | POST login (no demo pass needed) | Returns JWT |
+| D-S4 | No enterprise pass | POST register without `X-Enterprise-Password` | 401 |
+| D-S5 | With enterprise pass | POST register with `X-Enterprise-Password: DemoAccess2025` | 201 |
+| D-S6 | Login | POST login (no enterprise pass needed) | Returns JWT |
 | D-S7 | Rate limit | POST workflow execute 21 times | 21st returns 429 |
 | D-S8 | Admin routes | GET `/admin/users` with superuser | Returns list |
 | D-S9 | Egress | `curl -s $BASE/api/v1/config \| jq '.egress_enabled'` | `true` |
 | D-S10 | Limits | `curl -s $BASE/api/v1/config \| jq '.limits'` | `{maxExecutions:20, maxFileSizeMB:200, sessionExpiryHours:4}` |
 
-### 4.3 Demo Password [DEMO-ONLY]
+### 4.3 Enterprise Password [ENTERPRISE-ONLY]
 
-**TC-D-001: Registration requires demo password**
+**TC-D-001: Registration requires enterprise password**
 ```bash
 curl -s -X POST $BASE/api/v1/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"username":"demo_user","password":"TestPass123!"}'
+  -d '{"username":"enterprise_user","password":"TestPass123!"}'
 ```
-PASS: 401 "Demo password required".
+PASS: 401 "Enterprise password required".
 
-**TC-D-002: Correct demo password**
+**TC-D-002: Correct enterprise password**
 ```bash
 curl -s -X POST $BASE/api/v1/auth/register \
   -H "Content-Type: application/json" \
-  -H "X-Demo-Password: DemoAccess2025" \
-  -d '{"username":"demo_user","password":"TestPass123!"}'
+  -H "X-Enterprise-Password: DemoAccess2025" \
+  -d '{"username":"enterprise_user","password":"TestPass123!"}'
 ```
 PASS: 201.
 
-**TC-D-003: Wrong demo password** — 401
+**TC-D-003: Wrong enterprise password** — 401
 
-**TC-D-004: Login does NOT require demo password** — returns token
+**TC-D-004: Login does NOT require enterprise password** — returns token
 
-### 4.4 Rate Limiting [DEMO-ONLY]
+### 4.4 Rate Limiting [ENTERPRISE-ONLY]
 
 **TC-D-010: Hit rate limit**
 ```bash
@@ -689,40 +689,40 @@ curl -s -v -X POST $BASE/api/v1/workflows/<id>/execute \
 ```
 PASS: `X-RateLimit-Limit: 20`, `X-RateLimit-Remaining: <n>`.
 
-### 4.5 Session Expiry [DEMO-ONLY]
+### 4.5 Session Expiry [ENTERPRISE-ONLY]
 
 **TC-D-020: Fresh token works** — all endpoints return 200
 
 **TC-D-021: Expired session**
 (Set `SESSION_EXPIRY_HOURS=0` temporarily, or craft expired JWT.)
-PASS: 401 with `"Demo session expired"`, `max_session_hours`.
+PASS: 401 with `"Enterprise session expired"`, `max_session_hours`.
 
 **TC-D-022: Re-login after expiry** — new token works
 
-### 4.6 Expected Failures [DEMO-ONLY]
+### 4.6 Expected Failures [ENTERPRISE-ONLY]
 
 **TC-D-040: No graceful degradation** [EXPECTED FAILURE]
 ```bash
 curl -s $BASE/api/v1/config/network-status | jq .
 ```
-Network health monitoring does not start in demo mode. No auto-degradation.
+Network health monitoring does not start in enterprise mode. No auto-degradation.
 
 **TC-D-041: No remote audit** [EXPECTED FAILURE]
 `RemoteAuditHandler` only activates in hybrid mode. Log sync status returns `remote_logging_enabled:false`.
 
 ### 4.7 Re-run UNIVERSAL Tests
 
-Run all UNIVERSAL tests with demo auth, staying within rate limits.
+Run all UNIVERSAL tests with enterprise auth, staying within rate limits.
 
 ---
 
 ## Cross-Mode Regression Matrix
 
-| Behavior | Local | Hybrid | Demo |
+| Behavior | Local | Hybrid | Enterprise |
 |----------|-------|--------|------|
 | Auth middleware | Bypassed | Required | Required |
 | Auth/Admin routes | 404 | Registered | Registered |
-| Registration | Blocked | Open | Needs demo password |
+| Registration | Blocked | Open | Needs enterprise password |
 | Default user | "local" auto-created | Must register | Must register |
 | Egress default | `false` | `true` | `true` |
 | CORS | `*` | Configured only | Configured only |
@@ -738,7 +738,7 @@ Run all UNIVERSAL tests with demo auth, staying within rate limits.
 
 **TC-X-002: SECRET_KEY enforcement** — `APP_MODE=hybrid spectra-sherpa` with default key → exits with `SECURITY ERROR`
 
-**TC-X-003: CORS** — local returns `Access-Control-Allow-Origin: *`; hybrid/demo restrict to CORS_ORIGINS
+**TC-X-003: CORS** — local returns `Access-Control-Allow-Origin: *`; hybrid/enterprise restrict to CORS_ORIGINS
 
 ---
 
@@ -746,10 +746,10 @@ Run all UNIVERSAL tests with demo auth, staying within rate limits.
 
 | ID | Issue | Mode | Reference |
 |----|-------|------|-----------|
-| KEF-1 | No graceful degradation | Demo | network_health.py only starts in hybrid |
-| KEF-2 | No remote audit logging | Demo | logging.py:277 hybrid-only check |
+| KEF-1 | No graceful degradation | Enterprise | network_health.py only starts in hybrid |
+| KEF-2 | No remote audit logging | Enterprise | logging.py:277 hybrid-only check |
 | KEF-3 | No `/sherpa/sync` or `/sherpa/decide` on server | Hybrid | spectrasherpa-server not yet implemented |
-| KEF-4 | Zero automated tests for demo mode | Demo | CURRENT_CAPABILITIES.md testing status |
+| KEF-4 | Zero automated tests for enterprise mode | Enterprise | CURRENT_CAPABILITIES.md testing status |
 | KEF-5 | No CI/CD pipeline | All | No GitHub Actions or tox.ini |
 | KEF-6 | LLM managed key stored as plaintext on server | Hybrid | Code comment: "encrypt this!" |
 | KEF-7 | Backend/frontend template mismatch | All | 10 backend vs 12 frontend |

@@ -1,5 +1,5 @@
 """
-Mode-matrix regression tests for local / hybrid / demo behavior.
+Mode-matrix regression tests for local / hybrid / enterprise behavior.
 
 Tests that mode-dependent behavior matches the documented contracts.
 Each test is parametrized across the three operational modes to ensure
@@ -11,6 +11,7 @@ Run:
 
 from __future__ import annotations
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -48,8 +49,8 @@ def _make_config(
         egress_enabled=egress_enabled,
         api_base_url="http://localhost:8000",
         llms=llm_configs,
-        rate_limit_executions=rate_limit if mode == "demo" else None,
-        session_expiry_hours=session_expiry if mode == "demo" else None,
+        rate_limit_executions=rate_limit if mode == "enterprise" else None,
+        session_expiry_hours=session_expiry if mode == "enterprise" else None,
     )
 
 
@@ -61,7 +62,7 @@ def _make_config(
 class TestFeatureFlags:
     """Verify feature flags computed by to_client_safe() match per-mode expectations."""
 
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "demo"])
+    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
     def test_api_token_settings(self, mode: str):
         """apiTokenSettings enabled in local/hybrid, disabled in demo."""
         cfg = _make_config(mode=mode)
@@ -71,21 +72,23 @@ class TestFeatureFlags:
         else:
             assert flags["apiTokenSettings"] is False
 
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "demo"])
-    def test_demo_mode_flag(self, mode: str):
-        """demoMode is True only in demo mode."""
+    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
+    def test_enterprise_mode_flag(self, mode: str):
+        """enterpriseMode is True only in enterprise mode."""
         cfg = _make_config(mode=mode)
         flags = cfg.to_client_safe()["features"]
-        assert flags["demoMode"] is (mode == "demo")
+        assert flags["enterpriseMode"] is (mode == "enterprise")
+        # demoMode is a deprecated alias, should track enterpriseMode
+        assert flags["demoMode"] is (mode == "enterprise")
 
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "demo"])
+    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
     def test_plugin_system_always_enabled(self, mode: str):
         """pluginSystem is always True regardless of mode."""
         cfg = _make_config(mode=mode)
         flags = cfg.to_client_safe()["features"]
         assert flags["pluginSystem"] is True
 
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "demo"])
+    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
     def test_agentic_workflow_requires_llm_and_egress(self, mode: str):
         """agenticWorkflow requires both an LLM key and egress enabled."""
         # No LLM key, no egress
@@ -100,15 +103,15 @@ class TestFeatureFlags:
         cfg_both = _make_config(mode=mode, llm_key="sk-test", egress_enabled=True)
         assert cfg_both.to_client_safe()["features"]["agenticWorkflow"] is True
 
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "demo"])
+    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
     def test_nist_downloads_follows_egress(self, mode: str):
         """nistDownloads mirrors egress_enabled."""
         for egress in (True, False):
             cfg = _make_config(mode=mode, egress_enabled=egress)
             assert cfg.to_client_safe()["features"]["nistDownloads"] is egress
 
-    def test_sherpa_advisor_requires_hybrid_or_demo_and_key(self):
-        """sherpaAdvisor requires hybrid/demo mode AND SPECTRASHERPA_API_KEY."""
+    def test_sherpa_advisor_requires_hybrid_or_enterprise_and_key(self):
+        """sherpaAdvisor requires hybrid/enterprise mode AND SPECTRASHERPA_API_KEY."""
         # Local mode: always False regardless of key
         with patch.dict("os.environ", {"SPECTRASHERPA_API_KEY": "test-key"}):
             cfg = _make_config(mode="local")
@@ -126,9 +129,9 @@ class TestFeatureFlags:
             cfg = _make_config(mode="hybrid")
             assert cfg.to_client_safe()["features"]["sherpaAdvisor"] is True
 
-        # Demo with key: True
+        # Enterprise with key: True
         with patch.dict("os.environ", {"SPECTRASHERPA_API_KEY": "test-key"}):
-            cfg = _make_config(mode="demo")
+            cfg = _make_config(mode="enterprise")
             assert cfg.to_client_safe()["features"]["sherpaAdvisor"] is True
 
 
@@ -150,9 +153,9 @@ class TestLimits:
         cfg = _make_config(mode="hybrid")
         assert cfg.to_client_safe()["limits"] is None
 
-    def test_demo_has_limits(self):
-        """Demo mode returns non-null limits with defaults."""
-        cfg = _make_config(mode="demo", rate_limit=100, session_expiry=24)
+    def test_enterprise_has_limits(self):
+        """Enterprise mode returns non-null limits with defaults."""
+        cfg = _make_config(mode="enterprise", rate_limit=100, session_expiry=24)
         limits = cfg.to_client_safe()["limits"]
         assert limits is not None
         assert limits["maxExecutions"] == 100
@@ -178,9 +181,9 @@ class TestEgressDefaults:
         cfg = _make_config(mode="hybrid")
         assert cfg.egress_enabled is True
 
-    def test_demo_egress_enabled_by_default(self):
-        """Demo mode has egress enabled by default."""
-        cfg = _make_config(mode="demo")
+    def test_enterprise_egress_enabled_by_default(self):
+        """Enterprise mode has egress enabled by default."""
+        cfg = _make_config(mode="enterprise")
         assert cfg.egress_enabled is True
 
     def test_egress_can_be_overridden(self):
@@ -229,9 +232,9 @@ class TestIsEgressEnabled:
             from app.core.security import is_egress_enabled
             assert is_egress_enabled() is False
 
-    def test_demo_egress_enabled(self):
-        """Demo mode: egress always enabled (no degradation check)."""
-        cfg = _make_config(mode="demo", egress_enabled=True)
+    def test_enterprise_egress_enabled(self):
+        """Enterprise mode: egress always enabled (no degradation check)."""
+        cfg = _make_config(mode="enterprise", egress_enabled=True)
         with patch("app.core.security.app_config", cfg):
             from app.core.security import is_egress_enabled
             assert is_egress_enabled() is True
@@ -254,25 +257,25 @@ class TestExportAllowed:
             assert result is True
 
     @pytest.mark.asyncio
-    async def test_demo_checks_user_permission(self):
-        """Demo mode: checks user's egress_defaults.allow_export."""
+    async def test_enterprise_checks_user_permission(self):
+        """Enterprise mode: checks user's egress_defaults.allow_export."""
         # User with export allowed
         user_allowed = MagicMock()
         user_allowed.egress_defaults = MagicMock(allow_export=True)
-        with patch("app.core.mode_policy.app_config", _make_config(mode="demo")):
+        with patch("app.core.mode_policy.app_config", _make_config(mode="enterprise")):
             from app.core.security import check_export_allowed
             assert await check_export_allowed(user=user_allowed) is True
 
         # User with export denied
         user_denied = MagicMock()
         user_denied.egress_defaults = MagicMock(allow_export=False)
-        with patch("app.core.mode_policy.app_config", _make_config(mode="demo")):
+        with patch("app.core.mode_policy.app_config", _make_config(mode="enterprise")):
             assert await check_export_allowed(user=user_denied) is False
 
     @pytest.mark.asyncio
     async def test_no_user_defaults_to_allowed(self):
         """Any mode: null user defaults to export allowed."""
-        for mode in ("local", "hybrid", "demo"):
+        for mode in ("local", "hybrid", "enterprise"):
             with patch("app.core.mode_policy.app_config", _make_config(mode=mode)):
                 from app.core.security import check_export_allowed
                 assert await check_export_allowed(user=None) is True
@@ -302,17 +305,17 @@ class TestAuthMiddleware:
         # Hybrid mode: loopback is exempt, remote requires auth
         ("hybrid", "127.0.0.1", False),
         ("hybrid", "192.168.1.1", True),
-        # Demo mode: always requires auth
-        ("demo", "127.0.0.1", True),
-        ("demo", "192.168.1.1", True),
+        # Enterprise mode: always requires auth
+        ("enterprise", "127.0.0.1", True),
+        ("enterprise", "192.168.1.1", True),
     ])
     def test_ws_auth_requirement_matrix(self, mode: str, client_host: str, expected_requires_auth: bool):
         """WebSocket auth requirement matches mode + client host matrix."""
         from app.core.security import _is_loopback
 
-        # Replicate the logic from main.py lines 259-263
+        # Replicate the logic from main.py
         requires_ws_auth = (
-            mode == "demo"
+            mode == "enterprise"
             or (mode == "hybrid" and not _is_loopback(client_host))
         )
         assert requires_ws_auth is expected_requires_auth
@@ -337,7 +340,7 @@ class TestTokenTTL:
 
     def test_non_local_token_ttl_is_short(self):
         """Non-local modes: 60-minute token for security."""
-        for mode in ("hybrid", "demo"):
+        for mode in ("hybrid", "enterprise"):
             # The default for non-local is 60 minutes
             ttl = 60 if mode != "local" else 60 * 24 * 8
             assert ttl == 60
@@ -351,20 +354,20 @@ class TestTokenTTL:
 class TestConfigResponseShape:
     """Verify to_client_safe() response matches documented contract."""
 
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "demo"])
+    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
     def test_required_top_level_fields(self, mode: str):
-        """Config response always has mode, egress_enabled, features, llms."""
+        """Config response always has mode, egressEnabled, features, llms."""
         cfg = _make_config(mode=mode)
         response = cfg.to_client_safe()
 
         assert "mode" in response
-        assert "egress_enabled" in response
-        assert "api_base_url" in response
+        assert "egressEnabled" in response
+        assert "apiBaseUrl" in response
         assert "features" in response
         assert "llms" in response
         assert "limits" in response  # present, may be None
 
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "demo"])
+    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
     def test_required_feature_flags(self, mode: str):
         """All documented feature flags are present."""
         cfg = _make_config(mode=mode)
@@ -373,6 +376,7 @@ class TestConfigResponseShape:
         expected_flags = [
             "apiTokenSettings",
             "cloudOffload",
+            "enterpriseMode",
             "demoMode",
             "agenticWorkflow",
             "chatAssistant",
@@ -383,7 +387,7 @@ class TestConfigResponseShape:
         for flag in expected_flags:
             assert flag in features, f"Missing feature flag: {flag}"
 
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "demo"])
+    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
     def test_llm_entry_shape(self, mode: str):
         """Each LLM entry has provider, model, enabled."""
         cfg = _make_config(mode=mode, llm_key="sk-test")
@@ -397,7 +401,7 @@ class TestConfigResponseShape:
 
     def test_mode_field_matches_input(self):
         """Response mode field matches the configured mode."""
-        for mode in ("local", "hybrid", "demo"):
+        for mode in ("local", "hybrid", "enterprise"):
             cfg = _make_config(mode=mode)
             assert cfg.to_client_safe()["mode"] == mode
 
@@ -418,7 +422,7 @@ class TestRouteRegistration:
         """
         # We verify the logic pattern, not the live app state
         # (app is already imported at test time with whatever mode was set).
-        for mode in ("hybrid", "demo"):
+        for mode in ("hybrid", "enterprise"):
             # In non-local mode, auth/admin routers should be included
             assert mode != "local"  # tautology, documents the gate condition
 
@@ -439,7 +443,7 @@ class TestRouteRegistration:
 class TestMCPToolSystem:
     """Verify MCP tool system behavior across modes."""
 
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "demo"])
+    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
     def test_agentic_workflow_flag_requires_llm_and_egress(self, mode: str):
         """agenticWorkflow (gate for use_tools) needs both LLM key + egress."""
         # Neither → off
@@ -450,7 +454,7 @@ class TestMCPToolSystem:
         cfg_on = _make_config(mode=mode, llm_key="sk-test", egress_enabled=True)
         assert cfg_on.to_client_safe()["features"]["agenticWorkflow"] is True
 
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "demo"])
+    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
     def test_tool_registry_returns_tools_in_all_modes(self, mode: str):
         """tool_registry.list_definitions() is mode-independent — tools are always available."""
         import app.services.tools.builtin  # noqa: F401  — ensure builtins registered
@@ -485,3 +489,44 @@ class TestMCPToolSystem:
             assert "egress" in result.error.lower()
         finally:
             tool_registry.unregister("test_egress_tool")
+
+
+# ===========================================================================
+# 11. Backward compatibility: mode="demo" → "enterprise"
+# ===========================================================================
+
+
+class TestDemoBackwardCompat:
+    """Verify that the deprecated mode='demo' alias normalizes to 'enterprise'."""
+
+    def test_constructor_normalizes_demo_to_enterprise(self):
+        """AppConfig(mode='demo') normalizes to 'enterprise' via model validator."""
+        cfg = AppConfig(
+            mode="demo",
+            egress_enabled=True,
+            api_base_url="http://localhost:8000",
+            llms={},
+        )
+        assert cfg.mode == "enterprise"
+
+    def test_demo_constructor_produces_enterprise_flags(self):
+        """to_client_safe() returns enterpriseMode=True when constructed with demo."""
+        cfg = AppConfig(
+            mode="demo",
+            egress_enabled=True,
+            api_base_url="http://localhost:8000",
+            llms={},
+            rate_limit_executions=100,
+            session_expiry_hours=24,
+        )
+        safe = cfg.to_client_safe()
+        assert safe["mode"] == "enterprise"
+        assert safe["features"]["enterpriseMode"] is True
+        assert safe["features"]["demoMode"] is True
+        assert safe["limits"] is not None
+
+    @patch.dict(os.environ, {"APP_MODE": "demo"}, clear=False)
+    def test_from_env_maps_demo_to_enterprise(self):
+        """from_env() maps APP_MODE=demo → enterprise (with deprecation warning)."""
+        cfg = AppConfig.from_env()
+        assert cfg.mode == "enterprise"

@@ -10,7 +10,7 @@
 ### 1. Start Backend Server
 
 ```bash
-cd /Users/fe2val/Documents/Spectra\ Scientific/Component_code/Refactored/src/spectra_sherpa
+cd src/spectra_sherpa
 uvicorn app.main:app --reload
 ```
 
@@ -106,7 +106,7 @@ jq '.irdata | {folder_count: .[0].file_count, actual_files: (length - 1)}'
 
 **Command:**
 ```bash
-cd /Users/fe2val/Documents/Spectra\ Scientific/Component_code/Refactored/src/spectra_sherpa
+cd src/spectra_sherpa
 
 python -c "
 from app.services.dag.nodes.data import DataSourceNode
@@ -163,7 +163,7 @@ All tests passed!
 
 **Command:**
 ```bash
-cd /Users/fe2val/Documents/Spectra\ Scientific/Component_code/Refactored/src/spectra_sherpa
+cd src/spectra_sherpa
 
 python -c "
 import asyncio
@@ -233,7 +233,7 @@ Test PASSED ✅
 
 **Command:**
 ```bash
-cd /Users/fe2val/Documents/Spectra\ Scientific/Component_code/Refactored/src/spectra_sherpa
+cd src/spectra_sherpa
 
 python -c "
 import asyncio
@@ -286,7 +286,7 @@ Test PASSED ✅
 
 **Command:**
 ```bash
-cd /Users/fe2val/Documents/Spectra\ Scientific/Component_code/Refactored/src/spectra_sherpa
+cd src/spectra_sherpa
 
 python -c "
 import asyncio
@@ -339,7 +339,7 @@ Test PASSED ✅
 
 **Command:**
 ```bash
-cd /Users/fe2val/Documents/Spectra\ Scientific/Component_code/Refactored/src/spectra_sherpa
+cd src/spectra_sherpa
 
 python -c "
 import asyncio
@@ -403,7 +403,7 @@ Test PASSED ✅
 
 **Command:**
 ```bash
-cd /Users/fe2val/Documents/Spectra\ Scientific/Component_code/Refactored/src/spectra_sherpa
+cd src/spectra_sherpa
 
 python -c "
 import asyncio
@@ -472,7 +472,7 @@ Verify DataSourceNode pattern loading produces same result as LoadGroupNode.
 
 **Command:**
 ```bash
-cd /Users/fe2val/Documents/Spectra\ Scientific/Component_code/Refactored/src/spectra_sherpa
+cd src/spectra_sherpa
 
 python -c "
 import asyncio
@@ -573,7 +573,7 @@ Verify single file loading still works (backward compatibility).
 
 **Command:**
 ```bash
-cd /Users/fe2val/Documents/Spectra\ Scientific/Component_code/Refactored/src/spectra_sherpa
+cd src/spectra_sherpa
 
 python -c "
 import asyncio
@@ -632,7 +632,7 @@ Test PASSED ✅
 
 **Command:**
 ```bash
-cd /Users/fe2val/Documents/Spectra\ Scientific/Component_code/Refactored/src/spectra_sherpa
+cd src/spectra_sherpa
 
 python -c "
 import asyncio
@@ -689,7 +689,7 @@ Run all tests in sequence:
 
 **Command:**
 ```bash
-cd /Users/fe2val/Documents/Spectra\ Scientific/Component_code/Refactored/src/spectra_sherpa
+cd src/spectra_sherpa
 
 python -c "
 import asyncio
@@ -899,7 +899,7 @@ example_file = "*.SPG"  # Instead of "*"
 **Solution:**
 ```bash
 # Make sure you're in the package directory
-cd /Users/fe2val/Documents/Spectra\ Scientific/Component_code/Refactored/src/spectra_sherpa
+cd src/spectra_sherpa
 
 # Verify imports work
 python -c "from app.services.dag.nodes.data import DataSourceNode; print('✅ Imports work')"

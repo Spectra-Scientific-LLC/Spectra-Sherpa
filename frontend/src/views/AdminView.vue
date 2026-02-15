@@ -138,7 +138,7 @@
               </div>
               <div v-else class="no-limits">
                 <i class="pi pi-info-circle"></i>
-                <span>No rate limits configured (Demo mode settings not active)</span>
+                <span>No rate limits configured (enterprise mode settings not active)</span>
               </div>
             </div>
 
@@ -391,7 +391,7 @@ const filteredUsers = computed(() => {
 
 const modeSeverity = computed(() => {
   const mode = appConfig.value?.mode;
-  if (mode === 'demo') return 'warning';
+  if (mode === 'enterprise') return 'warning';
   if (mode === 'hybrid') return 'info';
   return 'secondary';
 });
@@ -403,7 +403,7 @@ const modeLabel = computed(() => {
 
 const modeDescription = computed(() => {
   const mode = appConfig.value?.mode;
-  if (mode === 'demo') return 'Cloud-hosted SaaS deployment with rate limits and user management.';
+  if (mode === 'enterprise') return 'Cloud-hosted enterprise deployment with rate limits and user management.';
   if (mode === 'hybrid') return 'Local compute with cloud account sync and managed LLM keys.';
   return 'Single-user offline-capable workstation.';
 });

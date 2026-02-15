@@ -110,14 +110,14 @@
 │  - Select NIST spectra                                      │
 │  - Select experiment data                                   │
 │  - Blending controls (ratios, mixing)                      │
-│  - Output: Combined NDDataset for analysis                 │
+│  - Output: Combined AnalysisDataset for analysis            │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ### Key Features
 - Search NIST database by compound name
 - Download JCAMP-DX files
-- Convert to NDDataset format
+- Convert to AnalysisDataset format
 - Blend NIST reference data with experimental spectra
 - Create "spiked" datasets for validation
 
@@ -205,7 +205,7 @@
 │  - Live preview plot (spectra evolving over time)          │
 │                                                             │
 │  Export Tab:                                                │
-│  - Export formats: CSV, SPA, NDDataset                     │
+│  - Export formats: CSV, SPA, AnalysisDataset               │
 │  - Metadata tagging                                         │
 │  - Batch generation (parameter sweeps)                     │
 └─────────────────────────────────────────────────────────────┘
@@ -396,7 +396,7 @@ Real-time prediction from streaming spectral data
                      ▼
          ┌──────────────────────────────┐
          │      "Loaded Data"          │
-         │        (NDDataset)          │
+         │     (AnalysisDataset)       │
          └───────────┬────────────────┘
                      │
          ┌───────────┴───────────┐

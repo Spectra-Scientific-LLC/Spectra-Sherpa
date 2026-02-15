@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Hybrid Connection &amp; Deployment Lessons - SpectraSherpa Documentation</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Hybrid Connection \u0026amp; Deployment Lessons";
+        var mkdocs_page_input_path = "deployment/hybrid_connection_learning.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> SpectraSherpa Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">User Guide (OSS)</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/installation/">Installation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/configuration/">Configuration</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/quickstart/">Quickstart</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/experiments/">Experiments</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/library/">Library (NIST)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/doe/">DOE (96-Well)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/synthesis/">Synthesis Builder</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/workflow/">Workflow Builder</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reproduction Study</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/reproduction_methodology/">Methodology</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../USER_MANUAL/">User Manual</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Server Operator Guide</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../server/overview/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../server/hybrid_mode/">Hybrid Mode</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../server/enterprise_mode/">Enterprise Mode</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../DIGITAL_OCEAN/">Docker Deployment</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Developer Guide</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../developer/setup/">Setup & Contributing</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../developer/architecture/">Architecture</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Examples</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/01_loading_data/">01. Loading Data</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/02_dataset_manipulation/">02. Manipulation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/03_plotting/">03. Plotting</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/04_preprocessing_smoothing/">04. Smoothing</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/05_preprocessing_baseline/">05. Baseline</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/06_peak_finding/">06. Peak Finding</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/07_peak_fitting/">07. Integration</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/08_pca/">08. PCA</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/09_mcr_als/">09. MCR-ALS</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/10_pls_regression/">10. PLS</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Reference</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../reference/nodes/">Node Library</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Past</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/RELEASE_NOTES/">Release Notes</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/IMPLEMENTATION_SUMMARY/">Implementation Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/FINAL_FIXES_SUMMARY/">Final Fixes Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/SESSION_SUMMARY_2026-01-21/">Session Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/NODE_STANDARDIZATION_2026-01-26/">Node Standardization (2026-01-26)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Completed Plans</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/ROADMAP/">Roadmap</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/REFACTOR_3_REPO_STRATEGY/">3-Repo Refactor Strategy</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/SHERPA_IMPLEMENTATION_PLAN_V2/">Sherpa Implementation Plan V2</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/DOE_ENHANCEMENTS/">DOE Enhancements</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/NAVIGATION_REDESIGN/">Navigation Redesign</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Fixes</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/3D_CONCATENATION_FIX/">3D Concatenation Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/QUICK_PLOT_Y_AXIS_LABELS_FIX/">Quick Plot Y-Axis Labels Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CASE_SENSITIVITY_AND_UI_FIXES/">Case Sensitivity and UI Fixes</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/DEDICATED_LOAD_GROUP_ENFORCEMENT/">Dedicated Load Group Enforcement</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/LOAD_GROUP_NODE_IMPLEMENTATION/">Load Group Node Implementation</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reviews & Testing</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CODE_REVIEW_FINDINGS/">Code Review Findings</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/WEEK7_TESTING/">Week 7 Testing</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Future</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ANALYSIS_CANVAS_WIREFRAME/">Analysis Canvas Wireframe</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/plugin_plan_011525/">Plugin Plan (2025-01-15)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/FUTURE_CAPABILITIES/">Future Capabilities</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">SpectraSherpa Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Hybrid Connection &amp; Deployment Lessons</li>
+    <li class="wy-breadcrumbs-aside">
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="hybrid-connection-deployment-lessons">Hybrid Connection &amp; Deployment Lessons</h1>
+<p><strong>Snapshot date:</strong> 2026-02-09</p>
+<p>This document captures hard-won lessons from the first DigitalOcean server
+deployment and hybrid mode activation testing. Keep it updated as new issues
+surface.</p>
+<hr />
+<h2 id="deployment-lessons-do-server-testing">Deployment Lessons (DO Server Testing)</h2>
+<h3 id="passlib-bcrypt-incompatibility">passlib / bcrypt incompatibility</h3>
+<ul>
+<li>passlib 1.7.4 breaks with bcrypt &gt;= 4.1</li>
+<li>Error: <code>AttributeError: module 'bcrypt' has no attribute '__about__'</code></li>
+<li><strong>FIX:</strong> Pin <code>bcrypt = "&gt;=4.0.1,&lt;4.1"</code> in <code>pyproject.toml</code></li>
+</ul>
+<h3 id="silent-startup-crash">Silent startup crash</h3>
+<ul>
+<li>If <code>seed_data()</code> in <code>ensure_database_ready()</code> fails (e.g. missing tables),
+  the process exits silently — no traceback in uvicorn logs</li>
+<li>Starlette swallows lifespan exceptions</li>
+<li><strong>FIX:</strong> Wrap in try/except with explicit traceback logging</li>
+</ul>
+<h3 id="db-corruption-on-incomplete-first-run">DB corruption on incomplete first run</h3>
+<ul>
+<li>If the first startup doesn't complete <code>create_all()</code>, Alembic migration
+  history exists but base tables (experiment, etc.) don't</li>
+<li>Subsequent startups fail in <code>seed_data()</code> with
+  <code>OperationalError: no such table: experiment</code></li>
+<li><strong>FIX:</strong> Delete the SQLite database file and restart</li>
+</ul>
+<h3 id="enterprise-mode-rejects-sqlite">Enterprise mode rejects SQLite</h3>
+<ul>
+<li><code>APP_MODE=enterprise</code> requires PostgreSQL — the app refuses to start with SQLite
+  (note: <code>APP_MODE=demo</code> is accepted as a deprecated alias for <code>enterprise</code>)</li>
+<li><strong>Use <code>APP_MODE=hybrid</code></strong> for single-server SQLite deployments</li>
+</ul>
+<h3 id="do-firewall">DO Firewall</h3>
+<ul>
+<li>Port 8000 must be explicitly added as a Custom TCP inbound rule</li>
+<li>Default DO firewall only allows SSH (22), HTTP (80), HTTPS (443)</li>
+</ul>
+<hr />
+<h2 id="hybrid-mode-activation">Hybrid Mode Activation</h2>
+<h3 id="required-env-variables">Required <code>.env</code> variables</h3>
+<pre><code class="language-bash">APP_MODE=hybrid
+SECRET_KEY=&lt;generate: python3 -c &quot;import secrets; print(secrets.token_urlsafe(32))&quot;&gt;
+SPECTRASHERPA_API_URL=http://&lt;server-ip&gt;:8000
+SPECTRASHERPA_API_KEY=sk_&lt;key-from-server&gt;
+</code></pre>
+<h3 id="secret_key-is-mandatory">SECRET_KEY is mandatory</h3>
+<ul>
+<li><code>validate_security_settings()</code> rejects the default key in hybrid mode</li>
+<li>Must generate a unique key and add to <code>.env</code></li>
+</ul>
+<h3 id="egress-sync-defaults-to-off">Egress sync defaults to OFF</h3>
+<ul>
+<li><code>allow_spectrasherpa_sync=False</code> by default in <code>UserEgressDefaults</code></li>
+<li>Must enable via DB for Sherpa Advisor to work:
+  <code>bash
+  sqlite3 ~/.spectra_sherpa/spectra_platform.db \
+    "UPDATE user_egress_defaults SET allow_spectrasherpa_sync=1;"</code></li>
+<li>Future: add UI toggle in Data &amp; Privacy tab</li>
+</ul>
+<h3 id="integrationstab-ui-gap">IntegrationsTab UI gap</h3>
+<ul>
+<li>The activate-hybrid UI (Server URL / API Key inputs) exists in the dev
+  codebase but is <strong>NOT</strong> in the pip-built static assets</li>
+<li>Users must use the manual <code>.env</code> method for now</li>
+</ul>
+<h3 id="admin-user-creation">Admin user creation</h3>
+<ul>
+<li>No CLI flag exists yet for admin promotion</li>
+<li>After registration, use sqlite3:
+  <code>bash
+  sqlite3 /path/to/spectra_platform.db \
+    "UPDATE users SET is_superuser=1 WHERE username='youruser';"</code></li>
+</ul>
+<hr />
+<h2 id="do-server-state-as-of-2026-02-09">DO Server State (as of 2026-02-09)</h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>IP</td>
+<td><code>146.190.48.1</code></td>
+</tr>
+<tr>
+<td>Port</td>
+<td>8000</td>
+</tr>
+<tr>
+<td>Mode</td>
+<td>hybrid</td>
+</tr>
+<tr>
+<td>Repos</td>
+<td><code>/opt/spectra-platform/</code> (Repo 1 + Repo 2)</td>
+</tr>
+<tr>
+<td>Users</td>
+<td><code>guest</code> (superuser), <code>hybrid_client</code> (API key holder)</td>
+</tr>
+<tr>
+<td>Python</td>
+<td>system + <code>spectra</code> user venv at <code>/opt/spectra-platform/venv</code></td>
+</tr>
+<tr>
+<td>bcrypt</td>
+<td>pinned to 4.0.1 on server</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="key-architecture-notes">Key Architecture Notes</h2>
+<h3 id="3-repo-split">3-Repo Split</h3>
+<ul>
+<li><strong>Repo 1</strong> (<code>Refactored/</code>): OSS local-first app — auth.py/admin.py removed</li>
+<li><strong>Repo 2</strong> (<code>spectrasherpa-server/</code>): Commercial backend — <code>create_app()</code> +
+  auth/admin routes via <code>extra_routers</code></li>
+<li><strong>Repo 3</strong> (<code>spectra-ops/</code>): Docker, compose, nginx, Caddy, deploy configs</li>
+</ul>
+<h3 id="websocket-debugging">WebSocket Debugging</h3>
+<ul>
+<li><code>ws_user</code> loaded in auth session; action handlers open new sessions —
+  lazy-loaded relationships fail with <code>DetachedInstanceError</code></li>
+<li>WS handlers need try/except per action (only <code>WebSocketDisconnect</code> is caught
+  at outer level)</li>
+<li>Backend must use <code>sherpa_error</code> (not <code>error</code>) for messages to reach the
+  Sherpa store via event bus dispatch</li>
+<li>Always add <code>logger.info</code> to WS handlers — unlike HTTP, they don't auto-log</li>
+</ul>
+<h3 id="testing-notes">Testing Notes</h3>
+<ul>
+<li>httpx <code>Response.json()</code> / <code>.raise_for_status()</code> are <strong>synchronous</strong> — use
+  <code>MagicMock()</code> not <code>AsyncMock()</code> for response objects</li>
+<li>httpx <code>client.post()</code> / <code>client.stream()</code> are <strong>async</strong> — use <code>AsyncMock()</code></li>
+<li>conftest.py imports <code>from app.db.base import Base</code> and <code>from app.main import
+  app</code> — needs full app context</li>
+</ul>
+<hr />
+<h2 id="codebase-fixes-still-needed">Codebase Fixes Still Needed</h2>
+<ul>
+<li>[ ] Add error logging for silent startup crashes (wrap <code>seed_data()</code> in
+      try/except with traceback in <code>startup.py</code>)</li>
+<li>[ ] Add Data &amp; Privacy tab to frontend OR auto-enable sync on hybrid
+      activation</li>
+<li>[ ] Add <code>--create-admin</code> CLI flag for first user setup</li>
+<li>[ ] Build activate-hybrid UI into pip-distributed static assets</li>
+<li>[ ] Update <code>modes.md</code> — mark <code>SECRET_KEY</code> as required for hybrid</li>
+<li>[ ] Update <code>DIGITAL_OCEAN.md</code> — add Path A (direct install), bcrypt fix,
+      firewall, admin user sections</li>
+</ul>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+    
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

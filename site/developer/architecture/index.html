@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Architecture - SpectraSherpa Documentation</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Architecture";
+        var mkdocs_page_input_path = "developer/architecture.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> SpectraSherpa Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">User Guide (OSS)</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/installation/">Installation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/configuration/">Configuration</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/quickstart/">Quickstart</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/experiments/">Experiments</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/library/">Library (NIST)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/doe/">DOE (96-Well)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/synthesis/">Synthesis Builder</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../user_guide/workflow/">Workflow Builder</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reproduction Study</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/case_study_pca/">PCA (Side-by-Side)</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../user_guide/reproduction_methodology/">Methodology</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../USER_MANUAL/">User Manual</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Server Operator Guide</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../server/overview/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../server/hybrid_mode/">Hybrid Mode</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../server/enterprise_mode/">Enterprise Mode</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../deployment/DIGITAL_OCEAN/">Docker Deployment</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Developer Guide</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../setup/">Setup & Contributing</a>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" href="#">Architecture</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#high-level-structure">High-Level Structure</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#core-concepts">Core Concepts</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#1-the-mode-contract">1. The Mode Contract</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#2-the-node-graph">2. The Node Graph</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#3-data-containers">3. Data Containers</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#4-spectrochempy-optional-dependency">4. SpectroChemPy Optional Dependency</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#5-type-system">5. Type System</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#6-scientific-integrity">6. Scientific Integrity</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#7-database-models">7. Database Models</a>
+    </li>
+        </ul>
+    </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Examples</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/00_case_study_notebook.ipynb">00. Case Study Notebook</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/01_loading_data/">01. Loading Data</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/02_dataset_manipulation/">02. Manipulation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/03_plotting/">03. Plotting</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/04_preprocessing_smoothing/">04. Smoothing</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/05_preprocessing_baseline/">05. Baseline</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/06_peak_finding/">06. Peak Finding</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/07_peak_fitting/">07. Integration</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/08_pca/">08. PCA</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/09_mcr_als/">09. MCR-ALS</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../examples/10_pls_regression/">10. PLS</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Reference</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../reference/nodes/">Node Library</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Past</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/RELEASE_NOTES/">Release Notes</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/IMPLEMENTATION_SUMMARY/">Implementation Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/FINAL_FIXES_SUMMARY/">Final Fixes Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/SESSION_SUMMARY_2026-01-21/">Session Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../past/NODE_STANDARDIZATION_2026-01-26/">Node Standardization (2026-01-26)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Completed Plans</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/ROADMAP/">Roadmap</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/REFACTOR_3_REPO_STRATEGY/">3-Repo Refactor Strategy</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/SHERPA_IMPLEMENTATION_PLAN_V2/">Sherpa Implementation Plan V2</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/DOE_ENHANCEMENTS/">DOE Enhancements</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/NAVIGATION_REDESIGN/">Navigation Redesign</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Fixes</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/3D_CONCATENATION_FIX/">3D Concatenation Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/QUICK_PLOT_Y_AXIS_LABELS_FIX/">Quick Plot Y-Axis Labels Fix</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CASE_SENSITIVITY_AND_UI_FIXES/">Case Sensitivity and UI Fixes</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/DEDICATED_LOAD_GROUP_ENFORCEMENT/">Dedicated Load Group Enforcement</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/LOAD_GROUP_NODE_IMPLEMENTATION/">Load Group Node Implementation</a>
+                </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" >Reviews & Testing</a>
+    <ul>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/CODE_REVIEW_FINDINGS/">Code Review Findings</a>
+                </li>
+                <li class="toctree-l2"><a class="reference internal" href="../../past/WEEK7_TESTING/">Week 7 Testing</a>
+                </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Future</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/">Summary</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/ANALYSIS_CANVAS_WIREFRAME/">Analysis Canvas Wireframe</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/plugin_plan_011525/">Plugin Plan (2025-01-15)</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../future/FUTURE_CAPABILITIES/">Future Capabilities</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">SpectraSherpa Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Developer Guide</li>
+      <li class="breadcrumb-item active">Architecture</li>
+    <li class="wy-breadcrumbs-aside">
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="system-architecture">System Architecture</h1>
+<p>SpectraSherpa follows a "Clean Architecture" pattern with a strict separation between the core domain logic and the delivery mechanism (FastAPI).</p>
+<h2 id="high-level-structure">High-Level Structure</h2>
+<pre><code>src/spectra_sherpa/
+├── app/
+│   ├── core/           # Configuration, Security, Mode Policy
+│   ├── lib/            # Core libraries (AnalysisDataset, scp_compat)
+│   ├── models/         # Pydantic models &amp; SQLAlchemy tables
+│   ├── schemas/        # API request/response schemas
+│   ├── services/       # Business logic (DAG, Metadata, LLM)
+│   │   ├── dag/        # Workflow engine &amp; Node definitions
+│   │   └── llm/        # AI Service integration
+│   └── api/            # FastAPI Routers
+└── static/             # Compiled Vue frontend
+</code></pre>
+<h2 id="core-concepts">Core Concepts</h2>
+<h3 id="1-the-mode-contract">1. The Mode Contract</h3>
+<p>The application behavior changes significantly based on <code>APP_MODE</code> (<code>local</code>, <code>hybrid</code>, <code>enterprise</code>). This logic is centralized in <code>app.core.mode_policy</code>.
+- <strong>Local:</strong> No Auth, No Egress.
+- <strong>Hybrid/Enterprise:</strong> Strict Auth, Allowed Egress.
+See <a href="../../server/overview/">Mode Policy</a> for details.</p>
+<h3 id="2-the-node-graph">2. The Node Graph</h3>
+<p>SpectraSherpa is fundamentally a Directed Acyclic Graph (DAG) engine.
+- <strong>Nodes</strong> (<code>app.services.dag.nodes.*</code>) are self-contained units of logic.
+- <strong>Workflows</strong> are serializable JSON structures defining the graph.
+- <strong>Execution</strong> is topological. Data flows from <code>DataSourceNode</code> -&gt; <code>PreprocessingNode</code> -&gt; <code>ModelingNode</code>.</p>
+<h3 id="3-data-containers">3. Data Containers</h3>
+<p>The DAG engine uses two data container types depending on the runtime environment:</p>
+<p><strong>AnalysisDataset</strong> (<code>app.lib.analysis_dataset</code>) — The canonical DAG runtime container. All portable nodes produce and consume this type. Fields:
+- <code>X</code>: 2D numpy array (n_samples, n_features)
+- <code>x_axis</code> / <code>y_axis</code>: <code>AxisInfo</code> (values, labels, units, title)
+- <code>target</code>: Optional target values for supervised learning
+- <code>meta</code>: Arbitrary metadata dict (includes <code>processing_history</code>)
+- <code>provenance</code>: Processing history list (synced with <code>meta["processing_history"]</code>)
+- <code>backend</code>: Origin tag (<code>"numpy"</code>, <code>"scp"</code>, <code>"sklearn"</code>)</p>
+<p>AnalysisDataset provides NDDataset-compatible properties (<code>.data</code>, <code>.x</code>, <code>.y</code>, <code>.shape</code>, <code>.ndim</code>, <code>.copy()</code>) so node code works with either type. The <code>to_dict()</code> method emits <code>type: "NDDataset"</code> wire format for frontend backward compatibility.</p>
+<p><strong>NDDataset</strong> (SpectroChemPy) — Used by 11 SCP-only nodes that require SpectroChemPy's coordinate-aware algorithms (ALS baseline, MSC, PCA, PLS, MCR, EFA, SIMPLISMA, etc.). Round-trip adapters in <code>scp_compat.py</code> convert between the two types.</p>
+<h3 id="4-spectrochempy-optional-dependency">4. SpectroChemPy Optional Dependency</h3>
+<p>SpectroChemPy is an optional dependency (<code>pip install spectra-sherpa[scp]</code>). The <code>scp_compat.py</code> module provides:
+- <code>HAS_SCP</code> boolean flag
+- <code>require_scp()</code> guard function
+- Stub <code>NDDataset</code>/<code>Coord</code> classes when SCP is absent (safe for <code>isinstance()</code>)</p>
+<p>Each node declares <code>requires_scp=True</code> in its <code>NodeMetadata</code> if it needs SCP. Without SCP, ~38 nodes run on pure numpy/scipy/sklearn via AnalysisDataset. With SCP, 11 additional nodes are unlocked.</p>
+<h3 id="5-type-system">5. Type System</h3>
+<p>All node ports use typed connections via <code>TypeRegistry</code>:
+- URIs: <code>spectrasherpa://types/{TypeName}/{Major.minor}</code>
+- <code>registry.json</code> defines all types with subtype relationships
+- Connection validator checks type compatibility + version constraints
+- <code>NodeResult</code> dataclass wraps outputs + diagnostics for type-safe results</p>
+<h3 id="6-scientific-integrity">6. Scientific Integrity</h3>
+<ul>
+<li><strong>Metadata Propagation:</strong> Every node automatically appends its operation to the <code>processing_history</code> metadata via <code>meta_helpers.add_processing_step()</code>.</li>
+<li><strong>Unit Awareness:</strong> The system tracks units (wavenumber vs nm, absorbance vs transmittance) to prevent invalid operations.</li>
+<li><strong>Provenance:</strong> Full processing chain recorded in dataset metadata for audit trails.</li>
+</ul>
+<h3 id="7-database-models">7. Database Models</h3>
+<p>SQLAlchemy models with SQLite backend:
+- <strong>Project</strong>: Self-referencing FK (folders), linked workflows + experiments
+- <strong>ProjectVersion</strong>: Snapshot JSON with version numbering
+- <strong>ProjectScript</strong>: Generated or manual Python scripts linked to projects
+- <strong>Workflow</strong>: Node/edge graph JSON with technique/sample_type
+- <strong>Experiment</strong>: Execution records with parameters and results
+- <strong>ExecutionRun</strong>: Run history with diagnostics and labels
+- <strong>FolderWatch</strong>: Automated polling configuration
+- <strong>BatchPrediction</strong>: Per-file prediction results</p>
+<p>16 linear Alembic migrations manage schema evolution.</p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../setup/" class="btn btn-neutral float-left" title="Setup & Contributing"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../../examples/00_case_study_notebook.ipynb" class="btn btn-neutral float-right" title="00. Case Study Notebook">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+    
+      <span><a href="../setup/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../../examples/00_case_study_notebook.ipynb" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

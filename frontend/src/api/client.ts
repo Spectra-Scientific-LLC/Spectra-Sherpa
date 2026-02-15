@@ -14,7 +14,7 @@ const api = axios.create({
  * Request interceptor to add authentication headers.
  *
  * Supports two auth mechanisms:
- * 1. JWT Bearer token (for user login in cloud/demo modes)
+ * 1. JWT Bearer token (for user login in cloud/enterprise modes)
  * 2. X-API-Key (for machine-to-machine in hybrid mode)
  *
  * JWT takes precedence if both are present.
@@ -40,7 +40,7 @@ api.interceptors.request.use((config) => {
 /**
  * Response interceptor to handle expired sessions.
  *
- * When the backend returns 401 (e.g. expired JWT in demo mode),
+ * When the backend returns 401 (e.g. expired JWT in enterprise mode),
  * clear stored credentials and redirect to login so the user
  * isn't stuck making failing requests.
  */

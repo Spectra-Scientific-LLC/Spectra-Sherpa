@@ -100,8 +100,8 @@ def test_ws_hybrid_loopback_allows_anonymous(ws_client, monkeypatch):
         assert response == {"type": "subscribed", "channel": "jobs:7"}
 
 
-def test_ws_demo_mode_rejects_invalid_credentials(ws_client, monkeypatch):
-    app_config.mode = "demo"
+def test_ws_enterprise_mode_rejects_invalid_credentials(ws_client, monkeypatch):
+    app_config.mode = "enterprise"
     _install_noop_async_session(monkeypatch)
 
     async def _invalid_api_key(_api_key):
@@ -114,8 +114,8 @@ def test_ws_demo_mode_rejects_invalid_credentials(ws_client, monkeypatch):
         _policy_violation_on_receive(ws)
 
 
-def test_ws_demo_user_cannot_subscribe_other_users_jobs(ws_client, monkeypatch):
-    app_config.mode = "demo"
+def test_ws_enterprise_user_cannot_subscribe_other_users_jobs(ws_client, monkeypatch):
+    app_config.mode = "enterprise"
     _install_noop_async_session(monkeypatch)
 
     async def _valid_api_key(api_key):
@@ -140,8 +140,8 @@ def test_ws_demo_user_cannot_subscribe_other_users_jobs(ws_client, monkeypatch):
         assert response == {"type": "subscribed", "channel": "jobs:1"}
 
 
-def test_ws_demo_superuser_can_subscribe_any_jobs_channel(ws_client, monkeypatch):
-    app_config.mode = "demo"
+def test_ws_enterprise_superuser_can_subscribe_any_jobs_channel(ws_client, monkeypatch):
+    app_config.mode = "enterprise"
     _install_noop_async_session(monkeypatch)
 
     async def _valid_api_key(api_key):

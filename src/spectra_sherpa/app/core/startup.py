@@ -55,7 +55,7 @@ def validate_concurrency_settings() -> None:
     except ImportError:
         has_fcntl = False
 
-    if app_config.mode in ("hybrid", "demo"):
+    if app_config.mode in ("hybrid", "enterprise"):
         web_concurrency = os.getenv("WEB_CONCURRENCY", "").strip()
         if web_concurrency:
             try:
@@ -63,12 +63,13 @@ def validate_concurrency_settings() -> None:
             except ValueError:
                 workers = 1
             if workers > 1:
-                logger.warning(
-                    "WEB_CONCURRENCY=%s with in-memory WebSocket channels can "
-                    "drop cross-worker realtime events. Use WEB_CONCURRENCY=1 "
-                    "unless a shared pub/sub backend is configured.",
+                logger.critical(
+                    "WEB_CONCURRENCY=%s is not supported with in-memory WebSocket "
+                    "channels — realtime events will be silently dropped across workers.\n"
+                    "Set WEB_CONCURRENCY=1 (sufficient for <20 concurrent users).",
                     workers,
                 )
+                sys.exit(1)
 
         if not has_fcntl:
             logger.warning(
@@ -89,7 +90,7 @@ def validate_security_settings() -> None:
     """
     Validate security-critical settings at startup.
 
-    In non-local modes (hybrid, demo, cloud), ensures:
+    In non-local modes (hybrid, enterprise, cloud), ensures:
     - SECRET_KEY is not the default value
     - MASTER_ENCRYPTION_KEY is set (warning only)
     - Hybrid mode warns if bound to a non-loopback address
@@ -125,9 +126,9 @@ def validate_security_settings() -> None:
         "yes",
     }
     if settings.api_key == DEFAULT_API_KEY and system_key_auth_enabled:
-        if app_config.mode == "demo":
+        if app_config.mode == "enterprise":
             logger.critical(
-                "SECURITY ERROR: Cannot start in 'demo' mode with default APP_API_KEY!\n"
+                "SECURITY ERROR: Cannot start in 'enterprise' mode with default APP_API_KEY!\n"
                 "ALLOW_SYSTEM_API_KEY_AUTH is enabled and APP_API_KEY is default. "
                 "Set APP_API_KEY to a strong random value.\n"
                 "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
@@ -139,7 +140,7 @@ def validate_security_settings() -> None:
                 "APP_API_KEY is set to the default value while ALLOW_SYSTEM_API_KEY_AUTH "
                 "is enabled. Set a strong random APP_API_KEY."
             )
-    elif settings.api_key == DEFAULT_API_KEY and app_config.mode == "demo":
+    elif settings.api_key == DEFAULT_API_KEY and app_config.mode == "enterprise":
         logger.info(
             "APP_API_KEY is default, but ALLOW_SYSTEM_API_KEY_AUTH is disabled, "
             "so this key is not accepted for external authentication."
@@ -156,22 +157,22 @@ def validate_security_settings() -> None:
 
     # Check encryption key (warning, not fatal)
     if not os.getenv("MASTER_ENCRYPTION_KEY"):
-        if app_config.mode == "demo":
+        if app_config.mode == "enterprise":
             logger.warning(
-                "MASTER_ENCRYPTION_KEY not set. A key will be auto-generated, but this "
-                "may cause issues if the container is recreated. Set this environment "
-                "variable for persistent API key encryption."
+                "MASTER_ENCRYPTION_KEY not set. A key will be auto-generated, but "
+                "stored API keys will be LOST if this container is recreated. "
+                "Set MASTER_ENCRYPTION_KEY explicitly for persistent encryption."
             )
         elif app_config.mode == "hybrid":
-            logger.info(
-                "MASTER_ENCRYPTION_KEY not set — auto-generating. Set this env var "
-                "before deploying to production."
+            logger.warning(
+                "MASTER_ENCRYPTION_KEY not set — auto-generating. Stored API keys "
+                "will be lost on container restart. Set this env var explicitly."
             )
 
-    # Demo mode: SQLite is not safe for concurrent multi-user production workloads.
-    if app_config.mode == "demo" and settings.database_url.startswith("sqlite"):
+    # Enterprise mode: SQLite is not safe for concurrent multi-user production workloads.
+    if app_config.mode == "enterprise" and settings.database_url.startswith("sqlite"):
         logger.critical(
-            "SECURITY/RELIABILITY ERROR: Demo mode cannot run with SQLite. "
+            "SECURITY/RELIABILITY ERROR: Enterprise mode cannot run with SQLite. "
             "Set DATABASE_URL to PostgreSQL before starting a multi-user deployment."
         )
         sys.exit(1)
@@ -189,6 +190,42 @@ def validate_security_settings() -> None:
                 "access is restricted to loopback (127.0.0.1) only.",
                 bind_host,
             )
+
+
+def validate_cors_settings() -> None:
+    """
+    Validate CORS configuration for enterprise mode.
+
+    Enterprise deployments must have explicit CORS_ORIGINS set to prevent
+    silent cross-origin failures. Wildcard origins are not allowed.
+
+    This runs during startup (not import time) so it does not affect tests.
+
+    Raises:
+        SystemExit: If CORS configuration is invalid for enterprise mode
+    """
+    import os
+
+    if app_config.mode != "enterprise":
+        return
+
+    cors_env = os.getenv("CORS_ORIGINS", "").strip()
+    if not cors_env:
+        logger.critical(
+            "SECURITY ERROR: CORS_ORIGINS must be set in enterprise mode.\n"
+            "Set CORS_ORIGINS to your production frontend domain(s), e.g.:\n"
+            "  CORS_ORIGINS=https://app.example.com"
+        )
+        sys.exit(1)
+
+    origins = [o.strip() for o in cors_env.split(",") if o.strip()]
+    if "*" in origins:
+        logger.critical(
+            "SECURITY ERROR: CORS_ORIGINS='*' is not allowed in enterprise mode.\n"
+            "Set CORS_ORIGINS to your production frontend domain(s), e.g.:\n"
+            "  CORS_ORIGINS=https://app.example.com"
+        )
+        sys.exit(1)
 
 
 def ensure_data_dirs() -> None:
@@ -309,7 +346,7 @@ async def ensure_egress_defaults() -> None:
     """
     Ensure all users have default egress settings.
 
-    This backfills UserEgressDefaults for existing users so hybrid/demo
+    This backfills UserEgressDefaults for existing users so hybrid/enterprise
     permissions work consistently after upgrades.
     """
     try:
@@ -328,9 +365,9 @@ async def ensure_egress_defaults() -> None:
                     UserEgressDefaults(
                         user_id=user.id,
                         allow_spectrasherpa_sync=False,
-                        allow_llm_context=True,
-                        allow_export=True,
-                        allow_nist_queries=True,
+                        allow_llm_context=False,
+                        allow_export=False,
+                        allow_nist_queries=False,
                     )
                 )
             await session.commit()

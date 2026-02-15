@@ -16,7 +16,7 @@ The codebase represents a **web-based visual programming environment (DAG-based)
 ### Key Data Objects
 | Internal Object | Library | Purpose |
 | :--- | :--- | :--- |
-| **`NDDataset`** | **SpectroChemPy** | **The Core Object**. The one and only data container - guarantees coordinate coupling (X+Y axes), units, and slicing. Processing history stored in `meta["processing_history"]`. This is the "Smart Array" that flows through the DAG. |
+| **`AnalysisDataset`** | `app/lib/analysis_dataset.py` | **The Core Object**. The canonical DAG runtime container — 2D numpy array with axes, metadata, and provenance. NDDataset-compatible interface (`.data`, `.x`, `.y`, `.shape`, `.copy()`). Processing history stored in `meta["processing_history"]`. SpectroChemPy `NDDataset` used only by SCP-only nodes via adapters. |
 | `meta_helpers` | Custom | Provenance helpers: `add_processing_step()`, `copy_processing_history()`, `get_processing_history()` |
 | `serialize_for_api()` | Custom | Single API boundary serialization function (called only in routes) |
 | `Node` | Custom | The unit of logic. Wraps `fit()`/`transform()` methods into a DAG-compatible step. |
@@ -27,8 +27,8 @@ The codebase represents a **web-based visual programming environment (DAG-based)
 *   **What it is**: A Python framework dedicated to spectroscopy, characterized by its `NDDataset` (N-dimensional dataset) which carries coordinates (wavenumbers, time) and units alongside data.
 *   **Pros**: Incredible data integrity; you never lose track of your X-axis (wavenumbers).
 *   **Cons**: Code-only interface (Jupyter/Script based). High barrier to entry for non-coders.
-*   **Gap Analysis**: **CRITICAL**. SpectroChemPy's "Smart Arrays" are its killer feature. Your current codebase moves data as dictionaries or raw arrays. If a user processes data (e.g., cuts a region), does the X-axis (wavenumbers) update automatically?
-*   **Takeaway**: We must ensure our "Dataset" object in the backend is as robust as `NDDataset`.
+*   **Gap Analysis**: **RESOLVED**. SpectroChemPy's "Smart Arrays" are its killer feature. Our `AnalysisDataset` provides coordinate-aware slicing, axis tracking, and provenance — filling this gap without requiring SCP as a hard dependency.
+*   **Takeaway**: `AnalysisDataset` is our NDDataset-compatible runtime container. SCP nodes convert via adapters when needed.
 
 ### vs. Orange Data Mining
 *   **What it is**: A general-purpose visual programming tool (GUI) for data analysis.

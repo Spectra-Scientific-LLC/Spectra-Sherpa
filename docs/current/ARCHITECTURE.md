@@ -14,7 +14,7 @@ A **modular monolithic** web application for spectral data analysis, combining e
 - **Local-compute-first:** All computation defaults to local machine; network only for NIST/LLM
 - **File-based storage:** Raw spectra remain as files (scientific tradition)
 - **Git-like versioning:** Content-addressable storage for efficient snapshots
-- **Three deployment modes:** Local (single-user, no auth), Hybrid (API-key linked identity from server), Demo/Cloud (multi-user JWT auth)
+- **Three deployment modes:** Local (single-user, no auth), Hybrid (API-key linked identity from server), Enterprise/Cloud (multi-user JWT auth)
 - **Performance-focused:** WAL mode, caching, resource limits, crash-safe jobs
 - **Exportable:** Scientists live in Excel/Origin/Matlab - export everything
 - **Cloud-extensible:** Architecture supports remote compute via spectrasherpa-server
@@ -30,7 +30,7 @@ A **modular monolithic** web application for spectral data analysis, combining e
 **Key Points:**
 - **Local mode:** Implicit single user, no login, all features except admin/cloud
 - **Hybrid mode:** API-key linked identity — `SPECTRASHERPA_API_KEY` validates against spectrasherpa-server at startup, enriches the local user with server-side `username` and `is_admin`. No login page needed. Managed LLM keys flow from server.
-- **Demo/Cloud mode:** JWT-based multi-user auth (email + password login via spectrasherpa-server)
+- **Enterprise/Cloud mode:** JWT-based multi-user auth (email + password login via spectrasherpa-server)
 - **Free Data:** NIST, HITRAN, EPA - no authentication required in any mode
 - **BYOK (Bring Your Own Key):** Users can add their own LLM API keys in any mode
 
@@ -97,7 +97,7 @@ A **modular monolithic** web application for spectral data analysis, combining e
 │  │  (OpenAI, etc.)  │  (Spectral data) │ server (hybrid)  │    │
 │  └──────────────────┴──────────────────┴──────────────────┘    │
 │  spectrasherpa-server provides: identity linking,              │
-│  managed LLM keys, usage quotas (hybrid/demo modes)            │
+│  managed LLM keys, usage quotas (hybrid/enterprise modes)            │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -363,7 +363,7 @@ Based on Exp_loader structure:
 1. **Metadata in DB, Files on Disk:** Database stores paths and metadata, actual spectral data stays as files
 2. **Content-Addressable Versioning:** Files stored once by SHA-256 hash, versions reference via manifests (prevents storage explosion)
 3. **SQLite WAL Mode:** Write-Ahead Logging allows concurrent readers + 1 writer (no UI freezes during job updates)
-4. **Mode-Dependent Auth:** Local = implicit user; Hybrid = API-key linked identity from spectrasherpa-server; Demo/Cloud = JWT auth
+4. **Mode-Dependent Auth:** Local = implicit user; Hybrid = API-key linked identity from spectrasherpa-server; Enterprise/Cloud = JWT auth
 5. **Local-Compute-First:** All scientific compute runs locally; network only for auxiliary services (NIST, LLM)
 6. **Crash-Safe Jobs:** BackgroundTasks with cleanup handlers mark jobs as failed on server crash
 7. **Compute Provenance:** Track whether job ran locally or via API (compute_location field)
@@ -450,7 +450,7 @@ Based on Exp_loader structure:
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/auth/me` | Get current user (enriched in hybrid mode) |
-| POST | `/auth/login` | Login with credentials (demo/cloud mode) |
+| POST | `/auth/login` | Login with credentials (enterprise/cloud mode) |
 | GET | `/user/profile` | Get user profile |
 | PUT | `/user/api-keys` | Update API keys (encrypted) |
 | GET | `/logs` | Get recent log entries (for debugging) |
@@ -458,7 +458,7 @@ Based on Exp_loader structure:
 **Auth by mode:**
 - **Local:** No auth required — implicit user resolved from DB
 - **Hybrid:** No login needed — identity linked from server via `SPECTRASHERPA_API_KEY` at startup. `GET /auth/me` returns enriched local user.
-- **Demo/Cloud:** JWT auth via `Authorization: Bearer <token>` header
+- **Enterprise/Cloud:** JWT auth via `Authorization: Bearer <token>` header
 
 ### WebSocket Events
 
@@ -1441,26 +1441,27 @@ The legacy `libs/project0/` and `libs/project1/` directories have been retired. 
 
 ### Data Architecture (Big Rollback Plan - BRB)
 
-**NDDataset is the SOLE data type** throughout the DAG. No wrapper classes.
+**AnalysisDataset is the SOLE data type** throughout the DAG. NDDataset (SpectroChemPy) is used only by ~11 SCP-only nodes via round-trip adapters in `scp_compat.py`.
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| **NDDataset** | SpectroChemPy | The one and only data container - coordinates, units, slicing |
+| **AnalysisDataset** | `app/lib/analysis_dataset.py` | Canonical DAG runtime container — 2D numpy array with axes, metadata, provenance |
+| **NDDataset** | SpectroChemPy (optional) | Used by SCP-only nodes; converted to/from AnalysisDataset at boundaries |
 | **meta_helpers.py** | `app/services/dag/` | Provenance tracking via `add_processing_step()`, sample management |
 | **serialize.py** | `app/services/dag/` | Single API boundary serialization via `serialize_for_api()` |
 
 **Key architectural principles:**
-- **Single data type:** NDDataset flows through all DAG nodes - no wrapping/unwrapping
+- **Single data type:** AnalysisDataset flows through all DAG nodes — NDDataset-compatible properties (`.data`, `.x`, `.y`, `.shape`, `.ndim`, `.copy()`) allow node code to work with either type
 - **Provenance in meta:** Processing history stored in `dataset.meta["processing_history"]` as structured dicts
 - **API boundary serialization:** `serialize_for_api(dataset)` called ONLY in routes/workflows.py
-- **Human-readable history:** SCP's built-in `dataset.history` kept alongside for audit trail
+- **Wire-format compatibility:** `AnalysisDataset.to_dict()` emits `type: "NDDataset"` so the frontend works without changes
 - **Parquet + JSON sidecar** serialization for efficient persistent caching
 
 **Node pattern (minimal):**
 ```python
-async def execute(self, input_data: NDDataset) -> NDDataset:
+async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
     result = input_data.copy()
-    result.basc(lamb=lam, asymmetry=p)  # SCP handles 2D natively
+    # process using numpy/scipy directly
     add_processing_step(result, "baseline.als", {"lam": lam, "p": p})
     return result
 ```

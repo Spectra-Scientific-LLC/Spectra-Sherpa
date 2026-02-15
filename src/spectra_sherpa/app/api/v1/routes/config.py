@@ -2,10 +2,10 @@
 Configuration endpoint for frontend.
 
 Returns client-safe configuration including:
-- App mode (local, hybrid, demo)
+- App mode (local, hybrid, enterprise)
 - Feature flags
 - LLM provider availability (checks env vars AND database)
-- Rate limits (if demo mode)
+- Rate limits (if enterprise mode)
 """
 
 import logging
@@ -111,7 +111,7 @@ async def get_config(
 
     # Recalculate feature flags with true provider availability.
     has_llm = any(llm["enabled"] for llm in config["llms"].values())
-    config["features"]["agenticWorkflow"] = has_llm and config["egress_enabled"]
+    config["features"]["agenticWorkflow"] = has_llm and config["egressEnabled"]
     config["features"]["chatAssistant"] = has_llm
 
     return config
@@ -484,13 +484,13 @@ async def activate_hybrid(request: ActivateHybridRequest, http_request: Request)
     Tests the connection, persists config to .env, hot-reloads in-memory
     singletons, and runs identity linking — all without a restart.
 
-    Security: blocked in demo mode; restricted to loopback in local/hybrid.
+    Security: blocked in enterprise mode; restricted to loopback in local/hybrid.
     """
-    from app.core.mode_policy import is_demo
+    from app.core.mode_policy import is_enterprise
     from app.core.security import get_client_host, _is_loopback
 
-    if is_demo():
-        raise HTTPException(status_code=403, detail="Mode switching is disabled in demo mode.")
+    if is_enterprise():
+        raise HTTPException(status_code=403, detail="Mode switching is disabled in enterprise mode.")
     if not _is_loopback(get_client_host(http_request)):
         raise HTTPException(status_code=403, detail="Mode switching is only available from localhost.")
 
@@ -611,13 +611,13 @@ async def deactivate_hybrid(http_request: Request):
 
     Clears credentials from memory and .env, reverts mode to local.
 
-    Security: blocked in demo mode; restricted to loopback in local/hybrid.
+    Security: blocked in enterprise mode; restricted to loopback in local/hybrid.
     """
-    from app.core.mode_policy import is_demo
+    from app.core.mode_policy import is_enterprise
     from app.core.security import get_client_host, _is_loopback
 
-    if is_demo():
-        raise HTTPException(status_code=403, detail="Mode switching is disabled in demo mode.")
+    if is_enterprise():
+        raise HTTPException(status_code=403, detail="Mode switching is disabled in enterprise mode.")
     if not _is_loopback(get_client_host(http_request)):
         raise HTTPException(status_code=403, detail="Mode switching is only available from localhost.")
 

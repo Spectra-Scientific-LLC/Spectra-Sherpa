@@ -63,7 +63,7 @@ export const useAuthStore = defineStore('auth', () => {
 
     async function initHybridUser() {
         // Hybrid mode uses implicit loopback identity, not JWT.
-        // Clear stale tokens from prior demo usage to prevent WS 1008.
+        // Clear stale tokens from prior enterprise usage to prevent WS 1008.
         if (token.value || localStorage.getItem('token') || localStorage.getItem('api_key')) {
             clearCredentials()
         }

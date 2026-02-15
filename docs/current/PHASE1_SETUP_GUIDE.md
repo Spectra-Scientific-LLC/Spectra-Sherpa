@@ -1,12 +1,12 @@
 # Phase 1 Setup Guide: Multi-Mode Configuration & LLM Integration
 
-This guide walks through setting up the newly implemented configuration system for local, hybrid, and demo modes.
+This guide walks through setting up the newly implemented configuration system for local, hybrid, and enterprise modes.
 
 ## What Was Built
 
 ### Backend
 1. **Multi-mode configuration system** ([app/core/config.py](../../src/spectra_sherpa/app/core/config.py))
-   - Support for `local`, `hybrid`, `demo` modes
+   - Support for `local`, `hybrid`, `enterprise` modes
    - LLM provider configuration (OpenAI, Anthropic, DeepSeek, Gemini)
    - Environment variable loading
    - Client-safe config endpoint
@@ -81,7 +81,7 @@ Expected output:
     },
     // ... other providers
   },
-  "limits": null  // only set in demo mode
+  "limits": null  // only set in enterprise mode
 }
 ```
 
@@ -330,15 +330,15 @@ APP_MODE=local
 - Bring your own API tokens
 - No rate limits
 
-### Demo Mode (For Cloud Deployment)
+### Enterprise Mode (For Cloud Deployment)
 ```bash
 # In .env
-APP_MODE=demo
-DEMO_PASSWORD=your-secure-password
+APP_MODE=enterprise
+ENTERPRISE_PASSWORD=your-secure-password
 RATE_LIMIT_EXECUTIONS=100
 SESSION_EXPIRY_HOURS=24
 ```
-- Single password for demo access
+- Single password for enterprise access
 - Rate limited executions
 - Ephemeral sessions
 
@@ -400,16 +400,16 @@ Should see: `api_router.include_router(config.router, tags=["config"])`
 
 | Variable | Mode | Description | Default |
 |----------|------|-------------|---------|
-| `APP_MODE` | All | App mode: local, hybrid, demo | `local` |
+| `APP_MODE` | All | App mode: local, hybrid, enterprise | `local` |
 | `OPENAI_API_KEY` | All | OpenAI API key | - |
 | `ANTHROPIC_API_KEY` | All | Anthropic API key | - |
 | `DEEPSEEK_API_KEY` | All | DeepSeek API key | - |
 | `GEMINI_API_KEY` | All | Gemini API key | - |
 | `EXECUTION_MODE` | Hybrid | Execution: local or hybrid | `local` |
 | `GRADIENT_API_KEY` | Hybrid | DigitalOcean Gradient key | - |
-| `DEMO_PASSWORD` | Demo | Demo access password | - |
-| `RATE_LIMIT_EXECUTIONS` | Demo | Max executions per session | `100` |
-| `SESSION_EXPIRY_HOURS` | Demo | Session lifetime | `24` |
+| `ENTERPRISE_PASSWORD` | Enterprise | Enterprise access password | - |
+| `RATE_LIMIT_EXECUTIONS` | Enterprise | Max executions per session | `100` |
+| `SESSION_EXPIRY_HOURS` | Enterprise | Session lifetime | `24` |
 
 ---
 

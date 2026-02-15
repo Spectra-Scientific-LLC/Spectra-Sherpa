@@ -63,7 +63,7 @@ The system uses 6 port types with color coding:
 
 | Type | Color | Description | Example |
 |------|-------|-------------|---------|
-| `dataset` | 🔵 Blue | Spectral data (NDDataset) | Raw spectra, preprocessed data |
+| `dataset` | 🔵 Blue | Spectral data (AnalysisDataset) | Raw spectra, preprocessed data |
 | `array` | 🟢 Green | Numeric arrays, matrices | PCA scores, predictions, peak lists |
 | `target` | 🟠 Orange | y values, labels, concentrations | Class labels, concentrations |
 | `model` | 🟣 Purple | Trained model objects | PCA model, PLS model, SIMCA models |

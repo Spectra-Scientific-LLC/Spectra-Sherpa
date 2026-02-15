@@ -1,15 +1,15 @@
 # Current Capabilities — SpectraSherpa v1.3
 
 What ships today. Every item here is implemented across the three deployment
-modes (local, hybrid, demo). Test coverage is concentrated on local-mode
-paths; hybrid and demo modes have minimal automated test coverage (see
+modes (local, hybrid, enterprise). Test coverage is concentrated on local-mode
+paths; hybrid and enterprise modes have minimal automated test coverage (see
 Testing Status below).
 
 ---
 
 ## Feature Matrix (Current Release)
 
-| Capability | Local | Hybrid | Demo | Status |
+| Capability | Local | Hybrid | Enterprise | Status |
 |-----------|-------|--------|------|--------|
 | DAG Workflow Builder | Full | Full | Full | Ready |
 | SpectroChemPy Algorithms (50+ nodes) | All | All | All | Ready |
@@ -82,7 +82,7 @@ Testing Status below).
 
 ### Rate Limiting
 - `RateLimiter`: sliding-window, file-backed, multi-process safe (fcntl)
-- Currently applied to: execution (hybrid/demo), NIST downloads, LLM
+- Currently applied to: execution (hybrid/enterprise), NIST downloads, LLM
 - Per-user keying: `user_{id}` or `ip:{addr}` fallback
 - Response headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`
 
@@ -110,7 +110,8 @@ Currently exposed from backend `to_client_safe()`:
 interface AppFeatures {
   apiTokenSettings: boolean   // Show API token settings
   cloudOffload: boolean       // GPU offload available
-  demoMode: boolean           // Rate-limited demo
+  enterpriseMode: boolean     // Enterprise mode (auth, rate limits)
+  demoMode: boolean           // Deprecated alias for enterpriseMode
   agenticWorkflow: boolean    // LLM-powered workflow automation
   chatAssistant: boolean      // Chat panel (Phase 4, currently false)
   sherpaAdvisor?: boolean     // Sherpa AI advisor available
@@ -136,7 +137,7 @@ The following items are designed to be extended without breaking changes:
    so new flags can be added without breaking existing clients
 
 2. **`AppConfig` includes `limits?`** (optional) — currently only populated
-   in demo mode but ready to carry tier-specific quotas
+   in enterprise mode but ready to carry tier-specific quotas
 
 3. **`EgressTier` is a string enum** — adding new tiers (e.g., `"anonymized"`)
    requires no client schema change
@@ -171,9 +172,9 @@ The following items are designed to be extended without breaking changes:
 
 ### Gaps
 
-- **Zero tests for demo mode** — rate limiting, enforcement middleware untested
+- **Zero tests for enterprise mode** — rate limiting, enforcement middleware untested
 - **No parametrized mode matrix** — no fixture that runs the same test
-  against local/hybrid/demo configurations
+  against local/hybrid/enterprise configurations
 - **No CI/CD pipeline** — no GitHub Actions, Makefile test targets, or tox.ini
 - **Integration tests require a live server** — `test_pca_integration.py` and
   `test_spike_doe.py` hit `localhost:8000`/`:9000`, not runnable in automated CI
@@ -185,7 +186,7 @@ The following items are designed to be extended without breaking changes:
 development. It does **not** mean there is automated regression coverage for
 that feature across all three modes. Priority areas for test hardening:
 
-1. Demo enforcement middleware (rate limiting, session expiry)
-2. Mode-parametrized test fixtures (`@pytest.fixture(params=["local","hybrid","demo"])`)
+1. Enterprise enforcement middleware (rate limiting, session expiry)
+2. Mode-parametrized test fixtures (`@pytest.fixture(params=["local","hybrid","enterprise"])`)
 3. Sherpa advisor graceful degradation (mock httpx responses)
 4. Export permission checks across modes

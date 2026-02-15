@@ -13,7 +13,7 @@ This document outlines how to verify that the refactored DOE implementation prod
 ### Steps:
 1. Start the refactored frontend:
    ```bash
-   cd Refactored/frontend
+   cd frontend
    npm run dev
    ```
 
@@ -141,7 +141,7 @@ import pandas as pd
 
 # Load both CSVs
 original = pd.read_csv("Original/EXP_20250909_6ZJBX_matched.csv")
-refactored = pd.read_csv("Refactored/refactored_matched.csv")
+refactored = pd.read_csv("refactored_matched.csv")
 
 # Compare key columns
 key_cols = ["seq", "filename", "cell", "sample_id"]
@@ -219,7 +219,7 @@ Expected:
 ### Steps:
 1. Start backend with query logging:
    ```bash
-   cd Refactored/backend
+   cd src/spectra_sherpa
    # Add to .env: DATABASE_ECHO=true
    poetry run uvicorn app.main:app --reload
    ```
@@ -272,7 +272,7 @@ WHERE plate_well.experiment_id = ?
 ### Issue: "Folder picker not showing"
 **Solution**: Rebuild frontend
 ```bash
-cd Refactored/frontend
+cd frontend
 npm run build
 # Or restart dev server
 npm run dev
@@ -311,17 +311,17 @@ for acq in acquisitions:
 Run the full automated test:
 ```bash
 # Backend tests
-cd Refactored/backend
+cd src/spectra_sherpa
 poetry install
 poetry run pytest tests/
 
 # Frontend tests
-cd Refactored/frontend
+cd frontend
 npm install
 npm test
 
 # Integration test
-cd Refactored
+cd .
 python test_spike_doe.py
 ```
 

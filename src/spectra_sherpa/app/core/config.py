@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional, Literal, Dict
 
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from spectra_sherpa._paths import (
     get_project_root,
@@ -211,9 +211,10 @@ class ExecutionConfig(BaseModel):
 
 class AppConfig(BaseModel):
     """Main application configuration for multi-mode operation"""
-    mode: Literal["local", "hybrid", "demo"] = Field(
+    mode: Literal["local", "hybrid", "enterprise", "demo"] = Field(
         default="local",
-        description="Application mode: local, hybrid (with GPU), or demo (cloud)"
+        description="Application mode: local, hybrid, or enterprise (cloud/SaaS). "
+                    "'demo' is accepted as a deprecated alias for 'enterprise'."
     )
     egress_enabled: bool = Field(
         default=False,
@@ -242,10 +243,26 @@ class AppConfig(BaseModel):
     # Execution settings
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
 
-    # Demo mode settings
-    demo_password: Optional[str] = None
+    # Enterprise mode settings (previously "demo mode")
+    enterprise_password: Optional[str] = None
+    demo_password: Optional[str] = None  # Deprecated alias for enterprise_password
     rate_limit_executions: Optional[int] = None
     session_expiry_hours: Optional[int] = None
+
+    # Marketing / UI label (independent of runtime mode)
+    site_profile: Optional[Literal["demo", "production", "internal"]] = None
+
+    @model_validator(mode="after")
+    def _normalize_demo_mode(self) -> "AppConfig":
+        """Map mode='demo' → 'enterprise' regardless of construction path.
+
+        This ensures from_file(), direct constructor, and any future entry
+        point always resolve to the canonical runtime mode.  The deprecation
+        *warning* is only emitted in from_env() to avoid hot-path log spam.
+        """
+        if self.mode == "demo":  # type: ignore[comparison-overlap]
+            object.__setattr__(self, "mode", "enterprise")
+        return self
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -276,10 +293,34 @@ class AppConfig(BaseModel):
 
         # Determine egress enabled default based on mode
         # Local mode: egress disabled by default (privacy-first)
-        # Hybrid/Demo: egress enabled by default (cloud features require it)
-        app_mode = os.getenv("APP_MODE", "local")
+        # Hybrid/Enterprise: egress enabled by default (cloud features require it)
+        import logging
+        _logger = logging.getLogger(__name__)
+
+        raw_mode = os.getenv("APP_MODE", "local")
+        if raw_mode == "demo":
+            _logger.warning(
+                "APP_MODE=demo is deprecated. Use APP_MODE=enterprise instead. "
+                "For marketing banners, set SITE_PROFILE=demo."
+            )
+            app_mode = "enterprise"
+        else:
+            app_mode = raw_mode
+
         egress_default = app_mode != "local"
         egress_enabled = _get_bool("EGRESS_ENABLED", egress_default)
+
+        # Resolve enterprise password (accept legacy DEMO_PASSWORD)
+        enterprise_pw = os.getenv("ENTERPRISE_PASSWORD") or os.getenv("DEMO_PASSWORD")
+
+        # Resolve site profile (defaults to "demo" for enterprise mode)
+        site_profile_raw = os.getenv("SITE_PROFILE")
+        if site_profile_raw and site_profile_raw in ("demo", "production", "internal"):
+            site_profile = site_profile_raw
+        elif app_mode == "enterprise":
+            site_profile = "demo"
+        else:
+            site_profile = None
 
         return cls(
             mode=app_mode,
@@ -291,12 +332,14 @@ class AppConfig(BaseModel):
                 gradient_api_key=os.getenv("GRADIENT_API_KEY"),
                 auto_offload_threshold=int(os.getenv("AUTO_OFFLOAD_THRESHOLD", "10000"))
             ),
-            demo_password=os.getenv("DEMO_PASSWORD"),
-            # Demo mode: default to 100 executions/hour and 24-hour sessions
+            enterprise_password=enterprise_pw,
+            demo_password=enterprise_pw,  # backward-compat alias
+            # Enterprise mode: default to 100 executions/hour and 24-hour sessions
             # unless explicitly overridden.  In other modes these stay None
             # (disabled) unless the operator sets the env var.
-            rate_limit_executions=_get_int("RATE_LIMIT_EXECUTIONS", 100) if (os.getenv("RATE_LIMIT_EXECUTIONS") or app_mode == "demo") else None,
-            session_expiry_hours=_get_int("SESSION_EXPIRY_HOURS", 24) if (os.getenv("SESSION_EXPIRY_HOURS") or app_mode == "demo") else None
+            rate_limit_executions=_get_int("RATE_LIMIT_EXECUTIONS", 100) if (os.getenv("RATE_LIMIT_EXECUTIONS") or app_mode == "enterprise") else None,
+            session_expiry_hours=_get_int("SESSION_EXPIRY_HOURS", 24) if (os.getenv("SESSION_EXPIRY_HOURS") or app_mode == "enterprise") else None,
+            site_profile=site_profile,
         )
 
     @classmethod
@@ -323,7 +366,7 @@ class AppConfig(BaseModel):
         # Sherpa is available when cloud key is configured and mode allows it,
         # OR when the server has a local Sherpa engine key.
         sherpa_configured = (
-            (self.mode in ("hybrid", "demo") and bool(os.getenv("SPECTRASHERPA_API_KEY")))
+            (self.mode in ("hybrid", "enterprise") and bool(os.getenv("SPECTRASHERPA_API_KEY")))
             or bool(os.getenv("SHERPA_ENGINE_API_KEY"))
         )
 
@@ -331,12 +374,14 @@ class AppConfig(BaseModel):
 
         return {
             "mode": self.mode,
-            "egress_enabled": self.egress_enabled,
-            "api_base_url": self.api_base_url,
+            "egressEnabled": self.egress_enabled,
+            "apiBaseUrl": self.api_base_url,
+            "siteProfile": self.site_profile,
             "features": {
                 "apiTokenSettings": self.mode in ["local", "hybrid"],
                 "cloudOffload": self.execution.mode == "hybrid",
-                "demoMode": self.mode == "demo",
+                "enterpriseMode": self.mode == "enterprise",
+                "demoMode": self.mode == "enterprise",  # Deprecated alias for enterpriseMode
                 "agenticWorkflow": has_llm and self.egress_enabled,
                 "chatAssistant": has_llm,
                 "nistDownloads": self.egress_enabled,
@@ -355,7 +400,7 @@ class AppConfig(BaseModel):
                 "maxExecutions": self.rate_limit_executions,
                 "maxFileSizeMB": settings.max_file_size_mb,
                 "sessionExpiryHours": self.session_expiry_hours
-            } if self.mode == "demo" else None
+            } if self.mode == "enterprise" else None
         }
 
 

@@ -29,7 +29,7 @@ SpectraSherpa runs in three modes to fit different use cases:
 |------|----------|
 | **Local** (default) | Single user on your laptop — no login, no network |
 | **Hybrid** | Local app with cloud identity linking and GPU offload |
-| **Demo** | Cloud-hosted multi-user server with JWT auth and rate limiting |
+| **Enterprise** | Cloud-hosted multi-user server with JWT auth and rate limiting |
 
 See [Configuration](user_guide/configuration.md) for details.
 
@@ -37,7 +37,7 @@ See [Configuration](user_guide/configuration.md) for details.
 
 *   [**Installation**](user_guide/installation.md): Install and launch SpectraSherpa.
 *   [**Quickstart**](user_guide/quickstart.md): Load data and run your first workflow.
-*   [**Configuration**](user_guide/configuration.md): Configure local, hybrid, or demo mode.
+*   [**Configuration**](user_guide/configuration.md): Configure local, hybrid, or enterprise mode.
 *   [**User Guide**](user_guide/experiments.md): Detailed instructions for all modules.
 *   [**Node Reference**](reference/nodes.md): Complete catalog of available analysis nodes.
 *   [**Deployment**](deployment/DIGITAL_OCEAN.md): Deploy to DigitalOcean with Docker.

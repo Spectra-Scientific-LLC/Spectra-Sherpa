@@ -19,11 +19,13 @@ bootstrap before login.
 ```json
 {
   "mode": "local",
-  "egress_enabled": false,
-  "api_base_url": "http://localhost:8000",
+  "egressEnabled": false,
+  "apiBaseUrl": "http://localhost:8000",
+  "siteProfile": null,
   "features": {
     "apiTokenSettings": true,
     "cloudOffload": false,
+    "enterpriseMode": false,
     "demoMode": false,
     "agenticWorkflow": true,
     "chatAssistant": false,
@@ -48,24 +50,26 @@ bootstrap before login.
 
 | Field | Type | Description |
 |---|---|---|
-| `mode` | `"local" \| "hybrid" \| "demo"` | Current application mode |
-| `egress_enabled` | bool | Whether outbound network access is enabled |
-| `api_base_url` | string | Backend base URL |
+| `mode` | `"local" \| "hybrid" \| "enterprise"` | Current application mode |
+| `egressEnabled` | bool | Whether outbound network access is enabled |
+| `apiBaseUrl` | string | Backend base URL |
 | `features` | object | Feature flag map (see below) |
 | `llms` | object | LLM provider availability map |
-| `limits` | object \| null | Rate limits (non-null only in demo mode) |
+| `siteProfile` | string \| null | Marketing label: `"demo"`, `"production"`, `"internal"`, or `null` |
+| `limits` | object \| null | Rate limits (non-null only in enterprise mode) |
 
 ### Feature Flags
 
 | Flag | Type | Mode Behavior | Description |
 |---|---|---|---|
-| `apiTokenSettings` | bool | local/hybrid: true, demo: false | Show BYOK API key settings |
+| `apiTokenSettings` | bool | local/hybrid: true, enterprise: false | Show BYOK API key settings |
 | `cloudOffload` | bool | true when execution mode is `hybrid` | Enable cloud compute offload |
-| `demoMode` | bool | true only in `demo` | Enable demo-specific UI (login gate, limits) |
+| `enterpriseMode` | bool | true only in `enterprise` | Enable enterprise UI (login gate, limits) |
+| `demoMode` | bool | (deprecated alias for `enterpriseMode`) | Kept for backward compatibility |
 | `agenticWorkflow` | bool | true when LLM configured + egress enabled | Enable LLM chat assistant |
 | `chatAssistant` | bool | Reserved (currently `false`) | Future chat assistant feature |
 | `nistDownloads` | bool | true when egress enabled | Enable NIST WebBook downloads |
-| `sherpaAdvisor` | bool | true in hybrid/demo when `SPECTRASHERPA_API_KEY` set | Enable Sherpa advisor tab |
+| `sherpaAdvisor` | bool | true in hybrid/enterprise when `SPECTRASHERPA_API_KEY` set | Enable Sherpa advisor tab |
 | `pluginSystem` | bool | Always `true` | Enable plugin discovery |
 
 ### LLM Provider Entry
@@ -79,9 +83,9 @@ bootstrap before login.
 The `enabled` field is computed at request time by checking both environment
 variables and the database `api_keys` table for the authenticated user.
 
-### Limits (Demo Mode Only)
+### Limits (Enterprise Mode Only)
 
-When `mode == "demo"`, `limits` is non-null:
+When `mode == "enterprise"`, `limits` is non-null:
 
 | Field | Type | Default | Description |
 |---|---|---|---|
@@ -89,7 +93,7 @@ When `mode == "demo"`, `limits` is non-null:
 | `maxFileSizeMB` | int | (from settings) | Max upload file size |
 | `sessionExpiryHours` | int \| null | 24 | Session TTL |
 
-When `mode != "demo"`, `limits` is `null`.
+When `mode != "enterprise"`, `limits` is `null`.
 
 ## Additional Config Endpoints
 
@@ -181,7 +185,7 @@ Returns available managed LLM keys from cloud Sherpa.
 The frontend counterpart of this contract is defined in
 `frontend/src/types/config.ts`:
 
-- `AppMode` — `"local" | "hybrid" | "demo"`
+- `AppMode` — `"local" | "hybrid" | "enterprise"`
 - `AppFeatures` — feature flag interface
 - `AppLimits` — limits interface
 - `AppConfig` — complete config response interface

@@ -17,7 +17,7 @@ nav:
   - Server Operator Guide:
     - Overview: server/overview.md
     - Hybrid Mode: server/hybrid_mode.md
-    - Demo Mode: server/demo_mode.md
+    - Enterprise Mode: server/enterprise_mode.md
     - Docker Deployment: deployment/DIGITAL_OCEAN.md
   - Developer Guide:
     - Setup & Contributing: developer/setup.md
