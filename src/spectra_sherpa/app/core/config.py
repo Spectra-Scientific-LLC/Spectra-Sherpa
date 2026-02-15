@@ -374,7 +374,7 @@ class AppConfig(BaseModel):
 
         # Registration requires the full auth module (spectra-server) + mode policy.
         try:
-            from app.api.v1.routes import auth as _auth_mod  # noqa: F401
+            from spectrasherpa_server.routes import auth as _auth_mod  # noqa: F401
             _has_register = hasattr(_auth_mod, "router")
         except ImportError:
             _has_register = False
