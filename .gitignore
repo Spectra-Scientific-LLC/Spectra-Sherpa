@@ -27,8 +27,8 @@ frontend/dist/
 # Pre-built frontend SPA (committed to git — DO NOT ignore)
 # src/spectra_sherpa/static/ is tracked
 
-# Data / databases
-data/
+# Data / databases (top-level runtime data only — bundled package data is tracked)
+/data/
 *.db
 *.db-wal
 *.db-shm
