@@ -98,16 +98,19 @@ jobs:
 
       - name: Verify static bundle is fresh
         run: |
-          # Extract asset references from both index.html files
-          DIST_ASSETS=$(grep -oP 'src="/assets/[^"]+"|href="/assets/[^"]+"' frontend/dist/index.html | sort)
-          STATIC_ASSETS=$(grep -oP 'src="/assets/[^"]+"|href="/assets/[^"]+"' src/spectra_sherpa/static/index.html | sort)
+          # Fail if build output differs from committed static assets.
+          # This catches stale static bundle commits and missing asset updates.
+          if [ -n "$(git status --porcelain -- src/spectra_sherpa/static)" ]; then
+            echo "::error::Frontend build changed src/spectra_sherpa/static."
+            echo "Run 'cd frontend && npm run build' and commit updated static assets."
+            git status --short -- src/spectra_sherpa/static
+            exit 1
+          fi
 
-          if [ "$DIST_ASSETS" != "$STATIC_ASSETS" ]; then
-            echo "::error::Static bundle is stale! Run: scripts/rebuild_static.sh"
-            echo "Expected (from build):"
-            echo "$DIST_ASSETS"
-            echo "Actual (in static/):"
-            echo "$STATIC_ASSETS"
+          # Vite builds directly into src/spectra_sherpa/static/ (see frontend/vite.config.ts).
+          # Verify index.html exists and all referenced assets are present.
+          if [ ! -f "src/spectra_sherpa/static/index.html" ]; then
+            echo "::error::Build did not produce src/spectra_sherpa/static/index.html"
             exit 1
           fi
 

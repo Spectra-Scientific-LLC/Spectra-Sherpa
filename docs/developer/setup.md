@@ -71,10 +71,9 @@ To bundle your frontend changes into the Python package:
 ```bash
 cd frontend && npm run build
 ```
-This builds the Vue app into `frontend/dist/`, then copy to `src/spectra_sherpa/static/`:
+Vite is configured to build directly into `src/spectra_sherpa/static/` — no manual copy step needed. Or use the helper script:
 ```bash
-rm -rf src/spectra_sherpa/static/assets
-cp -r frontend/dist/* src/spectra_sherpa/static/
+./scripts/rebuild_static.sh
 ```
 
 ## Environment Variables

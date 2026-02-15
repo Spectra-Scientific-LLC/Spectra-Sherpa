@@ -7,12 +7,13 @@ COPY package*.json ./
 RUN npm install
 
 COPY . .
+# Vite outputs to ../src/spectra_sherpa/static (resolves to /src/spectra_sherpa/static in container)
 RUN npm run build
 
 # Production Stage
 FROM nginx:stable-alpine as production-stage
 
-COPY --from=build-stage /app/dist /usr/share/nginx/html
+COPY --from=build-stage /src/spectra_sherpa/static /usr/share/nginx/html
 
 # Copy custom nginx config
 COPY nginx.conf /etc/nginx/conf.d/default.conf

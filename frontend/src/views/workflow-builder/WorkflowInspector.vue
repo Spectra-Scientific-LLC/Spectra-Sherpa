@@ -1995,7 +1995,9 @@ const selectedDatasetKey = ref<string | null>(null);
 
 onMounted(async () => {
   await workflowStore.fetchAvailableDatasets();
-  // Note: SpectroChemPy file loading is handled by the watch on example_dataset with immediate: true
+  // Preload reference dataset catalogs (eigenvector + sklearn) once.
+  // This keeps dropdowns in sync with backend catalogs without requiring a source toggle.
+  void workflowStore.fetchReferenceDatasets();
 });
 
 // Build TreeSelect nodes from available datasets
@@ -2130,6 +2132,10 @@ watch(() => props.selectedNode?.id, (newId, oldId) => {
     } else {
       selectedDatasetKey.value = null;
     }
+
+    if (localParams.value.source === 'eigenvector' || localParams.value.source === 'sklearn') {
+      void workflowStore.fetchReferenceDatasets();
+    }
   } else if (!node) {
     // Node deselected
     currentNodeId.value = null;
@@ -2209,21 +2215,28 @@ const dataSourceOptions = [
   { label: 'Synthetic', value: 'synthetic' },
 ];
 
-// Sklearn dataset options (loaded via SpectroChemPy wrappers)
-const sklearnDatasetOptions = [
-  { label: 'Iris (3 species, 4 features, 150 samples)', value: 'iris' },
-  { label: 'Wine (3 classes, 13 features, 178 samples)', value: 'wine' },
-  { label: 'Breast Cancer (2 classes, 30 features, 569 samples)', value: 'breast_cancer' },
-  { label: 'Digits (10 classes, 64 features, 1797 samples)', value: 'digits' },
-];
+const getSelectedDatasetFallback = (value: unknown): Array<{label: string; value: string}> => {
+  if (typeof value === 'string' && value.trim() !== '') {
+    return [{ label: value, value }];
+  }
+  return [];
+};
 
-// Eigenvector Research public dataset options (bundled NIR reference data)
-const eigenvectorDatasetOptions = [
-  { label: 'Diesel NIR (784 samples, 401 wavelengths, 750-1550 nm)', value: 'diesel_nir' },
-  { label: 'Corn M5 NIR (80 samples, 700 channels)', value: 'corn_m5' },
-  { label: 'Corn MP5 NIR (80 samples, 700 channels)', value: 'corn_mp5' },
-  { label: 'Corn MP6 NIR (80 samples, 700 channels)', value: 'corn_mp6' },
-];
+// Sklearn dataset options (fetched dynamically from API)
+const sklearnDatasetOptions = computed(() => {
+  const cached = workflowStore.sklearnDatasetCache;
+  if (cached.length > 0) return cached;
+  // Avoid hardcoded catalog drift: keep currently-selected value visible until cache loads.
+  return getSelectedDatasetFallback(localParams.value.sklearn_dataset);
+});
+
+// Eigenvector Research public dataset options (fetched dynamically from API)
+const eigenvectorDatasetOptions = computed(() => {
+  const cached = workflowStore.eigenvectorDatasetCache;
+  if (cached.length > 0) return cached;
+  // Avoid hardcoded catalog drift: keep currently-selected value visible until cache loads.
+  return getSelectedDatasetFallback(localParams.value.eigenvector_dataset);
+});
 
 // Dynamic dataset options from API (populated on initial file fetch)
 const scpExampleOptions = computed(() => {
@@ -2262,6 +2275,7 @@ const onSourceChange = () => {
     if (!localParams.value.sklearn_dataset) {
       localParams.value.sklearn_dataset = 'iris';
     }
+    void workflowStore.fetchReferenceDatasets();
   } else if (localParams.value.source === 'eigenvector') {
     localParams.value.file_path = undefined;
     localParams.value.experiment_id = undefined;
@@ -2272,6 +2286,7 @@ const onSourceChange = () => {
     if (!localParams.value.eigenvector_dataset) {
       localParams.value.eigenvector_dataset = 'diesel_nir';
     }
+    void workflowStore.fetchReferenceDatasets();
   }
   emitParams();
 };
@@ -2721,6 +2736,9 @@ const handleBroadcastMessage = async (event: MessageEvent) => {
     // Update local params with defaults merged with saved values
     const defaults = getDefaultsForNodeType(nodeType || props.selectedNode?.type || '');
     localParams.value = { ...defaults, ...params };
+    if (localParams.value.source === 'eigenvector' || localParams.value.source === 'sklearn') {
+      void workflowStore.fetchReferenceDatasets();
+    }
     emitParams();
   }
 };

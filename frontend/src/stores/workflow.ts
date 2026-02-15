@@ -1477,6 +1477,35 @@ export const useWorkflowStore = defineStore("workflow", () => {
   }
 
   /**
+   * Caches for reference dataset options (fetched from /builder/reference-datasets API).
+   * A single API call populates both eigenvector and sklearn caches.
+   */
+  const eigenvectorDatasetCache = ref<Array<{label: string; value: string}>>([]);
+  const sklearnDatasetCache = ref<Array<{label: string; value: string}>>([]);
+
+  /**
+   * Fetch available reference datasets from the API.
+   * Populates both eigenvector and sklearn caches from one call.
+   */
+  async function fetchReferenceDatasets(): Promise<void> {
+    if (eigenvectorDatasetCache.value.length > 0 && sklearnDatasetCache.value.length > 0) {
+      return;
+    }
+    try {
+      const response = await api.get("/builder/reference-datasets");
+      const toOptions = (arr: Array<{name: string; label: string}>) =>
+        arr.map(d => ({ label: d.label, value: d.name }));
+      eigenvectorDatasetCache.value = toOptions(response.data.eigenvector || []);
+      sklearnDatasetCache.value = toOptions(response.data.sklearn || []);
+    } catch (error: unknown) {
+      console.error("[fetchReferenceDatasets] Failed:", getErrorMessage(error));
+    }
+  }
+
+  // Backward-compatible alias
+  const fetchEigenvectorDatasets = fetchReferenceDatasets;
+
+  /**
    * Fetch type registry metadata used for connection compatibility checks.
    */
   async function fetchTypeRegistry(force: boolean = false): Promise<void> {
@@ -2066,5 +2095,9 @@ export const useWorkflowStore = defineStore("workflow", () => {
     fetchSpectroChemPyFiles,
     availableSpectroChemPyDatasets,
     clearSpectroChemPyFileCache,
+    eigenvectorDatasetCache,
+    sklearnDatasetCache,
+    fetchReferenceDatasets,
+    fetchEigenvectorDatasets,
   };
 });

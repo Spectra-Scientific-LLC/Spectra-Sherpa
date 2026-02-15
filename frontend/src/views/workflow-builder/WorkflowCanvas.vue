@@ -277,11 +277,11 @@
               <button
                 v-for="port in getAvailablePorts(node.id, node.type)"
                 :key="port.name"
-                class="port-btn"
-                :title="port.description"
+                class="port-btn port-btn-letter"
+                :title="port.label"
                 @click.stop="completeConnect(node.id, port.name)"
               >
-                {{ port.label }}
+                {{ port.label.charAt(0) }}
               </button>
             </div>
             <span v-if="getAvailablePorts(node.id, node.type).length === 0" class="ports-full">
@@ -306,12 +306,12 @@
               <button
                 v-for="port in getNodeOutputPorts(node.type)"
                 :key="port.name"
-                class="port-btn"
+                class="port-btn port-btn-letter"
                 :style="{ backgroundColor: getPortColor(getPortCategory(port.type_ref)) }"
-                :title="port.description"
+                :title="port.label"
                 @click.stop="startConnect(node.id, port.name)"
               >
-                {{ port.label }}
+                {{ port.label.charAt(0) }}
               </button>
             </div>
           </div>
@@ -1102,6 +1102,7 @@ watch(() => props.nodes, () => {
 .port-buttons {
   display: flex;
   gap: 4px;
+  justify-content: center;
 }
 
 .port-btn {
@@ -1118,6 +1119,19 @@ watch(() => props.nodes, () => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.port-btn-letter {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
 }
 
 .port-btn:hover {
