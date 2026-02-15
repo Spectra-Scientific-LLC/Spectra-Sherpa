@@ -428,13 +428,22 @@ class TestCrossDieselValidation:
 class TestEigenvectorLibrary:
     """Test the eigenvector parser library (DATASET_CATALOG, loader)."""
 
-    def test_catalog_has_four_entries(self):
-        """DATASET_CATALOG should contain all 4 datasets."""
-        assert len(DATASET_CATALOG) == 4
+    def test_catalog_has_all_entries(self):
+        """DATASET_CATALOG should contain all datasets."""
+        assert len(DATASET_CATALOG) == 13
+        # Original 4
         assert "diesel_nir" in DATASET_CATALOG
         assert "corn_m5" in DATASET_CATALOG
         assert "corn_mp5" in DATASET_CATALOG
         assert "corn_mp6" in DATASET_CATALOG
+        # New datasets
+        assert "diesel_nir_mat" in DATASET_CATALOG
+        assert "cgl_nir" in DATASET_CATALOG
+        assert "nir_shootout_cal1" in DATASET_CATALOG
+        assert "nir_shootout_test1" in DATASET_CATALOG
+        assert "metal_etch_oes" in DATASET_CATALOG
+        assert "metal_etch_machine" in DATASET_CATALOG
+        assert "metal_etch_rfm" in DATASET_CATALOG
 
     def test_catalog_entries_have_required_fields(self):
         """Each catalog entry should have label, format, technique, description."""

@@ -37,6 +37,7 @@ EIGENVECTOR_DATA_DIR = (
 # ---------------------------------------------------------------------------
 
 DATASET_CATALOG: dict[str, dict[str, Any]] = {
+    # --- SWRI Diesel NIR (CSV format) ---
     "diesel_nir": {
         "label": "Diesel NIR (784 samples, 401 wavelengths, 750-1550 nm)",
         "format": "csv",
@@ -49,6 +50,20 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
         "x_units": "nm",
         "description": "SWRI Diesel fuels — NIR spectra with 7 reference properties",
     },
+    # --- SWRI Diesel NIR (.mat format) ---
+    "diesel_nir_mat": {
+        "label": "Diesel NIR .mat (784 samples, 401 wavelengths, 750-1550 nm)",
+        "format": "mat",
+        "mat_file": "diesel_nir_mat/SWRI_Diesel_NIR.mat",
+        "spec_key": "diesel_spec",
+        "prop_key": "diesel_prop",
+        "prop_names": ["BP50", "CN", "D4052", "FLASH", "FREEZE", "TOTAL", "VISC"],
+        "technique": "NIR",
+        "x_title": "Wavelength",
+        "x_units": "nm",
+        "description": "SWRI Diesel fuels — NIR spectra (.mat format) with 7 reference properties",
+    },
+    # --- Corn instrument standardization ---
     "corn_m5": {
         "label": "Corn M5 NIR (80 samples, 700 channels)",
         "format": "mat",
@@ -84,6 +99,129 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
         "x_title": "Channel",
         "x_units": None,
         "description": "Corn NIR (Infratec MP6) — moisture, oil, protein, starch",
+    },
+    # --- CGL grain protein NIR ---
+    "cgl_nir": {
+        "label": "CGL NIR (231 samples, 117 wavelengths, 1104-2496 nm)",
+        "format": "mat",
+        "mat_file": "cgl_nir_mat/CGL_nir.mat",
+        "spec_key": "Spectra",
+        "prop_key": "PropVals",
+        "prop_names": ["Dry Gluten", "Moisture", "Protein", "Wet Gluten"],
+        "technique": "NIR",
+        "x_title": "Wavelength",
+        "x_units": "nm",
+        "description": (
+            "CGL grain NIR — 117 wavelengths (1104-2496 nm), "
+            "4 reference properties (dry/wet gluten, moisture, protein)"
+        ),
+    },
+    # --- NIR Shootout 2002 (pharmaceutical tablets) ---
+    "nir_shootout_cal1": {
+        "label": "NIR Shootout 2002 Cal Inst.1 (155 samples, 650 wl, 600-1898 nm)",
+        "format": "mat",
+        "mat_file": "nir_shootout_mat/nir_shootout_2002.mat",
+        "spec_key": "calibrate_1",
+        "prop_key": "calibrate_Y",
+        "prop_names": ["Active", "Hardness", "Weight"],
+        "technique": "NIR",
+        "x_title": "Wavelength",
+        "x_units": "nm",
+        "description": (
+            "NIR Shootout 2002 — calibration set, instrument 1. "
+            "Pharmaceutical tablet NIR with active ingredient, hardness, weight."
+        ),
+    },
+    "nir_shootout_cal2": {
+        "label": "NIR Shootout 2002 Cal Inst.2 (155 samples, 650 wl, 600-1898 nm)",
+        "format": "mat",
+        "mat_file": "nir_shootout_mat/nir_shootout_2002.mat",
+        "spec_key": "calibrate_2",
+        "prop_key": "calibrate_Y",
+        "prop_names": ["Active", "Hardness", "Weight"],
+        "technique": "NIR",
+        "x_title": "Wavelength",
+        "x_units": "nm",
+        "description": (
+            "NIR Shootout 2002 — calibration set, instrument 2. "
+            "Pharmaceutical tablet NIR with active ingredient, hardness, weight."
+        ),
+    },
+    "nir_shootout_test1": {
+        "label": "NIR Shootout 2002 Test Inst.1 (460 samples, 650 wl, 600-1898 nm)",
+        "format": "mat",
+        "mat_file": "nir_shootout_mat/nir_shootout_2002.mat",
+        "spec_key": "test_1",
+        "prop_key": "test_Y",
+        "prop_names": ["Active", "Hardness", "Weight"],
+        "technique": "NIR",
+        "x_title": "Wavelength",
+        "x_units": "nm",
+        "description": (
+            "NIR Shootout 2002 — test set, instrument 1. "
+            "Pharmaceutical tablet NIR with active ingredient, hardness, weight."
+        ),
+    },
+    "nir_shootout_test2": {
+        "label": "NIR Shootout 2002 Test Inst.2 (460 samples, 650 wl, 600-1898 nm)",
+        "format": "mat",
+        "mat_file": "nir_shootout_mat/nir_shootout_2002.mat",
+        "spec_key": "test_2",
+        "prop_key": "test_Y",
+        "prop_names": ["Active", "Hardness", "Weight"],
+        "technique": "NIR",
+        "x_title": "Wavelength",
+        "x_units": "nm",
+        "description": (
+            "NIR Shootout 2002 — test set, instrument 2. "
+            "Pharmaceutical tablet NIR with active ingredient, hardness, weight."
+        ),
+    },
+    # --- Metal Etch process monitoring ---
+    "metal_etch_oes": {
+        "label": "Metal Etch OES (126 wafers, 129 wavelengths, 250-792 nm)",
+        "format": "metal_etch",
+        "mat_file": "metal_etch/OES_DATA.mat",
+        "struct_key": "OESDATA",
+        "axis_key": "wave_axis",
+        "technique": "OES",
+        "x_title": "Wavelength",
+        "x_units": "nm",
+        "description": (
+            "LAM 9600 Metal Etcher — Optical Emission Spectroscopy. "
+            "126 wafers (106 normal + 20 fault), 129 wavelengths (250-792 nm). "
+            "Per-wafer time-averaged spectra."
+        ),
+    },
+    "metal_etch_machine": {
+        "label": "Metal Etch Machine (129 wafers, 21 sensor variables)",
+        "format": "metal_etch",
+        "mat_file": "metal_etch/MACHINE_Data.mat",
+        "struct_key": "LAMDATA",
+        "axis_key": "variables",
+        "technique": "Process Sensors",
+        "x_title": "Variable",
+        "x_units": None,
+        "description": (
+            "LAM 9600 Metal Etcher — machine sensor data. "
+            "129 wafers (108 normal + 21 fault), 21 process variables "
+            "(BCl3/Cl2 flow, RF power, pressure, etc.). Per-wafer time-averaged."
+        ),
+    },
+    "metal_etch_rfm": {
+        "label": "Metal Etch RFM (126 wafers, 19 RF variables)",
+        "format": "metal_etch",
+        "mat_file": "metal_etch/RFM_DATA.mat",
+        "struct_key": "RFMDATA",
+        "axis_key": "variables",
+        "technique": "RF Monitor",
+        "x_title": "Variable",
+        "x_units": None,
+        "description": (
+            "LAM 9600 Metal Etcher — RF Monitor data. "
+            "126 wafers (106 normal + 20 fault), 19 RF variables "
+            "(voltage, current, phase). Per-wafer time-averaged."
+        ),
     },
 }
 
@@ -262,13 +400,16 @@ def parse_eigenvector_mat(
     file_metadata = extract_mat_metadata(ds)
 
     # Try to extract axis scale (wavelength/channel values)
+    # Eigenvector DataSet axisscale is a 2x2 cell array:
+    #   [0,0] = row (sample) axis values,  [0,1] = row axis label
+    #   [1,0] = column (variable) axis values,  [1,1] = column axis label
     axis_values = None
     try:
         axisscale = ds["axisscale"][0, 0]
-        if axisscale.size > 0 and axisscale.ndim >= 2 and axisscale.shape[1] > 1:
-            col_axis = axisscale[0, 1].flatten()
-            if col_axis.size == spec_data.shape[1]:
-                axis_values = col_axis
+        if axisscale.size > 0 and axisscale.ndim >= 2 and axisscale.shape[0] > 1:
+            col_axis = axisscale[1, 0].flatten()
+            if col_axis.size == spec_data.shape[1] and col_axis.dtype.kind in ("f", "i", "u"):
+                axis_values = col_axis.astype(float)
     except (IndexError, KeyError, ValueError):
         pass
 
@@ -281,6 +422,90 @@ def parse_eigenvector_mat(
             logger.warning("Could not extract properties from '%s'", prop_key)
 
     return spec_data, axis_values, prop_data, file_metadata
+
+
+# ---------------------------------------------------------------------------
+# Metal Etch parser (LAM 9600 — OES, MACHINE, RFM)
+# ---------------------------------------------------------------------------
+
+
+def parse_metal_etch_mat(
+    path: Path,
+    struct_key: str,
+    axis_key: str,
+) -> tuple[np.ndarray, np.ndarray | None, list[str], dict[str, str]]:
+    """Parse Metal Etch .mat files (OES_DATA, MACHINE_Data, RFM_DATA).
+
+    These files use a different structure from the standard DataSet objects.
+    Each wafer's data is stored as a cell array element with time-resolved
+    measurements. We compute the per-wafer time-average to produce a 2D
+    matrix (n_wafers x n_features) suitable for spectral analysis.
+
+    Args:
+        path: Path to the .mat file.
+        struct_key: Top-level struct key (e.g., "OESDATA").
+        axis_key: Key for the axis values ("wave_axis" or "variables").
+
+    Returns:
+        (data, axis_values, fault_labels, info_metadata)
+        - data: 2D numpy array (n_wafers x n_features), time-averaged
+        - axis_values: 1D numpy array of axis values, or None
+        - fault_labels: list of fault/normal labels per wafer
+        - info_metadata: dict with INFORMATION text
+    """
+    from scipy.io import loadmat
+
+    mat = loadmat(str(path), squeeze_me=False)
+    ds = mat[struct_key]
+
+    # Extract per-wafer data by time-averaging each cell
+    cal_cells = ds["calibration"][0, 0]
+    test_cells = ds["test"][0, 0]
+
+    def _stack_wafers(cells: np.ndarray) -> np.ndarray:
+        rows = []
+        for i in range(cells.shape[0]):
+            w = cells[i, 0]
+            if w.ndim == 2 and w.shape[0] > 0:
+                rows.append(np.mean(w, axis=0))
+        return np.array(rows)
+
+    cal_data = _stack_wafers(cal_cells)
+    test_data = _stack_wafers(test_cells)
+    data = np.vstack([cal_data, test_data])
+
+    # Build fault labels: "normal" for calibration, fault name for test
+    fault_labels = ["normal"] * cal_data.shape[0]
+    try:
+        fnames = ds["fault_names"][0, 0]
+        for i in range(test_data.shape[0]):
+            if i < fnames.shape[0]:
+                fault_labels.append(str(fnames[i].flat[0]).strip())
+            else:
+                fault_labels.append("fault")
+    except (IndexError, KeyError):
+        fault_labels.extend(["fault"] * test_data.shape[0])
+
+    # Extract axis values
+    axis_values = None
+    try:
+        ax_raw = ds[axis_key][0, 0]
+        if ax_raw.dtype.kind in ("f", "i", "u"):
+            axis_values = ax_raw.flatten().astype(float)
+        # For "variables" key, values are strings — not a numeric axis
+    except (IndexError, KeyError, ValueError):
+        pass
+
+    # Extract INFORMATION text
+    info_metadata: dict[str, str] = {}
+    try:
+        info_arr = ds["INFORMATION"][0, 0]
+        lines = [str(x.flat[0]).strip() for x in info_arr.flatten()]
+        info_metadata["description"] = " ".join(lines)
+    except (IndexError, KeyError, ValueError):
+        pass
+
+    return data, axis_values, fault_labels, info_metadata
 
 
 # ---------------------------------------------------------------------------
@@ -375,6 +600,30 @@ def load_eigenvector_dataset(
             "prop_names": catalog.get("prop_names"),
             "catalog_entry": catalog,
             "file_metadata": file_metadata,
+        }
+
+    elif catalog["format"] == "metal_etch":
+        mat_path = base_dir / catalog["mat_file"]
+        if not mat_path.exists():
+            raise FileNotFoundError(
+                f"Eigenvector data file not found: {mat_path}\n"
+                f"Expected bundled data at: {base_dir}"
+            )
+
+        spectra, wavelengths, fault_labels, info_meta = parse_metal_etch_mat(
+            mat_path,
+            struct_key=catalog["struct_key"],
+            axis_key=catalog["axis_key"],
+        )
+
+        return {
+            "spectra": spectra,
+            "properties": None,
+            "wavelengths": wavelengths,
+            "sample_ids": fault_labels,
+            "prop_names": None,
+            "catalog_entry": catalog,
+            "file_metadata": info_meta,
         }
 
     else:
