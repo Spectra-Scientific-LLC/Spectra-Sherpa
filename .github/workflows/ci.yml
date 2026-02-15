@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   backend:
@@ -26,9 +27,49 @@ jobs:
 
       - name: Run tests
         run: |
-          poetry run python -m pytest tests/ -v --no-cov
-        env:
-          PYTHONPATH: src:src/spectra_sherpa
+          poetry run pytest tests/ -v --no-cov
+
+  scp-compat:
+    name: SCP Compat (3.11 / ${{ matrix.scp_version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        scp_version: ["0.6.10", "0.8.1"]
+    env:
+      SCP_CONFIG_HOME: ${{ runner.temp }}/scp-config
+      SCP_PROJECTS_HOME: ${{ runner.temp }}/scp-projects
+      MPLCONFIGDIR: ${{ runner.temp }}/mplconfig
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Install base dependencies
+        run: poetry install --with dev
+
+      - name: Prepare writable runtime dirs
+        run: mkdir -p "$SCP_CONFIG_HOME" "$SCP_PROJECTS_HOME" "$MPLCONFIGDIR"
+
+      - name: Pin SpectroChemPy version
+        run: poetry run pip install "spectrochempy==${{ matrix.scp_version }}"
+
+      - name: Run SCP compatibility suite
+        run: |
+          poetry run pytest \
+            tests/test_scp_compat.py \
+            tests/test_modeling_nodes.py \
+            tests/test_data_loading_golden.py \
+            tests/test_notebook_export.py \
+            tests/test_eigenvector_datasets.py \
+            tests/test_executor_pool.py -k "not PoolExecution" \
+            -v --no-cov
 
   frontend:
     name: Frontend Build

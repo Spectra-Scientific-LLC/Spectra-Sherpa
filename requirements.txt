@@ -34,7 +34,9 @@ bcrypt>=4.0.1,<4.1
 
 # Optional: spectral file I/O via SpectroChemPy (CeCILL-B license, not AGPL-compatible)
 # Install with: pip install spectra-sherpa[scp]
+# Supported release lines:
 # spectrochempy>=0.6.9,<0.7.0
+# spectrochempy>=0.8.1,<0.9.0
 
 # Optional: server deployment extras (uncomment as needed)
 # asyncpg>=0.29.0,<0.30.0

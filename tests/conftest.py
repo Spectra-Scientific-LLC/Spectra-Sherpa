@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
+from pathlib import Path
 from typing import AsyncGenerator
 
 import pytest
@@ -9,6 +12,29 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+
+def _configure_writable_runtime_dirs() -> None:
+    """Force third-party runtime state into writable temp directories.
+
+    SpectroChemPy writes config files (for example, ``PCA.json`` and
+    ``PlotPreferences.json``). In sandboxed or locked-down environments,
+    user home directories may be read-only and cause unrelated test failures.
+    """
+
+    runtime_root = Path(tempfile.mkdtemp(prefix="spectra-sherpa-pytest-"))
+    scp_config = runtime_root / "scp-config"
+    scp_projects = runtime_root / "scp-projects"
+    mpl_config = runtime_root / "mplconfig"
+
+    for path in (scp_config, scp_projects, mpl_config):
+        path.mkdir(parents=True, exist_ok=True)
+
+    os.environ["SCP_CONFIG_HOME"] = str(scp_config)
+    os.environ["SCP_PROJECTS_HOME"] = str(scp_projects)
+    os.environ["MPLCONFIGDIR"] = str(mpl_config)
+
+
+_configure_writable_runtime_dirs()
 
 from app.db.base import Base
 from app.api.deps import get_session

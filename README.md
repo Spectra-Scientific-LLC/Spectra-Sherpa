@@ -87,11 +87,19 @@ npm run dev        # Dev server at http://localhost:5173
 
 ```bash
 # Backend (from repo root)
-PYTHONPATH=src:src/spectra_sherpa python -m pytest tests/ -v --no-cov
+poetry run pytest tests/ -v --no-cov
 
 # Frontend type check + build
 cd frontend && npx vue-tsc --noEmit && npm run build
 ```
+
+### Automated Test Triggers (GitHub Actions)
+
+Backend/frontend/docs CI runs automatically when:
+
+- A commit is pushed to `main`
+- A pull request targets `main`
+- A maintainer manually starts the workflow (`workflow_dispatch`)
 
 ## Documentation
 
