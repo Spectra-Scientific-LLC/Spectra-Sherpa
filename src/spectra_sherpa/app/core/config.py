@@ -380,6 +380,8 @@ class AppConfig(BaseModel):
             _has_register = False
         from app.core.mode_policy import allows_registration
         registration_enabled = _has_register and allows_registration()
+        enterprise_pw = self.enterprise_password or self.demo_password
+        registration_requires_code = bool(enterprise_pw) and registration_enabled
 
         return {
             "mode": self.mode,
@@ -387,6 +389,7 @@ class AppConfig(BaseModel):
             "apiBaseUrl": self.api_base_url,
             "siteProfile": self.site_profile,
             "registrationEnabled": registration_enabled,
+            "registrationRequiresCode": registration_requires_code,
             "features": {
                 "apiTokenSettings": self.mode in ["local", "hybrid"],
                 "cloudOffload": self.execution.mode == "hybrid",

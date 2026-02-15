@@ -78,11 +78,16 @@ const router = createRouter({
 
 router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
-  const { config, loadConfig, appMode } = useAppConfig()
+  const { config, loadConfig, appMode, registrationEnabled } = useAppConfig()
 
   // Ensure config is loaded (needed for mode check)
   if (!config.value) {
     await loadConfig()
+  }
+
+  // Block registration route whenever backend doesn't support it.
+  if (to.path === '/register' && !registrationEnabled.value) {
+    return next((appMode.value === 'local' || authStore.isAuthenticated) ? '/' : '/login')
   }
 
   // Local mode: bypass all authentication (single-user, no login needed)
@@ -91,7 +96,7 @@ router.beforeEach(async (to, from, next) => {
     if (authStore.token || localStorage.getItem('token')) {
       authStore.clearCredentials()
     }
-    if (to.path === '/login') {
+    if (to.path === '/login' || to.path === '/register') {
       return next('/')
     }
     return next()

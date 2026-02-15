@@ -8,7 +8,7 @@ import Password from 'primevue/password'
 import Card from 'primevue/card'
 
 const authStore = useAuthStore()
-const { appMode } = useAppConfig()
+const { registrationRequiresCode } = useAppConfig()
 
 const username = ref('')
 const password = ref('')
@@ -17,7 +17,7 @@ const accessCode = ref('')
 const loading = ref(false)
 const validationError = ref<string | null>(null)
 
-const requiresAccessCode = () => appMode.value === 'enterprise'
+const requiresAccessCode = () => registrationRequiresCode.value
 
 const handleRegister = async () => {
   validationError.value = null
@@ -93,7 +93,7 @@ const handleRegister = async () => {
             />
           </div>
 
-          <div v-if="appMode === 'enterprise'" class="flex flex-column gap-2">
+          <div v-if="registrationRequiresCode" class="flex flex-column gap-2">
             <label for="accessCode" class="font-bold text-900">Access Code</label>
             <InputText id="accessCode" v-model="accessCode" type="password" placeholder="Enter the access code" class="w-full" />
           </div>

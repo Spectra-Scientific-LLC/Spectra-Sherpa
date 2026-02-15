@@ -34,6 +34,8 @@ async function loadConfig(force = false): Promise<void> {
     config.value = {
       mode: 'local',
       egressEnabled: false,
+      registrationEnabled: false,
+      registrationRequiresCode: false,
       apiBaseUrl: import.meta.env.VITE_API_BASE_URL || '/api/v1',
       features: {
         apiTokenSettings: true,
@@ -106,6 +108,11 @@ const egressEnabled = computed(() => config.value?.egressEnabled ?? false)
 const registrationEnabled = computed(() => config.value?.registrationEnabled ?? false)
 
 /**
+ * Check if registration requires an access code header
+ */
+const registrationRequiresCode = computed(() => config.value?.registrationRequiresCode ?? false)
+
+/**
  * Check if specific feature is enabled
  */
 function isFeatureEnabled(feature: keyof AppConfig['features']): boolean {
@@ -139,6 +146,7 @@ export function useAppConfig() {
     siteProfile,
     egressEnabled,
     registrationEnabled,
+    registrationRequiresCode,
     isFeatureEnabled,
     formatProviderName,
   }
