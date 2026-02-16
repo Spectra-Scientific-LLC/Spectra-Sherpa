@@ -71,7 +71,8 @@ class Settings:
     max_spectra_per_job: int = _get_int("MAX_SPECTRA_PER_JOB", 1000)  # Increased for MCR-ALS datasets
     max_wavenumbers: int = _get_int("MAX_WAVENUMBERS", 20000)
     max_memory_mb: int = _get_int("MAX_MEMORY_MB", 4096)
-    max_concurrent_jobs: int = _get_int("MAX_CONCURRENT_JOBS", 2)
+    max_concurrent_jobs: int = _get_int("MAX_CONCURRENT_JOBS", 5)
+    max_concurrent_jobs_per_user: int = _get_int("MAX_CONCURRENT_JOBS_PER_USER", 1)
     max_nist_downloads_per_hour: int = _get_int("MAX_NIST_DOWNLOADS_PER_HOUR", 50)
     max_llm_requests_per_hour: int = _get_int("MAX_LLM_REQUESTS_PER_HOUR", 100)
 

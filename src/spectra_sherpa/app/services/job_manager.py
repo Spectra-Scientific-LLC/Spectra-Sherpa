@@ -63,6 +63,20 @@ class JobManager:
         )
         return result.scalar() or 0
 
+    async def _count_running_jobs_for_user(
+        self, session: AsyncSession, user_id: int
+    ) -> int:
+        """Count running jobs for a specific user."""
+        result = await session.execute(
+            select(func.count())
+            .select_from(BackgroundJob)
+            .where(
+                BackgroundJob.status == "running",
+                BackgroundJob.user_id == user_id,
+            )
+        )
+        return result.scalar() or 0
+
     async def run_job(
         self, job_id: int, work: Callable[[], Awaitable[None]]
     ) -> None:
@@ -89,7 +103,7 @@ class JobManager:
                     .where(BackgroundJob.status == "pending")
                     .values(
                         status="failed",
-                        error_message="Max concurrent jobs exceeded",
+                        error_message="Server busy — max concurrent jobs exceeded. Please try again shortly.",
                         completed_at=datetime.now(timezone.utc),
                     )
                 )
@@ -98,10 +112,35 @@ class JobManager:
                     await self._broadcast_job(
                         job_id,
                         status="failed",
-                        message="Max concurrent jobs exceeded",
+                        message="Server busy — max concurrent jobs exceeded. Please try again shortly.",
                     )
                 self._job_owners.pop(job_id, None)
                 return
+
+            # Per-user concurrency limit
+            owner_id = await self._resolve_job_owner(job_id, session=session)
+            if owner_id is not None:
+                user_running = await self._count_running_jobs_for_user(session, owner_id)
+                if user_running >= settings.max_concurrent_jobs_per_user:
+                    block_result = await session.execute(
+                        update(BackgroundJob)
+                        .where(BackgroundJob.id == job_id)
+                        .where(BackgroundJob.status == "pending")
+                        .values(
+                            status="failed",
+                            error_message="You already have a job running. Please wait for it to finish.",
+                            completed_at=datetime.now(timezone.utc),
+                        )
+                    )
+                    await session.commit()
+                    if (block_result.rowcount or 0) > 0:
+                        await self._broadcast_job(
+                            job_id,
+                            status="failed",
+                            message="You already have a job running. Please wait for it to finish.",
+                        )
+                    self._job_owners.pop(job_id, None)
+                    return
 
             start_result = await session.execute(
                 update(BackgroundJob)
