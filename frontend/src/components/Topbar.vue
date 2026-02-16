@@ -128,6 +128,9 @@
     <!-- Change Password Dialog -->
     <ChangePasswordDialog v-model:visible="changePasswordVisible" />
 
+    <!-- User Profile Dialog -->
+    <UserProfileDialog v-model:visible="profileVisible" />
+
     <!-- Project Dialog -->
     <ProjectDialog
       v-model:visible="projectDialogVisible"
@@ -156,6 +159,7 @@ import Button from "primevue/button";
 import Dropdown from "primevue/dropdown";
 import Menu from "primevue/menu";
 import ChangePasswordDialog from "./ChangePasswordDialog.vue";
+import UserProfileDialog from "./UserProfileDialog.vue";
 import { useToast } from "primevue/usetoast";
 import { useProjectStore } from "@/stores/project";
 import type { ProjectSummary } from "@/types";
@@ -194,6 +198,7 @@ const fileInput = ref<HTMLInputElement | null>(null);
 // User menu
 const userMenu = ref();
 const changePasswordVisible = ref(false);
+const profileVisible = ref(false);
 
 const userMenuItems = computed(() => [
   {
@@ -203,6 +208,11 @@ const userMenuItems = computed(() => [
     class: 'user-menu-header',
   },
   { separator: true },
+  {
+    label: 'My Profile',
+    icon: 'pi pi-id-card',
+    command: () => { profileVisible.value = true; },
+  },
   {
     label: 'Change Password',
     icon: 'pi pi-key',
