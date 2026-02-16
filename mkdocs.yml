@@ -2,40 +2,40 @@ site_name: SpectraSherpa Documentation
 nav:
   - Home: index.md
   - User Guide (OSS):
-    - Installation: user_guide/installation.md
-    - Configuration: user_guide/configuration.md
-    - Quickstart: user_guide/quickstart.md
-    - Experiments: user_guide/experiments.md
-    - Library (NIST): user_guide/library.md
-    - DOE (96-Well): user_guide/doe.md
-    - Synthesis Builder: user_guide/synthesis.md
-    - Workflow Builder: user_guide/workflow.md
+    - Installation: user/installation.md
+    - Configuration: user/configuration.md
+    - Quickstart: user/quickstart.md
+    - Experiments: user/experiments.md
+    - Library (NIST): user/library.md
+    - DOE (96-Well): user/doe.md
+    - Synthesis Builder: user/synthesis.md
+    - Workflow Builder: user/workflow.md
     - Reproduction Study:
-        - PCA (Side-by-Side): user_guide/case_study_pca.md
-        - Methodology: user_guide/reproduction_methodology.md
-    - User Manual: USER_MANUAL.md
+        - PCA (Side-by-Side): user/case_study_pca.md
+        - Methodology: user/reproduction_methodology.md
+    - User Manual: user/manual.md
   - Server Operator Guide:
-    - Overview: server/overview.md
-    - Hybrid Mode: server/hybrid_mode.md
-    - Enterprise Mode: server/enterprise_mode.md
+    - Overview: admin/server/overview.md
+    - Hybrid Mode: admin/server/hybrid_mode.md
+    - Enterprise Mode: admin/server/enterprise_mode.md
     - Docker Deployment: deployment/DIGITAL_OCEAN.md
   - Developer Guide:
-    - Setup & Contributing: developer/setup.md
-    - Architecture: developer/architecture.md
+    - Setup & Contributing: dev/setup.md
+    - Architecture: dev/architecture.md
   - Examples:
-    - 00. Case Study Notebook: examples/00_case_study_notebook.ipynb
-    - 01. Loading Data: examples/01_loading_data.md
-    - 02. Manipulation: examples/02_dataset_manipulation.md
-    - 03. Plotting: examples/03_plotting.md
-    - 04. Smoothing: examples/04_preprocessing_smoothing.md
-    - 05. Baseline: examples/05_preprocessing_baseline.md
-    - 06. Peak Finding: examples/06_peak_finding.md
-    - 07. Integration: examples/07_peak_fitting.md
-    - 08. PCA: examples/08_pca.md
-    - 09. MCR-ALS: examples/09_mcr_als.md
-    - 10. PLS: examples/10_pls_regression.md
+    - 00. Case Study Notebook: user/examples/00_case_study_notebook.ipynb
+    - 01. Loading Data: user/examples/01_loading_data.md
+    - 02. Manipulation: user/examples/02_dataset_manipulation.md
+    - 03. Plotting: user/examples/03_plotting.md
+    - 04. Smoothing: user/examples/04_preprocessing_smoothing.md
+    - 05. Baseline: user/examples/05_preprocessing_baseline.md
+    - 06. Peak Finding: user/examples/06_peak_finding.md
+    - 07. Integration: user/examples/07_peak_fitting.md
+    - 08. PCA: user/examples/08_pca.md
+    - 09. MCR-ALS: user/examples/09_mcr_als.md
+    - 10. PLS: user/examples/10_pls_regression.md
   - Reference:
-    - Node Library: reference/nodes.md
+    - Node Library: user/reference/nodes.md
   - Past:
     - Summary: past/index.md
     - Release Notes: past/RELEASE_NOTES.md

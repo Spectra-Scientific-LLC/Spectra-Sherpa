@@ -151,7 +151,7 @@ jobs:
           # Allowed patterns: "deprecated alias", "accepted as deprecated",
           # "backward compat", "maps to enterprise"
           HITS=$(grep -rn 'APP_MODE=demo\|mode="demo"\|mode=demo\b' \
-            docs/current/ docs/server/ docs/deployment/ \
+            docs/current/ docs/admin/ docs/deployment/ \
             --include='*.md' \
             | grep -iv 'deprecat\|backward.compat\|maps.*enterprise\|accepted.*alias' || true)
 
