@@ -227,7 +227,7 @@
             <div class="ref-source-group">
               <h5 class="ref-group-title">
                 <i class="pi pi-wave-pulse"></i>
-                SpectroChemPy Examples
+                SpectroChemPy Datasets
               </h5>
               <div
                 v-for="ds in dataStore.referenceCatalog.spectrochempy"

@@ -14,6 +14,8 @@ directly — enforce with the CI check in ``tests/test_scp_import_rule.py``.
 from __future__ import annotations
 
 import logging
+import os
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +57,86 @@ def require_scp(feature: str = "This feature") -> None:
         )
 
 
+def _resolve_for_dedupe(path: Path) -> Path:
+    """Resolve paths for stable deduplication without requiring existence."""
+    try:
+        return path.expanduser().resolve(strict=False)
+    except Exception:
+        return path.expanduser()
+
+
+def get_scp_datadirs() -> list[Path]:
+    """Return ordered SpectroChemPy datadirs to search.
+
+    Priority:
+    1. ``SCP_DATADIR`` environment variable (explicit override)
+    2. ``scp.preferences.datadir`` (runtime default when SCP is installed)
+    3. ``~/.spectrochempy/testdata`` fallback
+    """
+    candidate_dirs: list[Path] = []
+
+    env_dir = os.getenv("SCP_DATADIR", "").strip()
+    if env_dir:
+        candidate_dirs.append(Path(env_dir))
+
+    if HAS_SCP:
+        try:
+            candidate_dirs.append(Path(scp.preferences.datadir))  # type: ignore[union-attr]
+        except Exception:
+            logger.debug("Could not read scp.preferences.datadir", exc_info=True)
+
+    candidate_dirs.append(Path.home() / ".spectrochempy" / "testdata")
+
+    deduped: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidate_dirs:
+        resolved = _resolve_for_dedupe(candidate)
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        deduped.append(candidate.expanduser())
+
+    return deduped
+
+
+def resolve_scp_path(relative_path: str) -> Path | None:
+    """Resolve an SCP-relative path against all known datadirs."""
+    rel = Path(relative_path)
+    for datadir in get_scp_datadirs():
+        candidate = datadir / rel
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def download_testdata() -> None:
+    """Download SpectroChemPy test data to ``scp.preferences.datadir``.
+
+    SCP 0.8.x moved the download helper to
+    ``spectrochempy.application.testdata.download_full_testdata_directory``.
+    """
+    require_scp("SpectroChemPy test data download")
+    from pathlib import Path
+
+    datadir = Path(scp.preferences.datadir)  # type: ignore[union-attr]
+    datadir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        from spectrochempy.application.testdata import (
+            download_full_testdata_directory,
+        )
+    except ImportError as exc:
+        raise RuntimeError(
+            "SpectroChemPy is installed, but download_full_testdata_directory() "
+            "is unavailable. Check your spectrochempy version (>=0.8.1 required)."
+        ) from exc
+
+    download_full_testdata_directory(datadir)
+
+
 __all__ = [
     "scp", "NDDataset", "Coord", "HAS_SCP", "require_scp",
+    "get_scp_datadirs", "resolve_scp_path", "download_testdata",
     "from_nddataset", "to_nddataset",
 ]
 

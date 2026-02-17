@@ -87,14 +87,17 @@ class TestDemoGuardCoverage:
             assert not _has_demo_guard(route), f"Unexpected demo_guard on {path}"
 
     @pytest.mark.anyio
-    async def test_demo_should_block_workflow_execute_inline_initial_data(
+    async def test_demo_allows_initial_data_for_reference_datasets(
         self,
         auth_client: AsyncClient,
         test_session: AsyncSession,
         test_user: User,
         demo_profile: None,
     ) -> None:
-        workflow = Workflow(name="demo-inline-data", user_id=test_user.id)
+        """initial_data is used by ALL data sources (eigenvector, sklearn, etc.),
+        not just file uploads. Workflow execution must NOT block initial_data
+        in demo mode — reference datasets would be unusable otherwise."""
+        workflow = Workflow(name="demo-ref-data", user_id=test_user.id)
         test_session.add(workflow)
         await test_session.commit()
         await test_session.refresh(workflow)
@@ -102,8 +105,8 @@ class TestDemoGuardCoverage:
         payload = {
             "initial_data": {
                 "data_1": {
-                    "wavenumber": [1000.0, 1001.0],
-                    "absorbance": [0.1, 0.2],
+                    "source": "eigenvector",
+                    "eigenvector_dataset": "diesel_nir",
                 }
             }
         }
@@ -111,31 +114,6 @@ class TestDemoGuardCoverage:
             f"/api/v1/workflows/{workflow.id}/execute",
             json=payload,
         )
-        assert resp.status_code == 403
-
-    @pytest.mark.anyio
-    async def test_demo_should_block_trial_execute_inline_initial_data(
-        self,
-        auth_client: AsyncClient,
-        demo_profile: None,
-    ) -> None:
-        payload = {
-            "target_node_id": "snv_1",
-            "trial_params": {},
-            "nodes": [
-                {
-                    "node_id": "snv_1",
-                    "node_type": "normalize.snv",
-                    "parameters": {},
-                }
-            ],
-            "edges": [],
-            "initial_data": {
-                "data_1": {
-                    "wavenumber": [1000.0, 1001.0],
-                    "absorbance": [0.1, 0.2],
-                }
-            },
-        }
-        resp = await auth_client.post("/api/v1/workflows/trial/execute", json=payload)
-        assert resp.status_code == 403
+        # Should not be 403 — reference datasets are allowed in demo mode.
+        # May fail for other reasons (no nodes, etc.) but must not be blocked.
+        assert resp.status_code != 403

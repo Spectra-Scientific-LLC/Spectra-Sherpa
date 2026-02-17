@@ -10,10 +10,18 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
-from spectra_sherpa.app.lib.scp_compat import scp, NDDataset, HAS_SCP, require_scp
+from spectra_sherpa.app.lib.scp_compat import (
+    HAS_SCP,
+    NDDataset,
+    get_scp_datadirs,
+    require_scp,
+    resolve_scp_path,
+    scp,
+)
 from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo, from_sklearn_bunch
 from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG
 
@@ -230,6 +238,92 @@ def extract_dataset_from_result(result: Any, file_path: str) -> NDDataset:
     return result
 
 
+_SCP_KNOWN_DEFAULTS: dict[str, tuple[str, str]] = {
+    # category: (relative_path, explicit reader name)
+    "irdata": ("irdata/nh4y-activation.spg", "read_omnic"),
+}
+
+
+def _normalize_scp_read_output(result: Any) -> NDDataset | None:
+    """Normalize SpectroChemPy reader outputs across versions."""
+    if result is None:
+        return None
+    if isinstance(result, NDDataset):
+        return result
+
+    if isinstance(result, dict):
+        for value in result.values():
+            candidate = _normalize_scp_read_output(value)
+            if candidate is not None:
+                return candidate
+        return None
+
+    if isinstance(result, (list, tuple)):
+        for item in result:
+            candidate = _normalize_scp_read_output(item)
+            if candidate is not None:
+                return candidate
+        return None
+
+    # Some SCP objects are iterable but not list/tuple.
+    if hasattr(result, "__iter__") and not isinstance(result, (str, bytes)):
+        try:
+            for item in result:
+                candidate = _normalize_scp_read_output(item)
+                if candidate is not None:
+                    return candidate
+        except Exception:
+            return None
+
+    return None
+
+
+def _try_load_scp_file(path: Path) -> NDDataset | None:
+    """Load one SCP file with extension-aware reader selection."""
+    from spectra_sherpa.app.core.config import get_reader_for_extension
+
+    try:
+        reader_name = get_reader_for_extension(path.suffix)
+    except ValueError:
+        return None
+
+    dataset = None
+    reader_fn = getattr(scp, reader_name, None)
+    if callable(reader_fn):
+        try:
+            dataset = _normalize_scp_read_output(reader_fn(str(path)))
+        except Exception:
+            dataset = None
+
+    # If the mapped reader is missing or couldn't parse, try generic read().
+    if dataset is None and reader_name != "read":
+        generic_reader = getattr(scp, "read", None)
+        if callable(generic_reader):
+            try:
+                dataset = _normalize_scp_read_output(generic_reader(str(path)))
+            except Exception:
+                dataset = None
+
+    if dataset is None:
+        return None
+
+    if path.suffix.lower() == ".csv":
+        return remove_index_columns(dataset)
+
+    return dataset
+
+
+def _try_load_first_file(folder: Path) -> NDDataset | None:
+    """Find the first readable file in a dataset folder (recursive)."""
+    for file_path in sorted(folder.rglob("*")):
+        if not file_path.is_file() or file_path.name.startswith((".", "_")):
+            continue
+        dataset = _try_load_scp_file(file_path)
+        if dataset is not None:
+            return dataset
+    return None
+
+
 def extract_instrument_metadata(dataset: NDDataset, file_path: str) -> dict:
     """
     Extract and normalize instrument metadata from a loaded NDDataset.
@@ -311,14 +405,14 @@ class DataSourceNode(Node):
     """
     Data Source node for loading spectral data.
 
-    Loads data from experiments, files, or generates synthetic data.
+    Loads spectral data from reference catalogs or direct files.
     """
 
     metadata = NodeMetadata(
         node_type="data.source",
         category="data",
         label="Data Source",
-        description="Load spectral data from experiments, files, or synthetic sources",
+        description="Load spectral data from reference catalogs or direct files",
         parameters=[
             # PRIMARY SELECTION (Basic - Top of Inspector)
             NodeParameter(
@@ -326,7 +420,7 @@ class DataSourceNode(Node):
                 label="Source Type",
                 param_type="select",
                 default="spectrochempy",
-                options=["spectrochempy", "sklearn", "eigenvector", "experiment", "file", "library", "synthetic"],
+                options=["spectrochempy", "sklearn", "eigenvector", "file"],
                 description="Type of data source",
                 required=False,
                 category="basic",
@@ -337,10 +431,13 @@ class DataSourceNode(Node):
                 param_type="select",
                 default="irdata",
                 options=[
-                    {"label": "IR: NH4Y Zeolite Activation", "value": "irdata"},
-                    {"label": "Raman: LabSpec Series", "value": "ramandata"},
-                    {"label": "NMR: Bruker TopSpin 1D", "value": "nmrdata"},
+                    {"label": "IR Spectroscopy", "value": "irdata"},
+                    {"label": "Raman Spectroscopy", "value": "ramandata"},
+                    {"label": "NMR (Bruker TopSpin)", "value": "nmrdata"},
                     {"label": "Galactic SPC Files", "value": "galacticdata"},
+                    {"label": "Agilent IR (AGIR)", "value": "agirdata"},
+                    {"label": "MATLAB Datasets", "value": "matlabdata"},
+                    {"label": "Mass Spectrometry", "value": "msdata"},
                 ],
                 description="SpectroChemPy example dataset category to load",
                 required=False,
@@ -603,12 +700,28 @@ class DataSourceNode(Node):
         }
 
         # MERGE with existing processing_history (don't overwrite!)
-        existing_history = dataset.meta.get("processing_history", [])
-        if existing_history:
-            # Prepend source step to existing history (this load is the new origin)
-            dataset.meta["processing_history"] = [source_step] + existing_history
-        else:
-            dataset.meta["processing_history"] = [source_step]
+        try:
+            existing_history = dataset.meta.get("processing_history", [])
+            if existing_history:
+                # Prepend source step to existing history (this load is the new origin)
+                dataset.meta["processing_history"] = [source_step] + existing_history
+            else:
+                dataset.meta["processing_history"] = [source_step]
+        except (TypeError, AttributeError):
+            # Some dataset meta containers are immutable; replace with a mutable copy when possible.
+            try:
+                mutable_meta = dict(dataset.meta)
+                existing_history = mutable_meta.get("processing_history", [])
+                if existing_history:
+                    mutable_meta["processing_history"] = [source_step] + existing_history
+                else:
+                    mutable_meta["processing_history"] = [source_step]
+                dataset.meta = mutable_meta
+            except Exception:
+                logger.debug(
+                    "Could not write processing_history to dataset.meta for %s",
+                    getattr(dataset, "name", "<unknown>"),
+                )
 
         # MERGE provenance summary - PRESERVE all existing fields from file metadata
         existing_provenance = dataset.meta.get("provenance", {})
@@ -767,8 +880,11 @@ class DataSourceNode(Node):
             else:
                 # NDDataset: use SCP Coord + set_coordset
                 if current_y is not None:
-                    if current_y.title != y_title:
-                        current_y.title = y_title
+                    try:
+                        if current_y.title != y_title:
+                            current_y.title = y_title
+                    except (AttributeError, TypeError):
+                        pass
                 else:
                     dataset.set_coordset(
                         y=scp.Coord(np.arange(dataset.shape[0]), title=y_title),
@@ -777,8 +893,11 @@ class DataSourceNode(Node):
                     current_y = safe_get_coord(dataset, 'y')
 
                 if current_x is not None:
-                    if current_x.title != x_title:
-                        current_x.title = x_title
+                    try:
+                        if current_x.title != x_title:
+                            current_x.title = x_title
+                    except (AttributeError, TypeError):
+                        pass
                 else:
                     dataset.set_coordset(
                         y=current_y,
@@ -959,186 +1078,42 @@ class DataSourceNode(Node):
         return dataset
 
     def _load_spectrochempy_example(self, example_name: str, example_file: str = "") -> NDDataset:
-        """
-        Load a SpectroChemPy example dataset.
+        """Load a SpectroChemPy example dataset from discovered testdata folders."""
+        require_scp("SpectroChemPy example datasets")
 
-        Prioritizes loading from ~/.spectrochempy/data/ if available.
-        NO SYNTHETIC FALLBACKS - raises explicit error if loading fails.
-
-        Args:
-            example_name: Category name (irdata, ramandata, nmrdata, galacticdata)
-            example_file: Optional specific file within the dataset (e.g., "CO@Mo_Al2O3.SPG").
-                         If provided, auto-prefixed with dataset folder and loaded instead of default.
-        """
-        from pathlib import Path
-
-        # If a specific file is requested, load it directly
+        # If a specific file is requested, load it directly.
         if example_file:
-            # Auto-prefix with dataset folder if not already included
-            if "/" not in example_file:
-                full_file_path = f"{example_name}/{example_file}"
-            else:
-                full_file_path = example_file
+            full_file_path = f"{example_name}/{example_file}" if "/" not in example_file else example_file
             return self._load_spectrochempy_custom_file(full_file_path)
 
-        # Define paths to examples in the user's home directory
-        home_spectrochempy = Path.home() / ".spectrochempy" / "data"
-
-        errors = []  # Collect all errors for detailed debugging
-
-        if example_name == "irdata":
-            # 1. Try ~/.spectrochempy location
-            local_path = home_spectrochempy / "irdata" / "nh4y-activation.spg"
-            if local_path.exists():
-                try:
-                    logger.debug(f"Loading local example from {local_path}")
-                    dataset = scp.read_omnic(str(local_path))
+        # Try known, verified defaults first.
+        if example_name in _SCP_KNOWN_DEFAULTS:
+            rel_path, reader_name = _SCP_KNOWN_DEFAULTS[example_name]
+            resolved = resolve_scp_path(rel_path)
+            if resolved is not None:
+                reader_fn = getattr(scp, reader_name, None)
+                if callable(reader_fn):
+                    try:
+                        dataset = _normalize_scp_read_output(reader_fn(str(resolved)))
+                    except Exception:
+                        dataset = None
                     if dataset is not None:
-                        logger.debug(f"Successfully loaded IR dataset: {dataset.shape}")
                         return dataset
-                except Exception as e:
-                    errors.append(f"Local file exists but read failed: {e}")
 
-            # 2. Try SpectroChemPy datadir (standard method)
-            try:
-                dataset = scp.read_omnic("irdata/nh4y-activation.spg")
-                if dataset is not None:
-                    logger.debug(f"Loaded SpectroChemPy IR dataset from datadir: {dataset.shape}")
-                    return dataset
-                else:
-                    errors.append("scp.read_omnic() returned None")
-            except Exception as e:
-                errors.append(f"SpectroChemPy datadir read failed: {e}")
+        # Generic fallback: first loadable file in dataset folder.
+        for datadir in get_scp_datadirs():
+            folder = datadir / example_name
+            if not folder.exists() or not folder.is_dir():
+                continue
+            dataset = _try_load_first_file(folder)
+            if dataset is not None:
+                return dataset
 
-            # NO FALLBACK - raise explicit error
-            raise ValueError(
-                f"❌ Failed to load irdata/nh4y-activation.spg\n\n"
-                f"Attempted paths:\n"
-                f"  1. {local_path} {'(exists)' if local_path.exists() else '(not found)'}\n"
-                f"  2. SpectroChemPy datadir: irdata/nh4y-activation.spg\n\n"
-                f"Errors encountered:\n" + "\n".join(f"  - {e}" for e in errors) + "\n\n"
-                f"Fix: Install SpectroChemPy example data with:\n"
-                f"  import spectrochempy as scp\n"
-                f"  scp.download_data()\n"
-                f"Or verify {local_path} exists and is a valid OMNIC file."
-            )
-
-        elif example_name == "ramandata":
-            # 1. Try ~/.spectrochempy location
-            local_path = home_spectrochempy / "ramandata" / "labspec" / "series.txt"
-            if local_path.exists():
-                try:
-                    logger.debug(f"Loading local example from {local_path}")
-                    dataset = scp.read(str(local_path))
-                    if dataset is not None:
-                        logger.debug(f"Successfully loaded Raman dataset: {dataset.shape}")
-                        return dataset
-                except Exception as e:
-                    errors.append(f"Local file exists but read failed: {e}")
-
-            # 2. Try SpectroChemPy datadir
-            try:
-                dataset = scp.read("ramandata/labspec/series.txt")
-                if dataset is not None:
-                    logger.debug(f"Loaded SpectroChemPy Raman dataset from datadir: {dataset.shape}")
-                    return dataset
-                else:
-                    errors.append("scp.read() returned None")
-            except Exception as e:
-                errors.append(f"SpectroChemPy datadir read failed: {e}")
-
-            # NO FALLBACK - raise explicit error
-            raise ValueError(
-                f"❌ Failed to load ramandata/labspec/series.txt\n\n"
-                f"Attempted paths:\n"
-                f"  1. {local_path} {'(exists)' if local_path.exists() else '(not found)'}\n"
-                f"  2. SpectroChemPy datadir: ramandata/labspec/series.txt\n\n"
-                f"Errors encountered:\n" + "\n".join(f"  - {e}" for e in errors) + "\n\n"
-                f"Fix: Install SpectroChemPy example data with:\n"
-                f"  import spectrochempy as scp\n"
-                f"  scp.download_data()\n"
-                f"Or verify {local_path} exists and is a valid text file."
-            )
-
-        elif example_name == "nmrdata":
-            # 1. Try ~/.spectrochempy location
-            local_path = home_spectrochempy / "nmrdata" / "bruker" / "tests" / "nmr" / "topspin_1d"
-            if local_path.exists():
-                try:
-                    logger.debug(f"Loading local example from {local_path}")
-                    dataset = scp.read(str(local_path))
-                    if dataset is not None:
-                        logger.debug(f"Successfully loaded NMR dataset: {dataset.shape}")
-                        return dataset
-                except Exception as e:
-                    errors.append(f"Local directory exists but read failed: {e}")
-
-            # 2. Try SpectroChemPy datadir
-            try:
-                dataset = scp.read("nmrdata/bruker/tests/nmr/topspin_1d")
-                if dataset is not None:
-                    logger.debug(f"Loaded SpectroChemPy NMR dataset from datadir: {dataset.shape}")
-                    return dataset
-                else:
-                    errors.append("scp.read() returned None")
-            except Exception as e:
-                errors.append(f"SpectroChemPy datadir read failed: {e}")
-
-            # NO FALLBACK - raise explicit error
-            raise ValueError(
-                f"❌ Failed to load nmrdata/bruker/tests/nmr/topspin_1d\n\n"
-                f"Attempted paths:\n"
-                f"  1. {local_path} {'(exists)' if local_path.exists() else '(not found)'}\n"
-                f"  2. SpectroChemPy datadir: nmrdata/bruker/tests/nmr/topspin_1d\n\n"
-                f"Errors encountered:\n" + "\n".join(f"  - {e}" for e in errors) + "\n\n"
-                f"Fix: Install SpectroChemPy example data with:\n"
-                f"  import spectrochempy as scp\n"
-                f"  scp.download_data()\n"
-                f"Or verify {local_path} exists and is a valid Bruker directory."
-            )
-
-        elif example_name == "galacticdata":
-            # 1. Try ~/.spectrochempy location
-            local_path = home_spectrochempy / "galacticdata" / "LabSpec5"
-            if local_path.exists():
-                try:
-                    logger.debug(f"Loading local example from {local_path}")
-                    dataset = scp.read_spc(str(local_path))
-                    if dataset is not None:
-                        logger.debug(f"Successfully loaded Galactic SPC dataset: {dataset.shape}")
-                        return dataset
-                except Exception as e:
-                    errors.append(f"Local file exists but read failed: {e}")
-
-            # 2. Try SpectroChemPy datadir
-            try:
-                dataset = scp.read_spc("galacticdata/LabSpec5")
-                if dataset is not None:
-                    logger.debug(f"Loaded SpectroChemPy Galactic dataset from datadir: {dataset.shape}")
-                    return dataset
-                else:
-                    errors.append("scp.read_spc() returned None")
-            except Exception as e:
-                errors.append(f"SpectroChemPy datadir read failed: {e}")
-
-            # NO FALLBACK - raise explicit error
-            raise ValueError(
-                f"❌ Failed to load galacticdata/LabSpec5\n\n"
-                f"Attempted paths:\n"
-                f"  1. {local_path} {'(exists)' if local_path.exists() else '(not found)'}\n"
-                f"  2. SpectroChemPy datadir: galacticdata/LabSpec5\n\n"
-                f"Errors encountered:\n" + "\n".join(f"  - {e}" for e in errors) + "\n\n"
-                f"Fix: Install SpectroChemPy example data with:\n"
-                f"  import spectrochempy as scp\n"
-                f"  scp.download_data()\n"
-                f"Or verify {local_path} exists and is a valid SPC file."
-            )
-
-        else:
-            raise ValueError(
-                f"Unknown example dataset: {example_name}. "
-                f"Valid options are: irdata, ramandata, nmrdata, galacticdata"
-            )
+        raise ValueError(
+            f"No loadable files found for '{example_name}'.\n"
+            "Ensure SpectroChemPy data is downloaded:\n"
+            "  python -c \"from spectra_sherpa.app.lib.scp_compat import download_testdata; download_testdata()\""
+        )
 
     def _load_spectrochempy_custom_file(self, file_path: str) -> NDDataset:
         """
@@ -1150,20 +1125,13 @@ class DataSourceNode(Node):
         Returns:
             NDDataset loaded from the specified file
         """
-        from pathlib import Path
-
         requested_path = Path(file_path).expanduser()
         candidate_paths = []
 
         if requested_path.is_absolute():
             candidate_paths.append(requested_path)
         else:
-            datadir = Path(scp.preferences.datadir)
-            fallback_datadir = Path.home() / ".spectrochempy" / "data"
-
-            candidate_paths.append(datadir / file_path)
-            if fallback_datadir != datadir:
-                candidate_paths.append(fallback_datadir / file_path)
+            candidate_paths.extend(datadir / file_path for datadir in get_scp_datadirs())
 
         full_path = next((path for path in candidate_paths if path.exists()), None)
         if full_path is None:
@@ -1177,7 +1145,9 @@ class DataSourceNode(Node):
         try:
             # For directories (Bruker NMR format), read the directory
             if full_path.is_dir():
-                dataset = scp.read(str(full_path))
+                dataset = _normalize_scp_read_output(scp.read(str(full_path)))
+                if dataset is None:
+                    raise ValueError(f"scp.read() returned no NDDataset for directory: {file_path}")
                 logger.debug(f"Loaded NMR dataset from directory: {file_path}")
                 dataset.title = file_path.replace("/", " / ")
                 return dataset
@@ -1189,7 +1159,9 @@ class DataSourceNode(Node):
             reader_name = get_reader_for_extension(ext)
             reader_method = getattr(scp, reader_name)
 
-            dataset = reader_method(str(full_path))
+            dataset = _normalize_scp_read_output(reader_method(str(full_path)))
+            if dataset is None and reader_name != "read":
+                dataset = _normalize_scp_read_output(scp.read(str(full_path)))
             logger.debug(f"Loaded {ext} dataset using {reader_name}: {file_path}")
 
             # Post-processing for specific formats
@@ -1197,7 +1169,7 @@ class DataSourceNode(Node):
                 dataset = remove_index_columns(dataset)
 
             if dataset is None:
-                raise ValueError(f"Reader {reader_name} returned None for {file_path}")
+                raise ValueError(f"Reader {reader_name} returned no NDDataset for {file_path}")
 
             # Set a meaningful title
             dataset.title = file_path.replace("/", " / ")
@@ -1247,7 +1219,6 @@ class DataSourceNode(Node):
         Returns:
             NDDataset with all matching files concatenated along sample axis
         """
-        from pathlib import Path
         import re
 
         # Parse pattern to extract folder and glob pattern
@@ -1268,13 +1239,8 @@ class DataSourceNode(Node):
 
         logger.debug(f"[DATA] Pattern detected: folder={folder_path}, pattern={glob_pattern}")
 
-        # Resolve folder path (try both primary and fallback datadirs)
-        datadir = Path(scp.preferences.datadir)
-        fallback_datadir = Path.home() / ".spectrochempy" / "data"
-
-        candidate_paths = [datadir / folder_path]
-        if fallback_datadir != datadir:
-            candidate_paths.append(fallback_datadir / folder_path)
+        # Resolve folder path across configured SCP datadirs.
+        candidate_paths = [datadir / folder_path for datadir in get_scp_datadirs()]
 
         folder = next((p for p in candidate_paths if p.exists()), None)
 
@@ -2071,7 +2037,7 @@ class NISTLibraryNode(Node):
                 # Build path to library file (file_path already includes "nist_library/" prefix)
                 file_path = settings.data_dir / entry.file_path
 
-                dataset = scp.read_jdx(str(file_path))
+                dataset = scp.read_jcamp(str(file_path))
                 dataset.title = entry.compound_name
 
                 # Parse physical state from JCAMP-DX if available
@@ -2372,7 +2338,6 @@ class LoadGroupNode(Node):
         Returns:
             NDDataset containing all spectra concatenated along sample axis (y-axis)
         """
-        from pathlib import Path
         import re
 
         folder_path = self.parameters.get("folder_path", "")
@@ -2390,12 +2355,7 @@ class LoadGroupNode(Node):
 
         if not folder.is_absolute():
             # Try relative to SpectroChemPy datadir
-            datadir = Path(scp.preferences.datadir)
-            fallback_datadir = Path.home() / ".spectrochempy" / "data"
-
-            candidate_paths = [datadir / folder_path]
-            if fallback_datadir != datadir:
-                candidate_paths.append(fallback_datadir / folder_path)
+            candidate_paths = [datadir / folder_path for datadir in get_scp_datadirs()]
 
             folder = next((p for p in candidate_paths if p.exists()), None)
 

@@ -349,6 +349,69 @@ async def reconcile_stale_jobs() -> None:
         logger.warning("Skipping job reconciliation; database not initialized.")
 
 
+def ensure_spectrochempy_data() -> None:
+    """Ensure SpectroChemPy test data is available before DB-dependent setup.
+
+    Controlled by ``SCP_DATA_BOOTSTRAP``:
+    - ``auto`` (default): download if missing, warn on failure.
+    - ``required``: download if missing, fail startup on failure.
+    - ``skip``: never download (use pre-baked images).
+    """
+    import os
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+
+    policy = os.getenv("SCP_DATA_BOOTSTRAP", "auto").strip().lower()
+    if policy not in {"auto", "required", "skip"}:
+        logger.warning("Invalid SCP_DATA_BOOTSTRAP=%r, defaulting to 'auto'", policy)
+        policy = "auto"
+
+    if policy == "skip":
+        logger.info("SCP data bootstrap skipped (SCP_DATA_BOOTSTRAP=skip)")
+        return
+
+    from spectra_sherpa.app.lib.scp_compat import HAS_SCP, download_testdata, get_scp_datadirs
+
+    if not HAS_SCP:
+        return
+
+    for datadir in get_scp_datadirs():
+        try:
+            if datadir.exists() and any(d.is_dir() for d in datadir.iterdir() if not d.name.startswith(".")):
+                logger.info("SCP test data present at %s", datadir)
+                return
+        except OSError:
+            continue
+
+    timeout_sec = int(os.getenv("SCP_DATA_TIMEOUT", "300"))
+    logger.info("Downloading SCP test data (timeout=%ss)...", timeout_sec)
+
+    executor: ThreadPoolExecutor | None = None
+    future = None
+    try:
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(download_testdata)
+        future.result(timeout=timeout_sec)
+        logger.info("SCP test data download complete")
+    except FutureTimeout:
+        if future is not None:
+            future.cancel()
+        if executor is not None:
+            executor.shutdown(wait=False, cancel_futures=True)
+            executor = None
+        msg = f"SCP data download timed out after {timeout_sec}s"
+        if policy == "required":
+            raise RuntimeError(msg)
+        logger.warning(msg)
+    except Exception as exc:
+        msg = f"Failed to download SCP test data: {exc}"
+        if policy == "required":
+            raise RuntimeError(msg) from exc
+        logger.warning(msg)
+    finally:
+        if executor is not None:
+            executor.shutdown(wait=True, cancel_futures=False)
+
+
 async def ensure_spectrochempy_testdata() -> None:
     """
     Ensure SpectrochemPy test data directory is accessible for LLM.

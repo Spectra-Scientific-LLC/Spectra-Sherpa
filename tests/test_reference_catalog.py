@@ -83,9 +83,17 @@ class TestSklearnInfo:
 class TestScpCatalog:
     """Test the SpectroChemPy catalog module."""
 
-    def test_catalog_has_four_entries(self):
-        assert len(SCP_CATALOG) == 4
-        for name in ("irdata", "ramandata", "nmrdata", "galacticdata"):
+    def test_catalog_has_seven_entries(self):
+        assert len(SCP_CATALOG) == 7
+        for name in (
+            "irdata",
+            "ramandata",
+            "nmrdata",
+            "galacticdata",
+            "agirdata",
+            "matlabdata",
+            "msdata",
+        ):
             assert name in SCP_CATALOG
 
     def test_catalog_entries_have_required_fields(self):

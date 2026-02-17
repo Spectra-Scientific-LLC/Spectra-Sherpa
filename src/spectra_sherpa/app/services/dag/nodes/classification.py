@@ -282,23 +282,33 @@ class PLSDANode(Node):
         # Case 2: y is dataset - extract embedded labels from y
         # Case 3: y is array/list - use directly
         if y is None:
-            y_coord = safe_get_coord(X, 'y')
-            if y_coord is not None:
-                # Extract labels from X's y-axis (prefer labels over data)
-                if hasattr(y_coord, 'labels') and y_coord.labels is not None:
-                    y = y_coord.labels
-                elif hasattr(y_coord, 'data') and y_coord.data is not None and np.array(y_coord.data).size > 0:
-                    y = y_coord.data
+            # First: check for explicit target attribute (sklearn datasets store
+            # class labels in AnalysisDataset.target, separate from the y-axis)
+            _target = getattr(X, "target", None)
+            if _target is not None:
+                _tarr = np.asarray(_target)
+                if _tarr.size > 0:
+                    y = _tarr
+
+            # Second: fall back to y-axis coordinate
+            if y is None:
+                y_coord = safe_get_coord(X, 'y')
+                if y_coord is not None:
+                    # Extract labels from X's y-axis (prefer labels over data)
+                    if hasattr(y_coord, 'labels') and y_coord.labels is not None:
+                        y = y_coord.labels
+                    elif hasattr(y_coord, 'data') and y_coord.data is not None and np.array(y_coord.data).size > 0:
+                        y = y_coord.data
+                    else:
+                        raise ValueError(
+                            "Dataset has y-axis but no labels or data found. "
+                            "Please provide class labels explicitly via the 'y' input port."
+                        )
                 else:
                     raise ValueError(
-                        "Dataset has y-axis but no labels or data found. "
-                        "Please provide class labels explicitly via the 'y' input port."
+                        "Missing required input: y (class labels)\n"
+                        "Either provide labels via the 'y' input port, or use a dataset with labels in X.y"
                     )
-            else:
-                raise ValueError(
-                    "Missing required input: y (class labels)\n"
-                    "Either provide labels via the 'y' input port, or use a dataset with labels in X.y"
-                )
         elif isinstance(y, (NDDataset, AnalysisDataset)):
             # If y IS a dataset, extract embedded labels (don't use the dataset itself)
             y_coord = safe_get_coord(y, 'y')
@@ -358,15 +368,17 @@ class PLSDANode(Node):
         for i, cls in enumerate(classes):
             Y_dummy[y_array == cls, i] = 1
 
-        # Prepare data as NDDatasets for SpectroChemPy
+        # Prepare data as NDDatasets for SpectroChemPy.
+        # X may be AnalysisDataset (sklearn path) so wrap X_data explicitly.
+        X_ndd = scp.NDDataset(X_data) if not isinstance(X, NDDataset) else X
         Y_dummy_dataset = scp.NDDataset(Y_dummy)
 
         # Fit PLS-DA model using SpectroChemPy
         pls = scp.PLSRegression(n_components=n_components, scale=scale)
-        pls.fit(X, Y_dummy_dataset)
+        pls.fit(X_ndd, Y_dummy_dataset)
 
         # Make predictions on training data
-        Y_pred_raw = pls.predict(X)
+        Y_pred_raw = pls.predict(X_ndd)
         # Extract numpy array from result (these are raw PLS regression outputs, NOT probabilities)
         Y_pred_raw_np = np.array(Y_pred_raw.data) if hasattr(Y_pred_raw, "data") else np.array(Y_pred_raw)
 
@@ -1136,25 +1148,35 @@ class KNNNode(Node):
         # Case 3: y is array/list - use directly
         if y is None:
             logger.debug("No y input provided - extracting labels from X")
-            y_coord = safe_get_coord(X, 'y') if isinstance(X, (NDDataset, AnalysisDataset)) else None
-            if y_coord is not None:
-                # Extract labels from X's y-axis (prefer labels over data)
-                if hasattr(y_coord, 'labels') and y_coord.labels is not None:
-                    y = y_coord.labels
-                    logger.debug("Auto-extracted class labels from X.y.labels")
-                elif hasattr(y_coord, 'data') and y_coord.data is not None and np.array(y_coord.data).size > 0:
-                    y = y_coord.data
-                    logger.debug("Auto-extracted class labels from X.y.data")
+            # First: check for explicit target attribute (sklearn datasets store
+            # class labels in AnalysisDataset.target, separate from the y-axis)
+            _target = getattr(X, "target", None)
+            if _target is not None:
+                _tarr = np.asarray(_target)
+                if _tarr.size > 0:
+                    y = _tarr
+                    logger.debug("Auto-extracted class labels from X.target")
+
+            if y is None:
+                y_coord = safe_get_coord(X, 'y') if isinstance(X, (NDDataset, AnalysisDataset)) else None
+                if y_coord is not None:
+                    # Extract labels from X's y-axis (prefer labels over data)
+                    if hasattr(y_coord, 'labels') and y_coord.labels is not None:
+                        y = y_coord.labels
+                        logger.debug("Auto-extracted class labels from X.y.labels")
+                    elif hasattr(y_coord, 'data') and y_coord.data is not None and np.array(y_coord.data).size > 0:
+                        y = y_coord.data
+                        logger.debug("Auto-extracted class labels from X.y.data")
+                    else:
+                        raise ValueError(
+                            "NDDataset has y-axis but no labels or data found. "
+                            "Please provide class labels explicitly via the 'y' input port."
+                        )
                 else:
                     raise ValueError(
-                        "NDDataset has y-axis but no labels or data found. "
-                        "Please provide class labels explicitly via the 'y' input port."
+                        "Missing required input: y (class labels)\n"
+                        "Either provide labels via the 'y' input port, or use an NDDataset with labels in X.y"
                     )
-            else:
-                raise ValueError(
-                    "Missing required input: y (class labels)\n"
-                    "Either provide labels via the 'y' input port, or use an NDDataset with labels in X.y"
-                )
         elif isinstance(y, (NDDataset, AnalysisDataset)):
             # If y IS an NDDataset/AnalysisDataset, extract embedded labels (don't use the dataset itself)
             logger.debug("y is NDDataset/AnalysisDataset - extracting embedded labels")
@@ -1630,25 +1652,35 @@ class SIMCANode(Node):
         # Case 3: y is array/list - use directly
         if y is None:
             logger.debug("No y input provided - extracting labels from X")
-            y_coord = safe_get_coord(X, 'y')
-            if y_coord is not None:
-                # Extract labels from X's y-axis (prefer labels over data)
-                if hasattr(y_coord, 'labels') and y_coord.labels is not None:
-                    y = y_coord.labels
-                    logger.debug("Auto-extracted class labels from X.y.labels")
-                elif hasattr(y_coord, 'data') and y_coord.data is not None and np.array(y_coord.data).size > 0:
-                    y = y_coord.data
-                    logger.debug("Auto-extracted class labels from X.y.data")
+            # First: check for explicit target attribute (sklearn datasets store
+            # class labels in AnalysisDataset.target, separate from the y-axis)
+            _target = getattr(X, "target", None)
+            if _target is not None:
+                _tarr = np.asarray(_target)
+                if _tarr.size > 0:
+                    y = _tarr
+                    logger.debug("Auto-extracted class labels from X.target")
+
+            if y is None:
+                y_coord = safe_get_coord(X, 'y')
+                if y_coord is not None:
+                    # Extract labels from X's y-axis (prefer labels over data)
+                    if hasattr(y_coord, 'labels') and y_coord.labels is not None:
+                        y = y_coord.labels
+                        logger.debug("Auto-extracted class labels from X.y.labels")
+                    elif hasattr(y_coord, 'data') and y_coord.data is not None and np.array(y_coord.data).size > 0:
+                        y = y_coord.data
+                        logger.debug("Auto-extracted class labels from X.y.data")
+                    else:
+                        raise ValueError(
+                            "Dataset has y-axis but no labels or data found. "
+                            "Please provide class labels explicitly via the 'y' input port."
+                        )
                 else:
                     raise ValueError(
-                        "Dataset has y-axis but no labels or data found. "
-                        "Please provide class labels explicitly via the 'y' input port."
+                        "Missing required input: y (class labels)\n"
+                        "Either provide labels via the 'y' input port, or use a dataset with labels in X.y"
                     )
-            else:
-                raise ValueError(
-                    "Missing required input: y (class labels)\n"
-                    "Either provide labels via the 'y' input port, or use a dataset with labels in X.y"
-                )
         elif isinstance(y, (NDDataset, AnalysisDataset)):
             # If y IS a dataset, extract embedded labels (don't use the dataset itself)
             logger.debug("y is dataset - extracting embedded labels")

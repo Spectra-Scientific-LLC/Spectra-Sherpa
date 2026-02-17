@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import TimeoutError as FutureTimeout
 from types import SimpleNamespace
 
 import pytest
@@ -194,3 +195,115 @@ def test_dag_pool_creation_gracefully_handles_permission_error(
     # Pool should be None — no SystemExit
     assert _dag_pool is None
 
+
+# ===========================================================================
+# SpectroChemPy bootstrap timeout behavior
+# ===========================================================================
+
+
+def test_scp_bootstrap_timeout_auto_is_non_blocking(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path,
+) -> None:
+    class _TimedOutFuture:
+        def __init__(self) -> None:
+            self.cancel_called = False
+
+        def result(self, timeout=None):  # noqa: ANN001
+            raise FutureTimeout()
+
+        def cancel(self) -> None:
+            self.cancel_called = True
+
+    class _FakeExecutor:
+        def __init__(self, max_workers=1):  # noqa: ANN001
+            self.shutdown_calls: list[tuple[bool, bool]] = []
+            self.future = _TimedOutFuture()
+
+        def submit(self, fn, *args, **kwargs):  # noqa: ANN001
+            return self.future
+
+        def shutdown(self, wait=True, cancel_futures=False):  # noqa: ANN001
+            self.shutdown_calls.append((wait, cancel_futures))
+
+    fake_executor = _FakeExecutor()
+
+    monkeypatch.setenv("SCP_DATA_BOOTSTRAP", "auto")
+    monkeypatch.setenv("SCP_DATA_TIMEOUT", "1")
+    monkeypatch.setattr(
+        "spectra_sherpa.app.lib.scp_compat.HAS_SCP",
+        True,
+    )
+    monkeypatch.setattr(
+        "spectra_sherpa.app.lib.scp_compat.get_scp_datadirs",
+        lambda: [tmp_path / "missing"],
+    )
+    monkeypatch.setattr(
+        "spectra_sherpa.app.lib.scp_compat.download_testdata",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "concurrent.futures.ThreadPoolExecutor",
+        lambda max_workers=1: fake_executor,
+    )
+
+    with caplog.at_level("WARNING"):
+        startup.ensure_spectrochempy_data()
+
+    assert "timed out after 1s" in caplog.text
+    assert fake_executor.future.cancel_called is True
+    assert fake_executor.shutdown_calls == [(False, True)]
+
+
+def test_scp_bootstrap_timeout_required_raises_runtime_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    class _TimedOutFuture:
+        def __init__(self) -> None:
+            self.cancel_called = False
+
+        def result(self, timeout=None):  # noqa: ANN001
+            raise FutureTimeout()
+
+        def cancel(self) -> None:
+            self.cancel_called = True
+
+    class _FakeExecutor:
+        def __init__(self, max_workers=1):  # noqa: ANN001
+            self.shutdown_calls: list[tuple[bool, bool]] = []
+            self.future = _TimedOutFuture()
+
+        def submit(self, fn, *args, **kwargs):  # noqa: ANN001
+            return self.future
+
+        def shutdown(self, wait=True, cancel_futures=False):  # noqa: ANN001
+            self.shutdown_calls.append((wait, cancel_futures))
+
+    fake_executor = _FakeExecutor()
+
+    monkeypatch.setenv("SCP_DATA_BOOTSTRAP", "required")
+    monkeypatch.setenv("SCP_DATA_TIMEOUT", "1")
+    monkeypatch.setattr(
+        "spectra_sherpa.app.lib.scp_compat.HAS_SCP",
+        True,
+    )
+    monkeypatch.setattr(
+        "spectra_sherpa.app.lib.scp_compat.get_scp_datadirs",
+        lambda: [tmp_path / "missing"],
+    )
+    monkeypatch.setattr(
+        "spectra_sherpa.app.lib.scp_compat.download_testdata",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "concurrent.futures.ThreadPoolExecutor",
+        lambda max_workers=1: fake_executor,
+    )
+
+    with pytest.raises(RuntimeError, match="timed out after 1s"):
+        startup.ensure_spectrochempy_data()
+
+    assert fake_executor.future.cancel_called is True
+    assert fake_executor.shutdown_calls == [(False, True)]

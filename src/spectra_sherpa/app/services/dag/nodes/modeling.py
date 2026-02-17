@@ -46,15 +46,25 @@ def _make_safe_coord(values: Any, title: Optional[str] = None) -> Any:
 
     # Coord-like object (NDDataset coordinate) — convert to AxisInfo
     if hasattr(values, "data") and hasattr(values, "copy"):
+        labels = None
+        raw_labels = getattr(values, "labels", None)
+        if raw_labels is not None:
+            try:
+                if hasattr(raw_labels, "tolist"):
+                    flat = raw_labels.tolist()
+                else:
+                    flat = list(raw_labels)
+                if isinstance(flat, list):
+                    labels = [str(v) for v in flat]
+                else:
+                    labels = [str(flat)]
+            except Exception:
+                labels = None
         return AxisInfo(
             values=np.asarray(values.data) if values.data is not None else None,
             units=str(values.units) if hasattr(values, "units") and values.units else None,
             title=title or (str(values.title) if hasattr(values, "title") and values.title else None),
-            labels=(
-                list(values.labels)
-                if hasattr(values, "labels") and values.labels is not None
-                else None
-            ),
+            labels=labels,
         )
 
     # Try numeric array

@@ -36,6 +36,9 @@ class TestScpCompatExports:
         assert hasattr(scp_compat, "Coord")
         assert hasattr(scp_compat, "HAS_SCP")
         assert hasattr(scp_compat, "require_scp")
+        assert hasattr(scp_compat, "get_scp_datadirs")
+        assert hasattr(scp_compat, "resolve_scp_path")
+        assert hasattr(scp_compat, "download_testdata")
 
     @pytest.mark.skipif(not HAS_SCP, reason="spectrochempy not installed")
     def test_require_scp_passes_when_available(self):
@@ -72,6 +75,36 @@ class TestScpCompatExports:
         monkeypatch.setattr(scp_mod, "HAS_SCP", False)
         with pytest.raises(ImportError, match="requires SpectroChemPy"):
             scp_mod.require_scp("Test feature")
+
+    def test_get_scp_datadirs_prioritizes_env_override(self, monkeypatch: pytest.MonkeyPatch):
+        from spectra_sherpa.app.lib import scp_compat
+
+        monkeypatch.setenv("SCP_DATADIR", "/tmp/custom-scp-datadir")
+        dirs = scp_compat.get_scp_datadirs()
+        assert dirs
+        assert str(dirs[0]) == "/tmp/custom-scp-datadir"
+
+    def test_get_scp_datadirs_includes_testdata_fallback(self, monkeypatch: pytest.MonkeyPatch):
+        from spectra_sherpa.app.lib import scp_compat
+
+        monkeypatch.delenv("SCP_DATADIR", raising=False)
+        dirs = scp_compat.get_scp_datadirs()
+        assert any(str(path).endswith(".spectrochempy/testdata") for path in dirs)
+
+    def test_resolve_scp_path_uses_discovered_dirs(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ):
+        from spectra_sherpa.app.lib import scp_compat
+
+        target = tmp_path / "irdata" / "sample.spg"
+        target.parent.mkdir(parents=True)
+        target.write_text("placeholder")
+
+        monkeypatch.setenv("SCP_DATADIR", str(tmp_path))
+        resolved = scp_compat.resolve_scp_path("irdata/sample.spg")
+        assert resolved == target
 
 
 class TestNoDirectScpImports:

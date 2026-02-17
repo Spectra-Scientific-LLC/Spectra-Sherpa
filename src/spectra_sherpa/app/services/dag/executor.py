@@ -666,7 +666,11 @@ class DAGExecutor:
                 else:
                     raise
 
-        # In-process path (data nodes, pool unavailable, or fallback)
+        # In-process path (data nodes, pool unavailable, or fallback).
+        # NOTE: We do NOT sanitize (NDDataset→AnalysisDataset) here because
+        # some nodes pass inputs directly to SpectroChemPy functions that
+        # require NDDataset.  JSON-safety is ensured at the API boundary
+        # by serialize_result() and _json_safe() in to_dict().
         if named_inputs:
             return await asyncio.wait_for(
                 node.run(**named_inputs), timeout=timeout

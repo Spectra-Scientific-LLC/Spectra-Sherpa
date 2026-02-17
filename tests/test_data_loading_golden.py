@@ -43,7 +43,7 @@ GOLDEN_FILES = {
 
 def _get_scp_datadirs() -> list[Path]:
     primary = Path(scp.preferences.datadir)
-    fallback = Path.home() / ".spectrochempy" / "data"
+    fallback = Path.home() / ".spectrochempy" / "testdata"
     datadirs = []
     if primary.exists():
         datadirs.append(primary)

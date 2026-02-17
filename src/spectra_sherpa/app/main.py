@@ -36,6 +36,7 @@ from spectra_sherpa.app.core.startup import (
     wait_for_database_ready,
     ensure_default_user,
     ensure_egress_defaults,
+    ensure_spectrochempy_data,
     link_hybrid_identity,
     reconcile_stale_jobs,
     ensure_spectrochempy_testdata,
@@ -202,6 +203,8 @@ def _make_lifespan(
                 await link_hybrid_identity()
                 logger.info("  → reconcile_stale_jobs")
                 await reconcile_stale_jobs()
+                logger.info("  → ensure_spectrochempy_data")
+                ensure_spectrochempy_data()
                 logger.info("  → ensure_spectrochempy_testdata")
                 await ensure_spectrochempy_testdata()
                 logger.info("  → ensure_workflow_templates")

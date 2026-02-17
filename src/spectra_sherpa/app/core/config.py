@@ -113,8 +113,8 @@ EXTENSION_READER_MAP = {
     ".mat": "read_matlab",
 
     # JCAMP-DX formats (common in IR spectroscopy)
-    ".jdx": "read_jdx",
-    ".dx": "read_jdx",
+    ".jdx": "read_jcamp",
+    ".dx": "read_jcamp",
 
     # Galactic SPC format
     ".spc": "read_spc",

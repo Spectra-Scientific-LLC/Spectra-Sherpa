@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from spectra_sherpa.app.api.deps import check_demo_capability, get_current_user, get_session
+from spectra_sherpa.app.api.deps import get_current_user, get_session
 from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.core.security import check_export_allowed
 from spectra_sherpa.app.models.user import User
@@ -306,10 +306,6 @@ async def execute_trial(
 
     This is completely independent of any stored workflow state.
     """
-    # Demo mode: block inline data injection
-    if payload.initial_data:
-        check_demo_capability("data_upload")
-
     try:
         # Build a fresh DAG executor for this trial (no caching)
         executor = DAGExecutor()
@@ -461,14 +457,15 @@ async def list_spectrochempy_examples(
     """
     List available files in SpectroChemPy example datasets.
 
-    Scans both scp.preferences.datadir and ~/.spectrochempy/data,
+    Scans configured SpectroChemPy datadirs (``SCP_DATADIR``,
+    ``scp.preferences.datadir``, and ``~/.spectrochempy/testdata``),
     deduplicates files, and returns metadata for each file.
 
     Returns a dictionary mapping dataset names (e.g., 'irdata', 'ramandata')
     to lists of available files with their labels, paths, and metadata.
     """
     from pathlib import Path
-    from spectra_sherpa.app.lib.scp_compat import scp, HAS_SCP
+    from spectra_sherpa.app.lib.scp_compat import HAS_SCP, get_scp_datadirs, scp
 
     if not HAS_SCP:
         raise HTTPException(
@@ -483,37 +480,51 @@ async def list_spectrochempy_examples(
     try:
         # Scan multiple data directories
         primary_datadir = Path(scp.preferences.datadir)
-        fallback_datadir = Path.home() / ".spectrochempy" / "data"
+        primary_resolved = primary_datadir.expanduser().resolve(strict=False)
+        data_dirs = [d for d in get_scp_datadirs() if d.exists()]
 
-        # Resolve symlinks to avoid scanning same directory twice
-        primary_resolved = primary_datadir.resolve()
-        fallback_resolved = fallback_datadir.resolve() if fallback_datadir.exists() else None
-
-        data_dirs = [primary_datadir]
-        if fallback_resolved and fallback_resolved != primary_resolved:
-            data_dirs.append(fallback_datadir)
-
-        # Define the example dataset folders to scan
-        # Extensions are now comprehensive and include JCAMP-DX formats
-        datasets = {
-            "irdata": {
-                "label": "IR: Infrared Spectroscopy",
-                "extensions": [".spg", ".spa", ".csv", ".jdx", ".dx"],
-                "allow_numeric_ext": True  # Handles all OPUS numeric extensions (.0, .1, .0000, etc.)
-            },
-            "ramandata": {
-                "label": "Raman Spectroscopy",
-                "extensions": [".txt", ".wdf", ".spc"]
-            },
-            "nmrdata": {
-                "label": "NMR: Nuclear Magnetic Resonance",
-                "dirs": True
-            },
-            "galacticdata": {
-                "label": "Galactic SPC Files",
-                "extensions": [".spc"]
-            },
+        spectral_extensions = {
+            ".spg",
+            ".spa",
+            ".csv",
+            ".jdx",
+            ".dx",
+            ".spc",
+            ".txt",
+            ".wdf",
+            ".mat",
+            ".asc",
         }
+        scp_labels = {
+            "irdata": "IR: Infrared Spectroscopy",
+            "ramandata": "Raman Spectroscopy",
+            "nmrdata": "NMR: Nuclear Magnetic Resonance",
+            "galacticdata": "Galactic SPC Files",
+            "agirdata": "Agilent IR (AGIR)",
+            "dscdata": "DSC (Calorimetry)",
+            "matlabdata": "MATLAB Datasets",
+            "msdata": "Mass Spectrometry",
+        }
+
+        # Auto-discover SCP categories from available datadirs.
+        datasets: dict[str, dict[str, Any]] = {}
+        for datadir in data_dirs:
+            for subdir in sorted(datadir.iterdir()):
+                if not subdir.is_dir() or subdir.name.startswith((".", "_")):
+                    continue
+                name = subdir.name
+                if name in datasets:
+                    continue
+
+                label = scp_labels.get(name, name.replace("data", " Data").title().strip())
+                if name == "nmrdata":
+                    datasets[name] = {"label": label, "dirs": True}
+                else:
+                    datasets[name] = {
+                        "label": label,
+                        "extensions": list(spectral_extensions),
+                        "allow_numeric_ext": True,
+                    }
 
         result = {}
 
@@ -535,6 +546,11 @@ async def list_spectrochempy_examples(
                             if (item / "fid").exists() or (item / "ser").exists():
                                 rel_path = item.relative_to(datadir)
                                 label = str(rel_path).replace(f"{dataset_name}/", "")
+                                source_kind = (
+                                    "primary"
+                                    if datadir.expanduser().resolve(strict=False) == primary_resolved
+                                    else "fallback"
+                                )
 
                                 # Deduplicate: only add if not already seen
                                 if label not in files_dict:
@@ -542,7 +558,7 @@ async def list_spectrochempy_examples(
                                         "label": label,
                                         "value": str(rel_path),
                                         "path": str(rel_path),
-                                        "source": "primary" if datadir == primary_datadir else "fallback"
+                                        "source": source_kind,
                                     }
                 else:
                     # For other datasets, list files by extension (case-insensitive)
@@ -564,6 +580,11 @@ async def list_spectrochempy_examples(
 
                         rel_path = file_path.relative_to(datadir)
                         label = str(rel_path).replace(f"{dataset_name}/", "")
+                        source_kind = (
+                            "primary"
+                            if datadir.expanduser().resolve(strict=False) == primary_resolved
+                            else "fallback"
+                        )
 
                         # Deduplicate: only add if not already seen
                         if label not in files_dict:
@@ -572,7 +593,7 @@ async def list_spectrochempy_examples(
                                 "value": str(rel_path),
                                 "path": str(rel_path),
                                 "format": file_path.suffix.lower(),
-                                "source": "primary" if datadir == primary_datadir else "fallback"
+                                "source": source_kind,
                             }
 
             if files_dict:
@@ -1069,10 +1090,6 @@ async def execute_workflow(
     current_user: User = Depends(get_current_user),
 ) -> WorkflowExecuteResponse:
     """Execute a workflow for the authenticated user."""
-    # Demo mode: block inline data injection
-    if payload.initial_data:
-        check_demo_capability("data_upload")
-
     user_id = current_user.id
 
     # Load workflow with nodes and edges
@@ -1168,7 +1185,7 @@ async def execute_workflow(
             workflow_id=workflow_id,
             status=final_status,
             results=serialized_results,
-            diagnostics=getattr(executor, "diagnostics", {}),
+            diagnostics=serialize_result(getattr(executor, "diagnostics", {})),
             node_statuses=node_statuses,
             executed_at=datetime.utcnow(),
             error=error_msg,
@@ -1203,7 +1220,7 @@ async def execute_workflow(
             workflow_id=workflow_id,
             status=response_status,
             results=partial_results,
-            diagnostics=getattr(executor, "diagnostics", {}) if executor else {},
+            diagnostics=serialize_result(getattr(executor, "diagnostics", {}) if executor else {}),
             node_statuses=executor.get_status()["node_statuses"] if executor else {},
             executed_at=datetime.utcnow(),
             error=error_msg,

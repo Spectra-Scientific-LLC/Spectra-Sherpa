@@ -2206,21 +2206,30 @@ const selectedDatasetLabel = computed(() => {
 
 const normalizeMethodOptions = ['mean', 'median', 'snv', 'msc'];
 
-// DATA node source options — hide Direct File in demo mode
+// DATA node source options — keep reference/file paths only in the primary selector.
+// Legacy sources remain executable for existing workflows but are not listed here.
 const allDataSourceOptions = [
   { label: 'Direct File', value: 'file' },
-  { label: 'Experiment', value: 'experiment' },
-  { label: 'Library', value: 'library' },
-  { label: 'SpectroChemPy Example', value: 'spectrochempy' },
+  { label: 'SpectroChemPy Dataset', value: 'spectrochempy' },
   { label: 'Sklearn Dataset', value: 'sklearn' },
   { label: 'Eigenvector Dataset', value: 'eigenvector' },
-  { label: 'Synthetic', value: 'synthetic' },
 ];
-const dataSourceOptions = computed(() =>
-  isDemoMode.value
-    ? allDataSourceOptions.filter(o => o.value !== 'file')
-    : allDataSourceOptions
-);
+const dataSourceOptions = computed(() => {
+  const options = (
+    isDemoMode.value
+      ? allDataSourceOptions.filter(o => o.value !== 'file')
+      : allDataSourceOptions
+  ).map(option => ({ ...option }));
+
+  // Preserve editability for legacy workflows that still carry old source values.
+  const currentSource = localParams.value.source;
+  if (typeof currentSource === 'string' && currentSource.trim() !== '' &&
+      !options.some(option => option.value === currentSource)) {
+    options.push({ label: `Legacy: ${currentSource}`, value: currentSource });
+  }
+
+  return options;
+});
 
 const getSelectedDatasetFallback = (value: unknown): Array<{label: string; value: string}> => {
   if (typeof value === 'string' && value.trim() !== '') {
@@ -2249,7 +2258,15 @@ const eigenvectorDatasetOptions = computed(() => {
 const scpExampleOptions = computed(() => {
   const datasets = workflowStore.availableSpectroChemPyDatasets;
   // Fall back to known datasets if cache is empty (pre-fetch)
-  return datasets.length > 0 ? datasets : ['irdata', 'ramandata', 'nmrdata', 'galacticdata'];
+  return datasets.length > 0 ? datasets : [
+    'irdata',
+    'ramandata',
+    'nmrdata',
+    'galacticdata',
+    'agirdata',
+    'matlabdata',
+    'msdata',
+  ];
 });
 
 // Handle source type change

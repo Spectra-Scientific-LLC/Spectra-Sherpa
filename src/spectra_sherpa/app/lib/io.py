@@ -459,11 +459,11 @@ def read_spectral_file(filepath: Path) -> "NDDataset":
     label = _extract_label_from_filename(filepath.name)
 
     if ext in [".jdx", ".dx"]:
-        dataset = scp.read_jdx(str(filepath))
+        dataset = scp.read_jcamp(str(filepath))
     elif ext == ".spc":
         dataset = scp.read_spc(str(filepath))
     elif ext == ".spa":
-        dataset = scp.read_spa(str(filepath))
+        dataset = scp.read_omnic(str(filepath))
     elif ext == ".spg":
         dataset = scp.read_omnic(str(filepath))
     elif ext == ".opus":

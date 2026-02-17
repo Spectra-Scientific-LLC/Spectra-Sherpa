@@ -316,14 +316,14 @@ class AnalysisDataset:
         if self.x_axis:
             result["x_axis"] = {
                 "data": self.x_axis.values.tolist() if self.x_axis.values is not None else None,
-                "labels": self.x_axis.labels,
+                "labels": _json_safe(self.x_axis.labels),
                 "units": self.x_axis.units,
                 "title": self.x_axis.title,
             }
         if self.y_axis:
             result["y_axis"] = {
                 "data": self.y_axis.values.tolist() if self.y_axis.values is not None else None,
-                "labels": self.y_axis.labels,
+                "labels": _json_safe(self.y_axis.labels),
                 "units": self.y_axis.units,
                 "title": self.y_axis.title,
             }
@@ -425,15 +425,28 @@ def from_sklearn_bunch(bunch: Any, name: str = "") -> AnalysisDataset:
 
 def _coord_to_axis_info(coord: Any) -> AxisInfo:
     """Convert a Coord-like object to AxisInfo."""
+    labels = None
+    raw_labels = getattr(coord, "labels", None)
+    if raw_labels is not None:
+        try:
+            # Flatten to plain Python strings — SCP Coord.labels may be a
+            # multi-dimensional numpy array of objects/bytes/strings.
+            if hasattr(raw_labels, "tolist"):
+                flat = raw_labels.tolist()
+            else:
+                flat = list(raw_labels)
+            if isinstance(flat, list):
+                labels = [str(v) for v in flat]
+            else:
+                labels = [str(flat)]
+        except Exception:
+            labels = None
+
     return AxisInfo(
         values=np.asarray(coord.data) if coord.data is not None else None,
         units=str(coord.units) if hasattr(coord, "units") and coord.units else None,
         title=str(coord.title) if hasattr(coord, "title") and coord.title else None,
-        labels=(
-            list(coord.labels)
-            if hasattr(coord, "labels") and coord.labels is not None
-            else None
-        ),
+        labels=labels,
     )
 
 
