@@ -155,11 +155,12 @@ watch(chatWidth, (value) => {
 
 // Connect the job store WS when the backend becomes available so that
 // background job progress (batch predict, folder watches) reaches the UI.
-// Skip if not authenticated in enterprise mode — avoids pre-login 1008 rejections.
+// Use authStore.user (not isAuthenticated) to avoid connecting with a stale
+// localStorage token before /auth/me validates it.
 watch(
-  [backendConnected, () => authStore.isAuthenticated],
-  ([isConnected, isAuthed]) => {
-    if (isConnected && (isAuthed || appMode.value === "local")) {
+  [backendConnected, () => authStore.user],
+  ([isConnected, user]) => {
+    if (isConnected && (user || appMode.value === "local")) {
       jobStore.connect().catch(() => undefined);
     } else {
       jobStore.disconnect();

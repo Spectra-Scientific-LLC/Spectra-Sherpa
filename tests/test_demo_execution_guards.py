@@ -60,54 +60,31 @@ def demo_profile(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class TestDemoGuardCoverage:
-    def test_data_ingress_routes_have_demo_guard(self) -> None:
-        """Data ingress/compute routes should expose demo_guard("data_upload")."""
+    def test_file_upload_routes_have_demo_guard(self) -> None:
+        """Actual file upload/import routes should have demo_guard("data_upload").
+
+        Processing endpoints (preprocess, blend, synthesize, compute/execute) are
+        intentionally NOT guarded — they must work with reference datasets in demo mode.
+        """
         guarded_paths = [
             "/api/v1/experiments/{experiment_id}/files",
             "/api/v1/projects/import",
-            "/api/v1/builder/preprocess",
-            "/api/v1/builder/blend",
-            "/api/v1/builder/synthesize",
-            "/api/v1/compute/execute",
         ]
         for path in guarded_paths:
             route = _find_route(path, "POST")
             assert _has_demo_guard(route), f"Expected demo_guard dependency on {path}"
 
-    @pytest.mark.anyio
-    async def test_demo_blocks_builder_preprocess_inline_data(
-        self,
-        auth_client: AsyncClient,
-        demo_profile: None,
-    ) -> None:
-        payload = {
-            "spectra": [
-                {
-                    "label": "inline-demo",
-                    "wavenumber": [1000.0, 1001.0],
-                    "absorbance": [0.1, 0.2],
-                }
-            ],
-            "settings": {},
-        }
-        resp = await auth_client.post("/api/v1/builder/preprocess", json=payload)
-        assert resp.status_code == 403
-        assert "not available in demo mode" in resp.json()["detail"]
-
-    @pytest.mark.anyio
-    async def test_demo_blocks_compute_execute_inline_data(
-        self,
-        auth_client: AsyncClient,
-        demo_profile: None,
-    ) -> None:
-        payload = {
-            "algorithm_id": "advanced_baseline",
-            "data": {"values": [[1.0, 2.0]], "x_axis": [1000.0, 1001.0]},
-            "metadata": {"x_title": "wn"},
-        }
-        resp = await auth_client.post("/api/v1/compute/execute", json=payload)
-        assert resp.status_code == 403
-        assert "not available in demo mode" in resp.json()["detail"]
+    def test_processing_routes_are_not_guarded(self) -> None:
+        """Processing endpoints must remain open in demo mode for reference datasets."""
+        open_paths = [
+            "/api/v1/builder/preprocess",
+            "/api/v1/builder/blend",
+            "/api/v1/builder/synthesize",
+            "/api/v1/compute/execute",
+        ]
+        for path in open_paths:
+            route = _find_route(path, "POST")
+            assert not _has_demo_guard(route), f"Unexpected demo_guard on {path}"
 
     @pytest.mark.anyio
     async def test_demo_should_block_workflow_execute_inline_initial_data(

@@ -267,9 +267,9 @@ const handleConfigChange = async () => {
 
 onMounted(async () => {
   // Skip WS connect and data fetches when not authenticated in enterprise mode.
-  // The router guard will redirect to /login; once the user logs in and this
-  // component re-mounts, these calls will proceed normally.
-  if (authStore.isAuthenticated || appMode.value === "local") {
+  // Use authStore.user (not isAuthenticated) to avoid acting on a stale token
+  // before /auth/me validates it.
+  if (authStore.user || appMode.value === "local") {
     store.connect();
     experimentStore.fetchExperiments();
     sherpaStore.init();

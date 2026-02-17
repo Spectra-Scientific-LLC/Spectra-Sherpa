@@ -2666,7 +2666,7 @@ const getParamDefinitions = (nodeType: string): NodeParameterDefinition[] => {
   const legacyType = workflowStore.getLegacyNodeType(nodeType);
   const definitions: Record<string, NodeParameterDefinition[]> = {
     DATA: [
-      { name: 'source', label: 'Source', type: 'select', options: dataSourceOptions },
+      { name: 'source', label: 'Source', type: 'select', options: dataSourceOptions.value },
       { name: 'file_path', label: 'File Path', type: 'text' },
       { name: 'transpose_on_load', label: 'Transpose on Load', type: 'boolean', default: false },
       { name: 'sample_axis_title', label: 'Sample Axis Title', type: 'text', default: 'Sample' },

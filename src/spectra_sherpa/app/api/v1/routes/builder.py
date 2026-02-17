@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from spectra_sherpa.app.api.deps import demo_guard, get_current_user, get_session
+from spectra_sherpa.app.api.deps import get_current_user, get_session
 from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.models.calibration import Calibration
 from spectra_sherpa.app.models.experiment import Experiment
@@ -155,8 +155,7 @@ async def _validate_payload_file_paths(
             await _validate_file_path_ownership(file_path, session, current_user)
 
 
-@router.post("/preprocess", response_model=PreprocessResponse,
-             dependencies=[Depends(demo_guard("data_upload"))])
+@router.post("/preprocess", response_model=PreprocessResponse)
 async def preprocess_spectra(
     payload: PreprocessRequest,
     session: AsyncSession = Depends(get_session),
@@ -266,8 +265,7 @@ async def get_file_info(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@router.post("/blend", response_model=BlendResponse,
-             dependencies=[Depends(demo_guard("data_upload"))])
+@router.post("/blend", response_model=BlendResponse)
 async def blend_spectra(
     payload: BlendRequest,
     session: AsyncSession = Depends(get_session),
@@ -385,8 +383,7 @@ async def generate_concentrations(payload: ConcentrationGenerateRequest) -> Conc
     )
 
 
-@router.post("/synthesize", response_model=SynthesizeResponse,
-             dependencies=[Depends(demo_guard("data_upload"))])
+@router.post("/synthesize", response_model=SynthesizeResponse)
 async def synthesize_spectra(
     payload: SynthesizeRequest,
     session: AsyncSession = Depends(get_session),

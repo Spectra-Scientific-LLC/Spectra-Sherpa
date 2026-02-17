@@ -40,8 +40,7 @@ class ComputeResponse(BaseModel):
     error: Optional[str] = None
 
 
-@router.post("/execute", response_model=ComputeResponse,
-             dependencies=[Depends(deps.demo_guard("data_upload"))])
+@router.post("/execute", response_model=ComputeResponse)
 async def execute_compute(
     request: ComputeRequest,
     current_user: User = Depends(deps.get_current_user),
