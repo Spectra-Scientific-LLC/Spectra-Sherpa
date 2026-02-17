@@ -1,67 +1,92 @@
 site_name: SpectraSherpa Documentation
+site_url: https://docs.spectrascientific.ai
+repo_url: https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa
+repo_name: Spectra-Scientific-LLC/Spectra-Sherpa
+edit_uri: edit/main/docs/
 nav:
   - Home: index.md
   - User Guide (OSS):
-    - Installation: user/installation.md
-    - Configuration: user/configuration.md
-    - Quickstart: user/quickstart.md
-    - Experiments: user/experiments.md
-    - Library (NIST): user/library.md
-    - DOE (96-Well): user/doe.md
-    - Synthesis Builder: user/synthesis.md
-    - Workflow Builder: user/workflow.md
-    - Reproduction Study:
-        - PCA (Side-by-Side): user/case_study_pca.md
-        - Methodology: user/reproduction_methodology.md
-    - User Manual: user/manual.md
+      - Installation: user/installation.md
+      - Configuration: user/configuration.md
+      - Quickstart: user/quickstart.md
+      - Experiments: user/experiments.md
+      - Library (NIST): user/library.md
+      - DOE (96-Well): user/doe.md
+      - Synthesis Builder: user/synthesis.md
+      - Workflow Builder: user/workflow.md
+      - Reproduction Study:
+          - PCA (Side-by-Side): user/case_study_pca.md
+          - Methodology: user/reproduction_methodology.md
+      - User Manual: user/manual.md
   - Server Operator Guide:
-    - Overview: admin/server/overview.md
-    - Hybrid Mode: admin/server/hybrid_mode.md
-    - Enterprise Mode: admin/server/enterprise_mode.md
-    - Docker Deployment: deployment/DIGITAL_OCEAN.md
+      - Overview: admin/server/overview.md
+      - Hybrid Mode: admin/server/hybrid_mode.md
+      - Enterprise Mode: admin/server/enterprise_mode.md
+      - Docker Deployment: deployment/DIGITAL_OCEAN.md
   - Developer Guide:
-    - Setup & Contributing: dev/setup.md
-    - Architecture: dev/architecture.md
+      - Setup & Contributing: dev/setup.md
+      - Architecture: dev/architecture.md
+      - Your First Node: dev/first_plugin.md
   - Examples:
-    - 00. Case Study Notebook: user/examples/00_case_study_notebook.ipynb
-    - 01. Loading Data: user/examples/01_loading_data.md
-    - 02. Manipulation: user/examples/02_dataset_manipulation.md
-    - 03. Plotting: user/examples/03_plotting.md
-    - 04. Smoothing: user/examples/04_preprocessing_smoothing.md
-    - 05. Baseline: user/examples/05_preprocessing_baseline.md
-    - 06. Peak Finding: user/examples/06_peak_finding.md
-    - 07. Integration: user/examples/07_peak_fitting.md
-    - 08. PCA: user/examples/08_pca.md
-    - 09. MCR-ALS: user/examples/09_mcr_als.md
-    - 10. PLS: user/examples/10_pls_regression.md
+      - 00. Case Study Notebook: user/examples/00_case_study_notebook.ipynb
+      - 01. Loading Data: user/examples/01_loading_data.md
+      - 02. Manipulation: user/examples/02_dataset_manipulation.md
+      - 03. Plotting: user/examples/03_plotting.md
+      - 04. Smoothing: user/examples/04_preprocessing_smoothing.md
+      - 05. Baseline: user/examples/05_preprocessing_baseline.md
+      - 06. Peak Finding: user/examples/06_peak_finding.md
+      - 07. Integration: user/examples/07_peak_fitting.md
+      - 08. PCA: user/examples/08_pca.md
+      - 09. MCR-ALS: user/examples/09_mcr_als.md
+      - 10. PLS: user/examples/10_pls_regression.md
   - Reference:
-    - Node Library: user/reference/nodes.md
+      - Node Library: user/reference/nodes.md
   - Past:
-    - Summary: past/index.md
-    - Release Notes: past/RELEASE_NOTES.md
-    - Implementation Summary: past/IMPLEMENTATION_SUMMARY.md
-    - Final Fixes Summary: past/FINAL_FIXES_SUMMARY.md
-    - Session Summary: past/SESSION_SUMMARY_2026-01-21.md
-    - Node Standardization (2026-01-26): past/NODE_STANDARDIZATION_2026-01-26.md
-    - Completed Plans:
-      - Roadmap: past/ROADMAP.md
-      - 3-Repo Refactor Strategy: past/REFACTOR_3_REPO_STRATEGY.md
-      - Sherpa Implementation Plan V2: past/SHERPA_IMPLEMENTATION_PLAN_V2.md
-      - DOE Enhancements: past/DOE_ENHANCEMENTS.md
-      - Navigation Redesign: past/NAVIGATION_REDESIGN.md
-    - Fixes:
-      - 3D Concatenation Fix: past/3D_CONCATENATION_FIX.md
-      - Quick Plot Y-Axis Labels Fix: past/QUICK_PLOT_Y_AXIS_LABELS_FIX.md
-      - Case Sensitivity and UI Fixes: past/CASE_SENSITIVITY_AND_UI_FIXES.md
-      - Dedicated Load Group Enforcement: past/DEDICATED_LOAD_GROUP_ENFORCEMENT.md
-      - Load Group Node Implementation: past/LOAD_GROUP_NODE_IMPLEMENTATION.md
-    - Reviews & Testing:
-      - Code Review Findings: past/CODE_REVIEW_FINDINGS.md
-      - Week 7 Testing: past/WEEK7_TESTING.md
+      - Summary: past/index.md
+      - Release Notes: past/RELEASE_NOTES.md
+      - Implementation Summary: past/IMPLEMENTATION_SUMMARY.md
+      - Final Fixes Summary: past/FINAL_FIXES_SUMMARY.md
+      - Session Summary: past/SESSION_SUMMARY_2026-01-21.md
+      - Node Standardization (2026-01-26): past/NODE_STANDARDIZATION_2026-01-26.md
+      - Completed Plans:
+          - Roadmap: past/ROADMAP.md
+          - 3-Repo Refactor Strategy: past/REFACTOR_3_REPO_STRATEGY.md
+          - Sherpa Implementation Plan V2: past/SHERPA_IMPLEMENTATION_PLAN_V2.md
+          - DOE Enhancements: past/DOE_ENHANCEMENTS.md
+          - Navigation Redesign: past/NAVIGATION_REDESIGN.md
+      - Fixes:
+          - 3D Concatenation Fix: past/3D_CONCATENATION_FIX.md
+          - Quick Plot Y-Axis Labels Fix: past/QUICK_PLOT_Y_AXIS_LABELS_FIX.md
+          - Case Sensitivity and UI Fixes: past/CASE_SENSITIVITY_AND_UI_FIXES.md
+          - Dedicated Load Group Enforcement: past/DEDICATED_LOAD_GROUP_ENFORCEMENT.md
+          - Load Group Node Implementation: past/LOAD_GROUP_NODE_IMPLEMENTATION.md
+      - Reviews & Testing:
+          - Code Review Findings: past/CODE_REVIEW_FINDINGS.md
+          - Week 7 Testing: past/WEEK7_TESTING.md
   - Future:
-    - Summary: future/index.md
-    - Analysis Canvas Wireframe: future/ANALYSIS_CANVAS_WIREFRAME.md
-    - Plugin Plan (2025-01-15): future/plugin_plan_011525.md
-    - Future Capabilities: future/FUTURE_CAPABILITIES.md
-theme: readthedocs
-dev_addr: '127.0.0.1:8100'
+      - Summary: future/index.md
+      - Analysis Canvas Wireframe: future/ANALYSIS_CANVAS_WIREFRAME.md
+      - Plugin Plan (2025-01-15): future/plugin_plan_011525.md
+      - Future Capabilities: future/FUTURE_CAPABILITIES.md
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - search.highlight
+    - content.action.edit
+copyright: Copyright &copy; 2025-2026 Spectra Scientific LLC
+dev_addr: "127.0.0.1:8100"

@@ -29,6 +29,33 @@ SpectraSherpa follows a "Clean Architecture" pattern with a strict separation be
 └──────────────────────────────────────────────────────┘
 ```
 
+### OS Boundary & Enterprise Extensions
+
+SpectraSherpa uses an "Open Core" model. The OSS codebase defines mode-checking hooks (e.g. `create_app()` lifespan callbacks) that the proprietary `spectra-server` package can optionally fill. Without that package, enterprise-only code paths fall through to no-op defaults.
+
+```mermaid
+graph TD
+    subgraph "OSS Core (AGPLv3)"
+        A[FastAPI Application] --> B[OSS Router]
+        A --> C[Mode Policy Check]
+        C --> D{Is Enterprise?}
+        D -- No --> E[Local Auth / No-Op]
+        D -- Yes --> F[Enterprise Middleware Interface]
+    end
+
+    subgraph "Proprietary Server (Commercial)"
+        F -. Injection .-> G[SSO / SAML / RBAC]
+        F -. Injection .-> H[Audit Logging]
+        F -. Injection .-> I[Cloud Job Queue]
+    end
+
+    classDef oss fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    classDef prop fill:#fff3e0,stroke:#ff6f00,stroke-width:2px,stroke-dasharray: 5 5;
+    
+    class A,B,C,D,E,F oss;
+    class G,H,I prop;
+```
+
 ## High-Level Structure
 
 ```
@@ -130,4 +157,4 @@ SQLAlchemy models with SQLite backend:
 - **FolderWatch**: Automated polling configuration
 - **BatchPrediction**: Per-file prediction results
 
-16 linear Alembic migrations manage schema evolution.
+17 linear Alembic migrations manage schema evolution.

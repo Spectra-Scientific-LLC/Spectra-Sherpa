@@ -104,9 +104,12 @@
         @click="emit('toggle-chat')"
       />
       <Button
+        icon="pi pi-bell"
+        class="p-button-text p-button-rounded"
         aria-label="Notifications"
-        badge="3"
-        badgeClass="p-badge-info"
+        :badge="notificationStore.unreadCount > 0 ? String(notificationStore.unreadCount) : undefined"
+        badgeClass="p-badge-danger"
+        @click="notificationDrawerVisible = !notificationDrawerVisible"
       />
       <Button
         v-if="authStore.user?.is_superuser && appMode !== 'local'"
@@ -150,6 +153,9 @@
 
     <!-- Project Details Drawer -->
     <ProjectDetailsDrawer v-model="projectDetailsVisible" />
+
+    <!-- Notification Drawer -->
+    <NotificationCenterDrawer v-model="notificationDrawerVisible" />
   </header>
 </template>
 
@@ -162,6 +168,7 @@ import ChangePasswordDialog from "./ChangePasswordDialog.vue";
 import UserProfileDialog from "./UserProfileDialog.vue";
 import { useToast } from "primevue/usetoast";
 import { useProjectStore } from "@/stores/project";
+import { useNotificationStore } from "@/stores/notification";
 import type { ProjectSummary } from "@/types";
 import type { ProjectFormData } from "./ProjectDialog.vue";
 import { useWorkflowStore } from "@/stores/workflow";
@@ -171,8 +178,10 @@ import { useAuthStore } from "@/stores/auth";
 import { useRouter } from "vue-router";
 import { useBackendStatus } from "@/composables/useBackendStatus";
 import { useAppConfig } from "@/composables/useAppConfig";
+import { useNotifier } from "@/composables/useNotifier";
 import ProjectDialog from "./ProjectDialog.vue";
 import ProjectDetailsDrawer from "./ProjectDetailsDrawer.vue";
+import NotificationCenterDrawer from "./NotificationCenterDrawer.vue";
 
 defineProps<{
   navCollapsed: boolean;
@@ -186,6 +195,8 @@ const emit = defineEmits<{
 
 const toast = useToast();
 const projectStore = useProjectStore();
+const notificationStore = useNotificationStore();
+const { notifySystemEvent } = useNotifier();
 const workflowStore = useWorkflowStore();
 const experimentStore = useExperimentStore();
 const llmStore = useLlmStore();
@@ -194,6 +205,7 @@ const router = useRouter();
 const { backendConnected } = useBackendStatus();
 const { appMode } = useAppConfig();
 const fileInput = ref<HTMLInputElement | null>(null);
+const notificationDrawerVisible = ref(false);
 
 // User menu
 const userMenu = ref();
@@ -289,6 +301,29 @@ watch(
     selectedProjectId.value = id;
   }
 );
+
+// System notifications: backend online/offline transitions
+let backendInitialized = false;
+watch(backendConnected, (connected) => {
+  // Skip the initial health check result
+  if (!backendInitialized) {
+    backendInitialized = true;
+    return;
+  }
+  if (connected) {
+    notifySystemEvent({
+      severity: "success",
+      title: "Backend Online",
+      message: "Connection restored",
+    });
+  } else {
+    notifySystemEvent({
+      severity: "error",
+      title: "Backend Offline",
+      message: "Lost connection to the server",
+    });
+  }
+});
 
 const getProjectName = (projectId: number): string => {
   const project = projectStore.projectList.find((p) => p.id === projectId);

@@ -83,8 +83,8 @@ class TestSklearnInfo:
 class TestScpCatalog:
     """Test the SpectroChemPy catalog module."""
 
-    def test_catalog_has_seven_entries(self):
-        assert len(SCP_CATALOG) == 7
+    def test_catalog_has_eight_entries(self):
+        assert len(SCP_CATALOG) == 8
         for name in (
             "irdata",
             "ramandata",
@@ -93,6 +93,7 @@ class TestScpCatalog:
             "agirdata",
             "matlabdata",
             "msdata",
+            "dscdata",
         ):
             assert name in SCP_CATALOG
 

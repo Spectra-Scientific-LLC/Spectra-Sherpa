@@ -36,6 +36,7 @@ export const useDataStore = defineStore("data", () => {
   // Reference dataset catalog + exploration
   const referenceCatalog = ref<Record<string, any[]> | null>(null);
   const referenceCatalogLoading = ref(false);
+  const referenceCatalogError = ref<string | null>(null);
   const catalogDatasetInfo = ref<Record<string, any> | null>(null);
   const catalogDatasetLoading = ref(false);
   const catalogDatasetError = ref<string | null>(null);
@@ -174,16 +175,32 @@ export const useDataStore = defineStore("data", () => {
 
   const fetchReferenceCatalog = async () => {
     referenceCatalogLoading.value = true;
+    referenceCatalogError.value = null;
     try {
       const response = await api.get<Record<string, any[]>>(
         "/builder/reference-datasets"
       );
       referenceCatalog.value = response.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to fetch reference catalog:", error);
+      referenceCatalogError.value =
+        error?.response?.data?.detail || error?.message || "Failed to load reference catalog";
     } finally {
       referenceCatalogLoading.value = false;
     }
+  };
+
+  const importReferenceDatasets = async (
+    experimentId: number,
+    datasets: Array<{ source: string; name: string }>
+  ) => {
+    const response = await api.post(
+      `/experiments/${experimentId}/import-reference`,
+      { datasets }
+    );
+    // Refresh file list and experiment list to reflect new files
+    await Promise.all([selectExperiment(experimentId), fetchExperiments(), fetchCatalog()]);
+    return response.data;
   };
 
   const exploreCatalogDataset = async (source: string, name: string) => {
@@ -247,6 +264,7 @@ export const useDataStore = defineStore("data", () => {
     // Reference catalog state
     referenceCatalog,
     referenceCatalogLoading,
+    referenceCatalogError,
     catalogDatasetInfo,
     catalogDatasetLoading,
     catalogDatasetError,
@@ -268,6 +286,7 @@ export const useDataStore = defineStore("data", () => {
     downloadFile,
     clearInspection,
     fetchReferenceCatalog,
+    importReferenceDatasets,
     exploreCatalogDataset,
     generateDataStory,
     clearCatalogExploration,

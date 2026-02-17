@@ -4,9 +4,14 @@ import api from "@/api/client";
 import type { JobInfo } from "@/types";
 import { buildWsUrl, withCredentials } from "@/utils/ws";
 import { useAuthStore } from "@/stores/auth";
+import { useNotifier } from "@/composables/useNotifier";
 
 export const useJobStore = defineStore("job", () => {
   const authStore = useAuthStore();
+  // NOTE: useNotifier only accesses Pinia stores, which is safe inside
+  // defineStore.  Do NOT add useToast() or other component-context APIs
+  // inside useNotifier — those require a component setup context.
+  const { notifyJobUpdate } = useNotifier();
   const jobs = ref<JobInfo[]>([]);
   const connected = ref(false);
   const wsRef = ref<WebSocket | null>(null);
@@ -124,6 +129,13 @@ export const useJobStore = defineStore("job", () => {
           window.dispatchEvent(
             new CustomEvent("job-update", { detail: payload })
           );
+
+          // Emit notification on terminal job states.
+          notifyJobUpdate({
+            jobId,
+            status: payload.status,
+            message: payload.message,
+          });
         }
       } catch {
         // Ignore malformed payloads

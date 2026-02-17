@@ -24,7 +24,7 @@ and long-term stewardship.
 ### Backend
 
 ```bash
-git clone https://github.com/Spectra-Scientific-LLC/spectrasherpa.git
+git clone https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa.git
 cd spectrasherpa
 poetry install --with dev            # core + dev tools (black, ruff, pytest)
 poetry install --with dev -E scp     # optional: SpectroChemPy spectral nodes

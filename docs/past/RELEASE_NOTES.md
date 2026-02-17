@@ -203,7 +203,7 @@ PATCH  /api/v1/workflows/{id}                   # Update notes
 ### Prerequisites
 - [ ] Python 3.10+ installed
 - [ ] SQLAlchemy dependencies installed
-- [ ] Node.js 18+ for frontend
+- [ ] Node.js 22+ for frontend
 - [ ] Database initialized
 
 ### Backend Setup

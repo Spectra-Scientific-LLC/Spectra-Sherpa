@@ -16,6 +16,8 @@ from spectra_sherpa.app.schemas.experiments import (
     ExperimentFileOut,
     ExperimentSummary,
     ExperimentUpdate,
+    ReferenceDatasetImportRequest,
+    ReferenceDatasetImportResponse,
     VersionCreate,
     VersionInfo,
 )
@@ -29,6 +31,7 @@ from spectra_sherpa.app.services.experiments import (
     get_experiment,
     get_experiment_file,
     get_version_by_name,
+    import_reference_dataset,
     list_experiment_files,
     list_experiments,
     read_metadata,
@@ -215,6 +218,65 @@ async def upload_experiment_file(
         raise
 
     return ExperimentFileOut.model_validate(experiment_file)
+
+
+@router.post(
+    "/{experiment_id}/import-reference",
+    response_model=ReferenceDatasetImportResponse,
+    status_code=201,
+)
+async def import_reference_datasets_endpoint(
+    experiment_id: int,
+    payload: ReferenceDatasetImportRequest,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> ReferenceDatasetImportResponse:
+    experiment = await get_experiment(session, experiment_id)
+    if experiment is None:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+    if experiment.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+
+    all_files: list[ExperimentFile] = []
+    exp_dir = experiment_dir(experiment_id)
+
+    def _cleanup_orphan_files() -> None:
+        """Remove files written by previously-successful datasets on failure."""
+        for f in all_files:
+            path = exp_dir / f.file_path
+            if path.exists():
+                path.unlink()
+
+    try:
+        for ds in payload.datasets:
+            files = await import_reference_dataset(
+                session, experiment_id, ds.source, ds.name
+            )
+            all_files.extend(files)
+        # Commit all DB rows atomically
+        await session.commit()
+    except ValueError as exc:
+        await session.rollback()
+        _cleanup_orphan_files()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        await session.rollback()
+        _cleanup_orphan_files()
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception:
+        await session.rollback()
+        _cleanup_orphan_files()
+        raise
+
+    # Post-commit: refresh is best-effort — files and DB rows are already safe.
+    # A refresh failure here must NOT trigger file cleanup.
+    for f in all_files:
+        await session.refresh(f)
+
+    return ReferenceDatasetImportResponse(
+        imported=len(all_files),
+        files=[ExperimentFileOut.model_validate(f) for f in all_files],
+    )
 
 
 @router.get("/{experiment_id}/files", response_model=list[ExperimentFileOut])

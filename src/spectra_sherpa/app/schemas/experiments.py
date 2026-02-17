@@ -43,6 +43,20 @@ class ExperimentFileOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ReferenceDatasetImportItem(BaseModel):
+    source: str = Field(..., description="One of: eigenvector, sklearn, spectrochempy")
+    name: str = Field(..., min_length=1)
+
+
+class ReferenceDatasetImportRequest(BaseModel):
+    datasets: List[ReferenceDatasetImportItem] = Field(..., min_length=1)
+
+
+class ReferenceDatasetImportResponse(BaseModel):
+    imported: int
+    files: List[ExperimentFileOut]
+
+
 class VersionCreate(BaseModel):
     version_name: str = Field(..., min_length=1)
     description: Optional[str] = None

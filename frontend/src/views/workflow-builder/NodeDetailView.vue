@@ -619,6 +619,29 @@
                 </Transition>
               </div>
 
+              <!-- Biplot -->
+              <div class="plot-subsection">
+                <div class="plot-subsection-header" @click="togglePlot('pcaBiplot')">
+                  <i :class="plotSections.pcaBiplot ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                  <span>Biplot (Scores + Loadings)</span>
+                </div>
+                <Transition name="collapse">
+                  <div v-if="plotSections.pcaBiplot" class="plot-container">
+                    <div class="plot-controls">
+                      <div class="control-group">
+                        <label>X Axis</label>
+                        <Dropdown v-model="pcaXAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
+                      </div>
+                      <div class="control-group">
+                        <label>Y Axis</label>
+                        <Dropdown v-model="pcaYAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
+                      </div>
+                    </div>
+                    <PlotlyChart :data="pcaBiplotData" :layout="pcaBiplotLayout" :config="pcaScoresConfig" />
+                  </div>
+                </Transition>
+              </div>
+
               <!-- Loadings Plot -->
               <div class="plot-subsection">
                 <div class="plot-subsection-header" @click="togglePlot('pcaLoadings')">
@@ -1223,6 +1246,7 @@ const getLogIcon = (type: LogEntry["type"]): string => {
 // Plot subsection collapse state
 const plotSections = ref<Record<string, boolean>>({
   pcaScores: true,
+  pcaBiplot: false,
   pcaLoadings: false,
   pcaScree: false,
   pcaDiagnostics: false,
@@ -1955,7 +1979,7 @@ const isPreprocessingNode = computed(() => {
 const availablePlots = computed(() => {
   const plots: string[] = [];
   if (isPCAOutput.value) {
-    plots.push("Scores Plot", "Loadings Plot", "Scree Plot", "Diagnostics Plot");
+    plots.push("Scores Plot", "Biplot", "Loadings Plot", "Scree Plot", "Diagnostics Plot");
     return plots;
   }
   switch (nodeTypeKey.value) {
@@ -2201,6 +2225,262 @@ const pcaScoresConfig = computed(() => ({
   editable: true,
   edits: { legendPosition: true },
 }));
+
+const pcaBiplotData = computed(() => {
+  if (!isPCAOutput.value || !hasOutput.value) return [];
+
+  const scores = nodeOutput.value?.data || [];
+  if (!Array.isArray(scores) || scores.length === 0) return [];
+
+  const loadingsPort = nodeOutput.value?.ports?.loadings;
+  const loadingsPayload = resolvePortPayload(loadingsPort);
+  const metadata = nodeOutput.value?.metadata || {};
+  const loadings = loadingsPort?.data || metadata.loadings || [];
+
+  // Fallback to scores-only plot when loadings are unavailable.
+  if (!Array.isArray(loadings) || loadings.length === 0) {
+    return pcaScoresData.value;
+  }
+
+  const maxLoadingPcIndex = loadings.length - 1;
+  const pcX = Math.max(0, Math.min(pcaXAxis.value, maxLoadingPcIndex));
+  const pcY = Math.max(0, Math.min(pcaYAxis.value, maxLoadingPcIndex));
+
+  const loadingXRaw = Array.isArray(loadings[pcX]) ? loadings[pcX] : [];
+  const loadingYRaw = Array.isArray(loadings[pcY]) ? loadings[pcY] : [];
+  if (!loadingXRaw.length || !loadingYRaw.length) {
+    return pcaScoresData.value;
+  }
+
+  const nFeatures = Math.min(loadingXRaw.length, loadingYRaw.length);
+  const axisLabels = pcLabels.value;
+  const pcXLabel = axisLabels[pcX] || `PC${pcX + 1}`;
+  const pcYLabel = axisLabels[pcY] || `PC${pcY + 1}`;
+
+  const sampleLabels = pcaSampleLabels.value.length === scores.length
+    ? pcaSampleLabels.value
+    : Array.from({ length: scores.length }, (_, i) => `Sample ${i + 1}`);
+  const labelCategories = pcaLabelCategories.value;
+  const useCategorical = pcaUseCategorical.value;
+
+  const sampleTraces: any[] = [];
+  if (useCategorical) {
+    const colorMap = createCategoryColorMap(sampleLabels, labelCategories);
+    const categoryGroups = new Map<string | number, { x: number[]; y: number[]; labels: string[] }>();
+    labelCategories.forEach((category: string | number) => {
+      categoryGroups.set(category, { x: [], y: [], labels: [] });
+    });
+
+    scores.forEach((row: number[], idx: number) => {
+      const category = sampleLabels[idx];
+      const group = categoryGroups.get(category);
+      if (group && Array.isArray(row) && row.length > Math.max(pcX, pcY)) {
+        group.x.push(Number(row[pcX]));
+        group.y.push(Number(row[pcY]));
+        group.labels.push(String(sampleLabels[idx]));
+      }
+    });
+
+    labelCategories.forEach((category: string | number) => {
+      const group = categoryGroups.get(category);
+      if (!group || group.x.length === 0) return;
+      sampleTraces.push({
+        type: "scatter",
+        mode: "markers",
+        x: group.x,
+        y: group.y,
+        text: group.labels,
+        name: String(category),
+        marker: {
+          size: 9,
+          color: colorMap.get(category),
+          opacity: 0.78,
+          line: { width: 1, color: "rgba(15, 23, 42, 0.55)" },
+        },
+        hovertemplate: `%{text}<br>${pcXLabel}: %{x:.3f}<br>${pcYLabel}: %{y:.3f}<extra></extra>`,
+      });
+    });
+  } else {
+    const pairedPoints = scores
+      .map((row: number[], idx: number) => ({
+        x: Number(row?.[pcX]),
+        y: Number(row?.[pcY]),
+        label: sampleLabels[idx],
+      }))
+      .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+
+    sampleTraces.push({
+      type: "scatter",
+      mode: "markers",
+      x: pairedPoints.map((point) => point.x),
+      y: pairedPoints.map((point) => point.y),
+      text: pairedPoints.map((point) => point.label),
+      name: "Samples",
+      marker: {
+        size: 9,
+        color: "#60a5fa",
+        opacity: 0.8,
+        line: { width: 1, color: "#1d4ed8" },
+      },
+      hovertemplate: `%{text}<br>${pcXLabel}: %{x:.3f}<br>${pcYLabel}: %{y:.3f}<extra></extra>`,
+    });
+  }
+
+  // Build feature labels for loading vectors.
+  const featureNames = metadata.feature_names;
+  const wavenumbers = loadingsPayload?.x_axis?.data || metadata.wavenumbers;
+  const featureLabels = Array.from({ length: nFeatures }, (_, idx) => {
+    if (Array.isArray(featureNames) && featureNames.length === nFeatures) {
+      return String(featureNames[idx]);
+    }
+    if (Array.isArray(wavenumbers) && wavenumbers.length === nFeatures) {
+      const w = Number(wavenumbers[idx]);
+      return Number.isFinite(w) ? `${w.toFixed(0)}` : String(wavenumbers[idx]);
+    }
+    return `F${idx + 1}`;
+  });
+
+  // Keep biplot readable on high-dimensional data:
+  // draw strongest vectors and label the strongest subset.
+  const vectors = Array.from({ length: nFeatures }, (_, idx) => {
+    const lx = Number(loadingXRaw[idx]);
+    const ly = Number(loadingYRaw[idx]);
+    return {
+      idx,
+      lx,
+      ly,
+      label: featureLabels[idx],
+      norm: Math.hypot(lx, ly),
+    };
+  }).filter((row) => Number.isFinite(row.lx) && Number.isFinite(row.ly));
+
+  if (vectors.length === 0) {
+    return sampleTraces;
+  }
+
+  vectors.sort((a, b) => b.norm - a.norm);
+  const maxVectors = Math.min(80, vectors.length);
+  const selectedVectors = vectors.slice(0, maxVectors);
+  const labeledCount = Math.min(24, selectedVectors.length);
+  const labeledFeatures = new Set(selectedVectors.slice(0, labeledCount).map((row) => row.idx));
+
+  const scoreXValues = scores
+    .map((row: number[]) => Number(row?.[pcX]))
+    .filter((value: number) => Number.isFinite(value));
+  const scoreYValues = scores
+    .map((row: number[]) => Number(row?.[pcY]))
+    .filter((value: number) => Number.isFinite(value));
+
+  const maxScoreX = Math.max(1e-12, ...scoreXValues.map((value: number) => Math.abs(value)));
+  const maxScoreY = Math.max(1e-12, ...scoreYValues.map((value: number) => Math.abs(value)));
+  const maxLoadX = Math.max(1e-12, ...selectedVectors.map((row) => Math.abs(row.lx)));
+  const maxLoadY = Math.max(1e-12, ...selectedVectors.map((row) => Math.abs(row.ly)));
+  const loadingScale = 0.82 * Math.min(maxScoreX / maxLoadX, maxScoreY / maxLoadY);
+
+  const vectorLineX: Array<number | null> = [];
+  const vectorLineY: Array<number | null> = [];
+  const vectorEndX: number[] = [];
+  const vectorEndY: number[] = [];
+  const vectorText: string[] = [];
+  const vectorCustomData: Array<[string, number, number, number]> = [];
+
+  selectedVectors.forEach((row) => {
+    const scaledX = row.lx * loadingScale;
+    const scaledY = row.ly * loadingScale;
+
+    vectorLineX.push(0, scaledX, null);
+    vectorLineY.push(0, scaledY, null);
+    vectorEndX.push(scaledX);
+    vectorEndY.push(scaledY);
+    vectorText.push(labeledFeatures.has(row.idx) ? row.label : "");
+    vectorCustomData.push([row.label, row.lx, row.ly, row.norm]);
+  });
+
+  const loadingLineTrace = {
+    type: "scatter",
+    mode: "lines",
+    x: vectorLineX,
+    y: vectorLineY,
+    name: "Loadings vectors",
+    line: { color: "#f59e0b", width: 1.6 },
+    hoverinfo: "skip",
+    showlegend: true,
+  };
+
+  const loadingMarkerTrace = {
+    type: "scatter",
+    mode: "markers+text",
+    x: vectorEndX,
+    y: vectorEndY,
+    text: vectorText,
+    textposition: "top center",
+    textfont: { size: 10, color: "#fde68a" },
+    customdata: vectorCustomData,
+    marker: {
+      size: 6,
+      color: "#f97316",
+      opacity: 0.92,
+      line: { width: 1, color: "#7c2d12" },
+    },
+    name: "Variables",
+    showlegend: false,
+    hovertemplate:
+      `<b>%{customdata[0]}</b><br>${pcXLabel} loading: %{customdata[1]:.3f}` +
+      `<br>${pcYLabel} loading: %{customdata[2]:.3f}` +
+      `<br>Vector norm: %{customdata[3]:.3f}<extra></extra>`,
+  };
+
+  return [...sampleTraces, loadingLineTrace, loadingMarkerTrace];
+});
+
+const pcaBiplotLayout = computed(() => {
+  const axisLabels = pcLabels.value;
+  const pcXLabel = axisLabels[pcaXAxis.value] || `PC${pcaXAxis.value + 1}`;
+  const pcYLabel = axisLabels[pcaYAxis.value] || `PC${pcaYAxis.value + 1}`;
+  const hasCategorical = pcaUseCategorical.value;
+
+  return {
+    ...basePlotLayout,
+    height: 460,
+    showlegend: true,
+    legend: {
+      bgcolor: "rgba(30, 41, 59, 0.82)",
+      bordercolor: "#334155",
+      borderwidth: 1,
+      x: 1,
+      y: 1,
+      xanchor: "right",
+      yanchor: "top",
+      orientation: hasCategorical ? "v" : "h",
+    },
+    xaxis: {
+      ...basePlotLayout.xaxis,
+      title: `${pcXLabel} (scores)`,
+      zeroline: true,
+      zerolinecolor: "#64748b",
+      zerolinewidth: 1.2,
+    },
+    yaxis: {
+      ...basePlotLayout.yaxis,
+      title: `${pcYLabel} (scores)`,
+      zeroline: true,
+      zerolinecolor: "#64748b",
+      zerolinewidth: 1.2,
+    },
+    annotations: [
+      {
+        xref: "paper",
+        yref: "paper",
+        x: 0,
+        y: 1.08,
+        showarrow: false,
+        text: "Loading vectors are scaled to score-space for interpretation.",
+        font: { size: 11, color: "#cbd5e1" },
+      },
+    ],
+    hovermode: "closest",
+  };
+});
 
 const pcaLoadingsData = computed(() => {
   if (!isPCAOutput.value || !hasOutput.value) return [];

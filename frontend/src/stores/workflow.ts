@@ -119,6 +119,7 @@ export const NODE_TYPE_MAP: Record<string, string> = {
   // Data source nodes
   DATA: "data.source",
   FILE_LOAD: "data.file_load",
+  MY_DATASET: "data.my_dataset",
   NIST_LIBRARY: "data.nist_library",
   SYNTHETIC_CURVE: "data.synthetic_curve",
   TRAIN_TEST_SPLIT: "data.train_test_split",

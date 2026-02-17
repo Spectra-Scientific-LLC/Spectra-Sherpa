@@ -9,7 +9,7 @@ This guide walks you through using the new DAG-based Analysis workflow system fo
 ## 📋 Prerequisites
 
 - Python 3.11+ with `poetry` installed
-- Node.js 18+ with `npm` installed
+- Node.js 22+ with `npm` installed
 - SpectroChemPy environment (`scpy` conda env)
 
 ---

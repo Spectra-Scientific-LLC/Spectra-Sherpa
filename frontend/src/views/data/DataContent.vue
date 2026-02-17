@@ -21,120 +21,260 @@
     <TabView v-model:activeIndex="activeTab">
       <!-- ======================== LOAD TAB ======================== -->
       <TabPanel header="Load">
-        <div class="load-toolbar">
-          <Button
-            label="New Experiment"
-            icon="pi pi-plus"
-            class="p-button-sm"
-            @click="showCreateDialog = true"
-          />
-          <Button
-            label="Upload File"
-            icon="pi pi-upload"
-            class="p-button-outlined p-button-sm"
-            :disabled="!dataStore.activeExperimentId"
-            @click="showUploadDialog = true"
-          />
-        </div>
+        <!-- ============ REFERENCE DATASETS (top, prominent) ============ -->
+        <div class="ref-catalog-section">
+          <h3 class="ref-catalog-title">
+            <i class="pi pi-database"></i>
+            Reference Datasets
+          </h3>
 
-        <div class="load-panels">
-          <!-- Experiment list (left) -->
-          <div class="experiment-list-panel">
-            <DataTable
-              :value="dataStore.experiments"
-              :loading="dataStore.experimentsLoading"
-              selectionMode="single"
-              :selection="selectedExperiment"
-              @update:selection="onExperimentSelect"
-              dataKey="id"
-              :rows="20"
-              scrollable
-              scrollHeight="400px"
-              size="small"
-              stripedRows
-              class="exp-table"
-            >
-              <template #empty>
-                <div class="empty-state-sm">No experiments yet</div>
-              </template>
-              <Column field="name" header="Name" :sortable="true" />
-              <Column field="file_count" header="Files" :sortable="true" style="width: 70px" />
-              <Column header="Created" :sortable="true" style="width: 180px">
-                <template #body="{ data }">
-                  {{ formatDate(data.created_at) }}
-                </template>
-              </Column>
-            </DataTable>
+          <div v-if="dataStore.referenceCatalogLoading" class="empty-state-sm">
+            <ProgressSpinner style="width: 24px; height: 24px" />
+            Loading catalog...
           </div>
 
-          <!-- Files panel (right) -->
-          <div class="files-panel">
-            <div v-if="!dataStore.activeExperimentId" class="empty-state">
-              <i class="pi pi-arrow-left"></i>
-              <span>Select an experiment to view its files</span>
+          <div v-else-if="dataStore.referenceCatalogError" class="ref-catalog-error">
+            <i class="pi pi-exclamation-triangle"></i>
+            <span>{{ dataStore.referenceCatalogError }}</span>
+            <Button
+              label="Retry"
+              icon="pi pi-refresh"
+              class="p-button-sm p-button-outlined"
+              :loading="dataStore.referenceCatalogLoading"
+              @click="dataStore.fetchReferenceCatalog()"
+            />
+          </div>
+
+          <div v-else-if="dataStore.referenceCatalog" class="ref-catalog-groups">
+            <!-- Eigenvector -->
+            <div class="ref-source-group">
+              <h5 class="ref-group-title">
+                <i class="pi pi-chart-bar"></i>
+                Eigenvector Research (NIR)
+              </h5>
+              <div
+                v-for="ds in dataStore.referenceCatalog.eigenvector"
+                :key="ds.name"
+                class="ref-dataset-item"
+                :class="{ selected: selectedRefDatasets.has(dsKey(ds)) }"
+                @click="toggleRefDataset(ds)"
+              >
+                <Checkbox
+                  :modelValue="selectedRefDatasets.has(dsKey(ds))"
+                  :binary="true"
+                  @click.stop
+                  @update:model-value="toggleRefDataset(ds)"
+                />
+                <span class="ref-ds-label">{{ ds.label }}</span>
+                <Tag :value="ds.technique" severity="info" class="ref-ds-tag" />
+                <Button
+                  icon="pi pi-search"
+                  class="p-button-text p-button-sm p-button-rounded ref-explore-btn"
+                  title="Explore"
+                  @click.stop="onExploreReference(ds.source, ds.name)"
+                />
+              </div>
             </div>
 
-            <div v-else-if="dataStore.experimentFilesLoading" class="empty-state">
-              <ProgressSpinner style="width: 28px; height: 28px" />
-              <span>Loading files...</span>
+            <!-- SpectroChemPy (file-level entries grouped by category) -->
+            <div class="ref-source-group">
+              <h5 class="ref-group-title">
+                <i class="pi pi-wave-pulse"></i>
+                SpectroChemPy Datasets
+              </h5>
+              <template v-for="cat in scpCategories" :key="cat">
+                <div class="ref-scp-category">{{ scpCategoryLabel(cat) }}</div>
+                <div
+                  v-for="ds in scpByCategory(cat)"
+                  :key="ds.name"
+                  class="ref-dataset-item"
+                  :class="{ selected: selectedRefDatasets.has(dsKey(ds)) }"
+                  @click="toggleRefDataset(ds)"
+                >
+                  <Checkbox
+                    :modelValue="selectedRefDatasets.has(dsKey(ds))"
+                    :binary="true"
+                    @click.stop
+                    @update:model-value="toggleRefDataset(ds)"
+                  />
+                  <span class="ref-ds-label">{{ ds.label }}</span>
+                  <Tag :value="ds.technique" severity="info" class="ref-ds-tag" />
+                  <Button
+                    icon="pi pi-search"
+                    class="p-button-text p-button-sm p-button-rounded ref-explore-btn"
+                    title="Explore"
+                    @click.stop="onExploreReference(ds.source || 'spectrochempy', ds.name)"
+                  />
+                </div>
+              </template>
             </div>
 
-            <div v-else-if="dataStore.experimentFiles.length === 0" class="empty-state">
-              <i class="pi pi-inbox"></i>
-              <span>No files in this experiment</span>
+            <!-- sklearn -->
+            <div class="ref-source-group">
+              <h5 class="ref-group-title">
+                <i class="pi pi-cog"></i>
+                Scikit-learn Datasets
+              </h5>
+              <div
+                v-for="ds in dataStore.referenceCatalog.sklearn"
+                :key="ds.name"
+                class="ref-dataset-item"
+                :class="{ selected: selectedRefDatasets.has(dsKey(ds)) }"
+                @click="toggleRefDataset(ds)"
+              >
+                <Checkbox
+                  :modelValue="selectedRefDatasets.has(dsKey(ds))"
+                  :binary="true"
+                  @click.stop
+                  @update:model-value="toggleRefDataset(ds)"
+                />
+                <span class="ref-ds-label">{{ ds.label }}</span>
+                <Tag :value="ds.technique" severity="info" class="ref-ds-tag" />
+                <Button
+                  icon="pi pi-search"
+                  class="p-button-text p-button-sm p-button-rounded ref-explore-btn"
+                  title="Explore"
+                  @click.stop="onExploreReference(ds.source, ds.name)"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- Action bar -->
+          <div class="ref-action-bar" v-if="selectedRefDatasets.size > 0">
+            <span class="ref-selection-count">{{ selectedRefDatasets.size }} selected</span>
+            <Button
+              label="Add to My Dataset"
+              icon="pi pi-plus"
+              class="p-button-sm"
+              :disabled="!dataStore.activeExperimentId"
+              :loading="importing"
+              @click="onImportSelectedDatasets"
+            />
+            <small v-if="!dataStore.activeExperimentId" class="ref-hint">
+              Create or select a dataset first
+            </small>
+          </div>
+        </div>
+
+        <!-- ============ MY DATASET (middle) ============ -->
+        <div class="my-dataset-section">
+          <div class="my-dataset-header">
+            <h3 class="my-dataset-title">
+              <i class="pi pi-folder"></i>
+              My Dataset
+            </h3>
+            <div class="my-dataset-actions">
+              <Button
+                label="New Dataset"
+                icon="pi pi-plus"
+                class="p-button-sm"
+                @click="showCreateDialog = true"
+              />
               <Button
                 label="Upload File"
                 icon="pi pi-upload"
-                class="p-button-sm p-button-outlined"
+                class="p-button-text p-button-sm"
+                :disabled="!dataStore.activeExperimentId"
                 @click="showUploadDialog = true"
               />
             </div>
+          </div>
 
-            <div v-else class="file-groups">
-              <div
-                v-for="stage in fileStages"
-                :key="stage.key"
-                class="file-stage"
+          <div class="load-panels">
+            <!-- Dataset list (left) -->
+            <div class="experiment-list-panel">
+              <DataTable
+                :value="dataStore.experiments"
+                :loading="dataStore.experimentsLoading"
+                selectionMode="single"
+                :selection="selectedExperiment"
+                @update:selection="onExperimentSelect"
+                dataKey="id"
+                :rows="20"
+                scrollable
+                scrollHeight="400px"
+                size="small"
+                stripedRows
+                class="exp-table"
               >
+                <template #empty>
+                  <div class="empty-state-sm">No datasets yet</div>
+                </template>
+                <Column field="name" header="Name" :sortable="true" />
+                <Column field="file_count" header="Files" :sortable="true" style="width: 70px" />
+                <Column header="Created" :sortable="true" style="width: 180px">
+                  <template #body="{ data }">
+                    {{ formatDate(data.created_at) }}
+                  </template>
+                </Column>
+              </DataTable>
+            </div>
+
+            <!-- Files panel (right) -->
+            <div class="files-panel">
+              <div v-if="!dataStore.activeExperimentId" class="empty-state">
+                <i class="pi pi-arrow-left"></i>
+                <span>Select a dataset to view its files</span>
+              </div>
+
+              <div v-else-if="dataStore.experimentFilesLoading" class="empty-state">
+                <ProgressSpinner style="width: 28px; height: 28px" />
+                <span>Loading files...</span>
+              </div>
+
+              <div v-else-if="dataStore.experimentFiles.length === 0" class="empty-state">
+                <i class="pi pi-inbox"></i>
+                <span>No files in this dataset</span>
+                <small>Select reference datasets above and click "Add to My Dataset"</small>
+              </div>
+
+              <div v-else class="file-groups">
                 <div
-                  v-if="filesForStage(stage.key).length > 0"
-                  class="stage-section"
+                  v-for="stage in fileStages"
+                  :key="stage.key"
+                  class="file-stage"
                 >
-                  <h4 class="stage-header">
-                    <i :class="stage.icon"></i>
-                    {{ stage.label }} ({{ filesForStage(stage.key).length }})
-                  </h4>
-                  <div class="file-list">
-                    <div
-                      v-for="file in filesForStage(stage.key)"
-                      :key="file.id"
-                      class="file-row"
-                    >
-                      <div class="file-info">
-                        <span class="file-name">{{ extractFileName(file.file_path) }}</span>
-                        <span v-if="file.file_size_bytes" class="file-size">
-                          {{ formatFileSize(file.file_size_bytes) }}
-                        </span>
-                      </div>
-                      <div class="file-actions">
-                        <Button
-                          icon="pi pi-search"
-                          class="p-button-text p-button-sm p-button-rounded"
-                          title="Inspect"
-                          @click="onInspectFile(file)"
-                        />
-                        <Button
-                          icon="pi pi-download"
-                          class="p-button-text p-button-sm p-button-rounded"
-                          title="Download"
-                          @click="dataStore.downloadFile(file.id, extractFileName(file.file_path))"
-                        />
-                        <Button
-                          icon="pi pi-trash"
-                          class="p-button-text p-button-sm p-button-rounded p-button-danger"
-                          title="Delete"
-                          @click="confirmDeleteFile(file)"
-                        />
+                  <div
+                    v-if="filesForStage(stage.key).length > 0"
+                    class="stage-section"
+                  >
+                    <h4 class="stage-header">
+                      <i :class="stage.icon"></i>
+                      {{ stage.label }} ({{ filesForStage(stage.key).length }})
+                    </h4>
+                    <div class="file-list">
+                      <div
+                        v-for="file in filesForStage(stage.key)"
+                        :key="file.id"
+                        class="file-row"
+                      >
+                        <div class="file-info">
+                          <span class="file-name">{{ extractFileName(file.file_path) }}</span>
+                          <span v-if="file.file_size_bytes" class="file-size">
+                            {{ formatFileSize(file.file_size_bytes) }}
+                          </span>
+                        </div>
+                        <div class="file-actions">
+                          <Button
+                            icon="pi pi-search"
+                            class="p-button-text p-button-sm p-button-rounded"
+                            title="Inspect"
+                            @click="onInspectFile(file)"
+                          />
+                          <Button
+                            icon="pi pi-download"
+                            class="p-button-text p-button-sm p-button-rounded"
+                            title="Download"
+                            @click="dataStore.downloadFile(file.id, extractFileName(file.file_path))"
+                          />
+                          <Button
+                            icon="pi pi-trash"
+                            class="p-button-text p-button-sm p-button-rounded p-button-danger"
+                            title="Delete"
+                            @click="confirmDeleteFile(file)"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -144,7 +284,7 @@
           </div>
         </div>
 
-        <!-- NIST Library (collapsible) -->
+        <!-- NIST Library (collapsible, de-emphasized) -->
         <Panel
           header="Reference Library"
           :toggleable="true"
@@ -183,80 +323,6 @@
               </template>
             </Column>
           </DataTable>
-        </Panel>
-
-        <!-- Reference Datasets Catalog -->
-        <Panel
-          header="Reference Datasets"
-          :toggleable="true"
-          :collapsed="refCatalogCollapsed"
-          @update:collapsed="refCatalogCollapsed = $event"
-          class="library-panel"
-        >
-          <div v-if="dataStore.referenceCatalogLoading" class="empty-state-sm">
-            <ProgressSpinner style="width: 24px; height: 24px" />
-            Loading catalog...
-          </div>
-          <div v-else-if="!dataStore.referenceCatalog" class="empty-state-sm">
-            <Button
-              label="Load Catalog"
-              icon="pi pi-database"
-              class="p-button-sm p-button-outlined"
-              @click="dataStore.fetchReferenceCatalog()"
-            />
-          </div>
-          <div v-else class="ref-catalog-groups">
-            <!-- Eigenvector -->
-            <div class="ref-source-group">
-              <h5 class="ref-group-title">
-                <i class="pi pi-chart-bar"></i>
-                Eigenvector Research (NIR Benchmarks)
-              </h5>
-              <div
-                v-for="ds in dataStore.referenceCatalog.eigenvector"
-                :key="ds.name"
-                class="ref-dataset-item"
-                @click="onExploreReference(ds.source, ds.name)"
-              >
-                <span class="ref-ds-label">{{ ds.label }}</span>
-                <Tag :value="ds.technique" severity="info" class="ref-ds-tag" />
-              </div>
-            </div>
-
-            <!-- SpectroChemPy -->
-            <div class="ref-source-group">
-              <h5 class="ref-group-title">
-                <i class="pi pi-wave-pulse"></i>
-                SpectroChemPy Datasets
-              </h5>
-              <div
-                v-for="ds in dataStore.referenceCatalog.spectrochempy"
-                :key="ds.name"
-                class="ref-dataset-item"
-                @click="onExploreReference(ds.source, ds.name)"
-              >
-                <span class="ref-ds-label">{{ ds.label }}</span>
-                <Tag :value="ds.technique" severity="info" class="ref-ds-tag" />
-              </div>
-            </div>
-
-            <!-- sklearn -->
-            <div class="ref-source-group">
-              <h5 class="ref-group-title">
-                <i class="pi pi-cog"></i>
-                Scikit-learn Datasets
-              </h5>
-              <div
-                v-for="ds in dataStore.referenceCatalog.sklearn"
-                :key="ds.name"
-                class="ref-dataset-item"
-                @click="onExploreReference(ds.source, ds.name)"
-              >
-                <span class="ref-ds-label">{{ ds.label }}</span>
-                <Tag :value="ds.technique" severity="info" class="ref-ds-tag" />
-              </div>
-            </div>
-          </div>
         </Panel>
       </TabPanel>
 
@@ -609,7 +675,7 @@
     <!-- Create Experiment -->
     <Dialog
       v-model:visible="showCreateDialog"
-      header="New Experiment"
+      header="New Dataset"
       :modal="true"
       :style="{ width: '420px' }"
     >
@@ -731,10 +797,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, reactive, computed, onMounted } from "vue";
 import TabView from "primevue/tabview";
 import TabPanel from "primevue/tabpanel";
 import Button from "primevue/button";
+import Checkbox from "primevue/checkbox";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
 import Dialog from "primevue/dialog";
@@ -746,17 +813,20 @@ import Panel from "primevue/panel";
 import ProgressSpinner from "primevue/progressspinner";
 import Tag from "primevue/tag";
 import { useDataStore } from "@/stores/data";
+import { useToast } from "primevue/usetoast";
 import type { ExperimentFile, ExperimentSummary } from "@/types";
 import DataQualityPanel from "./DataQualityPanel.vue";
 import PlotlyChart from "@/components/PlotlyChart.vue";
 
 const dataStore = useDataStore();
+const toast = useToast();
 const activeTab = ref(0);
 
 // --- Load tab state ---
 const libraryCollapsed = ref(true);
-const refCatalogCollapsed = ref(false);
 const librarySearch = ref("");
+const selectedRefDatasets = reactive(new Set<string>());
+const importing = ref(false);
 const showCreateDialog = ref(false);
 const showUploadDialog = ref(false);
 const showDeleteDialog = ref(false);
@@ -804,6 +874,78 @@ function filesForStage(stage: string): ExperimentFile[] {
   return dataStore.experimentFiles.filter((f) => f.stage === stage);
 }
 
+// --- Reference dataset selection ---
+
+function dsKey(ds: { source?: string; name: string }): string {
+  return `${ds.source || "spectrochempy"}::${ds.name}`;
+}
+
+function toggleRefDataset(ds: { source?: string; name: string }) {
+  const key = dsKey(ds);
+  if (selectedRefDatasets.has(key)) {
+    selectedRefDatasets.delete(key);
+  } else {
+    selectedRefDatasets.add(key);
+  }
+}
+
+async function onImportSelectedDatasets() {
+  if (!dataStore.activeExperimentId || selectedRefDatasets.size === 0) return;
+  importing.value = true;
+  try {
+    const datasets = Array.from(selectedRefDatasets).map((key) => {
+      const [source, ...rest] = key.split("::");
+      return { source, name: rest.join("::") };
+    });
+    const result = await dataStore.importReferenceDatasets(
+      dataStore.activeExperimentId,
+      datasets
+    );
+    toast.add({
+      severity: "success",
+      summary: "Import Complete",
+      detail: `Imported ${result.imported} file(s) into your dataset`,
+      life: 3000,
+    });
+    selectedRefDatasets.clear();
+  } catch (err: any) {
+    toast.add({
+      severity: "error",
+      summary: "Import Failed",
+      detail: err?.response?.data?.detail || "Failed to import datasets",
+      life: 5000,
+    });
+  } finally {
+    importing.value = false;
+  }
+}
+
+// --- SCP category helpers ---
+
+const SCP_CATEGORY_LABELS: Record<string, string> = {
+  irdata: "IR Spectroscopy",
+  ramandata: "Raman Spectroscopy",
+  galacticdata: "Galactic / SPC",
+  matlabdata: "MATLAB",
+  msdata: "Mass Spectrometry",
+  agirdata: "Agilent FTIR",
+};
+
+const scpCategories = computed(() => {
+  const scp = dataStore.referenceCatalog?.spectrochempy ?? [];
+  const cats = new Set(scp.map((d: any) => d.category || "other"));
+  return Array.from(cats);
+});
+
+function scpByCategory(category: string) {
+  const scp = dataStore.referenceCatalog?.spectrochempy ?? [];
+  return scp.filter((d: any) => (d.category || "other") === category);
+}
+
+function scpCategoryLabel(category: string): string {
+  return SCP_CATEGORY_LABELS[category] || category;
+}
+
 // --- Spectral preview plot ---
 
 const PLOT_COLORS = [
@@ -827,13 +969,32 @@ const previewPlotData = computed(() => {
   }));
 });
 
+const isReversedXAxis = computed(() => {
+  const src = (dataStore.fileInfo?.source ?? "").toLowerCase();
+  // FTIR / IR data: reversed wavenumber axis. Everything else: normal.
+  return src.includes("spa") || src.includes("spg") || src.includes("jdx")
+    || src.includes("opus") || src.includes("dx");
+});
+
+const xAxisLabel = computed(() => {
+  const src = (dataStore.fileInfo?.source ?? "").toLowerCase();
+  if (src.includes("spa") || src.includes("spg") || src.includes("jdx")
+    || src.includes("opus") || src.includes("dx")) {
+    return "Wavenumber (cm\u207B\u00B9)";
+  }
+  if (src.includes("wdf") || src.includes("spc")) {
+    return "Raman Shift (cm\u207B\u00B9)";
+  }
+  return "Variable Index";
+});
+
 const previewPlotLayout = computed(() => ({
-  title: { text: "Raw Spectra Preview", font: { size: 14 } },
+  title: { text: "Spectra Preview", font: { size: 14 } },
   xaxis: {
-    title: "Wavenumber (cm\u207B\u00B9)",
-    autorange: "reversed" as const,
+    title: xAxisLabel.value,
+    autorange: isReversedXAxis.value ? ("reversed" as const) : (true as const),
   },
-  yaxis: { title: "Absorbance" },
+  yaxis: { title: "Intensity" },
   autosize: true,
   height: 380,
   margin: { t: 40, r: 20, b: 50, l: 60 },
@@ -854,7 +1015,11 @@ onMounted(async () => {
 });
 
 async function refresh() {
-  await Promise.all([dataStore.fetchCatalog(), dataStore.fetchExperiments()]);
+  await Promise.all([
+    dataStore.fetchCatalog(),
+    dataStore.fetchExperiments(),
+    dataStore.fetchReferenceCatalog(),
+  ]);
   if (dataStore.activeExperimentId) {
     await dataStore.selectExperiment(dataStore.activeExperimentId);
   }
@@ -886,8 +1051,13 @@ async function onCreateExperiment() {
     if (created?.id) {
       await dataStore.selectExperiment(created.id);
     }
-  } catch (err) {
-    console.error("Failed to create experiment:", err);
+  } catch (err: any) {
+    toast.add({
+      severity: "error",
+      summary: "Create Failed",
+      detail: err?.response?.data?.detail || "Failed to create dataset",
+      life: 5000,
+    });
   } finally {
     creating.value = false;
   }
@@ -945,9 +1115,10 @@ async function onDeleteFile() {
 }
 
 async function onInspectFile(file: ExperimentFile) {
+  if (!dataStore.activeExperimentId) return;
   dataStore.clearCatalogExploration();
   try {
-    await dataStore.inspectFile(file.id, file.file_path, dataStore.activeExperimentId ?? undefined);
+    await dataStore.inspectFile(file.id, file.file_path, dataStore.activeExperimentId);
   } catch {
     // Error is stored in dataStore.fileInfoError
   }
@@ -1257,11 +1428,55 @@ function formatDate(dateStr: string): string {
   font-weight: 500;
 }
 
-/* ---- Reference catalog ---- */
-.ref-catalog-groups {
+/* ---- Reference catalog section ---- */
+.ref-catalog-section {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.ref-catalog-title {
+  margin: 0 0 16px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1e293b;
   display: flex;
-  flex-direction: column;
-  gap: 16px;
+  align-items: center;
+  gap: 8px;
+}
+
+.ref-catalog-title i {
+  color: #3b82f6;
+}
+
+.ref-catalog-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #991b1b;
+  font-size: 0.9rem;
+}
+
+.ref-catalog-error i {
+  color: #dc2626;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.ref-catalog-error span {
+  flex: 1;
+}
+
+.ref-catalog-groups {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
 }
 
 .ref-source-group {
@@ -1287,9 +1502,9 @@ function formatDate(dateStr: string): string {
 
 .ref-dataset-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 8px 12px;
+  gap: 8px;
+  padding: 6px 10px;
   border-radius: 6px;
   background: #f8fafc;
   border: 1px solid transparent;
@@ -1302,14 +1517,103 @@ function formatDate(dateStr: string): string {
   border-color: #bfdbfe;
 }
 
+.ref-dataset-item.selected {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
 .ref-ds-label {
   font-size: 0.85rem;
   color: #1e293b;
   font-weight: 500;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ref-ds-tag {
   font-size: 0.7rem;
+  flex-shrink: 0;
+}
+
+.ref-explore-btn {
+  flex-shrink: 0;
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+
+.ref-dataset-item:hover .ref-explore-btn {
+  opacity: 1;
+}
+
+.ref-scp-category {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 8px;
+  margin-bottom: 2px;
+  padding-left: 4px;
+}
+
+.ref-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+}
+
+.ref-selection-count {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #0369a1;
+}
+
+.ref-hint {
+  color: #64748b;
+  font-style: italic;
+}
+
+/* ---- My Dataset section ---- */
+.my-dataset-section {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.my-dataset-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.my-dataset-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1e293b;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.my-dataset-title i {
+  color: #3b82f6;
+}
+
+.my-dataset-actions {
+  display: flex;
+  gap: 8px;
 }
 
 /* ---- Catalog explore card ---- */
@@ -1471,6 +1775,10 @@ function formatDate(dateStr: string): string {
 
 /* ---- Responsive ---- */
 @media (max-width: 900px) {
+  .ref-catalog-groups {
+    grid-template-columns: 1fr;
+  }
+
   .load-panels {
     grid-template-columns: 1fr;
   }

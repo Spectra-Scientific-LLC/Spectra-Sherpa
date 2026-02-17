@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { type AxiosError } from "axios";
 import { isDemoUpgradeError } from "@/utils/errors";
 
 // Use relative URL in production (nginx proxies to backend)
@@ -10,6 +10,73 @@ const defaultBaseUrl = import.meta.env.DEV
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || defaultBaseUrl,
 });
+
+// Async endpoints polled or updated in the background.
+const ASYNC_ERROR_PATH_HINTS = ["/jobs", "/deploy/runs", "/deploy/workflows"];
+const ASYNC_ERROR_DEDUPE_WINDOW_MS = 15000;
+const asyncErrorDedup = new Map<string, number>();
+
+function normalizeUrlPath(rawUrl: string | undefined): string {
+  if (!rawUrl) return "";
+  try {
+    if (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) {
+      return new URL(rawUrl).pathname;
+    }
+  } catch {
+    return rawUrl;
+  }
+  return rawUrl;
+}
+
+function isAsyncErrorCandidate(error: AxiosError): boolean {
+  const path = normalizeUrlPath(error.config?.url);
+  if (!path) return false;
+  return ASYNC_ERROR_PATH_HINTS.some((prefix) => path.startsWith(prefix));
+}
+
+function formatAsyncErrorMessage(error: AxiosError): string {
+  const path = normalizeUrlPath(error.config?.url);
+  if (!error.response) {
+    return `Network error while syncing ${path || "background API"}.`;
+  }
+  return `Background request failed (${error.response.status}) on ${path || "API"}.`;
+}
+
+function dedupeAsyncError(path: string, status: number): boolean {
+  const now = Date.now();
+  const key = `${path}::${status}`;
+  const last = asyncErrorDedup.get(key);
+  if (last && now - last < ASYNC_ERROR_DEDUPE_WINDOW_MS) {
+    return true;
+  }
+  asyncErrorDedup.set(key, now);
+  return false;
+}
+
+function emitAsyncApiErrorNotification(error: AxiosError): void {
+  const path = normalizeUrlPath(error.config?.url) || "background API";
+  const status = error.response?.status ?? 0;
+
+  if (dedupeAsyncError(path, status)) {
+    return;
+  }
+
+  import("@/composables/useNotifier")
+    .then(({ useNotifier }) => {
+      const { notifyDeployOutcome, notifySystemEvent } = useNotifier();
+      const message = formatAsyncErrorMessage(error);
+      if (path.startsWith("/deploy/")) {
+        notifyDeployOutcome({ success: false, message });
+        return;
+      }
+      notifySystemEvent({
+        severity: "error",
+        title: "Background Sync Error",
+        message,
+      });
+    })
+    .catch(() => undefined);
+}
 
 /**
  * Request interceptor to add authentication headers.
@@ -42,7 +109,8 @@ api.interceptors.request.use((config) => {
  * Response interceptor to handle session expiry and demo upgrade prompts.
  *
  * - 403/429 with upgrade_url: demo mode capability block or rate limit.
- *   Triggers the upgrade modal via useDemoMode composable.
+ * - Async background API failures (/jobs, /deploy/runs, /deploy/workflows):
+ *   emit notification center events (toasts remain unchanged in calling views).
  * - 401: expired JWT — clear credentials and redirect to login.
  */
 api.interceptors.response.use(
@@ -57,6 +125,15 @@ api.interceptors.response.use(
         updateFromRateLimit(data?.remaining ?? 0, data?.limit ?? 25);
       });
       return Promise.reject(error);
+    }
+
+    if (axios.isAxiosError(error) && isAsyncErrorCandidate(error)) {
+      const status = error.response?.status ?? 0;
+      const shouldNotify =
+        status === 0 || status >= 500 || (status === 404 && normalizeUrlPath(error.config?.url).startsWith("/jobs"));
+      if (shouldNotify) {
+        emitAsyncApiErrorNotification(error);
+      }
     }
 
     if (error.response?.status === 401) {

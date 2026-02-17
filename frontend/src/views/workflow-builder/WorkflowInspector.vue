@@ -271,6 +271,29 @@
             </div>
           </template>
 
+          <!-- MY_DATASET node -->
+          <template v-else-if="selectedNodeType === 'MY_DATASET'">
+            <div class="field dataset-field">
+              <label>Dataset</label>
+              <TreeSelect
+                v-model="selectedDatasetKey"
+                :options="datasetTreeNodes"
+                placeholder="Select a dataset file..."
+                selectionMode="single"
+                class="dataset-tree-select"
+                @update:model-value="onMyDatasetSelect"
+              />
+              <small class="param-hint">
+                Select a file from your datasets (built on the Data tab).
+              </small>
+            </div>
+
+            <div v-if="localParams.dataset_id && localParams.file_id" class="field dataset-info">
+              <span class="dataset-badge experiment">dataset</span>
+              <span class="dataset-path">File #{{ localParams.file_id }}</span>
+            </div>
+          </template>
+
           <!-- NORMALIZE node -->
           <template v-else-if="selectedNodeType === 'NORMALIZE'">
             <div class="field">
@@ -1513,6 +1536,7 @@ const closeInspector = () => {
 const NODE_ICONS: Record<string, string> = {
   // Data source
   'DATA': '📊',
+  'MY_DATASET': '📁',
 
   // Preprocessing - atomic
   'COSMIC_RAY': '✨',
@@ -1555,6 +1579,7 @@ const NODE_ICONS: Record<string, string> = {
 const NODE_LABELS: Record<string, string> = {
   // Data source
   'DATA': 'Load Data',
+  'MY_DATASET': 'My Dataset',
 
   // Preprocessing - atomic
   'COSMIC_RAY': 'Cosmic Ray Removal',
@@ -2119,7 +2144,8 @@ watch(() => props.selectedNode?.id, (newId, oldId) => {
     localParams.value = { ...defaults, ...node.params };
     // Reconstruct selectedDatasetKey from params if available
     const ref = asObject(node.params.dataset_ref);
-    if (workflowStore.getLegacyNodeType(node.type) === 'DATA' && ref) {
+    const legacyType = workflowStore.getLegacyNodeType(node.type);
+    if (legacyType === 'DATA' && ref) {
       if (ref.source === 'experiment') {
         const experimentId = asKeyPart(ref.experiment_id);
         const stage = asKeyPart(ref.stage);
@@ -2131,6 +2157,14 @@ watch(() => props.selectedNode?.id, (newId, oldId) => {
         const libraryId = asKeyPart(ref.library_id);
         selectedDatasetKey.value = libraryId ? `lib-${libraryId}` : null;
       }
+    } else if (legacyType === 'MY_DATASET') {
+      // Reconstruct key from dataset_id/file_id/stage params
+      const datasetId = asKeyPart(node.params.dataset_id);
+      const stage = asKeyPart(node.params.stage || 'raw');
+      const fileId = asKeyPart(node.params.file_id);
+      selectedDatasetKey.value = datasetId && stage && fileId
+        ? `exp-${datasetId}-${stage}-${fileId}`
+        : null;
     } else {
       selectedDatasetKey.value = null;
     }
@@ -2180,6 +2214,32 @@ const onDatasetSelect = (nodeData: Record<string, unknown>) => {
       localParams.value.library_id = data.library_id;
       localParams.value.file_path = data.file_path;
     }
+    emitParams();
+  }
+};
+
+// Handle My Dataset node selection (simplified — only experiment files)
+const onMyDatasetSelect = (nodeData: Record<string, unknown>) => {
+  if (!nodeData) return;
+
+  const findNodeData = (nodes: DatasetTreeNode[], key: string): DatasetRefData | null => {
+    for (const node of nodes) {
+      if (node.key === key && node.data) return node.data;
+      if (node.children) {
+        const found = findNodeData(node.children, key);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  const selectedKey = Object.keys(nodeData)[0];
+  const data = findNodeData(datasetTreeNodes.value, selectedKey);
+
+  if (data && data.source === 'experiment') {
+    localParams.value.dataset_id = data.experiment_id;
+    localParams.value.file_id = data.file_id;
+    localParams.value.stage = data.stage;
     emitParams();
   }
 };

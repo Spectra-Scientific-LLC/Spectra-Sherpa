@@ -18,9 +18,6 @@
       <span>Offline Mode</span>
     </div>
 
-    <!-- Demo Mode Banner -->
-    <DemoBanner />
-
     <Sidebar :collapsed="navCollapsed" />
     <div class="workspace">
       <div class="main">
@@ -52,7 +49,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import ChatPanel from "@/components/ChatPanel.vue";
-import DemoBanner from "@/components/DemoBanner.vue";
 
 import Sidebar from "@/components/Sidebar.vue";
 import Topbar from "@/components/Topbar.vue";
@@ -264,14 +260,6 @@ watch(
 /* Adjust app layout when banners are shown */
 .app-shell:has(.backend-status-banner) {
   padding-top: 48px;
-}
-
-.app-shell:has(.demo-banner) {
-  padding-top: 40px;
-}
-
-.app-shell:has(.backend-status-banner):has(.demo-banner) {
-  padding-top: 88px;
 }
 
 /* Offline mode badge */

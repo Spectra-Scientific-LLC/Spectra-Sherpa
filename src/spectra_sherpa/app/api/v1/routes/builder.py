@@ -227,22 +227,48 @@ async def get_file_info(
         # Get source type
         source = datasets[0].meta.get("source_type", "csv") if hasattr(datasets[0], "meta") else "csv"
 
-        # Build preview data (all spectra, downsampled to max 500 pts)
+        # Build preview data (all spectra, downsampled via min-max bucketing
+        # to preserve spectral peak shapes — max ~500 output points)
         max_pts = 500
         preview_wn = None
         preview_spectra = None
         try:
             wn = all_wavenumbers[0]
-            step = max(1, len(wn) // max_pts)
-            preview_wn = wn[::step].tolist()
-            preview_spectra = []
-            for i, ds in enumerate(datasets):
-                lbl = labels[i] if i < len(labels) else f"Spectrum_{i+1}"
-                y = all_absorbances[i]
-                preview_spectra.append(SpectrumPreview(
-                    label=lbl,
-                    absorbance=y[::step].tolist(),
-                ))
+            n = len(wn)
+            if n <= max_pts:
+                preview_wn = wn.tolist()
+                preview_spectra = []
+                for i, ds in enumerate(datasets):
+                    lbl = labels[i] if i < len(labels) else f"Spectrum_{i+1}"
+                    preview_spectra.append(SpectrumPreview(
+                        label=lbl,
+                        absorbance=all_absorbances[i].tolist(),
+                    ))
+            else:
+                import numpy as np
+                # Each bucket produces 2 points (min, max); target ~250 buckets
+                n_buckets = max_pts // 2
+                bucket_size = n // n_buckets
+                indices = []
+                for b in range(n_buckets):
+                    start = b * bucket_size
+                    end = start + bucket_size if b < n_buckets - 1 else n
+                    # Use first spectrum to pick representative indices
+                    chunk = all_absorbances[0][start:end]
+                    idx_min = start + int(np.argmin(chunk))
+                    idx_max = start + int(np.argmax(chunk))
+                    # Keep them in x-order so the line doesn't zigzag
+                    indices.extend(sorted({idx_min, idx_max}))
+                # Deduplicate and sort
+                indices = sorted(set(indices))
+                preview_wn = wn[indices].tolist()
+                preview_spectra = []
+                for i, ds in enumerate(datasets):
+                    lbl = labels[i] if i < len(labels) else f"Spectrum_{i+1}"
+                    preview_spectra.append(SpectrumPreview(
+                        label=lbl,
+                        absorbance=all_absorbances[i][indices].tolist(),
+                    ))
         except Exception:
             pass  # Preview is best-effort
 
@@ -456,7 +482,7 @@ async def list_reference_datasets() -> dict[str, list[dict[str, Any]]]:
     """List all available reference datasets across all sources."""
     from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG
     from spectra_sherpa.app.lib.sklearn_info import SKLEARN_CATALOG
-    from spectra_sherpa.app.lib.scp_catalog import SCP_CATALOG
+    from spectra_sherpa.app.lib.scp_catalog import build_scp_catalog
 
     return {
         "eigenvector": [
@@ -482,18 +508,21 @@ async def list_reference_datasets() -> dict[str, list[dict[str, Any]]]:
         ],
         "spectrochempy": [
             {
-                "name": k,
+                "name": entry["name"],
                 "source": "spectrochempy",
-                "label": v["label"],
-                "technique": v["technique"],
-                "description": v["description"],
+                "label": entry["label"],
+                "technique": entry["technique"],
+                "description": entry["description"],
+                "category": entry["category"],
+                "file_count": entry["file_count"],
+                "entry_type": entry["entry_type"],
             }
-            for k, v in SCP_CATALOG.items()
+            for entry in build_scp_catalog()
         ],
     }
 
 
-@router.get("/reference-datasets/{source}/{name}")
+@router.get("/reference-datasets/{source}/{name:path}")
 async def get_reference_dataset_info(source: str, name: str) -> dict[str, Any]:
     """Get full metadata + statistics for a reference dataset."""
     if source == "eigenvector":
@@ -511,11 +540,12 @@ async def get_reference_dataset_info(source: str, name: str) -> dict[str, Any]:
         return get_sklearn_dataset_info(name)
 
     elif source == "spectrochempy":
-        from spectra_sherpa.app.lib.scp_catalog import SCP_CATALOG, get_scp_dataset_info
+        from spectra_sherpa.app.lib.scp_catalog import get_scp_dataset_info
 
-        if name not in SCP_CATALOG:
+        try:
+            return get_scp_dataset_info(name)
+        except ValueError:
             raise HTTPException(404, f"Dataset '{name}' not found")
-        return get_scp_dataset_info(name)
 
     else:
         raise HTTPException(400, f"Unknown source: {source}")

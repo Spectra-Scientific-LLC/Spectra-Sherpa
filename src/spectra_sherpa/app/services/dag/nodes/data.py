@@ -1978,6 +1978,137 @@ class FileLoadNode(Node):
 
 
 @register_node
+class MyDatasetNode(Node):
+    """
+    My Dataset node — lets users load data from their dataset collections
+    (experiments built on the Data tab).
+    """
+
+    metadata = NodeMetadata(
+        node_type="data.my_dataset",
+        category="data",
+        label="My Dataset",
+        description="Load data from your dataset collection",
+        parameters=[
+            NodeParameter(
+                name="dataset_id",
+                label="Dataset",
+                param_type="number",
+                default=None,
+                description="Dataset (experiment) containing the file",
+                required=True,
+            ),
+            NodeParameter(
+                name="file_id",
+                label="File",
+                param_type="number",
+                default=None,
+                description="Specific file to load from the dataset",
+                required=True,
+            ),
+            NodeParameter(
+                name="stage",
+                label="Stage",
+                param_type="select",
+                default="raw",
+                options=["raw", "preprocessed", "synthetic"],
+                description="Data processing stage",
+                required=False,
+            ),
+        ],
+        input_types=[],
+        output_type="NDDataset",
+    )
+
+    async def execute(self, *args) -> Any:
+        """Load data from a dataset file (reuses FileLoadNode logic)."""
+        require_scp("My Dataset loading")
+        from spectra_sherpa.app.core.config import settings
+        from spectra_sherpa.app.db.session import async_session
+        from spectra_sherpa.app.models.experiment_file import ExperimentFile as EF
+        from sqlalchemy import select as sa_select
+
+        dataset_id = self.parameters.get("dataset_id")
+        file_id = self.parameters.get("file_id")
+        stage = self.parameters.get("stage", "raw")
+
+        if not dataset_id or not file_id:
+            raise ValueError("Both dataset_id and file_id are required")
+
+        try:
+            async with async_session() as session:
+                query = sa_select(EF).where(
+                    EF.experiment_id == dataset_id,
+                    EF.id == file_id,
+                    EF.stage == stage,
+                )
+                result = await session.execute(query)
+                file_record = result.scalar_one_or_none()
+
+                if not file_record:
+                    raise ValueError(
+                        f"File {file_id} not found in dataset {dataset_id} for stage '{stage}'."
+                    )
+
+                exp_dir = f"exp_{str(dataset_id).zfill(3)}"
+                full_path = settings.data_dir / "experiments" / exp_dir / file_record.file_path
+
+                dataset = self._load_file(str(full_path))
+
+                meta = SpectraMeta(
+                    provenance=DataProvenance(
+                        source_type=SourceType.EXPERIMENT,
+                        experiment_id=dataset_id,
+                        file_id=file_id,
+                        original_file_path=str(file_record.file_path),
+                        original_file_format=os.path.splitext(file_record.file_path)[1].lower().lstrip("."),
+                        created_datetime=datetime.utcnow().isoformat(),
+                    ),
+                    processing_steps=["load"] if stage == "raw" else ["load", stage],
+                )
+                set_spectra_meta(dataset, meta)
+
+                add_processing_step(
+                    dataset,
+                    "data.my_dataset",
+                    {"dataset_id": dataset_id, "file_id": file_id, "stage": stage},
+                    node_id=self.node_id,
+                )
+                return dataset
+        except Exception as e:
+            raise ValueError(f"Error loading file: {e}")
+
+    def _load_file(self, file_path: str) -> NDDataset:
+        """Load data from a file using SpectroChemPy with index column detection."""
+        if not os.path.exists(file_path):
+            raise ValueError(f"File not found: {file_path}")
+
+        ext = os.path.splitext(file_path)[1]
+        try:
+            from spectra_sherpa.app.core.config import get_reader_for_extension
+
+            reader_name = get_reader_for_extension(ext)
+            reader_method = getattr(scp, reader_name)
+            dataset = reader_method(file_path)
+
+            if dataset is None:
+                raise ValueError(f"Reader {reader_name} returned None for {file_path}")
+
+            if ext.lower() == ".mat":
+                dataset = extract_dataset_from_result(dataset, file_path)
+                dataset = remove_index_columns(dataset)
+            elif ext.lower() == ".csv":
+                dataset = remove_index_columns(dataset)
+
+            return dataset
+        except Exception as e:
+            raise ValueError(
+                f"Failed to load file {file_path}: {str(e)}. "
+                f"File format: {ext or 'unknown'}."
+            ) from e
+
+
+@register_node
 class NISTLibraryNode(Node):
     """
     NIST Library node for loading reference spectra.

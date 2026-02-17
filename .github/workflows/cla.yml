@@ -25,9 +25,10 @@ jobs:
           path-to-signatures: "signatures/cla.json"
           path-to-cla: "CLA.md"
           branch: "main"
-          allowlist: bot*
+          allowlist: dependabot[bot],github-actions[bot],renovate[bot]
+          lock-pullrequest-aftermerge: true
           create-file-commit-message: "chore: Create file for storing CLA Signatures"
           signed-commit-message: "docs: $contributorName has signed the CLA in $owner/$repo#$pullRequestNo"
-          custom-notsigned-prcomment: "Thank you for your submission! We are a dual-licensed project (AGPLv3 + Commercial). To get your code merged, please read our [CLA](https://github.com/Spectra-Scientific-LLC/spectrasherpa/blob/main/CLA.md) and comment on this PR with the following message to sign:"
+          custom-notsigned-prcomment: "Thank you for your submission! We are a dual-licensed project (AGPLv3 + Commercial). To get your code merged, please read our [CLA](https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/blob/main/CLA.md) and comment on this PR with the following message to sign:"
           custom-pr-sign-comment: "I have read the CLA Document and I hereby sign the CLA"
           custom-allsigned-prcomment: "**CLA Assistant** All Contributors have signed the CLA. Ready for review!"

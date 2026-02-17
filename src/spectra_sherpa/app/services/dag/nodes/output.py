@@ -34,7 +34,7 @@ class PlotNode(Node):
                 label="Plot Type",
                 param_type="select",
                 default="spectra",
-                options=["spectra", "scores", "loadings", "scatter"],
+                options=["spectra", "scores", "biplot", "loadings", "scatter"],
                 description="Type of plot to generate",
                 required=False,
             ),
@@ -89,6 +89,8 @@ class PlotNode(Node):
         # Handle dict input (e.g., from PCA node)
         if isinstance(input_data, dict):
             if "scores" in input_data:
+                if plot_type == "biplot":
+                    return self._plot_biplot(input_data, x_axis, y_axis)
                 return self._plot_scores(input_data, x_axis, y_axis)
             if "data" in input_data:
                 return self._plot_generic(input_data)
@@ -201,6 +203,126 @@ class PlotNode(Node):
                     "title": "PCA Scores Plot",
                     "xaxis": {"title": f"PC{pc_x + 1}"},
                     "yaxis": {"title": f"PC{pc_y + 1}"},
+                },
+            }
+        }
+
+    def _plot_biplot(self, model_data: dict, pc_x: int, pc_y: int) -> Dict[str, Any]:
+        """Generate PCA biplot data (scores + scaled loading vectors)."""
+        scores = model_data.get("scores")
+        loadings = model_data.get("loadings")
+        if scores is None:
+            return {"visualization": {"plot_type": "biplot", "data": [], "layout": {}}}
+
+        if isinstance(scores, (NDDataset, AnalysisDataset)):
+            scores_array = np.array(scores.data)
+        else:
+            scores_array = np.array(scores)
+        if scores_array.ndim == 1:
+            scores_array = scores_array.reshape(-1, 1)
+        if scores_array.size == 0:
+            return {"visualization": {"plot_type": "biplot", "data": [], "layout": {}}}
+
+        n_components = scores_array.shape[1]
+        pc_x = min(max(0, pc_x), max(0, n_components - 1))
+        pc_y = min(max(0, pc_y), max(0, n_components - 1))
+        if n_components == 1:
+            pc_y = pc_x
+
+        scores_x = scores_array[:, pc_x].astype(float)
+        scores_y = scores_array[:, pc_y].astype(float)
+        traces: list[dict[str, Any]] = [{
+            "x": scores_x.tolist(),
+            "y": scores_y.tolist(),
+            "type": "scatter",
+            "mode": "markers",
+            "marker": {"size": 8, "color": "#60a5fa", "opacity": 0.8, "line": {"width": 1, "color": "#1d4ed8"}},
+            "name": "Scores",
+        }]
+
+        if loadings is not None:
+            if isinstance(loadings, (NDDataset, AnalysisDataset)):
+                loadings_array = np.array(loadings.data)
+            else:
+                loadings_array = np.array(loadings)
+
+            if loadings_array.ndim == 2 and loadings_array.size > 0:
+                # PCA loadings are typically [n_components, n_features].
+                if loadings_array.shape[0] > loadings_array.shape[1]:
+                    loadings_array = loadings_array.T
+
+                if loadings_array.shape[0] > max(pc_x, pc_y):
+                    vec_x = loadings_array[pc_x, :].astype(float)
+                    vec_y = loadings_array[pc_y, :].astype(float)
+                    norms = np.hypot(vec_x, vec_y)
+                    valid = np.isfinite(vec_x) & np.isfinite(vec_y)
+                    if np.any(valid):
+                        valid_idx = np.where(valid)[0]
+                        ranked = valid_idx[np.argsort(norms[valid_idx])[::-1]]
+                        selected = ranked[: min(80, ranked.shape[0])]
+
+                        if selected.size > 0:
+                            max_score_x = max(float(np.max(np.abs(scores_x))), 1e-12)
+                            max_score_y = max(float(np.max(np.abs(scores_y))), 1e-12)
+                            max_load_x = max(float(np.max(np.abs(vec_x[selected]))), 1e-12)
+                            max_load_y = max(float(np.max(np.abs(vec_y[selected]))), 1e-12)
+                            scale = 0.82 * min(max_score_x / max_load_x, max_score_y / max_load_y)
+
+                            lines_x: list[float | None] = []
+                            lines_y: list[float | None] = []
+                            points_x: list[float] = []
+                            points_y: list[float] = []
+                            labels: list[str] = []
+                            customdata: list[list[float | str]] = []
+
+                            labeled = set(selected[: min(24, selected.size)])
+                            for idx in selected:
+                                sx = float(vec_x[idx] * scale)
+                                sy = float(vec_y[idx] * scale)
+                                lines_x.extend([0.0, sx, None])
+                                lines_y.extend([0.0, sy, None])
+                                points_x.append(sx)
+                                points_y.append(sy)
+                                labels.append(f"F{idx + 1}" if idx in labeled else "")
+                                customdata.append([f"Feature {idx + 1}", float(vec_x[idx]), float(vec_y[idx])])
+
+                            traces.append(
+                                {
+                                    "x": lines_x,
+                                    "y": lines_y,
+                                    "type": "scatter",
+                                    "mode": "lines",
+                                    "line": {"color": "#f59e0b", "width": 1.6},
+                                    "name": "Loadings",
+                                    "hoverinfo": "skip",
+                                }
+                            )
+                            traces.append(
+                                {
+                                    "x": points_x,
+                                    "y": points_y,
+                                    "type": "scatter",
+                                    "mode": "markers+text",
+                                    "text": labels,
+                                    "textposition": "top center",
+                                    "textfont": {"size": 10, "color": "#92400e"},
+                                    "marker": {"size": 6, "color": "#f97316", "line": {"width": 1, "color": "#7c2d12"}},
+                                    "customdata": customdata,
+                                    "hovertemplate": "%%{customdata[0]}<br>PC%d loading: %%{customdata[1]:.3f}<br>PC%d loading: %%{customdata[2]:.3f}<extra></extra>"
+                                    % (pc_x + 1, pc_y + 1),
+                                    "showlegend": False,
+                                }
+                            )
+
+        return {
+            "visualization": {
+                "plot_type": "biplot",
+                "data": traces,
+                "layout": {
+                    "title": "PCA Biplot",
+                    "xaxis": {"title": f"PC{pc_x + 1} (scores)", "zeroline": True, "zerolinecolor": "#94a3b8"},
+                    "yaxis": {"title": f"PC{pc_y + 1} (scores)", "zeroline": True, "zerolinecolor": "#94a3b8"},
+                    "hovermode": "closest",
                 },
             }
         }

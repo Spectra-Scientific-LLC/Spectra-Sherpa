@@ -20,6 +20,9 @@
       <TabPanel header="Preferences">
         <PreferencesTab />
       </TabPanel>
+      <TabPanel header="Documentation">
+        <DocumentationTab />
+      </TabPanel>
     </TabView>
   </section>
 </template>
@@ -32,6 +35,7 @@ import ApiKeysTab from "./ApiKeysTab.vue";
 import IntegrationsTab from "./IntegrationsTab.vue";
 import DataPrivacyTab from "./DataPrivacyTab.vue";
 import PreferencesTab from "./PreferencesTab.vue";
+import DocumentationTab from "./DocumentationTab.vue";
 
 const activeTab = ref(0);
 </script>

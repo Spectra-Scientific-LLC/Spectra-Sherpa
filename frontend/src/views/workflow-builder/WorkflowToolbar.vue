@@ -344,6 +344,7 @@ const extraCategories = computed(() => {
 // Data Source Nodes (Blue)
 const DATA_NODES: Record<string, NodeConfig> = {
   'data.source': { label: 'Data Source', icon: '📊', colorClass: 'node-data', description: 'Load from experiments or files' },
+  'data.my_dataset': { label: 'My Dataset', icon: '📁', colorClass: 'node-data', description: 'Load from your dataset collection' },
   'data.file_load': { label: 'File Load', icon: '📂', colorClass: 'node-data', description: 'Load from local files' },
   'data.nist_library': { label: 'NIST Library', icon: '📚', colorClass: 'node-data', description: 'Load from NIST spectral library' },
   'data.synthetic_curve': { label: 'Synthetic Curve', icon: '📈', colorClass: 'node-data', description: 'Generate concentration curve' },
