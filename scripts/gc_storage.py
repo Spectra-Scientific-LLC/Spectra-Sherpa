@@ -10,7 +10,7 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.append(str(BASE_DIR))
 
-from app.services.version_storage import ContentAddressableStorage
+from spectra_sherpa.app.services.version_storage import ContentAddressableStorage
 
 
 def parse_args() -> argparse.Namespace:

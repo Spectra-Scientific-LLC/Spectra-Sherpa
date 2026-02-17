@@ -15,7 +15,7 @@ from .node_base import Node, node_registry
 
 def _ensure_registry_loaded() -> None:
     """Load the singleton type registry on-demand when needed."""
-    from app.types import type_registry
+    from spectra_sherpa.app.types import type_registry
 
     if type_registry.is_loaded:
         return
@@ -36,7 +36,7 @@ def validate_node_meta(node_class: Type[Node]) -> tuple[bool, List[str]]:
         ``(is_valid, errors)`` where ``errors`` contains human-readable messages.
     """
     _ensure_registry_loaded()
-    from app.types import type_registry
+    from spectra_sherpa.app.types import type_registry
 
     errors: List[str] = []
     meta = node_class.get_metadata()

@@ -6,7 +6,7 @@ the public benchmark datasets at https://eigenvector.com/resources/data-sets/
 
 Usage::
 
-    from app.lib.eigenvector import load_eigenvector_dataset, DATASET_CATALOG
+    from spectra_sherpa.app.lib.eigenvector import load_eigenvector_dataset, DATASET_CATALOG
 
     result = load_eigenvector_dataset("diesel_nir")
     spectra = result["spectra"]       # (784, 401) numpy array
@@ -36,10 +36,13 @@ EIGENVECTOR_DATA_DIR = (
 # Dataset catalog
 # ---------------------------------------------------------------------------
 
+FEATURED_DATASETS = {"diesel_nir", "corn_m5", "nir_shootout_cal1", "nir_shootout_test1", "metal_etch_oes"}
+
 DATASET_CATALOG: dict[str, dict[str, Any]] = {
     # --- SWRI Diesel NIR (CSV format) ---
     "diesel_nir": {
         "label": "Diesel NIR (784 samples, 401 wavelengths, 750-1550 nm)",
+        "featured": True,
         "format": "csv",
         "spec_file": "diesel_csv/diesel_spec.csv",
         "prop_file": "diesel_csv/diesel_prop.csv",
@@ -66,6 +69,7 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
     # --- Corn instrument standardization ---
     "corn_m5": {
         "label": "Corn M5 NIR (80 samples, 700 channels)",
+        "featured": True,
         "format": "mat",
         "mat_file": "corn_mat/corn.mat",
         "spec_key": "m5spec",
@@ -119,6 +123,7 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
     # --- NIR Shootout 2002 (pharmaceutical tablets) ---
     "nir_shootout_cal1": {
         "label": "NIR Shootout 2002 Cal Inst.1 (155 samples, 650 wl, 600-1898 nm)",
+        "featured": True,
         "format": "mat",
         "mat_file": "nir_shootout_mat/nir_shootout_2002.mat",
         "spec_key": "calibrate_1",
@@ -149,6 +154,7 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
     },
     "nir_shootout_test1": {
         "label": "NIR Shootout 2002 Test Inst.1 (460 samples, 650 wl, 600-1898 nm)",
+        "featured": True,
         "format": "mat",
         "mat_file": "nir_shootout_mat/nir_shootout_2002.mat",
         "spec_key": "test_1",
@@ -180,6 +186,7 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
     # --- Metal Etch process monitoring ---
     "metal_etch_oes": {
         "label": "Metal Etch OES (126 wafers, 129 wavelengths, 250-792 nm)",
+        "featured": True,
         "format": "metal_etch",
         "mat_file": "metal_etch/OES_DATA.mat",
         "struct_key": "OESDATA",

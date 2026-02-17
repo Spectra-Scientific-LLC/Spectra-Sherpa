@@ -24,12 +24,12 @@ from typing import Any, Callable, Optional
 
 from fastapi import WebSocket
 
-from app.core.config import app_config
-from app.core.security import check_egress_permission
-from app.db.session import async_session
-from app.services.llm import LLMService
-from app.services.rate_limiter import RateLimiter
-from app.services.websocket_manager import ws_manager
+from spectra_sherpa.app.core.config import app_config
+from spectra_sherpa.app.core.security import check_egress_permission
+from spectra_sherpa.app.db.session import async_session
+from spectra_sherpa.app.services.llm import LLMService
+from spectra_sherpa.app.services.rate_limiter import RateLimiter
+from spectra_sherpa.app.services.websocket_manager import ws_manager
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +150,18 @@ async def handle_llm_chat(
 # Sherpa Sync / Decide / Chat
 # ---------------------------------------------------------------------------
 
+async def _check_demo_sherpa_limit(ws: WebSocket, user: Any) -> bool:
+    """Check demo Sherpa interaction quota. Returns False (and sends error) if exhausted."""
+    from spectra_sherpa.app.core.demo_limits import check_demo_sherpa, demo_limit_error_detail
+    user_id = getattr(user, "id", None) if user else None
+    allowed, remaining = check_demo_sherpa(user_id)
+    if not allowed:
+        detail = demo_limit_error_detail("sherpa", remaining)
+        await ws.send_json({"type": "sherpa_error", **detail})
+        return False
+    return True
+
+
 async def handle_sherpa_sync(
     ws: WebSocket,
     payload: dict,
@@ -157,8 +169,11 @@ async def handle_sherpa_sync(
     rate_limiter: RateLimiter,
 ) -> None:
     try:
-        from app.schemas.sherpa import EgressTier, WorkflowStateSync
-        from app.services.sherpa_engine import get_sherpa_engine
+        if not await _check_demo_sherpa_limit(ws, user):
+            return
+
+        from spectra_sherpa.app.schemas.sherpa import EgressTier, WorkflowStateSync
+        from spectra_sherpa.app.services.sherpa_engine import get_sherpa_engine
 
         engine = get_sherpa_engine()
 
@@ -189,7 +204,7 @@ async def handle_sherpa_sync(
             return
 
         # Path 2: Cloud proxy (hybrid mode → remote SpectraSherpa server)
-        from app.services.sherpa_advisor import get_sherpa_advisor
+        from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
 
         advisor = get_sherpa_advisor()
         if not advisor.is_available:
@@ -227,8 +242,11 @@ async def handle_sherpa_decide(
     user: Any,
     rate_limiter: RateLimiter,
 ) -> None:
-    from app.services.sherpa_advisor import get_sherpa_advisor
-    from app.schemas.sherpa import UserDecision
+    if not await _check_demo_sherpa_limit(ws, user):
+        return
+
+    from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
+    from spectra_sherpa.app.schemas.sherpa import UserDecision
 
     advisor = get_sherpa_advisor()
     try:
@@ -250,7 +268,10 @@ async def handle_sherpa_chat(
     rate_limiter: RateLimiter,
 ) -> None:
     try:
-        from app.services.sherpa_engine import get_sherpa_engine
+        if not await _check_demo_sherpa_limit(ws, user):
+            return
+
+        from spectra_sherpa.app.services.sherpa_engine import get_sherpa_engine
 
         engine = get_sherpa_engine()
         chat_data = payload.get("payload", {})
@@ -277,7 +298,7 @@ async def handle_sherpa_chat(
             workflow_context = None
             sync_payload = chat_data.get("workflow_context")
             if sync_payload:
-                from app.schemas.sherpa import WorkflowStateSync
+                from spectra_sherpa.app.schemas.sherpa import WorkflowStateSync
                 workflow_context = WorkflowStateSync(**sync_payload)
 
             logger.info("sherpa_chat (engine): %s", message[:80])
@@ -290,7 +311,7 @@ async def handle_sherpa_chat(
             return
 
         # Path 2: Cloud proxy
-        from app.services.sherpa_advisor import get_sherpa_advisor
+        from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
 
         advisor = get_sherpa_advisor()
         if not advisor.is_available:
@@ -335,8 +356,8 @@ async def handle_tool_list(
     rate_limiter: RateLimiter,
 ) -> None:
     try:
-        from app.services.tools import tool_registry
-        from app.services.tools.schemas import ToolCategory, ToolScope
+        from spectra_sherpa.app.services.tools import tool_registry
+        from spectra_sherpa.app.services.tools.schemas import ToolCategory, ToolScope
 
         category_filter = payload.get("category")
         if category_filter:
@@ -369,8 +390,8 @@ async def handle_tool_invoke(
     rate_limiter: RateLimiter,
 ) -> None:
     try:
-        from app.services.tools.executor import ToolExecutionContext, execute_tool
-        from app.services.tools.schemas import ToolInvocation
+        from spectra_sherpa.app.services.tools.executor import ToolExecutionContext, execute_tool
+        from spectra_sherpa.app.services.tools.schemas import ToolInvocation
 
         # Rate limit
         user_key = f"user_{user.id}" if user and user.id else "anonymous"

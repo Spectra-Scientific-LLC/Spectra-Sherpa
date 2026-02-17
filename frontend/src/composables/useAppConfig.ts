@@ -40,8 +40,6 @@ async function loadConfig(force = false): Promise<void> {
       features: {
         apiTokenSettings: true,
         cloudOffload: false,
-        enterpriseMode: false,
-        demoMode: false,
         agenticWorkflow: false,
         chatAssistant: false,
         sherpaAdvisor: false,
@@ -54,6 +52,7 @@ async function loadConfig(force = false): Promise<void> {
         deepseek: { provider: 'deepseek', model: 'deepseek-chat', enabled: false },
         gemini: { provider: 'gemini', model: 'gemini-1.5-pro', enabled: false },
       },
+      demo: null,
     }
   } finally {
     loading.value = false

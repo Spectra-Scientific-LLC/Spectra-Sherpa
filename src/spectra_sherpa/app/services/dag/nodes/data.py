@@ -13,13 +13,13 @@ from datetime import datetime
 from typing import Any, Optional
 
 import numpy as np
-from app.lib.scp_compat import scp, NDDataset, HAS_SCP, require_scp
-from app.lib.analysis_dataset import AnalysisDataset, AxisInfo, from_sklearn_bunch
-from app.lib.eigenvector import DATASET_CATALOG
+from spectra_sherpa.app.lib.scp_compat import scp, NDDataset, HAS_SCP, require_scp
+from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo, from_sklearn_bunch
+from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG
 
 from ..node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
-from app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
-from app.models.spectra_meta import (
+from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
+from spectra_sherpa.app.models.spectra_meta import (
     SpectraMeta,
     SpeciesInfo,
     ConcentrationProfile,
@@ -262,7 +262,7 @@ def extract_instrument_metadata(dataset: NDDataset, file_path: str) -> dict:
     """
     try:
         # Use the new metadata extraction service
-        from app.services.metadata import extract_metadata
+        from spectra_sherpa.app.services.metadata import extract_metadata
         return extract_metadata(dataset, file_path)
     except ImportError:
         # Fallback if metadata service not available (shouldn't happen)
@@ -893,7 +893,7 @@ class DataSourceNode(Node):
         Returns:
             NDDataset (with SCP) or numpy array (without SCP)
         """
-        from app.lib.eigenvector import load_eigenvector_dataset
+        from spectra_sherpa.app.lib.eigenvector import load_eigenvector_dataset
 
         result = load_eigenvector_dataset(dataset_name)
         spectra = result["spectra"]
@@ -1183,7 +1183,7 @@ class DataSourceNode(Node):
                 return dataset
 
             # Use centralized reader mapping for file extensions
-            from app.core.config import get_reader_for_extension
+            from spectra_sherpa.app.core.config import get_reader_for_extension
 
             ext = full_path.suffix
             reader_name = get_reader_for_extension(ext)
@@ -1331,7 +1331,7 @@ class DataSourceNode(Node):
                 logger.debug(f"[DATA] Loading {i}/{len(files)}: {file_path.name}")
 
                 # Use centralized reader
-                from app.core.config import get_reader_for_extension
+                from spectra_sherpa.app.core.config import get_reader_for_extension
 
                 ext = file_path.suffix
                 reader_name = get_reader_for_extension(ext)
@@ -1642,9 +1642,9 @@ class DataSourceNode(Node):
             file_id: Specific file ID to load (if None, loads first file of the stage)
             stage: Data stage (raw, preprocessed, synthetic)
         """
-        from app.core.config import settings
-        from app.db.session import async_session
-        from app.models.experiment_file import ExperimentFile
+        from spectra_sherpa.app.core.config import settings
+        from spectra_sherpa.app.db.session import async_session
+        from spectra_sherpa.app.models.experiment_file import ExperimentFile
         from sqlalchemy import select
 
         async with async_session() as session:
@@ -1689,9 +1689,9 @@ class DataSourceNode(Node):
         Args:
             library_id: ID of the NIST library entry
         """
-        from app.core.config import settings
-        from app.db.session import async_session
-        from app.models.nist_library import NistLibrary
+        from spectra_sherpa.app.core.config import settings
+        from spectra_sherpa.app.db.session import async_session
+        from spectra_sherpa.app.models.nist_library import NistLibrary
         from sqlalchemy import select
 
         async with async_session() as session:
@@ -1731,7 +1731,7 @@ class DataSourceNode(Node):
 
         try:
             # Use centralized reader mapping
-            from app.core.config import get_reader_for_extension
+            from spectra_sherpa.app.core.config import get_reader_for_extension
 
             reader_name = get_reader_for_extension(ext)
             reader_method = getattr(scp, reader_name)
@@ -1756,7 +1756,7 @@ class DataSourceNode(Node):
             # Use the normalizer's merge function to preserve existing values
             # and never overwrite blindly
             try:
-                from app.services.metadata.normalizer import MetadataNormalizer
+                from spectra_sherpa.app.services.metadata.normalizer import MetadataNormalizer
                 normalizer = MetadataNormalizer()
                 dataset.meta = normalizer.merge_with_existing(extracted_meta, dataset.meta)
             except ImportError:
@@ -1911,9 +1911,9 @@ class FileLoadNode(Node):
     async def execute(self, *args) -> Any:
         """Load data from a specific experiment file."""
         require_scp("File loading")
-        from app.core.config import settings
-        from app.db.session import async_session
-        from app.models.experiment_file import ExperimentFile
+        from spectra_sherpa.app.core.config import settings
+        from spectra_sherpa.app.db.session import async_session
+        from spectra_sherpa.app.models.experiment_file import ExperimentFile
         from sqlalchemy import select
 
         experiment_id = self.parameters.get("experiment_id")
@@ -1984,7 +1984,7 @@ class FileLoadNode(Node):
 
         try:
             # Use centralized reader mapping
-            from app.core.config import get_reader_for_extension
+            from spectra_sherpa.app.core.config import get_reader_for_extension
 
             reader_name = get_reader_for_extension(ext)
             reader_method = getattr(scp, reader_name)
@@ -2049,9 +2049,9 @@ class NISTLibraryNode(Node):
 
     async def execute(self, *args) -> Any:
         """Load spectrum from NIST library."""
-        from app.core.config import settings
-        from app.db.session import async_session
-        from app.models.nist_library import NistLibrary
+        from spectra_sherpa.app.core.config import settings
+        from spectra_sherpa.app.db.session import async_session
+        from spectra_sherpa.app.models.nist_library import NistLibrary
         from sqlalchemy import select
 
         library_id = self.parameters.get("library_id")
@@ -2670,7 +2670,7 @@ class LoadGroupNode(Node):
         Raises:
             ValueError: If file cannot be loaded
         """
-        from app.core.config import get_reader_for_extension
+        from spectra_sherpa.app.core.config import get_reader_for_extension
 
         ext = file_path.suffix
 

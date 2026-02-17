@@ -13,12 +13,12 @@ from openai import AsyncOpenAI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.api_key import APIKey
-from app.models.llm_config import LLMConfig
-from app.models.user import User
-from app.services.encryption import decrypt_value
-from app.core.llm_registry import get_provider, get_default_provider
-from app.core.security import check_egress_permission
+from spectra_sherpa.app.models.api_key import APIKey
+from spectra_sherpa.app.models.llm_config import LLMConfig
+from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.services.encryption import decrypt_value
+from spectra_sherpa.app.core.llm_registry import get_provider, get_default_provider
+from spectra_sherpa.app.core.security import check_egress_permission
 
 # Anthropic import - will be available when installed
 try:
@@ -63,7 +63,7 @@ class ConversationStore:
     CONVERSATION_TTL_HOURS = 72  # Auto-expire after 3 days of inactivity
 
     def __init__(self, state_path: Optional[Path] = None) -> None:
-        from app.core.config import settings
+        from spectra_sherpa.app.core.config import settings
         self._state_path = state_path or (settings.data_dir / "conversations.json")
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -371,7 +371,7 @@ class LLMService:
         provider_meta = get_provider(config["provider"])
 
         # ---- resolve tool definitions ----
-        from app.services.tools import tool_registry
+        from spectra_sherpa.app.services.tools import tool_registry
 
         if provider_meta["client_type"] == "anthropic":
             tools_payload = tool_registry.to_anthropic_tools()
@@ -394,8 +394,8 @@ class LLMService:
         tool_calls_log: list[dict[str, Any]] = []
         content = ""
 
-        from app.services.tools.executor import ToolExecutionContext, execute_tool
-        from app.services.tools.schemas import ToolInvocation
+        from spectra_sherpa.app.services.tools.executor import ToolExecutionContext, execute_tool
+        from spectra_sherpa.app.services.tools.schemas import ToolInvocation
 
         ctx = ToolExecutionContext(session=self.session, user=self.user)
 
@@ -721,7 +721,7 @@ class LLMService:
             ValueError: If no API key found in any source
         """
         import logging
-        from app.core.config import app_config
+        from spectra_sherpa.app.core.config import app_config
 
         logger = logging.getLogger(__name__)
         logger.info(f"Resolving API key for provider: {provider}")
@@ -750,10 +750,10 @@ class LLMService:
                 await self.session.commit()
                 return decrypt_value(user_key.key_encrypted)
 
-        # Priority 3: Check SpectraSherpa managed keys (HYBRID and DEMO modes)
-        if app_config.mode in ("hybrid", "demo"):
+        # Priority 3: Check SpectraSherpa managed keys (non-local modes)
+        if app_config.mode != "local":
             try:
-                from app.services.spectrasherpa import get_spectrasherpa_service
+                from spectra_sherpa.app.services.spectrasherpa import get_spectrasherpa_service
                 spectrasherpa = get_spectrasherpa_service()
 
                 if spectrasherpa.is_configured:

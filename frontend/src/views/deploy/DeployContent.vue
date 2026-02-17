@@ -86,7 +86,7 @@
                 onLabel="ON"
                 offLabel="OFF"
                 class="toggle-sm"
-                @update:modelValue="(val: boolean) => handleToggle(data.id, val)"
+                @update:model-value="(val: boolean) => handleToggle(data.id, val)"
               />
             </template>
           </Column>
@@ -170,7 +170,7 @@
             <template #body="{ data }">
               <LabelChips
                 :modelValue="data.labels || []"
-                @update:modelValue="(labels: string[]) => handleUpdateLabels(data.id, labels)"
+                @update:model-value="(labels: string[]) => handleUpdateLabels(data.id, labels)"
               />
             </template>
           </Column>

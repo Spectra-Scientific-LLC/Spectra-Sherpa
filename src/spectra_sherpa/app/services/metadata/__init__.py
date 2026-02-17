@@ -6,7 +6,7 @@ from various spectral file formats (OPUS, SPA, JCAMP-DX, SPC) and normalizing
 them to our SpectraMeta schema.
 
 Usage:
-    from app.services.metadata import MetadataExtractor
+    from spectra_sherpa.app.services.metadata import MetadataExtractor
 
     # Extract metadata from any supported format
     metadata = MetadataExtractor.extract(dataset, file_path)

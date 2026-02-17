@@ -14,16 +14,16 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_current_user, get_session
-from app.core.config import settings
-from app.core.security import check_export_allowed
-from app.models.user import User
-from app.services.dag.serialize import serialize_for_api
+from spectra_sherpa.app.api.deps import check_demo_capability, get_current_user, get_session
+from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.app.core.security import check_export_allowed
+from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.services.dag.serialize import serialize_for_api
 
 logger = logging.getLogger(__name__)
 
-from app.lib.scp_compat import NDDataset, HAS_SCP
-from app.lib.analysis_dataset import AnalysisDataset
+from spectra_sherpa.app.lib.scp_compat import NDDataset, HAS_SCP
+from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
 HAS_NDDATASET = HAS_SCP
 
 
@@ -126,11 +126,11 @@ def serialize_result(obj: Any) -> Any:
     return obj
 
 
-from app.models.workflow import Workflow
-from app.models.workflow_edge import WorkflowEdge
-from app.models.workflow_node import WorkflowNode
-from app.models.workflow_version import WorkflowVersion
-from app.schemas.workflows import (
+from spectra_sherpa.app.models.workflow import Workflow
+from spectra_sherpa.app.models.workflow_edge import WorkflowEdge
+from spectra_sherpa.app.models.workflow_node import WorkflowNode
+from spectra_sherpa.app.models.workflow_version import WorkflowVersion
+from spectra_sherpa.app.schemas.workflows import (
     NodeLibraryResponse,
     NodeMetadataInfo,
     NodeParameterInfo,
@@ -147,14 +147,14 @@ from app.schemas.workflows import (
     WorkflowVersionListResponse,
     WorkflowVersionSummary,
 )
-from app.services.dag import (
+from spectra_sherpa.app.services.dag import (
     DAGExecutor,
     WorkflowEdge as DAGEdge,
     WorkflowNode as DAGNode,
     node_registry,
 )
-from app.services.dag.integrity import compute_workflow_hash
-from app.services.python_export import generate_python_code
+from spectra_sherpa.app.services.dag.integrity import compute_workflow_hash
+from spectra_sherpa.app.services.python_export import generate_python_code
 
 router = APIRouter(prefix="/workflows")
 
@@ -220,7 +220,7 @@ async def list_workflows(
     if tag_ids:
         # Filter workflows that have ANY of the specified tags
         # Use subquery to avoid duplicate rows in count aggregation
-        from app.models.workflow_tag import workflow_tag_association
+        from spectra_sherpa.app.models.workflow_tag import workflow_tag_association
 
         tag_subquery = (
             select(workflow_tag_association.c.workflow_id)
@@ -306,6 +306,10 @@ async def execute_trial(
 
     This is completely independent of any stored workflow state.
     """
+    # Demo mode: block inline data injection
+    if payload.initial_data:
+        check_demo_capability("data_upload")
+
     try:
         # Build a fresh DAG executor for this trial (no caching)
         executor = DAGExecutor()
@@ -464,7 +468,7 @@ async def list_spectrochempy_examples(
     to lists of available files with their labels, paths, and metadata.
     """
     from pathlib import Path
-    from app.lib.scp_compat import scp, HAS_SCP
+    from spectra_sherpa.app.lib.scp_compat import scp, HAS_SCP
 
     if not HAS_SCP:
         raise HTTPException(
@@ -660,7 +664,7 @@ async def update_workflow(
 
     # Update tags if provided
     if payload.tag_ids is not None:
-        from app.models.workflow_tag import WorkflowTag
+        from spectra_sherpa.app.models.workflow_tag import WorkflowTag
 
         # Clear existing tags
         workflow.tags = []
@@ -1065,6 +1069,10 @@ async def execute_workflow(
     current_user: User = Depends(get_current_user),
 ) -> WorkflowExecuteResponse:
     """Execute a workflow for the authenticated user."""
+    # Demo mode: block inline data injection
+    if payload.initial_data:
+        check_demo_capability("data_upload")
+
     user_id = current_user.id
 
     # Load workflow with nodes and edges
@@ -1212,7 +1220,7 @@ async def get_node_library(
 
     Includes backend version for client-side cache invalidation.
     """
-    from app.core.config import settings
+    from spectra_sherpa.app.core.config import settings
 
     nodes = node_registry.list_nodes()
 
@@ -1297,7 +1305,7 @@ async def get_type_registry(
     Returns all type definitions, subtype relationships, and version info
     so the frontend can validate connections without per-edge API calls.
     """
-    from app.types import type_registry
+    from spectra_sherpa.app.types import type_registry
     return type_registry.to_api_json()
 
 
@@ -1379,7 +1387,7 @@ async def export_workflow_to_notebook(
         raise HTTPException(status_code=404, detail="Workflow not found")
 
     try:
-        from app.services.notebook_export import generate_notebook
+        from spectra_sherpa.app.services.notebook_export import generate_notebook
 
         notebook = generate_notebook(workflow)
         safe_name = workflow.name.lower().replace(" ", "_")

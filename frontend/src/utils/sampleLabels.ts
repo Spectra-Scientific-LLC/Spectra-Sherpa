@@ -53,7 +53,7 @@ export function normalizeSampleLabel(value: unknown): string {
   if (typeof value === "string") {
     const trimmed = value.trim();
     if (trimmed.startsWith("[") || trimmed.startsWith("(")) {
-      const quoted = [...trimmed.matchAll(/'([^']+)'|\"([^\"]+)\"/g)]
+      const quoted = [...trimmed.matchAll(/'([^']+)'|"([^"]+)"/g)]
         .map((match) => match[1] || match[2])
         .filter(Boolean);
       if (quoted.length > 0) return quoted[quoted.length - 1];

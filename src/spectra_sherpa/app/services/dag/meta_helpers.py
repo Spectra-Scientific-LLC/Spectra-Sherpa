@@ -9,7 +9,7 @@ Meta Dict Schema:
     samples: Dict                    # Sample management (classes, include/exclude)
 
 Usage in nodes:
-    from app.services.dag.meta_helpers import add_processing_step
+    from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
 
     async def execute(self, input_data: NDDataset) -> NDDataset:
         result = input_data.copy()
@@ -24,7 +24,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
 import numpy as np
 
-from app.lib.scp_compat import NDDataset, HAS_SCP
+from spectra_sherpa.app.lib.scp_compat import NDDataset, HAS_SCP
 HAS_NDDATASET = HAS_SCP
 
 

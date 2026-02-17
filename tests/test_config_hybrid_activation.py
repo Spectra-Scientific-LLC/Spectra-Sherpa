@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-import app.services.spectrasherpa as spectrasherpa_module
-from app.core.config import app_config
-from app.services.spectrasherpa import (
+import spectra_sherpa.app.services.spectrasherpa as spectrasherpa_module
+from spectra_sherpa.app.core.config import app_config
+from spectra_sherpa.app.services.spectrasherpa import (
     SPECTRASHERPA_API_BASE,
     get_spectrasherpa_service,
     reset_spectrasherpa_service,
@@ -86,7 +86,7 @@ async def test_reset_spectrasherpa_service_recreates_singleton():
 
 @pytest.mark.asyncio
 async def test_activate_hybrid_endpoint_updates_runtime_state(client, monkeypatch, tmp_path):
-    import app.api.v1.routes.config as config_routes
+    import spectra_sherpa.app.api.v1.routes.config as config_routes
 
     env_file = tmp_path / ".env"
     env_file.write_text("", encoding="utf-8")
@@ -94,12 +94,12 @@ async def test_activate_hybrid_endpoint_updates_runtime_state(client, monkeypatc
     monkeypatch.setattr(config_routes, "_find_or_create_env_path", lambda: str(env_file))
     monkeypatch.setattr(config_routes.httpx, "AsyncClient", _FakeAsyncClient)
     monkeypatch.setattr(
-        "app.services.spectrasherpa.reset_spectrasherpa_service",
+        "spectra_sherpa.app.services.spectrasherpa.reset_spectrasherpa_service",
         AsyncMock(),
     )
-    monkeypatch.setattr("app.core.startup.ensure_egress_defaults", AsyncMock())
-    monkeypatch.setattr("app.core.startup.link_hybrid_identity", AsyncMock())
-    monkeypatch.setattr("app.services.network_health.start_network_health_service", AsyncMock())
+    monkeypatch.setattr("spectra_sherpa.app.core.startup.ensure_egress_defaults", AsyncMock())
+    monkeypatch.setattr("spectra_sherpa.app.core.startup.link_hybrid_identity", AsyncMock())
+    monkeypatch.setattr("spectra_sherpa.app.services.network_health.start_network_health_service", AsyncMock())
 
     app_config.mode = "local"
     app_config.egress_enabled = False
@@ -144,10 +144,10 @@ async def test_deactivate_hybrid_endpoint_clears_runtime_state(client, monkeypat
         lambda: [env_file],
     )
     monkeypatch.setattr(
-        "app.services.spectrasherpa.reset_spectrasherpa_service",
+        "spectra_sherpa.app.services.spectrasherpa.reset_spectrasherpa_service",
         AsyncMock(),
     )
-    monkeypatch.setattr("app.services.network_health.stop_network_health_service", AsyncMock())
+    monkeypatch.setattr("spectra_sherpa.app.services.network_health.stop_network_health_service", AsyncMock())
 
     app_config.mode = "hybrid"
     app_config.egress_enabled = True
@@ -182,7 +182,7 @@ async def test_deactivate_hybrid_endpoint_clears_runtime_state(client, monkeypat
 
 @pytest.mark.asyncio
 async def test_spectrasherpa_test_endpoint_works_when_egress_disabled(client, monkeypatch):
-    import app.api.v1.routes.config as config_routes
+    import spectra_sherpa.app.api.v1.routes.config as config_routes
 
     monkeypatch.setattr(config_routes.httpx, "AsyncClient", _FakeAsyncClient)
     app_config.mode = "local"

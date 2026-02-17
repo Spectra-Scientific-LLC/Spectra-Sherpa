@@ -18,6 +18,10 @@
       <span>Offline Mode</span>
     </div>
 
+    <!-- Demo Mode Banner + Upgrade Modal -->
+    <DemoBanner />
+    <DemoUpgradeModal />
+
     <Sidebar :collapsed="navCollapsed" />
     <div class="workspace">
       <div class="main">
@@ -49,6 +53,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import ChatPanel from "@/components/ChatPanel.vue";
+import DemoBanner from "@/components/DemoBanner.vue";
+import DemoUpgradeModal from "@/components/DemoUpgradeModal.vue";
 import Sidebar from "@/components/Sidebar.vue";
 import Topbar from "@/components/Topbar.vue";
 import Toast from "primevue/toast";
@@ -249,9 +255,17 @@ watch(backendConnected, (isConnected) => {
   }
 }
 
-/* Adjust app layout when banner is shown */
+/* Adjust app layout when banners are shown */
 .app-shell:has(.backend-status-banner) {
   padding-top: 48px;
+}
+
+.app-shell:has(.demo-banner) {
+  padding-top: 40px;
+}
+
+.app-shell:has(.backend-status-banner):has(.demo-banner) {
+  padding-top: 88px;
 }
 
 /* Offline mode badge */

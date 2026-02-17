@@ -13,11 +13,11 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select, update
 
-from app.db.session import async_session
-from app.models.batch_prediction import BatchPrediction
-from app.models.execution_run import ExecutionRun
-from app.models.folder_watch import FolderWatch
-from app.services.batch_predict import (
+from spectra_sherpa.app.db.session import async_session
+from spectra_sherpa.app.models.batch_prediction import BatchPrediction
+from spectra_sherpa.app.models.execution_run import ExecutionRun
+from spectra_sherpa.app.models.folder_watch import FolderWatch
+from spectra_sherpa.app.services.batch_predict import (
     build_executor_from_workflow,
     discover_files,
     load_single_file,
@@ -187,7 +187,7 @@ class FolderWatchService:
                 await session.flush()
 
                 # Process each file
-                from app.api.v1.routes.workflows import serialize_result
+                from spectra_sherpa.app.api.v1.routes.workflows import serialize_result
 
                 success_count = 0
                 error_count = 0

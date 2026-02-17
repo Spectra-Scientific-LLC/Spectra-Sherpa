@@ -29,22 +29,22 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from starlette.testclient import TestClient
 
-from app.db.base import Base
-from app.main import app
-from app.core.config import app_config
-from app.api.deps import get_session, get_current_user
-from app.models.user import User
-from app.models.workflow import Workflow
-from app.models.workflow_node import WorkflowNode
-import app.main as app_main
-from app.services.websocket_manager import ws_manager
+from spectra_sherpa.app.db.base import Base
+from spectra_sherpa.app.main import app
+from spectra_sherpa.app.core.config import app_config
+from spectra_sherpa.app.api.deps import get_session, get_current_user
+from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.models.workflow import Workflow
+from spectra_sherpa.app.models.workflow_node import WorkflowNode
+import spectra_sherpa.app.main as app_main
+from spectra_sherpa.app.services.websocket_manager import ws_manager
 
 
 # ---------------------------------------------------------------------------
 # Detect if full auth routes exist (server distribution)
 # ---------------------------------------------------------------------------
 try:
-    from app.api.v1.routes.auth import router as _auth_router  # noqa: F401
+    from spectra_sherpa.app.api.v1.routes.auth import router as _auth_router  # noqa: F401
 
     _HAS_SERVER_AUTH = True
 except ImportError:
@@ -131,6 +131,7 @@ def _reset_ws_state():
     ws_manager._channels.clear()
     yield
     ws_manager._channels.clear()
+
 
 
 # ---------------------------------------------------------------------------

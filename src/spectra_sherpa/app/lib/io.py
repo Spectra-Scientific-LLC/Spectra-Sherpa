@@ -31,7 +31,7 @@ except ImportError:
     HAS_SCIPY = False
     loadmat = None
 
-from app.lib.scp_compat import scp, NDDataset, HAS_SCP, require_scp
+from spectra_sherpa.app.lib.scp_compat import scp, NDDataset, HAS_SCP, require_scp
 
 
 # Filename pattern for extracting species labels

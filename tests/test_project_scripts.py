@@ -30,12 +30,12 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_session
-from app.main import app
-from app.models.project import Project
-from app.models.project_script import ProjectScript
-from app.models.user import User
-from app.models.workflow import Workflow
+from spectra_sherpa.app.api.deps import get_current_user, get_session
+from spectra_sherpa.app.main import app
+from spectra_sherpa.app.models.project import Project
+from spectra_sherpa.app.models.project_script import ProjectScript
+from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.models.workflow import Workflow
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────
@@ -352,7 +352,7 @@ class TestGenerateScript:
         )
 
         with patch(
-            "app.api.v1.routes.project_scripts.generate_python_code",
+            "spectra_sherpa.app.api.v1.routes.project_scripts.generate_python_code",
             return_value="# Generated code\nimport numpy as np\n",
         ):
             resp = await auth_client.post(
@@ -382,7 +382,7 @@ class TestGenerateScript:
         proj_id = sample_project["id"]
 
         with patch(
-            "app.api.v1.routes.project_scripts.generate_python_code",
+            "spectra_sherpa.app.api.v1.routes.project_scripts.generate_python_code",
             return_value="pass",
         ):
             resp = await auth_client.post(
@@ -418,7 +418,7 @@ class TestGenerateScript:
         proj_id = sample_project["id"]
 
         with patch(
-            "app.api.v1.routes.project_scripts.generate_python_code",
+            "spectra_sherpa.app.api.v1.routes.project_scripts.generate_python_code",
             side_effect=ValueError("Node 'bad_node' has no generate_python()"),
         ):
             resp = await auth_client.post(

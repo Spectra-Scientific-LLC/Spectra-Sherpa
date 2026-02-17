@@ -77,8 +77,7 @@ cd /Users/fe2val/Documents/Spectra\ Scientific/Component_code/Refactored
 
 # Make sure backend is running
 # Terminal 1:
-cd src/spectra_sherpa
-uvicorn app.main:app --reload
+uvicorn spectra_sherpa.app.main:create_app --factory --reload
 
 # Terminal 2: Run tests
 python test_pca_integration.py
@@ -408,8 +407,7 @@ Note: Requires two inputs - X (features) and y (class labels)
 ```
 **Solution:** Start the backend server:
 ```bash
-cd src/spectra_sherpa
-uvicorn app.main:app --reload
+uvicorn spectra_sherpa.app.main:create_app --factory --reload
 ```
 
 ### API Key Invalid
@@ -521,8 +519,7 @@ jobs:
           pip install -r requirements.txt
       - name: Start backend
         run: |
-          cd src/spectra_sherpa
-          uvicorn app.main:app &
+          uvicorn spectra_sherpa.app.main:create_app --factory &
           sleep 10
       - name: Run integration tests
         run: python test_pca_integration.py

@@ -1,4 +1,4 @@
-from app.api.v1.routes import (
+from spectra_sherpa.app.api.v1.routes import (
     api_keys,
     builder,
     compute,

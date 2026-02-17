@@ -17,9 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy import select
 
-from app.models.batch_prediction import BatchPrediction
-from app.models.execution_run import ExecutionRun
-from app.models.workflow import Workflow
+from spectra_sherpa.app.models.batch_prediction import BatchPrediction
+from spectra_sherpa.app.models.execution_run import ExecutionRun
+from spectra_sherpa.app.models.workflow import Workflow
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +36,8 @@ def validate_folder_path(folder_path: str) -> Path:
 
     Returns the resolved Path on success; raises ValueError otherwise.
     """
-    from app.core.mode_policy import is_local
-    from app.core.config import settings
+    from spectra_sherpa.app.core.mode_policy import is_local
+    from spectra_sherpa.app.core.config import settings
 
     resolved = Path(folder_path).expanduser().resolve()
 
@@ -129,8 +129,8 @@ def load_single_file(file_path: Path) -> Any:
     Raises:
         ValueError: If the extension is unsupported or reading fails.
     """
-    from app.core.config import get_reader_for_extension
-    from app.lib.scp_compat import scp, require_scp
+    from spectra_sherpa.app.core.config import get_reader_for_extension
+    from spectra_sherpa.app.lib.scp_compat import scp, require_scp
 
     require_scp("Batch prediction")
 
@@ -155,7 +155,7 @@ def build_executor_from_workflow(workflow: Workflow) -> Any:
     Returns:
         A DAGExecutor ready for inject_result() + execute().
     """
-    from app.services.dag import DAGExecutor, WorkflowEdge as DAGEdge, WorkflowNode as DAGNode
+    from spectra_sherpa.app.services.dag import DAGExecutor, WorkflowEdge as DAGEdge, WorkflowNode as DAGNode
 
     executor = DAGExecutor()
 
@@ -203,8 +203,8 @@ async def run_batch_prediction(
         workflow: Workflow with eagerly-loaded nodes + edges.
         files: List of file paths to process.
     """
-    from app.api.v1.routes.workflows import serialize_result
-    from app.services.job_manager import job_manager
+    from spectra_sherpa.app.api.v1.routes.workflows import serialize_result
+    from spectra_sherpa.app.services.job_manager import job_manager
 
     total = len(files)
     success_count = 0

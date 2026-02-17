@@ -34,15 +34,15 @@ class TestValidateFolderPath:
 
     def test_local_mode_allows_any_path(self, tmp_path: Path):
         """In local mode, any accessible path is allowed."""
-        from app.services.batch_predict import validate_folder_path
+        from spectra_sherpa.app.services.batch_predict import validate_folder_path
 
-        with patch("app.core.mode_policy.is_local", return_value=True):
+        with patch("spectra_sherpa.app.core.mode_policy.is_local", return_value=True):
             result = validate_folder_path(str(tmp_path))
             assert result == tmp_path.resolve()
 
     def test_hybrid_mode_blocks_outside_data_dir(self, tmp_path: Path):
         """In hybrid mode, paths outside data_dir are rejected."""
-        from app.services.batch_predict import validate_folder_path
+        from spectra_sherpa.app.services.batch_predict import validate_folder_path
 
         outside = tmp_path / "outside"
         outside.mkdir()
@@ -51,8 +51,8 @@ class TestValidateFolderPath:
         data_dir.mkdir()
 
         with (
-            patch("app.core.mode_policy.is_local", return_value=False),
-            patch("app.core.config.settings") as mock_settings,
+            patch("spectra_sherpa.app.core.mode_policy.is_local", return_value=False),
+            patch("spectra_sherpa.app.core.config.settings") as mock_settings,
         ):
             mock_settings.data_dir = data_dir
             with pytest.raises(ValueError, match="must be under the data directory"):
@@ -60,15 +60,15 @@ class TestValidateFolderPath:
 
     def test_hybrid_mode_allows_inside_data_dir(self, tmp_path: Path):
         """In hybrid mode, paths under data_dir are allowed."""
-        from app.services.batch_predict import validate_folder_path
+        from spectra_sherpa.app.services.batch_predict import validate_folder_path
 
         data_dir = tmp_path / "data"
         sub = data_dir / "spectra" / "batch1"
         sub.mkdir(parents=True)
 
         with (
-            patch("app.core.mode_policy.is_local", return_value=False),
-            patch("app.core.config.settings") as mock_settings,
+            patch("spectra_sherpa.app.core.mode_policy.is_local", return_value=False),
+            patch("spectra_sherpa.app.core.config.settings") as mock_settings,
         ):
             mock_settings.data_dir = data_dir
             result = validate_folder_path(str(sub))
@@ -76,7 +76,7 @@ class TestValidateFolderPath:
 
     def test_traversal_attempt_blocked(self, tmp_path: Path):
         """Traversal via ../.. is caught after resolve()."""
-        from app.services.batch_predict import validate_folder_path
+        from spectra_sherpa.app.services.batch_predict import validate_folder_path
 
         data_dir = tmp_path / "data"
         data_dir.mkdir()
@@ -84,8 +84,8 @@ class TestValidateFolderPath:
         traversal_path = str(data_dir / ".." / ".." / "etc")
 
         with (
-            patch("app.core.mode_policy.is_local", return_value=False),
-            patch("app.core.config.settings") as mock_settings,
+            patch("spectra_sherpa.app.core.mode_policy.is_local", return_value=False),
+            patch("spectra_sherpa.app.core.config.settings") as mock_settings,
         ):
             mock_settings.data_dir = data_dir
             with pytest.raises(ValueError, match="must be under the data directory"):
@@ -114,12 +114,12 @@ class TestDiscoverFilesExclude:
 
     def test_exclude_by_full_path(self, tmp_path: Path):
         """Files excluded by full path string are skipped."""
-        from app.services.batch_predict import discover_files
+        from spectra_sherpa.app.services.batch_predict import discover_files
 
         files = self._create_spectral_files(tmp_path)
         exclude = {str(files[0])}  # Exclude by full path
 
-        with patch("app.core.mode_policy.is_local", return_value=True):
+        with patch("spectra_sherpa.app.core.mode_policy.is_local", return_value=True):
             result = discover_files(str(tmp_path), "*", exclude_names=exclude)
             names = [f.name for f in result]
             assert "a.csv" not in names
@@ -128,12 +128,12 @@ class TestDiscoverFilesExclude:
 
     def test_exclude_by_filename_backward_compat(self, tmp_path: Path):
         """Files excluded by filename only are skipped (backward compat)."""
-        from app.services.batch_predict import discover_files
+        from spectra_sherpa.app.services.batch_predict import discover_files
 
         self._create_spectral_files(tmp_path)
         exclude = {"b.csv"}  # Old-style filename-only exclude
 
-        with patch("app.core.mode_policy.is_local", return_value=True):
+        with patch("spectra_sherpa.app.core.mode_policy.is_local", return_value=True):
             result = discover_files(str(tmp_path), "*", exclude_names=exclude)
             names = [f.name for f in result]
             assert "a.csv" in names
@@ -142,24 +142,60 @@ class TestDiscoverFilesExclude:
 
 
 # ---------------------------------------------------------------------------
-# 3. Rate limit coverage
+# 3. Rate limit coverage (see also test_rate_limit_intent.py)
 # ---------------------------------------------------------------------------
 
 
-class TestRateLimitPaths:
-    """RATE_LIMITED_PATHS must include /api/v1/deploy."""
+class TestIsExecutionPath:
+    """_is_execution_path correctly distinguishes compute from management POSTs."""
 
-    def test_deploy_in_rate_limited_paths(self):
-        from app.core.demo_enforcement import DemoEnforcementMiddleware
+    @pytest.fixture
+    def mw(self):
+        """Get a RateLimitMiddleware instance for testing _is_execution_path."""
+        from spectra_sherpa.app.core.rate_limit_middleware import RateLimitMiddleware
+        from unittest.mock import MagicMock
+        return RateLimitMiddleware(MagicMock())
 
-        assert "/api/v1/deploy" in DemoEnforcementMiddleware.RATE_LIMITED_PATHS
+    # --- True positives: these SHOULD consume demo quota ---
 
-    def test_all_critical_paths_covered(self):
-        from app.core.demo_enforcement import DemoEnforcementMiddleware
+    @pytest.mark.parametrize("path", [
+        "/api/v1/workflows/42/execute",       # workflow execute
+        "/api/v1/workflows/trial/execute",     # trial execute
+        "/api/v1/workflows/999/predict",       # workflow predict
+        "/api/v1/jobs",                        # job submission
+        "/api/v1/jobs/batch",                  # batch jobs
+        "/api/v1/compute",                     # compute endpoint
+        "/api/v1/compute/some-sub",            # compute sub-path
+        "/api/v1/deploy",                      # deployment
+        "/api/v1/deploy/model-1",              # deploy sub-path
+    ])
+    def test_execution_paths_detected(self, mw, path):
+        assert mw._is_execution_path(path) is True, f"{path} should be an execution path"
 
-        paths = DemoEnforcementMiddleware.RATE_LIMITED_PATHS
-        for expected in ["/api/v1/jobs", "/api/v1/workflows", "/api/v1/compute", "/api/v1/deploy"]:
-            assert expected in paths, f"{expected} missing from RATE_LIMITED_PATHS"
+    # --- True negatives: these should NOT consume demo quota ---
+
+    @pytest.mark.parametrize("path", [
+        "/api/v1/workflows",                   # workflow create
+        "/api/v1/workflows/42",                # workflow update
+        "/api/v1/workflows/42/versions/1/restore",  # version restore
+        "/api/v1/workflows/42/nodes",          # node CRUD
+        "/api/v1/auth/login",                  # auth
+        "/api/v1/auth/register",               # auth
+        "/api/v1/config",                      # config
+        "/api/v1/experiments/1/files",          # file upload
+    ])
+    def test_non_execution_paths_excluded(self, mw, path):
+        assert mw._is_execution_path(path) is False, f"{path} should NOT be an execution path"
+
+    def test_predict_suffix_catches_all_model_predict(self, mw):
+        """Any path ending in /predict is treated as execution."""
+        assert mw._is_execution_path("/api/v1/workflows/7/predict") is True
+        assert mw._is_execution_path("/api/v1/models/42/predict") is True
+
+    def test_execute_suffix_catches_all_workflow_execute(self, mw):
+        """Any path ending in /execute is treated as execution."""
+        assert mw._is_execution_path("/api/v1/workflows/1/execute") is True
+        assert mw._is_execution_path("/api/v1/workflows/abc/execute") is True
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +209,7 @@ class TestComparisonOrdering:
     def test_execution_runs_compare_has_order_by(self):
         """execution_runs.py compare endpoint query uses .order_by()."""
         import inspect
-        from app.api.v1.routes.execution_runs import compare_runs
+        from spectra_sherpa.app.api.v1.routes.execution_runs import compare_runs
 
         source = inspect.getsource(compare_runs)
         assert "order_by" in source, (
@@ -183,7 +219,7 @@ class TestComparisonOrdering:
     def test_workflow_export_report_data_has_order_by(self):
         """workflow_export.py report-data endpoint query uses .order_by()."""
         import inspect
-        from app.api.v1.routes.workflow_export import get_report_data
+        from spectra_sherpa.app.api.v1.routes.workflow_export import get_report_data
 
         source = inspect.getsource(get_report_data)
         assert "order_by" in source, (
@@ -202,7 +238,7 @@ class TestWorkflowProvenanceFields:
     def test_create_workflow_passes_technique_and_sample_type(self):
         """create_workflow route constructor includes technique and sample_type."""
         import inspect
-        from app.api.v1.routes.workflows import create_workflow
+        from spectra_sherpa.app.api.v1.routes.workflows import create_workflow
 
         source = inspect.getsource(create_workflow)
         assert "technique=payload.technique" in source
@@ -211,7 +247,7 @@ class TestWorkflowProvenanceFields:
     def test_update_workflow_handles_technique_and_sample_type(self):
         """update_workflow route sets technique and sample_type when provided."""
         import inspect
-        from app.api.v1.routes.workflows import update_workflow
+        from spectra_sherpa.app.api.v1.routes.workflows import update_workflow
 
         source = inspect.getsource(update_workflow)
         assert "payload.technique" in source
@@ -220,7 +256,7 @@ class TestWorkflowProvenanceFields:
     def test_list_workflows_includes_technique_and_sample_type(self):
         """list_workflows serialization includes technique and sample_type."""
         import inspect
-        from app.api.v1.routes.workflows import list_workflows
+        from spectra_sherpa.app.api.v1.routes.workflows import list_workflows
 
         source = inspect.getsource(list_workflows)
         assert '"technique"' in source or "technique" in source
@@ -229,7 +265,7 @@ class TestWorkflowProvenanceFields:
     def test_version_snapshot_includes_technique_and_sample_type(self):
         """Version snapshot dict (in update_workflow) includes technique and sample_type."""
         import inspect
-        from app.api.v1.routes.workflows import update_workflow
+        from spectra_sherpa.app.api.v1.routes.workflows import update_workflow
 
         source = inspect.getsource(update_workflow)
         # The snapshot dict is built inside update_workflow
@@ -239,7 +275,7 @@ class TestWorkflowProvenanceFields:
     def test_version_restore_handles_technique_sample_type_notes(self):
         """Version restore checks for technique, sample_type, and notes in snapshot."""
         import inspect
-        from app.api.v1.routes.workflows import restore_workflow_version
+        from spectra_sherpa.app.api.v1.routes.workflows import restore_workflow_version
 
         source = inspect.getsource(restore_workflow_version)
         for field in ["technique", "sample_type", "notes"]:
@@ -259,7 +295,7 @@ class TestFolderWatchDedupe:
     def test_processed_files_key_is_full_path(self):
         """folder_watch_service marks files with str(file_path), not file_path.name."""
         import inspect
-        from app.services.folder_watch_service import FolderWatchService
+        from spectra_sherpa.app.services.folder_watch_service import FolderWatchService
 
         source = inspect.getsource(FolderWatchService)
         # The key should be str(file_path), not file_path.name

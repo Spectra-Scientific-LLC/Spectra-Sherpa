@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 
-from app.lib.scp_compat import scp, NDDataset, HAS_SCP
+from spectra_sherpa.app.lib.scp_compat import scp, NDDataset, HAS_SCP
 
 from .spectral.dataset import create_spectral_dataset, SpectralUnit
 
@@ -63,7 +63,7 @@ class PreprocessingSettings:
     """
     Configuration bundle for optional spectral preprocessing.
 
-    DEPRECATED: Use PreprocessingSettings from app.lib.preprocessing instead.
+    DEPRECATED: Use PreprocessingSettings from spectra_sherpa.app.lib.preprocessing instead.
     """
 
     align_wavenumbers: bool = False

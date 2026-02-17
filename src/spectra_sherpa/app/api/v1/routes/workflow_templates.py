@@ -8,13 +8,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_session
-from app.models.user import User
-from app.models.workflow_template import WorkflowTemplate
-from app.models.workflow import Workflow
-from app.models.workflow_node import WorkflowNode
-from app.models.workflow_edge import WorkflowEdge
-from app.schemas.workflows import WorkflowDetail
+from spectra_sherpa.app.api.deps import get_current_user, get_session
+from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.models.workflow_template import WorkflowTemplate
+from spectra_sherpa.app.models.workflow import Workflow
+from spectra_sherpa.app.models.workflow_node import WorkflowNode
+from spectra_sherpa.app.models.workflow_edge import WorkflowEdge
+from spectra_sherpa.app.schemas.workflows import WorkflowDetail
 from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime
 

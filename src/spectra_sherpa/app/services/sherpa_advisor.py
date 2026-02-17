@@ -22,8 +22,8 @@ from typing import Any
 
 import httpx
 
-from app.core.config import app_config, settings
-from app.schemas.sherpa import (
+from spectra_sherpa.app.core.config import app_config, settings
+from spectra_sherpa.app.schemas.sherpa import (
     EgressTier,
     ExplorationResult,
     SherpaRecommendation,
@@ -44,7 +44,7 @@ SHERPA_TIMEOUT = 15.0  # seconds — slightly longer than standard for LLM calls
 
 def _sherpa_base_url() -> str:
     """Resolve the Sherpa endpoint from the SpectraSherpa config."""
-    from app.services.spectrasherpa import spectrasherpa_config
+    from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
 
     base = spectrasherpa_config.api_base_url.rstrip("/")
     if not base.endswith("/api/v1"):
@@ -53,7 +53,7 @@ def _sherpa_base_url() -> str:
 
 
 def _sherpa_api_key() -> str | None:
-    from app.services.spectrasherpa import spectrasherpa_config
+    from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
 
     return spectrasherpa_config.api_key
 
@@ -143,10 +143,10 @@ class SherpaAdvisorService:
     @property
     def is_available(self) -> bool:
         """True when the cloud Sherpa is configured and egress is on."""
-        from app.core.security import is_egress_enabled
+        from spectra_sherpa.app.core.security import is_egress_enabled
 
         return (
-            app_config.mode in ("hybrid", "demo")
+            app_config.mode != "local"
             and _sherpa_api_key() is not None
             and is_egress_enabled()
         )

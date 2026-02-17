@@ -17,7 +17,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.services.dag.node_base import Node, NodeMetadata, NodeResult, NodeStatus, PortMetadata
+from spectra_sherpa.app.services.dag.node_base import Node, NodeMetadata, NodeResult, NodeStatus, PortMetadata
 
 
 # ── NodeResult.wrap() ─────────────────────────────────────────────────────

@@ -36,9 +36,8 @@
 
 ### Backend Startup (User Action Required)
 ```bash
-cd src/spectra_sherpa
 source venv/bin/activate  # or conda activate <env>
-uvicorn app.main:app --reload
+uvicorn spectra_sherpa.app.main:create_app --factory --reload
 ```
 
 **Expected**: Server starts on http://localhost:8000
@@ -50,7 +49,6 @@ uvicorn app.main:app --reload
 
 ### Database Schema Validation
 ```bash
-cd src/spectra_sherpa
 alembic current
 alembic history
 ```
@@ -326,7 +324,7 @@ CORS_ORIGINS=http://localhost:5173
 cd backend && pip install -r requirements.txt
 
 # 2. Start server (database is created automatically on first run)
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn spectra_sherpa.app.main:create_app --factory --host 0.0.0.0 --port 8000
 ```
 
 ### Health Check Endpoint

@@ -3,10 +3,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_session
-from app.core.config import settings
-from app.models.user import User
-from app.schemas.llm import (
+from spectra_sherpa.app.api.deps import get_current_user, get_session
+from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.schemas.llm import (
     LLMChatRequest,
     LLMChatResponse,
     LLMConversation,
@@ -19,8 +19,8 @@ from app.schemas.llm import (
     LLMTextResponse,
     LLMWriteReportRequest,
 )
-from app.services.llm import LLMService, conversation_store
-from app.services.rate_limiter import RateLimiter
+from spectra_sherpa.app.services.llm import LLMService, conversation_store
+from spectra_sherpa.app.services.rate_limiter import RateLimiter
 
 router = APIRouter(prefix="/llm")
 
@@ -66,7 +66,7 @@ async def chat(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> LLMChatResponse:
-    from app.core.config import app_config
+    from spectra_sherpa.app.core.config import app_config
 
     _check_llm_rate_limit(current_user)
     service = LLMService(session, user=current_user)

@@ -20,7 +20,7 @@ from enum import Enum
 from typing import Optional, Callable, Any
 import threading
 
-from app.core.config import app_config
+from spectra_sherpa.app.core.config import app_config
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +127,7 @@ class NetworkHealthService:
         Returns:
             HealthCheckResult with current status
         """
-        from app.services.spectrasherpa import get_spectrasherpa_service
+        from spectra_sherpa.app.services.spectrasherpa import get_spectrasherpa_service
 
         start_time = datetime.now(timezone.utc)
         spectrasherpa = get_spectrasherpa_service()

@@ -19,8 +19,6 @@ export interface LLMConfig {
 export interface AppFeatures {
   apiTokenSettings: boolean
   cloudOffload: boolean
-  enterpriseMode: boolean
-  demoMode: boolean  // Deprecated alias for enterpriseMode
   agenticWorkflow: boolean
   chatAssistant: boolean
   sherpaAdvisor?: boolean
@@ -34,6 +32,36 @@ export interface AppLimits {
   sessionExpiryHours?: number
 }
 
+export interface DemoContract {
+  featured_datasets: string[]
+  featured_templates: string[]
+  max_executions_per_session: number
+  max_sherpa_interactions: number
+  disabled_capabilities: string[]
+  upgrade_url: string
+  upgrade_message: string
+  available_plans: string[]
+}
+
+export interface DemoQuota {
+  remaining: number
+  limit: number
+}
+
+export interface DemoQuotaResponse {
+  demo: boolean
+  executions?: DemoQuota
+  sherpa?: DemoQuota
+}
+
+/** Structured detail from demo 403 guards */
+export interface DemoBlockedDetail {
+  message: string
+  upgrade_url: string
+  available_plans: string[]
+  blocked_capability: string
+}
+
 export interface AppConfig {
   mode: AppMode
   siteProfile?: SiteProfile | null
@@ -44,6 +72,7 @@ export interface AppConfig {
   features: AppFeatures
   llms: Record<string, LLMConfig>
   limits?: AppLimits
+  demo?: DemoContract | null
 }
 
 /**

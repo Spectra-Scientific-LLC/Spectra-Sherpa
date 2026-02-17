@@ -1,5 +1,32 @@
 <template>
   <div class="template-gallery">
+    <!-- Demo Picks (demo mode only) -->
+    <div v-if="isDemoMode && demoPicks.length" class="tg-section">
+      <h3 class="tg-section-title">
+        <i class="pi pi-star" style="color: #f59e0b; margin-right: 6px"></i>Demo Picks
+      </h3>
+      <div class="tg-cards">
+        <div
+          v-for="tmpl in demoPicks"
+          :key="'demo-' + tmpl.id"
+          class="tg-card demo-pick"
+          @click="$emit('select', tmpl.id)"
+        >
+          <div class="tg-badge demo">Demo</div>
+          <div class="tg-card-header">
+            <div class="tg-icon demo">
+              <i :class="tmpl.icon"></i>
+            </div>
+            <div>
+              <h4 class="tg-card-title">{{ tmpl.title }}</h4>
+              <p class="tg-card-sub">Recommended</p>
+            </div>
+          </div>
+          <p class="tg-card-desc">{{ tmpl.description }}</p>
+        </div>
+      </div>
+    </div>
+
     <!-- Featured -->
     <div class="tg-section">
       <h3 class="tg-section-title">Featured Workflows</h3>
@@ -84,9 +111,14 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from "vue";
+import { useDemoMode } from "@/composables/useDemoMode";
+
 defineEmits<{
   select: [templateId: string];
 }>();
+
+const { isDemoMode, demoContract } = useDemoMode();
 
 interface TemplateItem {
   id: string;
@@ -233,6 +265,14 @@ const basics: TemplateItem[] = [
       "Automated peak detection with Gaussian/Lorentzian fitting, FWHM, and area quantification.",
   },
 ];
+
+const allTemplates = [...featured, ...examples, ...basics];
+
+const demoPicks = computed(() => {
+  if (!isDemoMode.value || !demoContract.value) return [];
+  const ids = new Set(demoContract.value.featured_templates);
+  return allTemplates.filter((t) => ids.has(t.id));
+});
 </script>
 
 <style scoped>
@@ -277,6 +317,29 @@ const basics: TemplateItem[] = [
 .tg-card.featured {
   border-color: #3b82f6;
   background: linear-gradient(to bottom right, #ffffff, #eff6ff);
+}
+
+.tg-card.demo-pick {
+  border-color: #f59e0b;
+  background: linear-gradient(to bottom right, #ffffff, #fffbeb);
+}
+
+.tg-card.demo-pick:hover {
+  border-color: #d97706;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.15);
+}
+
+.tg-badge.demo {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.tg-icon.demo {
+  background: #fef3c7;
+}
+
+.tg-icon.demo i {
+  color: #d97706;
 }
 
 .tg-badge {

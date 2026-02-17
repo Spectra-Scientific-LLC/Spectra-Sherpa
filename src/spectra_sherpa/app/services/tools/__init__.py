@@ -15,8 +15,8 @@ Architecture
 """
 from __future__ import annotations
 
-from app.services.tools.registry import register_plugin_tool, tool_registry  # noqa: F401
-from app.services.tools.schemas import (  # noqa: F401
+from spectra_sherpa.app.services.tools.registry import register_plugin_tool, tool_registry  # noqa: F401
+from spectra_sherpa.app.services.tools.schemas import (  # noqa: F401
     ToolDefinition,
     ToolInvocation,
     ToolOrigin,

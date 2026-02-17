@@ -7,10 +7,10 @@ from typing import Awaitable, Callable
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
-from app.db.session import async_session
-from app.models.background_job import BackgroundJob
-from app.services.websocket_manager import ws_manager
+from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.app.db.session import async_session
+from spectra_sherpa.app.models.background_job import BackgroundJob
+from spectra_sherpa.app.services.websocket_manager import ws_manager
 
 
 class JobManager:

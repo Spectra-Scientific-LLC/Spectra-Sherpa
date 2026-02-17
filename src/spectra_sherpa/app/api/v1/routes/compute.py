@@ -4,8 +4,8 @@ import asyncio
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
-from app.api import deps
-from app.models.user import User
+from spectra_sherpa.app.api import deps
+from spectra_sherpa.app.models.user import User
 
 router = APIRouter()
 
@@ -40,7 +40,8 @@ class ComputeResponse(BaseModel):
     error: Optional[str] = None
 
 
-@router.post("/execute", response_model=ComputeResponse)
+@router.post("/execute", response_model=ComputeResponse,
+             dependencies=[Depends(deps.demo_guard("data_upload"))])
 async def execute_compute(
     request: ComputeRequest,
     current_user: User = Depends(deps.get_current_user),

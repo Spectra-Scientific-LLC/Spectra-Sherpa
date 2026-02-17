@@ -3,7 +3,7 @@ Centralized SpectroChemPy compatibility layer.
 
 ALL application code should import SpectroChemPy through this module::
 
-    from app.lib.scp_compat import scp, NDDataset, Coord, HAS_SCP
+    from spectra_sherpa.app.lib.scp_compat import scp, NDDataset, Coord, HAS_SCP
 
 This centralises version checks, graceful degradation when SCP is
 unavailable, and future API migration paths.  No file outside this
@@ -72,7 +72,7 @@ def from_nddataset(ds: "NDDataset") -> "AnalysisDataset":  # type: ignore[name-d
     SCP must already be installed.
     """
     import numpy as np
-    from app.lib.analysis_dataset import AnalysisDataset, AxisInfo
+    from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo
 
     x_axis = None
     try:

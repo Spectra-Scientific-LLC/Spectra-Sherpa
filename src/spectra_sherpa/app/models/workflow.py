@@ -10,17 +10,17 @@ from typing import TYPE_CHECKING
 from sqlalchemy import DateTime, ForeignKey, String, Text, JSON, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base
+from spectra_sherpa.app.db.base import Base
 
 if TYPE_CHECKING:
-    from app.models.project import Project
-    from app.models.user import User
-    from app.models.workflow_node import WorkflowNode
-    from app.models.workflow_edge import WorkflowEdge
-    from app.models.workflow_version import WorkflowVersion
-    from app.models.workflow_tag import WorkflowTag
-    from app.models.workflow_folder import WorkflowFolder
-    from app.models.execution_run import ExecutionRun
+    from spectra_sherpa.app.models.project import Project
+    from spectra_sherpa.app.models.user import User
+    from spectra_sherpa.app.models.workflow_node import WorkflowNode
+    from spectra_sherpa.app.models.workflow_edge import WorkflowEdge
+    from spectra_sherpa.app.models.workflow_version import WorkflowVersion
+    from spectra_sherpa.app.models.workflow_tag import WorkflowTag
+    from spectra_sherpa.app.models.workflow_folder import WorkflowFolder
+    from spectra_sherpa.app.models.execution_run import ExecutionRun
 
 
 class Workflow(Base):

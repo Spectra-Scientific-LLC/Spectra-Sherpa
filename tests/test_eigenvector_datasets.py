@@ -25,8 +25,8 @@ import pytest
 from sklearn.decomposition import PCA as SklearnPCA
 from sklearn.preprocessing import StandardScaler
 
-from app.lib.scp_compat import scp, NDDataset, HAS_SCP
-from app.lib.eigenvector import (
+from spectra_sherpa.app.lib.scp_compat import scp, NDDataset, HAS_SCP
+from spectra_sherpa.app.lib.eigenvector import (
     parse_eigenvector_csv,
     parse_eigenvector_mat,
     load_eigenvector_dataset,
@@ -507,7 +507,7 @@ class TestDataSourceNodeEigenvector:
     @pytest.fixture
     def make_node(self):
         """Create a DataSourceNode with given parameters."""
-        from app.services.dag.nodes.data import DataSourceNode
+        from spectra_sherpa.app.services.dag.nodes.data import DataSourceNode
 
         def _make(params: dict):
             node = DataSourceNode(node_id="test_ev", parameters=params)

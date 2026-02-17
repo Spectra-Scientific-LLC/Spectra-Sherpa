@@ -22,7 +22,7 @@ def can_connect(source_type_ref: str, target_type_ref: str) -> tuple[bool, str]:
     Returns:
         ``(True, "")`` when compatible, ``(False, reason)`` otherwise.
     """
-    from app.types import type_registry
+    from spectra_sherpa.app.types import type_registry
 
     compatible, reason = type_registry.is_compatible(source_type_ref, target_type_ref)
     return compatible, reason

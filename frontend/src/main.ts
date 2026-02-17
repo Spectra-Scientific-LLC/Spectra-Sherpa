@@ -7,7 +7,6 @@ import Tooltip from "primevue/tooltip";
 import App from "./App.vue";
 import router from "./router";
 import { buildWsUrl } from "./utils/ws";
-import { useWorkflowStore } from "./stores/workflow";
 
 import "primevue/resources/themes/lara-light-blue/theme.css";
 import "primevue/resources/primevue.min.css";
@@ -41,39 +40,55 @@ app.use(PrimeVue);
 app.use(ToastService);
 app.directive("tooltip", Tooltip);
 
-// Initialize workflow store and fetch node library metadata
-// This provides validation schemas and parameter definitions from backend
-const workflowStore = useWorkflowStore();
-workflowStore.fetchNodeLibrary().catch((err) => {
-  console.error("[main.ts] Failed to fetch node library:", err);
-});
+let disposeWorkflowMetadataRefresh: (() => void) | null = null;
 
-// Auto-refresh node library when page becomes visible (e.g., after backend restart)
-// This prevents stale cache issues without requiring manual browser refresh
-const onVisibilityChange = () => {
-  if (!document.hidden) {
-    workflowStore.checkAndRefreshNodeLibrary().catch((err) => {
-      console.debug("[main.ts] Background version check failed:", err);
-    });
-  }
+const initWorkflowMetadataRefresh = async () => {
+  // Loaded lazily to keep the initial app chunk smaller.
+  const { useWorkflowStore } = await import("./stores/workflow");
+  const workflowStore = useWorkflowStore();
+
+  // Initialize workflow store and fetch node library metadata.
+  // This provides validation schemas and parameter definitions from backend.
+  await workflowStore.fetchNodeLibrary().catch((err) => {
+    console.error("[main.ts] Failed to fetch node library:", err);
+  });
+
+  // Auto-refresh node library when page becomes visible (e.g., after backend restart).
+  // This prevents stale cache issues without requiring manual browser refresh.
+  const onVisibilityChange = () => {
+    if (!document.hidden) {
+      workflowStore.checkAndRefreshNodeLibrary().catch((err) => {
+        console.debug("[main.ts] Background version check failed:", err);
+      });
+    }
+  };
+  document.addEventListener("visibilitychange", onVisibilityChange);
+
+  // Also check periodically (every 30 seconds) while page is visible.
+  const versionCheckInterval = window.setInterval(() => {
+    if (!document.hidden) {
+      workflowStore.checkAndRefreshNodeLibrary().catch((err) => {
+        console.debug("[main.ts] Background version check failed:", err);
+      });
+    }
+  }, 30000);
+
+  disposeWorkflowMetadataRefresh = () => {
+    clearInterval(versionCheckInterval);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+  };
 };
-document.addEventListener("visibilitychange", onVisibilityChange);
 
-// Also check periodically (every 30 seconds) while page is visible
-const versionCheckInterval = window.setInterval(() => {
-  if (!document.hidden) {
-    workflowStore.checkAndRefreshNodeLibrary().catch((err) => {
-      console.debug("[main.ts] Background version check failed:", err);
-    });
-  }
-}, 30000);
+void initWorkflowMetadataRefresh();
 
 app.mount("#app");
 
 // Cleanup on HMR to prevent stacked intervals and leaked listeners
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
-    clearInterval(versionCheckInterval);
-    document.removeEventListener("visibilitychange", onVisibilityChange);
+    if (disposeWorkflowMetadataRefresh) {
+      disposeWorkflowMetadataRefresh();
+      disposeWorkflowMetadataRefresh = null;
+    }
   });
 }

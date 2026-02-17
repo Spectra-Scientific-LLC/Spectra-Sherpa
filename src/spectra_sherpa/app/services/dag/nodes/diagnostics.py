@@ -12,7 +12,7 @@ from typing import Any, Optional
 import numpy as np
 
 logger = logging.getLogger(__name__)
-from app.lib.scp_compat import NDDataset
+from spectra_sherpa.app.lib.scp_compat import NDDataset
 
 from ..node_base import Node, NodeMetadata, NodeParameter, InputPort, PortMetadata, register_node
 

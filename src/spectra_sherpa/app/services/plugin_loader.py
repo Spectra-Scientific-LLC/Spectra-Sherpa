@@ -167,7 +167,7 @@ def discover_plugins() -> int:
     # All plugin imports run inside plugin_context() so that any tool
     # registered (via @register_tool or direct register()) automatically
     # gets origin=plugin and the associated trust constraints.
-    from app.services.tools import tool_registry
+    from spectra_sherpa.app.services.tools import tool_registry
 
     with tool_registry.plugin_context():
         # Filesystem plugins

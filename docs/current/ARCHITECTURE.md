@@ -810,8 +810,7 @@ spectra-sherpa          # Opens browser → http://127.0.0.1:8000
 
 ```bash
 # Backend (from repo root)
-cd src/spectra_sherpa
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+uvicorn spectra_sherpa.app.main:create_app --factory --reload --host 127.0.0.1 --port 8000
 
 # Frontend (separate terminal)
 cd frontend
@@ -822,7 +821,7 @@ npm run dev
 
 ### Development Flow
 
-1. **Start backend:** `uvicorn app.main:app --reload` (from `src/spectra_sherpa/`)
+1. **Start backend:** `uvicorn spectra_sherpa.app.main:create_app --factory --reload`
 2. **Start frontend:** `npm run dev` (from `frontend/`)
 3. **Access app:** http://localhost:5173 (proxies to backend at :8000)
 4. **API Docs:** http://localhost:8000/docs (Swagger UI)
@@ -1383,7 +1382,7 @@ export OPENBLAS_NUM_THREADS=4
 export MKL_NUM_THREADS=4
 export NUMEXPR_NUM_THREADS=4
 
-uvicorn app.main:app --reload
+uvicorn spectra_sherpa.app.main:create_app --factory --reload
 ```
 
 16. **Lazy Loading:** Load experiments/spectra on-demand

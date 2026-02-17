@@ -7,8 +7,8 @@ import pytest
 import spectrochempy as scp
 from spectrochempy import NDDataset
 
-from app.lib.analysis_dataset import AnalysisDataset, AxisInfo
-from app.services.dag import node_registry
+from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo
+from spectra_sherpa.app.services.dag import node_registry
 
 
 def _make_regression_dataset(

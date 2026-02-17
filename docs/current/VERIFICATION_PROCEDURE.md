@@ -219,9 +219,8 @@ Expected:
 ### Steps:
 1. Start backend with query logging:
    ```bash
-   cd src/spectra_sherpa
    # Add to .env: DATABASE_ECHO=true
-   poetry run uvicorn app.main:app --reload
+   poetry run uvicorn spectra_sherpa.app.main:create_app --factory --reload
    ```
 
 2. Match 120 files using the folder picker
@@ -311,7 +310,6 @@ for acq in acquisitions:
 Run the full automated test:
 ```bash
 # Backend tests
-cd src/spectra_sherpa
 poetry install
 poetry run pytest tests/
 

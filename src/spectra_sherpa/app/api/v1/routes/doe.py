@@ -13,18 +13,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_current_user, get_session
-from app.core.security import check_export_allowed
-from app.models.user import User
-from app.models.experiment import Experiment
-from app.models.factor_definition import FactorDefinition
-from app.models.matched_acquisition import MatchedAcquisition
-from app.models.mixture import Mixture
-from app.models.mixture_component import MixtureComponent
-from app.models.plate_well import PlateWell
-from app.models.run_level import RunLevel
-from app.models.sample import Sample
-from app.schemas.doe import (
+from spectra_sherpa.app.api.deps import demo_guard, get_current_user, get_session
+from spectra_sherpa.app.core.security import check_export_allowed
+from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.models.experiment import Experiment
+from spectra_sherpa.app.models.factor_definition import FactorDefinition
+from spectra_sherpa.app.models.matched_acquisition import MatchedAcquisition
+from spectra_sherpa.app.models.mixture import Mixture
+from spectra_sherpa.app.models.mixture_component import MixtureComponent
+from spectra_sherpa.app.models.plate_well import PlateWell
+from spectra_sherpa.app.models.run_level import RunLevel
+from spectra_sherpa.app.models.sample import Sample
+from spectra_sherpa.app.schemas.doe import (
     DOESummary,
     FactorDefinition as FactorDefinitionSchema,
     FactorDefinitionCreate,
@@ -61,7 +61,7 @@ async def _verify_experiment_ownership(
 # ==================== Sample Database ====================
 
 
-@router.post("/samples/import", response_model=list[SampleSchema])
+@router.post("/samples/import", response_model=list[SampleSchema], dependencies=[Depends(demo_guard("data_upload"))])
 async def import_samples(
     experiment_id: int,
     payload: SampleImportRequest,

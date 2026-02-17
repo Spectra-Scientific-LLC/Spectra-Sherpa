@@ -12,7 +12,7 @@ import contextlib
 import logging
 from typing import Any, Callable, Iterator, Optional
 
-from app.services.tools.schemas import (
+from spectra_sherpa.app.services.tools.schemas import (
     ToolCategory,
     ToolDefinition,
     ToolHandler,
@@ -219,8 +219,8 @@ def register_plugin_tool(
 
     This is the recommended entry point for third-party plugins::
 
-        from app.services.tools.registry import register_plugin_tool
-        from app.services.tools.schemas import ToolDefinition, ToolCategory
+        from spectra_sherpa.app.services.tools.registry import register_plugin_tool
+        from spectra_sherpa.app.services.tools.schemas import ToolDefinition, ToolCategory
 
         defn = ToolDefinition(
             name="my_plugin_tool",

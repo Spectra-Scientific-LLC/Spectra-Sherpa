@@ -1,93 +1,137 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { setActivePinia, createPinia } from 'pinia'
-import { useExperimentStore } from '@/stores/experiment'
-import api from '@/services/api'
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createPinia, setActivePinia } from "pinia";
 
-// Mock the API module
-vi.mock('@/services/api', () => ({
+import api from "@/api/client";
+import { useExperimentStore } from "@/stores/experiment";
+
+vi.mock("@/api/client", () => ({
   default: {
     get: vi.fn(),
     post: vi.fn(),
     put: vi.fn(),
     delete: vi.fn(),
   },
-}))
+}));
 
-describe('Experiment Store', () => {
+describe("Experiment Store", () => {
   beforeEach(() => {
-    setActivePinia(createPinia())
-    vi.clearAllMocks()
-  })
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+  });
 
-  it('initializes with empty state', () => {
-    const store = useExperimentStore()
-    expect(store.experiments).toEqual([])
-    expect(store.selectedExperiment).toBeNull()
-    expect(store.files).toEqual([])
-    expect(store.loading).toBe(false)
-  })
+  it("initializes with empty state", () => {
+    const store = useExperimentStore();
+    expect(store.experiments).toEqual([]);
+    expect(store.currentExperiment).toBeNull();
+    expect(store.currentExperimentId).toBeNull();
+    expect(store.files).toEqual([]);
+    expect(store.versions).toEqual([]);
+    expect(store.loading).toBe(false);
+    expect(store.error).toBeNull();
+  });
 
-  it('fetches experiments successfully', async () => {
+  it("fetches experiments successfully", async () => {
     const mockExperiments = [
-      { id: 1, name: 'Experiment 1', description: 'Test 1' },
-      { id: 2, name: 'Experiment 2', description: 'Test 2' },
-    ]
+      { id: 1, name: "Experiment 1", description: "Test 1" },
+      { id: 2, name: "Experiment 2", description: "Test 2" },
+    ];
+    vi.mocked(api.get).mockResolvedValueOnce({ data: mockExperiments });
 
-    vi.mocked(api.get).mockResolvedValueOnce({ data: mockExperiments })
+    const store = useExperimentStore();
+    await store.fetchExperiments();
 
-    const store = useExperimentStore()
-    await store.fetchExperiments()
+    expect(api.get).toHaveBeenCalledWith("/experiments");
+    expect(store.experiments).toEqual(mockExperiments);
+    expect(store.loading).toBe(false);
+    expect(store.error).toBeNull();
+  });
 
-    expect(api.get).toHaveBeenCalledWith('/experiments')
-    expect(store.experiments).toEqual(mockExperiments)
-    expect(store.loading).toBe(false)
-  })
+  it("captures and rethrows fetchExperiments errors", async () => {
+    const err = new Error("Network error");
+    vi.mocked(api.get).mockRejectedValueOnce(err);
 
-  it('handles fetch experiments error', async () => {
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    vi.mocked(api.get).mockRejectedValueOnce(new Error('Network error'))
+    const store = useExperimentStore();
+    await expect(store.fetchExperiments()).rejects.toThrow("Network error");
 
-    const store = useExperimentStore()
-    await store.fetchExperiments()
+    expect(store.experiments).toEqual([]);
+    expect(store.loading).toBe(false);
+    expect(store.error).toBe("Network error");
+  });
 
-    expect(store.experiments).toEqual([])
-    expect(store.loading).toBe(false)
-    expect(consoleSpy).toHaveBeenCalled()
-
-    consoleSpy.mockRestore()
-  })
-
-  it('selects an experiment', async () => {
-    const mockExperiment = { id: 1, name: 'Test Experiment' }
-    const mockFiles = [{ id: 1, file_path: 'test.csv' }]
+  it("selectExperiment loads experiment, files, and versions", async () => {
+    const mockExperiment = { id: 1, name: "Demo Experiment", description: "Demo" };
+    const mockFiles = [{ id: 11, file_path: "a.csv" }];
+    const mockVersions = [{ id: 21, version_name: "v1" }];
 
     vi.mocked(api.get)
       .mockResolvedValueOnce({ data: mockExperiment })
       .mockResolvedValueOnce({ data: mockFiles })
+      .mockResolvedValueOnce({ data: mockVersions });
 
-    const store = useExperimentStore()
-    await store.selectExperiment(1)
+    const store = useExperimentStore();
+    await store.selectExperiment(1);
 
-    expect(api.get).toHaveBeenCalledWith('/experiments/1')
-    expect(api.get).toHaveBeenCalledWith('/experiments/1/files')
-    expect(store.selectedExperiment).toEqual(mockExperiment)
-    expect(store.files).toEqual(mockFiles)
-  })
+    expect(api.get).toHaveBeenNthCalledWith(1, "/experiments/1");
+    expect(api.get).toHaveBeenNthCalledWith(2, "/experiments/1/files");
+    expect(api.get).toHaveBeenNthCalledWith(3, "/experiments/1/versions");
+    expect(store.currentExperiment).toEqual(mockExperiment);
+    expect(store.currentExperimentId).toBe(1);
+    expect(store.files).toEqual(mockFiles);
+    expect(store.versions).toEqual(mockVersions);
+  });
 
-  it('creates a new experiment', async () => {
-    const newExperiment = {
-      name: 'New Experiment',
-      description: 'Test description',
+  it("creates an experiment and prepends it to the list", async () => {
+    const payload = {
+      name: "New Experiment",
+      description: "Test description",
       metadata: {},
-    }
+    };
+    const created = { id: 1, ...payload };
+    vi.mocked(api.post).mockResolvedValueOnce({ data: created });
 
-    const createdExperiment = { id: 1, ...newExperiment }
-    vi.mocked(api.post).mockResolvedValueOnce({ data: createdExperiment })
+    const store = useExperimentStore();
+    const result = await store.createExperiment(payload);
 
-    const store = useExperimentStore()
-    const result = await store.createExperiment(newExperiment)
+    expect(api.post).toHaveBeenCalledWith("/experiments", payload);
+    expect(result).toEqual(created);
+    expect(store.experiments[0]).toEqual(created);
+    expect(store.loading).toBe(false);
+  });
 
-    expect(api.post).toHaveBeenCalledWith('/experiments', newExperiment)
-    expect(result).toEqual(createdExperiment)
-  })
-})
+  it("deleteExperiment clears selected experiment state", async () => {
+    const store = useExperimentStore();
+    store.experiments = [{ id: 7, name: "Delete Me", description: "" }] as any;
+    store.currentExperiment = { id: 7, name: "Delete Me", description: "" } as any;
+    store.files = [{ id: 1, file_path: "x.csv" }] as any;
+    store.versions = [{ id: 1, version_name: "v1" }] as any;
+
+    vi.mocked(api.delete).mockResolvedValueOnce({ data: null });
+    await store.deleteExperiment(7);
+
+    expect(api.delete).toHaveBeenCalledWith("/experiments/7");
+    expect(store.experiments).toEqual([]);
+    expect(store.currentExperiment).toBeNull();
+    expect(store.files).toEqual([]);
+    expect(store.versions).toEqual([]);
+  });
+
+  it("uploadFile posts multipart and refreshes files", async () => {
+    const store = useExperimentStore();
+    const file = new File(["a,b\n1,2"], "sample.csv", { type: "text/csv" });
+    const refreshed = [{ id: 100, file_path: "sample.csv" }];
+
+    vi.mocked(api.post).mockResolvedValueOnce({ data: null });
+    vi.mocked(api.get).mockResolvedValueOnce({ data: refreshed });
+
+    await store.uploadFile(42, file, "raw");
+
+    expect(api.post).toHaveBeenNthCalledWith(
+      1,
+      "/experiments/42/files",
+      expect.any(FormData),
+      { headers: { "Content-Type": "multipart/form-data" } },
+    );
+    expect(api.get).toHaveBeenCalledWith("/experiments/42/files");
+    expect(store.files).toEqual(refreshed);
+  });
+});

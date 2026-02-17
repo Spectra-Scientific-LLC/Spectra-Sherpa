@@ -570,8 +570,8 @@ function exportCSV() {
 
   const escapeCsv = (value: any): string => {
     const text = String(value ?? "");
-    if (text.includes(",") || text.includes("\"") || text.includes("\n")) {
-      return `"${text.replace(/\"/g, "\"\"")}"`;
+    if (text.includes(",") || text.includes('"') || text.includes("\n")) {
+      return `"${text.replace(/"/g, '""')}"`;
     }
     return text;
   };

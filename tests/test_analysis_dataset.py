@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from app.lib.analysis_dataset import AnalysisDataset, AxisInfo, from_sklearn_bunch
+from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo, from_sklearn_bunch
 
 
 # ===========================================================================
@@ -808,7 +808,7 @@ class TestMetaProvenanceSync:
 
     def test_add_processing_step_no_double_append(self):
         """add_processing_step must not double-append when meta and provenance are linked."""
-        from app.services.dag.meta_helpers import add_processing_step
+        from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
 
         ds = AnalysisDataset(np.zeros((3, 5)))
         # Confirm they're the same object (fresh AnalysisDataset)

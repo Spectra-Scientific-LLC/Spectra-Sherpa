@@ -5,7 +5,7 @@ This replaces SpectralResult.to_api_json() with a standalone function.
 Called ONLY at API boundary (in routes/workflows.py).
 
 Usage:
-    from app.services.dag.serialize import serialize_for_api
+    from spectra_sherpa.app.services.dag.serialize import serialize_for_api
 
     # In API route:
     result = serialize_for_api(dataset, sanitize_paths=True)
@@ -19,8 +19,8 @@ from datetime import datetime, date
 from typing import Any, Dict, Optional
 import numpy as np
 
-from app.lib.scp_compat import NDDataset, HAS_SCP
-from app.lib.analysis_dataset import AnalysisDataset
+from spectra_sherpa.app.lib.scp_compat import NDDataset, HAS_SCP
+from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
 HAS_NDDATASET = HAS_SCP
 
 from .meta_helpers import (

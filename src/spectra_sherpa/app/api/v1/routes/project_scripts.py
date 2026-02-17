@@ -12,19 +12,19 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_current_user, get_session
-from app.models.project import Project
-from app.models.project_script import ProjectScript
-from app.models.user import User
-from app.models.workflow import Workflow
-from app.schemas.project_scripts import (
+from spectra_sherpa.app.api.deps import get_current_user, get_session
+from spectra_sherpa.app.models.project import Project
+from spectra_sherpa.app.models.project_script import ProjectScript
+from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.models.workflow import Workflow
+from spectra_sherpa.app.schemas.project_scripts import (
     GenerateScriptRequest,
     ProjectScriptCreate,
     ProjectScriptDetail,
     ProjectScriptSummary,
     ProjectScriptUpdate,
 )
-from app.services.python_export import generate_python_code
+from spectra_sherpa.app.services.python_export import generate_python_code
 
 logger = logging.getLogger(__name__)
 

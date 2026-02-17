@@ -1,4 +1,5 @@
 import axios from "axios";
+import { isDemoUpgradeError, getDemoUpgradeInfo } from "@/utils/errors";
 
 // Use relative URL in production (nginx proxies to backend)
 // Use absolute URL in development for Vite dev server
@@ -38,15 +39,38 @@ api.interceptors.request.use((config) => {
 });
 
 /**
- * Response interceptor to handle expired sessions.
+ * Response interceptor to handle session expiry and demo upgrade prompts.
  *
- * When the backend returns 401 (e.g. expired JWT in enterprise mode),
- * clear stored credentials and redirect to login so the user
- * isn't stuck making failing requests.
+ * - 403/429 with upgrade_url: demo mode capability block or rate limit.
+ *   Triggers the upgrade modal via useDemoMode composable.
+ * - 401: expired JWT — clear credentials and redirect to login.
  */
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    // Demo mode: 403 (capability blocked) or 429 (execution limit)
+    if (isDemoUpgradeError(error)) {
+      const info = getDemoUpgradeInfo(error);
+      if (info) {
+        // Lazy import to avoid circular dependency
+        import("@/composables/useDemoMode").then(({ useDemoMode }) => {
+          const { triggerUpgradeModal, updateFromRateLimit } = useDemoMode();
+          triggerUpgradeModal({
+            message: info.message,
+            upgradeUrl: info.upgradeUrl,
+            availablePlans: info.availablePlans,
+            blockedCapability: info.blockedCapability,
+          });
+          // Update quota counter for 429 responses
+          if (error.response?.status === 429) {
+            const data = error.response?.data;
+            updateFromRateLimit(data?.remaining ?? 0, data?.limit ?? 25);
+          }
+        });
+      }
+      return Promise.reject(error);
+    }
+
     if (error.response?.status === 401) {
       const path = window.location.pathname;
       // Don't redirect if on login or register page (avoid loop / breaking registration UX)

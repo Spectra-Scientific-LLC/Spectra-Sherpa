@@ -17,7 +17,7 @@ TEMPLATE = """from typing import Any, Dict, List, Optional
 import numpy as np
 from spectrochempy import NDDataset
 
-from app.services.dag.node_base import (
+from spectra_sherpa.app.services.dag.node_base import (
     Node, 
     NodeMetadata, 
     NodeParameter, 

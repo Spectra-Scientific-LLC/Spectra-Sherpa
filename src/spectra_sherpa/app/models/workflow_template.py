@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import DateTime, String, Text, JSON, Boolean, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base
+from spectra_sherpa.app.db.base import Base
 
 if TYPE_CHECKING:
     pass

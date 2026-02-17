@@ -9,8 +9,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 import numpy as np
-from app.lib.scp_compat import scp, NDDataset, to_nddataset
-from app.lib.analysis_dataset import AnalysisDataset, AxisInfo
+from spectra_sherpa.app.lib.scp_compat import scp, NDDataset, to_nddataset
+from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo
 
 from ..node_base import (
     Node,
@@ -21,7 +21,7 @@ from ..node_base import (
     NodeResult,
     register_node,
 )
-from app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
+from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
 
 logger = logging.getLogger(__name__)
 

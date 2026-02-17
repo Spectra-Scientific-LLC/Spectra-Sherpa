@@ -8,10 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.config import settings
-from app.models.exp_version import ExpVersion
-from app.models.experiment import Experiment
-from app.models.experiment_file import ExperimentFile
+from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.app.models.exp_version import ExpVersion
+from spectra_sherpa.app.models.experiment import Experiment
+from spectra_sherpa.app.models.experiment_file import ExperimentFile
 
 ALLOWED_STAGES = {"raw", "preprocessed", "synthetic"}
 

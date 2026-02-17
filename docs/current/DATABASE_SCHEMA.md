@@ -546,7 +546,7 @@ async def get_db():
 
 **Usage in API:**
 ```python
-from app.core.database import get_db
+from spectra_sherpa.app.core.database import get_db
 
 @router.get("/experiments")
 async def list_experiments(db: AsyncSession = Depends(get_db)):

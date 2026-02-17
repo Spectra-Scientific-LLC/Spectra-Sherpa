@@ -6,7 +6,7 @@ from typing import Iterable
 from fastapi import UploadFile
 from werkzeug.utils import secure_filename
 
-from app.core.config import settings
+from spectra_sherpa.app.core.config import settings
 
 
 class FileValidationError(ValueError):

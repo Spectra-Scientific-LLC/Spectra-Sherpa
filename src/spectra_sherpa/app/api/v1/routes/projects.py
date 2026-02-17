@@ -10,22 +10,22 @@ import logging
 import zipfile
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_current_user, get_session
-from app.models.experiment import Experiment
-from app.models.experiment_file import ExperimentFile
-from app.models.project import Project, ProjectVersion
-from app.models.project_script import ProjectScript
-from app.models.user import User
-from app.models.workflow import Workflow
-from app.models.workflow_edge import WorkflowEdge
-from app.models.workflow_node import WorkflowNode
-from app.schemas.projects import (
+from spectra_sherpa.app.api.deps import demo_guard, get_current_user, get_session
+from spectra_sherpa.app.models.experiment import Experiment
+from spectra_sherpa.app.models.experiment_file import ExperimentFile
+from spectra_sherpa.app.models.project import Project, ProjectVersion
+from spectra_sherpa.app.models.project_script import ProjectScript
+from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.models.workflow import Workflow
+from spectra_sherpa.app.models.workflow_edge import WorkflowEdge
+from spectra_sherpa.app.models.workflow_node import WorkflowNode
+from spectra_sherpa.app.schemas.projects import (
     ExperimentBrief,
     ProjectCreate,
     ProjectDetail,
@@ -596,7 +596,7 @@ async def export_project(
     )
 
 
-@router.post("/import", response_model=ProjectDetail, status_code=201)
+@router.post("/import", response_model=ProjectDetail, status_code=201, dependencies=[Depends(demo_guard("project_import"))])
 async def import_project(
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session),

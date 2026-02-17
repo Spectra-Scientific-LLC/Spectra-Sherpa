@@ -9,12 +9,12 @@ from __future__ import annotations
 from typing import Any, Optional
 import re
 import numpy as np
-from app.lib.scp_compat import scp, NDDataset
-from app.lib.analysis_dataset import AnalysisDataset, AxisInfo
+from spectra_sherpa.app.lib.scp_compat import scp, NDDataset
+from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo
 
 import logging
 
-from app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
+from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
 
 from ..node_base import Node, NodeMetadata, NodeParameter, InputPort, PortMetadata, register_node
 from .visualization import generate_confusion_matrix_heatmap
@@ -262,7 +262,7 @@ class PLSDANode(Node):
         Returns:
             PLS-DA model with classification results
         """
-        from app.lib.scp_compat import scp
+        from spectra_sherpa.app.lib.scp_compat import scp
         from sklearn.model_selection import cross_val_score, cross_val_predict
         from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, balanced_accuracy_score, f1_score
 
@@ -546,7 +546,7 @@ class PLSDANode(Node):
             y_pred: Predicted class labels
             Y_pred_prob: Prediction probabilities
         """
-        from app.lib.scp_compat import scp
+        from spectra_sherpa.app.lib.scp_compat import scp
         from sklearn.model_selection import StratifiedKFold
 
         # Get numpy array from NDDataset
@@ -601,7 +601,7 @@ class PLSDANode(Node):
 
         Note: This method is currently unused but maintained for consistency.
         """
-        from app.lib.scp_compat import scp
+        from spectra_sherpa.app.lib.scp_compat import scp
         from sklearn.model_selection import StratifiedKFold
 
         # Extract numpy array if X is NDDataset
@@ -1610,7 +1610,7 @@ class SIMCANode(Node):
         Returns:
             SIMCA model with classification results
         """
-        from app.lib.scp_compat import scp
+        from spectra_sherpa.app.lib.scp_compat import scp
         from scipy.stats import f
 
         # Handle both positional and keyword arguments
@@ -1978,7 +1978,7 @@ class PLSDAPredictNode(Node):
         # Make predictions
         # PLS-DA returns continuous predictions for each class (dummy variables)
         # SpectroChemPy PLS model requires NDDataset input
-        from app.lib.scp_compat import scp
+        from spectra_sherpa.app.lib.scp_compat import scp
         from scipy.special import softmax
         X_dataset = scp.NDDataset(X_array)
         Y_pred_raw = pls_model.predict(X_dataset)

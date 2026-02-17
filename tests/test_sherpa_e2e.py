@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from app.schemas.sherpa import (
+from spectra_sherpa.app.schemas.sherpa import (
     EgressTier,
     SherpaRecommendation,
     SuggestionCategory,
@@ -30,7 +30,7 @@ from app.schemas.sherpa import (
     WorkflowContextNode,
     WorkflowStateSync,
 )
-from app.services.sherpa_advisor import (
+from spectra_sherpa.app.services.sherpa_advisor import (
     SherpaAdvisorService,
     filter_workflow_for_tier,
 )
@@ -203,9 +203,9 @@ class TestSherpaAdvisorSync:
         svc = SherpaAdvisorService()
         return svc
 
-    @patch("app.services.sherpa_advisor.app_config")
-    @patch("app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
-    @patch("app.core.security.is_egress_enabled", return_value=True)
+    @patch("spectra_sherpa.app.services.sherpa_advisor.app_config")
+    @patch("spectra_sherpa.app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
+    @patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True)
     async def test_sync_returns_recommendations(
         self, mock_egress, mock_key, mock_config, advisor
     ):
@@ -256,9 +256,9 @@ class TestSherpaAdvisorSync:
         assert "rec-001" in advisor._recommendations
         assert "rec-002" in advisor._recommendations
 
-    @patch("app.services.sherpa_advisor.app_config")
-    @patch("app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
-    @patch("app.core.security.is_egress_enabled", return_value=True)
+    @patch("spectra_sherpa.app.services.sherpa_advisor.app_config")
+    @patch("spectra_sherpa.app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
+    @patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True)
     async def test_sync_graceful_on_connect_error(
         self, mock_egress, mock_key, mock_config, advisor
     ):
@@ -283,8 +283,8 @@ class TestSherpaAdvisorSync:
         # Should return empty list, not raise
         assert recs == []
 
-    @patch("app.services.sherpa_advisor.app_config")
-    @patch("app.services.sherpa_advisor._sherpa_api_key", return_value=None)
+    @patch("spectra_sherpa.app.services.sherpa_advisor.app_config")
+    @patch("spectra_sherpa.app.services.sherpa_advisor._sherpa_api_key", return_value=None)
     async def test_sync_returns_empty_when_not_configured(
         self, mock_key, mock_config, advisor
     ):
@@ -306,9 +306,9 @@ class TestSherpaAdvisorChat:
     def advisor(self):
         return SherpaAdvisorService()
 
-    @patch("app.services.sherpa_advisor.app_config")
-    @patch("app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
-    @patch("app.core.security.is_egress_enabled", return_value=True)
+    @patch("spectra_sherpa.app.services.sherpa_advisor.app_config")
+    @patch("spectra_sherpa.app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
+    @patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True)
     async def test_chat_streams_chunks(
         self, mock_egress, mock_key, mock_config, advisor
     ):
@@ -347,9 +347,9 @@ class TestSherpaAdvisorChat:
         assert "PCA node" in full_response
         assert "scores plot" in full_response
 
-    @patch("app.services.sherpa_advisor.app_config")
-    @patch("app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
-    @patch("app.core.security.is_egress_enabled", return_value=True)
+    @patch("spectra_sherpa.app.services.sherpa_advisor.app_config")
+    @patch("spectra_sherpa.app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
+    @patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True)
     async def test_chat_fallback_on_404(
         self, mock_egress, mock_key, mock_config, advisor
     ):
@@ -381,9 +381,9 @@ class TestSherpaAdvisorChat:
         assert len(chunks) == 1
         assert "coming soon" in chunks[0].lower()
 
-    @patch("app.services.sherpa_advisor.app_config")
-    @patch("app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
-    @patch("app.core.security.is_egress_enabled", return_value=True)
+    @patch("spectra_sherpa.app.services.sherpa_advisor.app_config")
+    @patch("spectra_sherpa.app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
+    @patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True)
     async def test_chat_fallback_on_connect_error(
         self, mock_egress, mock_key, mock_config, advisor
     ):
@@ -409,8 +409,8 @@ class TestSherpaAdvisorChat:
         assert len(chunks) == 1
         assert "unreachable" in chunks[0].lower()
 
-    @patch("app.services.sherpa_advisor.app_config")
-    @patch("app.services.sherpa_advisor._sherpa_api_key", return_value=None)
+    @patch("spectra_sherpa.app.services.sherpa_advisor.app_config")
+    @patch("spectra_sherpa.app.services.sherpa_advisor._sherpa_api_key", return_value=None)
     async def test_chat_fallback_when_not_available(
         self, mock_key, mock_config, advisor
     ):
@@ -432,9 +432,9 @@ class TestPayloadRoundtrip:
     frontend builds payload → backend parses → advisor processes → response formatted.
     """
 
-    @patch("app.services.sherpa_advisor.app_config")
-    @patch("app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
-    @patch("app.core.security.is_egress_enabled", return_value=True)
+    @patch("spectra_sherpa.app.services.sherpa_advisor.app_config")
+    @patch("spectra_sherpa.app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
+    @patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True)
     async def test_sync_payload_roundtrip(
         self, mock_egress, mock_key, mock_config
     ):
@@ -500,9 +500,9 @@ class TestPayloadRoundtrip:
 
         await advisor.close()
 
-    @patch("app.services.sherpa_advisor.app_config")
-    @patch("app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
-    @patch("app.core.security.is_egress_enabled", return_value=True)
+    @patch("spectra_sherpa.app.services.sherpa_advisor.app_config")
+    @patch("spectra_sherpa.app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
+    @patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True)
     async def test_chat_payload_roundtrip(
         self, mock_egress, mock_key, mock_config
     ):
@@ -582,9 +582,9 @@ class TestPayloadRoundtrip:
 class TestSuggestionLifecycle:
     """Test that accepting/rejecting suggestions updates state correctly."""
 
-    @patch("app.services.sherpa_advisor.app_config")
-    @patch("app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
-    @patch("app.core.security.is_egress_enabled", return_value=True)
+    @patch("spectra_sherpa.app.services.sherpa_advisor.app_config")
+    @patch("spectra_sherpa.app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
+    @patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True)
     async def test_accept_recommendation(
         self, mock_egress, mock_key, mock_config
     ):
@@ -593,7 +593,7 @@ class TestSuggestionLifecycle:
         advisor = SherpaAdvisorService()
 
         # Pre-populate cache with a recommendation
-        from app.schemas.sherpa import UserDecision
+        from spectra_sherpa.app.schemas.sherpa import UserDecision
 
         rec = SherpaRecommendation(
             suggestion_id="rec-001",

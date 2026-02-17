@@ -10,10 +10,10 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, JSON, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base
+from spectra_sherpa.app.db.base import Base
 
 if TYPE_CHECKING:
-    from app.models.execution_run import ExecutionRun
+    from spectra_sherpa.app.models.execution_run import ExecutionRun
 
 
 class BatchPrediction(Base):

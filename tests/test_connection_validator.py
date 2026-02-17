@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from app.types.registry import TypeRegistry
-from app.types.validator import can_connect
+from spectra_sherpa.app.types.registry import TypeRegistry
+from spectra_sherpa.app.types.validator import can_connect
 
 TYPES_DIR = Path(__file__).resolve().parent.parent / "src" / "spectra_sherpa" / "app" / "types"
 
@@ -22,7 +22,7 @@ TYPES_DIR = Path(__file__).resolve().parent.parent / "src" / "spectra_sherpa" / 
 @pytest.fixture(autouse=True)
 def _load_registry():
     """Ensure the singleton type_registry is loaded for every test."""
-    from app.types import type_registry
+    from spectra_sherpa.app.types import type_registry
     if not type_registry.is_loaded:
         type_registry.load(TYPES_DIR)
 

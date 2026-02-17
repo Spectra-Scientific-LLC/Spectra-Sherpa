@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 if TYPE_CHECKING:
-    from app.lib.scp_compat import NDDataset
+    from spectra_sherpa.app.lib.scp_compat import NDDataset
 
 
 def _serialize_meta(meta: Dict[str, Any]) -> Dict[str, Any]:
@@ -115,7 +115,7 @@ def load_dataset_parquet(path: Path) -> "NDDataset":
     NDDataset
         Loaded dataset with coordinates and metadata
     """
-    from app.lib.scp_compat import scp, require_scp
+    from spectra_sherpa.app.lib.scp_compat import scp, require_scp
     require_scp("Dataset deserialization")
 
     path = Path(path)

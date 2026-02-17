@@ -27,8 +27,8 @@ const escapeCsvValue = (value: string | number | null | undefined): string => {
     return "";
   }
   const raw = String(value);
-  if (raw.includes(",") || raw.includes("\n") || raw.includes("\"")) {
-    return `"${raw.replace(/\"/g, "\"\"")}"`;
+  if (raw.includes(",") || raw.includes("\n") || raw.includes('"')) {
+    return `"${raw.replace(/"/g, '""')}"`;
   }
   return raw;
 };

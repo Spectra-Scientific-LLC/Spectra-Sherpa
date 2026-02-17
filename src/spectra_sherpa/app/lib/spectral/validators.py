@@ -14,7 +14,7 @@ from .dataset import parse_spectral_unit, validate_unit_compatibility, SpectralU
 from .conversions import ensure_absorbance
 
 if TYPE_CHECKING:
-    from app.lib.scp_compat import NDDataset
+    from spectra_sherpa.app.lib.scp_compat import NDDataset
 
 logger = logging.getLogger(__name__)
 

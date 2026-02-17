@@ -185,7 +185,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
 
   // ── WebSocket message handler ──────────────────────────────
 
-  /* eslint-disable @typescript-eslint/no-explicit-any */
+   
   function handleWsMessage(payload: any): void {
     if (payload.type === "sherpa_recommendations") {
       state.value = "idle";
@@ -244,14 +244,31 @@ export const useSherpaStore = defineStore("sherpa", () => {
       }
     } else if (payload.type === "sherpa_error") {
       state.value = "error";
-      lastSyncError.value = payload.detail || "Sherpa error";
-      messages.value.push({
-        role: "system",
-        content: payload.detail || "An error occurred communicating with Sherpa.",
-      });
+      // Demo limit error: has upgrade_url (sent by _check_demo_sherpa_limit)
+      if (payload.upgrade_url) {
+        lastSyncError.value = payload.message || "Demo limit reached";
+        messages.value.push({
+          role: "system",
+          content: payload.message || "Sherpa interaction limit reached. Upgrade to continue.",
+        });
+        import("@/composables/useDemoMode").then(({ useDemoMode }) => {
+          const { triggerUpgradeModal } = useDemoMode();
+          triggerUpgradeModal({
+            message: payload.message || "Sherpa interaction limit reached.",
+            upgradeUrl: payload.upgrade_url,
+            availablePlans: payload.available_plans || [],
+          });
+        });
+      } else {
+        lastSyncError.value = payload.detail || "Sherpa error";
+        messages.value.push({
+          role: "system",
+          content: payload.detail || "An error occurred communicating with Sherpa.",
+        });
+      }
     }
   }
-  /* eslint-enable @typescript-eslint/no-explicit-any */
+   
 
   // ── lifecycle ──────────────────────────────────────────────
 

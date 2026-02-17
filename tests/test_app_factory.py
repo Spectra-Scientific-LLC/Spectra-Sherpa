@@ -7,8 +7,8 @@ from unittest.mock import patch
 import pytest
 from fastapi import APIRouter, FastAPI
 
-import app.main as app_main
-from app.api.v1 import api as api_v1
+import spectra_sherpa.app.main as app_main
+from spectra_sherpa.app.api.v1 import api as api_v1
 
 
 def _paths(routes) -> set[str]:
@@ -30,7 +30,7 @@ def _async_event(events: list[str], name: str) -> Callable[..., Awaitable[None]]
 
 
 def test_build_api_router_can_skip_server_routes():
-    with patch("app.api.v1.api.get_server_routers") as get_server:
+    with patch("spectra_sherpa.app.api.v1.api.get_server_routers") as get_server:
         router = api_v1.build_api_router(include_server_routers=False)
     get_server.assert_not_called()
     paths = _paths(router.routes)
@@ -46,7 +46,7 @@ def test_build_api_router_includes_server_routes_when_enabled():
         return {"user": "server"}
 
     with patch(
-        "app.api.v1.api.get_server_routers",
+        "spectra_sherpa.app.api.v1.api.get_server_routers",
         return_value=[(server_router, {"prefix": "/auth"})],
     ) as get_server:
         router = api_v1.build_api_router(include_server_routers=True)
@@ -56,7 +56,7 @@ def test_build_api_router_includes_server_routes_when_enabled():
 
 
 def test_build_api_router_exposes_auth_me_for_multi_user_mode(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr("app.core.mode_policy.is_multi_user", lambda: True)
+    monkeypatch.setattr("spectra_sherpa.app.core.mode_policy.is_multi_user", lambda: True)
 
     router = api_v1.build_api_router(include_server_routers=True)
 
@@ -120,24 +120,24 @@ async def test_lifespan_runs_extra_shutdown_before_core_teardown(monkeypatch: py
     monkeypatch.setattr(app_main, "reconcile_stale_jobs", _async_event(events, "reconcile_stale_jobs"))
     monkeypatch.setattr(app_main, "ensure_spectrochempy_testdata", _async_event(events, "ensure_spectrochempy_testdata"))
     monkeypatch.setattr(app_main, "ensure_workflow_templates", _async_event(events, "ensure_workflow_templates"))
-    monkeypatch.setattr("app.services.plugin_loader.discover_plugins", _sync_event(events, "discover_plugins"))
+    monkeypatch.setattr("spectra_sherpa.app.services.plugin_loader.discover_plugins", _sync_event(events, "discover_plugins"))
     monkeypatch.setattr(
-        "app.services.network_health.start_network_health_service",
+        "spectra_sherpa.app.services.network_health.start_network_health_service",
         _async_event(events, "start_network_health_service"),
     )
 
     # Shutdown async phase
     monkeypatch.setattr(app_main.job_manager, "shutdown", _async_event(events, "job_manager_shutdown"))
     monkeypatch.setattr(
-        "app.services.network_health.stop_network_health_service",
+        "spectra_sherpa.app.services.network_health.stop_network_health_service",
         _async_event(events, "stop_network_health_service"),
     )
     monkeypatch.setattr(
-        "app.services.spectrasherpa.close_spectrasherpa_service",
+        "spectra_sherpa.app.services.spectrasherpa.close_spectrasherpa_service",
         _async_event(events, "close_spectrasherpa_service"),
     )
     monkeypatch.setattr(
-        "app.services.sherpa_advisor.close_sherpa_advisor",
+        "spectra_sherpa.app.services.sherpa_advisor.close_sherpa_advisor",
         _async_event(events, "close_sherpa_advisor"),
     )
 

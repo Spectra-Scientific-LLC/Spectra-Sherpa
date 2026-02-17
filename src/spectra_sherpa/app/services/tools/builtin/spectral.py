@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from app.services.tools.registry import register_tool
-from app.services.tools.schemas import ToolCategory
+from spectra_sherpa.app.services.tools.registry import register_tool
+from spectra_sherpa.app.services.tools.schemas import ToolCategory
 
 
 # ---------------------------------------------------------------------------
@@ -39,7 +39,7 @@ from app.services.tools.schemas import ToolCategory
 )
 def list_node_types(category: Optional[str] = None) -> list[dict[str, str]]:
     """Return a compact list of registered node types."""
-    from app.services.dag.node_base import node_registry
+    from spectra_sherpa.app.services.dag.node_base import node_registry
 
     results = []
     for node_type, node_cls in sorted(node_registry._nodes.items()):
@@ -82,7 +82,7 @@ def list_node_types(category: Optional[str] = None) -> list[dict[str, str]]:
 )
 def describe_node(node_type: str) -> dict[str, Any]:
     """Return the full metadata for a single node type."""
-    from app.services.dag.node_base import node_registry
+    from spectra_sherpa.app.services.dag.node_base import node_registry
 
     node_cls = node_registry._nodes.get(node_type)
     if node_cls is None:

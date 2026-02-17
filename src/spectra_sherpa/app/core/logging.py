@@ -11,7 +11,7 @@ import threading
 import requests
 import queue
 
-from app.core.config import settings, app_config
+from spectra_sherpa.app.core.config import settings, app_config
 
 log_buffer: Deque[dict] = deque(maxlen=settings.log_buffer_size)
 
@@ -82,7 +82,7 @@ class RemoteAuditHandler(logging.Handler):
     def _is_degraded(self) -> bool:
         """Check if we're in degraded mode (hybrid fallback to local)."""
         try:
-            from app.services.network_health import get_network_health_service
+            from spectra_sherpa.app.services.network_health import get_network_health_service
             health_service = get_network_health_service()
             return health_service.is_degraded
         except Exception:

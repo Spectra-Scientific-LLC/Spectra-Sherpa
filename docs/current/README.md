@@ -33,7 +33,7 @@ Alternatively, you can browse the Markdown files directly in the `docs/` tree.
 spectra-sherpa/
 ├── pyproject.toml                  # Package definition (pip install -e .)
 ├── src/spectra_sherpa/         # The pip-installable package
-│   ├── __init__.py                 # Version + meta-path finder
+│   ├── __init__.py                 # Package version
 │   ├── cli.py                      # `spectra-sherpa` CLI entry point
 │   ├── app/                        # FastAPI backend (all services, routes, models)
 │   ├── libs/                       # NIST scraper

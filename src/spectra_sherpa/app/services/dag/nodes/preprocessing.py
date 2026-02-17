@@ -14,8 +14,8 @@ from __future__ import annotations
 
 from typing import Any, Optional, List, Dict
 import numpy as np
-from app.lib.scp_compat import scp, NDDataset
-from app.lib.analysis_dataset import AnalysisDataset
+from spectra_sherpa.app.lib.scp_compat import scp, NDDataset
+from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
 
 from ..node_base import (
     Node,
@@ -28,7 +28,7 @@ from ..node_base import (
     _format_value,
 )
 from ..meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
-from app.lib.preprocessing import remove_cosmic_rays
+from spectra_sherpa.app.lib.preprocessing import remove_cosmic_rays
 
 
 def _wrap_result_lines(
@@ -107,7 +107,7 @@ class BaselineALSNode(Node):
         # basc() requires coordinates; synthesize if absent
         x_coord = safe_get_coord(result, "x")
         if x_coord is None or x_coord.data is None:
-            from app.lib.scp_compat import Coord
+            from spectra_sherpa.app.lib.scp_compat import Coord
             coords = {"x": Coord(np.arange(result.shape[-1]), title="pixels")}
             if result.ndim >= 2:
                 coords["y"] = Coord(np.arange(result.shape[-2]), title="samples")
@@ -935,7 +935,7 @@ class ClipRangeNode(Node):
         if max_wn is not None:
             mask &= x_vals <= max_wn
 
-        from app.lib.analysis_dataset import AxisInfo
+        from spectra_sherpa.app.lib.analysis_dataset import AxisInfo
         new_x = AxisInfo(
             values=x_vals[mask],
             labels=([l for l, m in zip(ds.x_axis.labels, mask) if m]

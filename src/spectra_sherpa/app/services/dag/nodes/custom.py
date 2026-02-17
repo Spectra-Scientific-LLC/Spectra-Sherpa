@@ -18,11 +18,11 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 import numpy as np
 
-from app.lib.scp_compat import scp, NDDataset, HAS_SCP
-from app.lib.analysis_dataset import AnalysisDataset, AxisInfo
+from spectra_sherpa.app.lib.scp_compat import scp, NDDataset, HAS_SCP
+from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo
 
 from ..node_base import Node, NodeMetadata, NodeParameter, register_node
-from app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
+from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -107,8 +107,8 @@ class LinearCalibrationNode(Node):
             Absorbance spectra for each concentration
         """
         import warnings
-        from app.lib.blending import eval_linear_model, SAFE_MIN_THRESHOLD
-        from app.lib.spectral.dataset import create_spectral_dataset, SpectralUnit
+        from spectra_sherpa.app.lib.blending import eval_linear_model, SAFE_MIN_THRESHOLD
+        from spectra_sherpa.app.lib.spectral.dataset import create_spectral_dataset, SpectralUnit
 
         s_max = self.parameters.get("s_max", SAFE_MIN_THRESHOLD)
         conc_unit = self.parameters.get("concentration_unit", "ppm")
@@ -253,8 +253,8 @@ class SaturationModelNode(Node):
             Absorbance spectra for each concentration
         """
         import warnings
-        from app.lib.blending import eval_saturation_model
-        from app.lib.spectral.dataset import create_spectral_dataset, SpectralUnit
+        from spectra_sherpa.app.lib.blending import eval_saturation_model
+        from spectra_sherpa.app.lib.spectral.dataset import create_spectral_dataset, SpectralUnit
 
         conc_unit = self.parameters.get("concentration_unit", "ppm")
         warn_extrap = self.parameters.get("warn_extrapolation", True)
@@ -389,7 +389,7 @@ class SystemSaturationNode(Node):
         NDDataset
             Saturated spectra (bounded by detector limits)
         """
-        from app.lib.blending import apply_system_saturation
+        from spectra_sherpa.app.lib.blending import apply_system_saturation
 
         s_system = self.parameters.get("s_system", 2.0)
         p_system = self.parameters.get("p_system", 1.0)
@@ -482,7 +482,7 @@ class CatmullRomCurveNode(Node):
         np.ndarray
             Concentration curve with n_points values
         """
-        from app.lib.curves import evaluate_catmull_rom, initial_curve_points
+        from spectra_sherpa.app.lib.curves import evaluate_catmull_rom, initial_curve_points
 
         n_points = int(self.parameters.get("n_points", 100))
         max_conc = self.parameters.get("max_concentration", 1.0)
@@ -692,7 +692,7 @@ class ConcentrationCurveNode(Node):
         np.ndarray
             Concentration values at each time point
         """
-        from app.lib.curves import generate_concentration_curve
+        from spectra_sherpa.app.lib.curves import generate_concentration_curve
 
         curve_type = self.parameters.get("curve_type", "sigmoid")
         n_points = int(self.parameters.get("n_points", 100))
@@ -762,7 +762,7 @@ class GoldenGridAlignNode(Node):
         list[NDDataset]
             Aligned spectra on common wavenumber grid
         """
-        from app.lib.preprocessing import build_golden_grid, interpolate_to_grid
+        from spectra_sherpa.app.lib.preprocessing import build_golden_grid, interpolate_to_grid
 
         method = self.parameters.get("method", "pchip")
         tolerance = self.parameters.get("merge_tolerance", 0.05)

@@ -11,7 +11,7 @@ from enum import Enum
 from typing import Optional, List
 import numpy as np
 
-from app.lib.scp_compat import scp, NDDataset, Coord, HAS_SCP, require_scp
+from spectra_sherpa.app.lib.scp_compat import scp, NDDataset, Coord, HAS_SCP, require_scp
 
 
 class SpectralUnit(Enum):

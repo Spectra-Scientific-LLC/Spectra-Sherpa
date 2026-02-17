@@ -5,12 +5,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_session
-from app.core.config import settings
-from app.models.user import User
-from app.models.exp_version import ExpVersion
-from app.models.experiment_file import ExperimentFile
-from app.schemas.experiments import (
+from spectra_sherpa.app.api.deps import demo_guard, get_current_user, get_session
+from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.models.exp_version import ExpVersion
+from spectra_sherpa.app.models.experiment_file import ExperimentFile
+from spectra_sherpa.app.schemas.experiments import (
     ExperimentCreate,
     ExperimentDetail,
     ExperimentFileOut,
@@ -19,7 +19,7 @@ from app.schemas.experiments import (
     VersionCreate,
     VersionInfo,
 )
-from app.services.experiments import (
+from spectra_sherpa.app.services.experiments import (
     ALLOWED_STAGES,
     add_experiment_file,
     delete_experiment,
@@ -36,8 +36,8 @@ from app.services.experiments import (
     update_experiment,
     create_experiment,
 )
-from app.services.file_storage import FileValidationError, save_upload_file
-from app.services.version_storage import ContentAddressableStorage
+from spectra_sherpa.app.services.file_storage import FileValidationError, save_upload_file
+from spectra_sherpa.app.services.version_storage import ContentAddressableStorage
 
 router = APIRouter(prefix="/experiments")
 
@@ -167,7 +167,7 @@ async def delete_experiment_endpoint(
     return {"status": "deleted"}
 
 
-@router.post("/{experiment_id}/files", response_model=ExperimentFileOut, status_code=201)
+@router.post("/{experiment_id}/files", response_model=ExperimentFileOut, status_code=201, dependencies=[Depends(demo_guard("data_upload"))])
 async def upload_experiment_file(
     experiment_id: int,
     stage: str = Form(...),

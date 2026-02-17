@@ -18,13 +18,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_current_user, get_session
-from app.models.background_job import BackgroundJob
-from app.models.batch_prediction import BatchPrediction
-from app.models.execution_run import ExecutionRun
-from app.models.folder_watch import FolderWatch
-from app.models.user import User
-from app.schemas.deploy import (
+from spectra_sherpa.app.api.deps import get_current_user, get_session
+from spectra_sherpa.app.models.background_job import BackgroundJob
+from spectra_sherpa.app.models.batch_prediction import BatchPrediction
+from spectra_sherpa.app.models.execution_run import ExecutionRun
+from spectra_sherpa.app.models.folder_watch import FolderWatch
+from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.schemas.deploy import (
     BatchPredictRequest,
     BatchPredictResponse,
     BatchPredictionList,
@@ -34,8 +34,8 @@ from app.schemas.deploy import (
     FolderWatchUpdate,
     UpdateLabelsRequest,
 )
-from app.schemas.execution_runs import ExecutionRunList, ExecutionRunOut
-from app.services.job_manager import job_manager
+from spectra_sherpa.app.schemas.execution_runs import ExecutionRunList, ExecutionRunOut
+from spectra_sherpa.app.services.job_manager import job_manager
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +90,7 @@ async def batch_predict(
     Discovers files in the given folder, creates an ExecutionRun and a
     BackgroundJob, then processes each file through the workflow.
     """
-    from app.services.batch_predict import (
+    from spectra_sherpa.app.services.batch_predict import (
         discover_files,
         load_workflow_with_graph,
         run_batch_prediction,
@@ -154,7 +154,7 @@ async def batch_predict(
 
     # Launch async work
     async def _work() -> None:
-        from app.db.session import async_session
+        from spectra_sherpa.app.db.session import async_session
 
         async with async_session() as work_session:
             # Re-load workflow with graph in the work session
@@ -246,8 +246,8 @@ async def create_watch(
     current_user: User = Depends(get_current_user),
 ) -> FolderWatchOut:
     """Create a new folder watch (starts disabled)."""
-    from app.models.workflow import Workflow
-    from app.services.batch_predict import validate_folder_path
+    from spectra_sherpa.app.models.workflow import Workflow
+    from spectra_sherpa.app.services.batch_predict import validate_folder_path
 
     # Validate folder path (prevents traversal in multi-user modes)
     try:

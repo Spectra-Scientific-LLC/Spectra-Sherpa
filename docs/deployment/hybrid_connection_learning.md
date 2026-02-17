@@ -112,7 +112,7 @@ SPECTRASHERPA_API_KEY=sk_<key-from-server>
 - httpx `Response.json()` / `.raise_for_status()` are **synchronous** — use
   `MagicMock()` not `AsyncMock()` for response objects
 - httpx `client.post()` / `client.stream()` are **async** — use `AsyncMock()`
-- conftest.py imports `from app.db.base import Base` and `from app.main import
+- conftest.py imports `from spectra_sherpa.app.db.base import Base` and `from spectra_sherpa.app.main import
   app` — needs full app context
 
 ---

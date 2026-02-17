@@ -13,8 +13,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from app.lib.analysis_dataset import AnalysisDataset, AxisInfo, from_sklearn_bunch
-from app.services.dag.node_base import node_registry, NodeResult
+from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo, from_sklearn_bunch
+from spectra_sherpa.app.services.dag.node_base import node_registry, NodeResult
 
 
 # ---------------------------------------------------------------------------
@@ -29,12 +29,12 @@ def no_scp(monkeypatch):
     at module level (Python binds names at import time, so a single patch
     on the source module does not propagate to already-imported references).
     """
-    monkeypatch.setattr("app.lib.scp_compat.HAS_SCP", False)
-    monkeypatch.setattr("app.services.dag.nodes.data.HAS_SCP", False)
-    monkeypatch.setattr("app.services.dag.executor.HAS_SCP", False)
-    monkeypatch.setattr("app.services.dag.serialize.HAS_SCP", False)
-    monkeypatch.setattr("app.services.dag.serialize.HAS_NDDATASET", False)
-    monkeypatch.setattr("app.services.dag.executor.HAS_NDDATASET", False)
+    monkeypatch.setattr("spectra_sherpa.app.lib.scp_compat.HAS_SCP", False)
+    monkeypatch.setattr("spectra_sherpa.app.services.dag.nodes.data.HAS_SCP", False)
+    monkeypatch.setattr("spectra_sherpa.app.services.dag.executor.HAS_SCP", False)
+    monkeypatch.setattr("spectra_sherpa.app.services.dag.serialize.HAS_SCP", False)
+    monkeypatch.setattr("spectra_sherpa.app.services.dag.serialize.HAS_NDDATASET", False)
+    monkeypatch.setattr("spectra_sherpa.app.services.dag.executor.HAS_NDDATASET", False)
 
 
 @pytest.fixture
@@ -268,7 +268,7 @@ def test_analysis_dataset_to_dict(iris_dataset):
 
 def test_serialize_for_api_with_analysis_dataset(iris_dataset):
     """serialize_for_api should delegate to AnalysisDataset.to_dict()."""
-    from app.services.dag.serialize import serialize_for_api
+    from spectra_sherpa.app.services.dag.serialize import serialize_for_api
 
     serialized = serialize_for_api(iris_dataset)
     expected = iris_dataset.to_dict()
@@ -287,7 +287,7 @@ def test_serialize_for_api_with_analysis_dataset(iris_dataset):
 
 def test_serialize_result_with_analysis_dataset(iris_dataset):
     """serialize_result should serialize AnalysisDataset to dict with type='NDDataset'."""
-    from app.api.v1.routes.workflows import serialize_result
+    from spectra_sherpa.app.api.v1.routes.workflows import serialize_result
 
     result = serialize_result(iris_dataset)
     assert isinstance(result, dict)
@@ -300,7 +300,7 @@ def test_serialize_result_with_analysis_dataset(iris_dataset):
 
 def test_serialize_result_with_nested_analysis_dataset(iris_dataset):
     """serialize_result should handle dicts containing AnalysisDataset values."""
-    from app.api.v1.routes.workflows import serialize_result
+    from spectra_sherpa.app.api.v1.routes.workflows import serialize_result
 
     multi_output = {
         "default": iris_dataset,
@@ -320,28 +320,28 @@ def test_serialize_result_with_nested_analysis_dataset(iris_dataset):
 
 def test_is_dataset_with_analysis_dataset(iris_dataset):
     """_is_dataset should return True for AnalysisDataset."""
-    from app.services.dag.executor import _is_dataset
+    from spectra_sherpa.app.services.dag.executor import _is_dataset
 
     assert _is_dataset(iris_dataset) is True
 
 
 def test_is_dataset_with_plain_dict():
     """_is_dataset should return False for a plain dict."""
-    from app.services.dag.executor import _is_dataset
+    from spectra_sherpa.app.services.dag.executor import _is_dataset
 
     assert _is_dataset({"key": "value"}) is False
 
 
 def test_is_dataset_with_plain_list():
     """_is_dataset should return False for a plain list."""
-    from app.services.dag.executor import _is_dataset
+    from spectra_sherpa.app.services.dag.executor import _is_dataset
 
     assert _is_dataset([1, 2, 3]) is False
 
 
 def test_is_dataset_with_numpy_array():
     """_is_dataset should return False for a raw numpy array."""
-    from app.services.dag.executor import _is_dataset
+    from spectra_sherpa.app.services.dag.executor import _is_dataset
 
     assert _is_dataset(np.array([1, 2, 3])) is False
 
@@ -532,7 +532,7 @@ async def test_sg_derivative_on_analysis_dataset(spectral_dataset):
 
 def test_copy_processing_history_syncs_provenance():
     """copy_processing_history must update both meta and provenance on AnalysisDataset."""
-    from app.services.dag.meta_helpers import copy_processing_history, add_processing_step
+    from spectra_sherpa.app.services.dag.meta_helpers import copy_processing_history, add_processing_step
 
     source = AnalysisDataset(X=np.ones((3, 5)))
     add_processing_step(source, "normalize.snv", {}, node_id="n1")
@@ -556,7 +556,7 @@ def test_copy_processing_history_syncs_provenance():
 
 def test_provenance_chain_survives_to_dict():
     """After SNV->Scale chain, to_dict() should serialize ALL provenance steps."""
-    from app.services.dag.meta_helpers import add_processing_step, copy_processing_history
+    from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
 
     # Simulate: source dataset → copy history → add step → serialize
     ds = AnalysisDataset(X=np.ones((3, 5)))
@@ -855,11 +855,11 @@ class TestClassificationIsinstanceGuards:
         # Check passes without raising
         assert isinstance(ds, AnalysisDataset)
         # The actual isinstance in the node should accept it
-        from app.lib.scp_compat import NDDataset
+        from spectra_sherpa.app.lib.scp_compat import NDDataset
         assert isinstance(ds, (NDDataset, AnalysisDataset))
 
     def test_simca_accepts_analysis_dataset_type(self):
         """SIMCANode isinstance check should accept AnalysisDataset."""
         ds = AnalysisDataset(X=np.ones((10, 5)))
-        from app.lib.scp_compat import NDDataset
+        from spectra_sherpa.app.lib.scp_compat import NDDataset
         assert isinstance(ds, (NDDataset, AnalysisDataset))

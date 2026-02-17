@@ -1,17 +1,19 @@
-
 import sys
 import os
 import asyncio
+from pathlib import Path
 
-# Add backend to path
-sys.path.append("/Users/fe2val/Documents/Spectra Scientific/Component_code/Refactored/backend")
+# Add repo root to path
+BASE_DIR = Path(__file__).resolve().parents[1]
+if str(BASE_DIR) not in sys.path:
+    sys.path.append(str(BASE_DIR))
 
 async def verify():
     print("Verifying Node Metadata...")
     
     # Import modules to register nodes
-    from app.services.dag.nodes import data, modeling, diagnostics, output, classification, preprocessing
-    from app.models.workflow_node import registry
+    from spectra_sherpa.app.services.dag.nodes import data, modeling, diagnostics, output, classification, preprocessing
+    from spectra_sherpa.app.models.workflow_node import registry
     
     nodes_to_check = [
         # Phase 2

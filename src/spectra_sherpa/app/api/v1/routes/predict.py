@@ -20,11 +20,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_current_user, get_session
-from app.models.user import User
-from app.models.workflow import Workflow
+from spectra_sherpa.app.api.deps import get_current_user, get_session
+from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.models.workflow import Workflow
 
-from app.lib.scp_compat import NDDataset, HAS_SCP
+from spectra_sherpa.app.lib.scp_compat import NDDataset, HAS_SCP
 HAS_NDDATASET = HAS_SCP
 
 router = APIRouter(prefix="/workflows")
@@ -146,11 +146,11 @@ async def predict(
     # --- 3. Build NDDataset from payload ---------------------------------
     dataset = NDDataset(data_array)
     if payload.wavenumbers is not None:
-        from app.lib.scp_compat import Coord
+        from spectra_sherpa.app.lib.scp_compat import Coord
         dataset.set_coordset(x=Coord(payload.wavenumbers, title="Wavenumbers"))
 
     # --- 4. Build DAGExecutor --------------------------------------------
-    from app.services.dag import (
+    from spectra_sherpa.app.services.dag import (
         DAGExecutor,
         WorkflowEdge as DAGEdge,
         WorkflowNode as DAGNode,
@@ -196,7 +196,7 @@ async def predict(
         raise HTTPException(status_code=500, detail=f"Execution error: {exc}")
 
     # --- 7. Collect and serialize exit-node results ----------------------
-    from app.api.v1.routes.workflows import serialize_result
+    from spectra_sherpa.app.api.v1.routes.workflows import serialize_result
 
     exit_nodes = executor.find_exit_nodes()
     serialized: dict[str, Any] = {}

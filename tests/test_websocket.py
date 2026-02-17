@@ -6,17 +6,17 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-import app.main as app_main
-import app.services.ws_handlers as ws_handlers_mod
-from app.core.config import app_config
-from app.services.tools import tool_registry
-from app.services.tools.schemas import (
+import spectra_sherpa.app.main as app_main
+import spectra_sherpa.app.services.ws_handlers as ws_handlers_mod
+from spectra_sherpa.app.core.config import app_config
+from spectra_sherpa.app.services.tools import tool_registry
+from spectra_sherpa.app.services.tools.schemas import (
     ToolCategory,
     ToolDefinition,
     ToolOrigin,
     ToolScope,
 )
-from app.services.websocket_manager import ws_manager
+from spectra_sherpa.app.services.websocket_manager import ws_manager
 
 
 class _NullAsyncSessionContext:
@@ -357,7 +357,7 @@ class TestWsToolInvoke:
         _cleanup_test_tools.append("ws_test_rate_limited")
 
         # Patch the rate limiter imported inside websocket_endpoint
-        from app.api.v1.routes.llm import _llm_rate_limiter
+        from spectra_sherpa.app.api.v1.routes.llm import _llm_rate_limiter
         monkeypatch.setattr(_llm_rate_limiter, "allow", lambda _key: False)
 
         with ws_client.websocket_connect("/ws") as ws:

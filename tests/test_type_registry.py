@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from app.types.registry import TypeRegistry, TypeDef, parse_type_ref
+from spectra_sherpa.app.types.registry import TypeRegistry, TypeDef, parse_type_ref
 
 TYPES_DIR = Path(__file__).resolve().parent.parent / "src" / "spectra_sherpa" / "app" / "types"
 

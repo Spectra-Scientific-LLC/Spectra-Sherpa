@@ -17,8 +17,8 @@ import inspect
 import logging
 from typing import Any, Optional
 
-from app.services.tools.registry import tool_registry
-from app.services.tools.schemas import ToolInvocation, ToolResult, ToolScope
+from spectra_sherpa.app.services.tools.registry import tool_registry
+from spectra_sherpa.app.services.tools.schemas import ToolInvocation, ToolResult, ToolScope
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +154,7 @@ async def execute_tool(
 
     # ---- Egress checks: global + per-user ----
     if defn.requires_egress:
-        from app.core.security import is_egress_enabled
+        from spectra_sherpa.app.core.security import is_egress_enabled
 
         if not is_egress_enabled():
             return ToolResult(
@@ -166,7 +166,7 @@ async def execute_tool(
 
     if defn.egress_permission:
         # Per-user egress permission check (requires session + user)
-        from app.core.security import check_egress_permission
+        from spectra_sherpa.app.core.security import check_egress_permission
 
         user = context.user if context else None
         session = context.session if context else None

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from app import schemas
-from app.api.deps import get_current_active_user
-from app.models.user import User
+from spectra_sherpa.app import schemas
+from spectra_sherpa.app.api.deps import get_current_active_user
+from spectra_sherpa.app.models.user import User
 
 router = APIRouter()
 

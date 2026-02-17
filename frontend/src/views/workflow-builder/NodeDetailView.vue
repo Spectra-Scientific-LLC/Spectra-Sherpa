@@ -2280,7 +2280,7 @@ const pcaLoadingsConfig = computed(() => ({
 const pcaScreeData = computed(() => {
   if (!isPCAOutput.value || !hasOutput.value) return [];
   const metadata = nodeOutput.value?.metadata || {};
-  let variance = metadata.explained_variance_ratio || [];
+  const variance = metadata.explained_variance_ratio || [];
 
   // Debug: log what we're getting
   console.log('[PCA Scree] variance data:', variance, 'length:', variance.length);

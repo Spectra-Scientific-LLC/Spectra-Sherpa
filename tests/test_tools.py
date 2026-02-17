@@ -18,15 +18,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.tools.schemas import (
+from spectra_sherpa.app.services.tools.schemas import (
     ToolCategory,
     ToolDefinition,
     ToolInvocation,
     ToolResult,
     ToolScope,
 )
-from app.services.tools.registry import ToolRegistry, register_tool, tool_registry
-from app.services.tools.executor import ToolExecutionContext, execute_tool
+from spectra_sherpa.app.services.tools.registry import ToolRegistry, register_tool, tool_registry
+from spectra_sherpa.app.services.tools.executor import ToolExecutionContext, execute_tool
 
 
 # ===========================================================================
@@ -214,13 +214,13 @@ class TestRegisterDecorator:
 
     def test_decorator_registers_function(self):
         # Import built-in tools to trigger registration
-        import app.services.tools.builtin  # noqa: F401
+        import spectra_sherpa.app.services.tools.builtin  # noqa: F401
 
         assert len(tool_registry) > 0
 
     def test_decorator_preserves_function(self):
         """Decorated function is still callable directly."""
-        from app.services.tools.builtin.spectral import list_node_types
+        from spectra_sherpa.app.services.tools.builtin.spectral import list_node_types
 
         result = list_node_types()
         assert isinstance(result, list)
@@ -241,7 +241,7 @@ class TestToolExecutor:
         defn = ToolDefinition(name="sync_tool", description="Sync")
         reg.register(defn, lambda: {"status": "ok"})
 
-        with patch("app.services.tools.executor.tool_registry", reg):
+        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg):
             result = await execute_tool(
                 ToolInvocation(tool_name="sync_tool"),
             )
@@ -259,7 +259,7 @@ class TestToolExecutor:
 
         reg.register(defn, handler)
 
-        with patch("app.services.tools.executor.tool_registry", reg):
+        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg):
             result = await execute_tool(
                 ToolInvocation(tool_name="async_tool"),
             )
@@ -284,7 +284,7 @@ class TestToolExecutor:
         )
         reg.register(defn, lambda a, b: a + b)
 
-        with patch("app.services.tools.executor.tool_registry", reg):
+        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg):
             result = await execute_tool(
                 ToolInvocation(tool_name="add_tool", arguments={"a": 3, "b": 7}),
             )
@@ -295,7 +295,7 @@ class TestToolExecutor:
     async def test_execute_unknown_tool(self):
         """Unknown tool returns error result (not exception)."""
         reg = ToolRegistry()
-        with patch("app.services.tools.executor.tool_registry", reg):
+        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg):
             result = await execute_tool(
                 ToolInvocation(tool_name="nonexistent"),
             )
@@ -313,7 +313,7 @@ class TestToolExecutor:
 
         reg.register(defn, handler)
 
-        with patch("app.services.tools.executor.tool_registry", reg):
+        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg):
             result = await execute_tool(
                 ToolInvocation(tool_name="fail_tool"),
             )
@@ -336,7 +336,7 @@ class TestToolExecutor:
         reg.register(defn, handler)
 
         # Without context → error
-        with patch("app.services.tools.executor.tool_registry", reg):
+        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg):
             result = await execute_tool(
                 ToolInvocation(tool_name="db_tool"),
             )
@@ -345,7 +345,7 @@ class TestToolExecutor:
 
         # With context → success
         ctx = ToolExecutionContext(session=MagicMock())
-        with patch("app.services.tools.executor.tool_registry", reg):
+        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg):
             result = await execute_tool(
                 ToolInvocation(tool_name="db_tool"),
                 context=ctx,
@@ -364,8 +364,8 @@ class TestToolExecutor:
         )
         reg.register(defn, lambda: "ok")
 
-        with patch("app.services.tools.executor.tool_registry", reg), \
-             patch("app.core.security.is_egress_enabled", return_value=False):
+        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg), \
+             patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=False):
             result = await execute_tool(
                 ToolInvocation(tool_name="net_tool"),
             )
@@ -382,7 +382,7 @@ class TestBuiltinSpectralTools:
     """Verify built-in spectral domain tools."""
 
     def test_list_node_types_all(self):
-        from app.services.tools.builtin.spectral import list_node_types
+        from spectra_sherpa.app.services.tools.builtin.spectral import list_node_types
 
         result = list_node_types()
         assert isinstance(result, list)
@@ -394,7 +394,7 @@ class TestBuiltinSpectralTools:
         assert "category" in first
 
     def test_list_node_types_filtered(self):
-        from app.services.tools.builtin.spectral import list_node_types
+        from spectra_sherpa.app.services.tools.builtin.spectral import list_node_types
 
         preprocessing = list_node_types(category="preprocessing")
         modeling = list_node_types(category="modeling")
@@ -402,13 +402,13 @@ class TestBuiltinSpectralTools:
         assert all(n["category"] == "modeling" for n in modeling)
 
     def test_list_node_types_empty_category(self):
-        from app.services.tools.builtin.spectral import list_node_types
+        from spectra_sherpa.app.services.tools.builtin.spectral import list_node_types
 
         result = list_node_types(category="nonexistent_category")
         assert result == []
 
     def test_describe_node_known(self):
-        from app.services.tools.builtin.spectral import describe_node
+        from spectra_sherpa.app.services.tools.builtin.spectral import describe_node
 
         result = describe_node("model.pca")
         assert result["node_type"] == "model.pca"
@@ -416,14 +416,14 @@ class TestBuiltinSpectralTools:
         assert "description" in result
 
     def test_describe_node_unknown(self):
-        from app.services.tools.builtin.spectral import describe_node
+        from spectra_sherpa.app.services.tools.builtin.spectral import describe_node
 
         result = describe_node("nonexistent.node")
         assert "error" in result
         assert "available" in result
 
     def test_suggest_preprocessing_ir(self):
-        from app.services.tools.builtin.spectral import suggest_preprocessing
+        from spectra_sherpa.app.services.tools.builtin.spectral import suggest_preprocessing
 
         result = suggest_preprocessing(technique="IR")
         assert result["technique"] == "IR"
@@ -434,14 +434,14 @@ class TestBuiltinSpectralTools:
         assert "baseline.als" in step_types
 
     def test_suggest_preprocessing_default(self):
-        from app.services.tools.builtin.spectral import suggest_preprocessing
+        from spectra_sherpa.app.services.tools.builtin.spectral import suggest_preprocessing
 
         result = suggest_preprocessing()
         assert result["technique"] == "generic"
         assert len(result["recommended_steps"]) > 0
 
     def test_suggest_preprocessing_with_goal(self):
-        from app.services.tools.builtin.spectral import suggest_preprocessing
+        from spectra_sherpa.app.services.tools.builtin.spectral import suggest_preprocessing
 
         result = suggest_preprocessing(technique="NIR", goal="classification")
         steps = [s["step"] for s in result["recommended_steps"]]
@@ -454,7 +454,7 @@ class TestBuiltinWorkflowTools:
     """Verify built-in workflow tools."""
 
     def test_validate_workflow_valid(self):
-        from app.services.tools.builtin.workflow import validate_workflow
+        from spectra_sherpa.app.services.tools.builtin.workflow import validate_workflow
 
         nodes = [
             {"node_id": "n1", "node_type": "data.source", "parameters": {}},
@@ -466,7 +466,7 @@ class TestBuiltinWorkflowTools:
         assert result["valid"] is True
 
     def test_validate_workflow_unknown_node_type(self):
-        from app.services.tools.builtin.workflow import validate_workflow
+        from spectra_sherpa.app.services.tools.builtin.workflow import validate_workflow
 
         nodes = [
             {"node_id": "n1", "node_type": "fake.node"},
@@ -476,7 +476,7 @@ class TestBuiltinWorkflowTools:
         assert any("Unknown node type" in i["message"] for i in result["issues"])
 
     def test_validate_workflow_dangling_edge(self):
-        from app.services.tools.builtin.workflow import validate_workflow
+        from spectra_sherpa.app.services.tools.builtin.workflow import validate_workflow
 
         nodes = [
             {"node_id": "n1", "node_type": "data.source"},
@@ -488,7 +488,7 @@ class TestBuiltinWorkflowTools:
         assert any("not in node list" in i["message"] for i in result["issues"])
 
     def test_validate_workflow_cycle(self):
-        from app.services.tools.builtin.workflow import validate_workflow
+        from spectra_sherpa.app.services.tools.builtin.workflow import validate_workflow
 
         nodes = [
             {"node_id": "n1", "node_type": "data.source"},
@@ -514,7 +514,7 @@ class TestGlobalRegistry:
 
     def test_builtin_tools_registered(self):
         # Import triggers registration
-        import app.services.tools.builtin  # noqa: F401
+        import spectra_sherpa.app.services.tools.builtin  # noqa: F401
 
         expected = [
             "list_node_types",
@@ -610,7 +610,7 @@ class TestScopeFiltering:
         reg.register(defn, lambda: "secret")
 
         # No user
-        with patch("app.services.tools.executor.tool_registry", reg):
+        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg):
             result = await execute_tool(ToolInvocation(tool_name="admin_op"))
         assert result.success is False
         assert "admin" in result.error.lower()
@@ -619,7 +619,7 @@ class TestScopeFiltering:
         regular = MagicMock()
         regular.is_superuser = False
         ctx = ToolExecutionContext(user=regular)
-        with patch("app.services.tools.executor.tool_registry", reg):
+        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg):
             result = await execute_tool(ToolInvocation(tool_name="admin_op"), ctx)
         assert result.success is False
         assert "admin" in result.error.lower()
@@ -628,7 +628,7 @@ class TestScopeFiltering:
         admin = MagicMock()
         admin.is_superuser = True
         ctx = ToolExecutionContext(user=admin)
-        with patch("app.services.tools.executor.tool_registry", reg):
+        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg):
             result = await execute_tool(ToolInvocation(tool_name="admin_op"), ctx)
         assert result.success is True
         assert result.result == "secret"
@@ -640,7 +640,7 @@ class TestScopeFiltering:
         defn = ToolDefinition(name="llm_only", description="LLM only", scope=ToolScope.internal)
         reg.register(defn, lambda: "internal data")
 
-        with patch("app.services.tools.executor.tool_registry", reg):
+        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg):
             result = await execute_tool(ToolInvocation(tool_name="llm_only"))
         assert result.success is False
         assert "internal" in result.error.lower()
@@ -652,7 +652,7 @@ class TestScopeFiltering:
         defn = ToolDefinition(name="llm_tool", description="LLM tool", scope=ToolScope.internal)
         reg.register(defn, lambda: "llm result")
 
-        with patch("app.services.tools.executor.tool_registry", reg):
+        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg):
             result = await execute_tool(
                 ToolInvocation(tool_name="llm_tool"),
                 allow_internal=True,
@@ -683,7 +683,7 @@ class TestArgumentValidation:
         )
         reg.register(defn, lambda name: f"Hello {name}")
 
-        with patch("app.services.tools.executor.tool_registry", reg):
+        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg):
             result = await execute_tool(
                 ToolInvocation(tool_name="needs_args", arguments={}),
             )
@@ -704,7 +704,7 @@ class TestArgumentValidation:
         )
         reg.register(defn, lambda x=0: x)
 
-        with patch("app.services.tools.executor.tool_registry", reg):
+        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg):
             result = await execute_tool(
                 ToolInvocation(tool_name="strict_tool", arguments={"x": 1, "bogus": "bad"}),
             )
@@ -730,7 +730,7 @@ class TestArgumentValidation:
         )
         reg.register(defn, lambda a, b="default": {"a": a, "b": b})
 
-        with patch("app.services.tools.executor.tool_registry", reg):
+        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg):
             result = await execute_tool(
                 ToolInvocation(tool_name="ok_tool", arguments={"a": 5}),
             )
@@ -765,9 +765,9 @@ class TestPerUserEgress:
         async def deny_permission(*args, **kwargs):
             return False
 
-        with patch("app.services.tools.executor.tool_registry", reg), \
-             patch("app.core.security.is_egress_enabled", return_value=True), \
-             patch("app.core.security.check_egress_permission", side_effect=deny_permission):
+        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg), \
+             patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True), \
+             patch("spectra_sherpa.app.core.security.check_egress_permission", side_effect=deny_permission):
             result = await execute_tool(
                 ToolInvocation(tool_name="cloud_tool"), ctx
             )
@@ -793,9 +793,9 @@ class TestPerUserEgress:
         async def allow_permission(*args, **kwargs):
             return True
 
-        with patch("app.services.tools.executor.tool_registry", reg), \
-             patch("app.core.security.is_egress_enabled", return_value=True), \
-             patch("app.core.security.check_egress_permission", side_effect=allow_permission):
+        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg), \
+             patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True), \
+             patch("spectra_sherpa.app.core.security.check_egress_permission", side_effect=allow_permission):
             result = await execute_tool(
                 ToolInvocation(tool_name="cloud_tool_ok"), ctx
             )
@@ -816,8 +816,8 @@ class TestPerUserEgress:
 
         ctx = ToolExecutionContext(session=MagicMock(), user=MagicMock())
 
-        with patch("app.services.tools.executor.tool_registry", reg), \
-             patch("app.core.security.is_egress_enabled", return_value=False):
+        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg), \
+             patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=False):
             result = await execute_tool(
                 ToolInvocation(tool_name="net_perm_tool"), ctx
             )
@@ -837,7 +837,7 @@ class TestPluginTrustBoundaries:
 
     def test_plugin_internal_scope_forced_to_public(self):
         """Plugins cannot register internal-scope tools — forced to public."""
-        from app.services.tools.schemas import ToolOrigin
+        from spectra_sherpa.app.services.tools.schemas import ToolOrigin
 
         reg = ToolRegistry()
         defn = ToolDefinition(
@@ -854,7 +854,7 @@ class TestPluginTrustBoundaries:
 
     def test_plugin_requires_user_forced_true(self):
         """Plugin tools always have requires_user=True regardless of declaration."""
-        from app.services.tools.schemas import ToolOrigin
+        from spectra_sherpa.app.services.tools.schemas import ToolOrigin
 
         reg = ToolRegistry()
         defn = ToolDefinition(
@@ -871,7 +871,7 @@ class TestPluginTrustBoundaries:
 
     def test_plugin_admin_scope_kept(self):
         """Plugin tools can use admin scope (only internal is blocked)."""
-        from app.services.tools.schemas import ToolOrigin
+        from spectra_sherpa.app.services.tools.schemas import ToolOrigin
 
         reg = ToolRegistry()
         defn = ToolDefinition(
@@ -887,17 +887,17 @@ class TestPluginTrustBoundaries:
 
     def test_builtin_origin_preserved(self):
         """Built-in tools registered via @register_tool retain origin=builtin."""
-        import app.services.tools.builtin  # noqa: F401
+        import spectra_sherpa.app.services.tools.builtin  # noqa: F401
 
         entry = tool_registry.get("list_node_types")
         assert entry is not None
-        from app.services.tools.schemas import ToolOrigin
+        from spectra_sherpa.app.services.tools.schemas import ToolOrigin
         assert entry[0].origin == ToolOrigin.builtin
 
     def test_register_plugin_tool_sets_origin(self):
         """register_plugin_tool() forces origin=plugin."""
-        from app.services.tools.registry import register_plugin_tool
-        from app.services.tools.schemas import ToolOrigin
+        from spectra_sherpa.app.services.tools.registry import register_plugin_tool
+        from spectra_sherpa.app.services.tools.schemas import ToolOrigin
 
         # Use a fresh registry to avoid polluting global
         reg = ToolRegistry()
@@ -907,7 +907,7 @@ class TestPluginTrustBoundaries:
             origin=ToolOrigin.builtin,  # caller tries builtin
         )
         # Patch the global so register_plugin_tool writes to our test registry
-        with patch("app.services.tools.registry.tool_registry", reg):
+        with patch("spectra_sherpa.app.services.tools.registry.tool_registry", reg):
             register_plugin_tool(defn, lambda: "ext")
 
         entry = reg.get("ext_tool")
@@ -918,7 +918,7 @@ class TestPluginTrustBoundaries:
     @pytest.mark.asyncio
     async def test_plugin_tool_requires_user_context(self):
         """Plugin tool with requires_user=True fails without user in context."""
-        from app.services.tools.schemas import ToolOrigin
+        from spectra_sherpa.app.services.tools.schemas import ToolOrigin
 
         reg = ToolRegistry()
         defn = ToolDefinition(
@@ -930,7 +930,7 @@ class TestPluginTrustBoundaries:
         reg.register(defn, lambda user=None: f"hi {user}")
 
         # No context → requires_user was forced True → should fail
-        with patch("app.services.tools.executor.tool_registry", reg):
+        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg):
             result = await execute_tool(
                 ToolInvocation(tool_name="user_plugin"),
             )
@@ -939,7 +939,7 @@ class TestPluginTrustBoundaries:
 
     def test_plugin_context_forces_origin(self):
         """Tools registered inside plugin_context() get origin=plugin."""
-        from app.services.tools.schemas import ToolOrigin
+        from spectra_sherpa.app.services.tools.schemas import ToolOrigin
 
         reg = ToolRegistry()
         # Register via @register_tool-style (declares origin=builtin)
@@ -958,7 +958,7 @@ class TestPluginTrustBoundaries:
 
     def test_plugin_context_does_not_affect_outside(self):
         """Tools registered outside plugin_context() keep their origin."""
-        from app.services.tools.schemas import ToolOrigin
+        from spectra_sherpa.app.services.tools.schemas import ToolOrigin
 
         reg = ToolRegistry()
         defn_inside = ToolDefinition(name="inside", description="Inside ctx", origin=ToolOrigin.builtin)
@@ -975,7 +975,7 @@ class TestPluginTrustBoundaries:
 
     def test_plugin_context_scope_and_user_enforced(self):
         """plugin_context() + scope=internal → forced public + requires_user."""
-        from app.services.tools.schemas import ToolOrigin
+        from spectra_sherpa.app.services.tools.schemas import ToolOrigin
 
         reg = ToolRegistry()
         defn = ToolDefinition(

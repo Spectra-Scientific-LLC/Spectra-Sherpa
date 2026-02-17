@@ -13,11 +13,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_current_user, get_session
-from app.models.execution_run import ExecutionRun
-from app.models.user import User
-from app.models.workflow import Workflow
-from app.schemas.execution_runs import (
+from spectra_sherpa.app.api.deps import get_current_user, get_session
+from spectra_sherpa.app.models.execution_run import ExecutionRun
+from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.models.workflow import Workflow
+from spectra_sherpa.app.schemas.execution_runs import (
     CompareRunsRequest,
     ComparisonResponse,
     ExecutionRunList,

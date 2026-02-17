@@ -8,11 +8,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 import numpy as np
-from app.lib.scp_compat import NDDataset
-from app.lib.analysis_dataset import AnalysisDataset
+from spectra_sherpa.app.lib.scp_compat import NDDataset
+from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
 
 from ..node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
-from app.services.dag.meta_helpers import safe_get_coord
+from spectra_sherpa.app.services.dag.meta_helpers import safe_get_coord
 
 
 @register_node

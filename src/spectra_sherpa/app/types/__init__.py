@@ -7,7 +7,7 @@ this registry.
 
 Usage::
 
-    from app.types import type_registry
+    from spectra_sherpa.app.types import type_registry
 
     td = type_registry.resolve("spectrasherpa://types/SpectralDataset/1.0")
     ok, reason = type_registry.is_compatible(source_ref, target_ref)

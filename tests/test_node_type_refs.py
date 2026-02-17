@@ -13,9 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from app.types.registry import TypeRegistry
-from app.services.dag.node_base import node_registry, NodeMetadata, PortMetadata
-from app.services.dag.node_meta_validator import (
+from spectra_sherpa.app.types.registry import TypeRegistry
+from spectra_sherpa.app.services.dag.node_base import node_registry, NodeMetadata, PortMetadata
+from spectra_sherpa.app.services.dag.node_meta_validator import (
     validate_all_registered_node_meta,
     validate_node_meta,
 )
@@ -26,21 +26,21 @@ TYPES_DIR = Path(__file__).resolve().parent.parent / "src" / "spectra_sherpa" / 
 @pytest.fixture(autouse=True, scope="module")
 def _setup_registries():
     """Load type registry and import all node modules to populate node_registry."""
-    from app.types import type_registry
+    from spectra_sherpa.app.types import type_registry
     if not type_registry.is_loaded:
         type_registry.load(TYPES_DIR)
 
     # Import all node modules to trigger @register_node decorators
-    import app.services.dag.nodes.preprocessing  # noqa: F401
-    import app.services.dag.nodes.modeling  # noqa: F401
-    import app.services.dag.nodes.classification  # noqa: F401
-    import app.services.dag.nodes.data  # noqa: F401
-    import app.services.dag.nodes.output  # noqa: F401
-    import app.services.dag.nodes.diagnostics  # noqa: F401
-    import app.services.dag.nodes.blend  # noqa: F401
-    import app.services.dag.nodes.cloud  # noqa: F401
-    import app.services.dag.nodes.custom  # noqa: F401
-    import app.services.dag.nodes.time_series  # noqa: F401
+    import spectra_sherpa.app.services.dag.nodes.preprocessing  # noqa: F401
+    import spectra_sherpa.app.services.dag.nodes.modeling  # noqa: F401
+    import spectra_sherpa.app.services.dag.nodes.classification  # noqa: F401
+    import spectra_sherpa.app.services.dag.nodes.data  # noqa: F401
+    import spectra_sherpa.app.services.dag.nodes.output  # noqa: F401
+    import spectra_sherpa.app.services.dag.nodes.diagnostics  # noqa: F401
+    import spectra_sherpa.app.services.dag.nodes.blend  # noqa: F401
+    import spectra_sherpa.app.services.dag.nodes.cloud  # noqa: F401
+    import spectra_sherpa.app.services.dag.nodes.custom  # noqa: F401
+    import spectra_sherpa.app.services.dag.nodes.time_series  # noqa: F401
 
 
 class TestAllNodeTypeRefs:
@@ -51,7 +51,7 @@ class TestAllNodeTypeRefs:
         assert len(nodes) > 0, "No nodes registered — node imports may have failed"
 
     def test_all_input_ports_resolve(self):
-        from app.types import type_registry
+        from spectra_sherpa.app.types import type_registry
 
         errors: list[str] = []
         for meta in node_registry.list_nodes():
@@ -71,7 +71,7 @@ class TestAllNodeTypeRefs:
             )
 
     def test_all_output_ports_resolve(self):
-        from app.types import type_registry
+        from spectra_sherpa.app.types import type_registry
 
         errors: list[str] = []
         for meta in node_registry.list_nodes():
@@ -92,7 +92,7 @@ class TestAllNodeTypeRefs:
 
     def test_all_ports_have_valid_category(self):
         """Every port's type_ref should resolve to a type with a known category."""
-        from app.types import type_registry
+        from spectra_sherpa.app.types import type_registry
 
         valid_categories = {"dataset", "array", "number", "target", "model", "visualization", "config"}
         errors: list[str] = []

@@ -22,11 +22,11 @@ from typing import Any, List, Dict, Optional
 import numpy as np
 
 logger = logging.getLogger(__name__)
-from app.lib.scp_compat import scp, NDDataset
-from app.lib.analysis_dataset import AnalysisDataset, AxisInfo
+from spectra_sherpa.app.lib.scp_compat import scp, NDDataset
+from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo
 
 from ..node_base import Node, NodeMetadata, NodeParameter, register_node
-from app.models.spectra_meta import (
+from spectra_sherpa.app.models.spectra_meta import (
     SpectraMeta,
     SpeciesInfo,
     ConcentrationProfile,
@@ -36,7 +36,7 @@ from app.models.spectra_meta import (
     PhysicalState,
     ConcentrationUnit,
 )
-from app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
+from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
 
 
 def generate_concentration_curve(

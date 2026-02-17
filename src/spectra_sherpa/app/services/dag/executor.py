@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from app.core.config import settings
+from spectra_sherpa.app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +26,9 @@ from .node_base import Node, NodeResult, NodeStatus, node_registry
 from .meta_helpers import safe_get_coord
 from .graph_utils import Edge as _Edge, build_dependency_map, topological_sort
 
-from app.lib.scp_compat import NDDataset, HAS_SCP
-from app.lib.analysis_dataset import AnalysisDataset
-from app.types.registry import parse_type_ref
+from spectra_sherpa.app.lib.scp_compat import NDDataset, HAS_SCP
+from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
+from spectra_sherpa.app.types.registry import parse_type_ref
 HAS_NDDATASET = HAS_SCP
 
 
@@ -48,7 +48,7 @@ def _category_from_type_ref(type_ref: str) -> str:
     falls back to ``"dataset"``.
     """
     try:
-        from app.types import type_registry
+        from spectra_sherpa.app.types import type_registry
         td = type_registry.resolve(type_ref)
         return td.category
     except Exception:
@@ -60,7 +60,7 @@ SpectralResult = None
 
 # Import unit validation from app/lib
 try:
-    from app.lib.spectral.validators import validate_and_normalize_units
+    from spectra_sherpa.app.lib.spectral.validators import validate_and_normalize_units
     HAS_UNIT_VALIDATION = True
 except ImportError:
     validate_and_normalize_units = None
@@ -279,10 +279,10 @@ def _run_node_in_worker(
     # Import node modules to populate the registry in the worker process.
     # These are guarded at module scope in the main process by conftest /
     # app startup, but spawned workers start fresh.
-    import app.services.dag.nodes.preprocessing  # noqa: F401
-    import app.services.dag.nodes.modeling  # noqa: F401
+    import spectra_sherpa.app.services.dag.nodes.preprocessing  # noqa: F401
+    import spectra_sherpa.app.services.dag.nodes.modeling  # noqa: F401
     try:
-        import app.services.dag.nodes.output  # noqa: F401
+        import spectra_sherpa.app.services.dag.nodes.output  # noqa: F401
     except Exception:
         pass  # output nodes are rarely offloaded
 
@@ -604,7 +604,7 @@ class DAGExecutor:
         contains only numpy arrays and plain Python types.
         """
         if HAS_SCP and isinstance(value, NDDataset):
-            from app.lib.scp_compat import from_nddataset
+            from spectra_sherpa.app.lib.scp_compat import from_nddataset
             return from_nddataset(value)
         return value
 

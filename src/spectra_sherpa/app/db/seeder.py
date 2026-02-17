@@ -2,11 +2,11 @@ import logging
 import shutil
 from pathlib import Path
 
-from app.core.config import settings
-from app.db.session import async_session
-from app.models.experiment import Experiment
-from app.models.user import User
-from app.services.experiments import create_experiment, add_experiment_file, experiment_dir
+from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.app.db.session import async_session
+from spectra_sherpa.app.models.experiment import Experiment
+from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.services.experiments import create_experiment, add_experiment_file, experiment_dir
 
 logger = logging.getLogger(__name__)
 

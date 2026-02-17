@@ -13,12 +13,12 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from app.services.dag.graph_utils import Edge, topological_sort, build_input_map
-from app.services.dag.node_base import node_registry
-from app.lib.scp_compat import HAS_SCP
+from spectra_sherpa.app.services.dag.graph_utils import Edge, topological_sort, build_input_map
+from spectra_sherpa.app.services.dag.node_base import node_registry
+from spectra_sherpa.app.lib.scp_compat import HAS_SCP
 
 if TYPE_CHECKING:
-    from app.models.workflow import Workflow
+    from spectra_sherpa.app.models.workflow import Workflow
 
 logger = logging.getLogger(__name__)
 

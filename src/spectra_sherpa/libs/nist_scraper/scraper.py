@@ -20,7 +20,7 @@ class NISTScraper:
 
     def _check_egress(self) -> None:
         """Check if egress is enabled before making network calls."""
-        from app.core.security import is_egress_enabled
+        from spectra_sherpa.app.core.security import is_egress_enabled
         if not is_egress_enabled():
             raise EgressDisabledError(
                 "Network egress is disabled. Enable EGRESS_ENABLED=true or set APP_MODE=hybrid "

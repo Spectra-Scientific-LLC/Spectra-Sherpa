@@ -13,43 +13,104 @@ and long-term stewardship.
 3. Sign the Contributor License Agreement in `CLA.md` before any non-trivial
    contribution is merged.
 
+## Development Setup
+
+### Prerequisites
+
+- Python 3.11+
+- Node.js 22+ (for frontend)
+- [Poetry](https://python-poetry.org/) (`pip install poetry`)
+
+### Backend
+
+```bash
+git clone https://github.com/Spectra-Scientific-LLC/spectrasherpa.git
+cd spectrasherpa
+poetry install --with dev            # core + dev tools (black, ruff, pytest)
+poetry install --with dev -E scp     # optional: SpectroChemPy spectral nodes
+```
+
+### Frontend
+
+```bash
+cd frontend && npm ci
+```
+
+### Quick Start
+
+```bash
+make dev    # starts backend (:8000) + frontend (:5173) — Ctrl+C stops both
+```
+
+Or run them separately:
+
+```bash
+# Terminal 1: backend
+poetry run uvicorn spectra_sherpa.app.main:create_app --factory --reload --port 8000
+
+# Terminal 2: frontend
+cd frontend && npm run dev
+```
+
+### Running Tests
+
+```bash
+make test          # backend pytest suite
+make test-all      # backend + frontend type-check
+```
+
+### Environment
+
+Copy `.env.example` to `.env`. The defaults work for local development with no
+changes needed. See `.env.enterprise.example` for hybrid/enterprise settings.
+
+> **Note:** Enterprise enforcement (password gating, session expiry, strict CORS,
+> SQLite prohibition) is implemented in `spectra-server`, not in this repository.
+> This OSS codebase provides mode awareness, rate limiting, and the Demo Contract
+> (`DemoContract` in `config.py`) for capability-based feature gating.
+
 ## Contribution Workflow
 
 1. Fork the repository and create a topic branch.
 2. Make focused changes with tests.
-3. Run checks locally.
+3. Run checks locally (`make test`, `make lint`).
 4. Open a pull request with:
    - problem statement
    - solution summary
    - test evidence
    - migration notes (if any)
 
-## Development Setup
+## Pull Request Checklist
 
-```bash
-git clone https://github.com/Spectra-Scientific-LLC/spectrasherpa.git
-cd spectrasherpa
-pip install -e ".[scp,sherpa]"
-```
+Before submitting:
 
-For frontend development:
+- [ ] Tests pass locally (`make test`)
+- [ ] ESLint passes (`cd frontend && npm run lint`)
+- [ ] If UI changed: `cd frontend && npm run build` and commit updated static assets
+- [ ] If new env var: added to `.env.example` (and `.env.enterprise.example` if enterprise-only)
+- [ ] If new DAG node: registered via `@register_node` decorator with `NodeMetadata`
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+## Code Style
 
-## Tests
+### Backend
 
-Run the relevant test suites for your change:
+- **Formatter:** black (line-length 120) — config in `pyproject.toml`
+- **Linter:** ruff (E, F, I rule sets) — config in `pyproject.toml`
+- Imports: always use `from spectra_sherpa.app.X import Y` (never bare `from app.`)
+- Async: use `async def` for all DB and I/O operations
+- Format locally: `make fmt`
 
-```bash
-pytest -q
-```
+> **Note:** The backend has not yet been bulk-formatted with black/ruff. A dedicated
+> format-only PR will establish the baseline. Until then, `make fmt` is available
+> locally but not enforced in CI.
 
-If your change affects UI behavior, include browser-level verification notes in
-the PR description.
+### Frontend
+
+- **Formatter:** Prettier (see `frontend/.prettierrc`)
+- **Linter:** ESLint with Vue + TypeScript rules (see `frontend/eslint.config.js`)
+- Components: Vue 3 Composition API with `<script setup lang="ts">`
+- State: Pinia stores (never component-local state for shared data)
+- See `frontend/README.md` for architecture details
 
 ## Coding Expectations
 

@@ -12,15 +12,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_session
-from app.models.data_egress import (
+from spectra_sherpa.app.api.deps import get_current_user, get_session
+from spectra_sherpa.app.models.data_egress import (
     DataEgressPermission as DataEgressPermissionModel,
     UserEgressDefaults as UserEgressDefaultsModel,
     DataType,
     EgressDestination,
 )
-from app.models.user import User
-from app.schemas.data_egress import (
+from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.schemas.data_egress import (
     DataEgressPermission,
     DataEgressPermissionCreate,
     DataEgressPermissionUpdate,

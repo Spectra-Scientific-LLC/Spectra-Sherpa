@@ -4,10 +4,10 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Request
 
-from app.core.config import settings, app_config
-from app.core.logging import log_buffer, RemoteAuditHandler
-from app.core.security import _is_loopback, get_client_host
-from app.schemas.logs import LogResponse
+from spectra_sherpa.app.core.config import settings, app_config
+from spectra_sherpa.app.core.logging import log_buffer, RemoteAuditHandler
+from spectra_sherpa.app.core.security import _is_loopback, get_client_host
+from spectra_sherpa.app.schemas.logs import LogResponse
 
 router = APIRouter()
 

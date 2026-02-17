@@ -16,7 +16,7 @@ from typing import Optional, List, Dict, Any, Literal, TYPE_CHECKING
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 if TYPE_CHECKING:
-    from app.lib.scp_compat import NDDataset
+    from spectra_sherpa.app.lib.scp_compat import NDDataset
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -11,7 +11,7 @@ import pytest
 from pathlib import Path
 import spectrochempy as scp
 
-from app.services.dag.nodes.data import DataSourceNode
+from spectra_sherpa.app.services.dag.nodes.data import DataSourceNode
 
 
 # Reference file metadata (expected properties)
@@ -32,10 +32,10 @@ GOLDEN_FILES = {
         "min_size": 1,
         "has_x_axis": True,
     },
-    "galacticdata/P350.SPC": {
+    "galacticdata/HOLMIUM.SPC": {
         "format": ".spc",
         "reader": "read_spc",
-        "expected_ndim": 1,  # 1D spectrum
+        "expected_ndim": 2,  # Multi-row spectrum
         "min_size": 100,  # At least 100 data points
         "has_x_axis": True,
     },
@@ -69,7 +69,7 @@ class TestGoldenDataLoading:
 
     def test_reader_mapping_consistency(self):
         """Test that reader mapping is consistent across all code paths."""
-        from app.core.config import get_reader_for_extension, EXTENSION_READER_MAP
+        from spectra_sherpa.app.core.config import get_reader_for_extension, EXTENSION_READER_MAP
 
         # Verify all expected readers are mapped
         assert ".spa" in EXTENSION_READER_MAP
@@ -168,7 +168,7 @@ class TestGoldenDataLoading:
 
     def test_case_insensitive_loading(self):
         """Test that files with different capitalizations load correctly."""
-        from app.core.config import get_reader_for_extension
+        from spectra_sherpa.app.core.config import get_reader_for_extension
 
         # Test various capitalizations
         extensions = [".spa", ".SPA", ".Spa", ".spg", ".SPG", ".Spg", ".csv", ".CSV"]
@@ -201,7 +201,7 @@ class TestGoldenDataLoading:
 
     def test_unsupported_extension_error(self):
         """Test that unsupported extensions raise clear errors."""
-        from app.core.config import get_reader_for_extension
+        from spectra_sherpa.app.core.config import get_reader_for_extension
 
         with pytest.raises(ValueError) as exc_info:
             get_reader_for_extension(".xyz")
@@ -212,7 +212,7 @@ class TestGoldenDataLoading:
 
     def test_backward_compat_dat_warning(self):
         """Test that .dat files trigger backward compatibility warning."""
-        from app.core.config import get_reader_for_extension
+        from spectra_sherpa.app.core.config import get_reader_for_extension
         import warnings
 
         # .dat should fall back to generic read with warning

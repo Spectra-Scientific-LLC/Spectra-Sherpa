@@ -12,7 +12,7 @@ Key Design Principles:
 
 Usage:
     from spectrochempy import NDDataset
-    from app.models.spectra_meta import SpectraMeta, get_spectra_meta, set_spectra_meta
+    from spectra_sherpa.app.models.spectra_meta import SpectraMeta, get_spectra_meta, set_spectra_meta
 
     # Read metadata
     meta = get_spectra_meta(dataset)
@@ -608,7 +608,7 @@ class SpectraMeta(BaseModel):
 
     Example:
         >>> from spectrochempy import NDDataset
-        >>> from app.models.spectra_meta import SpectraMeta, SourceType, DataProvenance
+        >>> from spectra_sherpa.app.models.spectra_meta import SpectraMeta, SourceType, DataProvenance
         >>>
         >>> # Create metadata
         >>> meta = SpectraMeta(

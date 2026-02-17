@@ -14,9 +14,9 @@ from __future__ import annotations
 
 import pytest
 
-from app.lib.sklearn_info import SKLEARN_CATALOG, get_sklearn_dataset_info
-from app.lib.scp_catalog import SCP_CATALOG, get_scp_dataset_info
-from app.lib.eigenvector import DATASET_CATALOG, get_dataset_info
+from spectra_sherpa.app.lib.sklearn_info import SKLEARN_CATALOG, get_sklearn_dataset_info
+from spectra_sherpa.app.lib.scp_catalog import SCP_CATALOG, get_scp_dataset_info
+from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG, get_dataset_info
 
 
 # ---------------------------------------------------------------------------

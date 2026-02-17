@@ -36,10 +36,10 @@ def _configure_writable_runtime_dirs() -> None:
 
 _configure_writable_runtime_dirs()
 
-from app.db.base import Base
-from app.api.deps import get_session
-from app.main import app
-from app.models.user import User
+from spectra_sherpa.app.db.base import Base
+from spectra_sherpa.app.api.deps import get_session
+from spectra_sherpa.app.main import app
+from spectra_sherpa.app.models.user import User
 
 
 @pytest.fixture
@@ -98,3 +98,30 @@ async def client(test_session: AsyncSession) -> AsyncGenerator[AsyncClient, None
         yield ac
 
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiter_state() -> None:
+    """Reset file-backed limiter state between tests to avoid flaky 429s.
+
+    Rate limiters persist counters to JSON files under ``settings.data_dir``.
+    Without cleanup, repeated runs can inherit prior state from manual
+    development sessions or earlier tests.
+    """
+    from spectra_sherpa.app.core.config import settings
+    from spectra_sherpa.app.core.demo_limits import reset_limiters
+
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    for name in (
+        "auth_rate_login",
+        "auth_rate_register",
+        "execution_rate_limits",
+        "demo_execution_limits",
+        "demo_sherpa_limits",
+    ):
+        (settings.data_dir / f"{name}.json").write_text("{}")
+
+    # demo_limits caches file-backed limiters; clear cached instances.
+    reset_limiters()
+    yield
+    reset_limiters()

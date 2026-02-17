@@ -12,10 +12,10 @@ from typing import Any, Optional
 import numpy as np
 
 logger = logging.getLogger(__name__)
-from app.lib.scp_compat import scp, NDDataset
-from app.lib.analysis_dataset import AnalysisDataset, AxisInfo
+from spectra_sherpa.app.lib.scp_compat import scp, NDDataset
+from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo
 
-from app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
+from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
 
 from ..node_base import Node, NodeMetadata, NodeParameter, register_node
 

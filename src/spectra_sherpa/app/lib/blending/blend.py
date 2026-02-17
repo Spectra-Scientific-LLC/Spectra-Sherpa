@@ -28,7 +28,7 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from app.lib.scp_compat import NDDataset
+    from spectra_sherpa.app.lib.scp_compat import NDDataset
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -401,7 +401,7 @@ def blend_datasets(
     NDDataset
         Blended mixture with ground truth in meta["blend_ground_truth"]
     """
-    from app.lib.scp_compat import scp, require_scp
+    from spectra_sherpa.app.lib.scp_compat import scp, require_scp
     require_scp("Spectral blending")
     from ..spectral.dataset import create_spectral_dataset, SpectralUnit
 

@@ -19,8 +19,7 @@ This guide walks you through using the new DAG-based Analysis workflow system fo
 ### 1. Install Dependencies
 
 ```bash
-cd src/spectra_sherpa
-/Users/fe2val/miniforge3/envs/scpy/bin/poetry install
+poetry install
 ```
 
 ### 2. Start Backend Server
@@ -29,7 +28,7 @@ cd src/spectra_sherpa
 > No manual migration step is needed.
 
 ```bash
-/Users/fe2val/miniforge3/envs/scpy/bin/poetry run uvicorn app.main:app --reload --port 8000
+poetry run uvicorn spectra_sherpa.app.main:create_app --factory --reload --port 8000
 ```
 
 **Verify**: Visit http://localhost:8000/docs to see the API documentation
@@ -168,8 +167,7 @@ curl -X POST http://localhost:8000/api/v1/workflows \
 ### Option C: Via Python Test Script (Immediate)
 
 ```bash
-cd src/spectra_sherpa
-/Users/fe2val/miniforge3/envs/scpy/bin/python test_workflow_executor.py
+python test_workflow_executor.py
 ```
 
 **Expected Output**:
@@ -369,20 +367,19 @@ curl http://localhost:8000/api/v1/workflows/nodes/library
 ### Test Individual Node
 
 ```bash
-cd src/spectra_sherpa
-/Users/fe2val/miniforge3/envs/scpy/bin/python test_pca_node.py
+python test_pca_node.py
 ```
 
 ### Test Node Registry
 
 ```bash
-/Users/fe2val/miniforge3/envs/scpy/bin/python test_node_registry.py
+python test_node_registry.py
 ```
 
 ### Test Full Workflow
 
 ```bash
-/Users/fe2val/miniforge3/envs/scpy/bin/python test_workflow_executor.py
+python test_workflow_executor.py
 ```
 
 ---
@@ -396,14 +393,14 @@ cd src/spectra_sherpa
 lsof -i :8000
 
 # Use different port
-/Users/fe2val/miniforge3/envs/scpy/bin/poetry run uvicorn app.main:app --reload --port 8001
+poetry run uvicorn spectra_sherpa.app.main:create_app --factory --reload --port 8001
 ```
 
 ### SpectroChemPy errors
 
 ```bash
 # Verify SpectroChemPy is installed
-/Users/fe2val/miniforge3/envs/scpy/bin/python -c "import spectrochempy as scp; print(scp.__version__)"
+python -c "import spectrochempy as scp; print(scp.__version__)"
 
 # Should output: 0.8.1
 ```

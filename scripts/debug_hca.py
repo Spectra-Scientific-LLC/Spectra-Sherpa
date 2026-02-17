@@ -1,9 +1,15 @@
+import sys
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parents[1]
+if str(BASE_DIR) not in sys.path:
+    sys.path.append(str(BASE_DIR))
 
 import numpy as np
 import asyncio
 import json
 import traceback
-from app.services.dag.nodes.modeling import HCANode
+from spectra_sherpa.app.services.dag.nodes.modeling import HCANode
 from spectrochempy import NDDataset
 import spectrochempy as scp
 

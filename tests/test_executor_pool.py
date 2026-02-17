@@ -11,18 +11,18 @@ import numpy as np
 import pytest
 
 # Import node modules to trigger @register_node decorators
-import app.services.dag.nodes.data  # noqa: F401
-import app.services.dag.nodes.preprocessing  # noqa: F401
-import app.services.dag.nodes.modeling  # noqa: F401
+import spectra_sherpa.app.services.dag.nodes.data  # noqa: F401
+import spectra_sherpa.app.services.dag.nodes.preprocessing  # noqa: F401
+import spectra_sherpa.app.services.dag.nodes.modeling  # noqa: F401
 
-from app.services.dag.executor import (
+from spectra_sherpa.app.services.dag.executor import (
     DAGExecutor,
     WorkflowEdge,
     WorkflowNode,
     _run_node_in_worker,
     set_default_pool,
 )
-from app.services.dag.node_base import NodeResult
+from spectra_sherpa.app.services.dag.node_base import NodeResult
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +59,7 @@ class TestRunNodeInWorker:
 
     def test_snv_in_worker(self):
         """A preprocessing node can execute in a fresh worker context."""
-        from app.lib.analysis_dataset import AnalysisDataset
+        from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
 
         ds = AnalysisDataset(X=np.random.default_rng(42).normal(size=(10, 50)))
         result = _run_node_in_worker(
@@ -108,7 +108,7 @@ class TestSanitizeForPool:
     """Test NDDataset -> AnalysisDataset conversion before pool dispatch."""
 
     def test_analysis_dataset_passes_through(self):
-        from app.lib.analysis_dataset import AnalysisDataset
+        from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
 
         ds = AnalysisDataset(X=np.ones((3, 5)))
         result = DAGExecutor._sanitize_for_pool(ds)
@@ -120,10 +120,10 @@ class TestSanitizeForPool:
 
     def test_nddataset_converted(self):
         """If SCP is installed, NDDataset is converted to AnalysisDataset."""
-        from app.lib.scp_compat import HAS_SCP
+        from spectra_sherpa.app.lib.scp_compat import HAS_SCP
         if not HAS_SCP:
             pytest.skip("SpectroChemPy not installed")
-        from app.lib.analysis_dataset import AnalysisDataset
+        from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
         import spectrochempy as scp
 
         nds = scp.NDDataset(np.random.default_rng(0).normal(size=(5, 10)))
@@ -164,12 +164,20 @@ class TestDefaultPool:
 class TestPoolExecution:
     """Integration tests: run workflows with a real ProcessPoolExecutor."""
 
+    @staticmethod
+    def _create_pool(max_workers: int) -> ProcessPoolExecutor:
+        """Create a process pool or skip when the runtime lacks semaphore support."""
+        try:
+            return ProcessPoolExecutor(
+                max_workers=max_workers,
+                mp_context=multiprocessing.get_context("spawn"),
+            )
+        except (NotImplementedError, PermissionError, OSError) as exc:
+            pytest.skip(f"ProcessPoolExecutor unavailable in this environment: {exc}")
+
     @pytest.fixture()
     def pool(self):
-        p = ProcessPoolExecutor(
-            max_workers=2,
-            mp_context=multiprocessing.get_context("spawn"),
-        )
+        p = self._create_pool(max_workers=2)
         yield p
         p.shutdown(wait=True)
 
@@ -219,10 +227,7 @@ class TestPoolExecution:
     async def test_pool_fallback_on_broken_pool(self):
         """If the pool breaks, execution falls back to in-process."""
         # Use a pool that's already been shut down (simulates broken pool)
-        broken = ProcessPoolExecutor(
-            max_workers=1,
-            mp_context=multiprocessing.get_context("spawn"),
-        )
+        broken = self._create_pool(max_workers=1)
         broken.shutdown(wait=True)
 
         executor = DAGExecutor(process_pool=broken)

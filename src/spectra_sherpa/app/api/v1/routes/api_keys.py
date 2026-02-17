@@ -4,11 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_session
-from app.models.api_key import APIKey
-from app.models.user import User
-from app.schemas.api_key import APIKeyCreate, APIKeyInfo
-from app.services.encryption import encrypt_value
+from spectra_sherpa.app.api.deps import demo_guard, get_current_user, get_session
+from spectra_sherpa.app.models.api_key import APIKey
+from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.schemas.api_key import APIKeyCreate, APIKeyInfo
+from spectra_sherpa.app.services.encryption import encrypt_value
 
 router = APIRouter()
 
@@ -24,7 +24,7 @@ async def list_api_keys(
     return [APIKeyInfo(service_name=key.service_name, last_used_at=key.last_used_at) for key in keys]
 
 
-@router.post("/api-keys", status_code=201)
+@router.post("/api-keys", status_code=201, dependencies=[Depends(demo_guard("api_key_management"))])
 async def set_api_key(
     payload: APIKeyCreate,
     session: AsyncSession = Depends(get_session),
@@ -53,7 +53,7 @@ async def set_api_key(
     return {"status": "stored"}
 
 
-@router.delete("/api-keys/{service_name}", status_code=204)
+@router.delete("/api-keys/{service_name}", status_code=204, dependencies=[Depends(demo_guard("api_key_management"))])
 async def delete_api_key(
     service_name: str,
     session: AsyncSession = Depends(get_session),

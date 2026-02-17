@@ -29,7 +29,7 @@ except ImportError:
     HAS_PLOTLY = False
     go = None
 
-from app.lib.scp_compat import NDDataset, HAS_SCP
+from spectra_sherpa.app.lib.scp_compat import NDDataset, HAS_SCP
 
 
 def check_plotly() -> None:

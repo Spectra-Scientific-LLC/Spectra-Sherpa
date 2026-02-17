@@ -335,7 +335,7 @@ class Node(ABC):
             self.status = NodeStatus.RUNNING
             # Per-node SCP gate (replaces former blanket _SCP_CATEGORIES check)
             if self.metadata and self.metadata.requires_scp:
-                from app.lib.scp_compat import HAS_SCP
+                from spectra_sherpa.app.lib.scp_compat import HAS_SCP
                 if not HAS_SCP:
                     raise ImportError(
                         f"{self.metadata.label} requires SpectroChemPy. "

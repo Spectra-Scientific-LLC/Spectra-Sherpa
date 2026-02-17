@@ -4,10 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_session
-from app.models.llm_config import LLMConfig
-from app.models.user import User
-from app.schemas.llm_config import LLMConfigCreate, LLMConfigResponse, LLMConfigUpdate
+from spectra_sherpa.app.api.deps import demo_guard, get_current_user, get_session
+from spectra_sherpa.app.models.llm_config import LLMConfig
+from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.schemas.llm_config import LLMConfigCreate, LLMConfigResponse, LLMConfigUpdate
 
 router = APIRouter()
 
@@ -27,7 +27,7 @@ async def get_llm_config(
     return LLMConfigResponse.model_validate(config)
 
 
-@router.post("/llm-config", response_model=LLMConfigResponse, status_code=201)
+@router.post("/llm-config", response_model=LLMConfigResponse, status_code=201, dependencies=[Depends(demo_guard("llm_config"))])
 async def create_or_update_llm_config(
     payload: LLMConfigCreate,
     session: AsyncSession = Depends(get_session),
@@ -61,7 +61,7 @@ async def create_or_update_llm_config(
     return LLMConfigResponse.model_validate(config)
 
 
-@router.patch("/llm-config", response_model=LLMConfigResponse)
+@router.patch("/llm-config", response_model=LLMConfigResponse, dependencies=[Depends(demo_guard("llm_config"))])
 async def update_llm_config(
     payload: LLMConfigUpdate,
     session: AsyncSession = Depends(get_session),
@@ -91,7 +91,7 @@ async def update_llm_config(
     return LLMConfigResponse.model_validate(config)
 
 
-@router.delete("/llm-config", status_code=204)
+@router.delete("/llm-config", status_code=204, dependencies=[Depends(demo_guard("llm_config"))])
 async def delete_llm_config(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),

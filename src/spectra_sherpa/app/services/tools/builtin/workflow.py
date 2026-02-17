@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from app.services.tools.registry import register_tool
-from app.services.tools.schemas import ToolCategory
+from spectra_sherpa.app.services.tools.registry import register_tool
+from spectra_sherpa.app.services.tools.schemas import ToolCategory
 
 
 # ---------------------------------------------------------------------------
@@ -43,7 +43,7 @@ async def get_workflow_summary(
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
 
-    from app.models.workflow import Workflow
+    from spectra_sherpa.app.models.workflow import Workflow
 
     result = await session.execute(
         select(Workflow)
@@ -130,7 +130,7 @@ def validate_workflow(
     edges: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Run structural validation on a workflow graph."""
-    from app.services.dag.node_base import node_registry
+    from spectra_sherpa.app.services.dag.node_base import node_registry
 
     issues: list[dict[str, str]] = []
     node_ids = {n["node_id"] for n in nodes}
@@ -266,7 +266,7 @@ async def list_workflows(
     """Return a compact list of user's workflows."""
     from sqlalchemy import func, select
 
-    from app.models.workflow import Workflow, WorkflowNode
+    from spectra_sherpa.app.models.workflow import Workflow, WorkflowNode
 
     # Subquery for node count
     node_count = (

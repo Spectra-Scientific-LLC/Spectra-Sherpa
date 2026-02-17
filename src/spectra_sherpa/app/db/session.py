@@ -5,7 +5,7 @@ from typing import AsyncGenerator
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.core.config import settings
+from spectra_sherpa.app.core.config import settings
 
 _is_sqlite = settings.database_url.startswith("sqlite")
 

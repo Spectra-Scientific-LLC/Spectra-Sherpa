@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional, Literal, Dict
 
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from spectra_sherpa._paths import (
     get_project_root,
@@ -187,7 +187,7 @@ settings = Settings()
 
 
 # ============================================================================
-# Multi-Mode Configuration (Local, Hybrid, Demo)
+# Multi-Mode Configuration (Local, Hybrid, Enterprise)
 # ============================================================================
 
 class LLMConfig(BaseModel):
@@ -210,12 +210,52 @@ class ExecutionConfig(BaseModel):
     auto_offload_threshold: int = 10000  # Dataset size threshold for GPU offload
 
 
+class DemoContract(BaseModel):
+    """Formal definition of the demo experience.
+
+    One object, product-tunable via env vars or config file.
+    Engineering adds capabilities to disabled_capabilities;
+    product tunes limits and messaging without code changes.
+    """
+    # Content curation
+    featured_datasets: list[str] = [
+        "diesel_nir",           # NIR quantitative (PLS showcase)
+        "corn_m5",              # NIR multi-property (calibration transfer)
+        "nir_shootout_cal1",    # Pharmaceutical (cross-validation)
+        "nir_shootout_test1",   # Pharmaceutical test set
+        "metal_etch_oes",       # Process monitoring (PCA + classification)
+    ]
+    featured_templates: list[str] = [
+        "pca",              # PCA Exploration (basic template)
+        "project1",         # Absorption Calibration (PLS regression)
+        "pls_regression",   # PLS Regression Analysis
+        "ir_opus_analysis", # IR OPUS Import & Analysis
+        "preprocessing",    # Standard Preprocessing
+    ]
+
+    # Limits
+    max_executions_per_session: int = 25
+    max_sherpa_interactions: int = 20
+
+    # Disabled capabilities — route guard checks this list
+    disabled_capabilities: list[str] = [
+        "data_upload",          # POST /experiments/{id}/files
+        "project_import",       # POST /projects/import
+        "llm_config",           # POST/PATCH/DELETE /llm-config
+        "api_key_management",   # POST/DELETE /api-keys
+    ]
+
+    # Conversion messaging
+    upgrade_url: str = "https://spectrascientific.ai/pricing"
+    upgrade_message: str = "This feature is available on paid plans."
+    available_plans: list[str] = ["hybrid", "enterprise"]
+
+
 class AppConfig(BaseModel):
     """Main application configuration for multi-mode operation"""
-    mode: Literal["local", "hybrid", "enterprise", "demo"] = Field(
+    mode: Literal["local", "hybrid", "enterprise"] = Field(
         default="local",
-        description="Application mode: local, hybrid, or enterprise (cloud/SaaS). "
-                    "'demo' is accepted as a deprecated alias for 'enterprise'."
+        description="Application mode: local, hybrid, or enterprise (cloud/SaaS)."
     )
     egress_enabled: bool = Field(
         default=False,
@@ -244,33 +284,22 @@ class AppConfig(BaseModel):
     # Execution settings
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
 
-    # Enterprise mode settings (previously "demo mode")
-    enterprise_password: Optional[str] = None
-    demo_password: Optional[str] = None  # Deprecated alias for enterprise_password
+    # Rate limiting (hybrid + enterprise modes)
     rate_limit_executions: Optional[int] = None
     session_expiry_hours: Optional[int] = None
 
     # Marketing / UI label (independent of runtime mode)
     site_profile: Optional[Literal["demo", "production", "internal"]] = None
 
-    @model_validator(mode="after")
-    def _normalize_demo_mode(self) -> "AppConfig":
-        """Map mode='demo' → 'enterprise' regardless of construction path.
-
-        This ensures from_file(), direct constructor, and any future entry
-        point always resolve to the canonical runtime mode.  The deprecation
-        *warning* is only emitted in from_env() to avoid hot-path log spam.
-        """
-        if self.mode == "demo":  # type: ignore[comparison-overlap]
-            object.__setattr__(self, "mode", "enterprise")
-        return self
+    # Demo experience contract (active when site_profile == "demo")
+    demo_contract: DemoContract = Field(default_factory=DemoContract)
 
     @classmethod
     def from_env(cls) -> "AppConfig":
         """Load configuration from environment variables using registry defaults"""
         # Import registry to get provider metadata
         try:
-            from app.core.llm_registry import PROVIDERS
+            from spectra_sherpa.app.core.llm_registry import PROVIDERS
         except ImportError:
             # Fallback if registry not available (shouldn't happen)
             PROVIDERS = {
@@ -301,27 +330,32 @@ class AppConfig(BaseModel):
         raw_mode = os.getenv("APP_MODE", "local")
         if raw_mode == "demo":
             _logger.warning(
-                "APP_MODE=demo is deprecated. Use APP_MODE=enterprise instead. "
-                "For marketing banners, set SITE_PROFILE=demo."
+                "APP_MODE=demo is no longer valid. Use APP_MODE=enterprise "
+                "with SITE_PROFILE=demo instead."
             )
-            app_mode = "enterprise"
+            app_mode = "enterprise"  # graceful fallback for one release cycle
         else:
             app_mode = raw_mode
 
         egress_default = app_mode != "local"
         egress_enabled = _get_bool("EGRESS_ENABLED", egress_default)
 
-        # Resolve enterprise password (accept legacy DEMO_PASSWORD)
-        enterprise_pw = os.getenv("ENTERPRISE_PASSWORD") or os.getenv("DEMO_PASSWORD")
-
-        # Resolve site profile (defaults to "demo" for enterprise mode)
+        # Resolve site profile (defaults to "production" for enterprise mode).
+        # Demo profile must be explicitly opted-in via SITE_PROFILE=demo.
         site_profile_raw = os.getenv("SITE_PROFILE")
         if site_profile_raw and site_profile_raw in ("demo", "production", "internal"):
             site_profile = site_profile_raw
         elif app_mode == "enterprise":
-            site_profile = "demo"
+            site_profile = "production"
         else:
             site_profile = None
+
+        # Build demo contract from env overrides
+        demo_contract = DemoContract(
+            max_executions_per_session=_get_int("DEMO_MAX_EXECUTIONS", 25),
+            max_sherpa_interactions=_get_int("DEMO_MAX_SHERPA_INTERACTIONS", 20),
+            upgrade_url=os.getenv("UPGRADE_URL", "https://spectrascientific.ai/pricing"),
+        )
 
         return cls(
             mode=app_mode,
@@ -333,14 +367,13 @@ class AppConfig(BaseModel):
                 gradient_api_key=os.getenv("GRADIENT_API_KEY"),
                 auto_offload_threshold=int(os.getenv("AUTO_OFFLOAD_THRESHOLD", "10000"))
             ),
-            enterprise_password=enterprise_pw,
-            demo_password=enterprise_pw,  # backward-compat alias
             # Enterprise mode: default to 100 executions/hour and 24-hour sessions
             # unless explicitly overridden.  In other modes these stay None
             # (disabled) unless the operator sets the env var.
             rate_limit_executions=_get_int("RATE_LIMIT_EXECUTIONS", 100) if (os.getenv("RATE_LIMIT_EXECUTIONS") or app_mode == "enterprise") else None,
             session_expiry_hours=_get_int("SESSION_EXPIRY_HOURS", 24) if (os.getenv("SESSION_EXPIRY_HOURS") or app_mode == "enterprise") else None,
             site_profile=site_profile,
+            demo_contract=demo_contract,
         )
 
     @classmethod
@@ -379,10 +412,15 @@ class AppConfig(BaseModel):
             _has_register = hasattr(_auth_mod, "router")
         except ImportError:
             _has_register = False
-        from app.core.mode_policy import allows_registration
+        from spectra_sherpa.app.core.mode_policy import allows_registration
         registration_enabled = _has_register and allows_registration()
-        enterprise_pw = self.enterprise_password or self.demo_password
-        registration_requires_code = bool(enterprise_pw) and registration_enabled
+
+        # Registration gating: only relevant in enterprise mode where
+        # spectra-server actually enforces the password check.
+        registration_requires_code = (
+            self.mode == "enterprise"
+            and bool(os.getenv("ENTERPRISE_PASSWORD", "").strip())
+        )
 
         return {
             "mode": self.mode,
@@ -394,8 +432,6 @@ class AppConfig(BaseModel):
             "features": {
                 "apiTokenSettings": self.mode in ["local", "hybrid"],
                 "cloudOffload": self.execution.mode == "hybrid",
-                "enterpriseMode": self.mode == "enterprise",
-                "demoMode": self.mode == "enterprise",  # Deprecated alias for enterpriseMode
                 "agenticWorkflow": has_llm and self.egress_enabled,
                 "chatAssistant": has_llm,
                 "nistDownloads": self.egress_enabled,
@@ -414,7 +450,8 @@ class AppConfig(BaseModel):
                 "maxExecutions": self.rate_limit_executions,
                 "maxFileSizeMB": settings.max_file_size_mb,
                 "sessionExpiryHours": self.session_expiry_hours
-            } if self.mode == "enterprise" else None
+            } if self.mode == "enterprise" else None,
+            "demo": self.demo_contract.model_dump() if self.site_profile == "demo" else None,
         }
 
 

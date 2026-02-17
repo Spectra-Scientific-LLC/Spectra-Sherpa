@@ -13,10 +13,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from app.services.python_export import generate_python_code
+from spectra_sherpa.app.services.python_export import generate_python_code
 
 if TYPE_CHECKING:
-    from app.models.workflow import Workflow
+    from spectra_sherpa.app.models.workflow import Workflow
 
 
 # Standard Jupyter notebook metadata (Python 3 kernel)

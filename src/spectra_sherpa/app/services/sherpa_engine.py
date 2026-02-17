@@ -19,8 +19,8 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
-from app.core.config import settings
-from app.schemas.sherpa import WorkflowStateSync
+from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.app.schemas.sherpa import WorkflowStateSync
 
 logger = logging.getLogger(__name__)
 
@@ -133,15 +133,15 @@ class SherpaEngine:
 
     def _get_tools(self) -> list[dict[str, Any]]:
         """Get MCP tool definitions in Anthropic format."""
-        from app.services.tools import tool_registry
+        from spectra_sherpa.app.services.tools import tool_registry
         return tool_registry.to_anthropic_tools()
 
     async def _execute_tool(
         self, name: str, arguments: dict[str, Any],
     ) -> dict[str, Any]:
         """Execute an MCP tool and return the result."""
-        from app.services.tools.executor import ToolExecutionContext, execute_tool
-        from app.services.tools.schemas import ToolInvocation
+        from spectra_sherpa.app.services.tools.executor import ToolExecutionContext, execute_tool
+        from spectra_sherpa.app.services.tools.schemas import ToolInvocation
 
         invocation = ToolInvocation(tool_name=name, arguments=arguments)
         ctx = ToolExecutionContext(session=None, user=None)

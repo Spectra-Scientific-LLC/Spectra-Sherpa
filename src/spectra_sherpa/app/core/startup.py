@@ -9,17 +9,17 @@ from pathlib import Path
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import OperationalError
 
-from app.core.config import app_config, settings
-from app.db.init_db import init_db
-from app.db.seeder import seed_data
-from app.db.session import async_session
-from app.models.background_job import BackgroundJob
-from app.models.experiment import Experiment
-from app.models.experiment_file import ExperimentFile
-from app.models.user import User
-from app.models.data_egress import UserEgressDefaults
-from app.models.workflow_template import WorkflowTemplate
-from app.services.experiments import (
+from spectra_sherpa.app.core.config import app_config, settings
+from spectra_sherpa.app.db.init_db import init_db
+from spectra_sherpa.app.db.seeder import seed_data
+from spectra_sherpa.app.db.session import async_session
+from spectra_sherpa.app.models.background_job import BackgroundJob
+from spectra_sherpa.app.models.experiment import Experiment
+from spectra_sherpa.app.models.experiment_file import ExperimentFile
+from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.models.data_egress import UserEgressDefaults
+from spectra_sherpa.app.models.workflow_template import WorkflowTemplate
+from spectra_sherpa.app.services.experiments import (
     create_experiment,
     add_experiment_file,
     metadata_path_for,
@@ -126,24 +126,9 @@ def validate_security_settings() -> None:
         "yes",
     }
     if settings.api_key == DEFAULT_API_KEY and system_key_auth_enabled:
-        if app_config.mode == "enterprise":
-            logger.critical(
-                "SECURITY ERROR: Cannot start in 'enterprise' mode with default APP_API_KEY!\n"
-                "ALLOW_SYSTEM_API_KEY_AUTH is enabled and APP_API_KEY is default. "
-                "Set APP_API_KEY to a strong random value.\n"
-                "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
-            )
-            sys.exit(1)
-        else:
-            # hybrid mode: warn (shared key accepted for non-loopback auth)
-            logger.warning(
-                "APP_API_KEY is set to the default value while ALLOW_SYSTEM_API_KEY_AUTH "
-                "is enabled. Set a strong random APP_API_KEY."
-            )
-    elif settings.api_key == DEFAULT_API_KEY and app_config.mode == "enterprise":
-        logger.info(
-            "APP_API_KEY is default, but ALLOW_SYSTEM_API_KEY_AUTH is disabled, "
-            "so this key is not accepted for external authentication."
+        logger.warning(
+            "APP_API_KEY is set to the default value while ALLOW_SYSTEM_API_KEY_AUTH "
+            "is enabled. Set a strong random APP_API_KEY."
         )
 
     if os.getenv("TRUST_PROXY", "").strip().lower() in {"1", "true", "yes"}:
@@ -156,26 +141,11 @@ def validate_security_settings() -> None:
             )
 
     # Check encryption key (warning, not fatal)
-    if not os.getenv("MASTER_ENCRYPTION_KEY"):
-        if app_config.mode == "enterprise":
-            logger.warning(
-                "MASTER_ENCRYPTION_KEY not set. A key will be auto-generated, but "
-                "stored API keys will be LOST if this container is recreated. "
-                "Set MASTER_ENCRYPTION_KEY explicitly for persistent encryption."
-            )
-        elif app_config.mode == "hybrid":
-            logger.warning(
-                "MASTER_ENCRYPTION_KEY not set — auto-generating. Stored API keys "
-                "will be lost on container restart. Set this env var explicitly."
-            )
-
-    # Enterprise mode: SQLite is not safe for concurrent multi-user production workloads.
-    if app_config.mode == "enterprise" and settings.database_url.startswith("sqlite"):
-        logger.critical(
-            "SECURITY/RELIABILITY ERROR: Enterprise mode cannot run with SQLite. "
-            "Set DATABASE_URL to PostgreSQL before starting a multi-user deployment."
+    if not os.getenv("MASTER_ENCRYPTION_KEY") and app_config.mode != "local":
+        logger.warning(
+            "MASTER_ENCRYPTION_KEY not set — auto-generating. Stored API keys "
+            "will be lost on container restart. Set this env var explicitly."
         )
-        sys.exit(1)
 
     # Hybrid mode: warn if bound to a non-loopback address.
     # The auth middleware enforces loopback-only for unauthenticated hybrid
@@ -190,42 +160,6 @@ def validate_security_settings() -> None:
                 "access is restricted to loopback (127.0.0.1) only.",
                 bind_host,
             )
-
-
-def validate_cors_settings() -> None:
-    """
-    Validate CORS configuration for enterprise mode.
-
-    Enterprise deployments must have explicit CORS_ORIGINS set to prevent
-    silent cross-origin failures. Wildcard origins are not allowed.
-
-    This runs during startup (not import time) so it does not affect tests.
-
-    Raises:
-        SystemExit: If CORS configuration is invalid for enterprise mode
-    """
-    import os
-
-    if app_config.mode != "enterprise":
-        return
-
-    cors_env = os.getenv("CORS_ORIGINS", "").strip()
-    if not cors_env:
-        logger.critical(
-            "SECURITY ERROR: CORS_ORIGINS must be set in enterprise mode.\n"
-            "Set CORS_ORIGINS to your production frontend domain(s), e.g.:\n"
-            "  CORS_ORIGINS=https://app.example.com"
-        )
-        sys.exit(1)
-
-    origins = [o.strip() for o in cors_env.split(",") if o.strip()]
-    if "*" in origins:
-        logger.critical(
-            "SECURITY ERROR: CORS_ORIGINS='*' is not allowed in enterprise mode.\n"
-            "Set CORS_ORIGINS to your production frontend domain(s), e.g.:\n"
-            "  CORS_ORIGINS=https://app.example.com"
-        )
-        sys.exit(1)
 
 
 def ensure_data_dirs() -> None:
@@ -290,7 +224,7 @@ async def link_hybrid_identity() -> None:
     if app_config.mode != "hybrid":
         return
 
-    from app.services.spectrasherpa import get_spectrasherpa_service
+    from spectra_sherpa.app.services.spectrasherpa import get_spectrasherpa_service
 
     service = get_spectrasherpa_service()
     if not service.is_configured:
@@ -491,7 +425,7 @@ async def ensure_workflow_templates() -> None:
     Seed the database with common workflow templates if they don't exist.
     """
     try:
-        from app.core.workflow_templates import WORKFLOW_TEMPLATES
+        from spectra_sherpa.app.core.workflow_templates import WORKFLOW_TEMPLATES
 
         async with async_session() as session:
             # Check if any templates already exist

@@ -413,11 +413,10 @@ def _load_spectrochempy_group(self, example_dataset: str, pattern: str) -> Analy
 ### Backend Tests
 
 ```bash
-cd src/spectra_sherpa
 
 # Test pattern detection
 python -c "
-from app.services.dag.nodes.data import DataSourceNode
+from spectra_sherpa.app.services.dag.nodes.data import DataSourceNode
 node = DataSourceNode()
 assert node._is_pattern('irdata/')
 assert node._is_pattern('*.spa')

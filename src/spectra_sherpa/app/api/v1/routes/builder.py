@@ -10,13 +10,13 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_session
-from app.core.config import settings
-from app.models.calibration import Calibration
-from app.models.experiment import Experiment
-from app.models.nist_library import NistLibrary
-from app.models.user import User
-from app.schemas.builder import (
+from spectra_sherpa.app.api.deps import demo_guard, get_current_user, get_session
+from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.app.models.calibration import Calibration
+from spectra_sherpa.app.models.experiment import Experiment
+from spectra_sherpa.app.models.nist_library import NistLibrary
+from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.schemas.builder import (
     BlendRequest,
     BlendResponse,
     ConcentrationGenerateRequest,
@@ -30,8 +30,8 @@ from app.schemas.builder import (
     SynthesizeRequest,
     SynthesizeResponse,
 )
-from app.services.builder import BuilderService
-from app.services.experiments import experiment_dir
+from spectra_sherpa.app.services.builder import BuilderService
+from spectra_sherpa.app.services.experiments import experiment_dir
 
 async def _validate_file_path_ownership(
     file_path: str,
@@ -155,7 +155,8 @@ async def _validate_payload_file_paths(
             await _validate_file_path_ownership(file_path, session, current_user)
 
 
-@router.post("/preprocess", response_model=PreprocessResponse)
+@router.post("/preprocess", response_model=PreprocessResponse,
+             dependencies=[Depends(demo_guard("data_upload"))])
 async def preprocess_spectra(
     payload: PreprocessRequest,
     session: AsyncSession = Depends(get_session),
@@ -265,7 +266,8 @@ async def get_file_info(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@router.post("/blend", response_model=BlendResponse)
+@router.post("/blend", response_model=BlendResponse,
+             dependencies=[Depends(demo_guard("data_upload"))])
 async def blend_spectra(
     payload: BlendRequest,
     session: AsyncSession = Depends(get_session),
@@ -383,7 +385,8 @@ async def generate_concentrations(payload: ConcentrationGenerateRequest) -> Conc
     )
 
 
-@router.post("/synthesize", response_model=SynthesizeResponse)
+@router.post("/synthesize", response_model=SynthesizeResponse,
+             dependencies=[Depends(demo_guard("data_upload"))])
 async def synthesize_spectra(
     payload: SynthesizeRequest,
     session: AsyncSession = Depends(get_session),
@@ -454,9 +457,9 @@ async def synthesize_spectra(
 @router.get("/reference-datasets")
 async def list_reference_datasets() -> dict[str, list[dict[str, Any]]]:
     """List all available reference datasets across all sources."""
-    from app.lib.eigenvector import DATASET_CATALOG
-    from app.lib.sklearn_info import SKLEARN_CATALOG
-    from app.lib.scp_catalog import SCP_CATALOG
+    from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG
+    from spectra_sherpa.app.lib.sklearn_info import SKLEARN_CATALOG
+    from spectra_sherpa.app.lib.scp_catalog import SCP_CATALOG
 
     return {
         "eigenvector": [
@@ -466,6 +469,7 @@ async def list_reference_datasets() -> dict[str, list[dict[str, Any]]]:
                 "label": v["label"],
                 "technique": v["technique"],
                 "description": v["description"],
+                "featured": v.get("featured", False),
             }
             for k, v in DATASET_CATALOG.items()
         ],
@@ -496,21 +500,21 @@ async def list_reference_datasets() -> dict[str, list[dict[str, Any]]]:
 async def get_reference_dataset_info(source: str, name: str) -> dict[str, Any]:
     """Get full metadata + statistics for a reference dataset."""
     if source == "eigenvector":
-        from app.lib.eigenvector import DATASET_CATALOG, get_dataset_info
+        from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG, get_dataset_info
 
         if name not in DATASET_CATALOG:
             raise HTTPException(404, f"Dataset '{name}' not found")
         return get_dataset_info(name)
 
     elif source == "sklearn":
-        from app.lib.sklearn_info import SKLEARN_CATALOG, get_sklearn_dataset_info
+        from spectra_sherpa.app.lib.sklearn_info import SKLEARN_CATALOG, get_sklearn_dataset_info
 
         if name not in SKLEARN_CATALOG:
             raise HTTPException(404, f"Dataset '{name}' not found")
         return get_sklearn_dataset_info(name)
 
     elif source == "spectrochempy":
-        from app.lib.scp_catalog import SCP_CATALOG, get_scp_dataset_info
+        from spectra_sherpa.app.lib.scp_catalog import SCP_CATALOG, get_scp_dataset_info
 
         if name not in SCP_CATALOG:
             raise HTTPException(404, f"Dataset '{name}' not found")

@@ -13,18 +13,18 @@ from typing import Any, List, Dict, Optional, TYPE_CHECKING
 
 import numpy as np
 
-from app.core.config import settings
-from app.services.cache import build_preprocessing_settings, load_preprocessed_spectrum, register_settings
-from app.services.experiments import resolve_data_path
+from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.app.services.cache import build_preprocessing_settings, load_preprocessed_spectrum, register_settings
+from spectra_sherpa.app.services.experiments import resolve_data_path
 
-from app.lib.blending import BlendSettings, blend_datasets
-from app.lib.curves import curve_segments, initial_curve_points, generate_concentration_curve
-from app.lib.io import load_spectrum
-from app.lib.spectral.dataset import create_spectral_dataset, SpectralUnit
-from app.lib.preprocessing import preprocess_pipeline
+from spectra_sherpa.app.lib.blending import BlendSettings, blend_datasets
+from spectra_sherpa.app.lib.curves import curve_segments, initial_curve_points, generate_concentration_curve
+from spectra_sherpa.app.lib.io import load_spectrum
+from spectra_sherpa.app.lib.spectral.dataset import create_spectral_dataset, SpectralUnit
+from spectra_sherpa.app.lib.preprocessing import preprocess_pipeline
 
 if TYPE_CHECKING:
-    from app.lib.scp_compat import NDDataset
+    from spectra_sherpa.app.lib.scp_compat import NDDataset
 
 
 def _dataset_to_payload(dataset: "NDDataset") -> Dict[str, Any]:

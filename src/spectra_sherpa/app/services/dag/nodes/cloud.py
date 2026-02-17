@@ -4,10 +4,10 @@ import logging
 
 import httpx
 
-from app.core.config import app_config
-from app.core.security import is_egress_enabled
-from app.services.dag.node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
-from app.services.dag.meta_helpers import safe_get_coord
+from spectra_sherpa.app.core.config import app_config
+from spectra_sherpa.app.core.security import is_egress_enabled
+from spectra_sherpa.app.services.dag.node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
+from spectra_sherpa.app.services.dag.meta_helpers import safe_get_coord
 
 logger = logging.getLogger(__name__)
 

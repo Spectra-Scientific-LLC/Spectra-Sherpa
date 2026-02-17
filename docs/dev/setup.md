@@ -4,7 +4,8 @@ This guide is for contributors who want to modify the SpectraSherpa codebase.
 
 ## Prerequisites
 - Python 3.11+
-- Node.js 18+ (for Frontend)
+- Node.js 22+ (for Frontend)
+- [Poetry](https://python-poetry.org/) (`pip install poetry`)
 - Git
 
 ## Backend Setup (Python)
@@ -15,23 +16,20 @@ This guide is for contributors who want to modify the SpectraSherpa codebase.
     cd spectra-sherpa
     ```
 
-2.  Create a virtual environment and install in editable mode:
+2.  Install dependencies with Poetry:
     ```bash
-    python -m venv venv
-    source venv/bin/activate
-    pip install -e ".[dev]"
+    poetry install --with dev
     ```
 
 3.  (Optional) Install SpectroChemPy for full node support:
     ```bash
-    pip install -e ".[dev,scp]"
+    poetry install --with dev -E scp
     ```
     Without SCP, ~38 nodes run on numpy/scipy/sklearn. With SCP, 11 additional spectral analysis nodes are available.
 
 4.  Run the server with hot-reloading:
     ```bash
-    cd src/spectra_sherpa
-    uvicorn app.main:app --reload --port 8000
+    poetry run uvicorn spectra_sherpa.app.main:create_app --factory --reload --port 8000
     ```
 
 ## Frontend Setup (Vue 3 + TypeScript)
@@ -43,26 +41,41 @@ This guide is for contributors who want to modify the SpectraSherpa codebase.
 
 2.  Install dependencies:
     ```bash
-    npm install
+    npm ci
     ```
 
 3.  Start the development server:
     ```bash
     npm run dev
     ```
-    The frontend will run at `http://localhost:5173` and proxy API requests to port `8000`.
+    The frontend will run at `http://localhost:5173` and proxy WebSocket requests to port `8000`.
+
+## Quick Start (Both Together)
+
+```bash
+make dev    # starts backend (:8000) + frontend (:5173) — Ctrl+C stops both
+```
 
 ## Running Tests
 
 ```bash
-PYTHONPATH=src/spectra_sherpa python -m pytest tests/ --no-cov
+make test       # or: poetry run pytest tests/ -v --no-cov
 ```
-
-The `PYTHONPATH` is required because the `app` package lives under `src/spectra_sherpa/app/`.
 
 To run a specific test file:
 ```bash
-PYTHONPATH=src/spectra_sherpa python -m pytest tests/test_analysis_dataset.py -v --no-cov
+poetry run pytest tests/test_analysis_dataset.py -v --no-cov
+```
+
+## Linting
+
+```bash
+# Frontend (enforced in CI)
+cd frontend && npm run lint
+
+# Backend (available locally, CI enforcement pending format-only PR)
+poetry run ruff check src/ tests/
+poetry run black --check src/ tests/
 ```
 
 ## Building for Release
@@ -71,18 +84,17 @@ To bundle your frontend changes into the Python package:
 ```bash
 cd frontend && npm run build
 ```
-Vite is configured to build directly into `src/spectra_sherpa/static/` — no manual copy step needed. Or use the helper script:
-```bash
-./scripts/rebuild_static.sh
-```
+Vite is configured to build directly into `src/spectra_sherpa/static/` — no manual copy step needed.
 
 ## Environment Variables
 
-Create a `.env` file in `src/spectra_sherpa/` for local configuration:
+Copy `.env.example` to `.env` for local configuration. The defaults work with zero changes.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `APP_MODE` | `local` | `local`, `hybrid`, or `enterprise` (`demo` accepted as alias) |
+| `APP_MODE` | `local` | `local`, `hybrid`, or `enterprise` |
 | `DATABASE_URL` | `sqlite:///./spectra_sherpa.db` | Database connection string |
-| `SHERPA_ENGINE_API_KEY` | (none) | Anthropic API key for Sherpa Engine |
-| `SECRET_KEY` | (auto-generated) | JWT signing key (required in hybrid/enterprise) |
+| `OPENAI_API_KEY` | (none) | OpenAI key for AI features |
+| `ANTHROPIC_API_KEY` | (none) | Anthropic key for AI features |
+
+See `.env.enterprise.example` for all hybrid/enterprise settings.

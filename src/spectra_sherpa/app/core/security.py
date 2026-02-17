@@ -11,11 +11,11 @@ from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import jwt, JWTError
 
-from app.core.config import app_config, settings
+from spectra_sherpa.app.core.config import app_config, settings
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
-    from app.models.user import User
+    from spectra_sherpa.app.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +192,7 @@ async def is_valid_api_key(api_key: Optional[str]) -> bool:
     user API keys before route-level dependencies run.
     """
     # Local mode: always valid (no auth required)
-    from app.core.mode_policy import api_key_always_valid
+    from spectra_sherpa.app.core.mode_policy import api_key_always_valid
     if api_key_always_valid():
         return True
 
@@ -209,8 +209,8 @@ async def is_valid_api_key(api_key: Optional[str]) -> bool:
     # Check user-specific API keys in database
     try:
         from sqlalchemy import select
-        from app.db.session import async_session
-        from app.models.user import User
+        from spectra_sherpa.app.db.session import async_session
+        from spectra_sherpa.app.models.user import User
 
         async with async_session() as session:
             # Check cache first
@@ -256,7 +256,7 @@ def _is_loopback(host: str | None) -> bool:
 
 def is_system_api_key_auth_enabled() -> bool:
     """Return whether APP_API_KEY is accepted for request authentication."""
-    from app.core.mode_policy import system_api_key_always_accepted
+    from spectra_sherpa.app.core.mode_policy import system_api_key_always_accepted
     if system_api_key_always_accepted():
         return True
     return os.getenv("ALLOW_SYSTEM_API_KEY_AUTH", "").strip().lower() in {
@@ -381,7 +381,7 @@ async def api_key_middleware(request: Request, call_next) -> Response:
         return await call_next(request)
 
     # Mode-based auth bypass: local always passes, hybrid loopback passes.
-    from app.core.mode_policy import requires_http_auth
+    from spectra_sherpa.app.core.mode_policy import requires_http_auth
     if not requires_http_auth(get_client_host(request)):
         return await call_next(request)
 
@@ -426,7 +426,7 @@ def is_egress_enabled() -> bool:
     # Check if we're in degraded mode (hybrid fallback to local)
     if app_config.mode == "hybrid":
         try:
-            from app.services.network_health import get_network_health_service
+            from spectra_sherpa.app.services.network_health import get_network_health_service
             health_service = get_network_health_service()
             if health_service.is_degraded:
                 # In degraded mode, disable egress to enforce local-only behavior
@@ -490,7 +490,7 @@ async def check_egress_permission(
     ):
         try:
             from sqlalchemy import select
-            from app.models.data_egress import DataEgressPermission
+            from spectra_sherpa.app.models.data_egress import DataEgressPermission
 
             result = await session.execute(
                 select(DataEgressPermission).where(
@@ -522,7 +522,7 @@ async def check_egress_permission(
         if session is not None and getattr(user, "id", None) is not None:
             try:
                 from sqlalchemy import select
-                from app.models.data_egress import UserEgressDefaults
+                from spectra_sherpa.app.models.data_egress import UserEgressDefaults
 
                 row = (
                     await session.execute(
@@ -566,7 +566,7 @@ async def check_export_allowed(
     In multi-user modes (hybrid, enterprise), the admin can restrict exports
     via the user's ``allow_export`` egress default.
     """
-    from app.core.mode_policy import export_always_allowed
+    from spectra_sherpa.app.core.mode_policy import export_always_allowed
     if export_always_allowed():
         return True
 
@@ -581,7 +581,7 @@ async def check_export_allowed(
         if session is not None and getattr(user, "id", None) is not None:
             try:
                 from sqlalchemy import select
-                from app.models.data_egress import UserEgressDefaults
+                from spectra_sherpa.app.models.data_egress import UserEgressDefaults
 
                 row = (
                     await session.execute(

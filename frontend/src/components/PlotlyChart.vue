@@ -10,7 +10,6 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import Plotly from "plotly.js-dist-min";
 
 type PlotlyData = Record<string, unknown>;
 type PlotlyLayout = Record<string, unknown>;
@@ -55,6 +54,32 @@ const chartEl = ref<HTMLDivElement | null>(null);
 const emptyMessage = computed(() => props.emptyMessage || "No data yet.");
 const isEmpty = computed(() => !props.data || props.data.length === 0);
 
+type PlotlyClient = {
+  react: (
+    element: HTMLDivElement,
+    data: PlotlyData[],
+    layout: PlotlyLayout,
+    config: PlotlyConfig
+  ) => unknown | Promise<unknown>;
+  purge: (element: HTMLDivElement) => void;
+  Plots: {
+    resize: (element: HTMLDivElement) => void;
+  };
+};
+
+let plotlyClientPromise: Promise<PlotlyClient> | null = null;
+
+const getPlotlyClient = async (): Promise<PlotlyClient> => {
+  if (!plotlyClientPromise) {
+    plotlyClientPromise = import("plotly.js-dist-min").then(
+      (mod) =>
+        (mod as unknown as { default?: PlotlyClient }).default ??
+        (mod as unknown as PlotlyClient)
+    );
+  }
+  return plotlyClientPromise;
+};
+
 const setupEventListeners = () => {
   if (!chartEl.value) return;
 
@@ -67,10 +92,11 @@ const setupEventListeners = () => {
   });
 };
 
-const render = () => {
+const render = async () => {
   if (!chartEl.value) {
     return;
   }
+  const Plotly = await getPlotlyClient();
   const layout = props.layout || {};
   const config = { responsive: true, displaylogo: false, ...props.config };
   Plotly.react(chartEl.value, props.data, layout, config);
@@ -78,10 +104,11 @@ const render = () => {
 };
 
 onMounted(() => {
-  render();
+  void render();
   // Plotly computes width at render time; container may not be laid out yet.
   // Resize after the browser paints so the chart fills the full width.
-  nextTick(() => {
+  void nextTick(async () => {
+    const Plotly = await getPlotlyClient();
     requestAnimationFrame(() => {
       if (chartEl.value) {
         Plotly.Plots.resize(chartEl.value);
@@ -93,14 +120,17 @@ onMounted(() => {
 watch(
   () => [props.data, props.layout, props.config],
   () => {
-    render();
+    void render();
   },
   { deep: true }
 );
 
 onBeforeUnmount(() => {
-  if (chartEl.value) {
-    Plotly.purge(chartEl.value);
+  if (chartEl.value && plotlyClientPromise) {
+    const element = chartEl.value;
+    void plotlyClientPromise.then((Plotly) => {
+      Plotly.purge(element);
+    });
   }
 });
 </script>

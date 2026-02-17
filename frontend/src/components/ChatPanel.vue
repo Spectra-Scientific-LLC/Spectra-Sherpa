@@ -160,6 +160,7 @@ import { useLlmStore } from "@/stores/llm";
 import { useSherpaStore } from "@/stores/sherpa";
 import { useExperimentStore } from "@/stores/experiment";
 import { useAppConfig } from "@/composables/useAppConfig";
+import { useDemoMode } from "@/composables/useDemoMode";
 import { formatDateTime } from "@/utils/format";
 import api from "@/api/client";
 
@@ -184,6 +185,7 @@ const sherpaStore = useSherpaStore();
 const experimentStore = useExperimentStore();
 const toast = useToast();
 const { isFeatureEnabled } = useAppConfig();
+const { isDemoMode } = useDemoMode();
 
 const userMessage = ref("");
 const messageContainer = ref<HTMLDivElement | null>(null);
@@ -196,6 +198,15 @@ const sherpaEnabled = computed(() => isFeatureEnabled("sherpaAdvisor"));
 
 const switchToSherpa = () => {
   activeTab.value = "sherpa";
+  // In demo mode, show a one-time welcome message
+  if (isDemoMode.value && sherpaStore.messages.length === 0) {
+    sherpaStore.messages.push({
+      role: "system",
+      content:
+        "Welcome to Sherpa Advisor! Try loading a Demo Pick template, " +
+        "then click the refresh button to get AI-powered analysis recommendations.",
+    });
+  }
   // Auto-sync on switch (proactive assessment)
   sherpaStore.syncWorkflow();
 };

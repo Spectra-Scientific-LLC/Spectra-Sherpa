@@ -26,14 +26,14 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_session
-from app.db.base import Base
-from app.main import app
-from app.models.experiment import Experiment
-from app.models.experiment_file import ExperimentFile
-from app.models.project import Project, ProjectVersion
-from app.models.user import User
-from app.models.workflow import Workflow
+from spectra_sherpa.app.api.deps import get_current_user, get_session
+from spectra_sherpa.app.db.base import Base
+from spectra_sherpa.app.main import app
+from spectra_sherpa.app.models.experiment import Experiment
+from spectra_sherpa.app.models.experiment_file import ExperimentFile
+from spectra_sherpa.app.models.project import Project, ProjectVersion
+from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.models.workflow import Workflow
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────

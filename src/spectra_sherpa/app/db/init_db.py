@@ -3,10 +3,10 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from app.core.config import app_config
-from app.db.base import Base
-from app.db.session import engine
-from app import models  # noqa: F401  # Ensure models are registered
+from spectra_sherpa.app.core.config import app_config
+from spectra_sherpa.app.db.base import Base
+from spectra_sherpa.app.db.session import engine
+from spectra_sherpa.app import models  # noqa: F401  # Ensure models are registered
 
 logger = logging.getLogger(__name__)
 

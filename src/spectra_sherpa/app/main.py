@@ -18,19 +18,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api.v1.api import build_api_router
-from app.api.deps import get_user_from_credentials
-from app.core.config import app_config, settings
-from app.core.logging import configure_logging
-from app.core.security import (
+from spectra_sherpa.app.api.v1.api import build_api_router
+from spectra_sherpa.app.api.deps import get_user_from_credentials
+from spectra_sherpa.app.core.config import app_config, settings
+from spectra_sherpa.app.core.logging import configure_logging
+from spectra_sherpa.app.core.security import (
     _is_loopback,
     api_key_middleware,
     get_client_host,
     is_valid_api_key,
     is_valid_bearer_token,
 )
-from app.core.enterprise_enforcement import EnterpriseEnforcementMiddleware
-from app.core.startup import (
+from spectra_sherpa.app.core.rate_limit_middleware import RateLimitMiddleware
+from spectra_sherpa.app.core.startup import (
     ensure_data_dirs,
     ensure_database_ready,
     wait_for_database_ready,
@@ -41,12 +41,11 @@ from app.core.startup import (
     ensure_spectrochempy_testdata,
     ensure_workflow_templates,
     validate_concurrency_settings,
-    validate_cors_settings,
     validate_security_settings,
 )
-from app.db.session import async_session
-from app.services.job_manager import job_manager
-from app.services.websocket_manager import ws_manager
+from spectra_sherpa.app.db.session import async_session
+from spectra_sherpa.app.services.job_manager import job_manager
+from spectra_sherpa.app.services.websocket_manager import ws_manager
 
 logger = logging.getLogger(__name__)
 
@@ -82,23 +81,16 @@ def get_cors_origins() -> list[str]:
     ]
 
     # In local mode, also allow the frontend to run on any port
-    from app.core.mode_policy import cors_allow_all
+    from spectra_sherpa.app.core.mode_policy import cors_allow_all
     if cors_allow_all():
         return ["*"]
 
     # Non-local modes without CORS_ORIGINS: use localhost defaults.
-    # validate_cors_settings() in startup.py enforces this as fatal for
-    # enterprise mode before the app starts serving requests.
-    if app_config.mode == "enterprise":
-        logger.warning(
-            "CORS_ORIGINS not set for enterprise mode — using localhost defaults. "
-            "validate_cors_settings() will block startup before serving.",
-        )
-    else:
-        logger.info(
-            "CORS_ORIGINS not set for %s mode — using localhost defaults.",
-            app_config.mode,
-        )
+    # spectra-server enforces stricter CORS via its own startup hooks.
+    logger.info(
+        "CORS_ORIGINS not set for %s mode — using localhost defaults.",
+        app_config.mode,
+    )
 
     # Add production URL if configured
     if app_config.api_base_url and app_config.api_base_url not in default_origins:
@@ -188,7 +180,6 @@ def _make_lifespan(
             logger.info("Phase 1: per-worker setup ...")
             configure_logging()
             validate_security_settings()  # Fail fast if security config is invalid
-            validate_cors_settings()  # Fail fast if CORS misconfigured for enterprise
             validate_concurrency_settings()  # Fail fast if multi-worker without pub/sub
             ensure_data_dirs()
             logger.info("Phase 1 complete")
@@ -225,24 +216,24 @@ def _make_lifespan(
             # Phase 3: per-worker setup that depends on DB being ready
             logger.info("Phase 3: tools + plugins ...")
             # Register built-in MCP tools (import triggers @register_tool decorators)
-            import app.services.tools.builtin  # noqa: F401
-            from app.services.tools import tool_registry as _tool_reg
+            import spectra_sherpa.app.services.tools.builtin  # noqa: F401
+            from spectra_sherpa.app.services.tools import tool_registry as _tool_reg
             logger.info("Registered %d built-in tool(s)", len(_tool_reg))
 
             # Discover and load third-party plugins (may register additional tools)
-            from app.services.plugin_loader import discover_plugins
+            from spectra_sherpa.app.services.plugin_loader import discover_plugins
             discover_plugins()
 
             # Start network health monitoring (HYBRID mode only)
-            from app.services.network_health import start_network_health_service
+            from spectra_sherpa.app.services.network_health import start_network_health_service
             await start_network_health_service()
 
             # Start folder watch polling service
-            from app.services.folder_watch_service import start_folder_watch_service
+            from spectra_sherpa.app.services.folder_watch_service import start_folder_watch_service
             await start_folder_watch_service()
 
             # Check Sherpa Engine availability (fires warning if misconfigured)
-            from app.services.sherpa_engine import get_sherpa_engine
+            from spectra_sherpa.app.services.sherpa_engine import get_sherpa_engine
             _engine = get_sherpa_engine()
             if _engine.is_available:
                 logger.info("Sherpa Engine: available (model=%s)", settings.sherpa_engine_model)
@@ -253,7 +244,7 @@ def _make_lifespan(
 
             # Load the type registry (JSON schemas for port type validation)
             from pathlib import Path as _Path
-            from app.types import type_registry as _type_reg
+            from spectra_sherpa.app.types import type_registry as _type_reg
             _type_reg.load(_Path(__file__).parent / "types")
             logger.info("Type registry: %d types loaded", len(_type_reg._types))
 
@@ -268,7 +259,7 @@ def _make_lifespan(
             # Phase 5: DAG worker pool for CPU-bound node execution
             import multiprocessing
             from concurrent.futures import ProcessPoolExecutor
-            from app.services.dag.executor import set_default_pool
+            from spectra_sherpa.app.services.dag.executor import set_default_pool
 
             pool_size = settings.dag_worker_pool_size
             try:
@@ -302,7 +293,7 @@ def _make_lifespan(
             await hook()
 
         # Shut down DAG worker pool
-        from app.services.dag.executor import set_default_pool as _clear_pool
+        from spectra_sherpa.app.services.dag.executor import set_default_pool as _clear_pool
         _clear_pool(None)
         if _dag_pool is not None:
             _dag_pool.shutdown(wait=True, cancel_futures=True)
@@ -311,21 +302,21 @@ def _make_lifespan(
         await job_manager.shutdown()
 
         # Stop folder watch polling
-        from app.services.folder_watch_service import stop_folder_watch_service
+        from spectra_sherpa.app.services.folder_watch_service import stop_folder_watch_service
         await stop_folder_watch_service()
 
         # Stop network health monitoring
-        from app.services.network_health import stop_network_health_service
+        from spectra_sherpa.app.services.network_health import stop_network_health_service
         await stop_network_health_service()
 
         # Close SpectraSherpa service
-        from app.services.spectrasherpa import close_spectrasherpa_service
+        from spectra_sherpa.app.services.spectrasherpa import close_spectrasherpa_service
         await close_spectrasherpa_service()
 
         # Close Sherpa advisor and engine
-        from app.services.sherpa_advisor import close_sherpa_advisor
+        from spectra_sherpa.app.services.sherpa_advisor import close_sherpa_advisor
         await close_sherpa_advisor()
-        from app.services.sherpa_engine import close_sherpa_engine
+        from spectra_sherpa.app.services.sherpa_engine import close_sherpa_engine
         await close_sherpa_engine()
 
     return lifespan
@@ -372,8 +363,8 @@ def _mount_frontend(app: FastAPI) -> None:
 
 async def websocket_endpoint(websocket: WebSocket) -> None:
     # Import rate limiter here to avoid circular imports
-    from app.api.v1.routes.llm import _llm_rate_limiter
-    from app.services.ws_handlers import (
+    from spectra_sherpa.app.api.v1.routes.llm import _llm_rate_limiter
+    from spectra_sherpa.app.services.ws_handlers import (
         handle_llm_chat,
         handle_sherpa_chat,
         handle_sherpa_decide,
@@ -390,7 +381,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     has_credentials = bool(token or api_key)
 
     # Determine if auth is required for this connection (mode-dependent).
-    from app.core.mode_policy import requires_ws_auth as _requires_ws_auth
+    from spectra_sherpa.app.core.mode_policy import requires_ws_auth as _requires_ws_auth
     ws_client_host = get_client_host(websocket)
     requires_ws_auth = _requires_ws_auth(ws_client_host)
 
@@ -507,9 +498,14 @@ def create_app(
         lifespan=_make_lifespan(extra_startup, extra_shutdown),
     )
 
-    # --- Middleware (order matters: outermost first) ---
+    # --- Middleware (last added = outermost in Starlette's onion model) ---
+    # Extra middleware (e.g. EnterpriseEnforcementMiddleware) is added first
+    # so that CORSMiddleware wraps it — ensuring CORS headers appear even
+    # on early 401/403 rejection responses from enforcement middleware.
+    for mw in (extra_middleware or []):
+        mw(_app)
     _app.middleware("http")(api_key_middleware)
-    _app.add_middleware(EnterpriseEnforcementMiddleware)
+    _app.add_middleware(RateLimitMiddleware)
     _app.add_middleware(
         CORSMiddleware,
         allow_origins=origins if not _allow_all else [],
@@ -518,8 +514,6 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    for mw in (extra_middleware or []):
-        mw(_app)
 
     # --- Routers ---
     _app.include_router(

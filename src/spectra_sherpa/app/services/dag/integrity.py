@@ -7,7 +7,7 @@ workflow (node types, parameters, connections). UI-only fields
 moving a node on the canvas does not change the hash.
 
 Usage:
-    from app.services.dag.integrity import compute_workflow_hash
+    from spectra_sherpa.app.services.dag.integrity import compute_workflow_hash
 
     h = compute_workflow_hash(nodes_list, edges_list)
 """

@@ -8,13 +8,13 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_session
-from app.core.security import check_export_allowed
-from app.models.user import User
-from app.models.experiment import Experiment
-from app.models.experiment_file import ExperimentFile
-from app.models.nist_library import NistLibrary
-from app.services.experiments import experiment_dir
+from spectra_sherpa.app.api.deps import get_current_user, get_session
+from spectra_sherpa.app.core.security import check_export_allowed
+from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.models.experiment import Experiment
+from spectra_sherpa.app.models.experiment_file import ExperimentFile
+from spectra_sherpa.app.models.nist_library import NistLibrary
+from spectra_sherpa.app.services.experiments import experiment_dir
 
 
 class ExperimentDataset(BaseModel):

@@ -11,8 +11,8 @@ import json
 from functools import lru_cache
 from typing import Any
 
-from app.lib.io import load_spectrum
-from app.lib.preprocessing import preprocess_pipeline, PreprocessingSettings
+from spectra_sherpa.app.lib.io import load_spectrum
+from spectra_sherpa.app.lib.preprocessing import preprocess_pipeline, PreprocessingSettings
 
 _SETTINGS_REGISTRY: dict[str, dict[str, Any]] = {}
 

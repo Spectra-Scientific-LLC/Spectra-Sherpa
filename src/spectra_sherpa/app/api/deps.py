@@ -9,11 +9,11 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import schemas
-from app.core import security
-from app.core.config import app_config, settings
-from app.db.session import async_session
-from app.models.user import User
+from spectra_sherpa.app import schemas
+from spectra_sherpa.app.core import security
+from spectra_sherpa.app.core.config import app_config, settings
+from spectra_sherpa.app.db.session import async_session
+from spectra_sherpa.app.models.user import User
 
 
 def invalidate_api_key_cache(api_key: Optional[str] = None) -> None:
@@ -65,7 +65,7 @@ async def _resolve_user(
     Returns the authenticated User or None if credentials are invalid.
     """
     # 0. Local mode: implicit user identity (single-user, no login needed)
-    from app.core.mode_policy import is_local
+    from spectra_sherpa.app.core.mode_policy import is_local
     if is_local():
         return await _get_or_create_local_user(session)
 
@@ -129,7 +129,7 @@ async def _resolve_user(
     # 3. Hybrid fallback: allow implicit local identity only when no
     # credentials were provided AND the client is loopback (defense-in-depth;
     # gateway middleware already enforces this, but we double-check here).
-    from app.core.mode_policy import is_hybrid
+    from spectra_sherpa.app.core.mode_policy import is_hybrid
     if is_hybrid() and not has_credentials:
         if client_host is not None and not security._is_loopback(client_host):
             return None
@@ -168,6 +168,45 @@ async def get_current_active_user(
 ) -> User:
     # is_active check is enforced in get_current_user; this is a pass-through alias.
     return current_user
+
+
+def demo_guard(capability: str):
+    """Factory for demo mode route guards. Checks the Demo Contract."""
+    def _guard():
+        if app_config.site_profile == "demo":
+            contract = app_config.demo_contract
+            if capability in contract.disabled_capabilities:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail={
+                        "message": contract.upgrade_message,
+                        "upgrade_url": contract.upgrade_url,
+                        "available_plans": contract.available_plans,
+                        "blocked_capability": capability,
+                    },
+                )
+    return _guard
+
+
+def check_demo_capability(capability: str) -> None:
+    """Callable guard for use inside handler bodies (not as a Depends).
+
+    Use this when the block is conditional on request data — e.g. only
+    when ``initial_data`` is non-empty — rather than on every request
+    to the endpoint.
+    """
+    if app_config.site_profile == "demo":
+        contract = app_config.demo_contract
+        if capability in contract.disabled_capabilities:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "message": contract.upgrade_message,
+                    "upgrade_url": contract.upgrade_url,
+                    "available_plans": contract.available_plans,
+                    "blocked_capability": capability,
+                },
+            )
 
 
 async def get_user_from_credentials(

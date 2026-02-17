@@ -71,7 +71,7 @@ should maintain its own `openapi_server_v1.json` in repo 2.
 ```bash
 PYTHONPATH=src/spectra_sherpa python -c "
 import json
-from app.main import app
+from spectra_sherpa.app.main import app
 spec = app.openapi()
 with open('contracts/openapi_v1.json', 'w') as f:
     json.dump(spec, f, indent=2, default=str)

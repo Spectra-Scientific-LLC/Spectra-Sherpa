@@ -2,6 +2,33 @@
 
 SpectraSherpa follows a "Clean Architecture" pattern with a strict separation between the core domain logic and the delivery mechanism (FastAPI).
 
+## Overview
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  Frontend (Vue 3)                    │
+│  Workflow Builder ──REST──► FastAPI REST API         │
+│  Workflow Builder ──WS────► /ws                      │
+└───────────────────────┬─────────────┬───────────────┘
+                        │             │
+┌───────────────────────▼─────────────▼───────────────┐
+│                  Backend (FastAPI)                    │
+│                                                      │
+│  REST API ──► DAG Executor ──► Node Registry         │
+│  WebSocket ──► DAG Executor    ┌──────────────────┐  │
+│                 │              │ DataSource        │  │
+│                 │ topological  │ Preprocessing     │  │
+│                 │ sort         │ Modeling          │  │
+│                 ▼              │ Visualization     │  │
+│              Results           └──────────────────┘  │
+│                                                      │
+│  Auth (mode-dependent):                              │
+│    local → no auth │ hybrid → JWT+API │ enterprise   │
+│                                                      │
+│  DB: SQLite (local) or PostgreSQL (enterprise)       │
+└──────────────────────────────────────────────────────┘
+```
+
 ## High-Level Structure
 
 ```
@@ -21,14 +48,21 @@ src/spectra_sherpa/
 ## Core Concepts
 
 ### 1. The Mode Contract
-The application behavior changes significantly based on `APP_MODE` (`local`, `hybrid`, `enterprise`). This logic is centralized in `app.core.mode_policy`.
-- **Local:** No Auth, No Egress.
-- **Hybrid/Enterprise:** Strict Auth, Allowed Egress.
-See [Mode Policy](../server/overview.md) for details.
+The application has two orthogonal configuration axes:
+
+**Runtime mode** (`APP_MODE`): `local` | `hybrid` | `enterprise` — controls auth, egress, and rate limiting.
+**Experience profile** (`SITE_PROFILE`): `demo` | `production` | `internal` | unset — controls UI experience and feature gating.
+
+Mode logic is centralized in `spectra_sherpa.app.core.mode_policy`.
+- **Local:** No auth, no egress, single-user.
+- **Hybrid:** JWT + API key auth for remote clients, loopback exemption, optional cloud offload.
+- **Enterprise:** Full auth for all clients, rate limiting, multi-user.
+
+When `SITE_PROFILE=demo`, the **Demo Contract** (`DemoContract` in `config.py`) restricts capabilities (e.g., no data upload) and provides conversion messaging. Enterprise enforcement (password gating, session expiry, CORS validation, SQLite prohibition) lives in `spectra-server` and is injected via `create_app()` hooks.
 
 ### 2. The Node Graph
 SpectraSherpa is fundamentally a Directed Acyclic Graph (DAG) engine.
-- **Nodes** (`app.services.dag.nodes.*`) are self-contained units of logic.
+- **Nodes** (`spectra_sherpa.app.services.dag.nodes.*`) are self-contained units of logic.
 - **Workflows** are serializable JSON structures defining the graph.
 - **Execution** is topological. Data flows from `DataSourceNode` -> `PreprocessingNode` -> `ModelingNode`.
 
@@ -36,7 +70,7 @@ SpectraSherpa is fundamentally a Directed Acyclic Graph (DAG) engine.
 
 The DAG engine uses two data container types depending on the runtime environment:
 
-**AnalysisDataset** (`app.lib.analysis_dataset`) — The canonical DAG runtime container. All portable nodes produce and consume this type. Fields:
+**AnalysisDataset** (`spectra_sherpa.app.lib.analysis_dataset`) — The canonical DAG runtime container. All portable nodes produce and consume this type. Fields:
 - `X`: 2D numpy array (n_samples, n_features)
 - `x_axis` / `y_axis`: `AxisInfo` (values, labels, units, title)
 - `target`: Optional target values for supervised learning
@@ -70,7 +104,21 @@ All node ports use typed connections via `TypeRegistry`:
 - **Unit Awareness:** The system tracks units (wavenumber vs nm, absorbance vs transmittance) to prevent invalid operations.
 - **Provenance:** Full processing chain recorded in dataset metadata for audit trails.
 
-### 7. Database Models
+### 7. WebSocket Lifecycle
+
+Real-time communication uses a single WebSocket endpoint at `/ws`. Clients send JSON messages with an `"action"` key; the server responds with messages using a `"type"` key.
+
+1. **Connect** — Client opens `/ws` with auth token (if hybrid/enterprise mode)
+2. **Subscribe** — Client sends `{"action": "subscribe", "workflow_id": "..."}` to watch a workflow
+3. **Unsubscribe** — Client sends `{"action": "unsubscribe", "workflow_id": "..."}`
+4. **LLM Chat** — Client sends `{"action": "llm_chat", ...}` → server streams `llm_start`, `llm_chunk`, `llm_done` responses
+5. **Sherpa AI** — `{"action": "sherpa_chat" | "sherpa_sync" | "sherpa_decide", ...}`
+6. **MCP Tools** — `{"action": "tool_list"}` or `{"action": "tool_invoke", ...}`
+7. **Errors** — Server sends `{"type": "error", "detail": "..."}` for unknown actions or failures
+
+The `useJobStore` Pinia store manages WebSocket state on the frontend.
+
+### 8. Database Models
 
 SQLAlchemy models with SQLite backend:
 - **Project**: Self-referencing FK (folders), linked workflows + experiments

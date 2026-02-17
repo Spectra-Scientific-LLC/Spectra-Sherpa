@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
-from app.services.experiments import experiment_dir
+from spectra_sherpa.app.services.experiments import experiment_dir
 
 
 class VersionStorage(ABC):

@@ -8,22 +8,24 @@ Returns client-safe configuration including:
 - Rate limits (if enterprise mode)
 """
 
+import json
 import logging
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import APIKeyHeader
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
-from app.api.deps import get_session, get_user_from_credentials
-from app.core.config import app_config
-from app.core.security import get_bearer_token_optional
-from app.core.llm_registry import PROVIDERS, get_provider
-from app.models.api_key import APIKey
-from app.models.user import User
+from spectra_sherpa.app.api.deps import get_current_user, get_session, get_user_from_credentials
+from spectra_sherpa.app.core.config import app_config, settings
+from spectra_sherpa.app.models.execution_run import ExecutionRun
+from spectra_sherpa.app.core.security import get_bearer_token_optional
+from spectra_sherpa.app.core.llm_registry import PROVIDERS, get_provider
+from spectra_sherpa.app.models.api_key import APIKey
+from spectra_sherpa.app.models.user import User
 
 router = APIRouter(prefix="/config", tags=["config"])
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -117,10 +119,96 @@ async def get_config(
     return config
 
 
+@router.get("/demo/quota")
+async def get_demo_quota(
+    current_user: User | None = Depends(get_optional_current_user),
+):
+    """
+    Return remaining demo quotas without consuming tokens.
+
+    Returns ``{"demo": false}`` when the site profile is not ``demo``.
+    """
+    if app_config.site_profile != "demo":
+        return {"demo": False}
+
+    from spectra_sherpa.app.core.demo_limits import (
+        demo_execution_remaining,
+        demo_sherpa_remaining,
+    )
+
+    user_id = current_user.id if current_user else None
+    contract = app_config.demo_contract
+    return {
+        "demo": True,
+        "executions": {
+            "remaining": demo_execution_remaining(user_id),
+            "limit": contract.max_executions_per_session,
+        },
+        "sherpa": {
+            "remaining": demo_sherpa_remaining(user_id),
+            "limit": contract.max_sherpa_interactions,
+        },
+    }
+
+
+@router.get("/demo/analytics")
+async def get_demo_analytics(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Demo session analytics for admin dashboard. Requires superuser.
+
+    Returns aggregate counts from the execution_run table and
+    active demo rate-limit sessions from the state file.
+    """
+    if not current_user.is_superuser:
+        raise HTTPException(status_code=403, detail="Admin only")
+    if app_config.site_profile != "demo":
+        return {"demo": False}
+
+    total_runs = (
+        await session.execute(select(func.count(ExecutionRun.id)))
+    ).scalar() or 0
+
+    unique_users = (
+        await session.execute(
+            select(func.count(func.distinct(ExecutionRun.user_id)))
+        )
+    ).scalar() or 0
+
+    status_rows = (
+        await session.execute(
+            select(ExecutionRun.status, func.count(ExecutionRun.id)).group_by(
+                ExecutionRun.status
+            )
+        )
+    ).all()
+    status_counts = {row[0]: row[1] for row in status_rows}
+
+    # Count active demo sessions from the file-backed rate limiter state
+    active_sessions = 0
+    state_path = settings.data_dir / "demo_execution_limits.json"
+    if state_path.exists():
+        try:
+            state = json.loads(state_path.read_text())
+            active_sessions = len(state)
+        except (json.JSONDecodeError, IOError):
+            pass
+
+    return {
+        "demo": True,
+        "total_runs": total_runs,
+        "unique_users": unique_users,
+        "status_counts": status_counts,
+        "active_sessions": active_sessions,
+    }
+
+
 @router.get("/mode")
 async def get_mode():
     """Get current application mode (considers degradation)"""
-    from app.services.network_health import get_network_health_service
+    from spectra_sherpa.app.services.network_health import get_network_health_service
 
     health_service = get_network_health_service()
 
@@ -139,7 +227,7 @@ async def get_network_status():
     Returns status of SpectraSherpa connection and degradation state.
     Useful for showing "Offline Mode" banner in the frontend.
     """
-    from app.services.network_health import get_network_health_service
+    from spectra_sherpa.app.services.network_health import get_network_health_service
 
     health_service = get_network_health_service()
     state = health_service.state
@@ -196,7 +284,7 @@ async def get_unit_options():
     - Measurement types (transmission, ATR, DRIFTS)
     - Reference types (background, blank, air, nitrogen)
     """
-    from app.lib.spectral.metadata import (
+    from spectra_sherpa.app.lib.spectral.metadata import (
         FRONTEND_CONCENTRATION_UNITS,
         FRONTEND_PATHLENGTH_UNITS,
         FRONTEND_TEMPERATURE_UNITS,
@@ -289,7 +377,7 @@ async def get_spectrasherpa_config():
 
     Configuration is read-only from environment variables.
     """
-    from app.services.spectrasherpa import spectrasherpa_config
+    from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
 
     if spectrasherpa_config.api_key:
         return {
@@ -399,7 +487,7 @@ async def get_spectrasherpa_user():
     """
     Get current user info from SpectraSherpa.
     """
-    from app.services.spectrasherpa import get_spectrasherpa_service
+    from spectra_sherpa.app.services.spectrasherpa import get_spectrasherpa_service
 
     service = get_spectrasherpa_service()
     if not service.is_configured:
@@ -427,7 +515,7 @@ async def get_spectrasherpa_keys():
     """
     Get available managed LLM keys from SpectraSherpa.
     """
-    from app.services.spectrasherpa import get_spectrasherpa_service
+    from spectra_sherpa.app.services.spectrasherpa import get_spectrasherpa_service
 
     service = get_spectrasherpa_service()
     if not service.is_configured:
@@ -486,8 +574,8 @@ async def activate_hybrid(request: ActivateHybridRequest, http_request: Request)
 
     Security: blocked in enterprise mode; restricted to loopback in local/hybrid.
     """
-    from app.core.mode_policy import is_enterprise
-    from app.core.security import get_client_host, _is_loopback
+    from spectra_sherpa.app.core.mode_policy import is_enterprise
+    from spectra_sherpa.app.core.security import get_client_host, _is_loopback
 
     if is_enterprise():
         raise HTTPException(status_code=403, detail="Mode switching is disabled in enterprise mode.")
@@ -531,8 +619,8 @@ async def activate_hybrid(request: ActivateHybridRequest, http_request: Request)
     env_path = _find_or_create_env_path()
 
     # ── 4. Generate SECRET_KEY if still default ──
-    from app.core.config import settings
-    from app.core.startup import DEFAULT_SECRET_KEY
+    from spectra_sherpa.app.core.config import settings
+    from spectra_sherpa.app.core.startup import DEFAULT_SECRET_KEY
 
     secret_key_generated = False
     if settings.secret_key == DEFAULT_SECRET_KEY:
@@ -558,24 +646,24 @@ async def activate_hybrid(request: ActivateHybridRequest, http_request: Request)
     app_config.mode = "hybrid"
     app_config.egress_enabled = True
 
-    from app.services.spectrasherpa import spectrasherpa_config
+    from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
     spectrasherpa_config.api_base_url = base_url
     spectrasherpa_config.api_key = request.api_key
 
     # ── 8. Reset SpectraSherpaService singleton ──
-    from app.services.spectrasherpa import reset_spectrasherpa_service
+    from spectra_sherpa.app.services.spectrasherpa import reset_spectrasherpa_service
     await reset_spectrasherpa_service()
 
     # ── 9. Run hybrid startup tasks ──
-    from app.core.startup import ensure_egress_defaults, link_hybrid_identity
+    from spectra_sherpa.app.core.startup import ensure_egress_defaults, link_hybrid_identity
     await ensure_egress_defaults()
 
     # Auto-enable spectrasherpa sync for all users — hybrid mode needs it
     # for Sherpa Advisor to work. Without this, users must manually toggle
     # via sqlite3 since there's no Data & Privacy UI yet.
     try:
-        from app.db.session import async_session
-        from app.models.data_egress import UserEgressDefaults
+        from spectra_sherpa.app.db.session import async_session
+        from spectra_sherpa.app.models.data_egress import UserEgressDefaults
         async with async_session() as session:
             result = await session.execute(
                 select(UserEgressDefaults).where(
@@ -591,7 +679,7 @@ async def activate_hybrid(request: ActivateHybridRequest, http_request: Request)
     await link_hybrid_identity()
 
     # ── 10. Start network health monitoring ──
-    from app.services.network_health import start_network_health_service
+    from spectra_sherpa.app.services.network_health import start_network_health_service
     await start_network_health_service()
 
     logger.info("Hybrid mode activated: connected to %s", base_url)
@@ -613,8 +701,8 @@ async def deactivate_hybrid(http_request: Request):
 
     Security: blocked in enterprise mode; restricted to loopback in local/hybrid.
     """
-    from app.core.mode_policy import is_enterprise
-    from app.core.security import get_client_host, _is_loopback
+    from spectra_sherpa.app.core.mode_policy import is_enterprise
+    from spectra_sherpa.app.core.security import get_client_host, _is_loopback
 
     if is_enterprise():
         raise HTTPException(status_code=403, detail="Mode switching is disabled in enterprise mode.")
@@ -647,16 +735,16 @@ async def deactivate_hybrid(http_request: Request):
     app_config.mode = "local"
     app_config.egress_enabled = False
 
-    from app.services.spectrasherpa import SPECTRASHERPA_API_BASE, spectrasherpa_config
+    from spectra_sherpa.app.services.spectrasherpa import SPECTRASHERPA_API_BASE, spectrasherpa_config
     spectrasherpa_config.api_key = None
     spectrasherpa_config.api_base_url = SPECTRASHERPA_API_BASE
 
     # ── 4. Reset service singleton ──
-    from app.services.spectrasherpa import reset_spectrasherpa_service
+    from spectra_sherpa.app.services.spectrasherpa import reset_spectrasherpa_service
     await reset_spectrasherpa_service()
 
     # ── 5. Stop network health monitoring ──
-    from app.services.network_health import stop_network_health_service
+    from spectra_sherpa.app.services.network_health import stop_network_health_service
     await stop_network_health_service()
 
     logger.info("Reverted to local mode")

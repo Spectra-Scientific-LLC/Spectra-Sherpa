@@ -6,7 +6,7 @@ from typing import Any, TypeAlias
 
 from fastapi import APIRouter
 
-from app.api.v1.routes import (
+from spectra_sherpa.app.api.v1.routes import (
     api_keys,
     builder,
     compute,
@@ -43,7 +43,7 @@ def get_server_routers() -> list[RouterInclude]:
     This keeps Repo 1 router construction decoupled from server-only route
     modules. Repo 2 can inject its own server routes via build/create helpers.
     """
-    from app.core.mode_policy import is_multi_user
+    from spectra_sherpa.app.core.mode_policy import is_multi_user
 
     if not is_multi_user():
         return []
@@ -52,10 +52,10 @@ def get_server_routers() -> list[RouterInclude]:
     auth_loaded = False
 
     try:
-        from app.api.v1.routes import auth
+        from spectra_sherpa.app.api.v1.routes import auth
     except ImportError:
         # After repo split, Repo 1 may not carry full auth routes.
-        from app.api.v1.routes import auth_compat
+        from spectra_sherpa.app.api.v1.routes import auth_compat
 
         logger.info(
             "Server auth routes unavailable in this distribution; "
@@ -67,7 +67,7 @@ def get_server_routers() -> list[RouterInclude]:
         routers.append((auth.router, {"prefix": "/auth", "tags": ["auth"]}))
 
     try:
-        from app.api.v1.routes import admin
+        from spectra_sherpa.app.api.v1.routes import admin
     except ImportError:
         logger.info("Server admin routes unavailable in this distribution; skipping admin router")
     else:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.config import AppConfig
+from spectra_sherpa.app.core.config import AppConfig
 
 
 def _clear_mode_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -76,6 +76,5 @@ def test_from_env_hybrid_accepts_site_profile_without_changing_runtime_mode(
     assert cfg.site_profile == "internal"
     assert safe["mode"] == "hybrid"
     assert safe["siteProfile"] == "internal"
-    assert safe["features"]["enterpriseMode"] is False
-    assert safe["features"]["demoMode"] is False
+    assert safe["demo"] is None  # Not a demo profile
 

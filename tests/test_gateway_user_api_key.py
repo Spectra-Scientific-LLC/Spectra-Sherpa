@@ -4,10 +4,10 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
 
-import app.db.session as db_session
-from app.core import security
-from app.core.config import app_config
-from app.models.user import User
+import spectra_sherpa.app.db.session as db_session
+from spectra_sherpa.app.core import security
+from spectra_sherpa.app.core.config import app_config
+from spectra_sherpa.app.models.user import User
 
 
 @pytest.mark.asyncio

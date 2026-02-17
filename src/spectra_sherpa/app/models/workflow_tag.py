@@ -10,11 +10,11 @@ from typing import TYPE_CHECKING
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Table, Column, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base
+from spectra_sherpa.app.db.base import Base
 
 if TYPE_CHECKING:
-    from app.models.user import User
-    from app.models.workflow import Workflow
+    from spectra_sherpa.app.models.user import User
+    from spectra_sherpa.app.models.workflow import Workflow
 
 
 # Association table for many-to-many relationship between workflows and tags

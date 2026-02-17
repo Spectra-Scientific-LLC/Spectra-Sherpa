@@ -4,11 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_session
-from app.models.background_job import BackgroundJob
-from app.models.user import User
-from app.schemas.jobs import JobInfo
-from app.services.job_manager import job_manager
+from spectra_sherpa.app.api.deps import get_current_user, get_session
+from spectra_sherpa.app.models.background_job import BackgroundJob
+from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.schemas.jobs import JobInfo
+from spectra_sherpa.app.services.job_manager import job_manager
 
 router = APIRouter(prefix="/jobs")
 

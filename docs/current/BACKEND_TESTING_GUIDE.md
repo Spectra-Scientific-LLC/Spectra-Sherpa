@@ -10,8 +10,7 @@
 ### 1. Start Backend Server
 
 ```bash
-cd src/spectra_sherpa
-uvicorn app.main:app --reload
+uvicorn spectra_sherpa.app.main:create_app --factory --reload
 ```
 
 **Expected:** Server starts on `http://localhost:8000`
@@ -106,10 +105,9 @@ jq '.irdata | {folder_count: .[0].file_count, actual_files: (length - 1)}'
 
 **Command:**
 ```bash
-cd src/spectra_sherpa
 
 python -c "
-from app.services.dag.nodes.data import DataSourceNode
+from spectra_sherpa.app.services.dag.nodes.data import DataSourceNode
 
 node = DataSourceNode()
 
@@ -163,11 +161,10 @@ All tests passed!
 
 **Command:**
 ```bash
-cd src/spectra_sherpa
 
 python -c "
 import asyncio
-from app.services.dag.nodes.data import DataSourceNode
+from spectra_sherpa.app.services.dag.nodes.data import DataSourceNode
 
 async def test():
     node = DataSourceNode()
@@ -233,11 +230,10 @@ Test PASSED ✅
 
 **Command:**
 ```bash
-cd src/spectra_sherpa
 
 python -c "
 import asyncio
-from app.services.dag.nodes.data import DataSourceNode
+from spectra_sherpa.app.services.dag.nodes.data import DataSourceNode
 
 async def test():
     node = DataSourceNode()
@@ -286,11 +282,10 @@ Test PASSED ✅
 
 **Command:**
 ```bash
-cd src/spectra_sherpa
 
 python -c "
 import asyncio
-from app.services.dag.nodes.data import DataSourceNode
+from spectra_sherpa.app.services.dag.nodes.data import DataSourceNode
 
 async def test():
     node = DataSourceNode()
@@ -339,11 +334,10 @@ Test PASSED ✅
 
 **Command:**
 ```bash
-cd src/spectra_sherpa
 
 python -c "
 import asyncio
-from app.services.dag.nodes.data import DataSourceNode
+from spectra_sherpa.app.services.dag.nodes.data import DataSourceNode
 
 async def test():
     node = DataSourceNode()
@@ -403,12 +397,11 @@ Test PASSED ✅
 
 **Command:**
 ```bash
-cd src/spectra_sherpa
 
 python -c "
 import asyncio
 import numpy as np
-from app.services.dag.nodes.data import DataSourceNode
+from spectra_sherpa.app.services.dag.nodes.data import DataSourceNode
 
 async def test():
     # This test requires files with mismatched x-axes
@@ -472,12 +465,11 @@ Verify DataSourceNode pattern loading produces same result as LoadGroupNode.
 
 **Command:**
 ```bash
-cd src/spectra_sherpa
 
 python -c "
 import asyncio
 import numpy as np
-from app.services.dag.nodes.data import DataSourceNode, LoadGroupNode
+from spectra_sherpa.app.services.dag.nodes.data import DataSourceNode, LoadGroupNode
 
 async def test():
     print('Testing: DataSourceNode vs LoadGroupNode consistency')
@@ -573,11 +565,10 @@ Verify single file loading still works (backward compatibility).
 
 **Command:**
 ```bash
-cd src/spectra_sherpa
 
 python -c "
 import asyncio
-from app.services.dag.nodes.data import DataSourceNode
+from spectra_sherpa.app.services.dag.nodes.data import DataSourceNode
 
 async def test():
     node = DataSourceNode()
@@ -632,11 +623,10 @@ Test PASSED ✅
 
 **Command:**
 ```bash
-cd src/spectra_sherpa
 
 python -c "
 import asyncio
-from app.services.dag.nodes.data import DataSourceNode
+from spectra_sherpa.app.services.dag.nodes.data import DataSourceNode
 
 async def test():
     node = DataSourceNode()
@@ -689,12 +679,11 @@ Run all tests in sequence:
 
 **Command:**
 ```bash
-cd src/spectra_sherpa
 
 python -c "
 import asyncio
 import sys
-from app.services.dag.nodes.data import DataSourceNode
+from spectra_sherpa.app.services.dag.nodes.data import DataSourceNode
 
 async def run_all_tests():
     results = []
@@ -899,10 +888,9 @@ example_file = "*.SPG"  # Instead of "*"
 **Solution:**
 ```bash
 # Make sure you're in the package directory
-cd src/spectra_sherpa
 
 # Verify imports work
-python -c "from app.services.dag.nodes.data import DataSourceNode; print('✅ Imports work')"
+python -c "from spectra_sherpa.app.services.dag.nodes.data import DataSourceNode; print('✅ Imports work')"
 ```
 
 ---

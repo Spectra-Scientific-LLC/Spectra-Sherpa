@@ -459,8 +459,7 @@ Frontend SPA is bundled inside the package — no Node.js required.
 
 ```bash
 # Backend (with auto-reload)
-cd src/spectra_sherpa
-uvicorn app.main:app --reload --port 8000
+uvicorn spectra_sherpa.app.main:create_app --factory --reload --port 8000
 
 # Frontend (separate terminal)
 cd frontend
@@ -545,7 +544,7 @@ See [DigitalOcean Deployment Guide](../deployment/DIGITAL_OCEAN.md) for cloud se
 spectra-sherpa/
 ├── pyproject.toml                      # Root package definition (pip install -e .)
 ├── src/spectra_sherpa/             # The pip-installable package
-│   ├── __init__.py                     # Version + meta-path finder (app.* alias)
+│   ├── __init__.py                     # Package version
 │   ├── cli.py                          # `spectra-sherpa` CLI entry point
 │   ├── _paths.py                       # Dual-mode path resolution (dev/pip)
 │   ├── app/

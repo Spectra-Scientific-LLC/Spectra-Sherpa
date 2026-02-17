@@ -4,10 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_session
-from app.models.user import User
-from app.models.doe_config import DOEConfig
-from app.schemas.doe_config import (
+from spectra_sherpa.app.api.deps import get_current_user, get_session
+from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.models.doe_config import DOEConfig
+from spectra_sherpa.app.schemas.doe_config import (
     DOEConfig as DOEConfigSchema,
     DOEConfigCreate,
     DOEConfigList,

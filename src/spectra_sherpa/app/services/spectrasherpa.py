@@ -21,7 +21,7 @@ from dataclasses import dataclass
 import httpx
 from pydantic import BaseModel, Field
 
-from app.core.config import app_config, settings
+from spectra_sherpa.app.core.config import app_config, settings
 
 logger = logging.getLogger(__name__)
 

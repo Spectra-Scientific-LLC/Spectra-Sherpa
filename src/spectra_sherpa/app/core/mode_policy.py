@@ -15,7 +15,7 @@ directly for one-shot checks that don't affect request handling.
 
 from __future__ import annotations
 
-from app.core.config import app_config
+from spectra_sherpa.app.core.config import app_config
 
 
 # ── Identity shortcuts ───────────────────────────────────────────
@@ -36,8 +36,8 @@ def is_enterprise() -> bool:
 
 
 def is_demo() -> bool:
-    """Deprecated: use is_enterprise(). Kept as alias for one release cycle."""
-    return is_enterprise()
+    """True when running with demo experience profile."""
+    return app_config.site_profile == "demo"
 
 
 def is_multi_user() -> bool:
@@ -57,7 +57,7 @@ def requires_http_auth(client_host: str | None) -> bool:
     if app_config.mode == "local":
         return False
     if app_config.mode == "hybrid":
-        from app.core.security import _is_loopback
+        from spectra_sherpa.app.core.security import _is_loopback
         return not _is_loopback(client_host)
     # enterprise (and any future mode): always require auth
     return True
