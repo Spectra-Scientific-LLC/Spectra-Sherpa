@@ -249,15 +249,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
         lastSyncError.value = payload.message || "Demo limit reached";
         messages.value.push({
           role: "system",
-          content: payload.message || "Sherpa interaction limit reached. Upgrade to continue.",
-        });
-        import("@/composables/useDemoMode").then(({ useDemoMode }) => {
-          const { triggerUpgradeModal } = useDemoMode();
-          triggerUpgradeModal({
-            message: payload.message || "Sherpa interaction limit reached.",
-            upgradeUrl: payload.upgrade_url,
-            availablePlans: payload.available_plans || [],
-          });
+          content: payload.message || "Sherpa interaction limit reached for this session.",
         });
       } else {
         lastSyncError.value = payload.detail || "Sherpa error";

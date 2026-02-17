@@ -159,6 +159,7 @@ import { useToast } from "primevue/usetoast";
 import { useLlmStore } from "@/stores/llm";
 import { useSherpaStore } from "@/stores/sherpa";
 import { useExperimentStore } from "@/stores/experiment";
+import { useAuthStore } from "@/stores/auth";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useDemoMode } from "@/composables/useDemoMode";
 import { formatDateTime } from "@/utils/format";
@@ -183,8 +184,9 @@ const router = useRouter();
 const store = useLlmStore();
 const sherpaStore = useSherpaStore();
 const experimentStore = useExperimentStore();
+const authStore = useAuthStore();
 const toast = useToast();
-const { isFeatureEnabled } = useAppConfig();
+const { appMode, isFeatureEnabled } = useAppConfig();
 const { isDemoMode } = useDemoMode();
 
 const userMessage = ref("");
@@ -264,9 +266,14 @@ const handleConfigChange = async () => {
 // ── Lifecycle ────────────────────────────────────────────────
 
 onMounted(async () => {
-  store.connect();
-  experimentStore.fetchExperiments();
-  sherpaStore.init();
+  // Skip WS connect and data fetches when not authenticated in enterprise mode.
+  // The router guard will redirect to /login; once the user logs in and this
+  // component re-mounts, these calls will proceed normally.
+  if (authStore.isAuthenticated || appMode.value === "local") {
+    store.connect();
+    experimentStore.fetchExperiments();
+    sherpaStore.init();
+  }
 
   // Fetch initial config
   await store.checkConfigChange();

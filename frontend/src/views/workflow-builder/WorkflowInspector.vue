@@ -1295,6 +1295,7 @@ import Slider from "primevue/slider";
 import TreeSelect from "primevue/treeselect";
 import { useToast } from "primevue/usetoast";
 import { useWorkflowStore, type WorkflowNode } from "@/stores/workflow";
+import { useDemoMode } from "@/composables/useDemoMode";
 import QuickPlotModal from "./modals/QuickPlotModal.vue";
 import DataTableModal from "./modals/DataTableModal.vue";
 import type { NodeOutput, PortOutput } from "@/utils/nodeOutput";
@@ -1405,6 +1406,7 @@ const emit = defineEmits<{
 
 const toast = useToast();
 const workflowStore = useWorkflowStore();
+const { isDemoMode } = useDemoMode();
 const selectedNodeType = computed(() => workflowStore.getLegacyNodeType(props.selectedNode?.type || ''));
 
 const asObject = (value: unknown): Record<string, unknown> | null => {
@@ -2204,8 +2206,8 @@ const selectedDatasetLabel = computed(() => {
 
 const normalizeMethodOptions = ['mean', 'median', 'snv', 'msc'];
 
-// DATA node source options
-const dataSourceOptions = [
+// DATA node source options — hide Direct File in demo mode
+const allDataSourceOptions = [
   { label: 'Direct File', value: 'file' },
   { label: 'Experiment', value: 'experiment' },
   { label: 'Library', value: 'library' },
@@ -2214,6 +2216,11 @@ const dataSourceOptions = [
   { label: 'Eigenvector Dataset', value: 'eigenvector' },
   { label: 'Synthetic', value: 'synthetic' },
 ];
+const dataSourceOptions = computed(() =>
+  isDemoMode.value
+    ? allDataSourceOptions.filter(o => o.value !== 'file')
+    : allDataSourceOptions
+);
 
 const getSelectedDatasetFallback = (value: unknown): Array<{label: string; value: string}> => {
   if (typeof value === 'string' && value.trim() !== '') {

@@ -1,5 +1,5 @@
 import axios from "axios";
-import { isDemoUpgradeError, getDemoUpgradeInfo } from "@/utils/errors";
+import { isDemoUpgradeError } from "@/utils/errors";
 
 // Use relative URL in production (nginx proxies to backend)
 // Use absolute URL in development for Vite dev server
@@ -48,26 +48,14 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Demo mode: 403 (capability blocked) or 429 (execution limit)
-    if (isDemoUpgradeError(error)) {
-      const info = getDemoUpgradeInfo(error);
-      if (info) {
-        // Lazy import to avoid circular dependency
-        import("@/composables/useDemoMode").then(({ useDemoMode }) => {
-          const { triggerUpgradeModal, updateFromRateLimit } = useDemoMode();
-          triggerUpgradeModal({
-            message: info.message,
-            upgradeUrl: info.upgradeUrl,
-            availablePlans: info.availablePlans,
-            blockedCapability: info.blockedCapability,
-          });
-          // Update quota counter for 429 responses
-          if (error.response?.status === 429) {
-            const data = error.response?.data;
-            updateFromRateLimit(data?.remaining ?? 0, data?.limit ?? 25);
-          }
-        });
-      }
+    // Demo mode: 429 (execution limit) — update banner quota counter.
+    // No modal is shown; the top-of-page DemoBanner is the sole upgrade prompt.
+    if (isDemoUpgradeError(error) && error.response?.status === 429) {
+      import("@/composables/useDemoMode").then(({ useDemoMode }) => {
+        const { updateFromRateLimit } = useDemoMode();
+        const data = error.response?.data;
+        updateFromRateLimit(data?.remaining ?? 0, data?.limit ?? 25);
+      });
       return Promise.reject(error);
     }
 

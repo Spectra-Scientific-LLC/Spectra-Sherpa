@@ -47,6 +47,15 @@ const initWorkflowMetadataRefresh = async () => {
   const { useWorkflowStore } = await import("./stores/workflow");
   const workflowStore = useWorkflowStore();
 
+  // Skip initial fetch when not authenticated (enterprise/hybrid mode).
+  // The node library will be fetched once the user logs in and views load.
+  const token = localStorage.getItem("token");
+  const apiKey = localStorage.getItem("api_key");
+  if (!token && !apiKey) {
+    // No credentials — defer until after login to avoid 401 spam.
+    return;
+  }
+
   // Initialize workflow store and fetch node library metadata.
   // This provides validation schemas and parameter definitions from backend.
   await workflowStore.fetchNodeLibrary().catch((err) => {

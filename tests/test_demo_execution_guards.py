@@ -92,8 +92,7 @@ class TestDemoGuardCoverage:
         }
         resp = await auth_client.post("/api/v1/builder/preprocess", json=payload)
         assert resp.status_code == 403
-        detail = resp.json()["detail"]
-        assert detail["blocked_capability"] == "data_upload"
+        assert "not available in demo mode" in resp.json()["detail"]
 
     @pytest.mark.anyio
     async def test_demo_blocks_compute_execute_inline_data(
@@ -108,8 +107,7 @@ class TestDemoGuardCoverage:
         }
         resp = await auth_client.post("/api/v1/compute/execute", json=payload)
         assert resp.status_code == 403
-        detail = resp.json()["detail"]
-        assert detail["blocked_capability"] == "data_upload"
+        assert "not available in demo mode" in resp.json()["detail"]
 
     @pytest.mark.anyio
     async def test_demo_should_block_workflow_execute_inline_initial_data(

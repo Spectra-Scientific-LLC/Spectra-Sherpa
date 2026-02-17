@@ -18,9 +18,8 @@
       <span>Offline Mode</span>
     </div>
 
-    <!-- Demo Mode Banner + Upgrade Modal -->
+    <!-- Demo Mode Banner -->
     <DemoBanner />
-    <DemoUpgradeModal />
 
     <Sidebar :collapsed="navCollapsed" />
     <div class="workspace">
@@ -54,15 +53,17 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import ChatPanel from "@/components/ChatPanel.vue";
 import DemoBanner from "@/components/DemoBanner.vue";
-import DemoUpgradeModal from "@/components/DemoUpgradeModal.vue";
+
 import Sidebar from "@/components/Sidebar.vue";
 import Topbar from "@/components/Topbar.vue";
 import Toast from "primevue/toast";
 import { useBackendStatus } from "@/composables/useBackendStatus";
 import { useAppConfig } from "@/composables/useAppConfig";
+import { useAuthStore } from "@/stores/auth";
 import { useJobStore } from "@/stores/job";
 
 const { appMode } = useAppConfig();
+const authStore = useAuthStore();
 const jobStore = useJobStore();
 
 const navCollapsed = ref(localStorage.getItem("navCollapsed") === "true");
@@ -154,13 +155,17 @@ watch(chatWidth, (value) => {
 
 // Connect the job store WS when the backend becomes available so that
 // background job progress (batch predict, folder watches) reaches the UI.
-watch(backendConnected, (isConnected) => {
-  if (isConnected) {
-    jobStore.connect().catch(() => undefined);
-  } else {
-    jobStore.disconnect();
+// Skip if not authenticated in enterprise mode — avoids pre-login 1008 rejections.
+watch(
+  [backendConnected, () => authStore.isAuthenticated],
+  ([isConnected, isAuthed]) => {
+    if (isConnected && (isAuthed || appMode.value === "local")) {
+      jobStore.connect().catch(() => undefined);
+    } else {
+      jobStore.disconnect();
+    }
   }
-});
+);
 </script>
 
 <style scoped>

@@ -178,12 +178,7 @@ def demo_guard(capability: str):
             if capability in contract.disabled_capabilities:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail={
-                        "message": contract.upgrade_message,
-                        "upgrade_url": contract.upgrade_url,
-                        "available_plans": contract.available_plans,
-                        "blocked_capability": capability,
-                    },
+                    detail=f"This feature is not available in demo mode.",
                 )
     return _guard
 
@@ -200,12 +195,7 @@ def check_demo_capability(capability: str) -> None:
         if capability in contract.disabled_capabilities:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail={
-                    "message": contract.upgrade_message,
-                    "upgrade_url": contract.upgrade_url,
-                    "available_plans": contract.available_plans,
-                    "blocked_capability": capability,
-                },
+                detail=f"This feature is not available in demo mode.",
             )
 
 

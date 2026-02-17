@@ -53,7 +53,7 @@ class TestDemoGuard:
         guard = demo_guard("data_upload")
         guard()
 
-    def test_403_response_has_contract_fields(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_403_response_is_plain_message(self, monkeypatch: pytest.MonkeyPatch) -> None:
         contract = DemoContract(
             disabled_capabilities=["data_upload"],
             upgrade_url="https://example.com/pricing",
@@ -68,11 +68,8 @@ class TestDemoGuard:
         with pytest.raises(HTTPException) as exc_info:
             guard()
 
-        detail = exc_info.value.detail
-        assert detail["upgrade_url"] == "https://example.com/pricing"
-        assert detail["available_plans"] == ["hybrid", "enterprise"]
-        assert detail["blocked_capability"] == "data_upload"
-        assert detail["message"] == "Upgrade now!"
+        assert exc_info.value.status_code == 403
+        assert "not available in demo mode" in exc_info.value.detail
 
 
 class TestDemoContractConfig:
