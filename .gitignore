@@ -20,6 +20,9 @@ venv/
 dist/
 build/
 
+# MkDocs build output
+site/
+
 # Node
 node_modules/
 frontend/dist/
@@ -50,6 +53,7 @@ Thumbs.db
 .vscode/
 .idea/
 .cursor/
+.claude/
 
 # Test / coverage
 .pytest_cache/
@@ -63,3 +67,25 @@ backend/
 
 # Spectrasherpa server (separate paid repo)
 spectrasherpa-server/
+
+# SpectroChemPy runtime data (downloaded at runtime, not part of source)
+.spectrochempy/
+
+# Internal planning / architecture docs (not for public consumption)
+ANALYSIS_REPORT.md
+ARCHITECTURE_REFACTOR_PLAN.md
+BIG_ROLLBACK_PLAN.md
+COMMERCIAL.md
+CURRENT.md
+DONE.md
+FUTURE.md
+NODE_ARCHITECTURE_AUDIT.md
+NODE_STANDARDIZATION_EFFORT.md
+PLS-DA_Implementation_Comparison.md
+
+# Internal docs directories
+docs/past/
+docs/future/
+docs/OSS_SCOPE.md
+docs/admin/
+docs/deployment/

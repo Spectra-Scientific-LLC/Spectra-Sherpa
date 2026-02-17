@@ -11,7 +11,7 @@ spectra-sherpa
 
 Your browser opens to `http://localhost:8000`. No login required — start analyzing immediately.
 
-See the [Quickstart Guide](user_guide/quickstart.md) for a 2-minute walkthrough.
+See the [Quickstart Guide](user/quickstart.md) for a 2-minute walkthrough.
 
 ## Key Features
 
@@ -21,29 +21,10 @@ See the [Quickstart Guide](user_guide/quickstart.md) for a 2-minute walkthrough.
 *   **Synthesis Builder**: Create synthetic spectral datasets by blending pure components with precise concentration profiles.
 *   **Workflow Builder**: Visually design analysis pipelines (DAGs) for reproducible science (e.g., Preprocess -> PCA -> Export).
 
-## Deployment Modes
-
-SpectraSherpa runs in three modes to fit different use cases:
-
-| Mode | Use Case |
-|------|----------|
-| **Local** (default) | Single user on your laptop — no login, no network |
-| **Hybrid** | Local app with cloud identity linking and GPU offload |
-| **Enterprise** | Cloud-hosted multi-user server with JWT auth and rate limiting |
-
-See [Configuration](user_guide/configuration.md) for details.
-
 ## Documentation
 
-*   [**Installation**](user_guide/installation.md): Install and launch SpectraSherpa.
-*   [**Quickstart**](user_guide/quickstart.md): Load data and run your first workflow.
-*   [**Configuration**](user_guide/configuration.md): Configure local, hybrid, or enterprise mode.
-*   [**User Guide**](user_guide/experiments.md): Detailed instructions for all modules.
-*   [**Node Reference**](reference/nodes.md): Complete catalog of available analysis nodes.
-*   [**Deployment**](deployment/DIGITAL_OCEAN.md): Deploy to DigitalOcean with Docker.
-
-## Documentation Structure
-
-*   [**Current**](current/index.md): Active product docs, architecture, and validation guides.
-*   [**Past**](past/index.md): Closed issues, fixes, and historical summaries.
-*   [**Future**](future/index.md): Roadmap items and forward-looking plans.
+*   [**Installation**](user/installation.md): Install and launch SpectraSherpa.
+*   [**Quickstart**](user/quickstart.md): Load data and run your first workflow.
+*   [**Configuration**](user/configuration.md): Configure SpectraSherpa for your environment.
+*   [**User Guide**](user/experiments.md): Detailed instructions for all modules.
+*   [**Node Reference**](user/reference/nodes.md): Complete catalog of available analysis nodes.

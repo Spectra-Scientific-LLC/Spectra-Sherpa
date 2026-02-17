@@ -159,25 +159,20 @@ jobs:
         run: pip install mkdocs-material
 
       - name: Build docs
-        run: mkdocs build
-        # Note: --strict omitted because historical docs (past/, current/)
-        # contain ~140 relative links to source files that mkdocs can't resolve.
-        # The demo-string hygiene check below catches nomenclature drift.
+        run: mkdocs build --strict
 
       - name: Demo-string hygiene check
         run: |
-          # Fail if any current/server/deployment doc uses APP_MODE=demo or
-          # mode="demo" outside of clearly-marked deprecation notes.
-          # Allowed patterns: "deprecated alias", "accepted as deprecated",
-          # "backward compat", "maps to enterprise"
+          # Fail if any doc uses APP_MODE=demo or mode="demo" outside of
+          # clearly-marked deprecation notes.
           HITS=$(grep -rn 'APP_MODE=demo\|mode="demo"\|mode=demo\b' \
-            docs/current/ docs/admin/ docs/deployment/ \
+            docs/ \
             --include='*.md' \
             | grep -iv 'deprecat\|backward.compat\|maps.*enterprise\|accepted.*alias' || true)
 
           if [ -n "$HITS" ]; then
-            echo "::error::Stale 'demo' references found in release docs:"
+            echo "::error::Stale 'demo' references found in docs:"
             echo "$HITS"
             exit 1
           fi
-          echo "No stale demo references in release docs."
+          echo "No stale demo references in docs."

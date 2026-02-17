@@ -101,14 +101,12 @@ Backend/frontend/docs CI runs automatically when:
 
 ## Documentation
 
-Full documentation is available at [docs/](docs/index.md):
+Full documentation is available at [docs.spectrascientific.ai](https://docs.spectrascientific.ai):
 
-- [Installation](docs/user_guide/installation.md)
-- [Quickstart](docs/user_guide/quickstart.md)
-- [Configuration](docs/user_guide/configuration.md)
-- [Node Reference](docs/reference/nodes.md)
-- [Enterprise Mode](docs/server/enterprise_mode.md)
-- [Docker Deployment](docs/deployment/DIGITAL_OCEAN.md)
+- [Installation](docs/user/installation.md)
+- [Quickstart](docs/user/quickstart.md)
+- [Configuration](docs/user/configuration.md)
+- [Node Reference](docs/user/reference/nodes.md)
 
 ## Acknowledgments
 

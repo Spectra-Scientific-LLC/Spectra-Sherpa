@@ -5,7 +5,7 @@ repo_name: Spectra-Scientific-LLC/Spectra-Sherpa
 edit_uri: edit/main/docs/
 nav:
   - Home: index.md
-  - User Guide (OSS):
+  - User Guide:
       - Installation: user/installation.md
       - Configuration: user/configuration.md
       - Quickstart: user/quickstart.md
@@ -18,11 +18,6 @@ nav:
           - PCA (Side-by-Side): user/case_study_pca.md
           - Methodology: user/reproduction_methodology.md
       - User Manual: user/manual.md
-  - Server Operator Guide:
-      - Overview: admin/server/overview.md
-      - Hybrid Mode: admin/server/hybrid_mode.md
-      - Enterprise Mode: admin/server/enterprise_mode.md
-      - Docker Deployment: deployment/DIGITAL_OCEAN.md
   - Developer Guide:
       - Setup & Contributing: dev/setup.md
       - Architecture: dev/architecture.md
@@ -41,33 +36,6 @@ nav:
       - 10. PLS: user/examples/10_pls_regression.md
   - Reference:
       - Node Library: user/reference/nodes.md
-  - Past:
-      - Summary: past/index.md
-      - Release Notes: past/RELEASE_NOTES.md
-      - Implementation Summary: past/IMPLEMENTATION_SUMMARY.md
-      - Final Fixes Summary: past/FINAL_FIXES_SUMMARY.md
-      - Session Summary: past/SESSION_SUMMARY_2026-01-21.md
-      - Node Standardization (2026-01-26): past/NODE_STANDARDIZATION_2026-01-26.md
-      - Completed Plans:
-          - Roadmap: past/ROADMAP.md
-          - 3-Repo Refactor Strategy: past/REFACTOR_3_REPO_STRATEGY.md
-          - Sherpa Implementation Plan V2: past/SHERPA_IMPLEMENTATION_PLAN_V2.md
-          - DOE Enhancements: past/DOE_ENHANCEMENTS.md
-          - Navigation Redesign: past/NAVIGATION_REDESIGN.md
-      - Fixes:
-          - 3D Concatenation Fix: past/3D_CONCATENATION_FIX.md
-          - Quick Plot Y-Axis Labels Fix: past/QUICK_PLOT_Y_AXIS_LABELS_FIX.md
-          - Case Sensitivity and UI Fixes: past/CASE_SENSITIVITY_AND_UI_FIXES.md
-          - Dedicated Load Group Enforcement: past/DEDICATED_LOAD_GROUP_ENFORCEMENT.md
-          - Load Group Node Implementation: past/LOAD_GROUP_NODE_IMPLEMENTATION.md
-      - Reviews & Testing:
-          - Code Review Findings: past/CODE_REVIEW_FINDINGS.md
-          - Week 7 Testing: past/WEEK7_TESTING.md
-  - Future:
-      - Summary: future/index.md
-      - Analysis Canvas Wireframe: future/ANALYSIS_CANVAS_WIREFRAME.md
-      - Plugin Plan (2025-01-15): future/plugin_plan_011525.md
-      - Future Capabilities: future/FUTURE_CAPABILITIES.md
 theme:
   name: material
   palette:
