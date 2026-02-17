@@ -83,9 +83,13 @@ NODE_ARCHITECTURE_AUDIT.md
 NODE_STANDARDIZATION_EFFORT.md
 PLS-DA_Implementation_Comparison.md
 
+# Internal API contracts
+contracts/
+
 # Internal docs directories
 docs/past/
 docs/future/
+docs/current/
 docs/OSS_SCOPE.md
 docs/admin/
 docs/deployment/
