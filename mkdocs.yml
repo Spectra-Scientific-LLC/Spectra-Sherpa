@@ -56,5 +56,8 @@ theme:
     - navigation.expand
     - search.highlight
     - content.action.edit
+plugins:
+  - search
+  - mkdocs-jupyter
 copyright: Copyright &copy; 2025-2026 Spectra Scientific LLC
 dev_addr: "127.0.0.1:8100"

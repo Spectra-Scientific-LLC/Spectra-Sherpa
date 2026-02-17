@@ -156,7 +156,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install mkdocs
-        run: pip install mkdocs-material
+        run: pip install mkdocs-material mkdocs-jupyter
 
       - name: Build docs
         run: mkdocs build --strict
