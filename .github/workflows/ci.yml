@@ -50,10 +50,6 @@ jobs:
       fail-fast: false
       matrix:
         scp_version: ["0.6.10", "0.8.1"]
-    env:
-      SCP_CONFIG_HOME: ${{ runner.temp }}/scp-config
-      SCP_PROJECTS_HOME: ${{ runner.temp }}/scp-projects
-      MPLCONFIGDIR: ${{ runner.temp }}/mplconfig
     steps:
       - uses: actions/checkout@v4
 
@@ -61,6 +57,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Set runtime env vars
+        run: |
+          echo "SCP_CONFIG_HOME=${{ runner.temp }}/scp-config" >> "$GITHUB_ENV"
+          echo "SCP_PROJECTS_HOME=${{ runner.temp }}/scp-projects" >> "$GITHUB_ENV"
+          echo "MPLCONFIGDIR=${{ runner.temp }}/mplconfig" >> "$GITHUB_ENV"
 
       - name: Install Poetry
         run: pip install poetry
