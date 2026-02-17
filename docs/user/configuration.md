@@ -26,9 +26,7 @@ To use the **Workflow Assistant** (LLM) or **NIST Library Search**, you need to 
     # .env
     EGRESS_ENABLED=true
     
-    # Add your keys (only one is needed)
-    OPENAI_API_KEY=sk-...
-    ANTHROPIC_API_KEY=sk-ant-...
+    # Add your LLM key (only one provider needed)
     DEEPSEEK_API_KEY=sk-...
     ```
 

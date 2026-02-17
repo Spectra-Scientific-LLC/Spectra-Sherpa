@@ -459,4 +459,4 @@ Hover over any indicator for detailed status.
 ## Support
 
 For issues and feature requests, visit:
-https://github.com/anthropics/claude-code/issues
+https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/issues

@@ -86,9 +86,8 @@ TRUSTED_PROXY_CIDRS=172.18.0.0/16  # Docker bridge network CIDR
 # WEB_CONCURRENCY=1
 
 # === LLM API KEYS (optional — enables AI assistant) ===
-# DEEPSEEK_API_KEY=sk-...          # Most cost-effective ($0.27/M input)
+# DEEPSEEK_API_KEY=sk-...
 # OPENAI_API_KEY=sk-...
-# ANTHROPIC_API_KEY=sk-...
 
 # === DATABASE (required for enterprise mode) ===
 # Enterprise mode hard-fails at startup with SQLite.
@@ -449,7 +448,4 @@ Wait 15 minutes or check the rate limit state file in the `app-data` volume.
 | `TRUST_PROXY` | No | `false` | Trust X-Forwarded-For headers |
 | `TRUSTED_PROXY_CIDRS` | No | Loopback | Trusted proxy CIDR ranges |
 | `LOG_FILE_PATH` | No | (none) | Audit log file path |
-| `OPENAI_API_KEY` | No | (none) | OpenAI LLM key |
-| `ANTHROPIC_API_KEY` | No | (none) | Anthropic LLM key |
-| `DEEPSEEK_API_KEY` | No | (none) | DeepSeek LLM key |
-| `GEMINI_API_KEY` | No | (none) | Google Gemini LLM key |
+| `DEEPSEEK_API_KEY` | No | (none) | LLM API key (any OpenAI-compatible provider) |

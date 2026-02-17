@@ -33,22 +33,11 @@ This enables native AnalysisDataset operations, SCP file format readers (JCAMP-D
 - **Python & Notebook Export** — Generate standalone `.py` scripts or Jupyter notebooks from any workflow
 - **Project Management** — Organize experiments, workflows, and scripts with versioned snapshots
 - **Experiment Tracking** — DOE support with 96-well plate layouts, samples, mixtures, and factor definitions
-- **LLM Chat & Agentic Workflows** — Multi-provider AI assistant (OpenAI, Anthropic, DeepSeek, Gemini) with MCP tool integration for workflow generation and spectral analysis
-- **Sherpa AI Advisor** — Cloud-connected guidance with tiered data egress controls (hybrid mode)
+- **LLM Chat** — Bring-your-own-key AI assistant with MCP tool integration for workflow generation and spectral analysis
+- **Sherpa AI Advisor** — Domain-expert guidance for spectroscopy workflows (available via [subscription](https://spectrascientific.ai))
 - **Plugin System** — Extend the node library and tool registry via Python entry points or drop-in modules
 - **Deploy** — Batch prediction, folder watching, execution run tracking
 - **Data Privacy Controls** — Per-user fine-grained egress permissions for LLM context, NIST queries, and exports
-
-## Deployment Modes
-
-| Mode | Use Case |
-|------|----------|
-| **Local** (default) | Single user, no login, SQLite, no network required |
-| **Hybrid** | Local app + cloud identity linking + managed LLM keys + Sherpa advisor |
-| **Enterprise** | Multi-user server with JWT auth, PostgreSQL, rate limiting, session expiry |
-
-> `APP_MODE=demo` is accepted as a deprecated alias for `enterprise`.
-> For marketing labels (login page branding), use `SITE_PROFILE=demo`.
 
 ## Installation
 
@@ -75,8 +64,6 @@ Extras are opt-in packages that enable additional capabilities. You can add them
 | Extra | Install | Description |
 |-------|---------|-------------|
 | `scp` | `pip install spectra-sherpa[scp]` | SpectroChemPy support (CeCILL-B, opt-in) |
-| `sherpa` | `pip install spectra-sherpa[sherpa]` | Sherpa AI advisor (Anthropic Claude) |
-| `cloud` | `pip install spectra-sherpa[cloud]` | PostgreSQL + Gunicorn for production |
 
 ## Development Setup
 
@@ -125,7 +112,7 @@ Full documentation is available at [docs/](docs/index.md):
 
 ## Acknowledgments
 
-SpectraSherpa builds on [SpectroChemPy](https://www.spectrochempy.fr/) by CEA/CNRS/INRIA for spectral data handling. SpectroChemPy is licensed under [CeCILL-B](https://cecill.info/licences/Licence_CeCILL-B_V1-en.html) and is an optional dependency.
+SpectraSherpa builds on [scikit-learn](https://scikit-learn.org/) and [NumPy](https://numpy.org/) for core data analysis. It optionally supports [SpectroChemPy](https://www.spectrochempy.fr/) (by CEA/CNRS/INRIA, licensed under [CeCILL-B](https://cecill.info/licences/Licence_CeCILL-B_V1-en.html)) for advanced spectral file formats and preprocessing.
 
 ## Contributing
 

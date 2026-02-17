@@ -82,7 +82,7 @@ The application has two orthogonal configuration axes:
 
 Mode logic is centralized in `spectra_sherpa.app.core.mode_policy`.
 - **Local:** No auth, no egress, single-user.
-- **Hybrid:** JWT + API key auth for remote clients, loopback exemption, optional cloud offload.
+- **Hybrid:** JWT + API key auth for remote clients, loopback exemption.
 - **Enterprise:** Full auth for all clients, rate limiting, multi-user.
 
 When `SITE_PROFILE=demo`, the **Demo Contract** (`DemoContract` in `config.py`) restricts capabilities (e.g., no data upload) and provides conversion messaging. Enterprise enforcement (password gating, session expiry, CORS validation, SQLite prohibition) lives in `spectra-server` and is injected via `create_app()` hooks.

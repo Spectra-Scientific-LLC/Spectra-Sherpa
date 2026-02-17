@@ -127,11 +127,9 @@ Create a `.env` file in your working directory:
 ```bash
 EGRESS_ENABLED=true
 
-# Add your API key(s) — only the provider(s) you want to use:
+# Add your LLM API key (configure in Settings > API Keys instead if you prefer):
+DEEPSEEK_API_KEY=sk-...
 OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
-DEEPSEEK_API_KEY=sk-...       # Most cost-effective
-GEMINI_API_KEY=AI...
 ```
 
 Restart SpectraSherpa after editing `.env`. The configured provider(s) will appear in Settings.
@@ -147,42 +145,15 @@ Restart SpectraSherpa after editing `.env`. The configured provider(s) will appe
 
 ### Supported Providers
 
-| Provider | Model | Env Variable | Use Case |
-|----------|-------|-------------|----------|
-| OpenAI | `gpt-4o` | `OPENAI_API_KEY` | Best overall quality |
-| Anthropic | `claude-sonnet-4-5-20250929` | `ANTHROPIC_API_KEY` | Strong reasoning |
-| DeepSeek | `deepseek-chat` | `DEEPSEEK_API_KEY` | Most cost-effective |
-| Google | `gemini-1.5-pro` | `GEMINI_API_KEY` | Good multimodal |
+Configure your preferred LLM provider in **Settings > API Keys**. Any OpenAI-compatible provider is supported, including DeepSeek, OpenAI, Google Gemini, and custom endpoints.
 
 ---
 
-## 7. Connect to SpectraSherpa Cloud (Optional)
+## 7. Sherpa AI Advisor (Subscription)
 
-SpectraSherpa starts in **local mode** — fully offline, single-user, SQLite. You can upgrade to **hybrid mode** at any time to get managed LLM keys, the Sherpa AI advisor, and cloud sync, all without restarting.
+The Sherpa AI Advisor provides domain-expert guidance for spectroscopy workflows. It is available as a subscription service at [spectrascientific.ai](https://spectrascientific.ai).
 
-### What You Need
-
-- A SpectraSherpa API key (starts with `ss_...`)
-- The server URL (default: `https://endpoint.spectrascientific.ai`)
-
-### Activate Hybrid Mode
-
-1. Open **Settings** > **Integrations**.
-2. Enter your **Server URL** and **API Key**.
-3. *(Optional)* Click **Test Connection** to verify credentials.
-4. Click **Connect & Enable Hybrid**.
-
-That's it. The app switches to hybrid mode immediately:
-
-- The Sherpa AI advisor tab appears in the chat panel.
-- Managed LLM keys from your account are available (no need to set your own).
-- Your `.env` file is updated automatically so hybrid mode persists across restarts.
-
-### Disconnect
-
-To revert to local mode, go to **Settings** > **Integrations** and click **Disconnect & Return Local**. Cloud features are removed and the app returns to fully offline operation.
-
-> **Data stays local.** In hybrid mode, your spectral data never leaves your machine. Only metadata (workflow structure, LLM prompts) is sent to the cloud when you use cloud features.
+To connect, go to **Settings > Integrations** and enter your API key. Your spectral data stays local — only workflow metadata is sent when you use advisor features.
 
 ---
 

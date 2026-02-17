@@ -94,7 +94,6 @@ Copy `.env.example` to `.env` for local configuration. The defaults work with ze
 |----------|---------|-------------|
 | `APP_MODE` | `local` | `local`, `hybrid`, or `enterprise` |
 | `DATABASE_URL` | `sqlite:///./spectra_sherpa.db` | Database connection string |
-| `OPENAI_API_KEY` | (none) | OpenAI key for AI features |
-| `ANTHROPIC_API_KEY` | (none) | Anthropic key for AI features |
+| `DEEPSEEK_API_KEY` | (none) | LLM API key (or configure in Settings UI) |
 
 See `.env.enterprise.example` for all hybrid/enterprise settings.
