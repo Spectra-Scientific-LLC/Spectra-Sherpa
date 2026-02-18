@@ -254,73 +254,6 @@ def serializable_array(arr: Optional[np.ndarray]) -> Optional[List]:
     return _array_to_list(arr)
 
 
-def dataset_to_payload(dataset: "NDDataset") -> Dict[str, Any]:
-    """
-    Convert NDDataset directly to a JSON-serializable payload dict.
-
-    This function bypasses SpectrumRecord to preserve all metadata.
-
-    Parameters
-    ----------
-    dataset : NDDataset
-        SpectroChemPy dataset
-
-    Returns
-    -------
-    dict
-        JSON-serializable payload with all metadata preserved
-    """
-    # Extract wavenumbers
-    if hasattr(dataset, "x") and dataset.x is not None:
-        wavenumber = np.asarray(dataset.x.data, dtype=float)
-    else:
-        wavenumber = np.arange(dataset.shape[-1], dtype=float)
-
-    # Extract absorbance
-    absorbance = np.asarray(dataset.data, dtype=float)
-    if absorbance.ndim > 1:
-        absorbance = absorbance.flatten()
-
-    # Extract metadata
-    meta = dict(dataset.meta) if hasattr(dataset, "meta") and dataset.meta else {}
-    calibration = meta.get("calibration", {})
-
-    # Build payload preserving all fields
-    payload: Dict[str, Any] = {
-        "label": dataset.title if hasattr(dataset, "title") and dataset.title else "UNKNOWN",
-        "file_path": meta.get("source_file"),
-        "wavenumber": wavenumber.tolist(),
-        "absorbance": absorbance.tolist(),
-        "source": meta.get("source_type", "csv"),
-        "model_type": calibration.get("model_type"),
-        "model_at_wavenumber": calibration.get("model_at_wavenumber"),
-        "slope": calibration.get("slope"),
-        "intercept": calibration.get("intercept"),
-        "s": calibration.get("s"),
-        "p": calibration.get("p"),
-        "c": calibration.get("c"),
-        "reference_concentration": calibration.get("reference_concentration"),
-        "concentration_mode": calibration.get("concentration_mode"),
-        "x_label": meta.get("x_label"),
-        "x_unit": meta.get("x_unit"),
-        "pathlength_m": meta.get("pathlength_m"),
-    }
-
-    # Include chemometrics metadata if present (preserves rich metadata)
-    if "chemometrics" in meta:
-        payload["chemometrics"] = meta["chemometrics"]
-
-    # Include provenance if present
-    if "provenance" in meta:
-        payload["provenance"] = meta["provenance"]
-
-    # Include spectral resolution info if present
-    if "spectral_resolution" in meta:
-        payload["spectral_resolution"] = meta["spectral_resolution"]
-
-    return payload
-
-
 __all__ = [
     # Legacy classes
     "SpectrumRecord",
@@ -332,5 +265,4 @@ __all__ = [
     "datasets_to_records",
     # Helpers
     "serializable_array",
-    "dataset_to_payload",
 ]

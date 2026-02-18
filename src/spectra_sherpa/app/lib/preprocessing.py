@@ -17,6 +17,8 @@ import numpy as np
 try:
     from scipy.interpolate import interp1d, PchipInterpolator
     from scipy.signal import savgol_filter as scipy_savgol
+    from scipy.ndimage import gaussian_filter1d as scipy_gaussian_filter1d
+    from scipy import sparse
 
     HAS_SCIPY = True
 except ImportError:
@@ -24,6 +26,27 @@ except ImportError:
     interp1d = None
     PchipInterpolator = None
     scipy_savgol = None
+    scipy_gaussian_filter1d = None
+    sparse = None
+
+try:
+    from joblib import Parallel, delayed
+
+    HAS_JOBLIB = True
+except ImportError:
+    HAS_JOBLIB = False
+    Parallel = None
+    delayed = None
+
+
+def _get_parallel_threshold() -> int:
+    """Read parallel threshold from app settings, with env-var fallback."""
+    try:
+        from spectra_sherpa.app.core.config import settings
+        return settings.parallel_threshold
+    except Exception:
+        import os
+        return int(os.getenv("PARALLEL_THRESHOLD", "100"))
 
 if TYPE_CHECKING:
     from spectra_sherpa.app.lib.scp_compat import NDDataset
@@ -583,6 +606,405 @@ def preprocess_pipeline(
     return processed, golden_grid
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# PENALIZED LEAST SQUARES BASELINES
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _diff_matrix(n: int, d: int = 2) -> "sparse.csc_matrix":
+    """Build sparse d-th order difference matrix (n-d × n)."""
+    if not HAS_SCIPY:
+        raise ImportError("SciPy is required for penalized least squares methods")
+    D = sparse.eye(n, format="csc")
+    for _ in range(d):
+        m = D.shape[0]
+        D = sparse.diags([-np.ones(m - 1), np.ones(m - 1)], [0, 1], shape=(m - 1, m), format="csc") @ D
+    return D
+
+
+def baseline_als(
+    y: np.ndarray,
+    lam: float = 1e5,
+    p: float = 0.001,
+    max_iter: int = 50,
+    tol: float = 1e-6,
+) -> np.ndarray:
+    """
+    Asymmetric Least Squares baseline estimation (Eilers 2005).
+
+    Solves: (W + λ D'D) z = W y, with asymmetric weights.
+
+    Parameters
+    ----------
+    y : np.ndarray
+        1-D spectrum (n_features,)
+    lam : float
+        Smoothness penalty (larger = smoother baseline)
+    p : float
+        Asymmetry weight (0 < p < 1; smaller = more asymmetric)
+    max_iter : int
+        Maximum iterations
+    tol : float
+        Convergence tolerance on weight change
+
+    Returns
+    -------
+    np.ndarray
+        Estimated baseline, same shape as y
+    """
+    n = len(y)
+    D = _diff_matrix(n, d=2)
+    DTD = lam * D.T @ D
+    w = np.ones(n)
+    z = np.zeros(n)
+
+    for _ in range(max_iter):
+        W = sparse.diags(w, format="csc")
+        z_new = sparse.linalg.spsolve(W + DTD, w * y)
+        w_new = np.where(y > z_new, p, 1 - p)
+        if np.linalg.norm(w_new - w) / (np.linalg.norm(w) + 1e-12) < tol:
+            return z_new
+        w = w_new
+        z = z_new
+
+    return z
+
+
+def baseline_arpls(
+    y: np.ndarray,
+    lam: float = 1e5,
+    max_iter: int = 50,
+    tol: float = 1e-6,
+) -> np.ndarray:
+    """
+    Asymmetrically Reweighted Penalized Least Squares (Baek et al. 2015).
+
+    Adaptive weighting based on negative residual statistics.
+
+    Parameters
+    ----------
+    y : np.ndarray
+        1-D spectrum (n_features,)
+    lam : float
+        Smoothness penalty
+    max_iter : int
+        Maximum iterations
+    tol : float
+        Convergence tolerance on weight change
+
+    Returns
+    -------
+    np.ndarray
+        Estimated baseline
+    """
+    n = len(y)
+    D = _diff_matrix(n, d=2)
+    DTD = lam * D.T @ D
+    w = np.ones(n)
+
+    for _ in range(max_iter):
+        W = sparse.diags(w, format="csc")
+        z = sparse.linalg.spsolve(W + DTD, w * y)
+        d = y - z
+        d_neg = d[d < 0]
+        if d_neg.size == 0:
+            break
+        m = d_neg.mean()
+        s = d_neg.std(ddof=1) if d_neg.size > 1 else 1.0
+        if s < 1e-12:
+            break
+        w_new = 1.0 / (1.0 + np.exp(2.0 * (d - (2.0 * s - m)) / s))
+        if np.linalg.norm(w_new - w) / (np.linalg.norm(w) + 1e-12) < tol:
+            return z
+        w = w_new
+
+    return z
+
+
+def baseline_airpls(
+    y: np.ndarray,
+    lam: float = 1e5,
+    max_iter: int = 50,
+    tol: float = 0.001,
+) -> np.ndarray:
+    """
+    Adaptive Iteratively Reweighted Penalized Least Squares (Zhang et al. 2010).
+
+    Parameters
+    ----------
+    y : np.ndarray
+        1-D spectrum (n_features,)
+    lam : float
+        Smoothness penalty
+    max_iter : int
+        Maximum iterations
+    tol : float
+        Convergence ratio (sum of negative residuals / sum of abs(y))
+
+    Returns
+    -------
+    np.ndarray
+        Estimated baseline
+    """
+    n = len(y)
+    D = _diff_matrix(n, d=2)
+    DTD = lam * D.T @ D
+    w = np.ones(n)
+    y_abs_sum = np.abs(y).sum()
+    if y_abs_sum < 1e-12:
+        return np.zeros(n)
+
+    for iteration in range(1, max_iter + 1):
+        W = sparse.diags(w, format="csc")
+        z = sparse.linalg.spsolve(W + DTD, w * y)
+        d = y - z
+        sum_neg = np.abs(d[d < 0]).sum()
+        if sum_neg < tol * y_abs_sum:
+            break
+        # Adaptive weights: zero out positive residuals, exponential for negative
+        w = np.zeros(n)
+        neg_mask = d < 0
+        if neg_mask.any() and sum_neg > 1e-12:
+            w[neg_mask] = np.exp(iteration * np.abs(d[neg_mask]) / sum_neg)
+        w[0] = np.exp(iteration * d[neg_mask].max() / sum_neg) if neg_mask.any() and sum_neg > 1e-12 else 0
+        w[-1] = w[0]
+
+    return z
+
+
+def baseline_penalized_ls(
+    data: np.ndarray,
+    method: str = "als",
+    lam: float = 1e5,
+    p: float = 0.001,
+    max_iter: int = 50,
+    tol: float = 1e-6,
+) -> np.ndarray:
+    """
+    Unified penalized least squares baseline correction.
+
+    Dispatches to ALS, ArPLS, or AirPLS based on method parameter.
+    Operates on 2-D data (n_samples × n_features) and returns
+    baseline-corrected spectra.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        2-D array (n_samples × n_features) or 1-D spectrum
+    method : str
+        One of "als", "arpls", "airpls"
+    lam : float
+        Smoothness penalty
+    p : float
+        Asymmetry parameter (only used for ALS)
+    max_iter : int
+        Maximum iterations
+    tol : float
+        Convergence tolerance
+
+    Returns
+    -------
+    np.ndarray
+        Baseline-corrected spectra, same shape as input
+    """
+    if data.ndim == 1:
+        data = data.reshape(1, -1)
+        was_1d = True
+    else:
+        was_1d = False
+
+    funcs = {"als": baseline_als, "arpls": baseline_arpls, "airpls": baseline_airpls}
+    if method not in funcs:
+        raise ValueError(f"method must be one of {list(funcs.keys())}, got '{method}'")
+
+    func = funcs[method]
+    kwargs = {"lam": lam, "max_iter": max_iter, "tol": tol}
+    if method == "als":
+        kwargs["p"] = p
+
+    n_samples = data.shape[0]
+    if HAS_JOBLIB and n_samples >= _get_parallel_threshold():
+        baselines = Parallel(n_jobs=-2, prefer="threads")(
+            delayed(func)(data[i], **kwargs) for i in range(n_samples)
+        )
+        corrected = data - np.array(baselines)
+    else:
+        corrected = np.empty_like(data)
+        for i in range(n_samples):
+            corrected[i] = data[i] - func(data[i], **kwargs)
+
+    return corrected[0] if was_1d else corrected
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# WHITTAKER SMOOTHER
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def whittaker_smooth(
+    data: np.ndarray,
+    lam: float = 1e2,
+    d: int = 2,
+) -> np.ndarray:
+    """
+    Whittaker smoother (Eilers 2003).
+
+    Minimises ||y - z||² + λ ||D^d z||² where D is the d-th difference matrix.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        1-D or 2-D array (n_samples × n_features)
+    lam : float
+        Smoothness penalty (larger = smoother)
+    d : int
+        Difference order (2 is most common)
+
+    Returns
+    -------
+    np.ndarray
+        Smoothed data, same shape as input
+    """
+    if not HAS_SCIPY:
+        raise ImportError("SciPy is required for Whittaker smoothing")
+
+    if data.ndim == 1:
+        data = data.reshape(1, -1)
+        was_1d = True
+    else:
+        was_1d = False
+
+    n_features = data.shape[1]
+    D = _diff_matrix(n_features, d=d)
+    A = sparse.eye(n_features, format="csc") + lam * D.T @ D
+
+    n_samples = data.shape[0]
+    if HAS_JOBLIB and n_samples >= _get_parallel_threshold():
+        rows = Parallel(n_jobs=-2, prefer="threads")(
+            delayed(sparse.linalg.spsolve)(A, data[i]) for i in range(n_samples)
+        )
+        smoothed = np.array(rows)
+    else:
+        smoothed = np.empty_like(data)
+        for i in range(n_samples):
+            smoothed[i] = sparse.linalg.spsolve(A, data[i])
+
+    return smoothed[0] if was_1d else smoothed
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NORRIS-WILLIAMS DERIVATIVE
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def norris_williams(
+    data: np.ndarray,
+    gap: int = 5,
+    segment: int = 5,
+    deriv: int = 1,
+) -> np.ndarray:
+    """
+    Norris-Williams gap-segment derivative.
+
+    For each point i:
+        d(i) = mean(y[i+gap : i+gap+segment]) - mean(y[i-gap-segment+1 : i-gap+1])
+
+    Parameters
+    ----------
+    data : np.ndarray
+        1-D or 2-D array (n_samples × n_features)
+    gap : int
+        Gap size (number of points between segments)
+    segment : int
+        Segment size (number of points to average)
+    deriv : int
+        Derivative order (1 or 2)
+
+    Returns
+    -------
+    np.ndarray
+        Derivative data, same shape as input (edges zero-padded)
+    """
+    if data.ndim == 1:
+        data = data.reshape(1, -1)
+        was_1d = True
+    else:
+        was_1d = False
+
+    n_samples, n_features = data.shape
+
+    def _first_deriv(y):
+        result = np.zeros(n_features)
+        for i in range(gap + segment - 1, n_features - gap - segment + 1):
+            left_start = i - gap - segment + 1
+            left_end = i - gap + 1
+            right_start = i + gap
+            right_end = i + gap + segment
+            result[i] = np.mean(y[right_start:right_end]) - np.mean(y[left_start:left_end])
+        return result
+
+    def _compute_row(row):
+        d1 = _first_deriv(row)
+        if deriv == 1:
+            return d1
+        elif deriv == 2:
+            return _first_deriv(d1)
+        else:
+            raise ValueError(f"deriv must be 1 or 2, got {deriv}")
+
+    if HAS_JOBLIB and n_samples >= _get_parallel_threshold():
+        rows = Parallel(n_jobs=-2, prefer="threads")(
+            delayed(_compute_row)(data[i]) for i in range(n_samples)
+        )
+        output = np.array(rows)
+    else:
+        output = np.empty_like(data)
+        for i in range(n_samples):
+            output[i] = _compute_row(data[i])
+
+    return output[0] if was_1d else output
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GAUSSIAN SMOOTHING
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def gaussian_smooth(
+    data: np.ndarray,
+    sigma: float = 2.0,
+) -> np.ndarray:
+    """
+    Gaussian smoothing using scipy.ndimage.gaussian_filter1d.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        1-D or 2-D array (n_samples × n_features)
+    sigma : float
+        Standard deviation of the Gaussian kernel
+
+    Returns
+    -------
+    np.ndarray
+        Smoothed data, same shape as input
+    """
+    if not HAS_SCIPY:
+        raise ImportError("SciPy is required for Gaussian smoothing")
+
+    if data.ndim == 1:
+        return scipy_gaussian_filter1d(data, sigma=sigma)
+
+    if HAS_JOBLIB and data.shape[0] >= _get_parallel_threshold():
+        rows = Parallel(n_jobs=-2, prefer="threads")(
+            delayed(scipy_gaussian_filter1d)(data[i], sigma=sigma)
+            for i in range(data.shape[0])
+        )
+        return np.array(rows)
+
+    return np.apply_along_axis(scipy_gaussian_filter1d, -1, data, sigma=sigma)
+
+
 __all__ = [
     "PreprocessingSettings",
     "build_golden_grid",
@@ -591,4 +1013,11 @@ __all__ = [
     "smooth_savgol",
     "clip_range",
     "preprocess_pipeline",
+    "baseline_als",
+    "baseline_arpls",
+    "baseline_airpls",
+    "baseline_penalized_ls",
+    "whittaker_smooth",
+    "norris_williams",
+    "gaussian_smooth",
 ]

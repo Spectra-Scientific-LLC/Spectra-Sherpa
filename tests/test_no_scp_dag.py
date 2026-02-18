@@ -69,7 +69,7 @@ def iris_dataset():
 @pytest.mark.asyncio
 async def test_requires_scp_gate_raises_import_error(no_scp):
     """Nodes with requires_scp=True should raise ImportError when HAS_SCP=False."""
-    node = node_registry.create_node("baseline.als", "test_als", {"lam": 1e5, "p": 0.01})
+    node = node_registry.create_node("baseline.rubberband", "test_rb", {})
 
     # Provide a dummy input so we get past parameter validation
     dummy = AnalysisDataset(X=np.ones((5, 10)))
@@ -704,7 +704,7 @@ class TestGeneratePythonNoScp:
 
     def test_scp_only_node_emits_import_error(self):
         """SCP-only nodes should emit ImportError when use_scp=False."""
-        node = self._make_node("baseline.als", {"lam": 1e5, "p": 0.001})
+        node = self._make_node("normalize.msc", {"reference": "mean"})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "ImportError" in code

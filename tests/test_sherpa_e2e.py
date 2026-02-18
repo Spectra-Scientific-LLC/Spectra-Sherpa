@@ -51,9 +51,9 @@ SAMPLE_WORKFLOW_PAYLOAD = {
         },
         {
             "node_id": "2",
-            "node_type": "baseline.als",
+            "node_type": "baseline.penalized_ls",
             "label": "BASELINE",
-            "parameters": {"method": "asls", "lam": 100000, "p": 0.001},
+            "parameters": {"method": "als", "lam": 100000, "p": 0.001},
         },
         {
             "node_id": "3",

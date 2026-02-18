@@ -431,7 +431,7 @@ class TestBuiltinSpectralTools:
         assert len(steps) > 0
         # IR should include baseline correction
         step_types = [s["step"] for s in steps]
-        assert "baseline.als" in step_types
+        assert "baseline.penalized_ls" in step_types
 
     def test_suggest_preprocessing_default(self):
         from spectra_sherpa.app.services.tools.builtin.spectral import suggest_preprocessing

@@ -140,7 +140,7 @@ export const NODE_TYPE_MAP: Record<string, string> = {
   // Preprocessing - existing nodes
   NORMALIZE: "normalize.snv",
   SCALE: "normalize.scale",
-  BASELINE: "baseline.als",
+  BASELINE: "baseline.penalized_ls",
   BASELINE_RB: "baseline.rubberband",
   SMOOTH: "smooth.savitzky_golay",
   DERIV_1: "derivative.first",
@@ -460,7 +460,7 @@ const TEMPLATES: Record<string, WorkflowTemplate> = {
     nodes: [
       { id: 1, type: "DATA", x: 50, y: 100, params: { source: "experiment" } },
       { id: 2, type: "DATA", x: 50, y: 250, params: { source: "spectrochempy", example_dataset: "irdata" } },
-      { id: 3, type: "BASELINE", x: 250, y: 100, params: { method: "asls", lam: 100000, p: 0.001 } },
+      { id: 3, type: "BASELINE", x: 250, y: 100, params: { method: "als", lam: 100000, p: 0.001 } },
       { id: 4, type: "NORMALIZE", x: 250, y: 250, params: { method: "snv" } },
       { id: 5, type: "PLS", x: 450, y: 175, params: { n_components: 5 } },
       { id: 6, type: "STATS", x: 650, y: 100, params: { metrics: ["r2", "rmse", "mae"] } },
@@ -481,7 +481,7 @@ const TEMPLATES: Record<string, WorkflowTemplate> = {
     description: "Multivariate Curve Resolution with kinetic constraints for time-resolved analysis",
     nodes: [
       { id: 1, type: "DATA", x: 50, y: 150, params: { source: "experiment" } },
-      { id: 2, type: "BASELINE", x: 230, y: 100, params: { method: "asls", lam: 50000, p: 0.01 } },
+      { id: 2, type: "BASELINE", x: 230, y: 100, params: { method: "als", lam: 50000, p: 0.01 } },
       { id: 3, type: "SMOOTH", x: 230, y: 250, params: { method: "savgol", window: 15, poly: 2 } },
       { id: 4, type: "MCR", x: 430, y: 175, params: { n_components: 3, max_iter: 100, tol: 0.1, non_negative_C: true, non_negative_St: true } },
       { id: 5, type: "PLOT", x: 630, y: 80, params: { type: "concentrations", xAxis: "time", yAxis: "conc" } },
@@ -506,7 +506,7 @@ const TEMPLATES: Record<string, WorkflowTemplate> = {
     nodes: [
       { id: 1, type: "DATA", x: 50, y: 150, params: { source: "file", format: "opus", path: "*.0" } },
       { id: 2, type: "SLICE", x: 230, y: 150, params: { start: 4000, end: 400, unit: "cm-1" } },
-      { id: 3, type: "BASELINE", x: 410, y: 100, params: { method: "rubberband", n_iter: 3 } },
+      { id: 3, type: "BASELINE_RB", x: 410, y: 100, params: {} },
       { id: 4, type: "NORMALIZE", x: 410, y: 220, params: { method: "area", range: [1800, 1500] } },
       { id: 5, type: "PEAK", x: 590, y: 150, params: { method: "find_peaks", prominence: 0.01, width: 5 } },
       { id: 6, type: "PLOT", x: 770, y: 80, params: { type: "spectra", show_peaks: true } },
@@ -550,7 +550,7 @@ const TEMPLATES: Record<string, WorkflowTemplate> = {
     nodes: [
       { id: 1, type: "DATA", x: 50, y: 100, params: { source: "experiment", format: "csv" } },
       { id: 2, type: "DATA", x: 50, y: 250, params: { source: "reference", format: "csv", column: "concentration" } },
-      { id: 3, type: "BASELINE", x: 250, y: 100, params: { method: "snip", n_iter: 40 } },
+      { id: 3, type: "BASELINE", x: 250, y: 100, params: { method: "arpls", lam: 100000 } },
       { id: 4, type: "NORMALIZE", x: 250, y: 250, params: { method: "snv" } },
       { id: 5, type: "PLS", x: 450, y: 175, params: { n_components: 10 } },
       { id: 6, type: "PLOT", x: 650, y: 80, params: { type: "rmsecv", xAxis: "components" } },
@@ -597,7 +597,7 @@ const TEMPLATES: Record<string, WorkflowTemplate> = {
     nodes: [
       { id: 1, type: "DATA", x: 50, y: 150, params: { source: "experiment", format: "bruker" } },
       { id: 2, type: "PHASE", x: 230, y: 150, params: { method: "auto", pivot: null } },
-      { id: 3, type: "BASELINE", x: 410, y: 100, params: { method: "polynomial", order: 5 } },
+      { id: 3, type: "BASELINE", x: 410, y: 100, params: { method: "als", lam: 100000, p: 0.001 } },
       { id: 4, type: "SLICE", x: 410, y: 220, params: { start: 12, end: -2, unit: "ppm" } },
       { id: 5, type: "PEAK", x: 590, y: 150, params: { method: "cwt", min_snr: 3 } },
       { id: 6, type: "FIT", x: 770, y: 100, params: { model: "lorentzian", optimize: true } },
@@ -641,7 +641,7 @@ const TEMPLATES: Record<string, WorkflowTemplate> = {
     description: "Basic preprocessing pipeline: baseline, smoothing, normalization",
     nodes: [
       { id: 1, type: "DATA", x: 50, y: 150, params: { source: "experiment" } },
-      { id: 2, type: "BASELINE", x: 230, y: 150, params: { method: "asls", lam: 100000, p: 0.001 } },
+      { id: 2, type: "BASELINE", x: 230, y: 150, params: { method: "als", lam: 100000, p: 0.001 } },
       { id: 3, type: "SMOOTH", x: 410, y: 150, params: { method: "savgol", window: 15, poly: 2 } },
       { id: 4, type: "NORMALIZE", x: 590, y: 150, params: { method: "snv" } },
       { id: 5, type: "EXPORT", x: 770, y: 150, params: { filename: "preprocessed.csv", format: "csv" } },
@@ -681,7 +681,7 @@ const TEMPLATES: Record<string, WorkflowTemplate> = {
     description: "Automated peak detection, fitting, and quantification workflow",
     nodes: [
       { id: 1, type: "DATA", x: 50, y: 150, params: { source: "experiment" } },
-      { id: 2, type: "BASELINE", x: 230, y: 150, params: { method: "asls", lam: 100000, p: 0.001 } },
+      { id: 2, type: "BASELINE", x: 230, y: 150, params: { method: "als", lam: 100000, p: 0.001 } },
       { id: 3, type: "SMOOTH", x: 410, y: 150, params: { method: "savgol", window: 11, poly: 3 } },
       { id: 4, type: "PEAK", x: 590, y: 100, params: { method: "find_peaks", prominence: 0.01 } },
       { id: 5, type: "FIT", x: 590, y: 220, params: { model: "gaussian", optimize: true } },

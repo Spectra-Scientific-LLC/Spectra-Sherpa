@@ -28,7 +28,13 @@ from ..node_base import (
     _format_value,
 )
 from ..meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
-from spectra_sherpa.app.lib.preprocessing import remove_cosmic_rays
+from spectra_sherpa.app.lib.preprocessing import (
+    remove_cosmic_rays,
+    baseline_penalized_ls,
+    whittaker_smooth,
+    norris_williams,
+    gaussian_smooth,
+)
 
 
 def _wrap_result_lines(
@@ -52,22 +58,32 @@ def _wrap_result_lines(
 
 
 @register_node
-class BaselineALSNode(Node):
+class BaselinePenalizedLSNode(Node):
     """
-    Asymmetric Least Squares (ALS) baseline correction node.
+    Penalized Least Squares baseline correction node.
 
-    Removes baseline drift from spectral data using the ALS algorithm.
+    Supports three algorithms via method selector:
+    - ALS:    Asymmetric Least Squares (Eilers 2005)
+    - ArPLS:  Asymmetrically Reweighted PLS (Baek et al. 2015)
+    - AirPLS: Adaptive Iteratively Reweighted PLS (Zhang et al. 2010)
     """
-
-    scp_method = "basc"
-    scp_param_map = {"lam": "lamb", "p": "asymmetry"}
 
     metadata = NodeMetadata(
-        node_type="baseline.als",
+        node_type="baseline.penalized_ls",
         category="preprocessing",
-        label="Baseline (ALS)",
-        description="Asymmetric Least Squares baseline correction",
+        label="Baseline (Penalized LS)",
+        description="Penalized Least Squares baseline correction (ALS / ArPLS / AirPLS)",
         parameters=[
+            NodeParameter(
+                name="method",
+                label="Algorithm",
+                param_type="select",
+                default="als",
+                options=["als", "arpls", "airpls"],
+                description="ALS: classic asymmetric; ArPLS: adaptive reweighted; AirPLS: iterative reweighted",
+                required=True,
+                category="basic",
+            ),
             NodeParameter(
                 name="lam",
                 label="Lambda (Smoothness)",
@@ -87,34 +103,91 @@ class BaselineALSNode(Node):
                 min_value=0.0001,
                 max_value=0.1,
                 step=0.0001,
-                description="Asymmetry parameter (smaller = more asymmetry)",
+                description="Asymmetry parameter (ALS only; smaller = more asymmetric)",
                 required=False,
                 category="basic",
+            ),
+            NodeParameter(
+                name="max_iter",
+                label="Max Iterations",
+                param_type="number",
+                default=50,
+                min_value=5,
+                max_value=500,
+                step=5,
+                description="Maximum number of iterations",
+                required=False,
+                category="advanced",
+            ),
+            NodeParameter(
+                name="tol",
+                label="Convergence Tolerance",
+                param_type="number",
+                default=1e-6,
+                min_value=1e-10,
+                max_value=1e-2,
+                description="Convergence tolerance on weight change",
+                required=False,
+                category="advanced",
             ),
         ],
         input_types=["NDDataset"],
         output_type="NDDataset",
-        requires_scp=True,
     )
 
+    python_extra_imports = [
+        "import numpy as np",
+        "from scipy import sparse",
+    ]
+
+    def generate_python(self, inputs, indent="    ", use_scp=True):
+        inp = next(iter(inputs.values())) if inputs else "input_data"
+        params = self._resolve_params()
+        method = params.get("method", "als")
+        lam = params.get("lam", 1e5)
+        p = params.get("p", 0.001)
+        max_iter = params.get("max_iter", 50)
+        tol = params.get("tol", 1e-6)
+        lines = [
+            f"{indent}# --- Baseline Penalized LS ({self.node_id}) ---",
+            f"{indent}from spectra_sherpa.app.lib.preprocessing import baseline_penalized_ls",
+            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
+            f"{indent}_corrected = baseline_penalized_ls(_data, method='{method}', lam={_format_value(lam)}, p={_format_value(p)}, max_iter={max_iter}, tol={_format_value(tol)})",
+        ]
+        lines += _wrap_result_lines(self.node_id, "_corrected", inp, indent, use_scp)
+        return lines
+
     async def execute(self, input_data: NDDataset) -> NDDataset:
-        """Execute baseline correction using ALS."""
+        """Execute penalized LS baseline correction."""
+        method = self.parameters.get("method", "als")
         lam = self.parameters.get("lam", 1e5)
         p = self.parameters.get("p", 0.001)
+        max_iter = self.parameters.get("max_iter", 50)
+        tol = self.parameters.get("tol", 1e-6)
 
-        result = input_data.copy()
+        data = np.array(input_data.data, dtype=np.float64)
+        corrected = baseline_penalized_ls(
+            data, method=method, lam=lam, p=p, max_iter=max_iter, tol=tol,
+        )
 
-        # basc() requires coordinates; synthesize if absent
-        x_coord = safe_get_coord(result, "x")
-        if x_coord is None or x_coord.data is None:
-            from spectra_sherpa.app.lib.scp_compat import Coord
-            coords = {"x": Coord(np.arange(result.shape[-1]), title="pixels")}
-            if result.ndim >= 2:
-                coords["y"] = Coord(np.arange(result.shape[-2]), title="samples")
-            result.set_coordset(**coords)
+        result = AnalysisDataset(X=corrected)
+        x_coord = safe_get_coord(input_data, 'x')
+        if x_coord is not None:
+            result.x = x_coord.copy()
+        y_coord = safe_get_coord(input_data, 'y')
+        if y_coord is not None:
+            result.y = y_coord.copy()
+        if hasattr(input_data, 'title'):
+            result.title = input_data.title
+        if hasattr(input_data, 'units'):
+            result.units = input_data.units
 
-        result.basc(lamb=lam, asymmetry=p)
-        add_processing_step(result, "baseline.als", {"lam": lam, "p": p}, node_id=self.node_id)
+        copy_processing_history(input_data, result)
+        add_processing_step(
+            result, "baseline.penalized_ls",
+            {"method": method, "lam": lam, "p": p, "max_iter": max_iter, "tol": tol},
+            node_id=self.node_id,
+        )
 
         return result
 
@@ -152,9 +225,28 @@ class BaselineRubberbandNode(Node):
 
     async def execute(self, input_data: NDDataset) -> NDDataset:
         """Execute rubberband baseline correction."""
+        ranges_str = self.parameters.get("ranges", "").strip()
+
         result = input_data.copy()
-        result.basc(method="rubberband")
-        add_processing_step(result, "baseline.rubberband", {"method": "rubberband"}, node_id=self.node_id)
+
+        kwargs: Dict[str, Any] = {"method": "rubberband"}
+        if ranges_str:
+            # Parse "4000:3800, 1800:1700" → list of (start, end) tuples
+            parsed = []
+            for part in ranges_str.split(","):
+                part = part.strip()
+                if ":" in part:
+                    lo, hi = part.split(":", 1)
+                    parsed.append((float(lo.strip()), float(hi.strip())))
+            if parsed:
+                kwargs["ranges"] = parsed
+
+        result.basc(**kwargs)
+        add_processing_step(
+            result, "baseline.rubberband",
+            {"method": "rubberband", "ranges": ranges_str or None},
+            node_id=self.node_id,
+        )
 
         return result
 
@@ -1060,21 +1152,40 @@ class WavenumberAlignNode(Node):
         output_type="NDDataset",
     )
 
+    python_extra_imports = [
+        "import numpy as np",
+        "from spectra_sherpa.app.lib.preprocessing import build_golden_grid, interpolate_to_grid",
+    ]
+
     def generate_python(self, inputs, indent="    ", use_scp=True):
         inp = next(iter(inputs.values())) if inputs else "input_data"
-        return [
+        params = self._resolve_params()
+        method = params.get("method", "pchip")
+        merge_tol = params.get("merge_tolerance", 0.5)
+        lines = [
             f"{indent}# --- Wavenumber Align ({self.node_id}) ---",
-            f"{indent}# Alignment is a no-op in offline export (data assumed pre-aligned)",
-            f"{indent}results['{self.node_id}'] = {inp}.copy()",
+            f"{indent}_grid = build_golden_grid([{inp}], merge_tolerance={_format_value(merge_tol)})",
+            f"{indent}results['{self.node_id}'] = interpolate_to_grid({inp}, _grid, method='{method}')",
         ]
+        return lines
 
     async def execute(self, input_data: NDDataset) -> NDDataset:
-        """Execute wavenumber alignment."""
+        """Execute wavenumber alignment via interpolation to a uniform grid."""
+        from spectra_sherpa.app.lib.preprocessing import interpolate_to_grid, build_golden_grid
+
         method = self.parameters.get("method", "pchip")
         merge_tolerance = self.parameters.get("merge_tolerance", 0.5)
 
-        result = input_data.copy()
-        add_processing_step(result, "preprocess.wavenumber_align", {"method": method, "merge_tolerance": merge_tolerance}, node_id=self.node_id)
+        # Build a clean uniform grid from the dataset's own x-axis
+        target_grid = build_golden_grid([input_data], merge_tolerance=merge_tolerance)
+        result = interpolate_to_grid(input_data, target_grid, method=method)
+
+        copy_processing_history(input_data, result)
+        add_processing_step(
+            result, "preprocess.wavenumber_align",
+            {"method": method, "merge_tolerance": merge_tolerance, "n_points": len(target_grid)},
+            node_id=self.node_id,
+        )
 
         return result
 
@@ -1121,9 +1232,9 @@ class ScaleMaxNode(Node):
             f"{indent}    _cmax = np.abs(_data).max()",
             f"{indent}    if _cmax > 0: _data = _data * ({_format_value(target)} / _cmax)",
             f"{indent}else:",
-            f"{indent}    for _i in range(_data.shape[0]):",
-            f"{indent}        _cmax = np.abs(_data[_i]).max()",
-            f"{indent}        if _cmax > 0: _data[_i] = _data[_i] * ({_format_value(target)} / _cmax)",
+            f"{indent}    _rmax = np.abs(_data).max(axis=1, keepdims=True)",
+            f"{indent}    _rmax[_rmax == 0] = 1.0",
+            f"{indent}    _data = _data * ({_format_value(target)} / _rmax)",
         ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
 
     async def execute(self, input_data: NDDataset) -> NDDataset:
@@ -1137,10 +1248,9 @@ class ScaleMaxNode(Node):
             if current_max > 0:
                 data = data * (target_max / current_max)
         else:
-            for i in range(data.shape[0]):
-                current_max = np.abs(data[i]).max()
-                if current_max > 0:
-                    data[i] = data[i] * (target_max / current_max)
+            row_max = np.abs(data).max(axis=1, keepdims=True)
+            row_max[row_max == 0] = 1.0
+            data = data * (target_max / row_max)
 
         result = AnalysisDataset(X=data)
         x_coord = safe_get_coord(input_data, 'x')
@@ -1718,14 +1828,17 @@ class EMSCNode(Node):
     """
     Extended Multiplicative Signal Correction (EMSC) node.
 
-    Extends MSC by adding polynomial baseline correction.
+    Extends MSC by adding polynomial baseline correction and optional
+    constituent spectra (interferents) to the design matrix.
+
+    Design matrix: [reference | poly_1 .. poly_d | constituent_1 .. constituent_k]
     """
 
     metadata = NodeMetadata(
         node_type="preprocess.emsc",
         category="preprocessing",
         label="EMSC",
-        description="Extended MSC with polynomial baseline correction",
+        description="Extended MSC with polynomial baseline and optional constituent spectra",
         parameters=[
             NodeParameter(
                 name="reference",
@@ -1750,12 +1863,29 @@ class EMSCNode(Node):
         ],
         input_types=["NDDataset"],
         output_type="NDDataset",
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Spectral data to correct",
+            ),
+            PortMetadata(
+                name="constituents",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=False,
+                label="Constituent Spectra",
+                description="Known interferent/constituent spectra (rows = constituents, cols = wavenumbers)",
+            ),
+        ],
     )
 
     python_extra_imports = ["import numpy as np"]
 
     def generate_python(self, inputs, indent="    ", use_scp=True):
-        inp = next(iter(inputs.values())) if inputs else "input_data"
+        inp = inputs.get("default", next(iter(inputs.values()))) if inputs else "input_data"
+        const_inp = inputs.get("constituents")
         params = self._resolve_params()
         ref = params.get("reference", "mean")
         poly = params.get("poly_order", 2)
@@ -1770,9 +1900,7 @@ class EMSCNode(Node):
             lines.append(f"{indent}_ref = np.median(_data, axis=0)")
         else:
             lines.append(f"{indent}_ref = _data[0]")
-        lines += [
-            f"{indent}_design = [_ref]",
-        ]
+        lines.append(f"{indent}_design = [_ref]")
         if poly > 0:
             lines += [
                 f"{indent}_x = np.arange(_p)",
@@ -1780,19 +1908,31 @@ class EMSCNode(Node):
             ]
             for deg in range(1, poly + 1):
                 lines.append(f"{indent}_design.append(_xn ** {deg})")
+        if const_inp:
+            lines += [
+                f"{indent}_const = np.array({const_inp}.data, dtype=np.float64)",
+                f"{indent}if _const.ndim == 1: _const = _const.reshape(1, -1)",
+                f"{indent}for _k in range(_const.shape[0]):",
+                f"{indent}    _design.append(_const[_k])",
+            ]
         lines += [
             f"{indent}_design = np.column_stack(_design)",
             f"{indent}_corrected = np.zeros_like(_data)",
             f"{indent}for _i in range(_n):",
             f"{indent}    _c, _, _, _ = np.linalg.lstsq(_design, _data[_i], rcond=None)",
-            f"{indent}    _bl = _design[:, 1:] @ _c[1:] if {poly} > 0 else 0",
+            f"{indent}    _bl = _design[:, 1:] @ _c[1:] if _design.shape[1] > 1 else 0",
             f"{indent}    _corrected[_i] = (_data[_i] - _bl) / _c[0] if abs(_c[0]) > 1e-8 else _data[_i]",
         ]
         lines += _wrap_result_lines(self.node_id, "_corrected", inp, indent, use_scp)
         return lines
 
-    async def execute(self, input_data: NDDataset) -> NDDataset:
-        """Execute EMSC correction."""
+    async def execute(self, input_data=None, constituents=None, **kwargs) -> NDDataset:
+        """Execute EMSC correction with optional constituent spectra."""
+        if input_data is None:
+            input_data = kwargs.get("default") or kwargs.get("input_0")
+        if constituents is None:
+            constituents = kwargs.get("input_1")
+
         reference_type = self.parameters.get("reference", "mean")
         poly_order = self.parameters.get("poly_order", 2)
 
@@ -1808,12 +1948,22 @@ class EMSCNode(Node):
         else:
             reference = np.mean(data, axis=0)
 
+        # Build design matrix: [reference | poly_terms | constituents]
         X_design = [reference]
         if poly_order > 0:
             x_axis = np.arange(n_features)
             x_norm = (x_axis - x_axis.mean()) / x_axis.std()
             for deg in range(1, poly_order + 1):
                 X_design.append(x_norm ** deg)
+
+        n_constituents = 0
+        if constituents is not None:
+            const_data = np.array(constituents.data, dtype=np.float64)
+            if const_data.ndim == 1:
+                const_data = const_data.reshape(1, -1)
+            n_constituents = const_data.shape[0]
+            for k in range(n_constituents):
+                X_design.append(const_data[k])
 
         X_design = np.column_stack(X_design)
         corrected_data = np.zeros_like(data)
@@ -1823,19 +1973,18 @@ class EMSCNode(Node):
             spectrum = data[i]
             coef, _, _, _ = np.linalg.lstsq(X_design, spectrum, rcond=None)
 
-            if poly_order > 0:
-                polynomial_baseline = X_design[:, 1:] @ coef[1:]
+            # Baseline = everything except the reference coefficient
+            if X_design.shape[1] > 1:
+                baseline = X_design[:, 1:] @ coef[1:]
                 if np.abs(coef[0]) > EMSC_COEF_THRESHOLD:
-                    corrected_spectrum = (spectrum - polynomial_baseline) / coef[0]
+                    corrected_data[i] = (spectrum - baseline) / coef[0]
                 else:
-                    corrected_spectrum = spectrum
+                    corrected_data[i] = spectrum
             else:
                 if np.abs(coef[0]) > EMSC_COEF_THRESHOLD:
-                    corrected_spectrum = spectrum / coef[0]
+                    corrected_data[i] = spectrum / coef[0]
                 else:
-                    corrected_spectrum = spectrum
-
-            corrected_data[i] = corrected_spectrum
+                    corrected_data[i] = spectrum
 
         result = AnalysisDataset(X=corrected_data)
         x_coord = safe_get_coord(input_data, 'x')
@@ -1850,6 +1999,300 @@ class EMSCNode(Node):
             result.units = input_data.units
 
         copy_processing_history(input_data, result)
-        add_processing_step(result, "preprocess.emsc", {"reference": reference_type, "poly_order": poly_order}, node_id=self.node_id)
+        add_processing_step(
+            result, "preprocess.emsc",
+            {"reference": reference_type, "poly_order": poly_order, "n_constituents": n_constituents},
+            node_id=self.node_id,
+        )
+
+        return result
+
+
+@register_node
+class NorrisWilliamsDerivativeNode(Node):
+    """
+    Norris-Williams gap-segment derivative node.
+
+    Computes derivatives using the gap-segment method, which is more robust
+    to noise than point-wise finite differences. Widely used in NIR
+    spectroscopy (Norris & Williams 1984).
+    """
+
+    metadata = NodeMetadata(
+        node_type="preprocess.norris_williams",
+        category="preprocessing",
+        label="Norris-Williams Derivative",
+        description="Gap-segment derivative (robust to noise, standard in NIR)",
+        parameters=[
+            NodeParameter(
+                name="gap",
+                label="Gap Size",
+                param_type="number",
+                default=5,
+                min_value=1,
+                max_value=50,
+                step=1,
+                description="Number of points between averaging segments",
+                required=True,
+                category="basic",
+            ),
+            NodeParameter(
+                name="segment",
+                label="Segment Size",
+                param_type="number",
+                default=5,
+                min_value=1,
+                max_value=50,
+                step=1,
+                description="Number of points to average in each segment",
+                required=True,
+                category="basic",
+            ),
+            NodeParameter(
+                name="deriv",
+                label="Derivative Order",
+                param_type="select",
+                default="1",
+                options=["1", "2"],
+                description="Derivative order: 1 (first) or 2 (second)",
+                required=True,
+            ),
+        ],
+        input_types=["NDDataset"],
+        output_type="NDDataset",
+    )
+
+    python_extra_imports = [
+        "import numpy as np",
+        "from spectra_sherpa.app.lib.preprocessing import norris_williams",
+    ]
+
+    def generate_python(self, inputs, indent="    ", use_scp=True):
+        inp = next(iter(inputs.values())) if inputs else "input_data"
+        params = self._resolve_params()
+        gap = params.get("gap", 5)
+        segment = params.get("segment", 5)
+        deriv = int(params.get("deriv", "1"))
+        lines = [
+            f"{indent}# --- Norris-Williams Derivative ({self.node_id}) ---",
+            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
+            f"{indent}_derived = norris_williams(_data, gap={gap}, segment={segment}, deriv={deriv})",
+        ]
+        lines += _wrap_result_lines(self.node_id, "_derived", inp, indent, use_scp)
+        return lines
+
+    async def execute(self, input_data: NDDataset) -> NDDataset:
+        """Execute Norris-Williams gap-segment derivative."""
+        gap = self.parameters.get("gap", 5)
+        segment = self.parameters.get("segment", 5)
+        deriv_order = int(self.parameters.get("deriv", "1"))
+
+        data = np.array(input_data.data, dtype=np.float64)
+        derived = norris_williams(data, gap=gap, segment=segment, deriv=deriv_order)
+
+        result = AnalysisDataset(X=derived)
+        x_coord = safe_get_coord(input_data, 'x')
+        if x_coord is not None:
+            result.x = x_coord.copy()
+        y_coord = safe_get_coord(input_data, 'y')
+        if y_coord is not None:
+            result.y = y_coord.copy()
+        if hasattr(input_data, 'title'):
+            result.title = input_data.title
+
+        # Update units for derivative
+        try:
+            original_units = str(input_data.units) if hasattr(input_data, 'units') and input_data.units else None
+            x_units = str(x_coord.units) if x_coord is not None and hasattr(x_coord, 'units') else None
+            if deriv_order == 1:
+                if original_units and x_units and original_units != "dimensionless":
+                    result.units = f"d({original_units})/d({x_units})"
+                else:
+                    result.units = "d/dx"
+            elif deriv_order == 2:
+                if original_units and x_units and original_units != "dimensionless":
+                    result.units = f"d²({original_units})/d({x_units})²"
+                else:
+                    result.units = "d²/dx²"
+        except Exception:
+            pass
+
+        copy_processing_history(input_data, result)
+        add_processing_step(
+            result, "preprocess.norris_williams",
+            {"gap": gap, "segment": segment, "deriv": deriv_order},
+            node_id=self.node_id,
+        )
+
+        return result
+
+
+@register_node
+class SmoothWhittakerNode(Node):
+    """
+    Whittaker smoother node.
+
+    Penalized least squares smoother (Eilers 2003). Minimises
+    ||y - z||² + λ ||D^d z||². More flexible than Savitzky-Golay for
+    unevenly spaced data and avoids window-size selection.
+    """
+
+    metadata = NodeMetadata(
+        node_type="smooth.whittaker",
+        category="preprocessing",
+        label="Smooth (Whittaker)",
+        description="Whittaker penalized least squares smoother",
+        parameters=[
+            NodeParameter(
+                name="lam",
+                label="Lambda (Smoothness)",
+                param_type="number",
+                default=1e2,
+                min_value=1,
+                max_value=1e8,
+                description="Smoothness penalty (larger = smoother)",
+                required=True,
+                category="basic",
+            ),
+            NodeParameter(
+                name="d",
+                label="Difference Order",
+                param_type="select",
+                default="2",
+                options=["1", "2", "3"],
+                description="Order of the difference penalty (2 is standard)",
+                required=False,
+                category="advanced",
+            ),
+        ],
+        input_types=["NDDataset"],
+        output_type="NDDataset",
+    )
+
+    python_extra_imports = [
+        "import numpy as np",
+        "from spectra_sherpa.app.lib.preprocessing import whittaker_smooth",
+    ]
+
+    def generate_python(self, inputs, indent="    ", use_scp=True):
+        inp = next(iter(inputs.values())) if inputs else "input_data"
+        params = self._resolve_params()
+        lam = params.get("lam", 1e2)
+        d = int(params.get("d", "2"))
+        lines = [
+            f"{indent}# --- Whittaker Smoother ({self.node_id}) ---",
+            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
+            f"{indent}_smoothed = whittaker_smooth(_data, lam={_format_value(lam)}, d={d})",
+        ]
+        lines += _wrap_result_lines(self.node_id, "_smoothed", inp, indent, use_scp)
+        return lines
+
+    async def execute(self, input_data: NDDataset) -> NDDataset:
+        """Execute Whittaker smoothing."""
+        lam = self.parameters.get("lam", 1e2)
+        d = int(self.parameters.get("d", "2"))
+
+        data = np.array(input_data.data, dtype=np.float64)
+        smoothed = whittaker_smooth(data, lam=lam, d=d)
+
+        result = AnalysisDataset(X=smoothed)
+        x_coord = safe_get_coord(input_data, 'x')
+        if x_coord is not None:
+            result.x = x_coord.copy()
+        y_coord = safe_get_coord(input_data, 'y')
+        if y_coord is not None:
+            result.y = y_coord.copy()
+        if hasattr(input_data, 'title'):
+            result.title = input_data.title
+        if hasattr(input_data, 'units'):
+            result.units = input_data.units
+
+        copy_processing_history(input_data, result)
+        add_processing_step(
+            result, "smooth.whittaker",
+            {"lam": lam, "d": d},
+            node_id=self.node_id,
+        )
+
+        return result
+
+
+@register_node
+class SmoothGaussianNode(Node):
+    """
+    Gaussian smoothing node.
+
+    Convolves the spectrum with a Gaussian kernel. Unlike Savitzky-Golay,
+    Gaussian smoothing has no polynomial fitting and is parameterised by a
+    single σ (standard deviation in data points).
+    """
+
+    metadata = NodeMetadata(
+        node_type="smooth.gaussian",
+        category="preprocessing",
+        label="Smooth (Gaussian)",
+        description="Gaussian kernel smoothing",
+        parameters=[
+            NodeParameter(
+                name="sigma",
+                label="Sigma (std dev)",
+                param_type="number",
+                default=2.0,
+                min_value=0.1,
+                max_value=50.0,
+                step=0.1,
+                description="Standard deviation of Gaussian kernel (in data points)",
+                required=True,
+                category="basic",
+            ),
+        ],
+        input_types=["NDDataset"],
+        output_type="NDDataset",
+    )
+
+    python_extra_imports = [
+        "import numpy as np",
+        "from scipy.ndimage import gaussian_filter1d",
+    ]
+
+    def generate_python(self, inputs, indent="    ", use_scp=True):
+        inp = next(iter(inputs.values())) if inputs else "input_data"
+        sigma = self._resolve_params().get("sigma", 2.0)
+        lines = [
+            f"{indent}# --- Gaussian Smoothing ({self.node_id}) ---",
+            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
+            f"{indent}if _data.ndim == 1:",
+            f"{indent}    _smoothed = gaussian_filter1d(_data, sigma={_format_value(sigma)})",
+            f"{indent}else:",
+            f"{indent}    _smoothed = np.apply_along_axis(gaussian_filter1d, -1, _data, sigma={_format_value(sigma)})",
+        ]
+        lines += _wrap_result_lines(self.node_id, "_smoothed", inp, indent, use_scp)
+        return lines
+
+    async def execute(self, input_data: NDDataset) -> NDDataset:
+        """Execute Gaussian smoothing."""
+        sigma = self.parameters.get("sigma", 2.0)
+
+        data = np.array(input_data.data, dtype=np.float64)
+        smoothed = gaussian_smooth(data, sigma=sigma)
+
+        result = AnalysisDataset(X=smoothed)
+        x_coord = safe_get_coord(input_data, 'x')
+        if x_coord is not None:
+            result.x = x_coord.copy()
+        y_coord = safe_get_coord(input_data, 'y')
+        if y_coord is not None:
+            result.y = y_coord.copy()
+        if hasattr(input_data, 'title'):
+            result.title = input_data.title
+        if hasattr(input_data, 'units'):
+            result.units = input_data.units
+
+        copy_processing_history(input_data, result)
+        add_processing_step(
+            result, "smooth.gaussian",
+            {"sigma": sigma},
+            node_id=self.node_id,
+        )
 
         return result

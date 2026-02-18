@@ -73,7 +73,7 @@ def list_node_types(category: Optional[str] = None) -> list[dict[str, str]]:
                 "type": "string",
                 "description": (
                     "Node type identifier (e.g. 'model.pca', "
-                    "'preprocess.autoscaling', 'baseline.als')"
+                    "'preprocess.autoscaling', 'baseline.penalized_ls')"
                 ),
             },
         },
@@ -154,7 +154,7 @@ def describe_node(node_type: str) -> dict[str, Any]:
 # These are general guidelines, not absolute rules.
 _TECHNIQUE_RECOMMENDATIONS: dict[str, list[dict[str, str]]] = {
     "IR": [
-        {"step": "baseline.als", "reason": "Remove baseline drift common in IR spectra"},
+        {"step": "baseline.penalized_ls", "reason": "Remove baseline drift common in IR spectra"},
         {"step": "normalize.snv", "reason": "Correct scatter effects (path-length variations)"},
         {"step": "smooth.savitzky_golay", "reason": "Reduce high-frequency noise"},
     ],
@@ -164,7 +164,7 @@ _TECHNIQUE_RECOMMENDATIONS: dict[str, list[dict[str, str]]] = {
         {"step": "smooth.savitzky_golay", "reason": "Smooth before or after derivative"},
     ],
     "Raman": [
-        {"step": "baseline.als", "reason": "Remove fluorescence background"},
+        {"step": "baseline.penalized_ls", "reason": "Remove fluorescence background"},
         {"step": "preprocess.cosmic_ray", "reason": "Remove cosmic ray spikes"},
         {"step": "normalize.snv", "reason": "Normalize intensity variations"},
     ],
