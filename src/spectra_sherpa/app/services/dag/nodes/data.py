@@ -1980,110 +1980,285 @@ class FileLoadNode(Node):
 @register_node
 class MyDatasetNode(Node):
     """
-    My Dataset node — lets users load data from their dataset collections
-    (experiments built on the Data tab).
+    My Dataset node — loads ALL files from a user dataset (experiment) created
+    on the Data tab and concatenates them into a single NDDataset.
     """
 
     metadata = NodeMetadata(
         node_type="data.my_dataset",
         category="data",
         label="My Dataset",
-        description="Load data from your dataset collection",
+        description="Load all files from your dataset collection",
         parameters=[
             NodeParameter(
                 name="dataset_id",
                 label="Dataset",
                 param_type="number",
                 default=None,
-                description="Dataset (experiment) containing the file",
+                description="Dataset (experiment) to load",
                 required=True,
-            ),
-            NodeParameter(
-                name="file_id",
-                label="File",
-                param_type="number",
-                default=None,
-                description="Specific file to load from the dataset",
-                required=True,
-            ),
-            NodeParameter(
-                name="stage",
-                label="Stage",
-                param_type="select",
-                default="raw",
-                options=["raw", "preprocessed", "synthetic"],
-                description="Data processing stage",
-                required=False,
             ),
         ],
         input_types=[],
-        output_type="NDDataset",
+        output_type="dict",
+        output_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Dataset",
+                description="Spectral data (all compatible files stacked)",
+            ),
+            PortMetadata(
+                name="target",
+                type_ref="spectrasherpa://types/Array1D/1.0",
+                required=False,
+                label="Properties",
+                description="Property / target data if available",
+            ),
+        ],
     )
 
     async def execute(self, *args) -> Any:
-        """Load data from a dataset file (reuses FileLoadNode logic)."""
+        """Load all files, group by compatible x-axis, stack each group."""
         require_scp("My Dataset loading")
         from spectra_sherpa.app.core.config import settings
         from spectra_sherpa.app.db.session import async_session
+        from spectra_sherpa.app.models.experiment import Experiment
         from spectra_sherpa.app.models.experiment_file import ExperimentFile as EF
         from sqlalchemy import select as sa_select
 
         dataset_id = self.parameters.get("dataset_id")
-        file_id = self.parameters.get("file_id")
-        stage = self.parameters.get("stage", "raw")
+        if not dataset_id:
+            raise ValueError("dataset_id is required")
 
-        if not dataset_id or not file_id:
-            raise ValueError("Both dataset_id and file_id are required")
+        async with async_session() as session:
+            exp_result = await session.execute(
+                sa_select(Experiment).where(Experiment.id == dataset_id)
+            )
+            experiment = exp_result.scalar_one_or_none()
+            if not experiment:
+                raise ValueError(f"Dataset {dataset_id} not found.")
+            exp_name = experiment.name
 
-        try:
-            async with async_session() as session:
-                query = sa_select(EF).where(
-                    EF.experiment_id == dataset_id,
-                    EF.id == file_id,
-                    EF.stage == stage,
+            query = sa_select(EF).where(
+                EF.experiment_id == dataset_id,
+                EF.stage == "raw",
+            ).order_by(EF.id)
+            result = await session.execute(query)
+            file_records = list(result.scalars().all())
+
+        if not file_records:
+            raise ValueError(f"No files found in dataset '{exp_name}'.")
+
+        exp_dir = f"exp_{str(dataset_id).zfill(3)}"
+        base_dir = settings.data_dir / "experiments" / exp_dir
+
+        # Load each file
+        loaded: list[tuple[NDDataset, str]] = []
+        for rec in file_records:
+            full_path = base_dir / rec.file_path
+            try:
+                ds = self._load_file(str(full_path))
+                loaded.append((ds, rec.file_path))
+            except Exception as e:
+                logger.warning(f"[MY_DATASET] Skipping {rec.file_path}: {e}")
+
+        if not loaded:
+            raise ValueError(f"All files in dataset '{exp_name}' failed to load.")
+
+        # Group files by compatible x-axis
+        groups = self._group_by_x_axis(loaded)
+
+        # Pick the group with the most x-axis points as "spectra",
+        # remaining groups become "properties" / target
+        groups.sort(key=lambda g: self._x_length(g[0][0]), reverse=True)
+        spectra_group = groups[0]
+        prop_groups = groups[1:]
+
+        # Stack spectra
+        s_datasets, s_names = zip(*spectra_group)
+        s_datasets, s_names = list(s_datasets), list(s_names)
+        spectra = self._concatenate(s_datasets, s_names) if len(s_datasets) > 1 else s_datasets[0]
+        spectra.title = f"{exp_name} ({len(s_datasets)} file{'s' if len(s_datasets) != 1 else ''})"
+
+        meta = SpectraMeta(
+            provenance=DataProvenance(
+                source_type=SourceType.EXPERIMENT,
+                experiment_id=dataset_id,
+                original_file_path=", ".join(s_names),
+                created_datetime=datetime.utcnow().isoformat(),
+            ),
+            processing_steps=["load"],
+        )
+        set_spectra_meta(spectra, meta)
+        add_processing_step(
+            spectra, "data.my_dataset",
+            {"dataset_id": dataset_id, "file_count": len(loaded)},
+            node_id=self.node_id,
+        )
+
+        # Stack properties (if any)
+        target: Optional[NDDataset] = None
+        if prop_groups:
+            all_props = []
+            all_pnames = []
+            for grp in prop_groups:
+                for ds, fn in grp:
+                    all_props.append(ds)
+                    all_pnames.append(fn)
+            target = self._concatenate(all_props, all_pnames) if len(all_props) > 1 else all_props[0]
+            target.title = f"{exp_name} properties"
+            logger.debug(
+                f"[MY_DATASET] Loaded {len(s_names)} spectral + "
+                f"{len(all_pnames)} property files from '{exp_name}'"
+            )
+
+        return {"default": spectra, "target": target}
+
+    @staticmethod
+    def _x_length(ds: NDDataset) -> int:
+        """Return number of x-axis points (0 if no x-axis)."""
+        coord = safe_get_coord(ds, 'x')
+        return len(np.array(coord.data)) if coord is not None else 0
+
+    def _group_by_x_axis(
+        self, loaded: list[tuple[NDDataset, str]]
+    ) -> list[list[tuple[NDDataset, str]]]:
+        """Group loaded datasets by compatible x-axis.
+
+        Two datasets are compatible if they have the same number of x points
+        and (when both have numeric x) the values match within tolerance.
+        Datasets without an x-axis form their own group.
+        """
+        groups: list[list[tuple[NDDataset, str]]] = []
+        group_keys: list[tuple[int, np.ndarray | None]] = []  # (length, x_values)
+
+        for ds, fname in loaded:
+            coord = safe_get_coord(ds, 'x')
+            if coord is not None:
+                x = np.array(coord.data)
+                length = len(x)
+            else:
+                x = None
+                length = 0
+
+            matched = False
+            for i, (glen, gx) in enumerate(group_keys):
+                if length != glen:
+                    continue
+                if x is None and gx is None:
+                    groups[i].append((ds, fname))
+                    matched = True
+                    break
+                if x is not None and gx is not None and np.allclose(x, gx, rtol=1e-9, atol=1e-12):
+                    groups[i].append((ds, fname))
+                    matched = True
+                    break
+
+            if not matched:
+                groups.append([(ds, fname)])
+                group_keys.append((length, x))
+
+        return groups
+
+    def _validate_axes(self, datasets: list[NDDataset], file_names: list[str]) -> None:
+        """Reject datasets whose x-axes differ."""
+        if len(datasets) < 2:
+            return
+        ref = datasets[0]
+        ref_x_coord = safe_get_coord(ref, 'x')
+        if ref_x_coord is None:
+            return  # no x-axis to compare
+        ref_x = np.array(ref_x_coord.data)
+
+        for i, (ds, fname) in enumerate(zip(datasets[1:], file_names[1:]), 2):
+            ds_x_coord = safe_get_coord(ds, 'x')
+            if ds_x_coord is None:
+                raise ValueError(
+                    f"Cannot merge: '{fname}' has no x-axis but "
+                    f"'{file_names[0]}' does."
                 )
-                result = await session.execute(query)
-                file_record = result.scalar_one_or_none()
-
-                if not file_record:
-                    raise ValueError(
-                        f"File {file_id} not found in dataset {dataset_id} for stage '{stage}'."
-                    )
-
-                exp_dir = f"exp_{str(dataset_id).zfill(3)}"
-                full_path = settings.data_dir / "experiments" / exp_dir / file_record.file_path
-
-                dataset = self._load_file(str(full_path))
-
-                meta = SpectraMeta(
-                    provenance=DataProvenance(
-                        source_type=SourceType.EXPERIMENT,
-                        experiment_id=dataset_id,
-                        file_id=file_id,
-                        original_file_path=str(file_record.file_path),
-                        original_file_format=os.path.splitext(file_record.file_path)[1].lower().lstrip("."),
-                        created_datetime=datetime.utcnow().isoformat(),
-                    ),
-                    processing_steps=["load"] if stage == "raw" else ["load", stage],
+            ds_x = np.array(ds_x_coord.data)
+            if ds_x.shape != ref_x.shape:
+                raise ValueError(
+                    f"Cannot merge: x-axis length mismatch.\n"
+                    f"  '{file_names[0]}': {len(ref_x)} points\n"
+                    f"  '{fname}': {len(ds_x)} points\n"
+                    f"All files in the dataset must share the same x-axis."
                 )
-                set_spectra_meta(dataset, meta)
-
-                add_processing_step(
-                    dataset,
-                    "data.my_dataset",
-                    {"dataset_id": dataset_id, "file_id": file_id, "stage": stage},
-                    node_id=self.node_id,
+            if not np.allclose(ds_x, ref_x, rtol=1e-9, atol=1e-12):
+                idx = int(np.where(~np.isclose(ds_x, ref_x, rtol=1e-9, atol=1e-12))[0][0])
+                raise ValueError(
+                    f"Cannot merge: x-axis values differ at index {idx}.\n"
+                    f"  '{file_names[0]}': {ref_x[idx]:.6f}\n"
+                    f"  '{fname}': {ds_x[idx]:.6f}\n"
+                    f"All files in the dataset must share the same x-axis."
                 )
-                return dataset
-        except Exception as e:
-            raise ValueError(f"Error loading file: {e}")
+
+    def _concatenate(self, datasets: list[NDDataset], file_names: list[str]) -> NDDataset:
+        """Validate x-axes match then concatenate along the sample axis."""
+        self._validate_axes(datasets, file_names)
+        data_arrays = [np.squeeze(np.array(ds.data)) for ds in datasets]
+        data_arrays = [arr if arr.ndim > 0 else np.array([arr]) for arr in data_arrays]
+
+        data_arrays_2d = []
+        for i, arr in enumerate(data_arrays):
+            if arr.ndim == 1:
+                data_arrays_2d.append(arr.reshape(1, -1))
+            elif arr.ndim == 2:
+                data_arrays_2d.append(arr)
+            else:
+                raise ValueError(
+                    f"Unexpected dimensionality in file '{file_names[i]}': shape {arr.shape}"
+                )
+
+        concatenated_data = np.concatenate(data_arrays_2d, axis=0)
+
+        y_labels = []
+        for arr, fname in zip(data_arrays_2d, file_names):
+            label = Path(fname).name
+            n = arr.shape[0]
+            if n == 1:
+                y_labels.append(label)
+            else:
+                for j in range(n):
+                    y_labels.append(f"{label}_{j+1}")
+
+        merged = scp.NDDataset(concatenated_data)
+
+        ref_x = safe_get_coord(datasets[0], 'x')
+        if ref_x is not None:
+            merged.x = ref_x.copy()
+
+        if hasattr(datasets[0], 'units') and datasets[0].units is not None:
+            merged.units = datasets[0].units
+
+        cat_y = safe_get_coord(merged, 'y')
+        if cat_y is not None:
+            cat_y.title = "Sample"
+            cat_y.labels = y_labels
+        else:
+            cat_x = safe_get_coord(merged, 'x')
+            merged.set_coordset(
+                y=scp.Coord(
+                    np.arange(len(y_labels)),
+                    title="Sample",
+                    labels=y_labels,
+                ),
+                x=cat_x,
+            )
+
+        return merged
 
     def _load_file(self, file_path: str) -> NDDataset:
-        """Load data from a file using SpectroChemPy with index column detection."""
+        """Load data from a file, with pandas fallback for CSVs that SCP can't read."""
         if not os.path.exists(file_path):
             raise ValueError(f"File not found: {file_path}")
 
-        ext = os.path.splitext(file_path)[1]
+        ext = os.path.splitext(file_path)[1].lower()
+
+        # Try SpectroChemPy first
         try:
             from spectra_sherpa.app.core.config import get_reader_for_extension
 
@@ -2091,21 +2266,75 @@ class MyDatasetNode(Node):
             reader_method = getattr(scp, reader_name)
             dataset = reader_method(file_path)
 
-            if dataset is None:
-                raise ValueError(f"Reader {reader_name} returned None for {file_path}")
+            if dataset is not None:
+                if ext == ".mat":
+                    dataset = extract_dataset_from_result(dataset, file_path)
+                    dataset = remove_index_columns(dataset)
+                elif ext == ".csv":
+                    dataset = remove_index_columns(dataset)
+                return dataset
+        except Exception:
+            pass  # fall through to pandas fallback
 
-            if ext.lower() == ".mat":
-                dataset = extract_dataset_from_result(dataset, file_path)
-                dataset = remove_index_columns(dataset)
-            elif ext.lower() == ".csv":
-                dataset = remove_index_columns(dataset)
+        # Pandas fallback for CSV files SCP can't parse
+        if ext == ".csv":
+            return self._load_csv_pandas(file_path)
 
+        raise ValueError(f"Failed to load {file_path} (format: {ext or 'unknown'})")
+
+    def _load_csv_pandas(self, file_path: str) -> NDDataset:
+        """Load a CSV via pandas — handles headers, mixed types, etc.
+
+        Splits columns by whether the *header name* parses as a float:
+        - Float-named columns → spectral data, header values become x-axis
+        - String-named columns → label / ID columns (first used as y-labels)
+        """
+        import pandas as pd
+
+        df = pd.read_csv(file_path)
+
+        # Partition columns: float-named headers vs string-named headers
+        spectral_cols: list[str] = []
+        x_vals: list[float] = []
+        label_cols: list[str] = []
+        for col in df.columns:
+            try:
+                x_vals.append(float(col))
+                spectral_cols.append(col)
+            except (ValueError, TypeError):
+                label_cols.append(col)
+
+        if not spectral_cols:
+            # No float-named columns — fall back to all numeric columns
+            numeric_df = df.select_dtypes(include="number")
+            if numeric_df.empty:
+                raise ValueError(f"No numeric columns in {file_path}")
+            data = numeric_df.values.astype(np.float64)
+            dataset = scp.NDDataset(data)
+            dataset.title = Path(file_path).stem
             return dataset
-        except Exception as e:
-            raise ValueError(
-                f"Failed to load file {file_path}: {str(e)}. "
-                f"File format: {ext or 'unknown'}."
-            ) from e
+
+        data = df[spectral_cols].values.astype(np.float64)
+        dataset = scp.NDDataset(data)
+        dataset.title = Path(file_path).stem
+
+        # Set x-axis from column header values and y-axis for samples
+        y_labels = (
+            df[label_cols[0]].astype(str).tolist() if label_cols else None
+        )
+        dataset.set_coordset(
+            y=scp.Coord(
+                np.arange(data.shape[0]),
+                title="Sample",
+                labels=y_labels,
+            ),
+            x=scp.Coord(
+                np.array(x_vals),
+                title="Wavenumber",
+            ),
+        )
+
+        return dataset
 
 
 @register_node

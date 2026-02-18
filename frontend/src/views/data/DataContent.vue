@@ -47,11 +47,19 @@
 
           <div v-else-if="dataStore.referenceCatalog" class="ref-catalog-groups">
             <!-- Eigenvector -->
-            <div class="ref-source-group">
-              <h5 class="ref-group-title">
-                <i class="pi pi-chart-bar"></i>
-                Eigenvector Research (NIR)
-              </h5>
+            <Panel
+              :toggleable="true"
+              :collapsed="eigenvectorCollapsed"
+              @update:collapsed="eigenvectorCollapsed = $event"
+              class="ref-group-panel"
+            >
+              <template #header>
+                <span class="ref-panel-header">
+                  <i class="pi pi-chart-bar"></i>
+                  Eigenvector Research (NIR)
+                  <Tag :value="String(dataStore.referenceCatalog.eigenvector.length)" severity="info" rounded />
+                </span>
+              </template>
               <div
                 v-for="ds in dataStore.referenceCatalog.eigenvector"
                 :key="ds.name"
@@ -74,14 +82,22 @@
                   @click.stop="onExploreReference(ds.source, ds.name)"
                 />
               </div>
-            </div>
+            </Panel>
 
-            <!-- SpectroChemPy (file-level entries grouped by category) -->
-            <div class="ref-source-group">
-              <h5 class="ref-group-title">
-                <i class="pi pi-wave-pulse"></i>
-                SpectroChemPy Datasets
-              </h5>
+            <!-- SpectroChemPy -->
+            <Panel
+              :toggleable="true"
+              :collapsed="scpCollapsed"
+              @update:collapsed="scpCollapsed = $event"
+              class="ref-group-panel"
+            >
+              <template #header>
+                <span class="ref-panel-header">
+                  <i class="pi pi-wave-pulse"></i>
+                  SpectroChemPy Datasets
+                  <Tag :value="String(dataStore.referenceCatalog.spectrochempy.length)" severity="info" rounded />
+                </span>
+              </template>
               <template v-for="cat in scpCategories" :key="cat">
                 <div class="ref-scp-category">{{ scpCategoryLabel(cat) }}</div>
                 <div
@@ -107,14 +123,22 @@
                   />
                 </div>
               </template>
-            </div>
+            </Panel>
 
             <!-- sklearn -->
-            <div class="ref-source-group">
-              <h5 class="ref-group-title">
-                <i class="pi pi-cog"></i>
-                Scikit-learn Datasets
-              </h5>
+            <Panel
+              :toggleable="true"
+              :collapsed="sklearnCollapsed"
+              @update:collapsed="sklearnCollapsed = $event"
+              class="ref-group-panel"
+            >
+              <template #header>
+                <span class="ref-panel-header">
+                  <i class="pi pi-cog"></i>
+                  Scikit-learn Datasets
+                  <Tag :value="String(dataStore.referenceCatalog.sklearn.length)" severity="info" rounded />
+                </span>
+              </template>
               <div
                 v-for="ds in dataStore.referenceCatalog.sklearn"
                 :key="ds.name"
@@ -137,7 +161,7 @@
                   @click.stop="onExploreReference(ds.source, ds.name)"
                 />
               </div>
-            </div>
+            </Panel>
           </div>
 
           <!-- Action bar -->
@@ -826,6 +850,9 @@ const activeTab = ref(0);
 const libraryCollapsed = ref(true);
 const librarySearch = ref("");
 const selectedRefDatasets = reactive(new Set<string>());
+const eigenvectorCollapsed = ref(false);
+const scpCollapsed = ref(true);
+const sklearnCollapsed = ref(true);
 const importing = ref(false);
 const showCreateDialog = ref(false);
 const showUploadDialog = ref(false);
@@ -1474,28 +1501,26 @@ function formatDate(dateStr: string): string {
 }
 
 .ref-catalog-groups {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-}
-
-.ref-source-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
 
-.ref-group-title {
-  margin: 0 0 6px;
+.ref-group-panel {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.ref-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 0.85rem;
   font-weight: 600;
   color: #475569;
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 
-.ref-group-title i {
+.ref-panel-header i {
   color: #64748b;
   font-size: 0.85rem;
 }
@@ -1775,10 +1800,6 @@ function formatDate(dateStr: string): string {
 
 /* ---- Responsive ---- */
 @media (max-width: 900px) {
-  .ref-catalog-groups {
-    grid-template-columns: 1fr;
-  }
-
   .load-panels {
     grid-template-columns: 1fr;
   }
