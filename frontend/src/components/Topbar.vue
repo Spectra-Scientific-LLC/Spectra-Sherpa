@@ -235,6 +235,11 @@ const userMenuItems = computed(() => [
     icon: 'pi pi-cog',
     command: () => { router.push('/settings'); },
   },
+  {
+    label: 'Documentation',
+    icon: 'pi pi-book',
+    command: () => { window.open('https://docs.spectrascientific.ai', '_blank'); },
+  },
   { separator: true },
   {
     label: 'Sign Out',

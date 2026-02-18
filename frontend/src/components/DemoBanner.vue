@@ -8,6 +8,15 @@
       </template>
     </span>
     <a
+      href="https://docs.spectrascientific.ai"
+      target="_blank"
+      rel="noopener"
+      class="demo-docs-btn"
+    >
+      <i class="pi pi-book"></i>
+      Docs
+    </a>
+    <a
       :href="demoContract?.upgrade_url || '#'"
       target="_blank"
       rel="noopener"
@@ -71,6 +80,27 @@ onMounted(() => {
 
 .demo-banner i.pi {
   font-size: 1rem;
+}
+
+.demo-docs-btn {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s;
+}
+
+.demo-docs-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.45);
 }
 
 .demo-upgrade-btn {

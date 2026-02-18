@@ -33,6 +33,14 @@
     <template #footer>
       <Button label="Maybe Later" class="p-button-text" @click="closeUpgradeModal" />
       <a
+        href="https://docs.spectrascientific.ai"
+        target="_blank"
+        rel="noopener"
+        style="text-decoration: none"
+      >
+        <Button label="View Docs" icon="pi pi-book" class="p-button-outlined" />
+      </a>
+      <a
         :href="upgradeModalContext?.upgradeUrl || '#'"
         target="_blank"
         rel="noopener"
