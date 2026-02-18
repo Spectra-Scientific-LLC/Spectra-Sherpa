@@ -63,6 +63,14 @@ def test_build_api_router_exposes_auth_me_for_multi_user_mode(monkeypatch: pytes
     assert "/auth/me" in _paths(router.routes)
 
 
+def test_build_api_router_exposes_auth_me_when_server_routes_missing(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("spectra_sherpa.app.api.v1.api.get_server_routers", lambda: [])
+
+    router = api_v1.build_api_router(include_server_routers=True)
+
+    assert "/auth/me" in _paths(router.routes)
+
+
 def test_create_app_accepts_extra_router_prefix_string():
     extra = APIRouter()
 

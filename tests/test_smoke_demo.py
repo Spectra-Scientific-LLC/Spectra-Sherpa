@@ -98,6 +98,11 @@ async def auth_client(
     smoke_session: AsyncSession, smoke_user: User
 ) -> AsyncClient:
     """HTTP client authenticated as smoke_user."""
+    # Guard against test-ordering contamination: ensure local mode so the
+    # api_key_middleware does not reject requests before dependency overrides
+    # take effect.
+    original_mode = app_config.mode
+    app_config.mode = "local"
 
     async def override_get_session():
         yield smoke_session
@@ -114,6 +119,7 @@ async def auth_client(
         yield ac
 
     app.dependency_overrides.clear()
+    app_config.mode = original_mode
 
 
 @pytest.fixture
@@ -140,7 +146,8 @@ def _reset_ws_state():
 class TestAuthMe:
     async def test_auth_me_returns_user(self, auth_client: AsyncClient, smoke_user: User):
         resp = await auth_client.get("/api/v1/auth/me")
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        assert resp.text, f"Empty response body (status={resp.status_code})"
         data = resp.json()
         assert data["username"] == smoke_user.username
         assert "id" in data

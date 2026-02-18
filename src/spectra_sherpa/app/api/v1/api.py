@@ -119,10 +119,19 @@ def build_api_router(
     # API key management (BYOK) — available in all modes
     router.include_router(api_keys.router, tags=["api-keys"])
 
-    # Server-only routes are injected via helper to keep split seams explicit.
+    # Server/auth routes:
+    # - non-local modes: include server auth/admin (or auth_compat fallback)
+    # - local mode: include auth_compat so /api/v1/auth/me always resolves
+    #   (frontend bootstrap + smoke tests rely on this path in all distributions)
     if include_server_routers:
-        for server_router, kwargs in get_server_routers():
-            router.include_router(server_router, **dict(kwargs))
+        server_routers = get_server_routers()
+        if server_routers:
+            for server_router, kwargs in server_routers:
+                router.include_router(server_router, **dict(kwargs))
+        else:
+            from spectra_sherpa.app.api.v1.routes import auth_compat
+
+            router.include_router(auth_compat.router, prefix="/auth", tags=["auth"])
 
     # Extension point: Repo 2 passes extra routers here
     for extra, kwargs in (extra_routers or []):
