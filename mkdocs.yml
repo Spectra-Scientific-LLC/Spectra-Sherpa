@@ -38,6 +38,8 @@ nav:
       - Node Library: user/reference/nodes.md
 theme:
   name: material
+  logo: assets/ss-logo.png
+  favicon: assets/ss-logo.png
   palette:
     - scheme: default
       primary: indigo
