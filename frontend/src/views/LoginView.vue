@@ -34,7 +34,7 @@ const handleLogin = async () => {
       </template>
 
       <template #content>
-        <form @submit.prevent="handleLogin" class="flex flex-column" style="gap: 1.3rem">
+        <form @submit.prevent="handleLogin" class="flex flex-column" style="gap: 1.75rem">
           <div class="flex flex-column gap-2">
             <label for="username" class="font-bold text-900">Username</label>
             <InputText id="username" v-model="username" placeholder="Enter your username" class="w-full" />
