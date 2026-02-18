@@ -93,6 +93,7 @@ async def test_activate_hybrid_endpoint_updates_runtime_state(client, monkeypatc
 
     monkeypatch.setattr(config_routes, "_find_or_create_env_path", lambda: str(env_file))
     monkeypatch.setattr(config_routes.httpx, "AsyncClient", _FakeAsyncClient)
+    monkeypatch.setattr(config_routes, "ALLOWED_SPECTRASHERPA_HOSTS", ["localhost", "127.0.0.1", "endpoint.example.com"])
     monkeypatch.setattr(
         "spectra_sherpa.app.services.spectrasherpa.reset_spectrasherpa_service",
         AsyncMock(),
@@ -107,7 +108,7 @@ async def test_activate_hybrid_endpoint_updates_runtime_state(client, monkeypatc
     response = await client.post(
         "/api/v1/config/activate-hybrid",
         json={
-            "server_url": "https://endpoint.spectrascientific.ai",
+            "server_url": "https://endpoint.example.com",
             "api_key": "ss_test_key",
         },
     )
@@ -119,12 +120,12 @@ async def test_activate_hybrid_endpoint_updates_runtime_state(client, monkeypatc
     assert app_config.mode == "hybrid"
     assert app_config.egress_enabled is True
     assert os.environ["APP_MODE"] == "hybrid"
-    assert os.environ["SPECTRASHERPA_API_URL"] == "https://endpoint.spectrascientific.ai/api/v1"
+    assert os.environ["SPECTRASHERPA_API_URL"] == "https://endpoint.example.com/api/v1"
     assert os.environ["SPECTRASHERPA_API_KEY"] == "ss_test_key"
 
     env_text = env_file.read_text(encoding="utf-8")
     assert "APP_MODE='hybrid'" in env_text
-    assert "SPECTRASHERPA_API_URL='https://endpoint.spectrascientific.ai/api/v1'" in env_text
+    assert "SPECTRASHERPA_API_URL='https://endpoint.example.com/api/v1'" in env_text
     assert "SPECTRASHERPA_API_KEY='ss_test_key'" in env_text
 
 
@@ -134,7 +135,7 @@ async def test_deactivate_hybrid_endpoint_clears_runtime_state(client, monkeypat
     env_file.write_text(
         "APP_MODE=hybrid\n"
         "EGRESS_ENABLED=true\n"
-        "SPECTRASHERPA_API_URL=https://endpoint.spectrascientific.ai/api/v1\n"
+        "SPECTRASHERPA_API_URL=https://endpoint.example.com/api/v1\n"
         "SPECTRASHERPA_API_KEY=ss_test_key\n",
         encoding="utf-8",
     )
@@ -152,10 +153,10 @@ async def test_deactivate_hybrid_endpoint_clears_runtime_state(client, monkeypat
     app_config.mode = "hybrid"
     app_config.egress_enabled = True
     spectrasherpa_config.api_key = "ss_test_key"
-    spectrasherpa_config.api_base_url = "https://endpoint.spectrascientific.ai/api/v1"
+    spectrasherpa_config.api_base_url = "https://endpoint.example.com/api/v1"
     os.environ["APP_MODE"] = "hybrid"
     os.environ["EGRESS_ENABLED"] = "true"
-    os.environ["SPECTRASHERPA_API_URL"] = "https://endpoint.spectrascientific.ai/api/v1"
+    os.environ["SPECTRASHERPA_API_URL"] = "https://endpoint.example.com/api/v1"
     os.environ["SPECTRASHERPA_API_KEY"] = "ss_test_key"
 
     response = await client.post("/api/v1/config/deactivate-hybrid")
@@ -185,13 +186,14 @@ async def test_spectrasherpa_test_endpoint_works_when_egress_disabled(client, mo
     import spectra_sherpa.app.api.v1.routes.config as config_routes
 
     monkeypatch.setattr(config_routes.httpx, "AsyncClient", _FakeAsyncClient)
+    monkeypatch.setattr(config_routes, "ALLOWED_SPECTRASHERPA_HOSTS", ["localhost", "127.0.0.1", "endpoint.example.com"])
     app_config.mode = "local"
     app_config.egress_enabled = False
 
     response = await client.post(
         "/api/v1/config/spectrasherpa/test",
         json={
-            "server_url": "https://endpoint.spectrascientific.ai",
+            "server_url": "https://endpoint.example.com",
             "api_key": "ss_test_key",
         },
     )

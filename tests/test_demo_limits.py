@@ -169,8 +169,8 @@ class TestDemoLimitErrorDetail:
 
         detail = demo_limit_error_detail("execution", 0)
         assert "25 per session" in detail["message"]
-        assert detail["upgrade_url"] == "https://spectrascientific.ai/pricing"
-        assert detail["available_plans"] == ["hybrid", "enterprise"]
+        assert detail["upgrade_url"] == ""
+        assert detail["available_plans"] == []
         assert detail["limit"] == 25
         assert detail["remaining"] == 0
 
@@ -179,7 +179,7 @@ class TestDemoLimitErrorDetail:
 
         detail = demo_limit_error_detail("sherpa", 0)
         assert "20 per session" in detail["message"]
-        assert detail["upgrade_url"] == "https://spectrascientific.ai/pricing"
+        assert detail["upgrade_url"] == ""
 
 
 # ===========================================================================

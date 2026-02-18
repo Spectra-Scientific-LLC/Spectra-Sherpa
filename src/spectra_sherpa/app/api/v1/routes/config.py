@@ -355,9 +355,9 @@ def _normalize_spectrasherpa_url(url: str) -> str:
     Normalize SpectraSherpa URL to ensure /api/v1 path is included.
 
     Handles:
-    - https://endpoint.spectrascientific.ai -> https://endpoint.spectrascientific.ai/api/v1
-    - https://endpoint.spectrascientific.ai/api/v1 -> https://endpoint.spectrascientific.ai/api/v1
-    - https://endpoint.spectrascientific.ai/ -> https://endpoint.spectrascientific.ai/api/v1
+    - https://your-server.example.com -> https://your-server.example.com/api/v1
+    - https://your-server.example.com/api/v1 -> https://your-server.example.com/api/v1
+    - https://your-server.example.com/ -> https://your-server.example.com/api/v1
     """
     url = url.rstrip("/")
     if not url.endswith("/api/v1"):

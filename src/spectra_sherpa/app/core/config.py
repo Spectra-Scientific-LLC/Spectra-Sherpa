@@ -345,7 +345,7 @@ class AppConfig(BaseModel):
         demo_contract = DemoContract(
             max_executions_per_session=_get_int("DEMO_MAX_EXECUTIONS", 25),
             max_sherpa_interactions=_get_int("DEMO_MAX_SHERPA_INTERACTIONS", 20),
-            upgrade_url=os.getenv("UPGRADE_URL", "https://spectrascientific.ai/pricing"),
+            upgrade_url=os.getenv("UPGRADE_URL", ""),
         )
 
         return cls(
