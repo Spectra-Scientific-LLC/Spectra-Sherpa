@@ -7,7 +7,6 @@ that:
 
 - Tests can verify policy without importing every module.
 - Adding a new mode requires changes in **one** file.
-- The future repo split can delete unwanted policies mechanically.
 
 Boot-time validation (startup.py, logging.py) may still read ``app_config``
 directly for one-shot checks that don't affect request handling.

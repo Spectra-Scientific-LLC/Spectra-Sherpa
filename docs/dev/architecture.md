@@ -29,32 +29,9 @@ SpectraSherpa follows a "Clean Architecture" pattern with a strict separation be
 └──────────────────────────────────────────────────────┘
 ```
 
-### OS Boundary & Enterprise Extensions
+### Mode System
 
-SpectraSherpa uses an "Open Core" model. The OSS codebase defines mode-checking hooks (e.g. `create_app()` lifespan callbacks) that the proprietary `spectra-server` package can optionally fill. Without that package, enterprise-only code paths fall through to no-op defaults.
-
-```mermaid
-graph TD
-    subgraph "OSS Core (AGPLv3)"
-        A[FastAPI Application] --> B[OSS Router]
-        A --> C[Mode Policy Check]
-        C --> D{Is Enterprise?}
-        D -- No --> E[Local Auth / No-Op]
-        D -- Yes --> F[Enterprise Middleware Interface]
-    end
-
-    subgraph "Proprietary Server (Commercial)"
-        F -. Injection .-> G[SSO / SAML / RBAC]
-        F -. Injection .-> H[Audit Logging]
-        F -. Injection .-> I[Cloud Job Queue]
-    end
-
-    classDef oss fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
-    classDef prop fill:#fff3e0,stroke:#ff6f00,stroke-width:2px,stroke-dasharray: 5 5;
-    
-    class A,B,C,D,E,F oss;
-    class G,H,I prop;
-```
+SpectraSherpa supports multiple deployment modes (`local`, `hybrid`, `enterprise`). Mode-checking hooks in `create_app()` lifespan callbacks allow extension packages to add middleware. Without extensions, non-local code paths fall through to safe defaults.
 
 ## High-Level Structure
 
@@ -75,17 +52,13 @@ src/spectra_sherpa/
 ## Core Concepts
 
 ### 1. The Mode Contract
-The application has two orthogonal configuration axes:
 
 **Runtime mode** (`APP_MODE`): `local` | `hybrid` | `enterprise` — controls auth, egress, and rate limiting.
-**Experience profile** (`SITE_PROFILE`): `demo` | `production` | `internal` | unset — controls UI experience and feature gating.
 
 Mode logic is centralized in `spectra_sherpa.app.core.mode_policy`.
-- **Local:** No auth, no egress, single-user.
+- **Local:** No auth, single-user, desktop convenience.
 - **Hybrid:** JWT + API key auth for remote clients, loopback exemption.
 - **Enterprise:** Full auth for all clients, rate limiting, multi-user.
-
-When `SITE_PROFILE=demo`, the **Demo Contract** (`DemoContract` in `config.py`) restricts capabilities (e.g., no data upload) and provides conversion messaging. Enterprise enforcement (password gating, session expiry, CORS validation, SQLite prohibition) lives in `spectra-server` and is injected via `create_app()` hooks.
 
 ### 2. The Node Graph
 SpectraSherpa is fundamentally a Directed Acyclic Graph (DAG) engine.

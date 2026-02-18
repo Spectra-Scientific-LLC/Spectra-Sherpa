@@ -8,7 +8,7 @@
       </template>
     </span>
     <a
-      :href="demoContract?.upgrade_url || 'https://spectrascientific.ai/pricing'"
+      :href="demoContract?.upgrade_url || '#'"
       target="_blank"
       rel="noopener"
       class="demo-upgrade-btn"

@@ -16,7 +16,7 @@
             <InputText
               id="server-url"
               v-model="serverUrl"
-              placeholder="https://endpoint.spectrascientific.ai"
+              placeholder="https://your-server.example.com"
               :disabled="testing || connecting || modeSwitchLocked"
             />
           </div>
@@ -39,7 +39,7 @@
               />
             </div>
             <small class="help-text">
-              The server must be in the allowlist (`endpoint.spectrascientific.ai`, `api.spectrascientific.ai`, `localhost`, `127.0.0.1`).
+              The server host must be in the allowlist (set via <code>SPECTRASHERPA_ALLOWED_HOSTS</code> env var).
             </small>
           </div>
 
@@ -188,7 +188,7 @@ import Dialog from 'primevue/dialog';
 const toast = useToast();
 const { appConfig, loadConfig } = useAppConfig();
 
-const serverUrl = ref('https://endpoint.spectrascientific.ai');
+const serverUrl = ref('');
 const apiKey = ref('');
 const showKey = ref(false);
 const testing = ref(false);

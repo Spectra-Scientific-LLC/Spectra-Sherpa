@@ -1,19 +1,13 @@
 """
-SpectraSherpa Cloud Service Integration
+SpectraSherpa Server Integration
 
-This service handles authentication and data exchange with the SpectraSherpa
-cloud platform for HYBRID mode deployments.
-
-Features:
-- API key validation with SpectraSherpa
-- User account linking (local <-> SpectraSherpa)
-- Managed LLM key retrieval
-- Log mirroring (audit trail sync)
-- Workflow/settings synchronization
+Handles authentication and data exchange with a SpectraSherpa server
+for hybrid mode deployments.
 """
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any, Optional
 from dataclasses import dataclass
@@ -30,7 +24,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ============================================================================
 
-SPECTRASHERPA_API_BASE = "https://api.spectrascientific.ai/api/v1"
+SPECTRASHERPA_API_BASE = os.getenv("SPECTRASHERPA_API_URL", "")
 SPECTRASHERPA_TIMEOUT = 10.0  # seconds
 
 
@@ -51,11 +45,10 @@ class SpectraSherpaConfig(BaseModel):
 
     @classmethod
     def from_env(cls) -> "SpectraSherpaConfig":
-        import os
         return cls(
             api_base_url=os.getenv("SPECTRASHERPA_API_URL", SPECTRASHERPA_API_BASE),
             api_key=os.getenv("SPECTRASHERPA_API_KEY"),
-            timeout=float(os.getenv("SPECTRASHERPA_TIMEOUT", SPECTRASHERPA_TIMEOUT))
+            timeout=float(os.getenv("SPECTRASHERPA_TIMEOUT", str(SPECTRASHERPA_TIMEOUT)))
         )
 
 

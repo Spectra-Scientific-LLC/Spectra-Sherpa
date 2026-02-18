@@ -6,9 +6,9 @@
 .env
 .env.local
 .env.*.local
+.env.*.example
 *.env
 !.env.example
-!.env.production
 
 # Python
 __pycache__/

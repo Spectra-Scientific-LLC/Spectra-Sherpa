@@ -326,14 +326,10 @@ class SpectraSherpaSaveRequest(BaseModel):
 # SECURITY: SpectraSherpa config is ENV-ONLY to prevent runtime tampering
 # No in-memory storage - configuration must come from environment variables
 
-# Allowlist of valid SpectraSherpa server URLs (add your domains here)
-ALLOWED_SPECTRASHERPA_HOSTS = [
-    "endpoint.spectrascientific.ai",
-    "api.spectrascientific.ai",
-    "demo.spectrascientific.ai",
-    "localhost",
-    "127.0.0.1",
-]
+# Allowlist of valid SpectraSherpa server hosts (SSRF protection).
+# Override via SPECTRASHERPA_ALLOWED_HOSTS env var (comma-separated).
+_extra = [h.strip() for h in os.getenv("SPECTRASHERPA_ALLOWED_HOSTS", "").split(",") if h.strip()]
+ALLOWED_SPECTRASHERPA_HOSTS = ["localhost", "127.0.0.1"] + _extra
 
 
 def _mask_api_key(key: str | None) -> str | None:

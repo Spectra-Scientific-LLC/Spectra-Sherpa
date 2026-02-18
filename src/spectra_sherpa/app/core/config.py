@@ -211,44 +211,35 @@ class ExecutionConfig(BaseModel):
 
 
 class DemoContract(BaseModel):
-    """Formal definition of the demo experience.
-
-    One object, product-tunable via env vars or config file.
-    Engineering adds capabilities to disabled_capabilities;
-    product tunes limits and messaging without code changes.
-    """
-    # Content curation
+    """Configuration for the demo experience profile."""
     featured_datasets: list[str] = [
-        "diesel_nir",           # NIR quantitative (PLS showcase)
-        "corn_m5",              # NIR multi-property (calibration transfer)
-        "nir_shootout_cal1",    # Pharmaceutical (cross-validation)
-        "nir_shootout_test1",   # Pharmaceutical test set
-        "metal_etch_oes",       # Process monitoring (PCA + classification)
+        "diesel_nir",
+        "corn_m5",
+        "nir_shootout_cal1",
+        "nir_shootout_test1",
+        "metal_etch_oes",
     ]
     featured_templates: list[str] = [
-        "pca",              # PCA Exploration (basic template)
-        "project1",         # Absorption Calibration (PLS regression)
-        "pls_regression",   # PLS Regression Analysis
-        "ir_opus_analysis", # IR OPUS Import & Analysis
-        "preprocessing",    # Standard Preprocessing
+        "pca",
+        "project1",
+        "pls_regression",
+        "ir_opus_analysis",
+        "preprocessing",
     ]
 
-    # Limits
     max_executions_per_session: int = 25
     max_sherpa_interactions: int = 20
 
-    # Disabled capabilities — route guard checks this list
     disabled_capabilities: list[str] = [
-        "data_upload",          # POST /experiments/{id}/files
-        "project_import",       # POST /projects/import
-        "llm_config",           # POST/PATCH/DELETE /llm-config
-        "api_key_management",   # POST/DELETE /api-keys
+        "data_upload",
+        "project_import",
+        "llm_config",
+        "api_key_management",
     ]
 
-    # Conversion messaging
-    upgrade_url: str = "https://spectrascientific.ai/pricing"
-    upgrade_message: str = "This feature is available on paid plans."
-    available_plans: list[str] = ["hybrid", "enterprise"]
+    upgrade_url: str = os.getenv("UPGRADE_URL", "")
+    upgrade_message: str = os.getenv("UPGRADE_MESSAGE", "")
+    available_plans: list[str] = []
 
 
 class AppConfig(BaseModel):
