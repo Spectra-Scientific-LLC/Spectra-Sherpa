@@ -66,18 +66,18 @@ const handleRegister = async () => {
       </template>
 
       <template #content>
-        <form @submit.prevent="handleRegister" class="flex flex-column" style="gap: 1.75rem">
-          <div class="flex flex-column gap-2">
+        <form @submit.prevent="handleRegister" class="auth-form">
+          <div class="field-group">
             <label for="username" class="font-bold text-900">Username</label>
             <InputText id="username" v-model="username" placeholder="Choose a username" class="w-full" />
           </div>
 
-          <div class="flex flex-column gap-2">
+          <div class="field-group">
             <label for="email" class="font-bold text-900">Email <span class="text-500 font-normal">(optional)</span></label>
             <InputText id="email" v-model="email" type="email" placeholder="For maintenance notifications" class="w-full" />
           </div>
 
-          <div class="flex flex-column gap-2">
+          <div class="field-group">
             <label for="password" class="font-bold text-900">Password</label>
             <Password
                 id="password"
@@ -90,7 +90,7 @@ const handleRegister = async () => {
             />
           </div>
 
-          <div class="flex flex-column gap-2">
+          <div class="field-group">
             <label for="confirmPassword" class="font-bold text-900">Confirm Password</label>
             <Password
                 id="confirmPassword"
@@ -103,7 +103,7 @@ const handleRegister = async () => {
             />
           </div>
 
-          <div v-if="registrationRequiresCode" class="flex flex-column gap-2">
+          <div v-if="registrationRequiresCode" class="field-group">
             <label for="accessCode" class="font-bold text-900">Access Code</label>
             <InputText id="accessCode" v-model="accessCode" type="password" placeholder="Enter the access code" class="w-full" />
           </div>
@@ -131,3 +131,17 @@ const handleRegister = async () => {
     </Card>
   </div>
 </template>
+
+<style scoped>
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+</style>

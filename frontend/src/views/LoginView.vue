@@ -34,13 +34,13 @@ const handleLogin = async () => {
       </template>
 
       <template #content>
-        <form @submit.prevent="handleLogin" class="flex flex-column" style="gap: 1.75rem">
-          <div class="flex flex-column gap-2">
+        <form @submit.prevent="handleLogin" class="auth-form">
+          <div class="field-group">
             <label for="username" class="font-bold text-900">Username</label>
             <InputText id="username" v-model="username" placeholder="Enter your username" class="w-full" />
           </div>
 
-          <div class="flex flex-column gap-2">
+          <div class="field-group">
             <label for="password" class="font-bold text-900">Password</label>
             <Password 
                 id="password" 
@@ -72,3 +72,17 @@ const handleLogin = async () => {
     </Card>
   </div>
 </template>
+
+<style scoped>
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+</style>
