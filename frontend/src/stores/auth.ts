@@ -37,11 +37,13 @@ export const useAuthStore = defineStore('auth', () => {
         }
     }
 
-    async function register(username: string, password: string, enterprisePassword: string) {
+    async function register(username: string, password: string, enterprisePassword: string, email?: string) {
         try {
             registerError.value = null
             registerSuccess.value = null
-            await api.post('/auth/register', { username, password }, {
+            const body: Record<string, string> = { username, password }
+            if (email) body.email = email
+            await api.post('/auth/register', body, {
                 headers: { 'X-Enterprise-Password': enterprisePassword }
             })
             registerSuccess.value = 'Account created successfully. You can now sign in.'

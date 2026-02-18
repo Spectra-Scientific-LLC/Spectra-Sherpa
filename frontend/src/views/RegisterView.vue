@@ -11,6 +11,7 @@ const authStore = useAuthStore()
 const { registrationRequiresCode } = useAppConfig()
 
 const username = ref('')
+const email = ref('')
 const password = ref('')
 const confirmPassword = ref('')
 const accessCode = ref('')
@@ -24,7 +25,11 @@ const handleRegister = async () => {
   authStore.registerError = null
 
   if (!username.value || !password.value || !confirmPassword.value) {
-    validationError.value = 'All fields are required'
+    validationError.value = 'Username and password fields are required'
+    return
+  }
+  if (email.value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value)) {
+    validationError.value = 'Please enter a valid email address'
     return
   }
   if (requiresAccessCode() && !accessCode.value) {
@@ -45,7 +50,7 @@ const handleRegister = async () => {
   }
 
   loading.value = true
-  await authStore.register(username.value, password.value, accessCode.value)
+  await authStore.register(username.value, password.value, accessCode.value, email.value || undefined)
   loading.value = false
 }
 </script>
@@ -61,10 +66,15 @@ const handleRegister = async () => {
       </template>
 
       <template #content>
-        <form @submit.prevent="handleRegister" class="flex flex-column gap-4">
+        <form @submit.prevent="handleRegister" class="flex flex-column gap-5">
           <div class="flex flex-column gap-2">
             <label for="username" class="font-bold text-900">Username</label>
             <InputText id="username" v-model="username" placeholder="Choose a username" class="w-full" />
+          </div>
+
+          <div class="flex flex-column gap-2">
+            <label for="email" class="font-bold text-900">Email <span class="text-500 font-normal">(optional)</span></label>
+            <InputText id="email" v-model="email" type="email" placeholder="For maintenance notifications" class="w-full" />
           </div>
 
           <div class="flex flex-column gap-2">
