@@ -273,10 +273,9 @@ onMounted(async () => {
     store.connect();
     experimentStore.fetchExperiments();
     sherpaStore.init();
+    // Fetch initial config only when authenticated (requires /llm/debug/config)
+    await store.checkConfigChange();
   }
-
-  // Fetch initial config
-  await store.checkConfigChange();
 
   // Listen for config change notifications
   window.addEventListener("llm-config-changed", handleConfigChange);
@@ -318,7 +317,7 @@ watch(
 watch(
   () => store.connectionStatus,
   (status, prev) => {
-    if (prev === "connected" && status === "disconnected") {
+    if (prev === "connected" && status === "disconnected" && hadRealtime.value) {
       toast.add({
         severity: "warn",
         summary: "Realtime disconnected",

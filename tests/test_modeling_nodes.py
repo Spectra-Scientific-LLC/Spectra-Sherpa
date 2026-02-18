@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-import spectrochempy as scp
+scp = pytest.importorskip("spectrochempy")
 from spectrochempy import NDDataset
 
 from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo

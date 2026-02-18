@@ -36,6 +36,16 @@ def _configure_writable_runtime_dirs() -> None:
 
 _configure_writable_runtime_dirs()
 
+# SpectroChemPy's logging interferes with pytest's capture mechanism, causing
+# "ValueError: I/O operation on closed file" when printing to stdout/stderr.
+# We disable its console logging here before it gets imported by the app.
+import logging
+# Force-configure the logger before import to prevent handler attachment
+logging.getLogger("spectrochempy").handlers = []
+logging.getLogger("spectrochempy").propagate = False
+# Also silence the root logger for good measure during tests
+logging.getLogger().setLevel(logging.CRITICAL)
+
 from spectra_sherpa.app.db.base import Base
 from spectra_sherpa.app.api.deps import get_session
 from spectra_sherpa.app.main import app
