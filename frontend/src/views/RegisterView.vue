@@ -66,7 +66,7 @@ const handleRegister = async () => {
       </template>
 
       <template #content>
-        <form @submit.prevent="handleRegister" class="flex flex-column gap-5">
+        <form @submit.prevent="handleRegister" class="flex flex-column" style="gap: 1.3rem">
           <div class="flex flex-column gap-2">
             <label for="username" class="font-bold text-900">Username</label>
             <InputText id="username" v-model="username" placeholder="Choose a username" class="w-full" />

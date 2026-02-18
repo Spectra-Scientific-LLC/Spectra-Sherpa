@@ -75,6 +75,11 @@
                 <span class="username">{{ slotProps.data.username }}</span>
               </template>
             </Column>
+            <Column field="email" header="Email" sortable>
+              <template #body="slotProps">
+                <span :class="{ 'text-secondary': !slotProps.data.email }">{{ slotProps.data.email || '—' }}</span>
+              </template>
+            </Column>
             <Column field="is_superuser" header="Role" style="width: 100px">
               <template #body="slotProps">
                 <Tag :severity="slotProps.data.is_superuser ? 'danger' : 'info'" :value="slotProps.data.is_superuser ? 'Admin' : 'User'" />
@@ -316,6 +321,7 @@ const { appConfig, loadConfig } = useAppConfig();
 interface AdminUser {
   id: number;
   username: string;
+  email?: string;
   is_superuser: boolean;
   is_active?: boolean;
   created_at?: string;
@@ -649,8 +655,6 @@ const getJobSeverity = (status: string) => {
 <style scoped>
 .admin-view {
   padding: 2rem;
-  max-width: 1400px;
-  margin: 0 auto;
 }
 
 .header {
