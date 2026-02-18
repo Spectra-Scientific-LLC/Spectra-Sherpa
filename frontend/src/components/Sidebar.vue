@@ -33,6 +33,17 @@
         <i :class="item.icon" aria-hidden="true"></i>
         <span v-if="!collapsed" class="nav-label">{{ item.label }}</span>
       </RouterLink>
+      <a
+        href="https://docs.spectrascientific.ai"
+        target="_blank"
+        rel="noopener"
+        class="nav-link secondary"
+        title="Documentation"
+        aria-label="Documentation"
+      >
+        <i class="pi pi-book" aria-hidden="true"></i>
+        <span v-if="!collapsed" class="nav-label">Documentation</span>
+      </a>
     </nav>
   </aside>
 </template>
