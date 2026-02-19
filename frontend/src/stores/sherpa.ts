@@ -6,13 +6,46 @@ import type { SherpaMessage, SherpaRecommendationPayload } from "@/types";
 
 type SherpaState = "idle" | "syncing" | "chatting" | "error";
 
+export interface PeaksResult {
+  /** Structured peaks array (if server provides it) */
+  peaks?: Array<{ wavenumber: number; assignment?: string; confidence?: number }>;
+  /** Text analysis from server (PRD-defined response shape) */
+  response?: string;
+}
+
+export interface CodeResult {
+  /** Extracted code string */
+  code: string;
+  language?: string;
+  /** Raw text analysis from server */
+  response?: string;
+}
+
+export interface ToolEvent {
+  tool_name: string;
+  status: "started" | "completed";
+  result?: unknown;
+}
+
 export const useSherpaStore = defineStore("sherpa", () => {
   const messages = ref<SherpaMessage[]>([]);
   const state = ref<SherpaState>("idle");
   const lastSyncError = ref<string | null>(null);
   const streamingIndex = ref<number | null>(null);
 
+  // Subscription-gated feature results
+  const lastPeaksResult = ref<PeaksResult | null>(null);
+  const lastCodeResult = ref<CodeResult | null>(null);
+  const activeTools = ref<ToolEvent[]>([]);
+  const subscriptionRequired = ref<string | null>(null);
+
   // ── helpers ────────────────────────────────────────────────
+
+  /** Extract code from a markdown response (```lang\n...\n```) */
+  function _extractCodeFromMarkdown(text: string): string {
+    const match = text.match(/```(?:\w+)?\n([\s\S]*?)```/);
+    return match ? match[1].trim() : text.trim();
+  }
 
   function getWs(): WebSocket | null {
     const llm = useLlmStore();
@@ -134,7 +167,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
     );
   }
 
-  async function sendMessage(message: string): Promise<void> {
+  async function sendMessage(message: string, useTools = false): Promise<void> {
     if (!message.trim()) return;
 
     const llm = useLlmStore();
@@ -161,9 +194,10 @@ export const useSherpaStore = defineStore("sherpa", () => {
     }
 
     state.value = "chatting";
+    activeTools.value = [];
     ws.send(
       JSON.stringify({
-        action: "sherpa_chat",
+        action: useTools ? "sherpa_chat_with_tools" : "sherpa_chat",
         payload: {
           message,
           workflow_id: workflow.workflowId,
@@ -181,6 +215,10 @@ export const useSherpaStore = defineStore("sherpa", () => {
     state.value = "idle";
     lastSyncError.value = null;
     streamingIndex.value = null;
+    lastPeaksResult.value = null;
+    lastCodeResult.value = null;
+    activeTools.value = [];
+    subscriptionRequired.value = null;
   }
 
   // ── WebSocket message handler ──────────────────────────────
@@ -242,6 +280,56 @@ export const useSherpaStore = defineStore("sherpa", () => {
           content: `Sherpa Advisor is not available (${reason}). Configure the cloud connection in Settings > Integrations.`,
         });
       }
+    } else if (payload.type === "sherpa_peaks_result") {
+      // Server returns {response: "text..."} and optionally {peaks: [...]}
+      // WS handler flattens result fields alongside type
+      lastPeaksResult.value = {
+        peaks: payload.peaks,
+        response: payload.response,
+      };
+    } else if (payload.type === "sherpa_peaks_error") {
+      lastPeaksResult.value = null;
+      messages.value.push({
+        role: "system",
+        content: payload.detail || "Peak identification failed.",
+      });
+    } else if (payload.type === "sherpa_code_result") {
+      // Server returns {response: "```python\n...```"} and optionally {code, language}
+      const rawCode = payload.code || _extractCodeFromMarkdown(payload.response || "");
+      lastCodeResult.value = {
+        code: rawCode,
+        language: payload.language || "python",
+        response: payload.response,
+      };
+    } else if (payload.type === "sherpa_code_error") {
+      lastCodeResult.value = null;
+      messages.value.push({
+        role: "system",
+        content: payload.detail || "Code generation failed.",
+      });
+    } else if (payload.type === "sherpa_tool_start") {
+      activeTools.value.push({
+        tool_name: payload.tool_name || "unknown",
+        status: "started",
+      });
+    } else if (payload.type === "sherpa_tool_result") {
+      const idx = activeTools.value.findIndex(
+        (t) => t.tool_name === payload.tool_name && t.status === "started"
+      );
+      if (idx >= 0) {
+        activeTools.value[idx] = {
+          ...activeTools.value[idx],
+          status: "completed",
+          result: payload.result,
+        };
+      }
+    } else if (payload.type === "sherpa_subscription_required") {
+      subscriptionRequired.value = payload.detail || "This feature requires a subscription.";
+      state.value = "idle";
+      messages.value.push({
+        role: "system",
+        content: payload.detail || "This feature requires a Sherpa subscription. Upgrade your plan to unlock it.",
+      });
     } else if (payload.type === "sherpa_error") {
       state.value = "error";
       // Demo limit error: has upgrade_url (sent by _check_demo_sherpa_limit)
@@ -280,6 +368,10 @@ export const useSherpaStore = defineStore("sherpa", () => {
     messages,
     state,
     lastSyncError,
+    lastPeaksResult,
+    lastCodeResult,
+    activeTools,
+    subscriptionRequired,
     syncWorkflow,
     sendMessage,
     clearMessages,

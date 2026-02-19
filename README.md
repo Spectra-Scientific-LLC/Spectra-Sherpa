@@ -33,11 +33,12 @@ This enables native AnalysisDataset operations, SCP file format readers (JCAMP-D
 - **Python & Notebook Export** — Generate standalone `.py` scripts or Jupyter notebooks from any workflow
 - **Project Management** — Organize experiments, workflows, and scripts with versioned snapshots
 - **Experiment Tracking** — DOE support with 96-well plate layouts, samples, mixtures, and factor definitions
-- **LLM Chat** — Bring-your-own-key AI assistant with built-in tool calling for workflow generation and spectral analysis
-- **Sherpa AI Advisor** — Domain-expert guidance for spectroscopy workflows (available via [subscription](https://spectrascientific.ai))
+- **LLM Chat** — Bring-your-own-key AI assistant for spectral analysis and workflow questions
+- **Sherpa AI Advisor** — Cloud-powered domain-expert guidance with peak identification, code generation, report writing, and agentic tool use (available via [subscription](https://spectrascientific.ai))
 - **Plugin System** — Extend the node library and tool registry via Python entry points or drop-in modules
 - **Deploy** — Batch prediction, folder watching, execution run tracking
-- **Data Privacy Controls** — Per-user fine-grained egress permissions for LLM context, NIST queries, and exports
+- **Demo Mode** — Public-facing demo profile with configurable usage limits and upgrade prompts
+- **Data Privacy Controls** — Per-user fine-grained egress permissions for LLM context, cloud sync, and exports
 
 ## Installation
 

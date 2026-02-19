@@ -71,6 +71,15 @@
           :model="exportMenuItems"
         />
         <Button
+          label="AI Code"
+          icon="pi pi-code"
+          class="toolbar-btn"
+          :loading="codeGenLoading"
+          :disabled="nodes.length === 0"
+          @click="onGenerateCode"
+          title="Generate AI-powered code from workflow"
+        />
+        <Button
           label="Bookmark Run"
           icon="pi pi-bookmark"
           class="toolbar-btn"
@@ -180,6 +189,31 @@
         />
       </template>
     </Dialog>
+
+    <!-- AI Generated Code Dialog -->
+    <Dialog
+      v-model:visible="showCodeDialog"
+      header="AI Generated Code"
+      :modal="true"
+      :style="{ width: '640px' }"
+    >
+      <div class="codegen-result">
+        <pre class="codegen-block"><code>{{ generatedCode }}</code></pre>
+      </div>
+      <template #footer>
+        <Button
+          label="Copy"
+          icon="pi pi-copy"
+          class="p-button-outlined"
+          @click="copyGeneratedCode"
+        />
+        <Button
+          label="Close"
+          class="p-button-text"
+          @click="showCodeDialog = false"
+        />
+      </template>
+    </Dialog>
   </section>
 </template>
 
@@ -196,6 +230,9 @@ import { useToast } from "primevue/usetoast";
 import { useWorkflowStore, type WorkflowNode, type WorkflowEdge } from "@/stores/workflow";
 import { useExperimentStore } from "@/stores/experiment";
 import { useRunsStore } from "@/stores/runs";
+import { useSherpaStore, type CodeResult } from "@/stores/sherpa";
+import { useLlmStore } from "@/stores/llm";
+import { useSherpaUpgrade } from "@/composables/useSherpaUpgrade";
 import WorkflowToolbar from "./WorkflowToolbar.vue";
 import WorkflowCanvas from "./WorkflowCanvas.vue";
 import WorkflowInspector from "./WorkflowInspector.vue";
@@ -210,7 +247,16 @@ const toast = useToast();
 const workflowStore = useWorkflowStore();
 const experimentStore = useExperimentStore();
 const runsStore = useRunsStore();
+const sherpaStore = useSherpaStore();
+const llmStore = useLlmStore();
+const { requireFeature } = useSherpaUpgrade();
 const canvasRef = ref();
+
+// AI Code generation state
+const codeGenLoading = ref(false);
+const showCodeDialog = ref(false);
+const generatedCode = ref("");
+const generatedCodeLang = ref("python");
 
 // Use store for workflow state
 const nodes = computed({
@@ -1283,6 +1329,103 @@ const onExecuteNode = async (nodeId: number) => {
   }
 };
 
+// --- AI Code Generation ---
+const onGenerateCode = async () => {
+  if (!requireFeature("sherpaCodeGen")) return;
+
+  codeGenLoading.value = true;
+  sherpaStore.lastCodeResult = null;
+
+  try {
+    await llmStore.connect();
+    const ws = llmStore.wsRef;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      throw new Error("WebSocket not connected");
+    }
+
+    // Build context from workflow
+    const context = {
+      workflow_name: workflowStore.workflowName,
+      nodes: nodes.value.map((n) => ({
+        node_id: String(n.id),
+        node_type: n.type,
+        label: n.type,
+        parameters: n.params || {},
+      })),
+      edges: edges.value.map((e) => ({
+        from_node_id: String(e.from),
+        to_node_id: String(e.to),
+        from_output: e.fromPort || "default",
+        to_input: e.toPort || "default",
+      })),
+    };
+
+    ws.send(JSON.stringify({
+      action: "sherpa_generate_code",
+      payload: {
+        task_description: `Generate a complete Python script for the "${workflowStore.workflowName}" workflow`,
+        context,
+      },
+    }));
+
+    // Wait for result
+    await new Promise<void>((resolve, reject) => {
+      const timeout = window.setTimeout(() => {
+        cleanup();
+        reject(new Error("Code generation timed out"));
+      }, 60_000);
+
+      const unwatch = watch(
+        () => sherpaStore.lastCodeResult,
+        (val) => {
+          if (val) {
+            cleanup();
+            resolve();
+          }
+        }
+      );
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        unwatch();
+      };
+    });
+
+    const codeResult = sherpaStore.lastCodeResult as CodeResult | null;
+    generatedCode.value = codeResult?.code || "";
+    generatedCodeLang.value = codeResult?.language || "python";
+    showCodeDialog.value = true;
+  } catch (err: any) {
+    toast.add({
+      severity: "error",
+      summary: "Code Generation Failed",
+      detail: err?.message || "Failed to generate code",
+      life: 4000,
+    });
+  } finally {
+    codeGenLoading.value = false;
+  }
+};
+
+const copyGeneratedCode = async () => {
+  try {
+    await navigator.clipboard.writeText(generatedCode.value);
+    toast.add({
+      severity: "success",
+      summary: "Copied",
+      detail: "Code copied to clipboard",
+      life: 2000,
+    });
+  } catch {
+    toast.add({
+      severity: "error",
+      summary: "Copy Failed",
+      detail: "Could not copy to clipboard",
+      life: 2000,
+    });
+  }
+};
+
 const onDeleteNode = (nodeId: number) => {
   workflowStore.removeNode(nodeId);
   if (selectedNode.value?.id === nodeId) {
@@ -1509,5 +1652,24 @@ const onDeleteNode = (nodeId: number) => {
   font-size: 0.85rem;
   font-weight: 500;
   color: #475569;
+}
+
+/* AI Code Generation Dialog */
+.codegen-result {
+  max-height: 500px;
+  overflow: auto;
+}
+
+.codegen-block {
+  margin: 0;
+  padding: 16px;
+  background: #1e293b;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #e2e8f0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
 }
 </style>

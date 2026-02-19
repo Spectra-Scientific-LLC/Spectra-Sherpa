@@ -113,7 +113,6 @@ async def get_config(
 
     # Recalculate feature flags with true provider availability.
     has_llm = any(llm["enabled"] for llm in config["llms"].values())
-    config["features"]["agenticWorkflow"] = has_llm and config["egressEnabled"]
     config["features"]["chatAssistant"] = has_llm
 
     return config
@@ -407,34 +406,24 @@ async def test_spectrasherpa_connection(request: SpectraSherpaTestRequest):
         base_url = _normalize_spectrasherpa_url(request.server_url)
 
         async with httpx.AsyncClient(timeout=10.0) as client:
-            # Test auth endpoint
-            response = await client.get(
-                f"{base_url}/auth/me",
-                headers={"X-API-Key": request.api_key}
+            # Validate deployment key
+            response = await client.post(
+                f"{base_url}/keys/deployment/validate",
+                headers={"X-Deployment-Key": request.api_key}
             )
 
             if response.status_code == 401:
-                return {"success": False, "error": "Invalid API key"}
-
+                return {"success": False, "error": "Invalid deployment key"}
+            if response.status_code == 403:
+                return {"success": False, "error": "Deployment key has been revoked"}
             if response.status_code != 200:
                 return {"success": False, "error": f"Server returned {response.status_code}"}
 
-            user_data = response.json()
-
-            # Try to get managed keys
-            keys_response = await client.get(
-                f"{base_url}/keys/llm",
-                headers={"X-API-Key": request.api_key}
-            )
-
-            keys = []
-            if keys_response.status_code == 200:
-                keys = keys_response.json()
+            validation = response.json()
 
             return {
                 "success": True,
-                "user": user_data,
-                "keys": keys,
+                "deployment": validation,
             }
 
     except httpx.ConnectError:
@@ -481,7 +470,10 @@ async def delete_spectrasherpa_config():
 @router.get("/spectrasherpa/user")
 async def get_spectrasherpa_user():
     """
-    Get current user info from SpectraSherpa.
+    Get deployment key info from SpectraSherpa server.
+
+    Returns deployment label, plan, and entitlements rather than user identity
+    (deployment keys don't map to individual server users).
     """
     from spectra_sherpa.app.services.spectrasherpa import get_spectrasherpa_service
 
@@ -489,21 +481,16 @@ async def get_spectrasherpa_user():
     if not service.is_configured:
         return {"error": "SpectraSherpa not configured"}
 
-    result = await service.validate_api_key()
-    if result.success and result.user is not None:
-        # Keep a backward-compatible payload while using current
-        # SpectraSherpaUser fields from spectrasherpa.py.
+    result = await service.validate_deployment_key()
+    if result.success:
         return {
-            "id": result.user.id,
-            "email": result.user.email,
-            "username": result.user.username,
-            "display_name": result.user.username,
-            "is_admin": result.user.is_admin,
-            "is_active": result.user.is_active,
-            "llm_quota": result.user.llm_quota,
+            "label": result.label,
+            "plan": result.plan,
+            "plan_status": result.plan_status,
+            "entitlements": result.entitlements,
         }
     else:
-        return {"error": result.error or "Unable to fetch SpectraSherpa user"}
+        return {"error": result.error or "Unable to validate deployment key"}
 
 
 @router.get("/spectrasherpa/keys")
@@ -524,7 +511,7 @@ async def get_spectrasherpa_keys():
                 "provider": k.provider,
                 "display_name": k.provider.title(),
                 "model": k.model or "default",
-                "rate_limit": k.rate_limit,
+                "available": k.available,
             }
             for k in keys
         ]
@@ -587,16 +574,19 @@ async def activate_hybrid(request: ActivateHybridRequest, http_request: Request)
 
     base_url = _normalize_spectrasherpa_url(request.server_url)
 
-    # ── 2. Validate API key via /auth/me ──
-    # This verifies both connectivity and credentials before persisting config.
+    # ── 2. Validate deployment key via /keys/deployment/validate ──
+    # The key is a deployment key (not a user API key).  This endpoint
+    # resolves against the DeploymentKey model and returns plan/entitlements.
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(
-                f"{base_url}/auth/me",
-                headers={"X-API-Key": request.api_key},
+            response = await client.post(
+                f"{base_url}/keys/deployment/validate",
+                headers={"X-Deployment-Key": request.api_key},
             )
             if response.status_code == 401:
-                raise HTTPException(status_code=400, detail="Invalid API key")
+                raise HTTPException(status_code=400, detail="Invalid deployment key")
+            if response.status_code == 403:
+                raise HTTPException(status_code=400, detail="Deployment key has been revoked")
             if response.status_code != 200:
                 raise HTTPException(
                     status_code=400,
@@ -654,23 +644,10 @@ async def activate_hybrid(request: ActivateHybridRequest, http_request: Request)
     from spectra_sherpa.app.core.startup import ensure_egress_defaults, link_hybrid_identity
     await ensure_egress_defaults()
 
-    # Auto-enable spectrasherpa sync for all users — hybrid mode needs it
-    # for Sherpa Advisor to work. Without this, users must manually toggle
-    # via sqlite3 since there's no Data & Privacy UI yet.
-    try:
-        from spectra_sherpa.app.db.session import async_session
-        from spectra_sherpa.app.models.data_egress import UserEgressDefaults
-        async with async_session() as session:
-            result = await session.execute(
-                select(UserEgressDefaults).where(
-                    UserEgressDefaults.allow_spectrasherpa_sync == False  # noqa: E712
-                )
-            )
-            for egress in result.scalars().all():
-                egress.allow_spectrasherpa_sync = True
-            await session.commit()
-    except Exception:
-        logger.warning("Could not auto-enable spectrasherpa sync", exc_info=True)
+    # Note: ensure_egress_defaults() creates default egress records for users
+    # who don't have one yet (with cloud sync enabled by default in hybrid mode).
+    # We intentionally do NOT force-enable cloud sync for users who have
+    # explicitly opted out — their privacy preference is respected.
 
     await link_hybrid_identity()
 

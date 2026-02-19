@@ -87,21 +87,6 @@ class TestFeatureFlags:
         assert flags["pluginSystem"] is True
 
     @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
-    def test_agentic_workflow_requires_llm_and_egress(self, mode: str):
-        """agenticWorkflow requires both an LLM key and egress enabled."""
-        # No LLM key, no egress
-        cfg_none = _make_config(mode=mode, llm_key=None, egress_enabled=False)
-        assert cfg_none.to_client_safe()["features"]["agenticWorkflow"] is False
-
-        # LLM key but no egress
-        cfg_key_only = _make_config(mode=mode, llm_key="sk-test", egress_enabled=False)
-        assert cfg_key_only.to_client_safe()["features"]["agenticWorkflow"] is False
-
-        # Both present
-        cfg_both = _make_config(mode=mode, llm_key="sk-test", egress_enabled=True)
-        assert cfg_both.to_client_safe()["features"]["agenticWorkflow"] is True
-
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
     def test_nist_downloads_follows_egress(self, mode: str):
         """nistDownloads mirrors egress_enabled."""
         for egress in (True, False):
@@ -374,7 +359,6 @@ class TestConfigResponseShape:
         expected_flags = [
             "apiTokenSettings",
             "cloudOffload",
-            "agenticWorkflow",
             "chatAssistant",
             "nistDownloads",
             "sherpaAdvisor",
@@ -438,17 +422,6 @@ class TestRouteRegistration:
 
 class TestMCPToolSystem:
     """Verify MCP tool system behavior across modes."""
-
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
-    def test_agentic_workflow_flag_requires_llm_and_egress(self, mode: str):
-        """agenticWorkflow (gate for use_tools) needs both LLM key + egress."""
-        # Neither → off
-        cfg_off = _make_config(mode=mode, llm_key=None, egress_enabled=False)
-        assert cfg_off.to_client_safe()["features"]["agenticWorkflow"] is False
-
-        # Both → on
-        cfg_on = _make_config(mode=mode, llm_key="sk-test", egress_enabled=True)
-        assert cfg_on.to_client_safe()["features"]["agenticWorkflow"] is True
 
     @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
     def test_tool_registry_returns_tools_in_all_modes(self, mode: str):
@@ -634,7 +607,6 @@ class TestConfigResponseContract:
         features = safe["features"]
         for key in (
             "chatAssistant",
-            "agenticWorkflow",
             "nistDownloads",
             "apiTokenSettings",
             "cloudOffload",

@@ -210,16 +210,15 @@ async def ensure_default_user() -> None:
 
 
 async def link_hybrid_identity() -> None:
-    """Enrich the local user with server-side identity in hybrid mode.
+    """Validate deployment key and cache subscription info in hybrid mode.
 
-    Calls ``GET /auth/me`` on the spectrasherpa-server using the configured
-    ``SPECTRASHERPA_API_KEY``.  On success the default local user is updated
-    with the server username and admin flag so that admin features, egress
-    controls, and future entitlements work correctly.
+    Calls ``POST /keys/deployment/validate`` on the spectrasherpa-server
+    using the configured ``SPECTRASHERPA_API_KEY`` (which is now a deployment
+    key).  On success the subscription features are cached on the Sherpa
+    advisor for feature-flag derivation.
 
-    Gracefully degrades: if the server is unreachable the previously-synced
-    identity (or the generic "local" user on first-ever offline start) is
-    kept as-is.
+    Gracefully degrades: if the server is unreachable the local app
+    continues without subscription features.
     """
     if app_config.mode != "hybrid":
         return
@@ -228,52 +227,44 @@ async def link_hybrid_identity() -> None:
 
     service = get_spectrasherpa_service()
     if not service.is_configured:
-        logger.info("Hybrid mode: no SPECTRASHERPA_API_KEY configured, using local identity")
+        logger.info("Hybrid mode: no SPECTRASHERPA_API_KEY configured, skipping deployment validation")
         return
 
     # Verify server connectivity via health check first
     is_healthy, health_msg = await service.health_check()
     if not is_healthy:
         logger.info(
-            "Hybrid mode: cloud server not reachable (%s) — using local identity",
+            "Hybrid mode: cloud server not reachable (%s) — running without subscription features",
             health_msg,
         )
         return
 
-    # Try to link identity via /auth/me (may fail if cloud DB isn't set up)
+    # Validate deployment key and get subscription info
     try:
-        result = await service.validate_api_key()
+        result = await service.validate_deployment_key()
     except Exception as exc:
-        logger.info("Hybrid identity linking skipped: %s — Sherpa sync still works", exc)
+        logger.info("Deployment key validation skipped: %s — Sherpa sync still works", exc)
         return
 
     if not result.success:
         logger.info(
-            "Hybrid identity linking skipped: %s — Sherpa sync still works via API key auth",
+            "Deployment key validation failed: %s — running without subscription features",
             result.error,
         )
         return
 
-    server_user = result.user
+    # Cache subscription features on the advisor for feature flag derivation
     try:
-        async with async_session() as session:
-            db_user = (
-                await session.execute(select(User).order_by(User.id).limit(1))
-            ).scalar_one_or_none()
-            if db_user is None:
-                return
-
-            db_user.username = server_user.username
-            db_user.is_superuser = server_user.is_admin
-            await session.commit()
-
+        from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
+        advisor = get_sherpa_advisor()
+        advisor._subscription_features = result.entitlements
+        advisor._subscription_plan = result.plan
         logger.info(
-            "Hybrid identity linked: %s (admin=%s)",
-            server_user.username,
-            server_user.is_admin,
+            "Hybrid mode: deployment key validated (plan=%s, label=%s)",
+            result.plan, result.label,
         )
     except Exception as exc:
-        logger.warning("Could not persist hybrid identity: %s", exc)
+        logger.warning("Could not cache subscription features: %s", exc)
 
 
 async def ensure_egress_defaults() -> None:
@@ -282,8 +273,16 @@ async def ensure_egress_defaults() -> None:
 
     This backfills UserEgressDefaults for existing users so hybrid/enterprise
     permissions work consistently after upgrades.
+
+    In hybrid/enterprise mode, new users get cloud sync enabled by default
+    so Sherpa Advisor works out-of-the-box. In local mode, everything is
+    disabled by default (privacy-first). Existing explicit preferences are
+    never overridden.
     """
     try:
+        from spectra_sherpa.app.core.config import app_config
+        is_connected = app_config.mode in ("hybrid", "enterprise")
+
         async with async_session() as session:
             result = await session.execute(
                 select(User)
@@ -298,8 +297,8 @@ async def ensure_egress_defaults() -> None:
                 session.add(
                     UserEgressDefaults(
                         user_id=user.id,
-                        allow_spectrasherpa_sync=False,
-                        allow_llm_context=False,
+                        allow_spectrasherpa_sync=is_connected,
+                        allow_llm_context=is_connected,
                         allow_export=False,
                         allow_nist_queries=False,
                     )

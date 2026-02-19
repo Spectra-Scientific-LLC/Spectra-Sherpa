@@ -73,12 +73,10 @@ class SpectraSherpaUser:
 
 @dataclass
 class ManagedLLMKey:
-    """LLM API key managed by SpectraSherpa"""
+    """LLM key metadata from Spectra-Server (metadata-only, no raw secrets)."""
     provider: str  # openai, anthropic, deepseek, gemini
-    api_key: str
     model: Optional[str] = None
-    rate_limit: Optional[int] = None  # requests per minute
-    expires_at: Optional[datetime] = None
+    available: bool = False
 
 
 @dataclass
@@ -92,6 +90,17 @@ class AuthResult:
     def __post_init__(self):
         if self.managed_keys is None:
             self.managed_keys = []
+
+
+@dataclass
+class DeploymentValidation:
+    """Result of deployment key validation via /keys/deployment/validate."""
+    success: bool
+    label: str = ""
+    plan: str = "none"
+    plan_status: Optional[str] = None
+    entitlements: Optional[dict[str, Any]] = None
+    error: Optional[str] = None
 
 
 # ============================================================================
@@ -232,17 +241,60 @@ class SpectraSherpaService:
             logger.error(f"SpectraSherpa auth error: {e}")
             return AuthResult(success=False, error=str(e))
 
+    async def validate_deployment_key(self, api_key: Optional[str] = None) -> DeploymentValidation:
+        """Validate a deployment key via POST /keys/deployment/validate.
+
+        This is the primary validation path for hybrid activation.
+        Returns plan, entitlements, and label for the deployment key.
+        """
+        key_to_validate = api_key or self.config.api_key
+
+        if not key_to_validate:
+            return DeploymentValidation(success=False, error="No deployment key provided")
+
+        try:
+            async with httpx.AsyncClient(
+                base_url=self.config.api_base_url,
+                timeout=self.config.timeout,
+                headers={
+                    "X-Deployment-Key": key_to_validate,
+                    "User-Agent": f"SpectraScientific/{settings.app_version}",
+                }
+            ) as client:
+                response = await client.post("/keys/deployment/validate")
+
+                if response.status_code == 401:
+                    return DeploymentValidation(success=False, error="Invalid deployment key")
+                if response.status_code == 403:
+                    return DeploymentValidation(success=False, error="Deployment key has been revoked")
+
+                response.raise_for_status()
+                data = response.json()
+
+                return DeploymentValidation(
+                    success=True,
+                    label=data.get("label", ""),
+                    plan=data.get("plan", "none"),
+                    plan_status=data.get("plan_status"),
+                    entitlements=data.get("entitlements"),
+                )
+
+        except httpx.HTTPStatusError as e:
+            logger.warning("Deployment key validation failed: %s", e)
+            return DeploymentValidation(success=False, error=f"Validation failed: {e.response.status_code}")
+        except Exception as e:
+            logger.error("Deployment key validation error: %s", e)
+            return DeploymentValidation(success=False, error=str(e))
+
     async def get_managed_llm_keys(self, force_refresh: bool = False) -> list[ManagedLLMKey]:
         """
-        Get managed LLM API keys from SpectraSherpa.
+        Get managed LLM key metadata from Spectra-Server.
+
+        Returns metadata only (provider, model, availability) — raw API keys
+        are never returned by the server. This is used to display which
+        providers are available on the server, not to extract secrets.
 
         Keys are cached for 1 hour to reduce API calls.
-
-        Args:
-            force_refresh: Force refresh even if cache is valid
-
-        Returns:
-            List of ManagedLLMKey objects
         """
         if not self.is_configured:
             return []
@@ -256,13 +308,7 @@ class SpectraSherpaService:
             client = await self._get_client()
             response = await client.get("/keys/llm")
 
-            if response.status_code == 401:
-                logger.warning("SpectraSherpa API key invalid for LLM key fetch")
-                return []
-
-            if response.status_code == 403:
-                # User's tier doesn't include managed keys
-                logger.info("SpectraSherpa tier doesn't include managed LLM keys")
+            if response.status_code in (401, 403):
                 return []
 
             response.raise_for_status()
@@ -270,32 +316,22 @@ class SpectraSherpaService:
 
             keys = []
             for key_data in data.get("keys", []):
-                expires_at = None
-                if key_data.get("expires_at"):
-                    expires_at = datetime.fromisoformat(key_data["expires_at"].replace("Z", "+00:00"))
-
                 keys.append(ManagedLLMKey(
                     provider=key_data["provider"],
-                    api_key=key_data["api_key"],
                     model=key_data.get("model"),
-                    rate_limit=key_data.get("rate_limit"),
-                    expires_at=expires_at
+                    available=key_data.get("available", False),
                 ))
 
             # Cache for 1 hour
             self._cached_keys = keys
-            self._cache_expires = datetime.now(timezone.utc).replace(
-                minute=0, second=0, microsecond=0
-            )
             from datetime import timedelta
-            self._cache_expires += timedelta(hours=1)
+            self._cache_expires = datetime.now(timezone.utc) + timedelta(hours=1)
 
-            logger.info(f"Fetched {len(keys)} managed LLM keys from SpectraSherpa")
+            logger.info(f"Fetched {len(keys)} managed LLM key metadata from Spectra-Server")
             return keys
 
         except Exception as e:
-            logger.error(f"Failed to fetch managed LLM keys: {e}")
-            # Return cached keys as fallback
+            logger.error(f"Failed to fetch managed LLM key metadata: {e}")
             return self._cached_keys
 
 

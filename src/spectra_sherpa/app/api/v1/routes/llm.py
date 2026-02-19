@@ -11,13 +11,8 @@ from spectra_sherpa.app.schemas.llm import (
     LLMChatResponse,
     LLMConversation,
     LLMDataStoryRequest,
-    LLMGenerateCodeRequest,
     LLMMessage,
-    LLMNameResponse,
-    LLMPeakIdentifyRequest,
-    LLMSuggestNameRequest,
     LLMTextResponse,
-    LLMWriteReportRequest,
 )
 from spectra_sherpa.app.services.llm import LLMService, conversation_store
 from spectra_sherpa.app.services.rate_limiter import RateLimiter
@@ -66,28 +61,9 @@ async def chat(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> LLMChatResponse:
-    from spectra_sherpa.app.core.config import app_config
-
     _check_llm_rate_limit(current_user)
     service = LLMService(session, user=current_user)
 
-    # Tool-augmented chat (mirrors WS llm_chat with use_tools=true)
-    if payload.use_tools and app_config.to_client_safe()["features"].get("agenticWorkflow"):
-        try:
-            conversation_id, response, tool_calls_log = await service.chat_with_tools(
-                message=payload.message,
-                conversation_id=payload.conversation_id,
-                metadata=payload.metadata,
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return LLMChatResponse(
-            conversation_id=conversation_id,
-            response=response,
-            tool_calls=tool_calls_log or None,
-        )
-
-    # Plain chat (no tools)
     try:
         conversation_id, response = await service.chat(
             message=payload.message,
@@ -125,66 +101,6 @@ async def delete_conversation(
     removed = conversation_store.delete(conversation_id, user_id=user_id)
     if not removed:
         raise HTTPException(status_code=404, detail="Conversation not found")
-
-
-@router.post("/suggest-name", response_model=LLMNameResponse)
-async def suggest_name(
-    payload: LLMSuggestNameRequest,
-    session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_user),
-) -> LLMNameResponse:
-    _check_llm_rate_limit(current_user)
-    service = LLMService(session, user=current_user)
-    try:
-        name = await service.suggest_name(payload.components)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return LLMNameResponse(name=name)
-
-
-@router.post("/identify-peaks", response_model=LLMTextResponse)
-async def identify_peaks(
-    payload: LLMPeakIdentifyRequest,
-    session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_user),
-) -> LLMTextResponse:
-    _check_llm_rate_limit(current_user)
-    service = LLMService(session, user=current_user)
-    try:
-        response = await service.identify_peaks(payload.wavenumbers, payload.absorbance)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return LLMTextResponse(response=response)
-
-
-@router.post("/generate-code", response_model=LLMTextResponse)
-async def generate_code(
-    payload: LLMGenerateCodeRequest,
-    session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_user),
-) -> LLMTextResponse:
-    _check_llm_rate_limit(current_user)
-    service = LLMService(session, user=current_user)
-    try:
-        response = await service.generate_code(payload.task_description)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return LLMTextResponse(response=response)
-
-
-@router.post("/write-report", response_model=LLMTextResponse)
-async def write_report(
-    payload: LLMWriteReportRequest,
-    session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_user),
-) -> LLMTextResponse:
-    _check_llm_rate_limit(current_user)
-    service = LLMService(session, user=current_user)
-    try:
-        response = await service.write_report(payload.experiment)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return LLMTextResponse(response=response)
 
 
 @router.post("/data-story", response_model=LLMTextResponse)

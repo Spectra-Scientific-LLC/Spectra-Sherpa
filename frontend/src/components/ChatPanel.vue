@@ -49,6 +49,16 @@
             @click="sherpaStore.syncWorkflow()"
             v-tooltip.bottom="'Re-sync workflow'"
           />
+          <!-- Agentic tools toggle (Sherpa tab, subscription-gated) -->
+          <Button
+            v-if="activeTab === 'sherpa' && isFeatureEnabled('sherpaAgenticTools')"
+            :icon="toolsActive ? 'pi pi-wrench' : 'pi pi-wrench'"
+            class="p-button-text p-button-sm"
+            :class="{ 'tools-active-btn': toolsActive }"
+            aria-label="Toggle agentic tools"
+            @click="toolsActive = !toolsActive"
+            v-tooltip.bottom="toolsActive ? 'Tools enabled' : 'Enable tools'"
+          />
           <Button
             icon="pi pi-external-link"
             class="p-button-text p-button-sm open-tab-btn"
@@ -89,20 +99,28 @@
               <div ref="messageContainer" class="chat-messages">
                 <!-- LLM messages -->
                 <template v-if="activeTab === 'llm'">
-                  <div
-                    v-for="(message, idx) in store.messages"
-                    :key="idx"
-                    class="chat-message"
-                    :class="message.role"
-                  >
-                    <div v-if="message.role === 'system'" class="system-notification">
-                      {{ message.content }}
+                  <!-- No BYOK key configured -->
+                  <div v-if="!llmChatEnabled" class="no-key-notice">
+                    <i class="pi pi-info-circle"></i>
+                    <span>Configure an LLM API key in Settings to enable chat.</span>
+                    <a class="setup-link" @click="router.push('/settings')">Setup</a>
+                  </div>
+                  <template v-else>
+                    <div
+                      v-for="(message, idx) in store.messages"
+                      :key="idx"
+                      class="chat-message"
+                      :class="message.role"
+                    >
+                      <div v-if="message.role === 'system'" class="system-notification">
+                        {{ message.content }}
+                      </div>
+                      <div v-else class="chat-bubble">{{ message.content }}</div>
                     </div>
-                    <div v-else class="chat-bubble">{{ message.content }}</div>
-                  </div>
-                  <div v-if="store.loading" class="chat-message assistant">
-                    <div class="chat-bubble">Streaming...</div>
-                  </div>
+                    <div v-if="store.loading" class="chat-message assistant">
+                      <div class="chat-bubble">Streaming...</div>
+                    </div>
+                  </template>
                 </template>
 
                 <!-- Sherpa messages -->
@@ -117,6 +135,19 @@
                       {{ message.content }}
                     </div>
                     <div v-else class="chat-bubble">{{ message.content }}</div>
+                  </div>
+                  <!-- Agentic tool progress -->
+                  <div
+                    v-for="(tool, tidx) in sherpaStore.activeTools"
+                    :key="'tool-' + tidx"
+                    class="tool-progress"
+                  >
+                    <i
+                      :class="tool.status === 'started' ? 'pi pi-spin pi-spinner' : 'pi pi-check-circle'"
+                      :style="{ color: tool.status === 'started' ? '#3b82f6' : '#22c55e' }"
+                    ></i>
+                    <span v-if="tool.status === 'started'">Using {{ tool.tool_name }}...</span>
+                    <span v-else>{{ tool.tool_name }} complete</span>
                   </div>
                   <div v-if="sherpaStore.state === 'syncing'" class="chat-message assistant">
                     <div class="chat-bubble">Analyzing workflow...</div>
@@ -134,9 +165,14 @@
                   v-model="userMessage"
                   :placeholder="inputPlaceholder"
                   class="chat-input__field"
+                  :disabled="activeTab === 'llm' && !llmChatEnabled"
                   @keyup.enter="sendMessage"
                 />
-                <Button icon="pi pi-send" @click="sendMessage" :disabled="!userMessage.trim()" />
+                <Button
+                  icon="pi pi-send"
+                  @click="sendMessage"
+                  :disabled="!userMessage.trim() || (activeTab === 'llm' && !llmChatEnabled)"
+                />
               </div>
             </SplitterPanel>
           </Splitter>
@@ -192,11 +228,13 @@ const { isDemoMode } = useDemoMode();
 const userMessage = ref("");
 const messageContainer = ref<HTMLDivElement | null>(null);
 const hadRealtime = ref(false);
+const toolsActive = ref(false);
 
 // ── Tab toggle ───────────────────────────────────────────────
 
 const activeTab = ref<"llm" | "sherpa">("llm");
 const sherpaEnabled = computed(() => isFeatureEnabled("sherpaAdvisor"));
+const llmChatEnabled = computed(() => isFeatureEnabled("chatAssistant"));
 
 const switchToSherpa = () => {
   activeTab.value = "sherpa";
@@ -360,7 +398,7 @@ const sendMessage = async () => {
       userMessage.value = "";
       return;
     }
-    await sherpaStore.sendMessage(userMessage.value);
+    await sherpaStore.sendMessage(userMessage.value, toolsActive.value);
     userMessage.value = "";
     return;
   }
@@ -862,6 +900,54 @@ const collapsed = computed(() => props.collapsed);
   border: 1px solid rgba(100, 116, 139, 0.2);
   border-radius: 6px;
   font-style: italic;
+}
+
+/* Tools toggle active state */
+.tools-active-btn {
+  color: #3b82f6 !important;
+  background: rgba(59, 130, 246, 0.1) !important;
+  border-radius: 6px;
+}
+
+/* Agentic tool progress */
+.tool-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+/* No BYOK key notice */
+.no-key-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  margin: 8px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+.no-key-notice i {
+  color: #3b82f6;
+  font-size: 1rem;
+}
+
+.setup-link {
+  color: #3b82f6;
+  cursor: pointer;
+  font-weight: 500;
+  text-decoration: underline;
+  margin-left: auto;
+}
+
+.setup-link:hover {
+  color: #2563eb;
 }
 
 @media (max-width: 900px) {

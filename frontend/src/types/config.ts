@@ -19,11 +19,21 @@ export interface LLMConfig {
 export interface AppFeatures {
   apiTokenSettings: boolean
   cloudOffload: boolean
-  agenticWorkflow: boolean
   chatAssistant: boolean
   sherpaAdvisor?: boolean
   pluginSystem?: boolean
   nistDownloads?: boolean
+  // Subscription-gated Sherpa capabilities
+  sherpaPeakId?: boolean
+  sherpaCodeGen?: boolean
+  sherpaWriteReport?: boolean
+  sherpaAgenticTools?: boolean
+  sherpaFullContext?: boolean
+}
+
+export interface SubscriptionInfo {
+  plan: string  // "none" | "pro" | "team" | "demo"
+  upgrade_url?: string
 }
 
 export interface AppLimits {
@@ -72,6 +82,7 @@ export interface AppConfig {
   features: AppFeatures
   llms: Record<string, LLMConfig>
   limits?: AppLimits
+  subscription?: SubscriptionInfo | null
   demo?: DemoContract | null
 }
 

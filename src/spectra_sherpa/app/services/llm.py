@@ -39,7 +39,6 @@ DEFAULT_MODEL = "deepseek-chat"
 DEFAULT_BASE_URL = "https://api.deepseek.com"
 
 MAX_HISTORY_MESSAGES = 40
-MAX_TOOL_ROUNDS = 5  # Prevent infinite function-calling loops
 
 # Cache for PDF reference content (loaded once)
 _spectrochempy_pdf_cache: Optional[str] = None
@@ -334,258 +333,6 @@ class LLMService:
 
             return conversation_id, openai_generator()
 
-    async def chat_with_tools(
-        self,
-        message: str,
-        conversation_id: Optional[str] = None,
-        metadata: Optional[dict[str, Any]] = None,
-    ) -> tuple[str, str, list[dict[str, Any]]]:
-        """
-        Chat with MCP tool / function-calling support.
-
-        The LLM may request tool invocations; this method handles the
-        multi-turn loop transparently.  Returns the final text response
-        once all tool calls have been resolved.
-
-        Returns:
-            (conversation_id, final_text, tool_calls_log)
-        """
-        import logging as _logging
-
-        _logger = _logging.getLogger(__name__)
-
-        # ---- egress guard (same as chat()) ----
-        # User-initiated BYOK chat bypasses the global egress flag.
-        config = await self._get_llm_config()
-        if not self._is_local_provider(config["provider"]):
-            if not await check_egress_permission(
-                self.user,
-                "allow_llm_context",
-                data_type="metadata",
-                destination="llm_context",
-                session=self.session,
-                skip_global_check=True,
-            ):
-                raise ValueError("LLM context sharing is disabled in user privacy settings.")
-
-        provider_meta = get_provider(config["provider"])
-
-        # ---- resolve tool definitions ----
-        from spectra_sherpa.app.services.tools import tool_registry
-
-        if provider_meta["client_type"] == "anthropic":
-            tools_payload = tool_registry.to_anthropic_tools()
-        else:
-            tools_payload = tool_registry.to_openai_tools()
-
-        if not tools_payload or not provider_meta.get("supports_function_calling"):
-            # No tools or provider doesn't support them — fall back
-            cid, content = await self.chat(message, conversation_id, metadata)
-            return cid, content, []
-
-        # ---- prepare conversation ----
-        user_id = self.user.id
-        conversation_id, history = conversation_store.get_or_create(conversation_id, user_id)
-        history.append({"role": "user", "content": message})
-
-        client = await self._client(config)
-        messages = self._build_messages(history, metadata, config)
-
-        tool_calls_log: list[dict[str, Any]] = []
-        content = ""
-
-        from spectra_sherpa.app.services.tools.executor import ToolExecutionContext, execute_tool
-        from spectra_sherpa.app.services.tools.schemas import ToolInvocation
-
-        ctx = ToolExecutionContext(session=self.session, user=self.user)
-
-        for round_num in range(MAX_TOOL_ROUNDS):
-            _logger.info("Tool round %d/%d", round_num + 1, MAX_TOOL_ROUNDS)
-
-            if provider_meta["client_type"] == "anthropic":
-                content, pending = await self._anthropic_tool_round(
-                    client, config, messages, tools_payload
-                )
-            else:
-                content, pending = await self._openai_tool_round(
-                    client, config, messages, tools_payload
-                )
-
-            if not pending:
-                break
-
-            # Execute each pending tool call
-            for tc in pending:
-                invocation = ToolInvocation(
-                    tool_name=tc["name"],
-                    arguments=tc["arguments"],
-                )
-                result = await execute_tool(invocation, ctx, allow_internal=True)
-                tool_calls_log.append(
-                    {
-                        "tool": tc["name"],
-                        "arguments": tc["arguments"],
-                        "result": result.result if result.success else None,
-                        "error": result.error,
-                    }
-                )
-
-                # Append tool result to messages for next round
-                if provider_meta["client_type"] == "anthropic":
-                    # Anthropic: assistant message with tool_use, then user with tool_result
-                    messages.append(
-                        {
-                            "role": "assistant",
-                            "content": [
-                                {
-                                    "type": "tool_use",
-                                    "id": tc["id"],
-                                    "name": tc["name"],
-                                    "input": tc["arguments"],
-                                }
-                            ],
-                        }
-                    )
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": [
-                                result.to_anthropic_block(tc["id"]),
-                            ],
-                        }
-                    )
-                else:
-                    # OpenAI: assistant message with tool_calls, then tool role message
-                    messages.append(
-                        {
-                            "role": "assistant",
-                            "tool_calls": [
-                                {
-                                    "id": tc["id"],
-                                    "type": "function",
-                                    "function": {
-                                        "name": tc["name"],
-                                        "arguments": json.dumps(tc["arguments"]),
-                                    },
-                                }
-                            ],
-                        }
-                    )
-                    messages.append(result.to_openai_message(tc["id"]))
-
-        # ---- persist conversation ----
-        history.append({"role": "assistant", "content": content})
-        conversation_store.trim(conversation_id)
-        conversation_store.save_messages(conversation_id, history)
-
-        return conversation_id, content, tool_calls_log
-
-    # ---- Provider-specific tool-call helpers ----
-
-    async def _openai_tool_round(
-        self,
-        client: Any,
-        config: dict[str, Any],
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
-    ) -> tuple[str, list[dict[str, Any]]]:
-        """
-        Single OpenAI API round that may produce text or tool calls.
-
-        Returns (text_content, pending_tool_calls).
-        ``pending_tool_calls`` is empty when the model returned pure text.
-        """
-        response = await client.chat.completions.create(
-            model=config["model"],
-            messages=messages,
-            tools=tools,
-            stream=False,
-        )
-        choice = response.choices[0]
-        msg = choice.message
-
-        if msg.tool_calls:
-            pending = []
-            for tc in msg.tool_calls:
-                try:
-                    args = json.loads(tc.function.arguments)
-                except (json.JSONDecodeError, TypeError):
-                    args = {}
-                pending.append(
-                    {"id": tc.id, "name": tc.function.name, "arguments": args}
-                )
-            return msg.content or "", pending
-
-        return msg.content or "", []
-
-    async def _anthropic_tool_round(
-        self,
-        client: Any,
-        config: dict[str, Any],
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
-    ) -> tuple[str, list[dict[str, Any]]]:
-        """
-        Single Anthropic API round that may produce text or tool_use blocks.
-
-        Returns (text_content, pending_tool_calls).
-        """
-        system_msg = next(
-            (m["content"] for m in messages if m["role"] == "system"),
-            DEFAULT_SYSTEM_PROMPT,
-        )
-        user_msgs = [m for m in messages if m["role"] != "system"]
-
-        response = await client.messages.create(
-            model=config["model"],
-            max_tokens=4096,
-            system=system_msg,
-            messages=user_msgs,
-            tools=tools,
-        )
-
-        text_parts: list[str] = []
-        pending: list[dict[str, Any]] = []
-
-        for block in response.content:
-            if block.type == "text":
-                text_parts.append(block.text)
-            elif block.type == "tool_use":
-                pending.append(
-                    {"id": block.id, "name": block.name, "arguments": block.input}
-                )
-
-        return "".join(text_parts), pending
-
-    async def suggest_name(self, components: list[str]) -> str:
-        prompt = (
-            "Generate a concise experiment name (<=5 words) for these components: "
-            + ", ".join(components)
-        )
-        return await self._single_turn(prompt)
-
-    async def identify_peaks(
-        self, wavenumbers: list[float], absorbance: list[float]
-    ) -> str:
-        payload = {
-            "wavenumbers": wavenumbers,
-            "absorbance": absorbance,
-            "instructions": "Identify likely peaks with approximate positions.",
-        }
-        prompt = f"Analyze this spectrum data and identify peaks:\n{json.dumps(payload)[:8000]}"
-        return await self._single_turn(prompt)
-
-    async def generate_code(self, task_description: str) -> str:
-        prompt = f"Write Python code for the following task:\n{task_description}"
-        return await self._single_turn(prompt)
-
-    async def write_report(self, experiment: dict[str, Any]) -> str:
-        prompt = (
-            "Write a concise scientific report for the following experiment context:\n"
-            + json.dumps(experiment, default=str)[:8000]
-        )
-        return await self._single_turn(prompt)
-
     async def write_data_story(self, dataset_info: dict[str, Any]) -> str:
         """Generate a narrative 'data story' for a reference dataset."""
         prompt = (
@@ -708,8 +455,10 @@ class LLMService:
         Resolve API key with unified priority:
         1. Environment variable (system-wide)
         2. User's own key from database (BYOK)
-        3. SpectraSherpa managed key (HYBRID mode)
-        4. System key from database
+        3. System key from database
+
+        Managed keys from Spectra-Server are no longer used as a fallback.
+        Server-managed keys stay server-side; free chat is BYOK-only.
 
         Args:
             provider: Provider identifier (e.g., 'openai', 'anthropic')
@@ -721,7 +470,6 @@ class LLMService:
             ValueError: If no API key found in any source
         """
         import logging
-        from spectra_sherpa.app.core.config import app_config
 
         logger = logging.getLogger(__name__)
         logger.info(f"Resolving API key for provider: {provider}")
@@ -750,26 +498,7 @@ class LLMService:
                 await self.session.commit()
                 return decrypt_value(user_key.key_encrypted)
 
-        # Priority 3: Check SpectraSherpa managed keys (non-local modes)
-        if app_config.mode != "local":
-            try:
-                from spectra_sherpa.app.services.spectrasherpa import get_spectrasherpa_service
-                spectrasherpa = get_spectrasherpa_service()
-
-                if spectrasherpa.is_configured:
-                    managed_keys = await spectrasherpa.get_managed_llm_keys()
-                    for key in managed_keys:
-                        if key.provider == provider:
-                            # Check if key is expired
-                            if key.expires_at and key.expires_at < datetime.now(timezone.utc):
-                                logger.warning(f"SpectraSherpa managed key for {provider} is expired")
-                                continue
-                            logger.info(f"Using {provider} API key from SpectraSherpa managed keys")
-                            return key.api_key
-            except Exception as e:
-                logger.warning(f"Failed to fetch SpectraSherpa managed keys: {e}")
-
-        # Priority 4: Check system key in database
+        # Priority 3: Check system key in database
         system_key_query = select(APIKey).where(
             APIKey.service_name == provider,
             APIKey.user_id == None
@@ -786,9 +515,46 @@ class LLMService:
         # No key found anywhere
         logger.error(f"{provider} API key not found in any source")
         raise ValueError(
-            f"{provider_meta['name']} API key not configured. "
-            f"Set {provider_meta['env_var']} environment variable or add via /api/v1/api-keys"
+            f"No LLM API key configured. "
+            f"Set {provider_meta['env_var']} environment variable or add a key in Settings."
         )
+
+    @staticmethod
+    def _has_full_context() -> bool:
+        """Check if the subscription allows full DAG context in LLM prompts."""
+        try:
+            from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
+            return get_sherpa_advisor().has_feature("full_dag_context")
+        except Exception:
+            return False
+
+    @staticmethod
+    def _extract_basic_context(metadata: dict[str, Any]) -> dict[str, Any]:
+        """Return a minimal context with only technique and node types.
+
+        Free-tier users get structure-level context (what nodes exist)
+        but not parameter values or dataset specifics.
+        """
+        basic: dict[str, Any] = {}
+        if "experiments" in metadata:
+            summaries = []
+            for exp in metadata["experiments"]:
+                summary: dict[str, Any] = {}
+                if exp.get("name"):
+                    summary["name"] = exp["name"]
+                if exp.get("technique"):
+                    summary["technique"] = exp["technique"]
+                # Include node types but strip parameter values
+                if exp.get("nodes"):
+                    summary["node_types"] = list(
+                        {n.get("type") or n.get("node_type", "unknown")
+                         for n in exp["nodes"] if isinstance(n, dict)}
+                    )
+                if summary:
+                    summaries.append(summary)
+            if summaries:
+                basic["experiments"] = summaries
+        return basic
 
     def _build_messages(
         self,
@@ -806,6 +572,11 @@ class LLMService:
 
         # Add experiment metadata context
         if metadata:
+            # Apply context tiering: full subscribers get everything,
+            # free-tier users get only technique + node types.
+            if not self._has_full_context():
+                metadata = self._extract_basic_context(metadata)
+
             # Extract spectrochempy info for better context
             context_parts = []
             if "experiments" in metadata:
@@ -824,7 +595,7 @@ class LLMService:
                                 f"{pdf_note}"
                             )
 
-            # Add full metadata
+            # Add metadata as JSON context
             context_parts.append(json.dumps(metadata, default=str))
             messages.append({"role": "system", "content": "Context:\n" + "\n\n".join(context_parts)})
 

@@ -40,11 +40,15 @@ async function loadConfig(force = false): Promise<void> {
       features: {
         apiTokenSettings: true,
         cloudOffload: false,
-        agenticWorkflow: false,
         chatAssistant: false,
         sherpaAdvisor: false,
         pluginSystem: true,
         nistDownloads: false,
+        sherpaPeakId: false,
+        sherpaCodeGen: false,
+        sherpaWriteReport: false,
+        sherpaAgenticTools: false,
+        sherpaFullContext: false,
       },
       llms: {
         openai: { provider: 'openai', model: 'gpt-4o', enabled: false },

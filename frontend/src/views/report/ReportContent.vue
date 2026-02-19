@@ -200,7 +200,7 @@ const { isFeatureEnabled } = useAppConfig();
 const exportMenuRef = ref();
 const previewFrame = ref<HTMLIFrameElement>();
 
-const llmAvailable = computed(() => isFeatureEnabled("chatAssistant"));
+const llmAvailable = computed(() => isFeatureEnabled("sherpaWriteReport"));
 
 // Run dropdown — acts as a "picker" that adds to selectedRunIds
 const selectedRunProxy = ref<number | null>(null);

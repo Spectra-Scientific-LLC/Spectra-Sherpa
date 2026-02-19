@@ -235,16 +235,6 @@ def _make_lifespan(
             from spectra_sherpa.app.services.folder_watch_service import start_folder_watch_service
             await start_folder_watch_service()
 
-            # Check Sherpa Engine availability (fires warning if misconfigured)
-            from spectra_sherpa.app.services.sherpa_engine import get_sherpa_engine
-            _engine = get_sherpa_engine()
-            if _engine.is_available:
-                logger.info("Sherpa Engine: available (model=%s)", settings.sherpa_engine_model)
-            elif settings.sherpa_engine_api_key:
-                pass  # warning already logged by is_available
-            else:
-                logger.info("Sherpa Engine: disabled (no SHERPA_ENGINE_API_KEY)")
-
             # Load the type registry (JSON schemas for port type validation)
             from pathlib import Path as _Path
             from spectra_sherpa.app.types import type_registry as _type_reg
@@ -316,11 +306,9 @@ def _make_lifespan(
         from spectra_sherpa.app.services.spectrasherpa import close_spectrasherpa_service
         await close_spectrasherpa_service()
 
-        # Close Sherpa advisor and engine
+        # Close Sherpa advisor
         from spectra_sherpa.app.services.sherpa_advisor import close_sherpa_advisor
         await close_sherpa_advisor()
-        from spectra_sherpa.app.services.sherpa_engine import close_sherpa_engine
-        await close_sherpa_engine()
 
     return lifespan
 
@@ -370,11 +358,13 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     from spectra_sherpa.app.services.ws_handlers import (
         handle_llm_chat,
         handle_sherpa_chat,
+        handle_sherpa_chat_with_tools,
         handle_sherpa_decide,
+        handle_sherpa_generate_code,
+        handle_sherpa_identify_peaks,
         handle_sherpa_sync,
+        handle_sherpa_write_report,
         handle_subscribe,
-        handle_tool_invoke,
-        handle_tool_list,
         handle_unsubscribe,
     )
 
@@ -460,10 +450,14 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 await handle_sherpa_decide(websocket, payload, ws_user, _llm_rate_limiter)
             elif action == "sherpa_chat":
                 await handle_sherpa_chat(websocket, payload, ws_user, _llm_rate_limiter)
-            elif action == "tool_list":
-                await handle_tool_list(websocket, payload, ws_user, _llm_rate_limiter)
-            elif action == "tool_invoke":
-                await handle_tool_invoke(websocket, payload, ws_user, _llm_rate_limiter)
+            elif action == "sherpa_identify_peaks":
+                await handle_sherpa_identify_peaks(websocket, payload, ws_user, _llm_rate_limiter)
+            elif action == "sherpa_generate_code":
+                await handle_sherpa_generate_code(websocket, payload, ws_user, _llm_rate_limiter)
+            elif action == "sherpa_write_report":
+                await handle_sherpa_write_report(websocket, payload, ws_user, _llm_rate_limiter)
+            elif action == "sherpa_chat_with_tools":
+                await handle_sherpa_chat_with_tools(websocket, payload, ws_user, _llm_rate_limiter)
             else:
                 await websocket.send_json({"type": "error", "detail": "Unknown action"})
     except WebSocketDisconnect:

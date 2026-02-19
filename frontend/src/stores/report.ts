@@ -1,6 +1,8 @@
 import { defineStore } from "pinia";
 import { ref, reactive, computed } from "vue";
 import api from "@/api/client";
+import { useAppConfig } from "@/composables/useAppConfig";
+import { useLlmStore } from "@/stores/llm";
 import type { ExecutionRunSummary } from "@/types";
 
 interface WorkflowOption {
@@ -167,40 +169,88 @@ export const useReportStore = defineStore("report", () => {
     }
   }
 
+  function _buildExperimentPayload(): Record<string, unknown> {
+    if (!reportData.value) return {};
+    const experiment: Record<string, unknown> = {
+      workflow_name: reportData.value.name,
+      description: reportData.value.description,
+      technique: reportData.value.technique,
+      sample_type: reportData.value.sample_type,
+      node_count: reportData.value.nodes.length,
+      nodes: reportData.value.nodes.map((n) => ({
+        type: n.node_type,
+        label: n.label,
+        parameters: n.parameters,
+      })),
+    };
+
+    if (reportData.value.runs?.length) {
+      experiment.runs = reportData.value.runs.map((r) => ({
+        name: r.name,
+        status: r.status,
+        results_summary: r.results_summary,
+      }));
+    }
+
+    if (reportData.value.comparison) {
+      experiment.comparison = reportData.value.comparison;
+    }
+    return experiment;
+  }
+
   async function generateNarrative(): Promise<void> {
     if (!reportData.value) return;
     narrativeLoading.value = true;
 
     try {
-      const experiment: Record<string, unknown> = {
-        workflow_name: reportData.value.name,
-        description: reportData.value.description,
-        technique: reportData.value.technique,
-        sample_type: reportData.value.sample_type,
-        node_count: reportData.value.nodes.length,
-        nodes: reportData.value.nodes.map((n) => ({
-          type: n.node_type,
-          label: n.label,
-          parameters: n.parameters,
-        })),
-      };
+      const experiment = _buildExperimentPayload();
+      const { isFeatureEnabled } = useAppConfig();
 
-      if (reportData.value.runs?.length) {
-        experiment.runs = reportData.value.runs.map((r) => ({
-          name: r.name,
-          status: r.status,
-          results_summary: r.results_summary,
+      if (!isFeatureEnabled("sherpaWriteReport")) {
+        throw new Error("AI report writing requires a Sherpa subscription.");
+      }
+
+      // Use Sherpa cloud proxy via WebSocket
+      const llm = useLlmStore();
+      await llm.connect();
+      const ws = llm.wsRef;
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        throw new Error("WebSocket not connected");
+      }
+
+      const result = await new Promise<string>((resolve, reject) => {
+        const timeout = window.setTimeout(() => {
+          cleanup();
+          reject(new Error("Report generation timed out"));
+        }, 60_000);
+
+        const handler = (event: Event) => {
+          const payload = (event as CustomEvent).detail;
+          if (payload.type === "sherpa_report_result") {
+            cleanup();
+            resolve(payload.report || payload.response || "");
+          } else if (payload.type === "sherpa_report_error") {
+            cleanup();
+            reject(new Error(payload.detail || "Report generation failed"));
+          } else if (payload.type === "sherpa_subscription_required") {
+            cleanup();
+            reject(new Error("Subscription required for AI reports"));
+          }
+        };
+
+        const cleanup = () => {
+          clearTimeout(timeout);
+          window.removeEventListener("sherpa-ws-message", handler);
+        };
+
+        window.addEventListener("sherpa-ws-message", handler);
+        ws.send(JSON.stringify({
+          action: "sherpa_write_report",
+          payload: { experiment },
         }));
-      }
-
-      if (reportData.value.comparison) {
-        experiment.comparison = reportData.value.comparison;
-      }
-
-      const response = await api.post<{ response: string }>("/llm/write-report", {
-        experiment,
       });
-      narrativeText.value = response.data.response;
+
+      narrativeText.value = result;
     } catch (err: any) {
       narrativeText.value = null;
       console.error("Failed to generate narrative:", err);

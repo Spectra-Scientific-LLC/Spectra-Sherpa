@@ -20,9 +20,19 @@ from datetime import datetime, timezone
 from collections.abc import AsyncIterator
 from typing import Any
 
+import json
+
 import httpx
 
 from spectra_sherpa.app.core.config import app_config, settings
+
+
+class SubscriptionRequiredError(Exception):
+    """Raised when the server returns 403 for a missing entitlement."""
+
+    def __init__(self, detail: str = ""):
+        self.detail = detail
+        super().__init__(detail)
 from spectra_sherpa.app.schemas.sherpa import (
     EgressTier,
     ExplorationResult,
@@ -137,6 +147,9 @@ class SherpaAdvisorService:
         self._client: httpx.AsyncClient | None = None
         # Local cache of pending recommendations (keyed by suggestion_id)
         self._recommendations: dict[str, SherpaRecommendation] = {}
+        # Subscription state from server (populated during hybrid activation)
+        self._subscription_features: dict[str, Any] | None = None
+        self._subscription_plan: str = "none"
 
     # ── lifecycle ──────────────────────────────────────────────────
 
@@ -153,11 +166,13 @@ class SherpaAdvisorService:
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
+            api_key = _sherpa_api_key() or ""
             self._client = httpx.AsyncClient(
                 base_url=_sherpa_base_url(),
                 timeout=SHERPA_TIMEOUT,
                 headers={
-                    "X-API-Key": _sherpa_api_key() or "",
+                    "X-API-Key": api_key,
+                    "X-Deployment-Key": api_key,
                     "User-Agent": f"SpectraSherpaLite/{settings.app_version}",
                     "X-Client-Mode": app_config.mode,
                 },
@@ -168,6 +183,33 @@ class SherpaAdvisorService:
         if self._client and not self._client.is_closed:
             await self._client.aclose()
             self._client = None
+
+    def has_feature(self, capability: str) -> bool:
+        """Check if the cached subscription includes a capability."""
+        if self._subscription_features is None:
+            return False
+        return bool(self._subscription_features.get(capability, False))
+
+    async def fetch_subscription(self) -> dict:
+        """Fetch subscription features from the server and cache them.
+
+        Calls ``GET /config/subscription`` with the deployment key.
+        Returns the features dict (also cached on ``_subscription_features``).
+        """
+        if not self.is_available:
+            return {}
+        try:
+            client = await self._get_client()
+            response = await client.get("/config/subscription")
+            response.raise_for_status()
+            data = response.json()
+            self._subscription_features = data.get("features", {})
+            sub = data.get("subscription", {})
+            self._subscription_plan = sub.get("plan", "none")
+            return self._subscription_features
+        except Exception:
+            logger.warning("Failed to fetch subscription features")
+            return {}
 
     # ── core operations ───────────────────────────────────────────
 
@@ -324,6 +366,132 @@ class SherpaAdvisorService:
         except Exception:
             logger.exception("Unexpected error during Sherpa chat")
             yield "An unexpected error occurred. Please try again."
+
+    # ── subscription-gated proxy methods ─────────────────────────
+
+    async def identify_peaks(
+        self,
+        wavenumbers: list[float],
+        absorbance: list[float],
+    ) -> dict:
+        """Proxy to POST /sherpa/identify-peaks."""
+        if not self.is_available:
+            return {"error": "Sherpa advisor not available"}
+        try:
+            client = await self._get_client()
+            response = await client.post(
+                "/sherpa/identify-peaks",
+                json={"wavenumbers": wavenumbers, "absorbance": absorbance},
+            )
+            if response.status_code == 403:
+                raise SubscriptionRequiredError(response.json().get("detail", ""))
+            response.raise_for_status()
+            return response.json()
+        except SubscriptionRequiredError:
+            raise
+        except Exception:
+            logger.warning("identify_peaks proxy failed")
+            return {"error": "Peak identification failed"}
+
+    async def generate_code(
+        self,
+        task_description: str,
+        context: dict[str, Any] | None = None,
+    ) -> dict:
+        """Proxy to POST /sherpa/generate-code."""
+        if not self.is_available:
+            return {"error": "Sherpa advisor not available"}
+        try:
+            client = await self._get_client()
+            body: dict[str, Any] = {"task_description": task_description}
+            if context:
+                body["context"] = context
+            response = await client.post("/sherpa/generate-code", json=body)
+            if response.status_code == 403:
+                raise SubscriptionRequiredError(response.json().get("detail", ""))
+            response.raise_for_status()
+            return response.json()
+        except SubscriptionRequiredError:
+            raise
+        except Exception:
+            logger.warning("generate_code proxy failed")
+            return {"error": "Code generation failed"}
+
+    async def write_report(self, experiment: dict[str, Any]) -> dict:
+        """Proxy to POST /sherpa/write-report."""
+        if not self.is_available:
+            return {"error": "Sherpa advisor not available"}
+        try:
+            client = await self._get_client()
+            response = await client.post(
+                "/sherpa/write-report", json={"experiment": experiment},
+            )
+            if response.status_code == 403:
+                raise SubscriptionRequiredError(response.json().get("detail", ""))
+            response.raise_for_status()
+            return response.json()
+        except SubscriptionRequiredError:
+            raise
+        except Exception:
+            logger.warning("write_report proxy failed")
+            return {"error": "Report generation failed"}
+
+    async def chat_with_tools(
+        self,
+        message: str,
+        history: list[dict[str, str]] | None = None,
+        workflow_context: dict[str, Any] | None = None,
+    ) -> AsyncIterator[dict]:
+        """Stream SSE events from POST /sherpa/chat-with-tools."""
+        if not self.is_available:
+            yield {"type": "error", "content": "Sherpa advisor not available"}
+            return
+        try:
+            client = await self._get_client()
+            body: dict[str, Any] = {
+                "message": message,
+                "history": history or [],
+            }
+            if workflow_context:
+                body["workflow_context"] = workflow_context
+            async with client.stream(
+                "POST", "/sherpa/chat-with-tools", json=body,
+            ) as response:
+                if response.status_code == 403:
+                    raise SubscriptionRequiredError("Plan does not include agentic tools")
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    line = line.strip()
+                    if not line or not line.startswith("data:"):
+                        continue
+                    try:
+                        yield json.loads(line[5:].strip())
+                    except json.JSONDecodeError:
+                        continue
+        except SubscriptionRequiredError:
+            raise
+        except Exception:
+            logger.warning("chat_with_tools proxy failed")
+            yield {"type": "error", "content": "Chat with tools failed"}
+
+    async def list_tools(self) -> list[dict]:
+        """Proxy to GET /sherpa/tools."""
+        if not self.is_available:
+            return []
+        try:
+            client = await self._get_client()
+            response = await client.get("/sherpa/tools")
+            if response.status_code == 403:
+                raise SubscriptionRequiredError(response.json().get("detail", ""))
+            response.raise_for_status()
+            return response.json().get("tools", [])
+        except SubscriptionRequiredError:
+            raise
+        except Exception:
+            logger.warning("list_tools proxy failed")
+            return []
+
+    # ── health ─────────────────────────────────────────────────────
 
     async def health_check(self) -> tuple[bool, str]:
         """Check if the Sherpa endpoint is reachable."""

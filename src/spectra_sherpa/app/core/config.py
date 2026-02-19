@@ -76,10 +76,6 @@ class Settings:
     max_nist_downloads_per_hour: int = _get_int("MAX_NIST_DOWNLOADS_PER_HOUR", 50)
     max_llm_requests_per_hour: int = _get_int("MAX_LLM_REQUESTS_PER_HOUR", 100)
 
-    # Sherpa Engine — server-side Anthropic Claude for AI-guided analysis
-    sherpa_engine_api_key: str = os.getenv("SHERPA_ENGINE_API_KEY", "")
-    sherpa_engine_model: str = os.getenv("SHERPA_ENGINE_MODEL", "claude-sonnet-4-5-20250929")
-
     max_file_size_mb: int = _get_int("MAX_FILE_SIZE_MB", 200)
     max_job_duration_sec: int = _get_int("MAX_JOB_DURATION_SEC", 3600)
     dag_worker_pool_size: int = _get_int("DAG_WORKER_POOL_SIZE", min(4, os.cpu_count() or 2))
@@ -389,14 +385,25 @@ class AppConfig(BaseModel):
 
     def to_client_safe(self) -> dict:
         """Return client-safe configuration (no secrets)"""
-        # Sherpa is available when cloud key is configured and mode allows it,
-        # OR when the server has a local Sherpa engine key.
+        # Sherpa Advisor requires cloud connection (hybrid/enterprise mode with API key).
+        # Local engine was removed — all Sherpa intelligence runs on Spectra-Server.
         sherpa_configured = (
-            (self.mode in ("hybrid", "enterprise") and bool(os.getenv("SPECTRASHERPA_API_KEY")))
-            or bool(os.getenv("SHERPA_ENGINE_API_KEY"))
+            self.mode in ("hybrid", "enterprise") and bool(os.getenv("SPECTRASHERPA_API_KEY"))
         )
 
         has_llm = len(self.get_configured_llms()) > 0
+
+        # Pull subscription-derived feature flags from the advisor cache.
+        # These are populated during hybrid activation / startup.
+        sub_features: dict = {}
+        sub_plan: str = "none"
+        try:
+            from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
+            advisor = get_sherpa_advisor()
+            sub_features = advisor._subscription_features or {}
+            sub_plan = advisor._subscription_plan
+        except Exception:
+            pass
 
         # Registration requires the full auth module (spectra-server) + mode policy.
         try:
@@ -424,12 +431,20 @@ class AppConfig(BaseModel):
             "features": {
                 "apiTokenSettings": self.mode in ["local", "hybrid"],
                 "cloudOffload": self.execution.mode == "hybrid",
-                "agenticWorkflow": has_llm and self.egress_enabled,
                 "chatAssistant": has_llm,
                 "nistDownloads": self.egress_enabled,
-                "sherpaAdvisor": sherpa_configured,
+                "sherpaAdvisor": sherpa_configured or sub_features.get("sherpa_sync", False),
                 "pluginSystem": True,  # Always available (local discovery)
+                # Subscription-gated Sherpa capabilities
+                "sherpaPeakId": sub_features.get("identify_peaks", False),
+                "sherpaCodeGen": sub_features.get("generate_code", False),
+                "sherpaWriteReport": sub_features.get("write_report", False),
+                "sherpaAgenticTools": sub_features.get("agentic_tools", False),
+                "sherpaFullContext": sub_features.get("full_dag_context", False),
             },
+            "subscription": {
+                "plan": sub_plan,
+            } if sub_features else None,
             "llms": {
                 name: {
                     "provider": llm.provider,

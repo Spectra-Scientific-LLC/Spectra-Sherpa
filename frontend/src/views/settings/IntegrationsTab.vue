@@ -86,6 +86,23 @@
               <span class="label">Quota</span>
               <span class="value">{{ userInfo.llm_quota }} requests/hour</span>
             </div>
+            <div class="info-item" v-if="subscriptionPlan">
+              <span class="label">Plan</span>
+              <Tag :severity="planSeverity" :value="planLabel" />
+            </div>
+          </div>
+
+          <div class="sherpa-features" v-if="subscriptionPlan">
+            <h4>Sherpa Capabilities</h4>
+            <div class="feature-list">
+              <div v-for="feat in sherpaFeatureList" :key="feat.key" class="feature-item">
+                <i
+                  :class="feat.enabled ? 'pi pi-check-circle' : 'pi pi-lock'"
+                  :style="{ color: feat.enabled ? 'var(--green-500)' : 'var(--text-color-secondary)' }"
+                ></i>
+                <span :class="{ 'feature-disabled': !feat.enabled }">{{ feat.label }}</span>
+              </div>
+            </div>
           </div>
 
           <div class="managed-keys" v-if="managedKeys.length">
@@ -186,7 +203,7 @@ import Tag from 'primevue/tag';
 import Dialog from 'primevue/dialog';
 
 const toast = useToast();
-const { appConfig, loadConfig } = useAppConfig();
+const { appConfig, loadConfig, isFeatureEnabled } = useAppConfig();
 
 const serverUrl = ref('');
 const apiKey = ref('');
@@ -235,6 +252,29 @@ const modeLabel = computed(() => {
   const mode = appMode.value || 'local';
   return mode.charAt(0).toUpperCase() + mode.slice(1) + ' Mode';
 });
+
+const subscriptionPlan = computed(() => appConfig.value?.subscription?.plan || null);
+
+const planSeverity = computed(() => {
+  const plan = subscriptionPlan.value;
+  if (plan === 'pro' || plan === 'team') return 'success';
+  if (plan === 'demo') return 'info';
+  return 'secondary';
+});
+
+const planLabel = computed(() => {
+  const plan = subscriptionPlan.value;
+  if (!plan || plan === 'none') return 'No Plan';
+  return plan.charAt(0).toUpperCase() + plan.slice(1);
+});
+
+const sherpaFeatureList = computed(() => [
+  { key: 'sherpaPeakId', label: 'Peak Identification', enabled: isFeatureEnabled('sherpaPeakId') },
+  { key: 'sherpaCodeGen', label: 'Code Generation', enabled: isFeatureEnabled('sherpaCodeGen') },
+  { key: 'sherpaWriteReport', label: 'Report Writing', enabled: isFeatureEnabled('sherpaWriteReport') },
+  { key: 'sherpaAgenticTools', label: 'Agentic Tools', enabled: isFeatureEnabled('sherpaAgenticTools') },
+  { key: 'sherpaFullContext', label: 'Full DAG Context', enabled: isFeatureEnabled('sherpaFullContext') },
+]);
 
 const modeDescription = computed(() => {
   if (appMode.value === 'hybrid') {
@@ -512,6 +552,35 @@ const refreshConnection = async () => {
 
 .info-item .value {
   font-weight: 500;
+}
+
+.sherpa-features {
+  margin: 1.5rem 0;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--surface-border);
+}
+
+.sherpa-features h4 {
+  margin: 0 0 1rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.feature-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.5rem;
+}
+
+.feature-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.feature-disabled {
+  color: var(--text-color-secondary);
 }
 
 .managed-keys {

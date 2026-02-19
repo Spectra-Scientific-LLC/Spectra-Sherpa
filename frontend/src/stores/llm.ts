@@ -30,14 +30,6 @@ interface LlmConfig {
   verbose: boolean;
 }
 
-/** A single MCP tool call logged during a chat_with_tools round. */
-interface ToolCallEntry {
-  tool: string;
-  arguments: Record<string, unknown>;
-  result?: unknown;
-  error?: string | null;
-}
-
 export const useLlmStore = defineStore("llm", () => {
   const messages = ref<LlmMessage[]>([]);
   const conversations = ref<ConversationSummary[]>(loadConversations());
@@ -52,10 +44,6 @@ export const useLlmStore = defineStore("llm", () => {
   const lastError = ref<string | null>(null);
   const reconnectAttempts = ref(0);
   const currentConfig = ref<LlmConfig | null>(null);
-  /** Tool calls from the most recent chat_with_tools response. */
-  const lastToolCalls = ref<ToolCallEntry[]>([]);
-  /** Available MCP tools (populated by requestToolList). */
-  const availableTools = ref<Record<string, unknown>[]>([]);
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let allowReconnect = true;
   let pendingConnect: Promise<void> | null = null;
@@ -112,24 +100,7 @@ export const useLlmStore = defineStore("llm", () => {
           streaming.value = false;
           loading.value = false;
           streamingIndex.value = null;
-          // Capture tool call log if present (from chat_with_tools)
-          if (Array.isArray(payload.tool_calls) && payload.tool_calls.length > 0) {
-            lastToolCalls.value = payload.tool_calls as ToolCallEntry[];
-          }
           updateConversationSummary(payload.conversation_id);
-        } else if (payload.type === "tool_list") {
-          // Response to requestToolList()
-          availableTools.value = payload.payload ?? [];
-        } else if (payload.type === "tool_result") {
-          // Direct tool invocation result — dispatch event for consumers
-          window.dispatchEvent(
-            new CustomEvent("tool-result", { detail: payload.payload })
-          );
-        } else if (payload.type === "tool_error") {
-          console.warn("[MCP] tool_error:", payload.detail);
-          window.dispatchEvent(
-            new CustomEvent("tool-error", { detail: payload.detail })
-          );
         } else if (payload.type === "error") {
           streaming.value = false;
           loading.value = false;
@@ -241,7 +212,6 @@ export const useLlmStore = defineStore("llm", () => {
     }
 
     loading.value = true;
-    lastToolCalls.value = [];
     messages.value.push({ role: "user", content: message });
     wsRef.value?.send(
       JSON.stringify({
@@ -249,51 +219,6 @@ export const useLlmStore = defineStore("llm", () => {
         message: message,
         conversation_id: currentConversationId.value,
         metadata: metadata || null,
-      })
-    );
-  };
-
-  /** Send a chat message with MCP tool calling enabled. */
-  const sendMessageWithTools = async (message: string, metadata?: Record<string, unknown>) => {
-    if (!message.trim()) {
-      return;
-    }
-    try {
-      await connect();
-    } catch (error) {
-      console.error('Failed to connect WebSocket:', error);
-      messages.value.push({
-        role: "assistant",
-        content: "Unable to connect for streaming. Check the API key and try again.",
-      });
-      return;
-    }
-
-    loading.value = true;
-    lastToolCalls.value = [];
-    messages.value.push({ role: "user", content: message });
-    wsRef.value?.send(
-      JSON.stringify({
-        action: "llm_chat",
-        message: message,
-        conversation_id: currentConversationId.value,
-        metadata: metadata || null,
-        use_tools: true,
-      })
-    );
-  };
-
-  /** Request the list of available MCP tools from the server. */
-  const requestToolList = async (category?: string) => {
-    try {
-      await connect();
-    } catch {
-      return;
-    }
-    wsRef.value?.send(
-      JSON.stringify({
-        action: "tool_list",
-        ...(category ? { category } : {}),
       })
     );
   };
@@ -345,31 +270,6 @@ export const useLlmStore = defineStore("llm", () => {
     allowReconnect = true;
     reconnectAttempts.value = 0;
     await connect();
-  };
-
-  const suggestName = async (components: string[]) => {
-    const response = await api.post("/llm/suggest-name", { components });
-    return response.data.name as string;
-  };
-
-  const identifyPeaks = async (payload: {
-    wavenumbers: number[];
-    absorbance: number[];
-  }) => {
-    const response = await api.post("/llm/identify-peaks", payload);
-    return response.data.response as string;
-  };
-
-  const generateCode = async (taskDescription: string) => {
-    const response = await api.post("/llm/generate-code", {
-      task_description: taskDescription,
-    });
-    return response.data.response as string;
-  };
-
-  const writeReport = async (experiment: Record<string, unknown>) => {
-    const response = await api.post("/llm/write-report", { experiment });
-    return response.data.response as string;
   };
 
   const fetchConfig = async (): Promise<LlmConfig | null> => {
@@ -442,21 +342,13 @@ export const useLlmStore = defineStore("llm", () => {
     streaming,
     currentConfig,
     wsRef,
-    lastToolCalls,
-    availableTools,
     connect,
     disconnect,
     reconnect,
     sendMessage,
-    sendMessageWithTools,
-    requestToolList,
     loadConversation,
     deleteConversation,
     startNewConversation,
-    suggestName,
-    identifyPeaks,
-    generateCode,
-    writeReport,
     fetchConfig,
     checkConfigChange,
     connectionStatus,

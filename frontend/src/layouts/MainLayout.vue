@@ -1,6 +1,9 @@
 <template>
   <div class="app-shell" :style="layoutStyle">
     <Toast position="top-right" />
+    <SherpaUpgradeModal />
+    <DemoBanner />
+    <DemoUpgradeModal />
 
     <!-- Backend Status Banner -->
     <div v-if="!backendConnected" class="backend-status-banner">
@@ -49,6 +52,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import ChatPanel from "@/components/ChatPanel.vue";
+import SherpaUpgradeModal from "@/components/SherpaUpgradeModal.vue";
+import DemoBanner from "@/components/DemoBanner.vue";
+import DemoUpgradeModal from "@/components/DemoUpgradeModal.vue";
 
 import Sidebar from "@/components/Sidebar.vue";
 import Topbar from "@/components/Topbar.vue";
@@ -260,6 +266,10 @@ watch(
 /* Adjust app layout when banners are shown */
 .app-shell:has(.backend-status-banner) {
   padding-top: 48px;
+}
+
+.app-shell:has(.demo-banner) {
+  padding-top: 40px;
 }
 
 /* Offline mode badge */

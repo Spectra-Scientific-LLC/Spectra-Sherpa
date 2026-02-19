@@ -563,11 +563,24 @@
             v-if="dataStore.fileInfo.preview_wavenumber && dataStore.fileInfo.preview_spectra"
             class="explore-plot"
           >
+            <div class="plot-toolbar">
+              <Button
+                label="Identify Peaks"
+                icon="pi pi-search"
+                class="p-button-sm p-button-outlined"
+                :loading="peakLoading"
+                @click="onIdentifyPeaks"
+              />
+            </div>
             <PlotlyChart
-              :data="previewPlotData"
+              :data="peakPlotData"
               :layout="previewPlotLayout"
               :config="{ displayModeBar: true, displaylogo: false }"
             />
+            <div v-if="peakAnalysisText" class="peak-analysis-panel">
+              <h4 class="panel-title">Peak Analysis</h4>
+              <p class="peak-analysis-text">{{ peakAnalysisText }}</p>
+            </div>
           </div>
 
           <div class="explore-panels">
@@ -821,7 +834,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from "vue";
+import { ref, reactive, computed, onMounted, watch } from "vue";
 import TabView from "primevue/tabview";
 import TabPanel from "primevue/tabpanel";
 import Button from "primevue/button";
@@ -837,14 +850,21 @@ import Panel from "primevue/panel";
 import ProgressSpinner from "primevue/progressspinner";
 import Tag from "primevue/tag";
 import { useDataStore } from "@/stores/data";
+import { useSherpaStore, type PeaksResult } from "@/stores/sherpa";
+import { useLlmStore } from "@/stores/llm";
 import { useToast } from "primevue/usetoast";
+import { useSherpaUpgrade } from "@/composables/useSherpaUpgrade";
 import type { ExperimentFile, ExperimentSummary } from "@/types";
 import DataQualityPanel from "./DataQualityPanel.vue";
 import PlotlyChart from "@/components/PlotlyChart.vue";
 
 const dataStore = useDataStore();
+const sherpaStore = useSherpaStore();
+const llmStore = useLlmStore();
 const toast = useToast();
+const { requireFeature } = useSherpaUpgrade();
 const activeTab = ref(0);
+const peakLoading = ref(false);
 
 // --- Load tab state ---
 const libraryCollapsed = ref(true);
@@ -1030,6 +1050,133 @@ const previewPlotLayout = computed(() => ({
   plot_bgcolor: "#fafafa",
   paper_bgcolor: "#ffffff",
 }));
+
+// --- Peak identification ---
+
+const peakPlotData = computed(() => {
+  const base = previewPlotData.value;
+  const peaks = (sherpaStore.lastPeaksResult as PeaksResult | null)?.peaks;
+  if (!peaks?.length || !dataStore.fileInfo?.preview_wavenumber) return base;
+
+  // Add peak markers as a scatter trace
+  const wn = dataStore.fileInfo.preview_wavenumber;
+  const firstSpectrum = dataStore.fileInfo.preview_spectra?.[0]?.absorbance;
+  if (!firstSpectrum) return base;
+
+  // For each peak, find the closest wavenumber index and get the y value
+  const peakX: number[] = [];
+  const peakY: number[] = [];
+  const peakLabels: string[] = [];
+  for (const p of peaks) {
+    let closestIdx = 0;
+    let closestDist = Math.abs(wn[0] - p.wavenumber);
+    for (let i = 1; i < wn.length; i++) {
+      const dist = Math.abs(wn[i] - p.wavenumber);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestIdx = i;
+      }
+    }
+    peakX.push(wn[closestIdx]);
+    peakY.push(firstSpectrum[closestIdx]);
+    peakLabels.push(p.assignment || `${p.wavenumber.toFixed(0)} cm\u207B\u00B9`);
+  }
+
+  return [
+    ...base,
+    {
+      x: peakX,
+      y: peakY,
+      type: "scatter" as const,
+      mode: "markers+text" as const,
+      name: "Peaks",
+      marker: { color: "#ef4444", size: 8, symbol: "diamond" },
+      text: peakLabels,
+      textposition: "top center" as const,
+      textfont: { size: 9, color: "#ef4444" },
+    },
+  ];
+});
+
+const peakAnalysisText = computed(() => {
+  const result = sherpaStore.lastPeaksResult as PeaksResult | null;
+  if (!result?.response) return "";
+  return result.response;
+});
+
+async function onIdentifyPeaks() {
+  if (!requireFeature("sherpaPeakId")) return;
+
+  const fi = dataStore.fileInfo;
+  if (!fi?.preview_wavenumber || !fi?.preview_spectra?.[0]) {
+    toast.add({
+      severity: "warn",
+      summary: "No Data",
+      detail: "Load and inspect a spectral file first.",
+      life: 3000,
+    });
+    return;
+  }
+
+  peakLoading.value = true;
+  sherpaStore.lastPeaksResult = null;
+
+  try {
+    await llmStore.connect();
+    const ws = llmStore.wsRef;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      throw new Error("WebSocket not connected");
+    }
+
+    ws.send(JSON.stringify({
+      action: "sherpa_identify_peaks",
+      payload: {
+        wavenumbers: fi.preview_wavenumber,
+        absorbance: fi.preview_spectra[0].absorbance,
+      },
+    }));
+
+    // Wait for result via sherpa store (with timeout)
+    await new Promise<void>((resolve, reject) => {
+      const timeout = window.setTimeout(() => {
+        cleanup();
+        reject(new Error("Peak identification timed out"));
+      }, 30_000);
+
+      const unwatch = watch(
+        () => sherpaStore.lastPeaksResult,
+        (val) => {
+          if (val) {
+            cleanup();
+            resolve();
+          }
+        }
+      );
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        unwatch();
+      };
+    });
+
+    const peakCount = (sherpaStore.lastPeaksResult as PeaksResult | null)?.peaks?.length;
+    toast.add({
+      severity: "success",
+      summary: "Peaks Identified",
+      detail: peakCount ? `Found ${peakCount} peaks` : "Analysis complete",
+      life: 3000,
+    });
+  } catch (err: any) {
+    toast.add({
+      severity: "error",
+      summary: "Peak Identification Failed",
+      detail: err?.message || "Failed to identify peaks",
+      life: 4000,
+    });
+  } finally {
+    peakLoading.value = false;
+  }
+}
 
 // --- Lifecycle ---
 
@@ -1404,6 +1551,29 @@ function formatDate(dateStr: string): string {
   padding: 12px;
   width: 100%;
   box-sizing: border-box;
+}
+
+.plot-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.peak-analysis-panel {
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.peak-analysis-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #334155;
+  white-space: pre-wrap;
 }
 
 .explore-panels {

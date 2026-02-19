@@ -35,11 +35,20 @@ class _FakeAsyncClient:
         return None
 
     async def get(self, url: str, headers: dict | None = None):
-        if url.endswith("/auth/me"):
-            return _FakeResponse(200, {"id": 1, "email": "alice@example.com", "username": "alice"})
         if url.endswith("/keys/llm"):
             return _FakeResponse(200, {"keys": []})
         return _FakeResponse(200, {"status": "ok"})
+
+    async def post(self, url: str, headers: dict | None = None, **kwargs):
+        if url.endswith("/keys/deployment/validate"):
+            return _FakeResponse(200, {
+                "valid": True,
+                "label": "test-key",
+                "plan": "pro",
+                "plan_status": "active",
+                "entitlements": {"sherpa_sync": True, "sherpa_chat": True},
+            })
+        return _FakeResponse(200, {})
 
 
 @pytest.fixture(autouse=True)
@@ -201,4 +210,4 @@ async def test_spectrasherpa_test_endpoint_works_when_egress_disabled(client, mo
     assert response.status_code == 200
     payload = response.json()
     assert payload["success"] is True
-    assert "error" not in payload
+    assert "deployment" in payload
