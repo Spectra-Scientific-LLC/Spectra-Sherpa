@@ -7,9 +7,9 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+import spectra_sherpa.app.models  # noqa: F401
 from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.db.base import Base
-import spectra_sherpa.app.models  # noqa: F401
 
 config = context.config
 

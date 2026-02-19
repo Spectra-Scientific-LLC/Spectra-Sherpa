@@ -136,17 +136,13 @@ class WorkflowBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     description: str | None = Field(None)
     status: str = Field(default="draft", description="draft, active, or archived")
-    canvas_state: dict[str, Any] | None = Field(
-        None, description="UI state (zoom, pan, etc.)"
-    )
+    canvas_state: dict[str, Any] | None = Field(None, description="UI state (zoom, pan, etc.)")
     notes: str | None = Field(None, description="Markdown notes/documentation for workflow")
     technique: str | None = Field(
-        None, max_length=50,
-        description="Spectral technique (e.g. FTIR, Raman, NMR, UV-Vis, NIR)"
+        None, max_length=50, description="Spectral technique (e.g. FTIR, Raman, NMR, UV-Vis, NIR)"
     )
     sample_type: str | None = Field(
-        None, max_length=100,
-        description="Sample type (e.g. polymer blend, pharmaceutical tablet, wine)"
+        None, max_length=100, description="Sample type (e.g. polymer blend, pharmaceutical tablet, wine)"
     )
 
 
@@ -171,9 +167,7 @@ class WorkflowUpdate(BaseModel):
     nodes: list[WorkflowNodeCreate] | None = Field(None)
     edges: list[WorkflowEdgeCreate] | None = Field(None)
     tag_ids: list[int] | None = Field(None, description="Tag IDs to apply to workflow")
-    change_description: str | None = Field(
-        None, description="Optional description of changes for version history"
-    )
+    change_description: str | None = Field(None, description="Optional description of changes for version history")
 
 
 class WorkflowSummary(WorkflowBase):
@@ -205,9 +199,7 @@ class WorkflowDetail(WorkflowSummary):
 class WorkflowExecuteRequest(BaseModel):
     """Schema for workflow execution request."""
 
-    initial_data: dict[str, Any] | None = Field(
-        None, description="Initial data for source nodes (node_id -> data)"
-    )
+    initial_data: dict[str, Any] | None = Field(None, description="Initial data for source nodes (node_id -> data)")
     node_id: str | None = Field(None, description="Execute specific node only")
 
 
@@ -216,15 +208,11 @@ class WorkflowExecuteResponse(BaseModel):
 
     workflow_id: int
     status: str = Field(..., description="Execution status")
-    results: dict[str, Any] = Field(
-        default_factory=dict, description="Node results (node_id -> result)"
-    )
+    results: dict[str, Any] = Field(default_factory=dict, description="Node results (node_id -> result)")
     diagnostics: dict[str, dict[str, Any]] = Field(
         default_factory=dict, description="Per-node diagnostic measurements (node_id -> metrics)"
     )
-    node_statuses: dict[str, str] = Field(
-        default_factory=dict, description="Individual node statuses"
-    )
+    node_statuses: dict[str, str] = Field(default_factory=dict, description="Individual node statuses")
     executed_at: datetime
     error: str | None = Field(None, description="Error message if execution failed")
     integrity_hash: str | None = Field(None, description="SHA-256 integrity hash of executed workflow")
@@ -251,10 +239,7 @@ class NodePortInfo(BaseModel):
     """Schema for node port metadata (input/output connectors)."""
 
     name: str = Field(..., description="Port identifier (e.g., 'X_train', 'y_class')")
-    type_ref: str = Field(
-        ...,
-        description="Type registry URI (e.g., 'spectrasherpa://types/SpectralDataset/1.0')"
-    )
+    type_ref: str = Field(..., description="Type registry URI (e.g., 'spectrasherpa://types/SpectralDataset/1.0')")
     required: bool = Field(True, description="Whether this port must be connected")
     label: str = Field(..., description="Display label for UI")
     description: str | None = Field(None, description="Port description")
@@ -316,9 +301,7 @@ class TrialExecuteRequest(BaseModel):
     trial_params: dict[str, Any] = Field(..., description="Trial parameters for target node")
     nodes: list[TrialNodeDefinition] = Field(..., description="All workflow nodes")
     edges: list[TrialEdgeDefinition] = Field(default_factory=list, description="Workflow edges")
-    initial_data: dict[str, Any] | None = Field(
-        None, description="Initial data for source nodes (node_id -> data)"
-    )
+    initial_data: dict[str, Any] | None = Field(None, description="Initial data for source nodes (node_id -> data)")
 
 
 class TrialExecuteResponse(BaseModel):

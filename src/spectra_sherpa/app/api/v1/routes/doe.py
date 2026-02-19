@@ -15,7 +15,6 @@ from sqlalchemy.orm import selectinload
 
 from spectra_sherpa.app.api.deps import demo_guard, get_current_user, get_session
 from spectra_sherpa.app.core.security import check_export_allowed
-from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.factor_definition import FactorDefinition
 from spectra_sherpa.app.models.matched_acquisition import MatchedAcquisition
@@ -24,21 +23,34 @@ from spectra_sherpa.app.models.mixture_component import MixtureComponent
 from spectra_sherpa.app.models.plate_well import PlateWell
 from spectra_sherpa.app.models.run_level import RunLevel
 from spectra_sherpa.app.models.sample import Sample
+from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.schemas.doe import (
     DOESummary,
-    FactorDefinition as FactorDefinitionSchema,
     FactorDefinitionCreate,
     MatchAcquisitionsRequest,
-    MatchedAcquisition as MatchedAcquisitionSchema,
-    Mixture as MixtureSchema,
     MixtureCreate,
     PlateMapRequest,
-    PlateWell as PlateWellSchema,
-    RunLevel as RunLevelSchema,
     RunSequenceRequest,
-    Sample as SampleSchema,
     SampleCreate,
     SampleImportRequest,
+)
+from spectra_sherpa.app.schemas.doe import (
+    FactorDefinition as FactorDefinitionSchema,
+)
+from spectra_sherpa.app.schemas.doe import (
+    MatchedAcquisition as MatchedAcquisitionSchema,
+)
+from spectra_sherpa.app.schemas.doe import (
+    Mixture as MixtureSchema,
+)
+from spectra_sherpa.app.schemas.doe import (
+    PlateWell as PlateWellSchema,
+)
+from spectra_sherpa.app.schemas.doe import (
+    RunLevel as RunLevelSchema,
+)
+from spectra_sherpa.app.schemas.doe import (
+    Sample as SampleSchema,
 )
 
 router = APIRouter(prefix="/experiments/{experiment_id}/doe")
@@ -142,20 +154,14 @@ async def list_mixtures(
 ) -> list[MixtureSchema]:
     """List mixtures for experiment"""
     await _verify_experiment_ownership(experiment_id, session, current_user)
-    stmt = (
-        select(Mixture)
-        .where(Mixture.experiment_id == experiment_id)
-        .options()  # Add eager loading if needed
-    )
+    stmt = select(Mixture).where(Mixture.experiment_id == experiment_id).options()  # Add eager loading if needed
     result = await session.execute(stmt)
     mixtures = result.scalars().all()
 
     # Load components for each mixture
     output = []
     for mixture in mixtures:
-        stmt_components = select(MixtureComponent).where(
-            MixtureComponent.mixture_id == mixture.id
-        )
+        stmt_components = select(MixtureComponent).where(MixtureComponent.mixture_id == mixture.id)
         result_components = await session.execute(stmt_components)
         components = result_components.scalars().all()
 
@@ -187,9 +193,7 @@ async def create_mixture(
 
     components = []
     for comp_data in payload.components:
-        component = MixtureComponent(
-            mixture_id=mixture.id, **comp_data.model_dump()
-        )
+        component = MixtureComponent(mixture_id=mixture.id, **comp_data.model_dump())
         session.add(component)
         components.append(component)
 
@@ -212,9 +216,7 @@ async def list_factors(
 ) -> list[FactorDefinitionSchema]:
     """List factor definitions for experiment"""
     await _verify_experiment_ownership(experiment_id, session, current_user)
-    stmt = select(FactorDefinition).where(
-        FactorDefinition.experiment_id == experiment_id
-    )
+    stmt = select(FactorDefinition).where(FactorDefinition.experiment_id == experiment_id)
     result = await session.execute(stmt)
     factors = result.scalars().all()
     return [FactorDefinitionSchema.model_validate(f) for f in factors]
@@ -294,11 +296,7 @@ async def get_run_sequence(
 ) -> list[RunLevelSchema]:
     """Get run sequence"""
     await _verify_experiment_ownership(experiment_id, session, current_user)
-    stmt = (
-        select(RunLevel)
-        .where(RunLevel.experiment_id == experiment_id)
-        .order_by(RunLevel.sequence_order)
-    )
+    stmt = select(RunLevel).where(RunLevel.experiment_id == experiment_id).order_by(RunLevel.sequence_order)
     result = await session.execute(stmt)
     levels = result.scalars().all()
     return [RunLevelSchema.model_validate(l) for l in levels]
@@ -337,9 +335,7 @@ async def set_run_sequence(
 # ==================== Acquisition Matching ====================
 
 
-def generate_scan_path(
-    first_cell: str, num_cells: int, orientation: str = "row"
-) -> list[str]:
+def generate_scan_path(first_cell: str, num_cells: int, orientation: str = "row") -> list[str]:
     """
     Generate plate scan path from first cell.
 
@@ -437,9 +433,9 @@ def extract_filename_number(filename: str) -> int | None:
     # Look for continuous digit sequences
     patterns = [
         r"_(\d+)\.",  # _0002.csv
-        r"_(\d+)$",   # _0002
-        r"^(\d+)_",   # 0002_
-        r"(\d+)",     # Any digits
+        r"_(\d+)$",  # _0002
+        r"^(\d+)_",  # 0002_
+        r"(\d+)",  # Any digits
     ]
 
     for pattern in patterns:
@@ -476,11 +472,13 @@ async def auto_match_acquisitions(
             batch_num = folder_data.get("batch_number", folder_idx + 1)
 
             for filename in folder_data["file_list"]:
-                files_with_meta.append({
-                    "filename": filename,
-                    "folder": folder_path,
-                    "batch": batch_num,
-                })
+                files_with_meta.append(
+                    {
+                        "filename": filename,
+                        "folder": folder_path,
+                        "batch": batch_num,
+                    }
+                )
     elif file_list:
         # Simple file list (detect folder from path)
         for filename in file_list:
@@ -493,11 +491,13 @@ async def auto_match_acquisitions(
                 folder = None
                 filename_only = filename
 
-            files_with_meta.append({
-                "filename": filename_only,
-                "folder": folder,
-                "batch": None,
-            })
+            files_with_meta.append(
+                {
+                    "filename": filename_only,
+                    "folder": folder,
+                    "batch": None,
+                }
+            )
     else:
         return []
 
@@ -508,9 +508,7 @@ async def auto_match_acquisitions(
     if use_plate_map and first_cell and scan_orientation:
         # Gap 2: Scan-path derived cells - using eager loading to prevent N+1 queries
         stmt = (
-            select(PlateWell)
-            .where(PlateWell.experiment_id == experiment_id)
-            .options(selectinload(PlateWell.mixture))
+            select(PlateWell).where(PlateWell.experiment_id == experiment_id).options(selectinload(PlateWell.mixture))
         )
         result = await session.execute(stmt)
         wells = result.scalars().all()
@@ -616,18 +614,20 @@ async def auto_match_acquisitions(
             except (ValueError, OSError, OverflowError):
                 pass
 
-        matched.append({
-            "seq": seq,
-            "filename": filename,
-            "folder": folder,
-            "timestamp": timestamp,
-            "date": date_str,
-            "batch": batch,
-            "sample_id": sample_id,
-            "cell": cell,
-            "special": None,
-            "factor_values": factor_values if factor_values else None,
-        })
+        matched.append(
+            {
+                "seq": seq,
+                "filename": filename,
+                "folder": folder,
+                "timestamp": timestamp,
+                "date": date_str,
+                "batch": batch,
+                "sample_id": sample_id,
+                "cell": cell,
+                "special": None,
+                "factor_values": factor_values if factor_values else None,
+            }
+        )
 
     return matched
 
@@ -642,9 +642,7 @@ async def match_acquisitions(
     """Auto-match acquisitions with comprehensive folder/scan/factor support"""
     await _verify_experiment_ownership(experiment_id, session, current_user)
     # Delete existing matched acquisitions
-    stmt_delete = select(MatchedAcquisition).where(
-        MatchedAcquisition.experiment_id == experiment_id
-    )
+    stmt_delete = select(MatchedAcquisition).where(MatchedAcquisition.experiment_id == experiment_id)
     result = await session.execute(stmt_delete)
     existing = result.scalars().all()
     for acq in existing:
@@ -760,7 +758,7 @@ async def export_doe_csv(
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename=doe_export.csv"},
+        headers={"Content-Disposition": "attachment; filename=doe_export.csv"},
     )
 
 
@@ -799,7 +797,7 @@ async def export_doe_json(
     return Response(
         content=json.dumps(export_data, indent=2, default=str),
         media_type="application/json",
-        headers={"Content-Disposition": f"attachment; filename=doe_export.json"},
+        headers={"Content-Disposition": "attachment; filename=doe_export.json"},
     )
 
 
@@ -874,7 +872,7 @@ async def export_doe_xml(
     return Response(
         content=xml_str,
         media_type="application/xml",
-        headers={"Content-Disposition": f"attachment; filename=doe_export.xml"},
+        headers={"Content-Disposition": "attachment; filename=doe_export.xml"},
     )
 
 
@@ -889,27 +887,15 @@ async def get_doe_summary(
 ) -> DOESummary:
     """Get DOE summary statistics"""
     await _verify_experiment_ownership(experiment_id, session, current_user)
-    samples_count = await session.scalar(
-        select(Sample).where(Sample.experiment_id == experiment_id)
-    )
-    mixtures_count = await session.scalar(
-        select(Mixture).where(Mixture.experiment_id == experiment_id)
-    )
+    samples_count = await session.scalar(select(Sample).where(Sample.experiment_id == experiment_id))
+    mixtures_count = await session.scalar(select(Mixture).where(Mixture.experiment_id == experiment_id))
     factors_count = await session.scalar(
-        select(FactorDefinition).where(
-            FactorDefinition.experiment_id == experiment_id
-        )
+        select(FactorDefinition).where(FactorDefinition.experiment_id == experiment_id)
     )
-    wells_count = await session.scalar(
-        select(PlateWell).where(PlateWell.experiment_id == experiment_id)
-    )
-    levels_count = await session.scalar(
-        select(RunLevel).where(RunLevel.experiment_id == experiment_id)
-    )
+    wells_count = await session.scalar(select(PlateWell).where(PlateWell.experiment_id == experiment_id))
+    levels_count = await session.scalar(select(RunLevel).where(RunLevel.experiment_id == experiment_id))
     matched_count = await session.scalar(
-        select(MatchedAcquisition).where(
-            MatchedAcquisition.experiment_id == experiment_id
-        )
+        select(MatchedAcquisition).where(MatchedAcquisition.experiment_id == experiment_id)
     )
 
     return DOESummary(

@@ -14,7 +14,6 @@ from spectra_sherpa.app.api.deps import get_current_user, get_session
 from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.models.calibration import Calibration
 from spectra_sherpa.app.models.experiment import Experiment
-from spectra_sherpa.app.models.nist_library import NistLibrary
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.schemas.builder import (
     BlendRequest,
@@ -32,6 +31,7 @@ from spectra_sherpa.app.schemas.builder import (
 )
 from spectra_sherpa.app.services.builder import BuilderService
 from spectra_sherpa.app.services.experiments import experiment_dir
+
 
 async def _validate_file_path_ownership(
     file_path: str,
@@ -71,9 +71,7 @@ async def _validate_file_path_ownership(
         exp_dir_match = re.match(r"exp_(\d+)", parts[1])
         if exp_dir_match:
             experiment_id = int(exp_dir_match.group(1))
-            result = await session.execute(
-                select(Experiment).where(Experiment.id == experiment_id)
-            )
+            result = await session.execute(select(Experiment).where(Experiment.id == experiment_id))
             experiment = result.scalar_one_or_none()
             if not experiment or experiment.user_id != current_user.id:
                 raise HTTPException(status_code=403, detail="Access denied: experiment not owned by user")
@@ -90,9 +88,7 @@ async def _validate_file_path_ownership(
         cal_dir_match = re.match(r"cal_(\d+)", parts[1])
         if cal_dir_match:
             calibration_id = int(cal_dir_match.group(1))
-            result = await session.execute(
-                select(Calibration).where(Calibration.id == calibration_id)
-            )
+            result = await session.execute(select(Calibration).where(Calibration.id == calibration_id))
             calibration = result.scalar_one_or_none()
             if not calibration or calibration.user_id != current_user.id:
                 raise HTTPException(status_code=403, detail="Access denied: calibration not owned by user")
@@ -240,12 +236,13 @@ async def get_file_info(
                 preview_spectra = []
                 for i, ds in enumerate(datasets):
                     lbl = labels[i] if i < len(labels) else f"Spectrum_{i+1}"
-                    preview_spectra.append(SpectrumPreview(
-                        label=lbl,
-                        absorbance=all_absorbances[i].tolist(),
-                    ))
+                    preview_spectra.append(
+                        SpectrumPreview(
+                            label=lbl,
+                            absorbance=all_absorbances[i].tolist(),
+                        )
+                    )
             else:
-                import numpy as np
                 # Each bucket produces 2 points (min, max); target ~250 buckets
                 n_buckets = max_pts // 2
                 bucket_size = n // n_buckets
@@ -265,10 +262,12 @@ async def get_file_info(
                 preview_spectra = []
                 for i, ds in enumerate(datasets):
                     lbl = labels[i] if i < len(labels) else f"Spectrum_{i+1}"
-                    preview_spectra.append(SpectrumPreview(
-                        label=lbl,
-                        absorbance=all_absorbances[i][indices].tolist(),
-                    ))
+                    preview_spectra.append(
+                        SpectrumPreview(
+                            label=lbl,
+                            absorbance=all_absorbances[i][indices].tolist(),
+                        )
+                    )
         except Exception:
             pass  # Preview is best-effort
 
@@ -481,8 +480,8 @@ async def synthesize_spectra(
 async def list_reference_datasets() -> dict[str, list[dict[str, Any]]]:
     """List all available reference datasets across all sources."""
     from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG
-    from spectra_sherpa.app.lib.sklearn_info import SKLEARN_CATALOG
     from spectra_sherpa.app.lib.scp_catalog import build_scp_catalog
+    from spectra_sherpa.app.lib.sklearn_info import SKLEARN_CATALOG
 
     return {
         "eigenvector": [

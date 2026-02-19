@@ -33,13 +33,10 @@ router = APIRouter(prefix="/projects/{project_id}/scripts")
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
-async def _get_project_for_user(
-    project_id: int, user_id: int, session: AsyncSession
-) -> Project:
+
+async def _get_project_for_user(project_id: int, user_id: int, session: AsyncSession) -> Project:
     """Load project with ownership check."""
-    result = await session.execute(
-        select(Project).where(Project.id == project_id, Project.user_id == user_id)
-    )
+    result = await session.execute(select(Project).where(Project.id == project_id, Project.user_id == user_id))
     project = result.scalar_one_or_none()
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -81,6 +78,7 @@ def _script_to_detail(script: ProjectScript) -> ProjectScriptDetail:
 
 # ── CRUD ─────────────────────────────────────────────────────────────
 
+
 @router.get("", response_model=list[ProjectScriptSummary])
 async def list_scripts(
     project_id: int,
@@ -91,9 +89,7 @@ async def list_scripts(
     await _get_project_for_user(project_id, current_user.id, session)
 
     result = await session.execute(
-        select(ProjectScript)
-        .where(ProjectScript.project_id == project_id)
-        .order_by(ProjectScript.priority)
+        select(ProjectScript).where(ProjectScript.project_id == project_id).order_by(ProjectScript.priority)
     )
     return [_script_to_summary(s) for s in result.scalars().all()]
 
@@ -169,7 +165,10 @@ async def generate_script(
     await session.refresh(script)
     logger.info(
         "Generated script '%s' (id=%s) from workflow '%s' (id=%s)",
-        script.name, script.id, workflow.name, workflow.id,
+        script.name,
+        script.id,
+        workflow.name,
+        workflow.id,
     )
     return _script_to_detail(script)
 
@@ -185,9 +184,7 @@ async def get_script(
     await _get_project_for_user(project_id, current_user.id, session)
 
     result = await session.execute(
-        select(ProjectScript).where(
-            ProjectScript.id == script_id, ProjectScript.project_id == project_id
-        )
+        select(ProjectScript).where(ProjectScript.id == script_id, ProjectScript.project_id == project_id)
     )
     script = result.scalar_one_or_none()
     if script is None:
@@ -207,9 +204,7 @@ async def update_script(
     await _get_project_for_user(project_id, current_user.id, session)
 
     result = await session.execute(
-        select(ProjectScript).where(
-            ProjectScript.id == script_id, ProjectScript.project_id == project_id
-        )
+        select(ProjectScript).where(ProjectScript.id == script_id, ProjectScript.project_id == project_id)
     )
     script = result.scalar_one_or_none()
     if script is None:
@@ -235,9 +230,7 @@ async def delete_script(
     await _get_project_for_user(project_id, current_user.id, session)
 
     result = await session.execute(
-        select(ProjectScript).where(
-            ProjectScript.id == script_id, ProjectScript.project_id == project_id
-        )
+        select(ProjectScript).where(ProjectScript.id == script_id, ProjectScript.project_id == project_id)
     )
     script = result.scalar_one_or_none()
     if script is None:

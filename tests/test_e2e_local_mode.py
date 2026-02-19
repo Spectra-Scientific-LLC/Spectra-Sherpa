@@ -22,13 +22,13 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 
-from spectra_sherpa.app.core.config import app_config
 import spectra_sherpa.app.api.deps as deps
-
+from spectra_sherpa.app.core.config import app_config
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(autouse=True)
 def _local_mode():
@@ -53,6 +53,7 @@ def _local_mode():
 # ---------------------------------------------------------------------------
 # Test
 # ---------------------------------------------------------------------------
+
 
 class TestLocalModeE2E:
     """Full HTTP round-trip in local mode — no auth, no rate limits."""

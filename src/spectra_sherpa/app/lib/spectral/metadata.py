@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import warnings
 from enum import Enum
-from typing import Optional, List, Dict, Any, Literal, TYPE_CHECKING
-from pydantic import BaseModel, Field, field_validator, model_validator
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional
+
+from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
     from spectra_sherpa.app.lib.scp_compat import NDDataset
@@ -265,9 +266,7 @@ class ReferenceSpectrum(BaseModel):
     )
     reference_id: Optional[str] = Field(None, description="ID or path of reference spectrum")
     acquisition_time: Optional[str] = Field(None, description="When reference was acquired (ISO format)")
-    conditions: Optional[MeasurementConditions] = Field(
-        None, description="Conditions when reference was acquired"
-    )
+    conditions: Optional[MeasurementConditions] = Field(None, description="Conditions when reference was acquired")
 
 
 class SpectralResolution(BaseModel):
@@ -323,9 +322,7 @@ class CalibrationRange(BaseModel):
     wavenumber_min: float = Field(..., description="Minimum wavenumber (cm^-1)")
     wavenumber_max: float = Field(..., description="Maximum wavenumber (cm^-1)")
     n_calibration_points: Optional[int] = Field(None, ge=2, description="Number of calibration standards")
-    calibration_conditions: Optional[MeasurementConditions] = Field(
-        None, description="Conditions during calibration"
-    )
+    calibration_conditions: Optional[MeasurementConditions] = Field(None, description="Conditions during calibration")
     model_type: Optional[str] = Field(None, description="Calibration model type (linear, saturation, hybrid)")
 
     def check_concentration(self, concentration: float, warn: bool = True) -> bool:
@@ -380,9 +377,7 @@ class ChemometricsMeta(BaseModel):
     species: Optional[List[str]] = Field(None, description="Chemical species present")
 
     # Concentration (if known)
-    concentrations: Optional[Dict[str, ConcentrationSpec]] = Field(
-        None, description="Concentration by species name"
-    )
+    concentrations: Optional[Dict[str, ConcentrationSpec]] = Field(None, description="Concentration by species name")
 
     # Measurement geometry
     pathlength: Optional[PathlengthSpec] = Field(None, description="Optical pathlength")
@@ -400,9 +395,7 @@ class ChemometricsMeta(BaseModel):
     resolution: Optional[SpectralResolution] = Field(None, description="Spectral resolution info")
 
     # Calibration
-    calibration_range: Optional[CalibrationRange] = Field(
-        None, description="Valid range for calibration model"
-    )
+    calibration_range: Optional[CalibrationRange] = Field(None, description="Valid range for calibration model")
 
     # Provenance
     source_file: Optional[str] = Field(None, description="Original source file path")

@@ -20,9 +20,7 @@ class Edge(NamedTuple):
     to_input: str = "default"
 
 
-def build_dependency_map(
-    node_ids: Sequence[str], edges: Sequence[Edge]
-) -> dict[str, list[str]]:
+def build_dependency_map(node_ids: Sequence[str], edges: Sequence[Edge]) -> dict[str, list[str]]:
     """
     Build a mapping of each node to the nodes it depends on.
 
@@ -39,9 +37,7 @@ def build_dependency_map(
     return deps
 
 
-def topological_sort(
-    node_ids: Sequence[str], edges: Sequence[Edge]
-) -> list[str]:
+def topological_sort(node_ids: Sequence[str], edges: Sequence[Edge]) -> list[str]:
     """
     Kahn's algorithm for topological ordering.
 

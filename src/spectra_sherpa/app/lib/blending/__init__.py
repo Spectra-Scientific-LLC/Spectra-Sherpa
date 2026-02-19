@@ -1,7 +1,7 @@
 """
 Multi-species spectral blending with calibration models.
 
-This module provides NDDataset-native blending operations,
+This module provides AnalysisDataset-native blending operations,
 preserving the numerical algorithms from project0/blend.py.
 
 Core algorithms:
@@ -12,16 +12,16 @@ Core algorithms:
 """
 
 from .blend import (
-    # Numerical functions
-    eval_linear_model,
-    eval_saturation_model,
-    apply_system_saturation,
-    select_hybrid_model,
     SAFE_MIN_THRESHOLD,
     # Settings
     BlendSettings,
+    apply_system_saturation,
     # NDDataset-native blending
     blend_datasets,
+    # Numerical functions
+    eval_linear_model,
+    eval_saturation_model,
+    select_hybrid_model,
 )
 
 __all__ = [

@@ -7,7 +7,10 @@ This module defines pre-built workflow templates for common chemometrics tasks.
 WORKFLOW_TEMPLATES = [
     {
         "name": "PCA Exploratory Analysis",
-        "description": "Load spectral data, apply preprocessing, and perform PCA for exploratory data analysis. Visualize scores and loadings to identify patterns and outliers.",
+        "description": (
+            "Load spectral data, apply preprocessing, and perform PCA for exploratory"
+            " data analysis. Visualize scores and loadings to identify patterns and outliers."
+        ),
         "category": "exploratory",
         "template_data": {
             "nodes": [
@@ -64,7 +67,10 @@ WORKFLOW_TEMPLATES = [
     },
     {
         "name": "PLSRegression Calibration",
-        "description": "Build a PLS regression model for quantitative calibration. Includes preprocessing, PLS modeling, cross-validation, and prediction visualization.",
+        "description": (
+            "Build a PLS regression model for quantitative calibration. Includes"
+            " preprocessing, PLS modeling, cross-validation, and prediction visualization."
+        ),
         "category": "calibration",
         "template_data": {
             "nodes": [
@@ -121,7 +127,10 @@ WORKFLOW_TEMPLATES = [
     },
     {
         "name": "Classification (PCA + LDA)",
-        "description": "Supervised classification workflow using PCA for dimensionality reduction followed by LDA for class discrimination.",
+        "description": (
+            "Supervised classification workflow using PCA for dimensionality reduction"
+            " followed by LDA for class discrimination."
+        ),
         "category": "classification",
         "template_data": {
             "nodes": [
@@ -178,7 +187,10 @@ WORKFLOW_TEMPLATES = [
     },
     {
         "name": "MCR-ALS Curve Resolution",
-        "description": "Multivariate Curve Resolution - Alternating Least Squares for resolving overlapping spectral components.",
+        "description": (
+            "Multivariate Curve Resolution - Alternating Least Squares for resolving"
+            " overlapping spectral components."
+        ),
         "category": "curve_resolution",
         "template_data": {
             "nodes": [
@@ -235,7 +247,10 @@ WORKFLOW_TEMPLATES = [
     },
     {
         "name": "Preprocessing Pipeline",
-        "description": "Comprehensive spectral preprocessing workflow: baseline correction, smoothing, normalization, and derivative.",
+        "description": (
+            "Comprehensive spectral preprocessing workflow: baseline correction,"
+            " smoothing, normalization, and derivative."
+        ),
         "category": "preprocessing",
         "template_data": {
             "nodes": [
@@ -502,7 +517,9 @@ WORKFLOW_TEMPLATES = [
     },
     {
         "name": "Compare Multiple Models",
-        "description": "Compare different classification models (KNN, LDA, SVM) on the same dataset with cross-validation.",
+        "description": (
+            "Compare different classification models (KNN, LDA, SVM) on the same" " dataset with cross-validation."
+        ),
         "category": "comparison",
         "template_data": {
             "nodes": [

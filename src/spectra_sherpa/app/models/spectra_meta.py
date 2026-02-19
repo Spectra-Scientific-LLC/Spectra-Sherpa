@@ -31,22 +31,23 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
-
 # =============================================================================
 # ENUMERATIONS
 # =============================================================================
 
+
 class PhysicalState(str, Enum):
     """Physical state of matter for spectroscopic samples."""
+
     GAS = "gas"
     LIQUID = "liquid"
     SOLID = "solid"
     PLASMA = "plasma"
-    SOLUTION = "solution"          # Dissolved in solvent
-    FILM = "film"                  # Thin film / coating
-    POWDER = "powder"              # Powder sample
-    KBR_PELLET = "kbr_pellet"      # KBr pellet (common for solids)
-    MULL = "mull"                  # Nujol mull
+    SOLUTION = "solution"  # Dissolved in solvent
+    FILM = "film"  # Thin film / coating
+    POWDER = "powder"  # Powder sample
+    KBR_PELLET = "kbr_pellet"  # KBr pellet (common for solids)
+    MULL = "mull"  # Nujol mull
     GEL = "gel"
     SUSPENSION = "suspension"
     UNKNOWN = "unknown"
@@ -54,117 +55,126 @@ class PhysicalState(str, Enum):
 
 class ConcentrationUnit(str, Enum):
     """Units for concentration values."""
-    PPM = "ppm"                    # Parts per million (v/v or m/m)
-    PPMV = "ppmv"                  # Parts per million by volume
-    PPMM = "ppmm"                  # Parts per million by mass
-    PPM_M = "ppm·m"                # ppm × pathlength (product mode)
-    PPB = "ppb"                    # Parts per billion
-    MOL_L = "mol/L"                # Molarity
-    MMOL_L = "mmol/L"              # Millimolar
-    UMOL_L = "µmol/L"              # Micromolar
-    MG_ML = "mg/mL"                # Mass concentration
-    UG_ML = "µg/mL"                # Microgram per mL
-    MG_L = "mg/L"                  # Milligram per liter
-    PERCENT_V = "%v/v"             # Volume percent
-    PERCENT_M = "%m/m"             # Mass percent
-    PERCENT = "%"                  # Generic percent
-    FRACTION = "fraction"          # Mole/mass fraction (0-1)
-    MOLALITY = "mol/kg"            # Molality
+
+    PPM = "ppm"  # Parts per million (v/v or m/m)
+    PPMV = "ppmv"  # Parts per million by volume
+    PPMM = "ppmm"  # Parts per million by mass
+    PPM_M = "ppm·m"  # ppm × pathlength (product mode)
+    PPB = "ppb"  # Parts per billion
+    MOL_L = "mol/L"  # Molarity
+    MMOL_L = "mmol/L"  # Millimolar
+    UMOL_L = "µmol/L"  # Micromolar
+    MG_ML = "mg/mL"  # Mass concentration
+    UG_ML = "µg/mL"  # Microgram per mL
+    MG_L = "mg/L"  # Milligram per liter
+    PERCENT_V = "%v/v"  # Volume percent
+    PERCENT_M = "%m/m"  # Mass percent
+    PERCENT = "%"  # Generic percent
+    FRACTION = "fraction"  # Mole/mass fraction (0-1)
+    MOLALITY = "mol/kg"  # Molality
 
 
 class SourceType(str, Enum):
     """Origin of spectral data."""
-    EXPERIMENT = "experiment"      # From experimental measurement
-    NIST = "nist"                  # NIST Chemistry WebBook
-    HITRAN = "hitran"              # HITRAN database
-    EPA = "epa"                    # EPA spectral library
-    PNNL = "pnnl"                  # PNNL gas-phase library
-    SDBS = "sdbs"                  # SDBS (AIST Japan)
-    SYNTHETIC = "synthetic"        # Generated from curve designer
-    BLEND = "blend"                # Synthetic mixture
-    CALIBRATION = "calibration"    # From calibration model
-    SIMULATION = "simulation"      # Computational / DFT
-    EIGENVECTOR = "eigenvector"    # Eigenvector Research public dataset
+
+    EXPERIMENT = "experiment"  # From experimental measurement
+    NIST = "nist"  # NIST Chemistry WebBook
+    HITRAN = "hitran"  # HITRAN database
+    EPA = "epa"  # EPA spectral library
+    PNNL = "pnnl"  # PNNL gas-phase library
+    SDBS = "sdbs"  # SDBS (AIST Japan)
+    SYNTHETIC = "synthetic"  # Generated from curve designer
+    BLEND = "blend"  # Synthetic mixture
+    CALIBRATION = "calibration"  # From calibration model
+    SIMULATION = "simulation"  # Computational / DFT
+    EIGENVECTOR = "eigenvector"  # Eigenvector Research public dataset
     UNKNOWN = "unknown"
 
 
 class ModelType(str, Enum):
     """Spectral response model type for quantitation."""
-    LINEAR = "linear"              # Beer-Lambert law (A = εlc)
-    SATURATION = "saturation"      # Saturation model
-    HYBRID = "hybrid"              # Mixed linear/saturation per wavenumber
-    POLYNOMIAL = "polynomial"      # Polynomial calibration
-    PLS = "pls"                    # PLS regression
-    PCR = "pcr"                    # Principal Component Regression
-    NONE = "none"                  # No model
+
+    LINEAR = "linear"  # Beer-Lambert law (A = εlc)
+    SATURATION = "saturation"  # Saturation model
+    HYBRID = "hybrid"  # Mixed linear/saturation per wavenumber
+    POLYNOMIAL = "polynomial"  # Polynomial calibration
+    PLS = "pls"  # PLS regression
+    PCR = "pcr"  # Principal Component Regression
+    NONE = "none"  # No model
 
 
 class SamplingTechnique(str, Enum):
     """Spectroscopic sampling/measurement technique."""
+
     TRANSMISSION = "transmission"
-    ATR = "atr"                    # Attenuated Total Reflectance
-    REFLECTION = "reflection"      # Specular reflection
-    DRIFTS = "drifts"              # Diffuse Reflectance
+    ATR = "atr"  # Attenuated Total Reflectance
+    REFLECTION = "reflection"  # Specular reflection
+    DRIFTS = "drifts"  # Diffuse Reflectance
     TRANSFLECTION = "transflection"
-    MICROSCOPY = "microscopy"      # IR/Raman microscopy
+    MICROSCOPY = "microscopy"  # IR/Raman microscopy
     EMISSION = "emission"
-    PAS = "pas"                    # Photoacoustic
-    RAIRS = "rairs"                # Reflection-Absorption
-    GC_IR = "gc_ir"                # GC-IR hyphenated
-    TGA_IR = "tga_ir"              # TGA-IR hyphenated
+    PAS = "pas"  # Photoacoustic
+    RAIRS = "rairs"  # Reflection-Absorption
+    GC_IR = "gc_ir"  # GC-IR hyphenated
+    TGA_IR = "tga_ir"  # TGA-IR hyphenated
     UNKNOWN = "unknown"
 
 
 class DetectorType(str, Enum):
     """Infrared detector types."""
-    MCT = "mct"                    # Mercury Cadmium Telluride (cooled)
-    MCT_A = "mct_a"                # MCT-A (narrow band)
-    MCT_B = "mct_b"                # MCT-B (broad band)
-    DTGS = "dtgs"                  # Deuterated Triglycine Sulfate
-    DTGS_KBR = "dtgs_kbr"          # DTGS with KBr window
-    DTGS_PE = "dtgs_pe"            # DTGS with polyethylene window
-    InGaAs = "ingaas"              # Indium Gallium Arsenide (NIR)
-    InSb = "insb"                  # Indium Antimonide
-    PbSe = "pbse"                  # Lead Selenide
-    Si = "si"                      # Silicon (NIR)
-    Ge = "ge"                      # Germanium
-    BOLOMETER = "bolometer"        # Far-IR
+
+    MCT = "mct"  # Mercury Cadmium Telluride (cooled)
+    MCT_A = "mct_a"  # MCT-A (narrow band)
+    MCT_B = "mct_b"  # MCT-B (broad band)
+    DTGS = "dtgs"  # Deuterated Triglycine Sulfate
+    DTGS_KBR = "dtgs_kbr"  # DTGS with KBr window
+    DTGS_PE = "dtgs_pe"  # DTGS with polyethylene window
+    InGaAs = "ingaas"  # Indium Gallium Arsenide (NIR)
+    InSb = "insb"  # Indium Antimonide
+    PbSe = "pbse"  # Lead Selenide
+    Si = "si"  # Silicon (NIR)
+    Ge = "ge"  # Germanium
+    BOLOMETER = "bolometer"  # Far-IR
     UNKNOWN = "unknown"
 
 
 class WindowMaterial(str, Enum):
     """Optical window and ATR crystal materials."""
-    KBr = "kbr"                    # 40000-400 cm⁻¹
-    NaCl = "nacl"                  # 40000-625 cm⁻¹
-    CaF2 = "caf2"                  # 50000-1100 cm⁻¹
-    BaF2 = "baf2"                  # 50000-870 cm⁻¹
-    ZnSe = "znse"                  # 20000-500 cm⁻¹
-    ZnS = "zns"                    # 17000-830 cm⁻¹
-    DIAMOND = "diamond"            # Type IIa: 40000-10 cm⁻¹
-    Ge = "ge"                      # 5500-600 cm⁻¹ (ATR)
-    Si = "si"                      # 8300-660 cm⁻¹
-    SAPPHIRE = "sapphire"          # 50000-1780 cm⁻¹
-    KRS5 = "krs5"                  # 20000-250 cm⁻¹ (TlBr/TlI)
-    AgCl = "agcl"                  # 25000-400 cm⁻¹
-    POLYETHYLENE = "pe"            # Far-IR window
+
+    KBr = "kbr"  # 40000-400 cm⁻¹
+    NaCl = "nacl"  # 40000-625 cm⁻¹
+    CaF2 = "caf2"  # 50000-1100 cm⁻¹
+    BaF2 = "baf2"  # 50000-870 cm⁻¹
+    ZnSe = "znse"  # 20000-500 cm⁻¹
+    ZnS = "zns"  # 17000-830 cm⁻¹
+    DIAMOND = "diamond"  # Type IIa: 40000-10 cm⁻¹
+    Ge = "ge"  # 5500-600 cm⁻¹ (ATR)
+    Si = "si"  # 8300-660 cm⁻¹
+    SAPPHIRE = "sapphire"  # 50000-1780 cm⁻¹
+    KRS5 = "krs5"  # 20000-250 cm⁻¹ (TlBr/TlI)
+    AgCl = "agcl"  # 25000-400 cm⁻¹
+    POLYETHYLENE = "pe"  # Far-IR window
     UNKNOWN = "unknown"
 
 
 class QualityFlag(str, Enum):
     """Data quality status flags."""
-    PASS = "pass"                  # Data meets all quality criteria
-    WARN = "warn"                  # Minor issues, usable with caution
-    FAIL = "fail"                  # Data does not meet quality criteria
-    UNCHECKED = "unchecked"        # Quality not yet assessed
-    REVIEW = "review"              # Requires manual review
+
+    PASS = "pass"  # Data meets all quality criteria
+    WARN = "warn"  # Minor issues, usable with caution
+    FAIL = "fail"  # Data does not meet quality criteria
+    UNCHECKED = "unchecked"  # Quality not yet assessed
+    REVIEW = "review"  # Requires manual review
 
 
 # =============================================================================
 # CHEMICAL SPECIES INFORMATION
 # =============================================================================
 
+
 class SpeciesInfo(BaseModel):
     """Chemical species metadata."""
+
     name: str = Field(..., description="Species name (e.g., 'Carbon Dioxide')")
 
     # Chemical identifiers
@@ -198,8 +208,10 @@ class SpeciesInfo(BaseModel):
 # CONCENTRATION PROFILES (for blending/mixtures)
 # =============================================================================
 
+
 class ConcentrationProfile(BaseModel):
     """Concentration timeseries for a species in a blend."""
+
     species_index: int = Field(..., description="Index into species list (0-based)")
     species_name: Optional[str] = Field(None, description="Species name (for readability)")
 
@@ -223,6 +235,7 @@ class ConcentrationProfile(BaseModel):
 # =============================================================================
 # INSTRUMENT INFORMATION
 # =============================================================================
+
 
 class InstrumentInfo(BaseModel):
     """Spectrometer hardware details for reproducibility."""
@@ -251,12 +264,11 @@ class InstrumentInfo(BaseModel):
 # MEASUREMENT GEOMETRY
 # =============================================================================
 
+
 class MeasurementGeometry(BaseModel):
     """Optical configuration and sampling geometry."""
 
-    sampling_technique: SamplingTechnique = Field(
-        SamplingTechnique.TRANSMISSION, description="Sampling technique"
-    )
+    sampling_technique: SamplingTechnique = Field(SamplingTechnique.TRANSMISSION, description="Sampling technique")
 
     # ATR-specific parameters
     atr_crystal: Optional[WindowMaterial] = Field(None, description="ATR crystal material")
@@ -271,9 +283,7 @@ class MeasurementGeometry(BaseModel):
     objective_na: Optional[float] = Field(None, description="Numerical aperture")
 
     # Gas cell / multipass
-    optical_path_type: Optional[str] = Field(
-        None, description="single_pass, White_cell, Herriott_cell, multipass"
-    )
+    optical_path_type: Optional[str] = Field(None, description="single_pass, White_cell, Herriott_cell, multipass")
     n_passes: Optional[int] = Field(None, description="Number of passes (for multipass cells)")
 
     class Config:
@@ -283,6 +293,7 @@ class MeasurementGeometry(BaseModel):
 # =============================================================================
 # ACQUISITION PARAMETERS
 # =============================================================================
+
 
 class AcquisitionParams(BaseModel):
     """Data collection parameters affecting spectral quality."""
@@ -319,12 +330,11 @@ class AcquisitionParams(BaseModel):
 # SAMPLE CELL / HOLDER
 # =============================================================================
 
+
 class SampleCell(BaseModel):
     """Sample holder/cell information."""
 
-    cell_type: Optional[str] = Field(
-        None, description="gas_cell, liquid_cell, demountable, flow_cell, cuvette, ATR"
-    )
+    cell_type: Optional[str] = Field(None, description="gas_cell, liquid_cell, demountable, flow_cell, cuvette, ATR")
     cell_manufacturer: Optional[str] = Field(None, description="Pike, Specac, Harrick, etc.")
     cell_model: Optional[str] = Field(None, description="Cell model/part number")
 
@@ -352,12 +362,12 @@ class SampleCell(BaseModel):
 # SAMPLE PREPARATION
 # =============================================================================
 
+
 class SamplePreparation(BaseModel):
     """How sample was prepared for measurement."""
 
     method: Optional[str] = Field(
-        None,
-        description="neat, KBr_pellet, Nujol_mull, solution, cast_film, spin_coat, ATR_contact"
+        None, description="neat, KBr_pellet, Nujol_mull, solution, cast_film, spin_coat, ATR_contact"
     )
 
     # Dilution
@@ -388,6 +398,7 @@ class SamplePreparation(BaseModel):
 # EXPERIMENTAL CONDITIONS
 # =============================================================================
 
+
 class ExperimentalConditions(BaseModel):
     """Environmental and experimental conditions during measurement."""
 
@@ -414,21 +425,16 @@ class ExperimentalConditions(BaseModel):
 # CALIBRATION MODEL (for quantitative analysis)
 # =============================================================================
 
+
 class CalibrationModel(BaseModel):
     """Calibrated model parameters for quantitative analysis."""
 
     model_type: ModelType = Field(ModelType.NONE, description="Calibration model type")
-    concentration_mode: str = Field(
-        "concentration", description="'concentration' (ppm) or 'product' (ppm·m)"
-    )
+    concentration_mode: str = Field("concentration", description="'concentration' (ppm) or 'product' (ppm·m)")
 
     # Reference point
-    reference_concentration: Optional[float] = Field(
-        None, description="Reference concentration for display"
-    )
-    reference_pathlength_m: Optional[float] = Field(
-        None, description="Reference pathlength (m)"
-    )
+    reference_concentration: Optional[float] = Field(None, description="Reference concentration for display")
+    reference_pathlength_m: Optional[float] = Field(None, description="Reference pathlength (m)")
 
     # Calibration range
     calibration_range_min: Optional[float] = Field(None, description="Minimum valid concentration")
@@ -467,6 +473,7 @@ class CalibrationModel(BaseModel):
 # QUALITY METRICS
 # =============================================================================
 
+
 class QualityMetrics(BaseModel):
     """Data quality indicators and flags."""
 
@@ -496,6 +503,7 @@ class QualityMetrics(BaseModel):
 # =============================================================================
 # DATA PROVENANCE
 # =============================================================================
+
 
 class DataProvenance(BaseModel):
     """Track where data came from - essential for traceability."""
@@ -529,6 +537,7 @@ class DataProvenance(BaseModel):
 # =============================================================================
 # AUDIT TRAIL (GxP Compliance)
 # =============================================================================
+
 
 class AuditInfo(BaseModel):
     """
@@ -593,6 +602,7 @@ class AuditInfo(BaseModel):
 # MAIN SCHEMA
 # =============================================================================
 
+
 class SpectraMeta(BaseModel):
     """
     Comprehensive metadata schema for spectral data.
@@ -623,10 +633,7 @@ class SpectraMeta(BaseModel):
     # ─────────────────────────────────────────────────────────────────────────
     # Chemical Identity
     # ─────────────────────────────────────────────────────────────────────────
-    species: list[SpeciesInfo] = Field(
-        default_factory=list,
-        description="Chemical species in the sample"
-    )
+    species: list[SpeciesInfo] = Field(default_factory=list, description="Chemical species in the sample")
 
     # ─────────────────────────────────────────────────────────────────────────
     # Concentration & Mixture Data (for blends / ground truth)
@@ -670,20 +677,13 @@ class SpectraMeta(BaseModel):
     # ─────────────────────────────────────────────────────────────────────────
     # Processing & Flags
     # ─────────────────────────────────────────────────────────────────────────
-    is_ground_truth: bool = Field(
-        False, description="True if concentrations/spectra are known (not recovered)"
-    )
-    processing_steps: list[str] = Field(
-        default_factory=list,
-        description="Ordered list of processing steps applied"
-    )
+    is_ground_truth: bool = Field(False, description="True if concentrations/spectra are known (not recovered)")
+    processing_steps: list[str] = Field(default_factory=list, description="Ordered list of processing steps applied")
 
     # ─────────────────────────────────────────────────────────────────────────
     # Extensibility
     # ─────────────────────────────────────────────────────────────────────────
-    custom: Optional[dict[str, Any]] = Field(
-        None, description="Custom fields for application-specific metadata"
-    )
+    custom: Optional[dict[str, Any]] = Field(None, description="Custom fields for application-specific metadata")
 
     class Config:
         use_enum_values = True
@@ -693,6 +693,7 @@ class SpectraMeta(BaseModel):
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
+
 
 def get_spectra_meta(dataset: Any) -> Optional[SpectraMeta]:
     """
@@ -743,10 +744,7 @@ def create_minimal_meta(source_type: SourceType, **kwargs) -> SpectraMeta:
     Returns:
         SpectraMeta with minimal required fields
     """
-    provenance = DataProvenance(
-        source_type=source_type,
-        created_datetime=datetime.utcnow().isoformat()
-    )
+    provenance = DataProvenance(source_type=source_type, created_datetime=datetime.utcnow().isoformat())
     return SpectraMeta(provenance=provenance, **kwargs)
 
 

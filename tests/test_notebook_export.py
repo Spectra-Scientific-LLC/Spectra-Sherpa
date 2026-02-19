@@ -15,7 +15,6 @@ from unittest.mock import patch
 
 import pytest
 
-
 # Sample Python code matching the output format of generate_python_code()
 SAMPLE_PYTHON_CODE = '''\
 """
@@ -192,7 +191,7 @@ class TestGenerateNotebook:
         assert cell["cell_type"] == "code"
         source_text = "".join(cell["source"])
         # Should NOT have `if __name__` — replaced with direct calls
-        assert 'if __name__' not in source_text
+        assert "if __name__" not in source_text
         # Should have the execution calls (de-indented)
         assert "results = run_workflow()" in source_text
 
@@ -271,7 +270,7 @@ class TestSplitPythonCode:
 
         sections = _split_python_code(SAMPLE_PYTHON_CODE)
         text = "\n".join(sections["main"])
-        assert '__name__' in text
+        assert "__name__" in text
 
 
 class TestDocstringToMarkdown:
@@ -280,7 +279,7 @@ class TestDocstringToMarkdown:
     def test_converts_generated_workflow_to_heading(self):
         from spectra_sherpa.app.services.notebook_export import _docstring_to_markdown
 
-        lines = ['"""', 'Generated workflow: My Pipeline', '"""']
+        lines = ['"""', "Generated workflow: My Pipeline", '"""']
         md = _docstring_to_markdown(lines)
 
         assert md[0] == "# My Pipeline"
@@ -288,7 +287,7 @@ class TestDocstringToMarkdown:
     def test_preserves_description(self):
         from spectra_sherpa.app.services.notebook_export import _docstring_to_markdown
 
-        lines = ['"""', 'Generated workflow: Test', '', 'Description text here', '"""']
+        lines = ['"""', "Generated workflow: Test", "", "Description text here", '"""']
         md = _docstring_to_markdown(lines)
 
         assert "# Test" in md[0]
@@ -297,7 +296,7 @@ class TestDocstringToMarkdown:
     def test_formats_integrity_hash_as_bold(self):
         from spectra_sherpa.app.services.notebook_export import _docstring_to_markdown
 
-        lines = ['"""', 'Generated workflow: Test', '', 'Integrity Hash: abc123', '"""']
+        lines = ['"""', "Generated workflow: Test", "", "Integrity Hash: abc123", '"""']
         md = _docstring_to_markdown(lines)
 
         assert any("**Integrity Hash:" in line for line in md)

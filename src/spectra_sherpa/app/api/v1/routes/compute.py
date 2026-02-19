@@ -1,7 +1,7 @@
-from typing import Any, Dict, List, Optional
 import asyncio
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from spectra_sherpa.app.api import deps
@@ -23,6 +23,7 @@ class ComputeResponse(BaseModel):
     This format preserves enough information to reconstruct
     spectral data structures (NDDataset-like) on the client side.
     """
+
     success: bool
     algorithm_id: str
     # Data in a format that can be reconstructed
@@ -61,22 +62,13 @@ async def execute_compute(
 
         else:
             return ComputeResponse(
-                success=False,
-                algorithm_id=request.algorithm_id,
-                error=f"Unknown algorithm: {request.algorithm_id}"
+                success=False, algorithm_id=request.algorithm_id, error=f"Unknown algorithm: {request.algorithm_id}"
             )
     except Exception as e:
-        return ComputeResponse(
-            success=False,
-            algorithm_id=request.algorithm_id,
-            error=str(e)
-        )
+        return ComputeResponse(success=False, algorithm_id=request.algorithm_id, error=str(e))
 
 
-async def _process_deep_learning_baseline(
-    data: Any,
-    metadata: Dict[str, Any]
-) -> ComputeResponse:
+async def _process_deep_learning_baseline(data: Any, metadata: Dict[str, Any]) -> ComputeResponse:
     """
     Deep learning baseline correction.
 
@@ -114,14 +106,11 @@ async def _process_deep_learning_baseline(
             "method": "deep_learning_baseline_v1",
             "gpu_accelerated": True,
             "model_version": "1.0.0",
-        }
+        },
     )
 
 
-async def _process_transformer_peak_picking(
-    data: Any,
-    metadata: Dict[str, Any]
-) -> ComputeResponse:
+async def _process_transformer_peak_picking(data: Any, metadata: Dict[str, Any]) -> ComputeResponse:
     """
     Transformer-based peak picking.
 
@@ -146,5 +135,5 @@ async def _process_transformer_peak_picking(
                 {"position": 2980, "intensity": 0.6, "confidence": 0.95, "assignment": "C-H stretch"},
             ],
             "peak_count": 2,
-        }
+        },
     )

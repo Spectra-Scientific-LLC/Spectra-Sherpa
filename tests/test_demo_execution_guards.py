@@ -26,15 +26,17 @@ def _find_route(path: str, method: str = "POST") -> APIRoute:
 def _has_demo_guard(route: APIRoute) -> bool:
     for dep in route.dependant.dependencies:
         call = dep.call
-        if call and getattr(call, "__name__", None) == "_guard" and getattr(call, "__module__", "") == "spectra_sherpa.app.api.deps":
+        if (
+            call
+            and getattr(call, "__name__", None) == "_guard"
+            and getattr(call, "__module__", "") == "spectra_sherpa.app.api.deps"
+        ):
             return True
     return False
 
 
 @pytest.fixture
-async def auth_client(
-    test_session: AsyncSession, test_user: User
-) -> AsyncGenerator[AsyncClient, None]:
+async def auth_client(test_session: AsyncSession, test_user: User) -> AsyncGenerator[AsyncClient, None]:
     """HTTP client authenticated as test_user."""
 
     async def override_get_session():
@@ -46,9 +48,7 @@ async def auth_client(
     app.dependency_overrides[get_session] = override_get_session
     app.dependency_overrides[get_current_user] = override_get_current_user
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
 
     app.dependency_overrides.clear()

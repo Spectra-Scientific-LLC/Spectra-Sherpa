@@ -1,86 +1,102 @@
-# Contributor License Agreement (Copyright Assignment)
+# Spectra Sherpa — Individual Contributor License Agreement
 
-Important: This is a project template intended for review by legal counsel.
+## Harmony Individual CLA (HA-CLA-I-E v1.0) — Exclusive License Grant
+
+**Important:** This CLA replaces copyright assignment with an exclusive license
+grant. You retain copyright ownership of your contributions.
 
 This Contributor License Agreement ("Agreement") is entered into between:
 
-- **Assignee**: Spectra Scientific LLC, a [STATE] limited liability company,
-  with principal place of business at [ADDRESS] ("Spectra")
-- **Contributor**: The individual or legal entity identified in the signature
-  block ("You")
+- **Us**: Spectra Scientific LLC ("Spectra"), the steward of the Spectra Sherpa
+  project at https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa
+- **You**: The individual identified in the signature block below
 
 Effective date: the date You submit this Agreement (the "Effective Date").
 
+---
+
 ## 1. Definitions
 
-1. **Contribution** means any original work of authorship, including source
+1. **"Contribution"** means any original work of authorship, including source
    code, object code, documentation, tests, build scripts, data schemas,
    examples, and other material submitted by You to Spectra for inclusion in
-   the SpectraSherpa project.
-2. **Project** means SpectraSherpa and its related repositories and releases.
-3. **Submission** means any communication to Spectra intended for inclusion in
+   the Project.
+2. **"Project"** means Spectra Sherpa and its related repositories and releases.
+3. **"Submission"** means any communication to Spectra intended for inclusion in
    the Project, including pull requests, patches, commits, attachments, and
    emailed diffs.
 
-## 2. Assignment of Copyright
+## 2. Grant of Rights
 
-Subject to the terms of this Agreement, You hereby irrevocably assign and
-transfer to Spectra, and Spectra hereby accepts, all right, title, and interest
-worldwide in and to the copyright (and all renewals, extensions, reversions,
-and restorations thereof) in each accepted Contribution, including all rights
-to enforce, sublicense, and otherwise exploit such rights.
+### 2.1 Copyright License
 
-This assignment applies when Spectra accepts the Contribution into the Project.
+Subject to the terms of this Agreement, You hereby grant to Spectra a
+worldwide, royalty-free, **exclusive**, perpetual, and irrevocable license,
+with the right to transfer and sublicense, under Your copyright covering the
+Contribution, to use, copy, modify, create derivative works of, publicly
+display, publicly perform, distribute, and sublicense the Contribution under
+any license terms, including without limitation:
 
-## 3. Moral Rights; Further Assurances
+(a) open source licenses such as the GNU Affero General Public License v3.0
+    and the BSD 3-Clause License; and
 
-1. To the maximum extent permitted by applicable law, You waive and agree not
-   to assert any moral rights or similar rights in accepted Contributions
-   against Spectra, its licensees, or downstream recipients.
-2. You agree to execute documents and provide reasonable assistance needed to
-   perfect, record, maintain, or enforce the rights assigned under this
-   Agreement.
+(b) proprietary, commercial, or binary-only licenses.
 
-## 4. Fallback License if Assignment Is Restricted
+### 2.2 Patent License
 
-If applicable law prevents full assignment of any right in a Contribution, You
-grant Spectra an irrevocable, perpetual, worldwide, exclusive, royalty-free,
-fully paid, sublicensable, and transferable license to use, reproduce, modify,
-create derivative works of, perform, display, distribute, enforce, and
-otherwise exploit that Contribution as if Spectra were the owner.
+Subject to the terms of this Agreement, You hereby grant to Spectra a
+worldwide, royalty-free, non-exclusive, perpetual, and irrevocable patent
+license, with the right to transfer and sublicense, to make, have made, use,
+offer to sell, sell, import, and otherwise transfer the Contribution, where
+such license applies only to those patent claims licensable by You that are
+necessarily infringed by Your Contribution alone or by combination of Your
+Contribution with the Project.
 
-## 5. Patent License
+### 2.3 Moral Rights
 
-You grant Spectra and its sublicensees a perpetual, worldwide, non-exclusive,
-royalty-free patent license under patent claims You can license that are
-necessarily infringed by Your accepted Contribution(s), alone or in combination
-with the Project.
+To the fullest extent permitted under applicable law, You waive and agree not
+to assert moral rights or similar rights in Your Contribution against Spectra,
+its licensees, transferees, or downstream recipients.
 
-## 6. Outbound Licensing and AGPL
+### 2.4 Spectra's Rights
 
-1. Spectra currently distributes the Project under the GNU Affero General Public
-   License, version 3.0 (or later), as designated by Spectra.
+You acknowledge that Spectra is not obligated to use Your Contribution as
+part of the Project and may decide to include any Contribution it considers
+appropriate.
+
+### 2.5 Reservation of Rights
+
+Any rights not expressly granted in this Agreement are reserved by You.
+**You retain copyright ownership of Your Contributions.** This license grant
+does not affect Your right to use Your own Contributions for any purpose.
+
+## 3. Outbound Licensing
+
+1. Spectra currently distributes the Project under the GNU Affero General
+   Public License, version 3.0 (or later), as designated by Spectra.
 2. Spectra may enforce license compliance and may offer additional or
    alternative licensing terms for the Project at Spectra's discretion.
 3. Nothing in this Agreement limits rights granted to recipients under the
    applicable open source license for distributed versions of the Project.
 
-## 7. Representations and Warranties
+## 4. Representations and Warranties
 
 You represent and warrant that:
 
 1. You have the legal right and authority to enter into this Agreement.
 2. Each Submission is Your original work, or You have sufficient rights to
-   submit it and assign rights under this Agreement.
+   submit it and grant the license under this Agreement.
 3. Your Submission does not knowingly infringe third-party intellectual
    property rights.
 4. You will identify any third-party code, data, or content included in a
    Submission and its applicable license terms.
-5. If You are submitting on behalf of an employer or another entity, You have
-   obtained all required permissions, and that entity is bound by this
-   Agreement.
+5. If You are employed and Your employer has rights to intellectual property
+   that You create, You have received permission to make Contributions on
+   behalf of that employer, or Your employer has waived such rights for Your
+   Contributions. If You are contributing on behalf of an entity, see
+   [CLA-entity.md](CLA-entity.md) instead.
 
-## 8. Excluded Contributions
+## 5. Excluded Contributions
 
 You may exclude specific materials from this Agreement only if both:
 
@@ -89,76 +105,38 @@ You may exclude specific materials from this Agreement only if both:
 
 Absent such written agreement, all accepted Contributions are covered.
 
-## 9. No Obligation to Accept Contributions
+## 6. No Obligation to Accept Contributions
 
 Spectra has no obligation to review, accept, or distribute any Submission.
 
-## 10. Disclaimer
+## 7. Disclaimer
 
-Except as expressly stated in Section 7, Contributions are provided "AS IS",
+Except as expressly stated in Section 4, Contributions are provided "AS IS",
 without warranties of any kind, express or implied.
 
-## 11. Governing Law and Venue
+## 8. Governing Law and Venue
 
-This Agreement is governed by the laws of [GOVERNING STATE], excluding conflict
-of law rules. The parties consent to exclusive venue in the state or federal
-courts located in [COUNTY, STATE], unless otherwise required by law.
+This Agreement is governed by the laws of the State of Delaware, excluding
+conflict of law rules. The parties consent to exclusive venue in the state or
+federal courts located in Delaware, unless otherwise required by law.
 
-## 12. Entire Agreement; Electronic Signature
+## 9. Entire Agreement; Electronic Signature
 
 1. This Agreement is the entire agreement between the parties on its subject.
 2. If any provision is unenforceable, the remaining provisions remain in full
    effect.
-3. Electronic signatures and click-through acceptance are valid and binding.
+3. Electronic signatures and click-through acceptance (including commenting on
+   a pull request) are valid and binding.
 
 ---
 
-## Signature Block (Individual Contributor)
+## Signature Block
 
-Name: ______________________________________
-
-Email: _____________________________________
-
-GitHub Username: ____________________________
-
-Address: ___________________________________
-
-Country: ___________________________________
-
-Signature: __________________________________
-
-Date: ______________________________________
-
----
-
-## Signature Block (Entity / Corporate Contributor)
-
-Legal Entity Name: __________________________
-
-Jurisdiction of Formation: __________________
-
-Principal Address: __________________________
-
-Authorized Signatory Name: __________________
-
-Title: _____________________________________
-
-Email: _____________________________________
-
-Signature: __________________________________
-
-Date: ______________________________________
-
----
-
-## Project Maintainer Acceptance
-
-Accepted by Spectra Scientific LLC:
-
-Name: ______________________________________
-
-Title: _____________________________________
-
-Signature: __________________________________
-
-Date: ______________________________________
+| Field            | Value |
+|------------------|-------|
+| Name             |       |
+| Email            |       |
+| GitHub Username  |       |
+| Country          |       |
+| Signature        |       |
+| Date             |       |

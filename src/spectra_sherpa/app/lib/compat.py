@@ -10,16 +10,15 @@ NDDataset, this module should be removed.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import List, Optional
 
 import numpy as np
 
-from spectra_sherpa.app.lib.scp_compat import scp, NDDataset, HAS_SCP
+from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset
 
-from .spectral.dataset import create_spectral_dataset, SpectralUnit
-
+from .spectral.dataset import SpectralUnit, create_spectral_dataset
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # LEGACY DATA CLASSES (for compatibility)

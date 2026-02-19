@@ -4,19 +4,20 @@ API endpoints for workflow templates.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session
 from spectra_sherpa.app.models.user import User
-from spectra_sherpa.app.models.workflow_template import WorkflowTemplate
 from spectra_sherpa.app.models.workflow import Workflow
-from spectra_sherpa.app.models.workflow_node import WorkflowNode
 from spectra_sherpa.app.models.workflow_edge import WorkflowEdge
+from spectra_sherpa.app.models.workflow_node import WorkflowNode
+from spectra_sherpa.app.models.workflow_template import WorkflowTemplate
 from spectra_sherpa.app.schemas.workflows import WorkflowDetail
-from pydantic import BaseModel, ConfigDict, Field
-from datetime import datetime
 
 router = APIRouter(prefix="/workflow-templates")
 
@@ -48,9 +49,7 @@ class InstantiateTemplateRequest(BaseModel):
     """Schema for instantiating a template into a workflow."""
 
     workflow_name: str = Field(..., description="Name for the new workflow")
-    workflow_description: str | None = Field(
-        None, description="Optional description for the new workflow"
-    )
+    workflow_description: str | None = Field(None, description="Optional description for the new workflow")
 
 
 @router.get("", response_model=WorkflowTemplateListResponse)
@@ -63,15 +62,13 @@ async def list_templates(
     """List all active workflow templates, optionally filtered by category."""
 
     # Build query
-    query = select(WorkflowTemplate).where(WorkflowTemplate.is_active == True)
+    query = select(WorkflowTemplate).where(WorkflowTemplate.is_active.is_(True))
 
     if category:
         query = query.where(WorkflowTemplate.category == category)
 
     # Get total count
-    count_query = select(func.count(WorkflowTemplate.id)).where(
-        WorkflowTemplate.is_active == True
-    )
+    count_query = select(func.count(WorkflowTemplate.id)).where(WorkflowTemplate.is_active.is_(True))
     if category:
         count_query = count_query.where(WorkflowTemplate.category == category)
 
@@ -79,9 +76,7 @@ async def list_templates(
     total = count_result.scalar() or 0
 
     # Get templates
-    query = query.order_by(WorkflowTemplate.category, WorkflowTemplate.name).limit(
-        limit
-    ).offset(offset)
+    query = query.order_by(WorkflowTemplate.category, WorkflowTemplate.name).limit(limit).offset(offset)
     result = await session.execute(query)
     templates = result.scalars().all()
 
@@ -98,7 +93,7 @@ async def list_template_categories(
     """Get a list of all template categories."""
     query = (
         select(WorkflowTemplate.category)
-        .where(WorkflowTemplate.is_active == True)
+        .where(WorkflowTemplate.is_active.is_(True))
         .distinct()
         .order_by(WorkflowTemplate.category)
     )
@@ -114,9 +109,7 @@ async def get_template(
 ) -> WorkflowTemplateOut:
     """Get a specific workflow template by ID."""
     query = (
-        select(WorkflowTemplate)
-        .where(WorkflowTemplate.id == template_id)
-        .where(WorkflowTemplate.is_active == True)
+        select(WorkflowTemplate).where(WorkflowTemplate.id == template_id).where(WorkflowTemplate.is_active.is_(True))
     )
     result = await session.execute(query)
     template = result.scalar_one_or_none()
@@ -144,9 +137,7 @@ async def instantiate_template(
 
     # Get template
     template_query = (
-        select(WorkflowTemplate)
-        .where(WorkflowTemplate.id == template_id)
-        .where(WorkflowTemplate.is_active == True)
+        select(WorkflowTemplate).where(WorkflowTemplate.id == template_id).where(WorkflowTemplate.is_active.is_(True))
     )
     template_result = await session.execute(template_query)
     template = template_result.scalar_one_or_none()
@@ -159,8 +150,7 @@ async def instantiate_template(
     workflow = Workflow(
         user_id=user_id,
         name=payload.workflow_name,
-        description=payload.workflow_description
-        or f"Created from template: {template.name}",
+        description=payload.workflow_description or f"Created from template: {template.name}",
         status="draft",
         canvas_state=template_data.get("canvas_state", {}),
     )

@@ -8,7 +8,6 @@ import io
 import json
 import logging
 import zipfile
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response, StreamingResponse
@@ -18,13 +17,10 @@ from sqlalchemy.orm import selectinload
 
 from spectra_sherpa.app.api.deps import demo_guard, get_current_user, get_session
 from spectra_sherpa.app.models.experiment import Experiment
-from spectra_sherpa.app.models.experiment_file import ExperimentFile
 from spectra_sherpa.app.models.project import Project, ProjectVersion
 from spectra_sherpa.app.models.project_script import ProjectScript
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
-from spectra_sherpa.app.models.workflow_edge import WorkflowEdge
-from spectra_sherpa.app.models.workflow_node import WorkflowNode
 from spectra_sherpa.app.schemas.projects import (
     ExperimentBrief,
     ProjectCreate,
@@ -46,13 +42,10 @@ router = APIRouter(prefix="/projects")
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
-async def _get_project_for_user(
-    project_id: int, user_id: int, session: AsyncSession
-) -> Project:
+
+async def _get_project_for_user(project_id: int, user_id: int, session: AsyncSession) -> Project:
     """Load project with ownership check."""
-    query = select(Project).where(
-        Project.id == project_id, Project.user_id == user_id
-    )
+    query = select(Project).where(Project.id == project_id, Project.user_id == user_id)
     result = await session.execute(query)
     project = result.scalar_one_or_none()
     if project is None:
@@ -62,15 +55,9 @@ async def _get_project_for_user(
 
 async def _project_to_summary(project: Project, session: AsyncSession) -> ProjectSummary:
     """Build a ProjectSummary with aggregated counts."""
-    exp_count = await session.scalar(
-        select(func.count(Experiment.id)).where(Experiment.project_id == project.id)
-    )
-    wf_count = await session.scalar(
-        select(func.count(Workflow.id)).where(Workflow.project_id == project.id)
-    )
-    child_count = await session.scalar(
-        select(func.count(Project.id)).where(Project.parent_id == project.id)
-    )
+    exp_count = await session.scalar(select(func.count(Experiment.id)).where(Experiment.project_id == project.id))
+    wf_count = await session.scalar(select(func.count(Workflow.id)).where(Workflow.project_id == project.id))
+    child_count = await session.scalar(select(func.count(Project.id)).where(Project.parent_id == project.id))
     script_count = await session.scalar(
         select(func.count(ProjectScript.id)).where(ProjectScript.project_id == project.id)
     )
@@ -100,40 +87,42 @@ async def _project_to_detail(project: Project, session: AsyncSession) -> Project
 
     # Experiments
     exp_result = await session.execute(
-        select(Experiment)
-        .where(Experiment.project_id == project.id)
-        .options(selectinload(Experiment.files))
+        select(Experiment).where(Experiment.project_id == project.id).options(selectinload(Experiment.files))
     )
     experiments = [
         ExperimentBrief(
-            id=e.id, name=e.name, description=e.description,
+            id=e.id,
+            name=e.name,
+            description=e.description,
             file_count=len(e.files),
         )
         for e in exp_result.scalars().all()
     ]
 
     # Workflows
-    wf_result = await session.execute(
-        select(Workflow).where(Workflow.project_id == project.id)
-    )
+    wf_result = await session.execute(select(Workflow).where(Workflow.project_id == project.id))
     workflows = [
         WorkflowBrief(
-            id=w.id, name=w.name, description=w.description,
-            status=w.status, integrity_hash=w.integrity_hash,
+            id=w.id,
+            name=w.name,
+            description=w.description,
+            status=w.status,
+            integrity_hash=w.integrity_hash,
         )
         for w in wf_result.scalars().all()
     ]
 
     # Scripts
     script_result = await session.execute(
-        select(ProjectScript)
-        .where(ProjectScript.project_id == project.id)
-        .order_by(ProjectScript.priority)
+        select(ProjectScript).where(ProjectScript.project_id == project.id).order_by(ProjectScript.priority)
     )
     scripts = [
         ScriptBrief(
-            id=s.id, name=s.name, description=s.description,
-            language=s.language, priority=s.priority,
+            id=s.id,
+            name=s.name,
+            description=s.description,
+            language=s.language,
+            priority=s.priority,
             source_workflow_id=s.source_workflow_id,
             code_length=len(s.code),
         )
@@ -141,9 +130,7 @@ async def _project_to_detail(project: Project, session: AsyncSession) -> Project
     ]
 
     # Children
-    child_result = await session.execute(
-        select(Project).where(Project.parent_id == project.id)
-    )
+    child_result = await session.execute(select(Project).where(Project.parent_id == project.id))
     children = []
     for c in child_result.scalars().all():
         children.append(await _project_to_summary(c, session))
@@ -159,6 +146,7 @@ async def _project_to_detail(project: Project, session: AsyncSession) -> Project
 
 
 # ── CRUD ─────────────────────────────────────────────────────────────
+
 
 @router.post("", response_model=ProjectDetail, status_code=201)
 async def create_project(
@@ -251,18 +239,12 @@ async def delete_project(
 
     # SET NULL on linked experiments and workflows before cascade delete
     await session.execute(
-        select(Experiment)
-        .where(Experiment.project_id == project_id)
-        .execution_options(synchronize_session="fetch")
+        select(Experiment).where(Experiment.project_id == project_id).execution_options(synchronize_session="fetch")
     )
-    for exp in (await session.execute(
-        select(Experiment).where(Experiment.project_id == project_id)
-    )).scalars().all():
+    for exp in (await session.execute(select(Experiment).where(Experiment.project_id == project_id))).scalars().all():
         exp.project_id = None
 
-    for wf in (await session.execute(
-        select(Workflow).where(Workflow.project_id == project_id)
-    )).scalars().all():
+    for wf in (await session.execute(select(Workflow).where(Workflow.project_id == project_id))).scalars().all():
         wf.project_id = None
 
     await session.delete(project)
@@ -272,6 +254,7 @@ async def delete_project(
 
 
 # ── Link / Unlink ────────────────────────────────────────────────────
+
 
 @router.post("/{project_id}/experiments/{experiment_id}", response_model=ProjectDetail)
 async def link_experiment(
@@ -283,9 +266,7 @@ async def link_experiment(
     """Link an experiment to this project."""
     project = await _get_project_for_user(project_id, current_user.id, session)
     result = await session.execute(
-        select(Experiment).where(
-            Experiment.id == experiment_id, Experiment.user_id == current_user.id
-        )
+        select(Experiment).where(Experiment.id == experiment_id, Experiment.user_id == current_user.id)
     )
     experiment = result.scalar_one_or_none()
     if experiment is None:
@@ -333,9 +314,7 @@ async def link_workflow(
     """Link a workflow to this project."""
     project = await _get_project_for_user(project_id, current_user.id, session)
     result = await session.execute(
-        select(Workflow).where(
-            Workflow.id == workflow_id, Workflow.user_id == current_user.id
-        )
+        select(Workflow).where(Workflow.id == workflow_id, Workflow.user_id == current_user.id)
     )
     workflow = result.scalar_one_or_none()
     if workflow is None:
@@ -375,27 +354,27 @@ async def unlink_workflow(
 
 # ── Versioning / Save All ────────────────────────────────────────────
 
+
 async def _build_snapshot(project: Project, session: AsyncSession) -> dict:
     """Build a recursive snapshot of the project tree."""
     # Experiments with files
     exp_result = await session.execute(
-        select(Experiment)
-        .where(Experiment.project_id == project.id)
-        .options(selectinload(Experiment.files))
+        select(Experiment).where(Experiment.project_id == project.id).options(selectinload(Experiment.files))
     )
     experiments_snap = []
     for exp in exp_result.scalars().all():
-        experiments_snap.append({
-            "id": exp.id,
-            "name": exp.name,
-            "description": exp.description,
-            "file_count": len(exp.files),
-            "files": [
-                {"id": f.id, "file_path": f.file_path, "stage": f.stage,
-                 "file_type": f.file_type}
-                for f in exp.files
-            ],
-        })
+        experiments_snap.append(
+            {
+                "id": exp.id,
+                "name": exp.name,
+                "description": exp.description,
+                "file_count": len(exp.files),
+                "files": [
+                    {"id": f.id, "file_path": f.file_path, "stage": f.stage, "file_type": f.file_type}
+                    for f in exp.files
+                ],
+            }
+        )
 
     # Workflows with nodes and edges
     wf_result = await session.execute(
@@ -405,58 +384,58 @@ async def _build_snapshot(project: Project, session: AsyncSession) -> dict:
     )
     workflows_snap = []
     for wf in wf_result.scalars().all():
-        workflows_snap.append({
-            "id": wf.id,
-            "name": wf.name,
-            "description": wf.description,
-            "status": wf.status,
-            "integrity_hash": wf.integrity_hash,
-            "technique": wf.technique,
-            "sample_type": wf.sample_type,
-            "nodes": [
-                {
-                    "node_id": n.node_id,
-                    "node_type": n.node_type,
-                    "label": n.label,
-                    "parameters": n.parameters,
-                    "position_x": n.position_x,
-                    "position_y": n.position_y,
-                }
-                for n in wf.nodes
-            ],
-            "edges": [
-                {
-                    "from_node_id": e.from_node_id,
-                    "to_node_id": e.to_node_id,
-                    "from_output": e.from_output,
-                    "to_input": e.to_input,
-                }
-                for e in wf.edges
-            ],
-        })
+        workflows_snap.append(
+            {
+                "id": wf.id,
+                "name": wf.name,
+                "description": wf.description,
+                "status": wf.status,
+                "integrity_hash": wf.integrity_hash,
+                "technique": wf.technique,
+                "sample_type": wf.sample_type,
+                "nodes": [
+                    {
+                        "node_id": n.node_id,
+                        "node_type": n.node_type,
+                        "label": n.label,
+                        "parameters": n.parameters,
+                        "position_x": n.position_x,
+                        "position_y": n.position_y,
+                    }
+                    for n in wf.nodes
+                ],
+                "edges": [
+                    {
+                        "from_node_id": e.from_node_id,
+                        "to_node_id": e.to_node_id,
+                        "from_output": e.from_output,
+                        "to_input": e.to_input,
+                    }
+                    for e in wf.edges
+                ],
+            }
+        )
 
     # Scripts
     script_result = await session.execute(
-        select(ProjectScript)
-        .where(ProjectScript.project_id == project.id)
-        .order_by(ProjectScript.priority)
+        select(ProjectScript).where(ProjectScript.project_id == project.id).order_by(ProjectScript.priority)
     )
     scripts_snap = []
     for s in script_result.scalars().all():
-        scripts_snap.append({
-            "id": s.id,
-            "name": s.name,
-            "description": s.description,
-            "language": s.language,
-            "code": s.code,
-            "priority": s.priority,
-            "source_workflow_id": s.source_workflow_id,
-        })
+        scripts_snap.append(
+            {
+                "id": s.id,
+                "name": s.name,
+                "description": s.description,
+                "language": s.language,
+                "code": s.code,
+                "priority": s.priority,
+                "source_workflow_id": s.source_workflow_id,
+            }
+        )
 
     # Recursive children
-    child_result = await session.execute(
-        select(Project).where(Project.parent_id == project.id)
-    )
+    child_result = await session.execute(select(Project).where(Project.parent_id == project.id))
     children_snap = []
     for child in child_result.scalars().all():
         children_snap.append(await _build_snapshot(child, session))
@@ -487,8 +466,7 @@ async def save_project(
 
     # Determine next version number
     max_ver = await session.scalar(
-        select(func.max(ProjectVersion.version_number))
-        .where(ProjectVersion.project_id == project_id)
+        select(func.max(ProjectVersion.version_number)).where(ProjectVersion.project_id == project_id)
     )
     next_ver = (max_ver or 0) + 1
 
@@ -506,9 +484,7 @@ async def save_project(
     await session.commit()
     await session.refresh(version)
 
-    logger.info(
-        "Saved project '%s' version %s (id=%s)", project.name, next_ver, version.id
-    )
+    logger.info("Saved project '%s' version %s (id=%s)", project.name, next_ver, version.id)
     return ProjectVersionSummary.model_validate(version)
 
 
@@ -545,9 +521,7 @@ async def get_version(
     """Get a specific version with full snapshot."""
     await _get_project_for_user(project_id, current_user.id, session)
 
-    query = select(ProjectVersion).where(
-        ProjectVersion.id == version_id, ProjectVersion.project_id == project_id
-    )
+    query = select(ProjectVersion).where(ProjectVersion.id == version_id, ProjectVersion.project_id == project_id)
     result = await session.execute(query)
     version = result.scalar_one_or_none()
     if version is None:
@@ -557,6 +531,7 @@ async def get_version(
 
 
 # ── Export / Import ──────────────────────────────────────────────────
+
 
 @router.get("/{project_id}/export")
 async def export_project(
@@ -569,9 +544,7 @@ async def export_project(
     project = await _get_project_for_user(project_id, current_user.id, session)
 
     if version_id:
-        query = select(ProjectVersion).where(
-            ProjectVersion.id == version_id, ProjectVersion.project_id == project_id
-        )
+        query = select(ProjectVersion).where(ProjectVersion.id == version_id, ProjectVersion.project_id == project_id)
         result = await session.execute(query)
         version = result.scalar_one_or_none()
         if version is None:
@@ -590,13 +563,13 @@ async def export_project(
     return StreamingResponse(
         buf,
         media_type="application/zip",
-        headers={
-            "Content-Disposition": f'attachment; filename="{safe_name}.spectrapy"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}.spectrapy"'},
     )
 
 
-@router.post("/import", response_model=ProjectDetail, status_code=201, dependencies=[Depends(demo_guard("project_import"))])
+@router.post(
+    "/import", response_model=ProjectDetail, status_code=201, dependencies=[Depends(demo_guard("project_import"))]
+)
 async def import_project(
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session),

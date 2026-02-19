@@ -164,8 +164,7 @@ class SPCExtractor(BaseMetadataExtractor):
     def _extract_extra(self, meta: dict) -> dict:
         """Extract unrecognized metadata."""
         recognized = set()
-        for key_map in [self.INSTRUMENT_KEYS, self.ACQUISITION_KEYS,
-                        self.SAMPLE_KEYS, self.PROVENANCE_KEYS]:
+        for key_map in [self.INSTRUMENT_KEYS, self.ACQUISITION_KEYS, self.SAMPLE_KEYS, self.PROVENANCE_KEYS]:
             for keys in key_map.values():
                 recognized.update(k.lower() for k in keys)
 

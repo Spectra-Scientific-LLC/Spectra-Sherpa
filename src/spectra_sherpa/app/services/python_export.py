@@ -13,9 +13,9 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from spectra_sherpa.app.services.dag.graph_utils import Edge, topological_sort, build_input_map
-from spectra_sherpa.app.services.dag.node_base import node_registry
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP
+from spectra_sherpa.app.services.dag.graph_utils import Edge, build_input_map, topological_sort
+from spectra_sherpa.app.services.dag.node_base import node_registry
 
 if TYPE_CHECKING:
     from spectra_sherpa.app.models.workflow import Workflow
@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ExportValidationError:
     """Describes a node that cannot be exported."""
+
     node_id: str
     node_type: str
     reason: str
@@ -41,23 +42,25 @@ def validate_export(workflow: Workflow) -> list[ExportValidationError]:
     errors: list[ExportValidationError] = []
     for wf_node in workflow.nodes:
         try:
-            node = node_registry.create_node(
-                wf_node.node_type, wf_node.node_id, wf_node.parameters
-            )
+            node = node_registry.create_node(wf_node.node_type, wf_node.node_id, wf_node.parameters)
         except KeyError:
-            errors.append(ExportValidationError(
-                node_id=wf_node.node_id,
-                node_type=wf_node.node_type,
-                reason=f"Unknown node type: {wf_node.node_type}",
-            ))
+            errors.append(
+                ExportValidationError(
+                    node_id=wf_node.node_id,
+                    node_type=wf_node.node_type,
+                    reason=f"Unknown node type: {wf_node.node_type}",
+                )
+            )
             continue
 
         if not node.supports_python_export():
-            errors.append(ExportValidationError(
-                node_id=wf_node.node_id,
-                node_type=wf_node.node_type,
-                reason="Node does not support Python export yet",
-            ))
+            errors.append(
+                ExportValidationError(
+                    node_id=wf_node.node_id,
+                    node_type=wf_node.node_type,
+                    reason="Node does not support Python export yet",
+                )
+            )
     return errors
 
 
@@ -81,9 +84,7 @@ def generate_python_code(workflow: Workflow) -> str:
     # --- validate --------------------------------------------------------
     errors = validate_export(workflow)
     if errors:
-        details = "; ".join(
-            f"{e.node_id} ({e.node_type}): {e.reason}" for e in errors
-        )
+        details = "; ".join(f"{e.node_id} ({e.node_type}): {e.reason}" for e in errors)
         raise ValueError(f"Workflow contains nodes that cannot be exported: {details}")
 
     # --- normalise edges -------------------------------------------------
@@ -104,9 +105,7 @@ def generate_python_code(workflow: Workflow) -> str:
     # --- instantiate nodes via registry ----------------------------------
     node_map = {}
     for wf_node in workflow.nodes:
-        node_map[wf_node.node_id] = node_registry.create_node(
-            wf_node.node_type, wf_node.node_id, wf_node.parameters
-        )
+        node_map[wf_node.node_id] = node_registry.create_node(wf_node.node_type, wf_node.node_id, wf_node.parameters)
 
     # --- backend mode (SCP vs numpy) --------------------------------------
     use_scp = HAS_SCP
@@ -143,8 +142,7 @@ def generate_python_code(workflow: Workflow) -> str:
     # Extra imports collected from nodes (deduplicated, skip already-present)
     base_imports = {"import numpy as np"}
     if use_scp:
-        base_imports |= {"import spectrochempy as scp",
-                         "from spectrochempy import NDDataset"}
+        base_imports |= {"import spectrochempy as scp", "from spectrochempy import NDDataset"}
     for imp in sorted(extra_imports - base_imports):
         # Skip SCP imports when not using SCP
         if not use_scp and "spectrochempy" in imp:
@@ -181,9 +179,7 @@ def generate_python_code(workflow: Workflow) -> str:
     # Generate code for each node in execution order
     for node_id in execution_order:
         node = node_map[node_id]
-        input_map = build_input_map(
-            node_id, edges, node.uses_named_ports()
-        )
+        input_map = build_input_map(node_id, edges, node.uses_named_ports())
 
         if not input_map:
             # Source node — no upstream edges
@@ -215,7 +211,7 @@ def generate_python_code(workflow: Workflow) -> str:
     lines.append("")
     lines.append(f'{indent}print("\\nWorkflow completed successfully!")')
     lines.append(f"{indent}for key, value in results.items():")
-    lines.append(f"{indent}    print(f\"  {{key}}: {{type(value).__name__}}\")")
+    lines.append(f'{indent}    print(f"  {{key}}: {{type(value).__name__}}")')
     lines.append("")
 
     return "\n".join(lines)

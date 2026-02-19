@@ -1,8 +1,8 @@
 """
-Meta dict conventions for NDDataset provenance and sample management.
+Meta dict conventions for AnalysisDataset provenance and sample management.
 
 This module standardizes how we store provenance and sample metadata in
-NDDataset.meta, enabling PLS_Toolbox-like functionality without a wrapper class.
+dataset.meta, enabling PLS_Toolbox-like functionality without a wrapper class.
 
 Meta Dict Schema:
     processing_history: List[Dict]  # Provenance chain
@@ -11,9 +11,8 @@ Meta Dict Schema:
 Usage in nodes:
     from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
 
-    async def execute(self, input_data: NDDataset) -> NDDataset:
+    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
         result = input_data.copy()
-        result.basc(lamb=1e5)
         add_processing_step(result, "baseline.als", {"lam": 1e5})
         return result
 """
@@ -22,15 +21,19 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
+
 import numpy as np
 
-from spectra_sherpa.app.lib.scp_compat import NDDataset, HAS_SCP
+from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
+from spectra_sherpa.app.lib.scp_compat import HAS_SCP
+
 HAS_NDDATASET = HAS_SCP
 
 
 # =============================================================================
 # Safe Coordinate Access
 # =============================================================================
+
 
 def safe_get_coord(dataset, coord_name: str):
     """Safely get a coordinate from NDDataset.
@@ -51,8 +54,9 @@ def safe_get_coord(dataset, coord_name: str):
 # Processing History (Provenance)
 # =============================================================================
 
+
 def add_processing_step(
-    dataset: NDDataset,
+    dataset: AnalysisDataset,
     operation: str,
     parameters: Dict[str, Any],
     node_id: Optional[str] = None,
@@ -64,7 +68,7 @@ def add_processing_step(
     Mutates the dataset in place. If processing_history doesn't exist, creates it.
 
     Args:
-        dataset: NDDataset to add history to
+        dataset: AnalysisDataset to add history to
         operation: Name of the operation (e.g., "baseline.als", "smooth.savgol")
         parameters: Dict of parameters used
         node_id: Optional DAG node ID
@@ -75,7 +79,7 @@ def add_processing_step(
         >>> dataset.basc(lamb=1e5, asymmetry=0.001)
         >>> add_processing_step(dataset, "baseline.als", {"lam": 1e5, "p": 0.001})
     """
-    if not hasattr(dataset, 'meta') or dataset.meta is None:
+    if not hasattr(dataset, "meta") or dataset.meta is None:
         dataset.meta = {}
 
     if "processing_history" not in dataset.meta:
@@ -105,19 +109,19 @@ def add_processing_step(
         pass
 
 
-def get_processing_history(dataset: NDDataset) -> List[Dict[str, Any]]:
+def get_processing_history(dataset: AnalysisDataset) -> List[Dict[str, Any]]:
     """
     Get processing history from dataset.meta.
 
     Returns:
         List of processing step dicts, or empty list if none
     """
-    if not hasattr(dataset, 'meta') or not dataset.meta:
+    if not hasattr(dataset, "meta") or not dataset.meta:
         return []
     return dataset.meta.get("processing_history", [])
 
 
-def copy_processing_history(source: NDDataset, target: NDDataset) -> None:
+def copy_processing_history(source: AnalysisDataset, target: AnalysisDataset) -> None:
     """
     Copy processing history from source to target dataset.
 
@@ -128,7 +132,7 @@ def copy_processing_history(source: NDDataset, target: NDDataset) -> None:
         source: Dataset to copy history from
         target: Dataset to copy history to
     """
-    if not hasattr(target, 'meta') or target.meta is None:
+    if not hasattr(target, "meta") or target.meta is None:
         target.meta = {}
 
     history = get_processing_history(source)
@@ -148,9 +152,9 @@ def copy_processing_history(source: NDDataset, target: NDDataset) -> None:
         pass
 
 
-def clear_processing_history(dataset: NDDataset) -> None:
+def clear_processing_history(dataset: AnalysisDataset) -> None:
     """Clear processing history (useful for creating derived datasets)."""
-    if hasattr(dataset, 'meta') and dataset.meta:
+    if hasattr(dataset, "meta") and dataset.meta:
         dataset.meta["processing_history"] = []
     # Sync AnalysisDataset.provenance
     try:
@@ -165,7 +169,8 @@ def clear_processing_history(dataset: NDDataset) -> None:
 # Sample Management (PLS_Toolbox-like Include/Exclude + Classes)
 # =============================================================================
 
-def ensure_samples_meta(dataset: NDDataset) -> Dict[str, Any]:
+
+def ensure_samples_meta(dataset: AnalysisDataset) -> Dict[str, Any]:
     """
     Ensure dataset.meta["samples"] exists with proper structure.
 
@@ -175,7 +180,7 @@ def ensure_samples_meta(dataset: NDDataset) -> Dict[str, Any]:
             classes: np.ndarray[str|int]    # Class labels per sample
             labels: List[str]               # Sample names/identifiers
     """
-    if not hasattr(dataset, 'meta') or dataset.meta is None:
+    if not hasattr(dataset, "meta") or dataset.meta is None:
         dataset.meta = {}
 
     if "samples" not in dataset.meta:
@@ -190,7 +195,7 @@ def ensure_samples_meta(dataset: NDDataset) -> Dict[str, Any]:
 
 
 def exclude_samples(
-    dataset: NDDataset,
+    dataset: AnalysisDataset,
     indices: Union[int, List[int], np.ndarray],
     reason: Optional[str] = None,
 ) -> None:
@@ -201,7 +206,7 @@ def exclude_samples(
     Use get_included_data() to get only included samples.
 
     Args:
-        dataset: NDDataset with 2D data
+        dataset: AnalysisDataset with 2D data
         indices: Sample index(es) to exclude
         reason: Optional reason for exclusion (stored in meta)
 
@@ -226,14 +231,14 @@ def exclude_samples(
 
 
 def include_samples(
-    dataset: NDDataset,
+    dataset: AnalysisDataset,
     indices: Union[int, List[int], np.ndarray, None] = None,
 ) -> None:
     """
     Mark samples as included. If indices=None, includes all samples.
 
     Args:
-        dataset: NDDataset with 2D data
+        dataset: AnalysisDataset with 2D data
         indices: Sample index(es) to include, or None for all
     """
     samples = ensure_samples_meta(dataset)
@@ -248,7 +253,7 @@ def include_samples(
         samples["include_mask"][indices] = True
 
 
-def get_included_data(dataset: NDDataset) -> NDDataset:
+def get_included_data(dataset: AnalysisDataset) -> AnalysisDataset:
     """
     Return a view/copy of dataset with only included samples.
 
@@ -256,7 +261,7 @@ def get_included_data(dataset: NDDataset) -> NDDataset:
     before operations if they want to respect the include/exclude mask.
 
     Returns:
-        NDDataset with only included samples
+        AnalysisDataset with only included samples
     """
     if dataset.ndim != 2:
         return dataset  # 1D data has no samples to exclude
@@ -270,14 +275,14 @@ def get_included_data(dataset: NDDataset) -> NDDataset:
     return dataset[mask]
 
 
-def get_include_mask(dataset: NDDataset) -> np.ndarray:
+def get_include_mask(dataset: AnalysisDataset) -> np.ndarray:
     """Get the include/exclude mask as a boolean array."""
     samples = ensure_samples_meta(dataset)
     return samples["include_mask"].copy()
 
 
 def set_class(
-    dataset: NDDataset,
+    dataset: AnalysisDataset,
     indices: Union[int, List[int], np.ndarray],
     class_label: Union[str, int],
 ) -> None:
@@ -285,7 +290,7 @@ def set_class(
     Assign a class label to samples.
 
     Args:
-        dataset: NDDataset with 2D data
+        dataset: AnalysisDataset with 2D data
         indices: Sample index(es) to assign class to
         class_label: Class label (string or integer)
 
@@ -302,25 +307,25 @@ def set_class(
     samples["classes"][indices] = class_label
 
 
-def get_classes(dataset: NDDataset) -> np.ndarray:
+def get_classes(dataset: AnalysisDataset) -> np.ndarray:
     """Get array of class labels for all samples."""
     samples = ensure_samples_meta(dataset)
     return samples["classes"].copy()
 
 
 def filter_by_class(
-    dataset: NDDataset,
+    dataset: AnalysisDataset,
     class_label: Union[str, int, List[Union[str, int]]],
-) -> NDDataset:
+) -> AnalysisDataset:
     """
     Return dataset filtered to only samples with given class(es).
 
     Args:
-        dataset: NDDataset with 2D data
+        dataset: Dataset with 2D data
         class_label: Class label(s) to filter by
 
     Returns:
-        NDDataset with only matching samples
+        AnalysisDataset with only matching samples
     """
     if dataset.ndim != 2:
         return dataset
@@ -335,7 +340,7 @@ def filter_by_class(
     return dataset[mask]
 
 
-def set_sample_labels(dataset: NDDataset, labels: List[str]) -> None:
+def set_sample_labels(dataset: AnalysisDataset, labels: List[str]) -> None:
     """Set sample labels/names."""
     samples = ensure_samples_meta(dataset)
     if len(labels) != dataset.shape[0]:
@@ -343,7 +348,7 @@ def set_sample_labels(dataset: NDDataset, labels: List[str]) -> None:
     samples["labels"] = list(labels)
 
 
-def get_sample_labels(dataset: NDDataset) -> List[str]:
+def get_sample_labels(dataset: AnalysisDataset) -> List[str]:
     """Get sample labels/names."""
     samples = ensure_samples_meta(dataset)
     return list(samples["labels"])
@@ -363,7 +368,7 @@ _TRANSMITTANCE_PATTERNS = {"transmittance", "trans", "t", "%t", "% transmittance
 _REFLECTANCE_PATTERNS = {"reflectance", "refl", "r", "%r", "% reflectance"}
 
 
-def detect_x_axis_type(dataset: NDDataset) -> Optional[str]:
+def detect_x_axis_type(dataset: AnalysisDataset) -> Optional[str]:
     """
     Detect X-axis type from units.
 
@@ -379,7 +384,7 @@ def detect_x_axis_type(dataset: NDDataset) -> Optional[str]:
     if x_coord is None:
         return None
 
-    units = str(x_coord.units).lower().strip() if hasattr(x_coord, 'units') else ""
+    units = str(x_coord.units).lower().strip() if hasattr(x_coord, "units") else ""
 
     if units in _WAVENUMBER_UNITS or ("cm" in units and "-1" in units):
         return "wavenumber"
@@ -391,7 +396,7 @@ def detect_x_axis_type(dataset: NDDataset) -> Optional[str]:
     return None
 
 
-def detect_spectral_technique(dataset: NDDataset) -> Optional[str]:
+def detect_spectral_technique(dataset: AnalysisDataset) -> Optional[str]:
     """
     Detect spectral technique from X-axis range and units.
 
@@ -406,7 +411,7 @@ def detect_spectral_technique(dataset: NDDataset) -> Optional[str]:
         return None
 
     # Check title for Raman indicator
-    if hasattr(dataset, 'title') and dataset.title and "raman" in str(dataset.title).lower():
+    if hasattr(dataset, "title") and dataset.title and "raman" in str(dataset.title).lower():
         return "Raman"
 
     axis_type = detect_x_axis_type(dataset)
@@ -419,7 +424,7 @@ def detect_spectral_technique(dataset: NDDataset) -> Optional[str]:
     if axis_type == "wavenumber":
         if x_min >= 100 and x_max <= 4000:
             # Check for Raman in units
-            units_str = str(dataset.units).lower() if hasattr(dataset, 'units') else ""
+            units_str = str(dataset.units).lower() if hasattr(dataset, "units") else ""
             if "raman" in units_str or x_min < 400:
                 return "Raman"
             return "IR"
@@ -434,14 +439,14 @@ def detect_spectral_technique(dataset: NDDataset) -> Optional[str]:
     return None
 
 
-def detect_data_quantity(dataset: NDDataset) -> Optional[str]:
+def detect_data_quantity(dataset: AnalysisDataset) -> Optional[str]:
     """
     Detect data quantity type from units.
 
     Returns:
         "Absorbance", "Transmittance", "Reflectance", "Intensity", or None
     """
-    if not hasattr(dataset, 'units') or not dataset.units:
+    if not hasattr(dataset, "units") or not dataset.units:
         return None
 
     units_lower = str(dataset.units).lower().strip()
@@ -458,7 +463,7 @@ def detect_data_quantity(dataset: NDDataset) -> Optional[str]:
     return None
 
 
-def get_spectral_info(dataset: NDDataset) -> Dict[str, Any]:
+def get_spectral_info(dataset: AnalysisDataset) -> Dict[str, Any]:
     """
     Get comprehensive spectral information for a dataset.
 
@@ -481,9 +486,9 @@ def get_spectral_info(dataset: NDDataset) -> Dict[str, Any]:
     if x_coord is not None:
         x_data = np.array(x_coord.data)
         info["x_range"] = (float(np.min(x_data)), float(np.max(x_data)))
-        info["x_units"] = str(x_coord.units) if hasattr(x_coord, 'units') else None
+        info["x_units"] = str(x_coord.units) if hasattr(x_coord, "units") else None
 
-    if hasattr(dataset, 'units'):
+    if hasattr(dataset, "units"):
         info["data_units"] = str(dataset.units)
 
     return info

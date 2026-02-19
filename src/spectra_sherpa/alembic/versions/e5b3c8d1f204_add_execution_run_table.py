@@ -5,6 +5,7 @@ Revises: d4a2f7b9e103
 Create Date: 2026-02-11 23:00:00.000000
 
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa

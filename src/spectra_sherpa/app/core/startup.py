@@ -14,14 +14,12 @@ from spectra_sherpa.app.db.init_db import init_db
 from spectra_sherpa.app.db.seeder import seed_data
 from spectra_sherpa.app.db.session import async_session
 from spectra_sherpa.app.models.background_job import BackgroundJob
-from spectra_sherpa.app.models.experiment import Experiment
-from spectra_sherpa.app.models.experiment_file import ExperimentFile
-from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.data_egress import UserEgressDefaults
+from spectra_sherpa.app.models.experiment import Experiment
+from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow_template import WorkflowTemplate
 from spectra_sherpa.app.services.experiments import (
     create_experiment,
-    add_experiment_file,
     metadata_path_for,
     write_metadata,
 )
@@ -46,11 +44,12 @@ def validate_concurrency_settings() -> None:
 
     # Check if we're likely in a multi-worker environment
     # (Gunicorn sets GUNICORN_ARBITER, Uvicorn doesn't have a reliable env var)
-    is_gunicorn = "GUNICORN_ARBITER" in os.environ or "gunicorn" in os.environ.get("SERVER_SOFTWARE", "")
+    _is_gunicorn = "GUNICORN_ARBITER" in os.environ or "gunicorn" in os.environ.get("SERVER_SOFTWARE", "")
 
     # Check for fcntl (file locking) availability
     try:
-        import fcntl
+        import fcntl  # noqa: F401 — imported to test availability, not used directly
+
         has_fcntl = True
     except ImportError:
         has_fcntl = False
@@ -104,8 +103,7 @@ def validate_security_settings() -> None:
         # Local mode: security validation is relaxed
         if settings.secret_key == DEFAULT_SECRET_KEY:
             logger.warning(
-                "Using default SECRET_KEY in local mode. "
-                "This is acceptable for development but not recommended."
+                "Using default SECRET_KEY in local mode. " "This is acceptable for development but not recommended."
             )
         return
 
@@ -114,7 +112,7 @@ def validate_security_settings() -> None:
         logger.critical(
             f"SECURITY ERROR: Cannot start in '{app_config.mode}' mode with default SECRET_KEY!\n"
             f"Please set a secure SECRET_KEY environment variable.\n"
-            f"Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+            f'Generate one with: python -c "import secrets; print(secrets.token_urlsafe(32))"'
         )
         sys.exit(1)
 
@@ -165,9 +163,7 @@ def validate_security_settings() -> None:
 def ensure_data_dirs() -> None:
     (settings.data_dir / "experiments").mkdir(parents=True, exist_ok=True)
     (settings.data_dir / "calibrations").mkdir(parents=True, exist_ok=True)
-    (settings.data_dir / "nist_library" / "downloaded").mkdir(
-        parents=True, exist_ok=True
-    )
+    (settings.data_dir / "nist_library" / "downloaded").mkdir(parents=True, exist_ok=True)
     (settings.data_dir / "user").mkdir(parents=True, exist_ok=True)
 
 
@@ -192,9 +188,7 @@ async def wait_for_database_ready(timeout_seconds: int = 300) -> None:
             last_error = exc
             await asyncio.sleep(1)
 
-    raise RuntimeError(
-        f"Database was not ready within {timeout_seconds} seconds."
-    ) from last_error
+    raise RuntimeError(f"Database was not ready within {timeout_seconds} seconds.") from last_error
 
 
 async def ensure_default_user() -> None:
@@ -256,12 +250,14 @@ async def link_hybrid_identity() -> None:
     # Cache subscription features on the advisor for feature flag derivation
     try:
         from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
+
         advisor = get_sherpa_advisor()
         advisor._subscription_features = result.entitlements
         advisor._subscription_plan = result.plan
         logger.info(
             "Hybrid mode: deployment key validated (plan=%s, label=%s)",
-            result.plan, result.label,
+            result.plan,
+            result.label,
         )
     except Exception as exc:
         logger.warning("Could not cache subscription features: %s", exc)
@@ -281,13 +277,12 @@ async def ensure_egress_defaults() -> None:
     """
     try:
         from spectra_sherpa.app.core.config import app_config
+
         is_connected = app_config.mode in ("hybrid", "enterprise")
 
         async with async_session() as session:
             result = await session.execute(
-                select(User)
-                .outerjoin(UserEgressDefaults)
-                .where(UserEgressDefaults.user_id.is_(None))
+                select(User).outerjoin(UserEgressDefaults).where(UserEgressDefaults.user_id.is_(None))
             )
             users_missing = result.scalars().all()
             if not users_missing:
@@ -357,7 +352,8 @@ def ensure_spectrochempy_data() -> None:
     - ``skip``: never download (use pre-baked images).
     """
     import os
-    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import TimeoutError as FutureTimeout
 
     policy = os.getenv("SCP_DATA_BOOTSTRAP", "auto").strip().lower()
     if policy not in {"auto", "required", "skip"}:
@@ -432,18 +428,13 @@ async def ensure_spectrochempy_testdata() -> None:
                 return
 
             # Check if reference experiment already exists
-            result = await session.execute(
-                select(Experiment).where(Experiment.name == "SpectrochemPy Test Data")
-            )
+            result = await session.execute(select(Experiment).where(Experiment.name == "SpectrochemPy Test Data"))
             experiment = result.scalar_one_or_none()
 
             # Count available test files and subdirectories (optimized single pass)
             subdirs = [d for d in spectrochempy_dir.iterdir() if d.is_dir()]
             allowed_extensions = {".csv", ".jdx", ".dx", ".spc", ".spa", ".spg"}
-            test_files = [
-                f for f in spectrochempy_dir.rglob("*")
-                if f.is_file() and f.suffix in allowed_extensions
-            ]
+            test_files = [f for f in spectrochempy_dir.rglob("*") if f.is_file() and f.suffix in allowed_extensions]
 
             # Check for reference PDF
             pdf_ref = spectrochempy_dir / "spectrochempy_testdata_reference.pdf"
@@ -456,7 +447,7 @@ async def ensure_spectrochempy_testdata() -> None:
                 "subdirectories": [d.name for d in subdirs],
                 "file_count": len(test_files),
                 "reference_pdf": str(pdf_ref) if has_pdf else None,
-                "instructions": "Files are accessible from ~/.spectrochempy/. Do not load all files into database."
+                "instructions": "Files are accessible from ~/.spectrochempy/. Do not load all files into database.",
             }
 
             # Create or update experiment
@@ -466,15 +457,22 @@ async def ensure_spectrochempy_testdata() -> None:
                     session=session,
                     user_id=user.id,
                     name="SpectrochemPy Test Data",
-                    description=f"Reference to test datasets in ~/.spectrochempy/ ({len(test_files)} files in {len(subdirs)} subdirectories)",
+                    description=(
+                        f"Reference to test datasets in ~/.spectrochempy/ "
+                        f"({len(test_files)} files in {len(subdirs)} subdirectories)"
+                    ),
                     metadata=metadata,
                 )
-                logger.info(f"SpectrochemPy reference created: {len(test_files)} files, {len(subdirs)} subdirs, PDF: {has_pdf}")
+                logger.info(
+                    f"SpectrochemPy reference created: {len(test_files)} files, {len(subdirs)} subdirs, PDF: {has_pdf}"
+                )
             else:
                 # Update metadata with current file counts
                 metadata_file = metadata_path_for(experiment.id)
                 write_metadata(metadata_file, metadata)
-                logger.info(f"SpectrochemPy reference updated: {len(test_files)} files, {len(subdirs)} subdirs, PDF: {has_pdf}")
+                logger.info(
+                    f"SpectrochemPy reference updated: {len(test_files)} files, {len(subdirs)} subdirs, PDF: {has_pdf}"
+                )
 
     except OperationalError:
         logger.warning("Skipping SpectrochemPy test data setup; database not initialized.")
@@ -495,7 +493,10 @@ async def ensure_workflow_templates() -> None:
             existing_template = result.scalar_one_or_none()
 
             if existing_template:
-                logger.info(f"Workflow templates already seeded ({await session.scalar(select(func.count(WorkflowTemplate.id)))} templates)")
+                logger.info(
+                    "Workflow templates already seeded "
+                    f"({await session.scalar(select(func.count(WorkflowTemplate.id)))} templates)"
+                )
                 return
 
             # Seed templates

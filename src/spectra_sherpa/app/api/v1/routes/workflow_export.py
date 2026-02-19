@@ -72,9 +72,7 @@ async def export_workflow_to_markdown(
     md_lines.append(f"- **Updated**: {workflow.updated_at.strftime('%Y-%m-%d %H:%M:%S')}")
 
     if workflow.last_executed_at:
-        md_lines.append(
-            f"- **Last Executed**: {workflow.last_executed_at.strftime('%Y-%m-%d %H:%M:%S')}"
-        )
+        md_lines.append(f"- **Last Executed**: {workflow.last_executed_at.strftime('%Y-%m-%d %H:%M:%S')}")
 
     if workflow.folder:
         md_lines.append(f"- **Folder**: {workflow.folder.name}")
@@ -91,7 +89,7 @@ async def export_workflow_to_markdown(
 
     # Version history
     if workflow.versions:
-        md_lines.append(f"\n## Version History\n")
+        md_lines.append("\n## Version History\n")
         md_lines.append(f"Total versions: {len(workflow.versions)}\n")
         md_lines.append("| Version | Date | Description |")
         md_lines.append("|---------|------|-------------|")
@@ -102,11 +100,11 @@ async def export_workflow_to_markdown(
 
     # Workflow notes
     if workflow.notes:
-        md_lines.append(f"\n## Workflow Notes\n")
+        md_lines.append("\n## Workflow Notes\n")
         md_lines.append(workflow.notes)
 
     # Nodes
-    md_lines.append(f"\n## Workflow Nodes\n")
+    md_lines.append("\n## Workflow Nodes\n")
     md_lines.append(f"Total nodes: {len(workflow.nodes)}\n")
 
     # Group nodes by type
@@ -139,7 +137,7 @@ async def export_workflow_to_markdown(
 
     # Edges (connections)
     if workflow.edges:
-        md_lines.append(f"\n## Workflow Connections\n")
+        md_lines.append("\n## Workflow Connections\n")
         md_lines.append(f"Total connections: {len(workflow.edges)}\n")
         md_lines.append("| From | To | Ports |")
         md_lines.append("|------|-----|-------|")
@@ -157,10 +155,8 @@ async def export_workflow_to_markdown(
             md_lines.append(f"| {from_label} | {to_label} | {ports} |")
 
     # Footer
-    md_lines.append(f"\n---\n")
-    md_lines.append(
-        f"*Exported from Workflow Builder on {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC*"
-    )
+    md_lines.append("\n---\n")
+    md_lines.append(f"*Exported from Workflow Builder on {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC*")
 
     return "\n".join(md_lines)
 
@@ -267,10 +263,14 @@ async def get_report_data(
 
     # Optionally include execution run data
     if parsed_run_ids:
-        run_query = select(ExecutionRun).where(
-            ExecutionRun.workflow_id == workflow_id,
-            ExecutionRun.id.in_(parsed_run_ids),
-        ).order_by(ExecutionRun.id)
+        run_query = (
+            select(ExecutionRun)
+            .where(
+                ExecutionRun.workflow_id == workflow_id,
+                ExecutionRun.id.in_(parsed_run_ids),
+            )
+            .order_by(ExecutionRun.id)
+        )
         run_result = await session.execute(run_query)
         runs = list(run_result.scalars().all())
 

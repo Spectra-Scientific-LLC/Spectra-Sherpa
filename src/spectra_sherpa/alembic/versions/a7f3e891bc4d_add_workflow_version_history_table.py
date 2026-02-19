@@ -5,14 +5,14 @@ Revises:
 Create Date: 2026-01-15 10:30:00.000000
 
 """
+
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = 'a7f3e891bc4d'
+revision = "a7f3e891bc4d"
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -127,13 +127,9 @@ def _ensure_workflow_node_table() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     if not _index_exists("workflow_node", "ix_workflow_node_workflow_id"):
-        op.create_index(
-            "ix_workflow_node_workflow_id", "workflow_node", ["workflow_id"], unique=False
-        )
+        op.create_index("ix_workflow_node_workflow_id", "workflow_node", ["workflow_id"], unique=False)
     if not _index_exists("workflow_node", "ix_workflow_node_node_type"):
-        op.create_index(
-            "ix_workflow_node_node_type", "workflow_node", ["node_type"], unique=False
-        )
+        op.create_index("ix_workflow_node_node_type", "workflow_node", ["node_type"], unique=False)
 
 
 def _ensure_workflow_edge_table() -> None:
@@ -148,7 +144,8 @@ def _ensure_workflow_edge_table() -> None:
         sa.Column("from_output", sa.String(length=100), nullable=False, server_default="default"),
         sa.Column("to_input", sa.String(length=100), nullable=False, server_default="default"),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
+            "created_at",
+            sa.DateTime(timezone=True),
             server_default=sa.text("(CURRENT_TIMESTAMP)"),
         ),
         sa.ForeignKeyConstraint(["workflow_id"], ["workflow.id"], ondelete="CASCADE"),
@@ -169,12 +166,16 @@ def _ensure_experiment_table() -> None:
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("metadata_path", sa.String(length=500), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
-            server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False,
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("(CURRENT_TIMESTAMP)"),
+            nullable=False,
         ),
         sa.Column(
-            "updated_at", sa.DateTime(timezone=True),
-            server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False,
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("(CURRENT_TIMESTAMP)"),
+            nullable=False,
         ),
         sa.ForeignKeyConstraint(["user_id"], ["user.id"]),
         sa.PrimaryKeyConstraint("id"),
@@ -197,7 +198,8 @@ def _ensure_experiment_file_table() -> None:
         sa.Column("stage", sa.String(length=50), nullable=False),
         sa.Column("file_size_bytes", sa.Integer(), nullable=True),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
+            "created_at",
+            sa.DateTime(timezone=True),
             server_default=sa.text("(CURRENT_TIMESTAMP)"),
         ),
         sa.ForeignKeyConstraint(["experiment_id"], ["experiment.id"]),
@@ -221,7 +223,8 @@ def _ensure_exp_version_table() -> None:
         sa.Column("manifest_path", sa.String(length=500), nullable=False),
         sa.Column("parent_version_id", sa.Integer(), nullable=True),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
+            "created_at",
+            sa.DateTime(timezone=True),
             server_default=sa.text("(CURRENT_TIMESTAMP)"),
         ),
         sa.ForeignKeyConstraint(["experiment_id"], ["experiment.id"]),
@@ -248,11 +251,13 @@ def _ensure_calibration_table() -> None:
         sa.Column("pathlength_m", sa.Float(), nullable=True),
         sa.Column("metadata_path", sa.String(length=500), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
+            "created_at",
+            sa.DateTime(timezone=True),
             server_default=sa.text("(CURRENT_TIMESTAMP)"),
         ),
         sa.Column(
-            "updated_at", sa.DateTime(timezone=True),
+            "updated_at",
+            sa.DateTime(timezone=True),
             server_default=sa.text("(CURRENT_TIMESTAMP)"),
         ),
         sa.ForeignKeyConstraint(["user_id"], ["user.id"]),
@@ -274,7 +279,8 @@ def _ensure_calibration_file_table() -> None:
         sa.Column("file_path", sa.String(length=500), nullable=False),
         sa.Column("concentration", sa.Float(), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
+            "created_at",
+            sa.DateTime(timezone=True),
             server_default=sa.text("(CURRENT_TIMESTAMP)"),
         ),
         sa.ForeignKeyConstraint(["calibration_id"], ["calibration.id"]),
@@ -298,7 +304,8 @@ def _ensure_cal_model_table() -> None:
         sa.Column("rmse", sa.Float(), nullable=True),
         sa.Column("is_active", sa.Boolean(), server_default="0", nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
+            "created_at",
+            sa.DateTime(timezone=True),
             server_default=sa.text("(CURRENT_TIMESTAMP)"),
         ),
         sa.ForeignKeyConstraint(["calibration_id"], ["calibration.id"]),
@@ -320,7 +327,8 @@ def _ensure_nist_library_table() -> None:
         sa.Column("resolution", sa.String(length=20), nullable=False),
         sa.Column("file_path", sa.String(length=500), nullable=False),
         sa.Column(
-            "downloaded_at", sa.DateTime(timezone=True),
+            "downloaded_at",
+            sa.DateTime(timezone=True),
             server_default=sa.text("(CURRENT_TIMESTAMP)"),
         ),
         sa.PrimaryKeyConstraint("id"),
@@ -349,8 +357,10 @@ def _ensure_background_job_table() -> None:
         sa.Column("compute_node", sa.String(length=100), nullable=True),
         sa.Column("last_heartbeat", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
-            server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False,
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("(CURRENT_TIMESTAMP)"),
+            nullable=False,
         ),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
@@ -384,7 +394,8 @@ def _ensure_sample_table() -> None:
         sa.Column("active", sa.Boolean(), server_default="1"),
         sa.Column("notes", sa.Text(), nullable=True),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
+            "created_at",
+            sa.DateTime(timezone=True),
             server_default=sa.text("(CURRENT_TIMESTAMP)"),
         ),
         sa.ForeignKeyConstraint(["experiment_id"], ["experiment.id"]),
@@ -406,7 +417,8 @@ def _ensure_mixture_table() -> None:
         sa.Column("basis", sa.String(length=20), server_default="volume"),
         sa.Column("notes", sa.Text(), nullable=True),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
+            "created_at",
+            sa.DateTime(timezone=True),
             server_default=sa.text("(CURRENT_TIMESTAMP)"),
         ),
         sa.ForeignKeyConstraint(["experiment_id"], ["experiment.id"]),
@@ -507,7 +519,8 @@ def _ensure_llm_config_table() -> None:
         sa.Column("model", sa.String(length=100), nullable=False, server_default="deepseek-chat"),
         sa.Column("verbose", sa.Boolean(), nullable=False, server_default="1"),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
+            "created_at",
+            sa.DateTime(timezone=True),
             server_default=sa.text("(CURRENT_TIMESTAMP)"),
         ),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
@@ -529,7 +542,8 @@ def _ensure_api_key_table() -> None:
         sa.Column("service_name", sa.String(length=100), nullable=False),
         sa.Column("key_encrypted", sa.Text(), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
+            "created_at",
+            sa.DateTime(timezone=True),
             server_default=sa.text("(CURRENT_TIMESTAMP)"),
         ),
         sa.Column("last_used_at", sa.DateTime(timezone=True), nullable=True),
@@ -610,8 +624,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # ### commands auto generated by Alembic - please adjust! ###
-    op.drop_index(op.f('ix_workflow_version_workflow_id'), table_name='workflow_version')
-    op.drop_index(op.f('ix_workflow_version_created_by'), table_name='workflow_version')
-    op.drop_index(op.f('ix_workflow_version_created_at'), table_name='workflow_version')
-    op.drop_table('workflow_version')
+    op.drop_index(op.f("ix_workflow_version_workflow_id"), table_name="workflow_version")
+    op.drop_index(op.f("ix_workflow_version_created_by"), table_name="workflow_version")
+    op.drop_index(op.f("ix_workflow_version_created_at"), table_name="workflow_version")
+    op.drop_table("workflow_version")
     # ### end Alembic commands ###

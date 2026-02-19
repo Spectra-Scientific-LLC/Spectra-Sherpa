@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import ForeignKey, Integer, JSON, String
+from sqlalchemy import JSON, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from spectra_sherpa.app.db.base import Base
@@ -12,9 +12,7 @@ class MatchedAcquisition(Base):
     __tablename__ = "matched_acquisition"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    experiment_id: Mapped[int] = mapped_column(
-        ForeignKey("experiment.id"), nullable=False, index=True
-    )
+    experiment_id: Mapped[int] = mapped_column(ForeignKey("experiment.id"), nullable=False, index=True)
     seq: Mapped[int | None] = mapped_column(Integer)
     filename: Mapped[str | None] = mapped_column(String(255))
     folder: Mapped[str | None] = mapped_column(String(255))

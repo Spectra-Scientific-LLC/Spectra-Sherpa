@@ -5,7 +5,7 @@ These nodes combine multiple species with concentration profiles to generate
 synthetic mixture spectra for training and validation purposes.
 
 Ground Truth Metadata:
-    When blending, the output NDDataset includes complete ground truth in meta["spectra"]:
+    When blending, the output AnalysisDataset includes complete ground truth in meta["spectra"]:
     - concentration_matrix: C matrix (n_timepoints x n_species)
     - pure_spectra_matrix: S matrix (n_wavenumbers x n_species)
     - species: List of species information
@@ -18,25 +18,25 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any, List, Dict, Optional
+
 import numpy as np
 
 logger = logging.getLogger(__name__)
-from spectra_sherpa.app.lib.scp_compat import scp, NDDataset
 from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo
-
-from ..node_base import Node, NodeMetadata, NodeParameter, register_node
 from spectra_sherpa.app.models.spectra_meta import (
-    SpectraMeta,
-    SpeciesInfo,
     ConcentrationProfile,
+    ConcentrationUnit,
     DataProvenance,
     ExperimentalConditions,
-    SourceType,
     PhysicalState,
-    ConcentrationUnit,
+    SourceType,
+    SpeciesInfo,
+    SpectraMeta,
 )
-from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
+from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, safe_get_coord
+
+from ..io_contracts import build_dataset_like, coerce_dataset, to_numpy_2d
+from ..node_base import Node, NodeMetadata, NodeParameter, register_node
 
 
 def generate_concentration_curve(
@@ -64,7 +64,7 @@ def generate_concentration_curve(
     if curve_type == "sigmoid":
         return max_concentration / (1 + np.exp(-(t - center) / width))
     elif curve_type == "gaussian":
-        return max_concentration * np.exp(-((t - center) ** 2) / (2 * width ** 2))
+        return max_concentration * np.exp(-((t - center) ** 2) / (2 * width**2))
     elif curve_type == "linear":
         return max_concentration * t
     elif curve_type == "exponential":
@@ -145,15 +145,15 @@ class BlendNode(Node):
         output_type="NDDataset",
     )
 
-    async def execute(self, *input_data: NDDataset) -> NDDataset:
+    async def execute(self, *input_data: AnalysisDataset) -> AnalysisDataset:
         """
         Execute blending of multiple spectra.
 
         Args:
-            *input_data: Variable number of NDDataset inputs (one per species)
+            *input_data: Variable number of AnalysisDataset inputs (one per species)
 
         Returns:
-            NDDataset containing the blended mixture spectra
+            AnalysisDataset containing the blended mixture spectra
         """
         n_timepoints = int(self.parameters.get("n_timepoints", 100))
         model_type = self.parameters.get("model_type", "linear")
@@ -164,17 +164,19 @@ class BlendNode(Node):
         if len(input_data) == 0:
             raise ValueError("At least one input spectrum is required")
 
-        # Validate all inputs are datasets and collect units
-        spectra = []
+        # Normalize all inputs to AnalysisDataset and collect units.
+        spectra = [
+            coerce_dataset(
+                inp,
+                input_name=f"input_data[{i}]",
+                dataset_error_message="Input must be NDDataset or AnalysisDataset",
+            )
+            for i, inp in enumerate(input_data)
+        ]
         input_units = []
-        for inp in input_data:
-            if isinstance(inp, (AnalysisDataset, NDDataset)):
-                spectra.append(inp)
-                # Collect units from each spectrum
-                if hasattr(inp, 'units') and inp.units:
-                    input_units.append(str(inp.units))
-            else:
-                raise ValueError(f"Input must be NDDataset or AnalysisDataset, got {type(inp)}")
+        for inp in spectra:
+            if hasattr(inp, "units") and inp.units:
+                input_units.append(str(inp.units))
 
         # Determine output units from input spectra
         # Inherit from first spectrum, or use "absorbance" as default
@@ -182,7 +184,9 @@ class BlendNode(Node):
             # Warn if units are inconsistent
             unique_units = list(set(input_units))
             if len(unique_units) > 1:
-                logger.warning(f"[BlendNode] Input spectra have different units: {unique_units}. Using first spectrum's units.")
+                logger.warning(
+                    f"[BlendNode] Input spectra have different units: {unique_units}. Using first spectrum's units."
+                )
             output_units = input_units[0]
         else:
             output_units = "absorbance"  # Default for typical FTIR blending
@@ -190,24 +194,17 @@ class BlendNode(Node):
         # Get wavenumber axis from first spectrum
         # Assume all spectra are aligned to the same wavenumber grid
         first_spectrum = spectra[0]
-        first_x_coord = safe_get_coord(first_spectrum, 'x')
-        if first_spectrum.ndim == 2:
-            # Multiple spectra in dataset, take the mean
-            reference_spectrum = np.mean(first_spectrum.data, axis=0)
-            wavenumbers = first_x_coord.data if first_x_coord is not None else np.arange(first_spectrum.shape[-1])
-        else:
-            reference_spectrum = first_spectrum.data
-            wavenumbers = first_x_coord.data if first_x_coord is not None else np.arange(len(reference_spectrum))
+        first_x_coord = safe_get_coord(first_spectrum, "x")
+        first_matrix = to_numpy_2d(first_spectrum, name="input_data[0]")
+        wavenumbers = first_x_coord.data if first_x_coord is not None else np.arange(first_matrix.shape[-1])
 
         n_wavenumbers = len(wavenumbers)
 
         # Build species matrix (each column is a pure spectrum)
         S = np.zeros((n_wavenumbers, len(spectra)))
         for i, spec in enumerate(spectra):
-            if spec.ndim == 2:
-                S[:, i] = np.mean(spec.data, axis=0)
-            else:
-                S[:, i] = spec.data
+            spec_matrix = to_numpy_2d(spec, name=f"input_data[{i}]")
+            S[:, i] = np.mean(spec_matrix, axis=0)
 
         # Generate concentration profiles
         C = np.zeros((n_timepoints, len(spectra)))
@@ -219,9 +216,7 @@ class BlendNode(Node):
                 max_conc = config.get("curve", {}).get("maxConcentration", 1.0)
                 center = config.get("curve", {}).get("center", 0.5)
                 width = config.get("curve", {}).get("width", 0.1)
-                C[:, i] = generate_concentration_curve(
-                    curve_type, n_timepoints, max_conc, center, width
-                )
+                C[:, i] = generate_concentration_curve(curve_type, n_timepoints, max_conc, center, width)
         else:
             # Default: generate diverse curves for each species
             for i in range(len(spectra)):
@@ -245,14 +240,21 @@ class BlendNode(Node):
             noise = np.random.randn(*D.shape) * noise_level * np.abs(D).mean()
             D += noise
 
-        # Create output dataset
-        dataset = AnalysisDataset(X=D)
+        # Create output dataset (explicitly reset inherited meta/target for synthesis output)
+        dataset = build_dataset_like(
+            D,
+            first_spectrum,
+            units=output_units,
+            title="Synthetic Mixture",
+            backend="numpy",
+            copy_history=False,
+        )
+        dataset.target = None
+        dataset.meta = {"processing_history": dataset.provenance}
         dataset.set_coordset(
             y=AxisInfo(values=np.arange(n_timepoints), title="Time", units="s"),
             x=AxisInfo(values=wavenumbers, title="Wavenumber", units="cm^-1"),
         )
-        dataset.title = "Synthetic Mixture"
-        dataset.units = output_units  # Inherit from input spectra, not hardcoded
 
         # ---------------------------------------------------------------------
         # Attach Ground Truth Metadata (Critical for MCR-ALS validation)
@@ -346,7 +348,7 @@ class BlendNode(Node):
             },
         )
 
-        # Store in NDDataset meta
+        # Store in AnalysisDataset meta
         dataset.meta["spectra"] = meta.model_dump(exclude_none=True)
 
         # Record processing step
@@ -402,23 +404,26 @@ class SpeciesSelectorNode(Node):
         output_type="NDDataset",
     )
 
-    async def execute(self, input_data: NDDataset) -> NDDataset:
+    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
         """
         Pass through the spectrum with species metadata.
 
         Args:
-            input_data: Input NDDataset
+            input_data: Input AnalysisDataset
 
         Returns:
-            NDDataset with species metadata attached
+            AnalysisDataset with species metadata attached
         """
-        if not isinstance(input_data, (AnalysisDataset, NDDataset)):
-            raise ValueError("Input must be an NDDataset or AnalysisDataset object")
+        input_ds = coerce_dataset(
+            input_data,
+            input_name="input_data",
+            dataset_error_message="Input must be an NDDataset or AnalysisDataset object",
+        )
 
         species_name = self.parameters.get("species_name", "Species")
         molar_abs = self.parameters.get("molar_absorptivity", 1.0)
 
-        result = input_data.copy()
+        result = input_ds.copy()
         result.title = species_name
 
         # Create structured metadata
@@ -430,8 +435,8 @@ class SpeciesSelectorNode(Node):
 
         # Check if input already has metadata
         existing_meta = None
-        if hasattr(input_data, "meta") and input_data.meta:
-            existing_dict = input_data.meta.get("spectra", {})
+        if hasattr(input_ds, "meta") and input_ds.meta:
+            existing_dict = input_ds.meta.get("spectra", {})
             if isinstance(existing_dict, dict) and existing_dict:
                 try:
                     existing_meta = SpectraMeta.model_validate(existing_dict)
@@ -452,7 +457,7 @@ class SpeciesSelectorNode(Node):
                 ),
             )
 
-        # Store in NDDataset meta
+        # Store in AnalysisDataset meta
         result.meta["spectra"] = meta.model_dump(exclude_none=True)
 
         # Also keep legacy fields for backwards compatibility
@@ -499,40 +504,41 @@ class MergeSpectraNode(Node):
         output_type="NDDataset",
     )
 
-    async def execute(self, *input_data: NDDataset) -> NDDataset:
+    async def execute(self, *input_data: AnalysisDataset) -> AnalysisDataset:
         """
         Merge multiple spectra into a single dataset.
 
         Args:
-            *input_data: Variable number of NDDataset inputs
+            *input_data: Variable number of AnalysisDataset inputs
 
         Returns:
-            NDDataset containing all spectra stacked
+            AnalysisDataset containing all spectra stacked
         """
         if len(input_data) == 0:
             raise ValueError("At least one input spectrum is required")
 
+        datasets = [
+            coerce_dataset(
+                inp,
+                input_name=f"input_data[{idx}]",
+                dataset_error_message="Input must be NDDataset or AnalysisDataset",
+            )
+            for idx, inp in enumerate(input_data)
+        ]
         spectra = []
         wavenumbers_list = []
         input_units = []
 
-        for inp in input_data:
-            if not isinstance(inp, (AnalysisDataset, NDDataset)):
-                raise ValueError(f"Input must be NDDataset or AnalysisDataset, got {type(inp)}")
-
+        for inp in datasets:
             # Collect units from each input
-            if hasattr(inp, 'units') and inp.units:
+            if hasattr(inp, "units") and inp.units:
                 input_units.append(str(inp.units))
 
-            inp_x_coord = safe_get_coord(inp, 'x')
-            if inp.ndim == 2:
-                # Multiple spectra in this dataset
-                for i in range(inp.shape[0]):
-                    spectra.append(inp.data[i])
-                wavenumbers_list.append(inp_x_coord.data if inp_x_coord is not None else np.arange(inp.shape[-1]))
-            else:
-                spectra.append(inp.data)
-                wavenumbers_list.append(inp_x_coord.data if inp_x_coord is not None else np.arange(len(inp.data)))
+            inp_x_coord = safe_get_coord(inp, "x")
+            inp_matrix = to_numpy_2d(inp, name="input_data")
+            for row in inp_matrix:
+                spectra.append(row)
+            wavenumbers_list.append(inp_x_coord.data if inp_x_coord is not None else np.arange(inp_matrix.shape[-1]))
 
         # Use the first wavenumber axis as reference
         ref_wn = wavenumbers_list[0]
@@ -544,19 +550,27 @@ class MergeSpectraNode(Node):
         if input_units:
             unique_units = list(set(input_units))
             if len(unique_units) > 1:
-                logger.warning(f"[MergeSpectraNode] Input spectra have different units: {unique_units}. Using first input's units.")
+                logger.warning(
+                    f"[MergeSpectraNode] Input spectra have different units: {unique_units}. Using first input's units."
+                )
             output_units = input_units[0]
         else:
             output_units = "absorbance"  # Default fallback
 
-        # Create output dataset
-        dataset = AnalysisDataset(X=stacked)
+        dataset = build_dataset_like(
+            stacked,
+            datasets[0],
+            units=output_units,
+            title="Merged Spectra",
+            backend="numpy",
+            copy_history=False,
+        )
+        dataset.target = None
+        dataset.meta = {"processing_history": dataset.provenance}
         dataset.set_coordset(
             y=AxisInfo(values=np.arange(len(spectra)), title="Sample"),
             x=AxisInfo(values=ref_wn, title="Wavenumber", units="cm^-1"),
         )
-        dataset.title = "Merged Spectra"
-        dataset.units = output_units  # Inherit from input spectra, not hardcoded
 
         # Record processing step
         add_processing_step(

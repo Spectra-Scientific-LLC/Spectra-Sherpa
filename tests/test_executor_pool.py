@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
 from unittest.mock import MagicMock
@@ -12,9 +11,8 @@ import pytest
 
 # Import node modules to trigger @register_node decorators
 import spectra_sherpa.app.services.dag.nodes.data  # noqa: F401
-import spectra_sherpa.app.services.dag.nodes.preprocessing  # noqa: F401
 import spectra_sherpa.app.services.dag.nodes.modeling  # noqa: F401
-
+import spectra_sherpa.app.services.dag.nodes.preprocessing  # noqa: F401
 from spectra_sherpa.app.services.dag.executor import (
     DAGExecutor,
     WorkflowEdge,
@@ -24,35 +22,42 @@ from spectra_sherpa.app.services.dag.executor import (
 )
 from spectra_sherpa.app.services.dag.node_base import NodeResult
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_snv_workflow(executor: DAGExecutor) -> str:
     """Add a DataSource -> SNV two-node workflow and return the SNV node id."""
-    executor.add_node(WorkflowNode(
-        node_id="src",
-        node_type="data.source",
-        parameters={"source": "sklearn", "dataset_name": "iris"},
-    ))
-    executor.add_node(WorkflowNode(
-        node_id="snv",
-        node_type="normalize.snv",
-        parameters={},
-    ))
-    executor.add_edge(WorkflowEdge(
-        from_node="src",
-        to_node="snv",
-        from_output="default",
-        to_input="default",
-    ))
+    executor.add_node(
+        WorkflowNode(
+            node_id="src",
+            node_type="data.source",
+            parameters={"source": "sklearn", "dataset_name": "iris"},
+        )
+    )
+    executor.add_node(
+        WorkflowNode(
+            node_id="snv",
+            node_type="normalize.snv",
+            parameters={},
+        )
+    )
+    executor.add_edge(
+        WorkflowEdge(
+            from_node="src",
+            to_node="snv",
+            from_output="default",
+            to_input="default",
+        )
+    )
     return "snv"
 
 
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestRunNodeInWorker:
     """Test the top-level worker function directly."""
@@ -121,10 +126,12 @@ class TestSanitizeForPool:
     def test_nddataset_converted(self):
         """If SCP is installed, NDDataset is converted to AnalysisDataset."""
         from spectra_sherpa.app.lib.scp_compat import HAS_SCP
+
         if not HAS_SCP:
             pytest.skip("SpectroChemPy not installed")
-        from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
         import spectrochempy as scp
+
+        from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
 
         nds = scp.NDDataset(np.random.default_rng(0).normal(size=(5, 10)))
         result = DAGExecutor._sanitize_for_pool(nds)
@@ -210,10 +217,13 @@ class TestPoolExecution:
     async def test_data_node_runs_in_process_with_pool(self, pool):
         """Data source nodes should execute in-process even with a pool."""
         executor = DAGExecutor(process_pool=pool)
-        executor.add_node(WorkflowNode(
-            "src", "data.source",
-            {"source": "sklearn", "dataset_name": "iris"},
-        ))
+        executor.add_node(
+            WorkflowNode(
+                "src",
+                "data.source",
+                {"source": "sklearn", "dataset_name": "iris"},
+            )
+        )
         results = await executor.execute()
         assert "src" in results
 

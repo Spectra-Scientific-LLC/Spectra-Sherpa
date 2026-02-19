@@ -4,13 +4,13 @@ import logging
 import os
 from collections.abc import Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Any, TypeAlias
 
 # Force non-interactive matplotlib backend before SpectroChemPy imports it.
 # The macOS backend requires the main thread, but FastAPI runs handlers
 # in worker threads — 'agg' works everywhere without a display.
 import matplotlib
+
 matplotlib.use("agg")
 
 from fastapi import APIRouter, FastAPI, Request, WebSocket, WebSocketDisconnect, status
@@ -18,31 +18,30 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from spectra_sherpa.app.api.v1.api import build_api_router
 from spectra_sherpa.app.api.deps import get_user_from_credentials
+from spectra_sherpa.app.api.v1.api import build_api_router
 from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.core.logging import configure_logging
+from spectra_sherpa.app.core.rate_limit_middleware import RateLimitMiddleware
 from spectra_sherpa.app.core.security import (
-    _is_loopback,
     api_key_middleware,
     get_client_host,
     is_valid_api_key,
     is_valid_bearer_token,
 )
-from spectra_sherpa.app.core.rate_limit_middleware import RateLimitMiddleware
 from spectra_sherpa.app.core.startup import (
     ensure_data_dirs,
     ensure_database_ready,
-    wait_for_database_ready,
     ensure_default_user,
     ensure_egress_defaults,
     ensure_spectrochempy_data,
-    link_hybrid_identity,
-    reconcile_stale_jobs,
     ensure_spectrochempy_testdata,
     ensure_workflow_templates,
+    link_hybrid_identity,
+    reconcile_stale_jobs,
     validate_concurrency_settings,
     validate_security_settings,
+    wait_for_database_ready,
 )
 from spectra_sherpa.app.db.session import async_session
 from spectra_sherpa.app.services.job_manager import job_manager
@@ -83,6 +82,7 @@ def get_cors_origins() -> list[str]:
 
     # In local mode, also allow the frontend to run on any port
     from spectra_sherpa.app.core.mode_policy import cors_allow_all
+
     if cors_allow_all():
         return ["*"]
 
@@ -123,7 +123,8 @@ def _try_leader_lock() -> bool:
         logger.warning(
             "Could not acquire leader lock %s: %s — running as follower. "
             "If no leader is running, delete the lock file and restart.",
-            lock_path, exc,
+            lock_path,
+            exc,
         )
         return False
 
@@ -159,6 +160,7 @@ def _normalize_router_mounts(extra_routers: list[RouterMount] | None) -> list[tu
 # Lifespan factory
 # ---------------------------------------------------------------------------
 
+
 def _make_lifespan(
     extra_startup: list[Callable[[], Awaitable[None]]] | None = None,
     extra_shutdown: list[Callable[[], Awaitable[None]]] | None = None,
@@ -170,10 +172,12 @@ def _make_lifespan(
     (shutdown).  Repo 2 uses these to register server-only hooks without
     forking this module.
     """
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         # === STARTUP ===
         import traceback as _tb
+
         _dag_pool = None
 
         try:
@@ -221,23 +225,29 @@ def _make_lifespan(
             # Register built-in MCP tools (import triggers @register_tool decorators)
             import spectra_sherpa.app.services.tools.builtin  # noqa: F401
             from spectra_sherpa.app.services.tools import tool_registry as _tool_reg
+
             logger.info("Registered %d built-in tool(s)", len(_tool_reg))
 
             # Discover and load third-party plugins (may register additional tools)
             from spectra_sherpa.app.services.plugin_loader import discover_plugins
+
             discover_plugins()
 
             # Start network health monitoring (HYBRID mode only)
             from spectra_sherpa.app.services.network_health import start_network_health_service
+
             await start_network_health_service()
 
             # Start folder watch polling service
             from spectra_sherpa.app.services.folder_watch_service import start_folder_watch_service
+
             await start_folder_watch_service()
 
             # Load the type registry (JSON schemas for port type validation)
             from pathlib import Path as _Path
+
             from spectra_sherpa.app.types import type_registry as _type_reg
+
             _type_reg.load(_Path(__file__).parent / "types")
             logger.info("Type registry: %d types loaded", len(_type_reg._types))
 
@@ -246,12 +256,13 @@ def _make_lifespan(
             # Phase 4: extension hooks (Repo 2 injects server-only startup here)
             if extra_startup:
                 logger.info("Phase 4: %d extension hook(s) ...", len(extra_startup))
-            for hook in (extra_startup or []):
+            for hook in extra_startup or []:
                 await hook()
 
             # Phase 5: DAG worker pool for CPU-bound node execution
             import multiprocessing
             from concurrent.futures import ProcessPoolExecutor
+
             from spectra_sherpa.app.services.dag.executor import set_default_pool
 
             pool_size = settings.dag_worker_pool_size
@@ -264,8 +275,7 @@ def _make_lifespan(
                 logger.info("DAG worker pool: %d processes (spawn)", pool_size)
             except (PermissionError, OSError) as exc:
                 logger.warning(
-                    "Could not create DAG worker pool (%s). "
-                    "CPU-bound nodes will run in-process.",
+                    "Could not create DAG worker pool (%s). " "CPU-bound nodes will run in-process.",
                     exc,
                 )
                 _dag_pool = None
@@ -273,7 +283,8 @@ def _make_lifespan(
             logger.info("Application startup complete")
         except Exception:
             logger.critical(
-                "STARTUP FAILED — lifespan exception:\n%s", _tb.format_exc(),
+                "STARTUP FAILED — lifespan exception:\n%s",
+                _tb.format_exc(),
             )
             raise
 
@@ -282,11 +293,12 @@ def _make_lifespan(
         # === SHUTDOWN ===
         # Extension shutdown hooks run first so server add-ons can still
         # access core services before they are torn down.
-        for hook in (extra_shutdown or []):
+        for hook in extra_shutdown or []:
             await hook()
 
         # Shut down DAG worker pool
         from spectra_sherpa.app.services.dag.executor import set_default_pool as _clear_pool
+
         _clear_pool(None)
         if _dag_pool is not None:
             _dag_pool.shutdown(wait=True, cancel_futures=True)
@@ -296,18 +308,22 @@ def _make_lifespan(
 
         # Stop folder watch polling
         from spectra_sherpa.app.services.folder_watch_service import stop_folder_watch_service
+
         await stop_folder_watch_service()
 
         # Stop network health monitoring
         from spectra_sherpa.app.services.network_health import stop_network_health_service
+
         await stop_network_health_service()
 
         # Close SpectraSherpa service
         from spectra_sherpa.app.services.spectrasherpa import close_spectrasherpa_service
+
         await close_spectrasherpa_service()
 
         # Close Sherpa advisor
         from spectra_sherpa.app.services.sherpa_advisor import close_sherpa_advisor
+
         await close_sherpa_advisor()
 
     return lifespan
@@ -316,6 +332,7 @@ def _make_lifespan(
 # ---------------------------------------------------------------------------
 # Frontend SPA mount
 # ---------------------------------------------------------------------------
+
 
 def _mount_frontend(app: FastAPI) -> None:
     """Mount the pre-built frontend if static/ exists.
@@ -352,6 +369,7 @@ def _mount_frontend(app: FastAPI) -> None:
 # WebSocket endpoint (standalone — registered on app inside create_app)
 # ---------------------------------------------------------------------------
 
+
 async def websocket_endpoint(websocket: WebSocket) -> None:
     # Import rate limiter here to avoid circular imports
     from spectra_sherpa.app.api.v1.routes.llm import _llm_rate_limiter
@@ -375,6 +393,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
     # Determine if auth is required for this connection (mode-dependent).
     from spectra_sherpa.app.core.mode_policy import requires_ws_auth as _requires_ws_auth
+
     ws_client_host = get_client_host(websocket)
     requires_ws_auth = _requires_ws_auth(ws_client_host)
 
@@ -441,7 +460,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             if action == "subscribe":
                 await handle_subscribe(websocket, payload, ws_user, _llm_rate_limiter, resolve_channel=_resolve_channel)
             elif action == "unsubscribe":
-                await handle_unsubscribe(websocket, payload, ws_user, _llm_rate_limiter, resolve_channel=_resolve_channel)
+                await handle_unsubscribe(
+                    websocket, payload, ws_user, _llm_rate_limiter, resolve_channel=_resolve_channel
+                )
             elif action == "llm_chat":
                 await handle_llm_chat(websocket, payload, ws_user, _llm_rate_limiter)
             elif action == "sherpa_sync":
@@ -467,6 +488,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 # ---------------------------------------------------------------------------
 # Application factory
 # ---------------------------------------------------------------------------
+
 
 def create_app(
     *,
@@ -499,7 +521,7 @@ def create_app(
     # Extra middleware (e.g. EnterpriseEnforcementMiddleware) is added first
     # so that CORSMiddleware wraps it — ensuring CORS headers appear even
     # on early 401/403 rejection responses from enforcement middleware.
-    for mw in (extra_middleware or []):
+    for mw in extra_middleware or []:
         mw(_app)
     _app.middleware("http")(api_key_middleware)
     _app.add_middleware(RateLimitMiddleware)

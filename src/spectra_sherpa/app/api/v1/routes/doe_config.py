@@ -5,10 +5,12 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session
-from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.doe_config import DOEConfig
+from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.schemas.doe_config import (
     DOEConfig as DOEConfigSchema,
+)
+from spectra_sherpa.app.schemas.doe_config import (
     DOEConfigCreate,
     DOEConfigList,
     DOEConfigUpdate,
@@ -26,9 +28,7 @@ async def list_doe_configs(
     user_id = current_user.id
 
     result = await session.execute(
-        select(DOEConfig)
-        .where(DOEConfig.user_id == user_id)
-        .order_by(DOEConfig.is_default.desc(), DOEConfig.name)
+        select(DOEConfig).where(DOEConfig.user_id == user_id).order_by(DOEConfig.is_default.desc(), DOEConfig.name)
     )
     configs = result.scalars().all()
     return DOEConfigList(configs=configs, total=len(configs))
@@ -43,12 +43,7 @@ async def get_doe_config(
     """Get a specific DOE configuration profile"""
     user_id = current_user.id
 
-    result = await session.execute(
-        select(DOEConfig).where(
-            DOEConfig.id == config_id,
-            DOEConfig.user_id == user_id
-        )
-    )
+    result = await session.execute(select(DOEConfig).where(DOEConfig.id == config_id, DOEConfig.user_id == user_id))
     config = result.scalar_one_or_none()
     if not config:
         raise HTTPException(status_code=404, detail="DOE config not found")
@@ -66,10 +61,8 @@ async def create_doe_config(
 
     # If this is marked as default, unset any existing default
     if config_data.is_default:
-        existing_defaults = (await session.execute(
-            select(DOEConfig)
-            .where(DOEConfig.user_id == user_id, DOEConfig.is_default == True)
-        )).scalars().all()
+        stmt = select(DOEConfig).where(DOEConfig.user_id == user_id, DOEConfig.is_default.is_(True))
+        existing_defaults = (await session.execute(stmt)).scalars().all()
 
         for existing in existing_defaults:
             existing.is_default = False
@@ -102,26 +95,24 @@ async def update_doe_config(
     """Update a DOE configuration profile"""
     user_id = current_user.id
 
-    result = await session.execute(
-        select(DOEConfig).where(
-            DOEConfig.id == config_id,
-            DOEConfig.user_id == user_id
-        )
-    )
+    result = await session.execute(select(DOEConfig).where(DOEConfig.id == config_id, DOEConfig.user_id == user_id))
     config = result.scalar_one_or_none()
     if not config:
         raise HTTPException(status_code=404, detail="DOE config not found")
 
     # If setting this as default, unset other defaults
     if config_data.is_default is True and not config.is_default:
-        existing_defaults = (await session.execute(
-            select(DOEConfig)
-            .where(
-                DOEConfig.user_id == user_id,
-                DOEConfig.is_default == True,
-                DOEConfig.id != config_id
+        existing_defaults = (
+            (
+                await session.execute(
+                    select(DOEConfig).where(
+                        DOEConfig.user_id == user_id, DOEConfig.is_default.is_(True), DOEConfig.id != config_id
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
 
         for existing in existing_defaults:
             existing.is_default = False
@@ -145,19 +136,12 @@ async def delete_doe_config(
     """Delete a DOE configuration profile"""
     user_id = current_user.id
 
-    result = await session.execute(
-        select(DOEConfig).where(
-            DOEConfig.id == config_id,
-            DOEConfig.user_id == user_id
-        )
-    )
+    result = await session.execute(select(DOEConfig).where(DOEConfig.id == config_id, DOEConfig.user_id == user_id))
     config = result.scalar_one_or_none()
     if not config:
         raise HTTPException(status_code=404, detail="DOE config not found")
 
-    await session.execute(
-        delete(DOEConfig).where(DOEConfig.id == config_id)
-    )
+    await session.execute(delete(DOEConfig).where(DOEConfig.id == config_id))
     await session.commit()
     return None
 
@@ -170,11 +154,7 @@ async def get_default_config(
     """Get the default DOE configuration profile for the current user"""
     user_id = current_user.id
 
-    result = await session.execute(
-        select(DOEConfig).where(
-            DOEConfig.user_id == user_id,
-            DOEConfig.is_default == True
-        )
-    )
+    stmt = select(DOEConfig).where(DOEConfig.user_id == user_id, DOEConfig.is_default.is_(True))
+    result = await session.execute(stmt)
     config = result.scalar_one_or_none()
     return config

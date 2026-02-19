@@ -145,14 +145,14 @@ class FolderWatchService:
 
                 logger.info(
                     "Watch '%s': found %d new file(s) in %s",
-                    watch.name, len(files), watch.folder_path,
+                    watch.name,
+                    len(files),
+                    watch.folder_path,
                 )
 
                 # Load workflow with graph
                 try:
-                    workflow = await load_workflow_with_graph(
-                        session, watch.workflow_id, watch.user_id
-                    )
+                    workflow = await load_workflow_with_graph(session, watch.workflow_id, watch.user_id)
                 except ValueError as exc:
                     watch.last_error = str(exc)
                     watch.last_poll_at = datetime.now(timezone.utc)
@@ -194,6 +194,7 @@ class FolderWatchService:
 
                 for file_path in files:
                     import time
+
                     start_ms = time.monotonic()
 
                     try:
@@ -243,7 +244,9 @@ class FolderWatchService:
                         error_count += 1
                         logger.warning(
                             "Watch '%s': failed to process %s: %s",
-                            watch.name, file_path.name, exc,
+                            watch.name,
+                            file_path.name,
+                            exc,
                         )
 
                     # Mark file as processed (keyed by full path for uniqueness)
@@ -267,7 +270,10 @@ class FolderWatchService:
 
                 logger.info(
                     "Watch '%s': processed %d/%d files (run_id=%d)",
-                    watch.name, success_count, len(files), run.id,
+                    watch.name,
+                    success_count,
+                    len(files),
+                    run.id,
                 )
 
             except Exception as exc:

@@ -18,10 +18,10 @@ import pytest
 
 from spectra_sherpa.app.core.config import AppConfig, LLMConfig
 
-
 # ---------------------------------------------------------------------------
 # Helpers: build AppConfig instances for each mode without env var side-effects
 # ---------------------------------------------------------------------------
+
 
 def _make_config(
     mode: str = "local",
@@ -186,6 +186,7 @@ class TestIsEgressEnabled:
         cfg = _make_config(mode="local")
         with patch("spectra_sherpa.app.core.security.app_config", cfg):
             from spectra_sherpa.app.core.security import is_egress_enabled
+
             assert is_egress_enabled() is False
 
     def test_hybrid_egress_enabled_when_healthy(self):
@@ -194,9 +195,12 @@ class TestIsEgressEnabled:
         mock_health = MagicMock()
         mock_health.is_degraded = False
 
-        with patch("spectra_sherpa.app.core.security.app_config", cfg), \
-             patch("spectra_sherpa.app.services.network_health.get_network_health_service", return_value=mock_health):
+        with (
+            patch("spectra_sherpa.app.core.security.app_config", cfg),
+            patch("spectra_sherpa.app.services.network_health.get_network_health_service", return_value=mock_health),
+        ):
             from spectra_sherpa.app.core.security import is_egress_enabled
+
             assert is_egress_enabled() is True
 
     def test_hybrid_egress_disabled_when_degraded(self):
@@ -205,9 +209,12 @@ class TestIsEgressEnabled:
         mock_health = MagicMock()
         mock_health.is_degraded = True
 
-        with patch("spectra_sherpa.app.core.security.app_config", cfg), \
-             patch("spectra_sherpa.app.services.network_health.get_network_health_service", return_value=mock_health):
+        with (
+            patch("spectra_sherpa.app.core.security.app_config", cfg),
+            patch("spectra_sherpa.app.services.network_health.get_network_health_service", return_value=mock_health),
+        ):
             from spectra_sherpa.app.core.security import is_egress_enabled
+
             assert is_egress_enabled() is False
 
     def test_enterprise_egress_enabled(self):
@@ -215,6 +222,7 @@ class TestIsEgressEnabled:
         cfg = _make_config(mode="enterprise", egress_enabled=True)
         with patch("spectra_sherpa.app.core.security.app_config", cfg):
             from spectra_sherpa.app.core.security import is_egress_enabled
+
             assert is_egress_enabled() is True
 
 
@@ -231,6 +239,7 @@ class TestExportAllowed:
         """Local mode: exports always allowed (single-user assumption)."""
         with patch("spectra_sherpa.app.core.mode_policy.app_config", _make_config(mode="local")):
             from spectra_sherpa.app.core.security import check_export_allowed
+
             result = await check_export_allowed(user=MagicMock())
             assert result is True
 
@@ -242,6 +251,7 @@ class TestExportAllowed:
         user_allowed.egress_defaults = MagicMock(allow_export=True)
         with patch("spectra_sherpa.app.core.mode_policy.app_config", _make_config(mode="enterprise")):
             from spectra_sherpa.app.core.security import check_export_allowed
+
             assert await check_export_allowed(user=user_allowed) is True
 
         # User with export denied
@@ -256,6 +266,7 @@ class TestExportAllowed:
         for mode in ("local", "hybrid", "enterprise"):
             with patch("spectra_sherpa.app.core.mode_policy.app_config", _make_config(mode=mode)):
                 from spectra_sherpa.app.core.security import check_export_allowed
+
                 assert await check_export_allowed(user=None) is True
 
 
@@ -276,26 +287,26 @@ class TestAuthMiddleware:
         assert _is_loopback("192.168.1.1") is False
         assert _is_loopback(None) is False  # fail closed
 
-    @pytest.mark.parametrize("mode,client_host,expected_requires_auth", [
-        # Local mode: never requires WS auth
-        ("local", "127.0.0.1", False),
-        ("local", "192.168.1.1", False),
-        # Hybrid mode: loopback is exempt, remote requires auth
-        ("hybrid", "127.0.0.1", False),
-        ("hybrid", "192.168.1.1", True),
-        # Enterprise mode: always requires auth
-        ("enterprise", "127.0.0.1", True),
-        ("enterprise", "192.168.1.1", True),
-    ])
+    @pytest.mark.parametrize(
+        "mode,client_host,expected_requires_auth",
+        [
+            # Local mode: never requires WS auth
+            ("local", "127.0.0.1", False),
+            ("local", "192.168.1.1", False),
+            # Hybrid mode: loopback is exempt, remote requires auth
+            ("hybrid", "127.0.0.1", False),
+            ("hybrid", "192.168.1.1", True),
+            # Enterprise mode: always requires auth
+            ("enterprise", "127.0.0.1", True),
+            ("enterprise", "192.168.1.1", True),
+        ],
+    )
     def test_ws_auth_requirement_matrix(self, mode: str, client_host: str, expected_requires_auth: bool):
         """WebSocket auth requirement matches mode + client host matrix."""
         from spectra_sherpa.app.core.security import _is_loopback
 
         # Replicate the logic from main.py
-        requires_ws_auth = (
-            mode == "enterprise"
-            or (mode == "hybrid" and not _is_loopback(client_host))
-        )
+        requires_ws_auth = mode == "enterprise" or (mode == "hybrid" and not _is_loopback(client_host))
         assert requires_ws_auth is expected_requires_auth
 
 
@@ -313,6 +324,7 @@ class TestTokenTTL:
         expected = 60 * 24 * 8
         with patch.dict("os.environ", {"APP_MODE": "local"}, clear=False):
             from spectra_sherpa.app.core.config import _get_int
+
             ttl = _get_int("ACCESS_TOKEN_EXPIRE_MINUTES", 60 if "local" != "local" else expected)
             assert ttl == expected
 
@@ -432,10 +444,9 @@ class TestMCPToolSystem:
     @pytest.mark.asyncio
     async def test_tool_egress_blocked_when_disabled(self):
         """Tools with requires_egress=True fail when egress is globally disabled."""
-        from spectra_sherpa.app.services.tools.executor import execute_tool
-        from spectra_sherpa.app.services.tools.schemas import ToolInvocation
         from spectra_sherpa.app.services.tools import tool_registry
-        from spectra_sherpa.app.services.tools.schemas import ToolDefinition, ToolOrigin
+        from spectra_sherpa.app.services.tools.executor import execute_tool
+        from spectra_sherpa.app.services.tools.schemas import ToolDefinition, ToolInvocation, ToolOrigin
 
         defn = ToolDefinition(
             name="test_egress_tool",
@@ -548,36 +559,33 @@ class TestCorsMiddlewareOrdering:
 
     def test_cors_is_outermost_without_extra_middleware(self):
         """create_app() places CORSMiddleware at user_middleware[0] (outermost)."""
+
         from spectra_sherpa.app.main import create_app
-        from fastapi.middleware.cors import CORSMiddleware
 
         app = create_app()
         names = [mw.cls.__name__ for mw in app.user_middleware if hasattr(mw, "cls")]
-        assert names[0] == "CORSMiddleware", (
-            f"CORSMiddleware must be outermost (index 0) but got: {names}"
-        )
+        assert names[0] == "CORSMiddleware", f"CORSMiddleware must be outermost (index 0) but got: {names}"
 
     def test_cors_is_outermost_with_extra_middleware(self):
         """When extra_middleware is injected (e.g. EnterpriseEnforcement),
         CORSMiddleware must STILL be outermost."""
-        from spectra_sherpa.app.main import create_app
         from starlette.middleware.base import BaseHTTPMiddleware
+
+        from spectra_sherpa.app.main import create_app
 
         class FakeEnforcementMiddleware(BaseHTTPMiddleware):
             async def dispatch(self, request, call_next):
                 return await call_next(request)
 
-        app = create_app(
-            extra_middleware=[lambda a: a.add_middleware(FakeEnforcementMiddleware)]
-        )
+        app = create_app(extra_middleware=[lambda a: a.add_middleware(FakeEnforcementMiddleware)])
         names = [mw.cls.__name__ for mw in app.user_middleware if hasattr(mw, "cls")]
-        assert names[0] == "CORSMiddleware", (
-            f"CORSMiddleware must be outermost even with extra_middleware, got: {names}"
-        )
+        assert (
+            names[0] == "CORSMiddleware"
+        ), f"CORSMiddleware must be outermost even with extra_middleware, got: {names}"
         assert "FakeEnforcementMiddleware" in names, "Extra middleware should be registered"
-        assert names.index("FakeEnforcementMiddleware") > names.index("CORSMiddleware"), (
-            "Enforcement middleware must be inner (higher index) than CORSMiddleware"
-        )
+        assert names.index("FakeEnforcementMiddleware") > names.index(
+            "CORSMiddleware"
+        ), "Enforcement middleware must be inner (higher index) than CORSMiddleware"
 
 
 # ===========================================================================

@@ -5,6 +5,7 @@ This module provides a node-based workflow system for building
 reproducible spectral analysis pipelines.
 """
 
+from .executor import DAGExecutor, WorkflowEdge, WorkflowNode, WorkflowStatus
 from .node_base import (
     Node,
     NodeMetadata,
@@ -14,11 +15,10 @@ from .node_base import (
     node_registry,
     register_node,
 )
-from .executor import DAGExecutor, WorkflowNode, WorkflowEdge, WorkflowStatus
 
-# Import ALL node modules to trigger registration
-# Order matters: data and blend depend on other modules
-from .nodes import (
+# Import ALL node modules to trigger @register_node side effects.
+# Order matters: data and blend depend on other modules.
+from .nodes import (  # noqa: F401
     blend,
     classification,
     cloud,

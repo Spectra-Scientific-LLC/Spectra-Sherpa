@@ -6,6 +6,7 @@ These models define the contract between:
 - The LLM function-calling layer
 - The WebSocket tool_invoke / tool_result protocol
 """
+
 from __future__ import annotations
 
 import uuid
@@ -27,16 +28,16 @@ class ToolCategory(str, Enum):
 class ToolScope(str, Enum):
     """Access scope controlling who can discover and invoke a tool."""
 
-    public = "public"        # Any authenticated user
-    admin = "admin"          # Superusers only
-    internal = "internal"    # LLM function-calling only (hidden from tool_list)
+    public = "public"  # Any authenticated user
+    admin = "admin"  # Superusers only
+    internal = "internal"  # LLM function-calling only (hidden from tool_list)
 
 
 class ToolOrigin(str, Enum):
     """Where a tool was registered from — used for trust boundaries."""
 
-    builtin = "builtin"    # Core built-in tools (trusted)
-    plugin = "plugin"      # Third-party plugin (constrained)
+    builtin = "builtin"  # Core built-in tools (trusted)
+    plugin = "plugin"  # Third-party plugin (constrained)
 
 
 class ToolDefinition(BaseModel):
@@ -52,9 +53,7 @@ class ToolDefinition(BaseModel):
         description="Unique tool identifier (e.g. 'list_node_types')",
         pattern=r"^[a-z][a-z0-9_]{0,63}$",
     )
-    description: str = Field(
-        ..., description="Human-readable description shown to LLM and UI"
-    )
+    description: str = Field(..., description="Human-readable description shown to LLM and UI")
     category: ToolCategory = Field(
         default=ToolCategory.system,
         description="Broad category for filtering",
@@ -94,8 +93,7 @@ class ToolDefinition(BaseModel):
     origin: ToolOrigin = Field(
         default=ToolOrigin.builtin,
         description=(
-            "Where this tool was registered from. "
-            "Plugin-origin tools have restricted scope and forced user context."
+            "Where this tool was registered from. " "Plugin-origin tools have restricted scope and forced user context."
         ),
     )
 
@@ -128,9 +126,7 @@ class ToolInvocation(BaseModel):
         default_factory=lambda: str(uuid.uuid4()),
         description="Unique request ID for tracking",
     )
-    tool_name: str = Field(
-        ..., description="Name of the tool to call"
-    )
+    tool_name: str = Field(..., description="Name of the tool to call")
     arguments: dict[str, Any] = Field(
         default_factory=dict,
         description="Arguments matching the tool's parameter schema",

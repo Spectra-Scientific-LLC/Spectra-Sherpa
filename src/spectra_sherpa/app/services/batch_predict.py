@@ -13,9 +13,9 @@ import time
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy import select
 
 from spectra_sherpa.app.models.batch_prediction import BatchPrediction
 from spectra_sherpa.app.models.execution_run import ExecutionRun
@@ -36,8 +36,8 @@ def validate_folder_path(folder_path: str) -> Path:
 
     Returns the resolved Path on success; raises ValueError otherwise.
     """
-    from spectra_sherpa.app.core.mode_policy import is_local
     from spectra_sherpa.app.core.config import settings
+    from spectra_sherpa.app.core.mode_policy import is_local
 
     resolved = Path(folder_path).expanduser().resolve()
 
@@ -46,10 +46,7 @@ def validate_folder_path(folder_path: str) -> Path:
         try:
             resolved.relative_to(allowed_root)
         except ValueError:
-            raise ValueError(
-                f"Folder path must be under the data directory "
-                f"({allowed_root}). Got: {resolved}"
-            )
+            raise ValueError(f"Folder path must be under the data directory " f"({allowed_root}). Got: {resolved}")
 
     return resolved
 
@@ -118,19 +115,19 @@ def discover_files(
 
 def load_single_file(file_path: Path) -> Any:
     """
-    Load a single spectral file into an NDDataset.
+    Load a single spectral file into an AnalysisDataset.
 
     Uses ``get_reader_for_extension()`` to pick the correct SpectroChemPy reader,
     then ensures the result is 2-D.
 
     Returns:
-        NDDataset with shape (n_samples, n_features).
+        AnalysisDataset with shape (n_samples, n_features).
 
     Raises:
         ValueError: If the extension is unsupported or reading fails.
     """
     from spectra_sherpa.app.core.config import get_reader_for_extension
-    from spectra_sherpa.app.lib.scp_compat import scp, require_scp
+    from spectra_sherpa.app.lib.scp_compat import require_scp, scp
 
     require_scp("Batch prediction")
 
@@ -155,7 +152,9 @@ def build_executor_from_workflow(workflow: Workflow) -> Any:
     Returns:
         A DAGExecutor ready for inject_result() + execute().
     """
-    from spectra_sherpa.app.services.dag import DAGExecutor, WorkflowEdge as DAGEdge, WorkflowNode as DAGNode
+    from spectra_sherpa.app.services.dag import DAGExecutor
+    from spectra_sherpa.app.services.dag import WorkflowEdge as DAGEdge
+    from spectra_sherpa.app.services.dag import WorkflowNode as DAGNode
 
     executor = DAGExecutor()
 
@@ -164,11 +163,7 @@ def build_executor_from_workflow(workflow: Workflow) -> Any:
             node_id=node.node_id,
             node_type=node.node_type,
             parameters=node.parameters,
-            position=(
-                {"x": node.position_x, "y": node.position_y}
-                if node.position_x and node.position_y
-                else None
-            ),
+            position=({"x": node.position_x, "y": node.position_y} if node.position_x and node.position_y else None),
         )
         executor.add_node(dag_node)
 
@@ -270,7 +265,9 @@ async def run_batch_prediction(
 
         progress = int(((idx + 1) / total) * 100)
         await job_manager.update_progress(
-            session, job_id, progress,
+            session,
+            job_id,
+            progress,
             message=f"Processed {idx + 1}/{total}: {file_path.name}",
         )
 
@@ -286,13 +283,13 @@ async def run_batch_prediction(
     await session.commit()
     logger.info(
         "Batch prediction complete: %d/%d succeeded for run %d",
-        success_count, total, run.id,
+        success_count,
+        total,
+        run.id,
     )
 
 
-async def load_workflow_with_graph(
-    session: AsyncSession, workflow_id: int, user_id: int
-) -> Workflow:
+async def load_workflow_with_graph(session: AsyncSession, workflow_id: int, user_id: int) -> Workflow:
     """Load workflow with eagerly-loaded nodes and edges, with ownership check."""
     query = (
         select(Workflow)

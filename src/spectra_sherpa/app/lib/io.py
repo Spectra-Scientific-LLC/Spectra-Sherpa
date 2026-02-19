@@ -16,7 +16,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple, Union
+from typing import List, Optional, Union
 
 import numpy as np
 
@@ -31,8 +31,7 @@ except ImportError:
     HAS_SCIPY = False
     loadmat = None
 
-from spectra_sherpa.app.lib.scp_compat import scp, NDDataset, HAS_SCP, require_scp
-
+from spectra_sherpa.app.lib.scp_compat import NDDataset, require_scp, scp
 
 # Filename pattern for extracting species labels
 FILENAME_PATTERN = re.compile(r"^(?P<label>[A-Z0-9]+)[\s_-]?.*\.CSV$", re.IGNORECASE)
@@ -109,11 +108,7 @@ def extract_pathlength(filepath: Path) -> Optional[float]:
         unit_suffix = "m"
 
     # Strip letters and convert hyphen to decimal
-    clean_segment = (
-        segment.rstrip("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ)")
-        .replace("-", ".")
-        .strip()
-    )
+    clean_segment = segment.rstrip("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ)").replace("-", ".").strip()
 
     try:
         value = float(clean_segment)
@@ -148,7 +143,7 @@ def read_csv_spectrum(filepath: Path) -> "NDDataset":
     NDDataset
         Spectrum with x-coordinate (wavenumber) and metadata
     """
-    from .spectral.dataset import create_spectral_dataset, SpectralUnit
+    from .spectral.dataset import SpectralUnit, create_spectral_dataset
 
     df = pd.read_csv(
         filepath,
@@ -238,7 +233,7 @@ def read_json_signature(filepath: Path) -> "NDDataset":
     NDDataset
         Spectrum with calibration in meta["calibration"]
     """
-    from .spectral.dataset import create_spectral_dataset, SpectralUnit
+    from .spectral.dataset import SpectralUnit, create_spectral_dataset
 
     with open(filepath) as f:
         data = json.load(f)
@@ -324,7 +319,7 @@ def read_mat_file(filepath: Path) -> List["NDDataset"]:
     if not HAS_SCIPY:
         raise ImportError("scipy is required to read .mat files")
 
-    from .spectral.dataset import create_spectral_dataset, SpectralUnit
+    from .spectral.dataset import SpectralUnit, create_spectral_dataset
 
     mat_data = loadmat(str(filepath), squeeze_me=True, struct_as_record=False)
     label = _extract_label_from_filename(filepath.name)
@@ -372,15 +367,11 @@ def read_mat_file(filepath: Path) -> List["NDDataset"]:
                     break
 
     if absorbance is not None and wavenumber is None:
-        raise ValueError(
-            f"No wavenumber axis found in {filepath}. "
-            "Provide a wavenumber array or a 2-column matrix."
-        )
+        raise ValueError(f"No wavenumber axis found in {filepath}. " "Provide a wavenumber array or a 2-column matrix.")
 
     if wavenumber is None or absorbance is None:
         raise ValueError(
-            f"Could not find spectral data in {filepath}. "
-            "Expected variables like 'wavenumber'/'absorbance'."
+            f"Could not find spectral data in {filepath}. " "Expected variables like 'wavenumber'/'absorbance'."
         )
 
     datasets = []
@@ -416,8 +407,7 @@ def read_mat_file(filepath: Path) -> List["NDDataset"]:
         absorbance = absorbance.flatten()
         if len(wavenumber) != len(absorbance):
             raise ValueError(
-                f"Wavenumber/absorbance length mismatch in {filepath}: "
-                f"{len(wavenumber)} vs {len(absorbance)}"
+                f"Wavenumber/absorbance length mismatch in {filepath}: " f"{len(wavenumber)} vs {len(absorbance)}"
             )
         ds = create_spectral_dataset(
             data=absorbance,
@@ -584,7 +574,7 @@ def stack_datasets(datasets: List["NDDataset"]) -> "NDDataset":
     data = np.vstack([ds.data.reshape(1, -1) for ds in datasets])
     labels = [ds.title for ds in datasets]
 
-    from .spectral.dataset import create_spectral_dataset, SpectralUnit
+    from .spectral.dataset import SpectralUnit, create_spectral_dataset
 
     result = create_spectral_dataset(
         data=data,

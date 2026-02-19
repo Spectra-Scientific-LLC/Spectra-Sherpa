@@ -140,8 +140,7 @@ class SPAExtractor(BaseMetadataExtractor):
                 # Type conversion for numeric fields
                 if field in ["n_scans", "n_background_scans", "zero_fill_factor"]:
                     acquisition[field] = self._to_int(value)
-                elif field in ["resolution_cm", "aperture_mm", "high_frequency",
-                               "low_frequency", "sample_spacing"]:
+                elif field in ["resolution_cm", "aperture_mm", "high_frequency", "low_frequency", "sample_spacing"]:
                     acquisition[field] = self._to_float(value)
                 else:
                     acquisition[field] = self._clean_value(value)
@@ -198,8 +197,13 @@ class SPAExtractor(BaseMetadataExtractor):
     def _extract_extra(self, meta: dict) -> dict:
         """Extract unrecognized metadata for debugging."""
         recognized = set()
-        for key_map in [self.INSTRUMENT_KEYS, self.ACQUISITION_KEYS,
-                        self.CONDITION_KEYS, self.SAMPLE_KEYS, self.PROVENANCE_KEYS]:
+        for key_map in [
+            self.INSTRUMENT_KEYS,
+            self.ACQUISITION_KEYS,
+            self.CONDITION_KEYS,
+            self.SAMPLE_KEYS,
+            self.PROVENANCE_KEYS,
+        ]:
             for keys in key_map.values():
                 recognized.update(k.lower() for k in keys)
 

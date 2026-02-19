@@ -7,12 +7,13 @@ consistent results across different code paths.
 
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
+
+import pytest
+
 scp = pytest.importorskip("spectrochempy")
 
 from spectra_sherpa.app.services.dag.nodes.data import DataSourceNode
-
 
 # Reference file metadata (expected properties)
 # These serve as "golden" references - if these change, investigate why
@@ -41,6 +42,7 @@ GOLDEN_FILES = {
     },
 }
 
+
 def _get_scp_datadirs() -> list[Path]:
     primary = Path(scp.preferences.datadir)
     fallback = Path.home() / ".spectrochempy" / "testdata"
@@ -60,16 +62,13 @@ def _resolve_datadir_file(file_path: str) -> Path | None:
     return None
 
 
-@pytest.mark.skipif(
-    not _get_scp_datadirs(),
-    reason="SpectroChemPy data directory not found"
-)
+@pytest.mark.skipif(not _get_scp_datadirs(), reason="SpectroChemPy data directory not found")
 class TestGoldenDataLoading:
     """Golden tests for reference datasets."""
 
     def test_reader_mapping_consistency(self):
         """Test that reader mapping is consistent across all code paths."""
-        from spectra_sherpa.app.core.config import get_reader_for_extension, EXTENSION_READER_MAP
+        from spectra_sherpa.app.core.config import EXTENSION_READER_MAP, get_reader_for_extension
 
         # Verify all expected readers are mapped
         assert ".spa" in EXTENSION_READER_MAP
@@ -101,12 +100,14 @@ class TestGoldenDataLoading:
         assert dataset is not None, f"Failed to load {file_path}"
 
         # Verify dimensionality
-        assert dataset.ndim == metadata["expected_ndim"], \
-            f"{file_path}: Expected {metadata['expected_ndim']}D, got {dataset.ndim}D"
+        assert (
+            dataset.ndim == metadata["expected_ndim"]
+        ), f"{file_path}: Expected {metadata['expected_ndim']}D, got {dataset.ndim}D"
 
         # Verify minimum size
-        assert dataset.size >= metadata["min_size"], \
-            f"{file_path}: Expected at least {metadata['min_size']} points, got {dataset.size}"
+        assert (
+            dataset.size >= metadata["min_size"]
+        ), f"{file_path}: Expected at least {metadata['min_size']} points, got {dataset.size}"
 
         # Verify x-axis if expected
         if metadata.get("has_x_axis"):
@@ -116,8 +117,7 @@ class TestGoldenDataLoading:
                 pass
 
         # Verify title is set
-        assert dataset.title is not None and dataset.title != "", \
-            f"{file_path}: Missing or empty title"
+        assert dataset.title is not None and dataset.title != "", f"{file_path}: Missing or empty title"
 
     def test_loader_consistency_spa_file(self):
         """Test that .SPA files load identically via all code paths."""
@@ -135,13 +135,12 @@ class TestGoldenDataLoading:
         ds2 = node._load_from_file(str(full_path))
 
         # Both should produce identical results
-        assert ds1.shape == ds2.shape, \
-            f"Shape mismatch: custom={ds1.shape}, direct={ds2.shape}"
+        assert ds1.shape == ds2.shape, f"Shape mismatch: custom={ds1.shape}, direct={ds2.shape}"
 
         # Data should be numerically equivalent (within tolerance for float precision)
         import numpy as np
-        assert np.allclose(ds1.data, ds2.data, rtol=1e-10, atol=1e-12), \
-            "Data mismatch between loaders"
+
+        assert np.allclose(ds1.data, ds2.data, rtol=1e-10, atol=1e-12), "Data mismatch between loaders"
 
     def test_loader_consistency_spg_file(self):
         """Test that .SPG files load identically via all code paths."""
@@ -159,12 +158,11 @@ class TestGoldenDataLoading:
         ds2 = node._load_from_file(str(full_path))
 
         # Both should produce identical results
-        assert ds1.shape == ds2.shape, \
-            f"Shape mismatch: custom={ds1.shape}, direct={ds2.shape}"
+        assert ds1.shape == ds2.shape, f"Shape mismatch: custom={ds1.shape}, direct={ds2.shape}"
 
         import numpy as np
-        assert np.allclose(ds1.data, ds2.data, rtol=1e-10, atol=1e-12), \
-            "Data mismatch between loaders"
+
+        assert np.allclose(ds1.data, ds2.data, rtol=1e-10, atol=1e-12), "Data mismatch between loaders"
 
     def test_case_insensitive_loading(self):
         """Test that files with different capitalizations load correctly."""
@@ -179,8 +177,7 @@ class TestGoldenDataLoading:
 
             # SPA and SPG should use read_omnic regardless of case
             if ext.lower() in [".spa", ".spg"]:
-                assert reader == "read_omnic", \
-                    f"{ext} should use read_omnic, got {reader}"
+                assert reader == "read_omnic", f"{ext} should use read_omnic, got {reader}"
 
     def test_csv_index_removal(self):
         """Test that CSV index columns are removed consistently."""
@@ -212,8 +209,9 @@ class TestGoldenDataLoading:
 
     def test_backward_compat_dat_warning(self):
         """Test that .dat files trigger backward compatibility warning."""
-        from spectra_sherpa.app.core.config import get_reader_for_extension
         import warnings
+
+        from spectra_sherpa.app.core.config import get_reader_for_extension
 
         # .dat should fall back to generic read with warning
         with warnings.catch_warnings(record=True) as w:
@@ -235,7 +233,6 @@ class TestAPIFileDiscovery:
     @pytest.mark.asyncio
     async def test_case_insensitive_discovery(self, client):
         """Test that API discovers files regardless of extension capitalization."""
-        from httpx import AsyncClient
 
         response = await client.get("/api/v1/workflows/spectrochempy-examples")
         assert response.status_code == 200
@@ -259,7 +256,6 @@ class TestAPIFileDiscovery:
     @pytest.mark.asyncio
     async def test_dual_directory_support(self, client):
         """Test that API scans both primary and fallback directories."""
-        from httpx import AsyncClient
 
         response = await client.get("/api/v1/workflows/spectrochempy-examples")
         assert response.status_code == 200
@@ -272,13 +268,11 @@ class TestAPIFileDiscovery:
 
             # Each file should have source metadata
             for file_entry in files:
-                assert file_entry["source"] in ["primary", "fallback"], \
-                    f"Invalid source: {file_entry['source']}"
+                assert file_entry["source"] in ["primary", "fallback"], f"Invalid source: {file_entry['source']}"
 
     @pytest.mark.asyncio
     async def test_galacticdata_in_response(self, client):
         """Test that galacticdata is now included in API response."""
-        from httpx import AsyncClient
 
         response = await client.get("/api/v1/workflows/spectrochempy-examples")
         assert response.status_code == 200

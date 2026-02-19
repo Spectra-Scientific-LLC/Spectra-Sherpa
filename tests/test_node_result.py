@@ -9,18 +9,17 @@ Covers:
 Run:
     PYTHONPATH=src/spectra_sherpa python -m pytest tests/test_node_result.py -v --no-cov
 """
+
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict
-from unittest.mock import patch
 
 import pytest
 
-from spectra_sherpa.app.services.dag.node_base import Node, NodeMetadata, NodeResult, NodeStatus, PortMetadata
-
+from spectra_sherpa.app.services.dag.node_base import Node, NodeMetadata, NodeResult, NodeStatus
 
 # ── NodeResult.wrap() ─────────────────────────────────────────────────────
+
 
 class TestNodeResultWrap:
     def test_wrap_node_result_passthrough(self):
@@ -56,6 +55,7 @@ class TestNodeResultWrap:
 
 
 # ── Node.run() integration ────────────────────────────────────────────────
+
 
 class _SimpleNode(Node):
     metadata = NodeMetadata(

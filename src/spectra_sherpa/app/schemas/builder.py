@@ -55,10 +55,10 @@ class CurveDefaultsResponse(BaseModel):
 
 class CurveSpec(BaseModel):
     """Specification for generating a single concentration curve."""
+
     label: str
     curve_type: str = Field(
-        default="constant",
-        description="Type: sigmoid, gaussian, linear, exponential, step, constant, catmull_rom"
+        default="constant", description="Type: sigmoid, gaussian, linear, exponential, step, constant, catmull_rom"
     )
     max_concentration: float = Field(default=1.0, ge=0.0)
     center: float = Field(default=0.5, ge=0.0, le=1.0, description="Center for sigmoid/gaussian (0-1)")
@@ -70,6 +70,7 @@ class CurveSpec(BaseModel):
 
 class ConcentrationGenerateRequest(BaseModel):
     """Request to generate concentration curves for multiple species."""
+
     curves: List[CurveSpec]
     n_points: int = Field(default=100, ge=2, le=10000, description="Number of time points")
     time_min: float = Field(default=0.0, description="Start time")
@@ -79,6 +80,7 @@ class ConcentrationGenerateRequest(BaseModel):
 
 class ConcentrationGenerateResponse(BaseModel):
     """Response containing generated concentration curves."""
+
     status: str
     times: List[float]
     time_unit: str
@@ -88,6 +90,7 @@ class ConcentrationGenerateResponse(BaseModel):
 
 class SynthesizeRequest(BaseModel):
     """Request to synthesize blended spectra from species and concentrations."""
+
     species: List[SpectrumPayload]
     concentrations: Dict[str, List[float]]  # {species_label: [concentration_values]}
     pathlength_m: Optional[float] = None
@@ -96,6 +99,7 @@ class SynthesizeRequest(BaseModel):
 
 class SynthesizeResponse(BaseModel):
     """Response containing synthesized spectral data."""
+
     status: str
     wavenumbers: List[float]
     times: List[float]
@@ -107,6 +111,7 @@ class SynthesizeResponse(BaseModel):
 # Legacy aliases for backward compatibility
 class BlendRequest(BaseModel):
     """DEPRECATED: Use SynthesizeRequest instead."""
+
     species: List[SpectrumPayload]
     concentration_timeseries: Dict[str, List[float]]
     pathlength_m: Optional[float] = None
@@ -115,6 +120,7 @@ class BlendRequest(BaseModel):
 
 class BlendResponse(BaseModel):
     """DEPRECATED: Use SynthesizeResponse instead."""
+
     status: str
     wavenumbers: List[float]
     times: List[float]

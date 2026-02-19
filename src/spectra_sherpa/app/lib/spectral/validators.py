@@ -8,10 +8,10 @@ optionally auto-convert incompatible units with warnings.
 from __future__ import annotations
 
 import logging
-from typing import List, TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 
-from .dataset import parse_spectral_unit, validate_unit_compatibility, SpectralUnit
 from .conversions import ensure_absorbance
+from .dataset import parse_spectral_unit, validate_unit_compatibility
 
 if TYPE_CHECKING:
     from spectra_sherpa.app.lib.scp_compat import NDDataset
@@ -103,8 +103,7 @@ def validate_and_normalize_units(
         # WARNING + AUTO-CONVERT
         unit_list = [u.value for u in units]
         logger.warning(
-            f"[{operation}] Incompatible units detected: {unit_list}. "
-            f"Auto-converting all inputs to absorbance."
+            f"[{operation}] Incompatible units detected: {unit_list}. " f"Auto-converting all inputs to absorbance."
         )
         import warnings
 

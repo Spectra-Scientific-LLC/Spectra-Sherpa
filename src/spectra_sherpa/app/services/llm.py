@@ -13,16 +13,17 @@ from openai import AsyncOpenAI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from spectra_sherpa.app.core.llm_registry import get_default_provider, get_provider
+from spectra_sherpa.app.core.security import check_egress_permission
 from spectra_sherpa.app.models.api_key import APIKey
 from spectra_sherpa.app.models.llm_config import LLMConfig
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.services.encryption import decrypt_value
-from spectra_sherpa.app.core.llm_registry import get_provider, get_default_provider
-from spectra_sherpa.app.core.security import check_egress_permission
 
 # Anthropic import - will be available when installed
 try:
     from anthropic import AsyncAnthropic
+
     ANTHROPIC_AVAILABLE = True
 except ImportError:
     ANTHROPIC_AVAILABLE = False
@@ -30,10 +31,6 @@ except ImportError:
 
 DEFAULT_SYSTEM_PROMPT = "You are a master of all things spectral data analysis."
 
-# Default LLM configurations (cost-effective choices)
-# - DeepSeek: deepseek-chat ($0.27/M input, $1.10/M output)
-# - OpenAI: gpt-5-mini
-# - Gemini: gemini-2.5-flash
 DEFAULT_PROVIDER = "deepseek"
 DEFAULT_MODEL = "deepseek-chat"
 DEFAULT_BASE_URL = "https://api.deepseek.com"
@@ -63,6 +60,7 @@ class ConversationStore:
 
     def __init__(self, state_path: Optional[Path] = None) -> None:
         from spectra_sherpa.app.core.config import settings
+
         self._state_path = state_path or (settings.data_dir / "conversations.json")
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -72,20 +70,19 @@ class ConversationStore:
             return {}
         try:
             import json
+
             data = json.loads(self._state_path.read_text())
             # Expire old conversations
             now = time.time()
             ttl_sec = self.CONVERSATION_TTL_HOURS * 3600
-            return {
-                cid: conv for cid, conv in data.items()
-                if now - conv.get("updated_at", 0) < ttl_sec
-            }
+            return {cid: conv for cid, conv in data.items() if now - conv.get("updated_at", 0) < ttl_sec}
         except (json.JSONDecodeError, OSError):
             return {}
 
     def _save(self, data: dict[str, dict[str, Any]]) -> None:
         """Atomically write conversations to disk."""
         import json
+
         tmp = self._state_path.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, default=str))
         tmp.replace(self._state_path)
@@ -95,6 +92,7 @@ class ConversationStore:
         """File lock for concurrent worker access."""
         try:
             import fcntl
+
             lock_path = self._state_path.with_suffix(".lock")
             fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT)
             try:
@@ -117,9 +115,7 @@ class ConversationStore:
             return None
         return conv.get("messages")
 
-    def get_or_create(
-        self, conversation_id: Optional[str], user_id: int
-    ) -> tuple[str, list[dict[str, str]]]:
+    def get_or_create(self, conversation_id: Optional[str], user_id: int) -> tuple[str, list[dict[str, str]]]:
         """Get existing conversation (if owned by user) or create new one."""
         with self._locked():
             data = self._load()
@@ -217,17 +213,11 @@ class LLMService:
         # Use appropriate API format based on client type
         if provider_meta["client_type"] == "anthropic":
             # Anthropic format: separate system message from conversation
-            system_msg = next(
-                (m["content"] for m in payload if m["role"] == "system"),
-                DEFAULT_SYSTEM_PROMPT
-            )
+            system_msg = next((m["content"] for m in payload if m["role"] == "system"), DEFAULT_SYSTEM_PROMPT)
             user_msgs = [m for m in payload if m["role"] != "system"]
 
             response = await client.messages.create(
-                model=config["model"],
-                max_tokens=4096,
-                system=system_msg,
-                messages=user_msgs
+                model=config["model"], max_tokens=4096, system=system_msg, messages=user_msgs
             )
             content = response.content[0].text
         else:
@@ -277,18 +267,11 @@ class LLMService:
         # Create appropriate stream based on client type
         if provider_meta["client_type"] == "anthropic":
             # Anthropic streaming format
-            system_msg = next(
-                (m["content"] for m in payload if m["role"] == "system"),
-                DEFAULT_SYSTEM_PROMPT
-            )
+            system_msg = next((m["content"] for m in payload if m["role"] == "system"), DEFAULT_SYSTEM_PROMPT)
             user_msgs = [m for m in payload if m["role"] != "system"]
 
             stream = await client.messages.create(
-                model=config["model"],
-                max_tokens=4096,
-                system=system_msg,
-                messages=user_msgs,
-                stream=True
+                model=config["model"], max_tokens=4096, system=system_msg, messages=user_msgs, stream=True
             )
 
             async def anthropic_generator() -> AsyncIterator[str]:
@@ -340,8 +323,7 @@ class LLMService:
             "Include what the data measures, its scientific context, typical applications, "
             "and any notable characteristics (sample count, spectral range, reference properties). "
             "Write 2-3 paragraphs in a professional scientific tone.\n\n"
-            "Dataset info:\n"
-            + json.dumps(dataset_info, default=str)[:6000]
+            "Dataset info:\n" + json.dumps(dataset_info, default=str)[:6000]
         )
         return await self._single_turn(prompt)
 
@@ -371,7 +353,7 @@ class LLMService:
                 model=config["model"],
                 max_tokens=4096,
                 system=DEFAULT_SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": prompt}]
+                messages=[{"role": "user", "content": prompt}],
             )
             return response.content[0].text
         else:
@@ -398,9 +380,7 @@ class LLMService:
 
         user_id = self.user.id
 
-        result = await self.session.execute(
-            select(LLMConfig).where(LLMConfig.user_id == user_id)
-        )
+        result = await self.session.execute(select(LLMConfig).where(LLMConfig.user_id == user_id))
         user_config = result.scalar_one_or_none()
 
         if user_config:
@@ -437,14 +417,13 @@ class LLMService:
         api_key = await self._resolve_api_key(provider)
 
         import logging
+
         logger = logging.getLogger(__name__)
         logger.info(f"Creating {provider_meta['client_type']} client for provider={provider}, model={config['model']}")
 
         if provider_meta["client_type"] == "anthropic":
             if not ANTHROPIC_AVAILABLE:
-                raise ImportError(
-                    "Anthropic SDK not installed. Install with: pip install anthropic"
-                )
+                raise ImportError("Anthropic SDK not installed. Install with: pip install anthropic")
             return AsyncAnthropic(api_key=api_key)
         else:
             # OpenAI-compatible providers
@@ -485,10 +464,7 @@ class LLMService:
 
         # Priority 2: Check user's own key in database (BYOK)
         if hasattr(APIKey, "user_id"):
-            user_key_query = select(APIKey).where(
-                APIKey.service_name == provider,
-                APIKey.user_id == self.user.id
-            )
+            user_key_query = select(APIKey).where(APIKey.service_name == provider, APIKey.user_id == self.user.id)
             result = await self.session.execute(user_key_query)
             user_key = result.scalar_one_or_none()
 
@@ -499,10 +475,7 @@ class LLMService:
                 return decrypt_value(user_key.key_encrypted)
 
         # Priority 3: Check system key in database
-        system_key_query = select(APIKey).where(
-            APIKey.service_name == provider,
-            APIKey.user_id == None
-        )
+        system_key_query = select(APIKey).where(APIKey.service_name == provider, APIKey.user_id.is_(None))
         result = await self.session.execute(system_key_query)
         system_key = result.scalar_one_or_none()
 
@@ -524,6 +497,7 @@ class LLMService:
         """Check if the subscription allows full DAG context in LLM prompts."""
         try:
             from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
+
             return get_sherpa_advisor().has_feature("full_dag_context")
         except Exception:
             return False
@@ -547,8 +521,7 @@ class LLMService:
                 # Include node types but strip parameter values
                 if exp.get("nodes"):
                     summary["node_types"] = list(
-                        {n.get("type") or n.get("node_type", "unknown")
-                         for n in exp["nodes"] if isinstance(n, dict)}
+                        {n.get("type") or n.get("node_type", "unknown") for n in exp["nodes"] if isinstance(n, dict)}
                     )
                 if summary:
                     summaries.append(summary)
@@ -557,10 +530,7 @@ class LLMService:
         return basic
 
     def _build_messages(
-        self,
-        history: list[dict[str, str]],
-        metadata: Optional[dict[str, Any]],
-        config: dict[str, Any]
+        self, history: list[dict[str, str]], metadata: Optional[dict[str, Any]], config: dict[str, Any]
     ) -> list[dict[str, str]]:
         system_prompt = DEFAULT_SYSTEM_PROMPT
 
@@ -621,8 +591,10 @@ class LLMService:
 
             # Try to extract text from PDF
             try:
-                from pypdf import PdfReader
                 import logging
+
+                from pypdf import PdfReader
+
                 logger = logging.getLogger(__name__)
 
                 logger.info(f"Loading SpectrochemPy reference PDF from {pdf_path}")
@@ -636,15 +608,19 @@ class LLMService:
                     return _spectrochempy_pdf_cache
             except ImportError:
                 # pypdf not available, provide file path instead
-                _spectrochempy_pdf_cache = f"Reference PDF available at: {pdf_path}\n(PDF extraction not available - install pypdf)"
+                _spectrochempy_pdf_cache = (
+                    f"Reference PDF available at: {pdf_path}\n(PDF extraction not available - install pypdf)"
+                )
                 return _spectrochempy_pdf_cache
             except Exception as e:
                 import logging
+
                 logging.getLogger(__name__).warning(f"Failed to extract PDF content: {e}")
                 _spectrochempy_pdf_cache = f"Reference PDF available at: {pdf_path}\n(PDF extraction failed)"
                 return _spectrochempy_pdf_cache
         except Exception as e:
             import logging
+
             logging.getLogger(__name__).debug(f"Could not load spectrochempy reference: {e}")
             _spectrochempy_pdf_cache = None
             return None

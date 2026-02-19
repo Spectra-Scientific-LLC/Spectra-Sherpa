@@ -29,15 +29,11 @@ async def test_gateway_accepts_user_api_key(
     app_config.mode = "hybrid"
     try:
         # Point gateway DB access to the test engine
-        test_sessionmaker = sessionmaker(
-            test_engine, class_=AsyncSession, expire_on_commit=False
-        )
+        test_sessionmaker = sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
         monkeypatch.setattr(db_session, "async_session", test_sessionmaker)
 
         # Simulate a remote (non-loopback) client so gateway enforces auth
-        monkeypatch.setattr(
-            security, "get_client_host", lambda _req: "203.0.113.42"
-        )
+        monkeypatch.setattr(security, "get_client_host", lambda _req: "203.0.113.42")
 
         # Create a user with an API key hash
         api_key = "sk_test_user_key_1234567890"
@@ -55,9 +51,7 @@ async def test_gateway_accepts_user_api_key(
         assert resp.status_code == 401
 
         # User API key should pass the gateway middleware
-        resp = await client.get(
-            "/api/v1/experiments", headers={"X-API-Key": api_key}
-        )
+        resp = await client.get("/api/v1/experiments", headers={"X-API-Key": api_key})
         assert resp.status_code == 200
     finally:
         app_config.mode = original_mode

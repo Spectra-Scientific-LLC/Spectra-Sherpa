@@ -6,19 +6,26 @@ These nodes implement various classification techniques like PLS-DA, KNN, etc.
 
 from __future__ import annotations
 
-from typing import Any, Optional
-import re
-import numpy as np
-from spectra_sherpa.app.lib.scp_compat import scp, NDDataset
-from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo
-
 import logging
+import re
+from typing import Any
 
+import numpy as np
+
+from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo
+from spectra_sherpa.app.lib.scp_compat import scp
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
 
-from ..node_base import Node, NodeMetadata, NodeParameter, InputPort, PortMetadata, register_node
-from .visualization import generate_confusion_matrix_heatmap
+from ..io_contracts import (
+    bind_X,
+    bind_y,
+    resolve_legacy_input,
+    to_numpy_1d,
+    to_numpy_2d,
+)
+from ..node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
 from .modeling import _create_spectral_dataset
+from .visualization import generate_confusion_matrix_heatmap
 
 logger = logging.getLogger(__name__)
 
@@ -147,10 +154,7 @@ def _prepare_class_labels(raw_labels: Any, n_samples: int) -> np.ndarray:
         )
 
     if any(str(label).strip() == "" for label in y_array):
-        raise ValueError(
-            "Class labels contain empty values. "
-            "Please provide one non-empty class label per sample."
-        )
+        raise ValueError("Class labels contain empty values. " "Please provide one non-empty class label per sample.")
 
     return y_array
 
@@ -251,7 +255,7 @@ class PLSDANode(Node):
         requires_scp=True,
     )
 
-    async def execute(self, X: NDDataset = None, y: Any = None, **kwargs) -> Any:
+    async def execute(self, X: AnalysisDataset = None, y: Any = None, **kwargs) -> Any:
         """
         Execute PLS-DA classification.
 
@@ -262,79 +266,42 @@ class PLSDANode(Node):
         Returns:
             PLS-DA model with classification results
         """
-        from spectra_sherpa.app.lib.scp_compat import scp
-        from sklearn.model_selection import cross_val_score, cross_val_predict
-        from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, balanced_accuracy_score, f1_score
+        from sklearn.metrics import (
+            accuracy_score,
+            balanced_accuracy_score,
+            classification_report,
+            confusion_matrix,
+            f1_score,
+        )
 
-        # Handle both positional and keyword arguments for backward compatibility
-        if X is None and "input_0" in kwargs:
-            X = kwargs["input_0"]
-        if y is None and "input_1" in kwargs:
-            y = kwargs["input_1"]
-
-        if X is None:
-            raise ValueError("Missing required input: X (spectra)")
-        if not isinstance(X, (NDDataset, AnalysisDataset)):
-            raise ValueError("X must be an NDDataset or AnalysisDataset object")
-
-        # Auto-extract labels from dataset
-        # Case 1: y is None - extract from X
-        # Case 2: y is dataset - extract embedded labels from y
-        # Case 3: y is array/list - use directly
-        if y is None:
-            # First: check for explicit target attribute (sklearn datasets store
-            # class labels in AnalysisDataset.target, separate from the y-axis)
-            _target = getattr(X, "target", None)
-            if _target is not None:
-                _tarr = np.asarray(_target)
-                if _tarr.size > 0:
-                    y = _tarr
-
-            # Second: fall back to y-axis coordinate
-            if y is None:
-                y_coord = safe_get_coord(X, 'y')
-                if y_coord is not None:
-                    # Extract labels from X's y-axis (prefer labels over data)
-                    if hasattr(y_coord, 'labels') and y_coord.labels is not None:
-                        y = y_coord.labels
-                    elif hasattr(y_coord, 'data') and y_coord.data is not None and np.array(y_coord.data).size > 0:
-                        y = y_coord.data
-                    else:
-                        raise ValueError(
-                            "Dataset has y-axis but no labels or data found. "
-                            "Please provide class labels explicitly via the 'y' input port."
-                        )
-                else:
-                    raise ValueError(
-                        "Missing required input: y (class labels)\n"
-                        "Either provide labels via the 'y' input port, or use a dataset with labels in X.y"
-                    )
-        elif isinstance(y, (NDDataset, AnalysisDataset)):
-            # If y IS a dataset, extract embedded labels (don't use the dataset itself)
-            y_coord = safe_get_coord(y, 'y')
-            if y_coord is not None:
-                # Extract from y's own y-axis
-                if hasattr(y_coord, 'labels') and y_coord.labels is not None:
-                    y = y_coord.labels
-                elif hasattr(y_coord, 'data') and y_coord.data is not None and np.array(y_coord.data).size > 0:
-                    y = y_coord.data
-                else:
-                    raise ValueError(
-                        "Dataset passed to y port has no embedded labels. "
-                        "Use the y-axis coordinate to store class labels."
-                    )
-            else:
-                raise ValueError(
-                    "Dataset passed to y port has no y-axis coordinate. "
-                    "Cannot extract class labels."
-                )
+        X_ds = bind_X(
+            X,
+            kwargs,
+            missing_message="Missing required input: X (spectra)",
+            dataset_error_message="X must be an NDDataset or AnalysisDataset object",
+            allow_array=False,
+        )
+        y = bind_y(
+            y,
+            kwargs,
+            X=X_ds,
+            required=True,
+            infer_from_X=True,
+            missing_message=(
+                "Missing required input: y (class labels)\n"
+                "Either provide labels via the 'y' input port, or use a dataset with labels in X.y"
+            ),
+            dataset_missing_message=(
+                "Dataset passed to y port has no embedded labels. " "Use the y-axis coordinate to store class labels."
+            ),
+        )
 
         n_components = self.parameters.get("n_components", 2)
         scale = self.parameters.get("scale", True)
         cv_folds = self.parameters.get("cv_folds", 5)
 
         # Convert inputs to numpy arrays
-        X_data = np.array(X.data)
+        X_data = to_numpy_2d(X_ds, name="X", dtype=np.float64)
         y_array = _prepare_class_labels(y, X_data.shape[0])
 
         max_components = min(X_data.shape[0] - 1, X_data.shape[1])
@@ -359,9 +326,7 @@ class PLSDANode(Node):
         class_counts = np.array([(y_array == cls).sum() for cls in classes])
         min_class_count = int(class_counts.min()) if class_counts.size else 0
         if cv_folds > min_class_count:
-            raise ValueError(
-                f"cv_folds must be <= smallest class count ({min_class_count}). Got {cv_folds}."
-            )
+            raise ValueError(f"cv_folds must be <= smallest class count ({min_class_count}). Got {cv_folds}.")
 
         # One-hot encode class labels
         Y_dummy = np.zeros((len(y_array), n_classes))
@@ -370,7 +335,7 @@ class PLSDANode(Node):
 
         # Prepare data as NDDatasets for SpectroChemPy.
         # X may be AnalysisDataset (sklearn path) so wrap X_data explicitly.
-        X_ndd = scp.NDDataset(X_data) if not isinstance(X, NDDataset) else X
+        X_ndd = scp.NDDataset(X_data)
         Y_dummy_dataset = scp.NDDataset(Y_dummy)
 
         # Fit PLS-DA model using SpectroChemPy
@@ -380,7 +345,7 @@ class PLSDANode(Node):
         # Make predictions on training data
         Y_pred_raw = pls.predict(X_ndd)
         # Extract numpy array from result (these are raw PLS regression outputs, NOT probabilities)
-        Y_pred_raw_np = np.array(Y_pred_raw.data) if hasattr(Y_pred_raw, "data") else np.array(Y_pred_raw)
+        Y_pred_raw_np = to_numpy_2d(Y_pred_raw, name="Y_pred_raw", dtype=np.float64)
 
         # Validate prediction shape before processing
         if Y_pred_raw_np.ndim != 2:
@@ -398,12 +363,13 @@ class PLSDANode(Node):
         # PLS regression outputs are unbounded continuous values (-∞ to +∞), NOT probabilities!
         # Softmax converts them to valid probabilities (0-1 range, sum to 1)
         from scipy.special import softmax
+
         Y_pred_prob = softmax(Y_pred_raw_np, axis=1)
 
         y_pred_train = classes[np.argmax(Y_pred_prob, axis=1)]
 
         # Cross-validation predictions (also returns softmax-normalized probabilities)
-        y_pred_cv, Y_pred_cv_prob = self._cross_val_predict_plsda(X, y_array, classes, n_components, scale, cv_folds)
+        y_pred_cv, Y_pred_cv_prob = self._cross_val_predict_plsda(X_ds, y_array, classes, n_components, scale, cv_folds)
 
         # Calculate metrics
         train_accuracy = accuracy_score(y_array, y_pred_train)
@@ -414,15 +380,25 @@ class PLSDANode(Node):
         cm_cv = confusion_matrix(y_array, y_pred_cv, labels=classes)
 
         # Classification report
-        class_report = classification_report(y_array, y_pred_cv, target_names=[str(c) for c in classes], output_dict=True)
+        class_report = classification_report(
+            y_array, y_pred_cv, target_names=[str(c) for c in classes], output_dict=True
+        )
 
         # Classification-appropriate metrics
         cv_balanced_accuracy = balanced_accuracy_score(y_array, y_pred_cv)
         cv_f1_macro = f1_score(y_array, y_pred_cv, average="macro")
 
         # Get PLS scores for visualization (extract numpy arrays from SpectroChemPy model)
-        X_scores = _coerce_numeric_array(pls.x_scores.data) if hasattr(pls.x_scores, "data") else _coerce_numeric_array(pls.x_scores)
-        X_loadings = _coerce_numeric_array(pls.x_loadings.data) if hasattr(pls.x_loadings, "data") else _coerce_numeric_array(pls.x_loadings)
+        X_scores = (
+            _coerce_numeric_array(pls.x_scores.data)
+            if hasattr(pls.x_scores, "data")
+            else _coerce_numeric_array(pls.x_scores)
+        )
+        X_loadings = (
+            _coerce_numeric_array(pls.x_loadings.data)
+            if hasattr(pls.x_loadings, "data")
+            else _coerce_numeric_array(pls.x_loadings)
+        )
 
         # Calculate VIP scores (Variable Importance in Projection)
         vip_error = None
@@ -434,8 +410,8 @@ class PLSDANode(Node):
             vip_error = f"{type(e).__name__}: {e}"
 
         # Extract wavenumbers and feature_names from input coordinates for plot generation
-        _x_coord = safe_get_coord(X, 'x')
-        _y_coord = safe_get_coord(X, 'y')
+        _x_coord = safe_get_coord(X_ds, "x")
+        _y_coord = safe_get_coord(X_ds, "y")
         wavenumbers = None
         feature_names = None
 
@@ -458,8 +434,7 @@ class PLSDANode(Node):
 
         try:
             plots = self._generate_plsda_plots(
-                X_scores, X_loadings, vip_scores, y_array, classes,
-                n_components, wavenumbers, feature_names
+                X_scores, X_loadings, vip_scores, y_array, classes, n_components, wavenumbers, feature_names
             )
 
             # Add confusion matrix heatmaps (using shared utility)
@@ -509,7 +484,7 @@ class PLSDANode(Node):
         )
 
         # Add processing history
-        copy_processing_history(X, scores_dataset)
+        copy_processing_history(X_ds, scores_dataset)
         add_processing_step(
             scores_dataset,
             "classification.plsda.scores",
@@ -517,7 +492,7 @@ class PLSDANode(Node):
             node_id=self.node_id,
         )
 
-        copy_processing_history(X, loadings_dataset)
+        copy_processing_history(X_ds, loadings_dataset)
         add_processing_step(
             loadings_dataset,
             "classification.plsda.loadings",
@@ -526,28 +501,30 @@ class PLSDANode(Node):
         )
 
         # Store ONLY scientific metadata that coordinates can't carry
-        scores_dataset.meta.update({
-            "n_components": n_components,
-            "label_categories": label_categories,
-            "lv_labels": lv_labels,
-            "accuracy": cv_accuracy,
-            "train_accuracy": train_accuracy,
-            "cv_balanced_accuracy": cv_balanced_accuracy,
-            "f1_score": cv_f1_macro,
-            "confusion_matrix_train": cm_train.tolist(),
-            "confusion_matrix_cv": cm_cv.tolist(),
-            "classification_report": class_report,
-            "vip_scores": vip_scores.tolist(),
-            "vip_error": vip_error,
-            "plot_error": plot_error,
-        })
+        scores_dataset.meta.update(
+            {
+                "n_components": n_components,
+                "label_categories": label_categories,
+                "lv_labels": lv_labels,
+                "accuracy": cv_accuracy,
+                "train_accuracy": train_accuracy,
+                "cv_balanced_accuracy": cv_balanced_accuracy,
+                "f1_score": cv_f1_macro,
+                "confusion_matrix_train": cm_train.tolist(),
+                "confusion_matrix_cv": cm_cv.tolist(),
+                "classification_report": class_report,
+                "vip_scores": vip_scores.tolist(),
+                "vip_error": vip_error,
+                "plot_error": plot_error,
+            }
+        )
 
         # NDDataset-only return: one serialization boundary at API layer
         return {
-            "default": scores_dataset,      # NDDataset: scores + sample labels (y) + LV coords (x)
-            "loadings": loadings_dataset,    # NDDataset: loadings + wavenumbers (x) + LV coords (y)
-            "model": pls,                    # Model port for Apply PLS-DA Model
-            "plots": plots,                  # Pre-built Plotly traces (legitimate visualization output)
+            "default": scores_dataset,  # NDDataset: scores + sample labels (y) + LV coords (x)
+            "loadings": loadings_dataset,  # NDDataset: loadings + wavenumbers (x) + LV coords (y)
+            "model": pls,  # Model port for Apply PLS-DA Model
+            "plots": plots,  # Pre-built Plotly traces (legitimate visualization output)
         }
 
     def _cross_val_predict_plsda(self, X, y, classes, n_components, scale, cv_folds):
@@ -558,11 +535,9 @@ class PLSDANode(Node):
             y_pred: Predicted class labels
             Y_pred_prob: Prediction probabilities
         """
-        from spectra_sherpa.app.lib.scp_compat import scp
         from sklearn.model_selection import StratifiedKFold
 
-        # Get numpy array from NDDataset
-        X_data = np.array(X.data)
+        X_data = to_numpy_2d(X, name="X", dtype=np.float64)
 
         y_pred = np.zeros_like(y)
         Y_pred_prob = np.zeros((len(y), len(classes)))
@@ -589,7 +564,7 @@ class PLSDANode(Node):
             # Predict on test fold
             Y_test_pred_raw = pls.predict(X_test)
             # Extract numpy array (raw PLS regression outputs, NOT probabilities)
-            Y_test_pred_raw_np = np.array(Y_test_pred_raw.data) if hasattr(Y_test_pred_raw, "data") else np.array(Y_test_pred_raw)
+            Y_test_pred_raw_np = to_numpy_2d(Y_test_pred_raw, name="Y_test_pred_raw", dtype=np.float64)
 
             # Validate prediction shape before argmax
             if Y_test_pred_raw_np.ndim != 2 or Y_test_pred_raw_np.shape[1] != len(classes):
@@ -600,6 +575,7 @@ class PLSDANode(Node):
 
             # CRITICAL: Apply softmax to convert raw PLS outputs to proper probabilities
             from scipy.special import softmax
+
             Y_test_pred_prob = softmax(Y_test_pred_raw_np, axis=1)
 
             y_pred[test_idx] = classes[np.argmax(Y_test_pred_prob, axis=1)]
@@ -613,11 +589,9 @@ class PLSDANode(Node):
 
         Note: This method is currently unused but maintained for consistency.
         """
-        from spectra_sherpa.app.lib.scp_compat import scp
         from sklearn.model_selection import StratifiedKFold
 
-        # Extract numpy array if X is NDDataset
-        X_data = np.array(X.data) if hasattr(X, "data") else np.array(X)
+        X_data = to_numpy_2d(X, name="X", dtype=np.float64)
 
         Y_pred_cv = np.zeros_like(Y_dummy)
         kf = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=42)
@@ -635,8 +609,7 @@ class PLSDANode(Node):
             pls.fit(X_train, Y_train_dataset)
 
             Y_pred_raw = pls.predict(X_test)
-            # Extract numpy array
-            Y_pred_cv[test_idx] = np.array(Y_pred_raw.data) if hasattr(Y_pred_raw, "data") else np.array(Y_pred_raw)
+            Y_pred_cv[test_idx] = to_numpy_2d(Y_pred_raw, name="Y_pred_raw", dtype=np.float64)
 
         return Y_pred_cv
 
@@ -648,11 +621,24 @@ class PLSDANode(Node):
         VIP > 1 indicates important variables.
         """
         # Extract numeric arrays from SpectroChemPy model
-        t = _coerce_numeric_array(pls_model.x_scores.data) if hasattr(pls_model.x_scores, "data") else _coerce_numeric_array(pls_model.x_scores)
-        # SpectroChemPy returns x_weights as (n_components, n_features), but VIP calculation expects (n_features, n_components)
-        w_raw = _coerce_numeric_array(pls_model.x_weights.data) if hasattr(pls_model.x_weights, "data") else _coerce_numeric_array(pls_model.x_weights)
+        t = (
+            _coerce_numeric_array(pls_model.x_scores.data)
+            if hasattr(pls_model.x_scores, "data")
+            else _coerce_numeric_array(pls_model.x_scores)
+        )
+        # SpectroChemPy returns x_weights as (n_components, n_features),
+        # but VIP calculation expects (n_features, n_components)
+        w_raw = (
+            _coerce_numeric_array(pls_model.x_weights.data)
+            if hasattr(pls_model.x_weights, "data")
+            else _coerce_numeric_array(pls_model.x_weights)
+        )
         w = w_raw.T  # Transpose to (n_features, n_components)
-        q = _coerce_numeric_array(pls_model.y_loadings.data) if hasattr(pls_model.y_loadings, "data") else _coerce_numeric_array(pls_model.y_loadings)
+        q = (
+            _coerce_numeric_array(pls_model.y_loadings.data)
+            if hasattr(pls_model.y_loadings, "data")
+            else _coerce_numeric_array(pls_model.y_loadings)
+        )
 
         # Guard against malformed arrays
         if t.ndim != 2 or w.ndim != 2 or q.ndim < 1:
@@ -683,9 +669,9 @@ class PLSDANode(Node):
 
         return np.nan_to_num(vip, nan=0.0, posinf=0.0, neginf=0.0)
 
-
-
-    def _generate_plsda_plots(self, scores, loadings, vip_scores, y_array, classes, n_components, wavenumbers, feature_names=None):
+    def _generate_plsda_plots(
+        self, scores, loadings, vip_scores, y_array, classes, n_components, wavenumbers, feature_names=None
+    ):
         """
         Generate plots for PLS-DA visualization.
 
@@ -702,7 +688,6 @@ class PLSDANode(Node):
         Returns:
             Dict with plot specifications for Quick Plot
         """
-        from scipy import stats
 
         plots = {}
 
@@ -712,8 +697,16 @@ class PLSDANode(Node):
 
             # Standard Plotly color palette (same as frontend)
             PLOTLY_COLORS = [
-                "#636EFA", "#EF553B", "#00CC96", "#AB63FA", "#FFA15A",
-                "#19D3F3", "#FF6692", "#B6E880", "#FF97FF", "#FECB52"
+                "#636EFA",
+                "#EF553B",
+                "#00CC96",
+                "#AB63FA",
+                "#FFA15A",
+                "#19D3F3",
+                "#FF6692",
+                "#B6E880",
+                "#FF97FF",
+                "#FECB52",
             ]
 
             # Create scatter traces for each class with confidence ellipses
@@ -738,8 +731,7 @@ class PLSDANode(Node):
                 # Calculate 95% confidence ellipse
                 if len(class_scores) >= 3:  # Need at least 3 points for ellipse
                     ellipse_trace = self._calculate_confidence_ellipse(
-                        class_scores[:, 0], class_scores[:, 1],
-                        confidence=0.95, name=f"{cls} (95%)", color=color
+                        class_scores[:, 0], class_scores[:, 1], confidence=0.95, name=f"{cls} (95%)", color=color
                     )
                     # Only add ellipse if successfully calculated (not degenerate)
                     if ellipse_trace is not None:
@@ -752,7 +744,7 @@ class PLSDANode(Node):
                     "xaxis": {"title": "LV1"},
                     "yaxis": {"title": "LV2"},
                     "showlegend": True,
-                }
+                },
             }
 
         # 2A. Loadings Line Plot (like PCA) - shows each LV as a line across features
@@ -765,10 +757,18 @@ class PLSDANode(Node):
             x_title = "Feature Index"
             x_reversed = False
 
-            if feature_names is not None and isinstance(feature_names, (list, tuple, np.ndarray)) and len(feature_names) == n_features:
+            if (
+                feature_names is not None
+                and isinstance(feature_names, (list, tuple, np.ndarray))
+                and len(feature_names) == n_features
+            ):
                 x_values = feature_names
                 x_title = "Feature"
-            elif wavenumbers is not None and isinstance(wavenumbers, (list, tuple, np.ndarray)) and len(wavenumbers) == n_features:
+            elif (
+                wavenumbers is not None
+                and isinstance(wavenumbers, (list, tuple, np.ndarray))
+                and len(wavenumbers) == n_features
+            ):
                 x_values = wavenumbers
                 x_title = "Wavenumber (cm⁻¹)"
                 x_reversed = True
@@ -779,14 +779,16 @@ class PLSDANode(Node):
             # Create line traces for each LV
             traces = []
             for i in range(n_components):
-                traces.append({
-                    "type": "scatter",
-                    "mode": "lines",
-                    "x": x_values,
-                    "y": loadings[i, :].tolist(),  # LV i's loadings across all features
-                    "name": f"LV{i+1}",
-                    "line": {"width": 2},
-                })
+                traces.append(
+                    {
+                        "type": "scatter",
+                        "mode": "lines",
+                        "x": x_values,
+                        "y": loadings[i, :].tolist(),  # LV i's loadings across all features
+                        "name": f"LV{i+1}",
+                        "line": {"width": 2},
+                    }
+                )
 
             plots["loadings_lines"] = {
                 "data": traces,
@@ -795,7 +797,7 @@ class PLSDANode(Node):
                     "xaxis": {"title": x_title, "autorange": "reversed" if x_reversed else True},
                     "yaxis": {"title": "Loading"},
                     "showlegend": True,
-                }
+                },
             }
 
         # 2B. Loadings Biplot (LV1 vs LV2) - shows how features relate to latent variables
@@ -806,9 +808,17 @@ class PLSDANode(Node):
             n_features = loadings.shape[1]
 
             labels = None
-            if feature_names is not None and isinstance(feature_names, (list, tuple, np.ndarray)) and len(feature_names) == n_features:
+            if (
+                feature_names is not None
+                and isinstance(feature_names, (list, tuple, np.ndarray))
+                and len(feature_names) == n_features
+            ):
                 labels = feature_names
-            elif wavenumbers is not None and isinstance(wavenumbers, (list, tuple, np.ndarray)) and len(wavenumbers) == n_features:
+            elif (
+                wavenumbers is not None
+                and isinstance(wavenumbers, (list, tuple, np.ndarray))
+                and len(wavenumbers) == n_features
+            ):
                 # For spectral data, use wavenumber values as labels (limit to prevent overcrowding)
                 if len(wavenumbers) <= 50:
                     labels = [f"{w:.0f}" for w in wavenumbers]
@@ -829,46 +839,52 @@ class PLSDANode(Node):
                 lv2 = float(loadings[1, i])  # Loading of feature i on LV2 (component 1)
 
                 # Arrow annotation from (0,0) to (lv1, lv2)
-                annotations.append({
-                    "x": lv1,
-                    "y": lv2,
-                    "ax": 0,  # Arrow starts at origin x
-                    "ay": 0,  # Arrow starts at origin y
-                    "xref": "x",
-                    "yref": "y",
-                    "axref": "x",
-                    "ayref": "y",
-                    "showarrow": True,
-                    "arrowhead": 2,
-                    "arrowsize": 1,
-                    "arrowwidth": 2,
-                    "arrowcolor": "steelblue",
-                })
+                annotations.append(
+                    {
+                        "x": lv1,
+                        "y": lv2,
+                        "ax": 0,  # Arrow starts at origin x
+                        "ay": 0,  # Arrow starts at origin y
+                        "xref": "x",
+                        "yref": "y",
+                        "axref": "x",
+                        "ayref": "y",
+                        "showarrow": True,
+                        "arrowhead": 2,
+                        "arrowsize": 1,
+                        "arrowwidth": 2,
+                        "arrowcolor": "steelblue",
+                    }
+                )
 
                 # Text label at 1.15x the arrow length
-                annotations.append({
-                    "x": lv1 * 1.15,
-                    "y": lv2 * 1.15,
-                    "text": labels[i],
-                    "xref": "x",
-                    "yref": "y",
-                    "showarrow": False,
-                    "font": {"size": 10, "color": "black"},
-                    "xanchor": "center",
-                    "yanchor": "middle",
-                })
+                annotations.append(
+                    {
+                        "x": lv1 * 1.15,
+                        "y": lv2 * 1.15,
+                        "text": labels[i],
+                        "xref": "x",
+                        "yref": "y",
+                        "showarrow": False,
+                        "font": {"size": 10, "color": "black"},
+                        "xanchor": "center",
+                        "yanchor": "middle",
+                    }
+                )
 
             plots["loadings_biplot"] = {
-                "data": [{
-                    # Dummy invisible trace needed for Plotly to render annotations
-                    "x": [0],
-                    "y": [0],
-                    "type": "scatter",
-                    "mode": "markers",
-                    "marker": {"size": 0.1, "opacity": 0},
-                    "showlegend": False,
-                    "hoverinfo": "skip",
-                }],
+                "data": [
+                    {
+                        # Dummy invisible trace needed for Plotly to render annotations
+                        "x": [0],
+                        "y": [0],
+                        "type": "scatter",
+                        "mode": "markers",
+                        "marker": {"size": 0.1, "opacity": 0},
+                        "showlegend": False,
+                        "hoverinfo": "skip",
+                    }
+                ],
                 "layout": {
                     "title": "PLS-DA Loadings Biplot (Feature Correlations)",
                     "xaxis": {"title": "Loading on LV1", "zeroline": True, "zerolinecolor": "gray", "zerolinewidth": 1},
@@ -876,7 +892,7 @@ class PLSDANode(Node):
                     "showlegend": False,
                     "annotations": annotations,
                     "hovermode": "closest",
-                }
+                },
             }
 
         # Set default "loadings" to line plot for consistency with PCA
@@ -890,11 +906,19 @@ class PLSDANode(Node):
             top_indices = np.argsort(vip_scores)[-top_n:][::-1]
 
             # Priority: feature_names > wavenumbers > feature indices (with safety checks)
-            if feature_names is not None and isinstance(feature_names, (list, tuple, np.ndarray)) and len(feature_names) == len(vip_scores):
+            if (
+                feature_names is not None
+                and isinstance(feature_names, (list, tuple, np.ndarray))
+                and len(feature_names) == len(vip_scores)
+            ):
                 x_values = [feature_names[i] for i in top_indices]
                 x_title = "Feature"
                 x_reversed = False
-            elif wavenumbers is not None and isinstance(wavenumbers, (list, tuple, np.ndarray)) and len(wavenumbers) == len(vip_scores):
+            elif (
+                wavenumbers is not None
+                and isinstance(wavenumbers, (list, tuple, np.ndarray))
+                and len(wavenumbers) == len(vip_scores)
+            ):
                 x_values = [wavenumbers[i] for i in top_indices]
                 x_title = "Wavenumber (cm⁻¹)"
                 x_reversed = True
@@ -904,31 +928,35 @@ class PLSDANode(Node):
                 x_reversed = False
 
             plots["vip"] = {
-                "data": [{
-                    "x": x_values,
-                    "y": vip_scores[top_indices].tolist(),
-                    "type": "bar",
-                    "name": "VIP Scores",
-                    "marker": {
-                        "color": vip_scores[top_indices].tolist(),
-                        "colorscale": "Viridis",
-                        "showscale": True,
-                        "colorbar": {"title": "VIP"},
-                    },
-                }],
+                "data": [
+                    {
+                        "x": x_values,
+                        "y": vip_scores[top_indices].tolist(),
+                        "type": "bar",
+                        "name": "VIP Scores",
+                        "marker": {
+                            "color": vip_scores[top_indices].tolist(),
+                            "colorscale": "Viridis",
+                            "showscale": True,
+                            "colorbar": {"title": "VIP"},
+                        },
+                    }
+                ],
                 "layout": {
                     "title": f"Top {top_n} VIP Scores (VIP > 1 indicates importance)",
                     "xaxis": {"title": x_title, "autorange": "reversed" if x_reversed else True},
                     "yaxis": {"title": "VIP Score"},
-                    "shapes": [{
-                        "type": "line",
-                        "x0": 0,  # Start from first bar position
-                        "x1": len(x_values) - 1,  # End at last bar position
-                        "y0": 1,
-                        "y1": 1,
-                        "line": {"color": "red", "width": 2, "dash": "dash"},
-                    }],
-                }
+                    "shapes": [
+                        {
+                            "type": "line",
+                            "x0": 0,  # Start from first bar position
+                            "x1": len(x_values) - 1,  # End at last bar position
+                            "y0": 1,
+                            "y1": 1,
+                            "line": {"color": "red", "width": 2, "dash": "dash"},
+                        }
+                    ],
+                },
             }
 
         return plots
@@ -978,16 +1006,10 @@ class PLSDANode(Node):
 
         # Generate ellipse points
         t = np.linspace(0, 2 * np.pi, 100)
-        ellipse = np.column_stack([
-            width/2 * np.cos(t),
-            height/2 * np.sin(t)
-        ])
+        ellipse = np.column_stack([width / 2 * np.cos(t), height / 2 * np.sin(t)])
 
         # Rotate ellipse
-        rotation_matrix = np.array([
-            [np.cos(angle), -np.sin(angle)],
-            [np.sin(angle), np.cos(angle)]
-        ])
+        rotation_matrix = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
         ellipse_rotated = ellipse @ rotation_matrix.T
 
         # Translate to mean
@@ -1116,7 +1138,7 @@ class KNNNode(Node):
         ],
     )
 
-    async def execute(self, X: NDDataset = None, y: Any = None, **kwargs) -> Any:
+    async def execute(self, X: AnalysisDataset = None, y: Any = None, **kwargs) -> Any:
         """
         Execute KNN classification.
 
@@ -1127,81 +1149,34 @@ class KNNNode(Node):
         Returns:
             KNN model with classification results
         """
+        from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+        from sklearn.model_selection import cross_val_predict, cross_val_score
         from sklearn.neighbors import KNeighborsClassifier
-        from sklearn.model_selection import cross_val_score, cross_val_predict
-        from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
 
-        # Handle both positional and keyword arguments for backward compatibility
-        if X is None and "input_0" in kwargs:
-            X = kwargs["input_0"]
-        if y is None and "input_1" in kwargs:
-            y = kwargs["input_1"]
+        X = bind_X(
+            X,
+            kwargs,
+            missing_message="Missing required input: X (features)",
+            dataset_error_message="X must be an NDDataset or AnalysisDataset object",
+            allow_array=False,
+        )
+        y = bind_y(
+            y,
+            kwargs,
+            X=X,
+            required=True,
+            infer_from_X=True,
+            missing_message=(
+                "Missing required input: y (class labels)\n"
+                "Either provide labels via the 'y' input port, or use an NDDataset with labels in X.y"
+            ),
+            dataset_missing_message=(
+                "NDDataset passed to y port has no embedded labels. " "Use the y-axis coordinate to store class labels."
+            ),
+        )
 
-        if X is None:
-            raise ValueError("Missing required input: X (features)")
-        if not isinstance(X, (NDDataset, AnalysisDataset)):
-            raise ValueError("X must be an NDDataset or AnalysisDataset object")
-
-        # Auto-extract labels from NDDataset/AnalysisDataset
-        # Case 1: y is None - extract from X
-        # Case 2: y is NDDataset/AnalysisDataset - extract embedded labels from y (don't use raw dataset)
-        # Case 3: y is array/list - use directly
-        if y is None:
-            logger.debug("No y input provided - extracting labels from X")
-            # First: check for explicit target attribute (sklearn datasets store
-            # class labels in AnalysisDataset.target, separate from the y-axis)
-            _target = getattr(X, "target", None)
-            if _target is not None:
-                _tarr = np.asarray(_target)
-                if _tarr.size > 0:
-                    y = _tarr
-                    logger.debug("Auto-extracted class labels from X.target")
-
-            if y is None:
-                y_coord = safe_get_coord(X, 'y') if isinstance(X, (NDDataset, AnalysisDataset)) else None
-                if y_coord is not None:
-                    # Extract labels from X's y-axis (prefer labels over data)
-                    if hasattr(y_coord, 'labels') and y_coord.labels is not None:
-                        y = y_coord.labels
-                        logger.debug("Auto-extracted class labels from X.y.labels")
-                    elif hasattr(y_coord, 'data') and y_coord.data is not None and np.array(y_coord.data).size > 0:
-                        y = y_coord.data
-                        logger.debug("Auto-extracted class labels from X.y.data")
-                    else:
-                        raise ValueError(
-                            "NDDataset has y-axis but no labels or data found. "
-                            "Please provide class labels explicitly via the 'y' input port."
-                        )
-                else:
-                    raise ValueError(
-                        "Missing required input: y (class labels)\n"
-                        "Either provide labels via the 'y' input port, or use an NDDataset with labels in X.y"
-                    )
-        elif isinstance(y, (NDDataset, AnalysisDataset)):
-            # If y IS an NDDataset/AnalysisDataset, extract embedded labels (don't use the dataset itself)
-            logger.debug("y is NDDataset/AnalysisDataset - extracting embedded labels")
-            y_coord = safe_get_coord(y, 'y')
-            if y_coord is not None:
-                # Extract from y's own y-axis
-                if hasattr(y_coord, 'labels') and y_coord.labels is not None:
-                    y = y_coord.labels
-                    logger.debug("Extracted labels from y.y.labels")
-                elif hasattr(y_coord, 'data') and y_coord.data is not None and np.array(y_coord.data).size > 0:
-                    y = y_coord.data
-                    logger.debug("Extracted labels from y.y.data")
-                else:
-                    raise ValueError(
-                        "NDDataset passed to y port has no embedded labels. "
-                        "Use the y-axis coordinate to store class labels."
-                    )
-            else:
-                raise ValueError(
-                    "NDDataset passed to y port has no y-axis coordinate. "
-                    "Cannot extract class labels."
-                )
-
-        # Convert to numpy arrays - X is NDDataset or AnalysisDataset
-        X_data = np.array(X.data)
+        # Convert to numpy arrays
+        X_data = to_numpy_2d(X, name="X", dtype=np.float64)
         y_array = _prepare_class_labels(y, X_data.shape[0])
 
         # Get parameters
@@ -1218,24 +1193,20 @@ class KNNNode(Node):
             raise ValueError(f"Need at least 2 classes, got {n_classes}")
 
         # Fit KNN model
-        knn = KNeighborsClassifier(
-            n_neighbors=n_neighbors,
-            weights=weights,
-            metric=metric,
-            algorithm='auto'
-        )
+        knn = KNeighborsClassifier(n_neighbors=n_neighbors, weights=weights, metric=metric, algorithm="auto")
         knn.fit(X_data, y_array)
 
         # Make predictions on training data
         y_pred_train = knn.predict(X_data)
-        y_pred_prob_train = knn.predict_proba(X_data)
+        _y_pred_prob_train = knn.predict_proba(X_data)
 
         # Cross-validation predictions with stratified folds
         from sklearn.model_selection import StratifiedKFold
+
         cv_splitter = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=42)
         y_pred_cv = cross_val_predict(knn, X_data, y_array, cv=cv_splitter)
         # Get CV probabilities using method='predict_proba'
-        y_pred_prob_cv = cross_val_predict(knn, X_data, y_array, cv=cv_splitter, method='predict_proba')
+        _y_pred_prob_cv = cross_val_predict(knn, X_data, y_array, cv=cv_splitter, method="predict_proba")
         cv_scores = cross_val_score(knn, X_data, y_array, cv=cv_splitter)
 
         # Calculate metrics
@@ -1248,17 +1219,15 @@ class KNNNode(Node):
 
         # Classification report
         class_report = classification_report(
-            y_array, y_pred_cv,
-            target_names=[str(c) for c in classes],
-            output_dict=True
+            y_array, y_pred_cv, target_names=[str(c) for c in classes], output_dict=True
         )
 
         # Get unique categories from the classes already computed
         label_categories = [str(c) for c in classes]
 
         # Get input coordinates for NDDataset creation
-        _x_coord = safe_get_coord(X, 'x')
-        _y_coord = safe_get_coord(X, 'y')
+        _x_coord = safe_get_coord(X, "x")
+        _y_coord = safe_get_coord(X, "y")
 
         # For visualization: if feature space is high-dimensional (>10 features),
         # compute PCA internally for meaningful 2D/3D visualization
@@ -1270,6 +1239,7 @@ class KNNNode(Node):
             # Compute PCA for visualization only (doesn't affect KNN model)
             # Use sklearn PCA (portable, no SCP dependency)
             from sklearn.decomposition import PCA as SklearnPCA
+
             n_viz_components = min(5, n_features, X_data.shape[0])
 
             pca_viz = SklearnPCA(n_components=n_viz_components)
@@ -1279,7 +1249,11 @@ class KNNNode(Node):
             explained_var = pca_viz.explained_variance_ratio_
             viz_labels = [f"PC{i+1} ({explained_var[i]*100:.1f}%)" for i in range(n_viz_components)]
 
-            logger.debug("High-dimensional data (%d features) - computed PCA for visualization (%d PCs)", n_features, n_viz_components)
+            logger.debug(
+                "High-dimensional data (%d features) - computed PCA for visualization (%d PCs)",
+                n_features,
+                n_viz_components,
+            )
         else:
             # Low-dimensional data, use as-is
             viz_labels = [f"Feature {i+1}" for i in range(n_features)]
@@ -1313,7 +1287,7 @@ class KNNNode(Node):
                 y_array,
                 classes,
                 n_neighbors=n_neighbors,
-                weights=weights
+                weights=weights,
             )
         except Exception as e:
             logger.warning("Failed to generate decision boundary plot: %s", e)
@@ -1342,60 +1316,62 @@ class KNNNode(Node):
         )
 
         # Store ONLY scientific metadata that coordinates can't carry
-        scores_dataset.meta.update({
-            "n_neighbors": n_neighbors,
-            "label_categories": label_categories,
-            "pc_labels": viz_labels,
-            "accuracy": cv_accuracy,
-            "train_accuracy": train_accuracy,
-            "confusion_matrix_train": cm_train.tolist(),
-            "confusion_matrix_cv": cm_cv.tolist(),
-            "classification_report": class_report,
-            "optimal_k": k_tuning_results.get("best_k") if k_tuning_results else None,
-        })
+        scores_dataset.meta.update(
+            {
+                "n_neighbors": n_neighbors,
+                "label_categories": label_categories,
+                "pc_labels": viz_labels,
+                "accuracy": cv_accuracy,
+                "train_accuracy": train_accuracy,
+                "confusion_matrix_train": cm_train.tolist(),
+                "confusion_matrix_cv": cm_cv.tolist(),
+                "classification_report": class_report,
+                "optimal_k": k_tuning_results.get("best_k") if k_tuning_results else None,
+            }
+        )
 
         logger.debug("Train accuracy: %.3f, CV accuracy: %.3f", train_accuracy, cv_accuracy)
 
         # NDDataset-only return: one serialization boundary at API layer
         return {
-            "default": scores_dataset,      # NDDataset: viz scores + sample labels (y) + feature coords (x)
-            "model": knn,                    # Model port for Apply KNN Model
-            "plots": plots,                  # Pre-built Plotly traces (legitimate visualization output)
+            "default": scores_dataset,  # NDDataset: viz scores + sample labels (y) + feature coords (x)
+            "model": knn,  # Model port for Apply KNN Model
+            "plots": plots,  # Pre-built Plotly traces (legitimate visualization output)
         }
 
     def _optimize_k(self, X, y, max_k=20, folds=5) -> dict:
         """
         Search for optimal K value using cross-validation.
         """
+        from sklearn.model_selection import StratifiedKFold, cross_val_score
         from sklearn.neighbors import KNeighborsClassifier
-        from sklearn.model_selection import cross_val_score, StratifiedKFold
-        
+
         n_samples = len(y)
-        limit_k = min(max_k, int(n_samples * 0.8) - 1, 50) # Ensure K isn't too large for dataset
+        limit_k = min(max_k, int(n_samples * 0.8) - 1, 50)  # Ensure K isn't too large for dataset
         if limit_k < 2:
             return {}
 
         results = {"k": [], "accuracy": [], "std": []}
-        
+
         # Use stratified folds
         cv = StratifiedKFold(n_splits=min(folds, n_samples // 2), shuffle=True, random_state=42)
-        
+
         best_k = 1
         best_score = -1.0
-        
+
         for k in range(1, limit_k + 1):
             knn = KNeighborsClassifier(n_neighbors=k)
-            scores = cross_val_score(knn, X, y, cv=cv, scoring='accuracy')
+            scores = cross_val_score(knn, X, y, cv=cv, scoring="accuracy")
             mean_score = scores.mean()
-            
+
             results["k"].append(k)
             results["accuracy"].append(mean_score)
             results["std"].append(scores.std())
-            
+
             if mean_score > best_score:
                 best_score = mean_score
                 best_k = k
-                
+
         results["best_k"] = best_k
         results["best_accuracy"] = best_score
         return results
@@ -1404,7 +1380,7 @@ class KNNNode(Node):
         """Generate Plotly chart for K-value optimization."""
         if not results:
             return {}
-            
+
         return {
             "data": [
                 {
@@ -1419,8 +1395,8 @@ class KNNNode(Node):
                         "array": results["std"],
                         "visible": True,
                         "color": "#1f77b4",
-                        "opacity": 0.3
-                    }
+                        "opacity": 0.3,
+                    },
                 },
                 # Highlight Best K
                 {
@@ -1428,88 +1404,86 @@ class KNNNode(Node):
                     "y": [results["best_accuracy"]],
                     "mode": "markers",
                     "name": f"Best K ({results['best_k']})",
-                    "marker": {"size": 12, "color": "red", "symbol": "star"}
-                }
+                    "marker": {"size": 12, "color": "red", "symbol": "star"},
+                },
             ],
             "layout": {
                 "title": "K-Value Parameter Tuning",
                 "xaxis": {"title": "Number of Neighbors (k)"},
                 "yaxis": {"title": "Cross-Validation Accuracy"},
-                "hovermode": "closest"
-            }
+                "hovermode": "closest",
+            },
         }
 
-
-    
-    def _generate_decision_boundary_plot(self, X_2d, y, classes, n_neighbors=5, weights='uniform'):
+    def _generate_decision_boundary_plot(self, X_2d, y, classes, n_neighbors=5, weights="uniform"):
         """
         Generate decision boundary visualization for 2D data (or PCA-reduced).
         """
         from sklearn.neighbors import KNeighborsClassifier
-        
+
         # Train shadow model on just these 2 dimensions
         clf = KNeighborsClassifier(n_neighbors=n_neighbors, weights=weights)
         clf.fit(X_2d, y)
-        
+
         # Create meshgrid
         x_min, x_max = X_2d[:, 0].min() - 1, X_2d[:, 0].max() + 1
         y_min, y_max = X_2d[:, 1].min() - 1, X_2d[:, 1].max() + 1
-        h = max((x_max - x_min) / 100, (y_max - y_min) / 100) # Resolution
-        
-        xx, yy = np.meshgrid(np.arange(x_min, x_max, h),
-                             np.arange(y_min, y_max, h))
-        
+        h = max((x_max - x_min) / 100, (y_max - y_min) / 100)  # Resolution
+
+        xx, yy = np.meshgrid(np.arange(x_min, x_max, h), np.arange(y_min, y_max, h))
+
         # Predict mesh points
         Z = clf.predict(np.c_[xx.ravel(), yy.ravel()])
-        
+
         # Convert class labels to integers for contour plot
         # Create map from class label to integer
         unique_classes = np.unique(y)
         class_to_int = {c: i for i, c in enumerate(unique_classes)}
-        
+
         Z_int = np.array([class_to_int[z] for z in Z])
         Z_int = Z_int.reshape(xx.shape)
-        y_int = np.array([class_to_int[label] for label in y])
+        _y_int = np.array([class_to_int[label] for label in y])
 
         # Create Plotly traces
         data = []
-        
+
         # 1. Decision Regions (Contour)
-        data.append({
-            "type": "contour",
-            "x": np.arange(x_min, x_max, h).tolist(),
-            "y": np.arange(y_min, y_max, h).tolist(),
-            "z": Z_int.tolist(),
-            "showscale": False,
-            "opacity": 0.4,
-            "colorscale": "Viridis",
-            "hoverinfo": "none",
-            "contours": {"coloring": "heatmap"}
-        })
-        
+        data.append(
+            {
+                "type": "contour",
+                "x": np.arange(x_min, x_max, h).tolist(),
+                "y": np.arange(y_min, y_max, h).tolist(),
+                "z": Z_int.tolist(),
+                "showscale": False,
+                "opacity": 0.4,
+                "colorscale": "Viridis",
+                "hoverinfo": "none",
+                "contours": {"coloring": "heatmap"},
+            }
+        )
+
         # 2. Scatter Points (Actual Data)
         for i, cls in enumerate(unique_classes):
-             mask = (y == cls)
-             data.append({
-                 "type": "scatter",
-                 "x": X_2d[mask, 0].tolist(),
-                 "y": X_2d[mask, 1].tolist(),
-                 "mode": "markers",
-                 "name": str(cls),
-                 "marker": {
-                     "size": 8,
-                     "line": {"width": 1, "color": "white"}
-                 }
-             })
-             
+            mask = y == cls
+            data.append(
+                {
+                    "type": "scatter",
+                    "x": X_2d[mask, 0].tolist(),
+                    "y": X_2d[mask, 1].tolist(),
+                    "mode": "markers",
+                    "name": str(cls),
+                    "marker": {"size": 8, "line": {"width": 1, "color": "white"}},
+                }
+            )
+
         return {
             "data": data,
             "layout": {
                 "title": f"Decision Boundary (k={n_neighbors})",
                 "xaxis": {"title": "Component 1"},
                 "yaxis": {"title": "Component 2"},
-                "legend": {"title": {"text": "Classes"}}
-            }
+                "legend": {"title": {"text": "Classes"}},
+            },
         }
 
 
@@ -1621,7 +1595,7 @@ class SIMCANode(Node):
         requires_scp=True,
     )
 
-    async def execute(self, X: NDDataset = None, y: Any = None, **kwargs) -> Any:
+    async def execute(self, X: AnalysisDataset = None, y: Any = None, **kwargs) -> Any:
         """
         Execute SIMCA classification.
 
@@ -1632,80 +1606,32 @@ class SIMCANode(Node):
         Returns:
             SIMCA model with classification results
         """
-        from spectra_sherpa.app.lib.scp_compat import scp
         from scipy.stats import f
 
-        # Handle both positional and keyword arguments
-        if X is None and "input_0" in kwargs:
-            X = kwargs["input_0"]
-        if y is None and "input_1" in kwargs:
-            y = kwargs["input_1"]
-
-        if X is None:
-            raise ValueError("Missing required input: X (features)")
-        if not isinstance(X, (NDDataset, AnalysisDataset)):
-            raise ValueError("X must be an NDDataset or AnalysisDataset object")
-
-        # Auto-extract labels from dataset
-        # Case 1: y is None - extract from X
-        # Case 2: y is dataset - extract embedded labels from y
-        # Case 3: y is array/list - use directly
-        if y is None:
-            logger.debug("No y input provided - extracting labels from X")
-            # First: check for explicit target attribute (sklearn datasets store
-            # class labels in AnalysisDataset.target, separate from the y-axis)
-            _target = getattr(X, "target", None)
-            if _target is not None:
-                _tarr = np.asarray(_target)
-                if _tarr.size > 0:
-                    y = _tarr
-                    logger.debug("Auto-extracted class labels from X.target")
-
-            if y is None:
-                y_coord = safe_get_coord(X, 'y')
-                if y_coord is not None:
-                    # Extract labels from X's y-axis (prefer labels over data)
-                    if hasattr(y_coord, 'labels') and y_coord.labels is not None:
-                        y = y_coord.labels
-                        logger.debug("Auto-extracted class labels from X.y.labels")
-                    elif hasattr(y_coord, 'data') and y_coord.data is not None and np.array(y_coord.data).size > 0:
-                        y = y_coord.data
-                        logger.debug("Auto-extracted class labels from X.y.data")
-                    else:
-                        raise ValueError(
-                            "Dataset has y-axis but no labels or data found. "
-                            "Please provide class labels explicitly via the 'y' input port."
-                        )
-                else:
-                    raise ValueError(
-                        "Missing required input: y (class labels)\n"
-                        "Either provide labels via the 'y' input port, or use a dataset with labels in X.y"
-                    )
-        elif isinstance(y, (NDDataset, AnalysisDataset)):
-            # If y IS a dataset, extract embedded labels (don't use the dataset itself)
-            logger.debug("y is dataset - extracting embedded labels")
-            y_coord = safe_get_coord(y, 'y')
-            if y_coord is not None:
-                # Extract from y's own y-axis
-                if hasattr(y_coord, 'labels') and y_coord.labels is not None:
-                    y = y_coord.labels
-                    logger.debug("Extracted labels from y.y.labels")
-                elif hasattr(y_coord, 'data') and y_coord.data is not None and np.array(y_coord.data).size > 0:
-                    y = y_coord.data
-                    logger.debug("Extracted labels from y.y.data")
-                else:
-                    raise ValueError(
-                        "Dataset passed to y port has no embedded labels. "
-                        "Use the y-axis coordinate to store class labels."
-                    )
-            else:
-                raise ValueError(
-                    "Dataset passed to y port has no y-axis coordinate. "
-                    "Cannot extract class labels."
-                )
+        X_ds = bind_X(
+            X,
+            kwargs,
+            missing_message="Missing required input: X (features)",
+            dataset_error_message="X must be an NDDataset or AnalysisDataset object",
+            allow_array=False,
+        )
+        y = bind_y(
+            y,
+            kwargs,
+            X=X_ds,
+            required=True,
+            infer_from_X=True,
+            missing_message=(
+                "Missing required input: y (class labels)\n"
+                "Either provide labels via the 'y' input port, or use a dataset with labels in X.y"
+            ),
+            dataset_missing_message=(
+                "Dataset passed to y port has no embedded labels. " "Use the y-axis coordinate to store class labels."
+            ),
+        )
 
         # Convert to numpy arrays
-        X_data = np.array(X.data)
+        X_data = to_numpy_2d(X_ds, name="X", dtype=np.float64)
         y_array = _prepare_class_labels(y, X_data.shape[0])
 
         # Get parameters
@@ -1732,7 +1658,9 @@ class SIMCANode(Node):
 
             # Need at least n_components + 1 samples for valid F-distribution (df2 > 0)
             if n_class_samples <= n_components:
-                raise ValueError(f"Class {cls} has {n_class_samples} samples but needs at least {n_components + 1} for SIMCA")
+                raise ValueError(
+                    f"Class {cls} has {n_class_samples} samples but needs at least {n_components + 1} for SIMCA"
+                )
 
             # Build PCA model for this class
             X_class_dataset = scp.NDDataset(X_class)
@@ -1741,8 +1669,8 @@ class SIMCANode(Node):
 
             # Get scores and loadings
             scores = pca.transform()
-            scores_data = np.array(scores.data) if hasattr(scores, "data") else np.array(scores)
-            loadings_data = np.array(pca.components.data) if hasattr(pca.components, "data") else np.array(pca.components)
+            scores_data = to_numpy_2d(scores, name="scores", dtype=np.float64)
+            loadings_data = to_numpy_2d(pca.components, name="components", dtype=np.float64)
 
             # Get class mean for proper projection of new samples
             # CRITICAL: PCA centers data, so we need the mean to project new samples correctly
@@ -1751,8 +1679,8 @@ class SIMCANode(Node):
             # Calculate T² limit using CORRECT eigenvalues from PCA model
             # CRITICAL: Use pca.explained_variance (eigenvalues), NOT score variance
             # Reference: Nomikos & MacGregor (1995), Technometrics
-            explained_var = np.array(pca.explained_variance.data) if hasattr(pca.explained_variance, "data") else np.array(pca.explained_variance)
-            eigenvalues = np.maximum(explained_var.flatten()[:n_components], 1e-10)
+            explained_var = to_numpy_1d(pca.explained_variance, name="explained_variance", dtype=np.float64)
+            eigenvalues = np.maximum(explained_var[:n_components], 1e-10)
 
             alpha = 1 - confidence_level
             df2 = n_class_samples - n_components
@@ -1760,8 +1688,7 @@ class SIMCANode(Node):
             if df2 <= 0:
                 df2 = 1
             F_crit = f.ppf(1 - alpha, n_components, df2)
-            T2_limit = (n_components * (n_class_samples - 1) * (n_class_samples + 1)) / \
-                       (n_class_samples * df2) * F_crit
+            T2_limit = (n_components * (n_class_samples - 1) * (n_class_samples + 1)) / (n_class_samples * df2) * F_crit
 
             # Calculate Q limit using chi-squared distribution
             # Reference: Jackson & Mudholkar (1979), Technometrics
@@ -1773,6 +1700,7 @@ class SIMCANode(Node):
             # Estimate degrees of freedom for residual space
             n_residual_dims = max(1, X_class.shape[1] - n_components)
             from scipy.stats import chi2
+
             Q_limit = max(remaining_var * chi2.ppf(confidence_level, n_residual_dims) / n_residual_dims, 1e-10)
 
             # Ensure limits are valid (not zero, not NaN, not inf)
@@ -1810,10 +1738,10 @@ class SIMCANode(Node):
                 # scores = (sample - mean) @ loadings
                 sample_dataset = scp.NDDataset(sample)
                 sample_scores = pca.transform(sample_dataset)
-                t = np.array(sample_scores.data).flatten() if hasattr(sample_scores, "data") else np.array(sample_scores).flatten()
+                t = to_numpy_1d(sample_scores, name="sample_scores", dtype=np.float64)
 
                 # Calculate T² distance
-                T2 = np.sum((t ** 2) / eigenvalues)
+                T2 = np.sum((t**2) / eigenvalues)
 
                 # Calculate Q distance (simplified)
                 reconstructed = t @ loadings.T
@@ -1831,11 +1759,13 @@ class SIMCANode(Node):
         predictions = np.array(predictions)
 
         # Calculate metrics
-        from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
+        from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
         train_accuracy = accuracy_score(y_array, predictions)
         cm = confusion_matrix(y_array, predictions, labels=classes)
-        class_report = classification_report(y_array, predictions, target_names=[str(c) for c in classes], output_dict=True)
+        class_report = classification_report(
+            y_array, predictions, target_names=[str(c) for c in classes], output_dict=True
+        )
 
         # For visualization: project all samples into first class model's PC space
         # This provides a meaningful reduced-dimension view of the data
@@ -1845,7 +1775,7 @@ class SIMCANode(Node):
 
         # Project all samples into first class PC space for visualization
         viz_scores = first_pca.transform(scp.NDDataset(X_data))
-        viz_scores_data = np.array(viz_scores.data) if hasattr(viz_scores, "data") else np.array(viz_scores)
+        viz_scores_data = to_numpy_2d(viz_scores, name="viz_scores", dtype=np.float64)
 
         logger.debug("Visualization: projecting all samples into class '%s' PC space", first_class)
 
@@ -1855,8 +1785,12 @@ class SIMCANode(Node):
             str(cls): {
                 "scores": model["scores"].tolist() if hasattr(model["scores"], "tolist") else model["scores"],
                 "loadings": model["loadings"].tolist() if hasattr(model["loadings"], "tolist") else model["loadings"],
-                "eigenvalues": model["eigenvalues"].tolist() if hasattr(model["eigenvalues"], "tolist") else model["eigenvalues"],
-                "class_mean": model["class_mean"].tolist() if hasattr(model["class_mean"], "tolist") else model["class_mean"],
+                "eigenvalues": (
+                    model["eigenvalues"].tolist() if hasattr(model["eigenvalues"], "tolist") else model["eigenvalues"]
+                ),
+                "class_mean": (
+                    model["class_mean"].tolist() if hasattr(model["class_mean"], "tolist") else model["class_mean"]
+                ),
                 "n_samples": model["n_samples"],
             }
             for cls, model in class_models.items()
@@ -1866,13 +1800,11 @@ class SIMCANode(Node):
         label_categories = [str(c) for c in classes]
 
         # Get input coordinates for NDDataset creation
-        _y_coord = safe_get_coord(X, 'y')
+        _y_coord = safe_get_coord(X_ds, "y")
 
         # Generate plots
         plots = {}
-        plots["confusion_matrix"] = generate_confusion_matrix_heatmap(
-            cm, classes, "Confusion Matrix (Training Set)"
-        )
+        plots["confusion_matrix"] = generate_confusion_matrix_heatmap(cm, classes, "Confusion Matrix (Training Set)")
 
         # =====================================================================
         # Create NDDataset output with proper coordinate coupling
@@ -1891,7 +1823,7 @@ class SIMCANode(Node):
         )
 
         # Add processing history
-        copy_processing_history(X, scores_dataset)
+        copy_processing_history(X_ds, scores_dataset)
         add_processing_step(
             scores_dataset,
             "classification.simca.scores",
@@ -1900,27 +1832,29 @@ class SIMCANode(Node):
         )
 
         # Store ONLY scientific metadata that coordinates can't carry
-        scores_dataset.meta.update({
-            "n_components": n_components,
-            "label_categories": label_categories,
-            "pc_labels": pc_labels,
-            "accuracy": train_accuracy,
-            "confusion_matrix": cm.tolist(),
-            "classification_report": class_report,
-            "confidence_level": confidence_level,
-            "acceptance_stats": {
-                "T2_limits": {str(k): float(v) for k, v in T2_limits.items()},
-                "Q_limits": {str(k): float(v) for k, v in Q_limits.items()},
-            },
-        })
+        scores_dataset.meta.update(
+            {
+                "n_components": n_components,
+                "label_categories": label_categories,
+                "pc_labels": pc_labels,
+                "accuracy": train_accuracy,
+                "confusion_matrix": cm.tolist(),
+                "classification_report": class_report,
+                "confidence_level": confidence_level,
+                "acceptance_stats": {
+                    "T2_limits": {str(k): float(v) for k, v in T2_limits.items()},
+                    "Q_limits": {str(k): float(v) for k, v in Q_limits.items()},
+                },
+            }
+        )
 
         logger.debug("Train accuracy: %.3f with %d PCs per class", train_accuracy, n_components)
 
         # NDDataset-only return: one serialization boundary at API layer
         return {
-            "default": scores_dataset,          # NDDataset: viz scores + sample labels (y) + PC coords (x)
-            "model": serializable_models,        # Model port: class models dict for SIMCA Predict
-            "plots": plots,                      # Pre-built Plotly traces (legitimate visualization output)
+            "default": scores_dataset,  # NDDataset: viz scores + sample labels (y) + PC coords (x)
+            "model": serializable_models,  # Model port: class models dict for SIMCA Predict
+            "plots": plots,  # Pre-built Plotly traces (legitimate visualization output)
         }
 
 
@@ -1928,12 +1862,12 @@ class SIMCANode(Node):
 class PLSDAPredictNode(Node):
     """
     Apply trained PLS-DA model to predict class labels for new samples.
-    
+
     Takes new spectral data and a trained PLS-DA model, returns predicted
     class labels and probabilities. Enables train/test workflows and
     production inference.
     """
-    
+
     metadata = NodeMetadata(
         node_type="classification.plsda_predict",
         category="classification",
@@ -1988,6 +1922,9 @@ class PLSDAPredictNode(Node):
         Returns:
             Dict with predicted classes and probabilities
         """
+        X_new = resolve_legacy_input(X_new, kwargs, "input_0")
+        model = resolve_legacy_input(model, kwargs, "input_1")
+
         if X_new is None:
             raise ValueError("Missing required input: X_new (new spectra)")
         if model is None:
@@ -2004,17 +1941,23 @@ class PLSDAPredictNode(Node):
         if pls_model is None:
             raise ValueError("Model dict does not contain 'model' key with trained PLS-DA model")
 
-        # X_new can be NDDataset or AnalysisDataset
-        X_array = np.array(X_new.data)
+        X_new_ds = bind_X(
+            X_new,
+            kwargs,
+            missing_message="Missing required input: X_new (new spectra)",
+            dataset_error_message="X_new must be an NDDataset or AnalysisDataset object",
+            allow_array=True,
+        )
+        X_array = to_numpy_2d(X_new_ds, name="X_new", dtype=np.float64)
 
         # Make predictions
         # PLS-DA returns continuous predictions for each class (dummy variables)
         # SpectroChemPy PLS model requires NDDataset input
-        from spectra_sherpa.app.lib.scp_compat import scp
         from scipy.special import softmax
+
         X_dataset = scp.NDDataset(X_array)
         Y_pred_raw = pls_model.predict(X_dataset)
-        Y_pred_raw_np = np.array(Y_pred_raw.data) if hasattr(Y_pred_raw, "data") else np.array(Y_pred_raw)
+        Y_pred_raw_np = to_numpy_2d(Y_pred_raw, name="Y_pred_raw", dtype=np.float64)
 
         # Validate prediction shape before argmax
         n_classes = len(classes)
@@ -2045,12 +1988,12 @@ class PLSDAPredictNode(Node):
 class KNNPredictNode(Node):
     """
     Apply trained KNN model to predict class labels for new samples.
-    
+
     Takes new feature data and a trained KNN model, returns predicted
     class labels and probabilities. Useful for test set evaluation and
     production inference.
     """
-    
+
     metadata = NodeMetadata(
         node_type="classification.knn_predict",
         category="classification",
@@ -2092,37 +2035,44 @@ class KNNPredictNode(Node):
         input_types=["NDDataset", "dict"],
         output_type="dict",
     )
-    
+
     async def execute(self, X_new: Any = None, model: Any = None, **kwargs: Any) -> dict[str, Any]:
         """
         Apply KNN model to new data.
-        
+
         Args:
             X_new: New feature data (NDDataset or array)
             model: Trained KNN model dict from training node
-            
+
         Returns:
             Dict with predicted classes and probabilities
         """
+        X_new = resolve_legacy_input(X_new, kwargs, "input_0")
+        model = resolve_legacy_input(model, kwargs, "input_1")
+
         if X_new is None:
             raise ValueError("Missing required input: X_new (new features)")
         if model is None:
             raise ValueError("Missing required input: model (trained KNN model)")
-        
+
         # Extract model from result dict
         if isinstance(model, dict):
             knn_model = model.get("model")
-            classes = np.array(model.get("classes", []))
+            _classes = np.array(model.get("classes", []))
         else:
             raise ValueError("Model must be a dict containing KNN model and metadata")
-        
+
         if knn_model is None:
             raise ValueError("Model dict does not contain 'model' key with trained KNN model")
 
-        # X_new is NDDataset or AnalysisDataset directly
-        if not isinstance(X_new, (NDDataset, AnalysisDataset)):
-            raise ValueError("X_new must be an NDDataset or AnalysisDataset object")
-        X_array = np.array(X_new.data)
+        X_new_ds = bind_X(
+            X_new,
+            kwargs,
+            missing_message="Missing required input: X_new (new features)",
+            dataset_error_message="X_new must be an NDDataset or AnalysisDataset object",
+            allow_array=True,
+        )
+        X_array = to_numpy_2d(X_new_ds, name="X_new", dtype=np.float64)
 
         # Make predictions
         y_pred = knn_model.predict(X_array)
@@ -2201,6 +2151,9 @@ class SIMCAPredictNode(Node):
         Returns:
             Dict with predicted classes and distances to each class
         """
+        X_new = resolve_legacy_input(X_new, kwargs, "input_0")
+        model = resolve_legacy_input(model, kwargs, "input_1")
+
         if X_new is None:
             raise ValueError("Missing required input: X_new (new spectra)")
         if model is None:
@@ -2220,14 +2173,14 @@ class SIMCAPredictNode(Node):
         if not classes:
             raise ValueError("Model dict does not contain 'classes' list")
 
-        # X_new is NDDataset or AnalysisDataset directly
-        if not isinstance(X_new, (NDDataset, AnalysisDataset)):
-            raise ValueError("X_new must be an NDDataset or AnalysisDataset object")
-        X_array = np.array(X_new.data)
-
-        # Ensure 2D
-        if X_array.ndim == 1:
-            X_array = X_array.reshape(1, -1)
+        X_new_ds = bind_X(
+            X_new,
+            kwargs,
+            missing_message="Missing required input: X_new (new spectra)",
+            dataset_error_message="X_new must be an NDDataset or AnalysisDataset object",
+            allow_array=True,
+        )
+        X_array = to_numpy_2d(X_new_ds, name="X_new", dtype=np.float64)
 
         n_samples = X_array.shape[0]
         predictions = []
@@ -2281,12 +2234,12 @@ class SIMCAPredictNode(Node):
                 eigenvalues = np.maximum(eigenvalues[:n_components], 1e-10)
 
                 # Calculate T² (Hotelling's T²)
-                T2 = np.sum((scores ** 2) / eigenvalues)
+                T2 = np.sum((scores**2) / eigenvalues)
 
                 # Calculate Q (SPE - Squared Prediction Error)
                 reconstructed = scores @ loadings  # shape: (n_features,)
                 residual = centered_sample - reconstructed
-                Q = np.sum(residual ** 2)
+                Q = np.sum(residual**2)
 
                 # Combined normalized distance
                 distance = (T2 / T2_limit) + (Q / Q_limit)

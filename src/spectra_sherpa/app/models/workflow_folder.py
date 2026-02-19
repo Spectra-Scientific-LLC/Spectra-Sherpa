@@ -13,8 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from spectra_sherpa.app.db.base import Base
 
 if TYPE_CHECKING:
-    from spectra_sherpa.app.models.user import User
-    from spectra_sherpa.app.models.workflow import Workflow
+    pass
 
 
 class WorkflowFolder(Base):
@@ -27,16 +26,10 @@ class WorkflowFolder(Base):
     __tablename__ = "workflow_folder"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("user.id"), nullable=False, index=True
-    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    parent_id: Mapped[int | None] = mapped_column(
-        ForeignKey("workflow_folder.id", ondelete="CASCADE"), index=True
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("workflow_folder.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -44,9 +37,7 @@ class WorkflowFolder(Base):
     # Relationships
     user = relationship("User")
     parent = relationship("WorkflowFolder", remote_side=[id], back_populates="children")
-    children = relationship(
-        "WorkflowFolder", back_populates="parent", cascade="all, delete-orphan"
-    )
+    children = relationship("WorkflowFolder", back_populates="parent", cascade="all, delete-orphan")
     workflows = relationship("Workflow", back_populates="folder")
 
     def __repr__(self) -> str:

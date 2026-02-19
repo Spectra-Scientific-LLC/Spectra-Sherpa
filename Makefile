@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help install dev test test-all lint lint-all fmt build clean
+.PHONY: help install dev test test-all lint fmt build clean
 
 help:            ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -21,13 +21,9 @@ test-all:        ## Run backend tests + frontend type-check
 	poetry run pytest tests/ -v --no-cov
 	cd frontend && npx vue-tsc --noEmit
 
-lint:            ## Run eslint (frontend) — backend formatting pending dedicated PR
-	cd frontend && npx eslint src/ --max-warnings 0
-	@echo "Note: backend ruff/black not yet enforced. Run 'make fmt' locally."
-
-lint-all:        ## Run all linters (requires format-only PR first)
-	poetry run ruff check src/ tests/
+lint:            ## Run all linters (backend + frontend)
 	poetry run black --check src/ tests/
+	poetry run ruff check src/ tests/
 	cd frontend && npx eslint src/ --max-warnings 0
 
 fmt:             ## Auto-format backend (black + ruff) and frontend (prettier)

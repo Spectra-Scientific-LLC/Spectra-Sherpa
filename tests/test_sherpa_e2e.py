@@ -12,9 +12,9 @@ The cloud Sherpa service is mocked — the test verifies the local
 pipeline from frontend payload → backend handler → advisor service →
 response formatting.
 """
+
 from __future__ import annotations
 
-import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -26,7 +26,6 @@ from spectra_sherpa.app.schemas.sherpa import (
     SherpaRecommendation,
     SuggestionCategory,
     SuggestionStatus,
-    WorkflowContextEdge,
     WorkflowContextNode,
     WorkflowStateSync,
 )
@@ -34,7 +33,6 @@ from spectra_sherpa.app.services.sherpa_advisor import (
     SherpaAdvisorService,
     filter_workflow_for_tier,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────────────
 
@@ -136,6 +134,7 @@ CHAT_STREAM_LINES = [
 
 # ── Unit Tests: Tier Filtering ────────────────────────────────────
 
+
 class TestTierFiltering:
     """Verify that privacy tiers correctly strip data."""
 
@@ -195,6 +194,7 @@ class TestTierFiltering:
 
 # ── Unit Tests: SherpaAdvisorService ──────────────────────────────
 
+
 class TestSherpaAdvisorSync:
     """Test sync_workflow with mocked cloud responses."""
 
@@ -206,9 +206,7 @@ class TestSherpaAdvisorSync:
     @patch("spectra_sherpa.app.services.sherpa_advisor.app_config")
     @patch("spectra_sherpa.app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
     @patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True)
-    async def test_sync_returns_recommendations(
-        self, mock_egress, mock_key, mock_config, advisor
-    ):
+    async def test_sync_returns_recommendations(self, mock_egress, mock_key, mock_config, advisor):
         mock_config.mode = "hybrid"
 
         # Mock the httpx client — use MagicMock for response since
@@ -259,9 +257,7 @@ class TestSherpaAdvisorSync:
     @patch("spectra_sherpa.app.services.sherpa_advisor.app_config")
     @patch("spectra_sherpa.app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
     @patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True)
-    async def test_sync_graceful_on_connect_error(
-        self, mock_egress, mock_key, mock_config, advisor
-    ):
+    async def test_sync_graceful_on_connect_error(self, mock_egress, mock_key, mock_config, advisor):
         mock_config.mode = "hybrid"
 
         mock_client = AsyncMock(spec=httpx.AsyncClient)
@@ -271,11 +267,7 @@ class TestSherpaAdvisorSync:
 
         sync = WorkflowStateSync(
             workflow_id=42,
-            nodes=[
-                WorkflowContextNode(
-                    node_id="1", node_type="model.pca", parameters={}
-                )
-            ],
+            nodes=[WorkflowContextNode(node_id="1", node_type="model.pca", parameters={})],
             edges=[],
         )
 
@@ -285,9 +277,7 @@ class TestSherpaAdvisorSync:
 
     @patch("spectra_sherpa.app.services.sherpa_advisor.app_config")
     @patch("spectra_sherpa.app.services.sherpa_advisor._sherpa_api_key", return_value=None)
-    async def test_sync_returns_empty_when_not_configured(
-        self, mock_key, mock_config, advisor
-    ):
+    async def test_sync_returns_empty_when_not_configured(self, mock_key, mock_config, advisor):
         mock_config.mode = "local"
 
         sync = WorkflowStateSync(
@@ -309,9 +299,7 @@ class TestSherpaAdvisorChat:
     @patch("spectra_sherpa.app.services.sherpa_advisor.app_config")
     @patch("spectra_sherpa.app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
     @patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True)
-    async def test_chat_streams_chunks(
-        self, mock_egress, mock_key, mock_config, advisor
-    ):
+    async def test_chat_streams_chunks(self, mock_egress, mock_key, mock_config, advisor):
         mock_config.mode = "hybrid"
 
         # Create a mock streaming response
@@ -350,17 +338,13 @@ class TestSherpaAdvisorChat:
     @patch("spectra_sherpa.app.services.sherpa_advisor.app_config")
     @patch("spectra_sherpa.app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
     @patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True)
-    async def test_chat_fallback_on_404(
-        self, mock_egress, mock_key, mock_config, advisor
-    ):
+    async def test_chat_fallback_on_404(self, mock_egress, mock_key, mock_config, advisor):
         mock_config.mode = "hybrid"
 
         # Simulate 404 from cloud (endpoint not built yet)
         mock_response = MagicMock()
         mock_response.status_code = 404
-        http_error = httpx.HTTPStatusError(
-            "Not Found", request=MagicMock(), response=mock_response
-        )
+        http_error = httpx.HTTPStatusError("Not Found", request=MagicMock(), response=mock_response)
 
         mock_client = AsyncMock(spec=httpx.AsyncClient)
         mock_client.is_closed = False
@@ -384,18 +368,14 @@ class TestSherpaAdvisorChat:
     @patch("spectra_sherpa.app.services.sherpa_advisor.app_config")
     @patch("spectra_sherpa.app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
     @patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True)
-    async def test_chat_fallback_on_connect_error(
-        self, mock_egress, mock_key, mock_config, advisor
-    ):
+    async def test_chat_fallback_on_connect_error(self, mock_egress, mock_key, mock_config, advisor):
         mock_config.mode = "hybrid"
 
         mock_client = AsyncMock(spec=httpx.AsyncClient)
         mock_client.is_closed = False
 
         mock_stream_cm = AsyncMock()
-        mock_stream_cm.__aenter__ = AsyncMock(
-            side_effect=httpx.ConnectError("Connection refused")
-        )
+        mock_stream_cm.__aenter__ = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
         mock_stream_cm.__aexit__ = AsyncMock(return_value=False)
         mock_client.stream = MagicMock(return_value=mock_stream_cm)
         advisor._client = mock_client
@@ -411,9 +391,7 @@ class TestSherpaAdvisorChat:
 
     @patch("spectra_sherpa.app.services.sherpa_advisor.app_config")
     @patch("spectra_sherpa.app.services.sherpa_advisor._sherpa_api_key", return_value=None)
-    async def test_chat_fallback_when_not_available(
-        self, mock_key, mock_config, advisor
-    ):
+    async def test_chat_fallback_when_not_available(self, mock_key, mock_config, advisor):
         mock_config.mode = "local"
 
         chunks = []
@@ -426,6 +404,7 @@ class TestSherpaAdvisorChat:
 
 # ── Integration Test: Payload Roundtrip ───────────────────────────
 
+
 class TestPayloadRoundtrip:
     """
     Simulate the full frontend→backend payload flow:
@@ -435,9 +414,7 @@ class TestPayloadRoundtrip:
     @patch("spectra_sherpa.app.services.sherpa_advisor.app_config")
     @patch("spectra_sherpa.app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
     @patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True)
-    async def test_sync_payload_roundtrip(
-        self, mock_egress, mock_key, mock_config
-    ):
+    async def test_sync_payload_roundtrip(self, mock_egress, mock_key, mock_config):
         """Simulate: frontend payload → parse → advisor.sync_workflow → WS response."""
         mock_config.mode = "hybrid"
 
@@ -503,9 +480,7 @@ class TestPayloadRoundtrip:
     @patch("spectra_sherpa.app.services.sherpa_advisor.app_config")
     @patch("spectra_sherpa.app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
     @patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True)
-    async def test_chat_payload_roundtrip(
-        self, mock_egress, mock_key, mock_config
-    ):
+    async def test_chat_payload_roundtrip(self, mock_egress, mock_key, mock_config):
         """Simulate: frontend chat payload → parse → advisor.chat_followup → WS chunks."""
         mock_config.mode = "hybrid"
 
@@ -552,9 +527,7 @@ class TestPayloadRoundtrip:
         ws_messages: list[dict[str, Any]] = []
         ws_messages.append({"type": "sherpa_chat_start"})
 
-        async for chunk in advisor.chat_followup(
-            message=message, workflow_id=workflow_id, history=history
-        ):
+        async for chunk in advisor.chat_followup(message=message, workflow_id=workflow_id, history=history):
             ws_messages.append({"type": "sherpa_chat_chunk", "chunk": chunk})
 
         ws_messages.append({"type": "sherpa_chat_done"})
@@ -579,15 +552,14 @@ class TestPayloadRoundtrip:
 
 # ── Decision Lifecycle Test ───────────────────────────────────────
 
+
 class TestSuggestionLifecycle:
     """Test that accepting/rejecting suggestions updates state correctly."""
 
     @patch("spectra_sherpa.app.services.sherpa_advisor.app_config")
     @patch("spectra_sherpa.app.services.sherpa_advisor._sherpa_api_key", return_value="test-key")
     @patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True)
-    async def test_accept_recommendation(
-        self, mock_egress, mock_key, mock_config
-    ):
+    async def test_accept_recommendation(self, mock_egress, mock_key, mock_config):
         mock_config.mode = "hybrid"
 
         advisor = SherpaAdvisorService()

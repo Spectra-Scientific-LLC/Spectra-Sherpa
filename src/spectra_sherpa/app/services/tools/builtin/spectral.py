@@ -5,6 +5,7 @@ These tools expose the DAG node registry to the LLM so it can
 reason about available operations, their parameters, and
 recommended preprocessing pipelines.
 """
+
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -12,15 +13,14 @@ from typing import Any, Optional
 from spectra_sherpa.app.services.tools.registry import register_tool
 from spectra_sherpa.app.services.tools.schemas import ToolCategory
 
-
 # ---------------------------------------------------------------------------
 # list_node_types
 # ---------------------------------------------------------------------------
 
+
 @register_tool(
     "list_node_types",
-    "List available DAG node types, optionally filtered by category. "
-    "Returns node type IDs, labels, and categories.",
+    "List available DAG node types, optionally filtered by category. " "Returns node type IDs, labels, and categories.",
     category=ToolCategory.spectral,
     parameters={
         "type": "object",
@@ -61,6 +61,7 @@ def list_node_types(category: Optional[str] = None) -> list[dict[str, str]]:
 # describe_node
 # ---------------------------------------------------------------------------
 
+
 @register_tool(
     "describe_node",
     "Get detailed information about a specific DAG node type including "
@@ -72,8 +73,7 @@ def list_node_types(category: Optional[str] = None) -> list[dict[str, str]]:
             "node_type": {
                 "type": "string",
                 "description": (
-                    "Node type identifier (e.g. 'model.pca', "
-                    "'preprocess.autoscaling', 'baseline.penalized_ls')"
+                    "Node type identifier (e.g. 'model.pca', " "'preprocess.autoscaling', 'baseline.penalized_ls')"
                 ),
             },
         },
@@ -195,10 +195,7 @@ _DEFAULT_RECOMMENDATIONS = [
             },
             "goal": {
                 "type": "string",
-                "description": (
-                    "Analysis goal: 'classification', 'regression', "
-                    "'clustering', 'exploration'"
-                ),
+                "description": ("Analysis goal: 'classification', 'regression', " "'clustering', 'exploration'"),
                 "enum": ["classification", "regression", "clustering", "exploration"],
             },
         },
@@ -215,15 +212,19 @@ def suggest_preprocessing(
     # Add goal-specific suggestions
     if goal == "classification":
         steps.append(
-            {"step": "preprocess.autoscaling", "reason": "Autoscaling is common before classification to equalize feature variance"}
+            {
+                "step": "preprocess.autoscaling",
+                "reason": "Autoscaling is common before classification to equalize feature variance",
+            }
         )
     elif goal == "regression":
-        steps.append(
-            {"step": "preprocess.center_mean", "reason": "Mean centering is standard for PLS regression"}
-        )
+        steps.append({"step": "preprocess.center_mean", "reason": "Mean centering is standard for PLS regression"})
     elif goal == "clustering":
         steps.append(
-            {"step": "preprocess.autoscaling", "reason": "Autoscaling prevents high-intensity features from dominating distance metrics"}
+            {
+                "step": "preprocess.autoscaling",
+                "reason": "Autoscaling prevents high-intensity features from dominating distance metrics",
+            }
         )
 
     # Deduplicate by step name

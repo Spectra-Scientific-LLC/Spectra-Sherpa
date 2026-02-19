@@ -1,13 +1,12 @@
-from typing import Any, Dict, Optional, List
-import json
 import logging
+from typing import Any, Optional
 
 import httpx
 
 from spectra_sherpa.app.core.config import app_config
 from spectra_sherpa.app.core.security import is_egress_enabled
-from spectra_sherpa.app.services.dag.node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
 from spectra_sherpa.app.services.dag.meta_helpers import safe_get_coord
+from spectra_sherpa.app.services.dag.node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +48,7 @@ async def check_cloud_health(url: str, api_key: Optional[str] = None, timeout: f
     except Exception as e:
         return False, f"Error checking cloud health: {str(e)}"
 
+
 @register_node
 class CloudComputeNode(Node):
     metadata = NodeMetadata(
@@ -66,7 +66,7 @@ class CloudComputeNode(Node):
                     {"label": "Deep Learning Baseline", "value": "advanced_baseline"},
                     {"label": "Transformer Peak Picking", "value": "transformer_peaks"},
                 ],
-                description="The specific cloud-only algorithm to execute."
+                description="The specific cloud-only algorithm to execute.",
             ),
             NodeParameter(
                 name="timeout",
@@ -75,15 +75,17 @@ class CloudComputeNode(Node):
                 default=60,
                 min_value=10,
                 max_value=300,
-                description="Maximum time to wait for the cloud result."
-            )
+                description="Maximum time to wait for the cloud result.",
+            ),
         ],
         input_ports=[
-            PortMetadata(name="input_data", type_ref="spectrasherpa://types/SpectralDataset/1.0", label="Input Spectra"),
+            PortMetadata(
+                name="input_data", type_ref="spectrasherpa://types/SpectralDataset/1.0", label="Input Spectra"
+            ),
         ],
         output_ports=[
             PortMetadata(name="output_data", type_ref="spectrasherpa://types/SpectralDataset/1.0", label="Result"),
-        ]
+        ],
     )
 
     def _serialize_data(self, data: Any) -> Any:
@@ -94,21 +96,25 @@ class CloudComputeNode(Node):
         # Handle dicts recursively
         if isinstance(data, dict):
             return {k: self._serialize_data(v) for k, v in data.items()}
-        
+
         # Handle lists recursively
         if isinstance(data, list):
             return [self._serialize_data(v) for v in data]
 
         # Handle numpy arrays if numpy is available or if data looks like an array
         if hasattr(data, "tolist"):
-             return data.tolist()
-        
+            return data.tolist()
+
         # Handle XArray/NDDataset if it has a .values property that is an array
         if hasattr(data, "values") and hasattr(data.values, "tolist"):
             return {
                 "values": data.values.tolist(),
                 "dims": getattr(data, "dims", None),
-                "coords": {k: self._serialize_data(v) for k, v in getattr(data, "coords", {}).items()} if hasattr(data, "coords") else None
+                "coords": (
+                    {k: self._serialize_data(v) for k, v in getattr(data, "coords", {}).items()}
+                    if hasattr(data, "coords")
+                    else None
+                ),
             }
 
         return data
@@ -136,7 +142,7 @@ class CloudComputeNode(Node):
         is_healthy, health_message = await check_cloud_health(
             app_config.cloud_compute_url,
             app_config.cloud_api_key,
-            timeout=min(timeout / 10, 5.0)  # Use 10% of timeout or 5s max for health check
+            timeout=min(timeout / 10, 5.0),  # Use 10% of timeout or 5s max for health check
         )
         if not is_healthy:
             raise RuntimeError(f"Cloud service unavailable: {health_message}")
@@ -157,31 +163,27 @@ class CloudComputeNode(Node):
         # Try to extract axis metadata from input data
         if hasattr(input_data, "meta") and input_data.meta:
             meta = input_data.meta
-            input_metadata.update({
-                "x_title": meta.get("x_title"),
-                "x_units": meta.get("x_units"),
-                "y_title": meta.get("y_title"),
-                "y_units": meta.get("y_units"),
-            })
+            input_metadata.update(
+                {
+                    "x_title": meta.get("x_title"),
+                    "x_units": meta.get("x_units"),
+                    "y_title": meta.get("y_title"),
+                    "y_units": meta.get("y_units"),
+                }
+            )
         elif hasattr(input_data, "units"):
             input_metadata["y_units"] = str(input_data.units)
 
         # Try to get x-axis info from coords
-        x_coord = safe_get_coord(input_data, 'x')
+        x_coord = safe_get_coord(input_data, "x")
         if x_coord is not None and hasattr(x_coord, "title"):
             input_metadata["x_title"] = x_coord.title
             if hasattr(x_coord, "units"):
                 input_metadata["x_units"] = str(x_coord.units)
 
-        payload = {
-            "algorithm_id": algorithm_id,
-            "data": serialized_data,
-            "metadata": input_metadata
-        }
-        
-        headers = {
-            "Content-Type": "application/json"
-        }
+        payload = {"algorithm_id": algorithm_id, "data": serialized_data, "metadata": input_metadata}
+
+        headers = {"Content-Type": "application/json"}
         if app_config.cloud_api_key:
             headers["X-API-Key"] = app_config.cloud_api_key
 
@@ -191,12 +193,12 @@ class CloudComputeNode(Node):
                     f"{app_config.cloud_compute_url.rstrip('/')}/api/v1/compute/execute",
                     json=payload,
                     headers=headers,
-                    timeout=timeout
+                    timeout=timeout,
                 )
-                
+
                 if response.status_code == 401:
                     raise RuntimeError("Cloud authentication failed. Check CLOUD_API_KEY setting.")
-                
+
                 response.raise_for_status()
 
                 result_data = response.json()

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.models.user import User
 
@@ -83,9 +82,7 @@ async def test_update_experiment(client: AsyncClient, test_user: User):
         "description": "Updated description",
     }
 
-    response = await client.put(
-        f"/api/v1/experiments/{experiment_id}", json=update_payload
-    )
+    response = await client.put(f"/api/v1/experiments/{experiment_id}", json=update_payload)
     assert response.status_code == 200
 
     data = response.json()

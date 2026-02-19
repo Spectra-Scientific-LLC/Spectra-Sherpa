@@ -17,11 +17,7 @@ class LLMConfig(Base):
     base_url: Mapped[str] = mapped_column(String(255), nullable=False, default="https://api.deepseek.com")
     model: Mapped[str] = mapped_column(String(100), nullable=False, default="deepseek-chat")
     verbose: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    updated_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), onupdate=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
     user = relationship("User", back_populates="llm_config")

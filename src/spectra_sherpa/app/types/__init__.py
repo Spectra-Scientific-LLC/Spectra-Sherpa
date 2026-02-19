@@ -13,7 +13,7 @@ Usage::
     ok, reason = type_registry.is_compatible(source_ref, target_ref)
 """
 
-from .registry import TypeRegistry, TypeDef, parse_type_ref
+from .registry import TypeDef, TypeRegistry, parse_type_ref
 
 # Singleton — populated by app.main lifespan handler via type_registry.load()
 type_registry = TypeRegistry()

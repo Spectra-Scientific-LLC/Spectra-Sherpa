@@ -1,14 +1,14 @@
 import logging
 import shutil
-from pathlib import Path
 
 from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.db.session import async_session
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.user import User
-from spectra_sherpa.app.services.experiments import create_experiment, add_experiment_file, experiment_dir
+from spectra_sherpa.app.services.experiments import add_experiment_file, create_experiment, experiment_dir
 
 logger = logging.getLogger(__name__)
+
 
 async def seed_data() -> None:
     """
@@ -22,9 +22,10 @@ async def seed_data() -> None:
     async with async_session() as session:
         # Get default user
         from sqlalchemy import select
+
         result = await session.execute(select(User).limit(1))
         user = result.scalar_one_or_none()
-        
+
         if not user:
             logger.warning("No user found to assign seed data to.")
             return
@@ -46,9 +47,9 @@ async def seed_data() -> None:
 
         # Copy files and register
         for file_path in seeds_dir.glob("*"):
-            if file_path.name.startswith("."): # skip .DS_Store
+            if file_path.name.startswith("."):  # skip .DS_Store
                 continue
-            
+
             # Destination in canonical data/experiments/exp_XXX/raw/
             exp_dir = experiment_dir(experiment.id)
             dest_dir = exp_dir / "raw"
@@ -65,8 +66,8 @@ async def seed_data() -> None:
                 file_path=str(rel_path),
                 file_type=file_path.suffix.lstrip("."),
                 stage="raw",
-                file_size_bytes=dest_file.stat().st_size
+                file_size_bytes=dest_file.stat().st_size,
             )
             logger.info(f"Seeded file: {file_path.name}")
-            
+
         await session.commit()

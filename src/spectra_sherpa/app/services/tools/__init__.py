@@ -13,6 +13,7 @@ Architecture
 - ``executor``  — Invocation engine with permission and error handling
 - ``builtin/``  — Domain-specific tools shipped with the app
 """
+
 from __future__ import annotations
 
 from spectra_sherpa.app.services.tools.registry import register_plugin_tool, tool_registry  # noqa: F401

@@ -23,26 +23,29 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-
 # ── Enums ───────────────────────────────────────────────────────────
+
 
 class EgressTier(str, Enum):
     """How much data the user allows Sherpa to see."""
-    STRUCTURE = "structure"   # node types, connections, parameters only
-    SUMMARIES = "summaries"   # + result shapes, statistics, scores
-    FULL = "full"             # + raw spectral arrays
+
+    STRUCTURE = "structure"  # node types, connections, parameters only
+    SUMMARIES = "summaries"  # + result shapes, statistics, scores
+    FULL = "full"  # + raw spectral arrays
 
 
 class SuggestionStatus(str, Enum):
     """Lifecycle of a suggestion."""
-    PENDING = "pending"       # delivered, awaiting user decision
-    ACCEPTED = "accepted"     # user applied the patch
-    REJECTED = "rejected"     # user dismissed
-    EXPIRED = "expired"       # superseded by workflow change
+
+    PENDING = "pending"  # delivered, awaiting user decision
+    ACCEPTED = "accepted"  # user applied the patch
+    REJECTED = "rejected"  # user dismissed
+    EXPIRED = "expired"  # superseded by workflow change
 
 
 class SuggestionCategory(str, Enum):
     """What kind of advice Sherpa is giving."""
+
     PREPROCESSING = "preprocessing"
     MODELING = "modeling"
     DIAGNOSTICS = "diagnostics"
@@ -53,11 +56,13 @@ class SuggestionCategory(str, Enum):
 
 # ── Workflow Patch (structured diff) ────────────────────────────────
 
+
 class NodePatch(BaseModel):
     """A single node to add, modify, or remove."""
+
     node_id: str
     action: Literal["add", "modify", "remove"]
-    node_type: str | None = None            # required for "add"
+    node_type: str | None = None  # required for "add"
     label: str | None = None
     parameters: dict[str, Any] | None = None  # new/updated params
     position_x: float | None = None
@@ -66,6 +71,7 @@ class NodePatch(BaseModel):
 
 class EdgePatch(BaseModel):
     """A single edge to add or remove."""
+
     action: Literal["add", "remove"]
     from_node_id: str
     to_node_id: str
@@ -75,14 +81,17 @@ class EdgePatch(BaseModel):
 
 class WorkflowPatch(BaseModel):
     """Structured diff that can be previewed and applied atomically."""
+
     nodes: list[NodePatch] = Field(default_factory=list)
     edges: list[EdgePatch] = Field(default_factory=list)
 
 
 # ── Messages: Local → Cloud ────────────────────────────────────────
 
+
 class WorkflowContextNode(BaseModel):
     """Serialized node for Sherpa context (tier-aware)."""
+
     node_id: str
     node_type: str
     label: str | None = None
@@ -96,6 +105,7 @@ class WorkflowContextNode(BaseModel):
 
 class WorkflowContextEdge(BaseModel):
     """Serialized edge for Sherpa context."""
+
     from_node_id: str
     to_node_id: str
     from_output: str = "default"
@@ -108,6 +118,7 @@ class WorkflowStateSync(BaseModel):
     The ``tier`` field controls how much data is included.  The local app
     is responsible for filtering before sending.
     """
+
     workflow_id: int
     workflow_name: str | None = None
     tier: EgressTier = EgressTier.STRUCTURE
@@ -117,7 +128,7 @@ class WorkflowStateSync(BaseModel):
     # Tier 3: raw data (sent as separate binary or base64 payload)
     raw_data: dict[str, Any] | None = None
     # Context
-    spectral_technique: str | None = None   # "IR", "NIR", "Raman", "UV-Vis"
+    spectral_technique: str | None = None  # "IR", "NIR", "Raman", "UV-Vis"
     n_samples: int | None = None
     n_features: int | None = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
@@ -125,15 +136,17 @@ class WorkflowStateSync(BaseModel):
 
 class UserDecision(BaseModel):
     """User accepts or rejects a Sherpa suggestion."""
+
     workflow_id: int
     suggestion_id: str
     accepted: bool
-    feedback: str | None = None   # optional free-text from user
+    feedback: str | None = None  # optional free-text from user
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
 class SherpaChatRequest(BaseModel):
     """Follow-up question from user to Sherpa about the current workflow."""
+
     message: str
     workflow_id: int | None = None
     history: list[dict[str, str]] = Field(default_factory=list)
@@ -141,14 +154,16 @@ class SherpaChatRequest(BaseModel):
 
 # ── Messages: Cloud → Local ────────────────────────────────────────
 
+
 class SherpaRecommendation(BaseModel):
     """A single suggestion from Sherpa, with both explanation and action."""
+
     suggestion_id: str
     workflow_id: int
     category: SuggestionCategory
-    title: str                              # short summary (< 80 chars)
-    explanation: str                        # natural language rationale (markdown)
-    patch: WorkflowPatch | None = None      # structured action (None = advice only)
+    title: str  # short summary (< 80 chars)
+    explanation: str  # natural language rationale (markdown)
+    patch: WorkflowPatch | None = None  # structured action (None = advice only)
     confidence: float = Field(ge=0.0, le=1.0, description="0-1 confidence score")
     status: SuggestionStatus = SuggestionStatus.PENDING
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -156,9 +171,10 @@ class SherpaRecommendation(BaseModel):
 
 class ExplorationResult(BaseModel):
     """Result from Sherpa's autonomous exploration (user opted in)."""
+
     workflow_id: int
     exploration_id: str
-    summary: str                            # what Sherpa tried and found
+    summary: str  # what Sherpa tried and found
     recommendations: list[SherpaRecommendation] = Field(default_factory=list)
     metrics_before: dict[str, float] | None = None  # e.g., RMSECV, R²
     metrics_after: dict[str, float] | None = None
@@ -166,6 +182,7 @@ class ExplorationResult(BaseModel):
 
 
 # ── WebSocket Envelope ──────────────────────────────────────────────
+
 
 class SherpaWSMessage(BaseModel):
     """Envelope for all Sherpa WebSocket messages.
@@ -184,6 +201,7 @@ class SherpaWSMessage(BaseModel):
         {"type": "sherpa_chat_done"}
         {"type": "sherpa_status",          "payload": {"connected": true}}
     """
-    action: str | None = None   # for client-sent messages
-    type: str | None = None     # for server-sent messages
+
+    action: str | None = None  # for client-sent messages
+    type: str | None = None  # for server-sent messages
     payload: dict[str, Any] = Field(default_factory=dict)

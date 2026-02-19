@@ -34,7 +34,7 @@ class _CoordMissing:
 
 try:
     import spectrochempy as scp
-    from spectrochempy import NDDataset, Coord
+    from spectrochempy import Coord, NDDataset
 
     HAS_SCP = True
 except ImportError:
@@ -51,10 +51,7 @@ def require_scp(feature: str = "This feature") -> None:
     Call at the top of any code path that needs SpectroChemPy at runtime.
     """
     if not HAS_SCP:
-        raise ImportError(
-            f"{feature} requires SpectroChemPy. "
-            f"Install with: pip install spectra-sherpa[scp]"
-        )
+        raise ImportError(f"{feature} requires SpectroChemPy. " f"Install with: pip install spectra-sherpa[scp]")
 
 
 def _resolve_for_dedupe(path: Path) -> Path:
@@ -135,9 +132,16 @@ def download_testdata() -> None:
 
 
 __all__ = [
-    "scp", "NDDataset", "Coord", "HAS_SCP", "require_scp",
-    "get_scp_datadirs", "resolve_scp_path", "download_testdata",
-    "from_nddataset", "to_nddataset",
+    "scp",
+    "NDDataset",
+    "Coord",
+    "HAS_SCP",
+    "require_scp",
+    "get_scp_datadirs",
+    "resolve_scp_path",
+    "download_testdata",
+    "from_nddataset",
+    "to_nddataset",
 ]
 
 
@@ -145,13 +149,15 @@ __all__ = [
 # NDDataset ↔ AnalysisDataset adapters
 # ---------------------------------------------------------------------------
 
-def from_nddataset(ds: "NDDataset") -> "AnalysisDataset":  # type: ignore[name-defined]
+
+def from_nddataset(ds: "NDDataset") -> "AnalysisDataset":  # type: ignore[name-defined]  # noqa: F821
     """Lossless conversion from SCP NDDataset to AnalysisDataset.
 
     Safe to call regardless of HAS_SCP — if you have an NDDataset in hand
     SCP must already be installed.
     """
     import numpy as np
+
     from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo
 
     x_axis = None
@@ -162,11 +168,7 @@ def from_nddataset(ds: "NDDataset") -> "AnalysisDataset":  # type: ignore[name-d
                 values=np.asarray(xc.data),
                 units=str(xc.units) if hasattr(xc, "units") and xc.units else None,
                 title=str(xc.title) if hasattr(xc, "title") and xc.title else None,
-                labels=(
-                    list(xc.labels)
-                    if hasattr(xc, "labels") and xc.labels is not None
-                    else None
-                ),
+                labels=(list(xc.labels) if hasattr(xc, "labels") and xc.labels is not None else None),
             )
     except (KeyError, AttributeError):
         pass
@@ -179,11 +181,7 @@ def from_nddataset(ds: "NDDataset") -> "AnalysisDataset":  # type: ignore[name-d
                 values=np.asarray(yc.data),
                 units=str(yc.units) if hasattr(yc, "units") and yc.units else None,
                 title=str(yc.title) if hasattr(yc, "title") and yc.title else None,
-                labels=(
-                    list(yc.labels)
-                    if hasattr(yc, "labels") and yc.labels is not None
-                    else None
-                ),
+                labels=(list(yc.labels) if hasattr(yc, "labels") and yc.labels is not None else None),
             )
     except (KeyError, AttributeError):
         pass
@@ -203,14 +201,13 @@ def from_nddataset(ds: "NDDataset") -> "AnalysisDataset":  # type: ignore[name-d
     )
 
 
-def to_nddataset(ads: "AnalysisDataset") -> "NDDataset":  # type: ignore[name-defined]
+def to_nddataset(ads: "AnalysisDataset") -> "NDDataset":  # type: ignore[name-defined]  # noqa: F821
     """Convert AnalysisDataset back to NDDataset.
 
     Raises:
         ImportError: If SpectroChemPy is not installed.
     """
     require_scp("to_nddataset()")
-    import numpy as np
 
     ds = scp.NDDataset(ads.X)
 

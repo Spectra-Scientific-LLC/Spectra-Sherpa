@@ -13,7 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from spectra_sherpa.app.db.base import Base
 
 if TYPE_CHECKING:
-    from spectra_sherpa.app.models.workflow import Workflow
+    pass
 
 
 class WorkflowEdge(Base):
@@ -26,24 +26,12 @@ class WorkflowEdge(Base):
     __tablename__ = "workflow_edge"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    workflow_id: Mapped[int] = mapped_column(
-        ForeignKey("workflow.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    from_node_id: Mapped[str] = mapped_column(
-        String(255), nullable=False
-    )  # Source node ID (within workflow)
-    to_node_id: Mapped[str] = mapped_column(
-        String(255), nullable=False
-    )  # Target node ID (within workflow)
-    from_output: Mapped[str] = mapped_column(
-        String(100), nullable=False, default="default"
-    )  # Output port name
-    to_input: Mapped[str] = mapped_column(
-        String(100), nullable=False, default="default"
-    )  # Input port name
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    workflow_id: Mapped[int] = mapped_column(ForeignKey("workflow.id", ondelete="CASCADE"), nullable=False, index=True)
+    from_node_id: Mapped[str] = mapped_column(String(255), nullable=False)  # Source node ID (within workflow)
+    to_node_id: Mapped[str] = mapped_column(String(255), nullable=False)  # Target node ID (within workflow)
+    from_output: Mapped[str] = mapped_column(String(100), nullable=False, default="default")  # Output port name
+    to_input: Mapped[str] = mapped_column(String(100), nullable=False, default="default")  # Input port name
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
     workflow = relationship("Workflow", back_populates="edges")

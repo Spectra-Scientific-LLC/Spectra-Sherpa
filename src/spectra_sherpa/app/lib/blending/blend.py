@@ -20,8 +20,8 @@ Core Algorithm:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 import numpy as np
 
@@ -168,19 +168,22 @@ def eval_saturation_model(
         invalid_indices = np.where(s <= 0)[0]
         raise ValueError(
             f"Saturation parameter s must be > 0 at all wavenumbers. "
-            f"Found s ≤ 0 at {len(invalid_indices)} wavenumbers (first: index {invalid_indices[0]}, s={s[invalid_indices[0]]})"
+            f"Found s ≤ 0 at {len(invalid_indices)} wavenumbers "
+            f"(first: index {invalid_indices[0]}, s={s[invalid_indices[0]]})"
         )
     if np.any(p <= 0):
         invalid_indices = np.where(p <= 0)[0]
         raise ValueError(
             f"Saturation parameter p must be > 0 at all wavenumbers. "
-            f"Found p ≤ 0 at {len(invalid_indices)} wavenumbers (first: index {invalid_indices[0]}, p={p[invalid_indices[0]]})"
+            f"Found p ≤ 0 at {len(invalid_indices)} wavenumbers "
+            f"(first: index {invalid_indices[0]}, p={p[invalid_indices[0]]})"
         )
     if np.any(c <= 0):
         invalid_indices = np.where(c <= 0)[0]
         raise ValueError(
             f"Saturation parameter c must be > 0 at all wavenumbers. "
-            f"Found c ≤ 0 at {len(invalid_indices)} wavenumbers (first: index {invalid_indices[0]}, c={c[invalid_indices[0]]})"
+            f"Found c ≤ 0 at {len(invalid_indices)} wavenumbers "
+            f"(first: index {invalid_indices[0]}, c={c[invalid_indices[0]]})"
         )
 
     # Clip negative concentrations (non-physical)
@@ -198,7 +201,7 @@ def eval_saturation_model(
         normalized = (c_col * concentrations) / s_col
 
         # Step 2: Apply shape exponent
-        powered = normalized ** p_col
+        powered = normalized**p_col
 
         # Step 3: Apply hyperbolic tangent (bounded [0, 1])
         tanh_val = np.tanh(powered)
@@ -209,9 +212,7 @@ def eval_saturation_model(
     # Failsafe: catch any unexpected NaN/inf (should not occur with validation above)
     # If this triggers, there's a numerical issue in the calculation itself
     if np.any(~np.isfinite(absorbance)):
-        logger.warning(
-            "NaN/inf detected in saturation model output despite parameter validation"
-        )
+        logger.warning("NaN/inf detected in saturation model output despite parameter validation")
     absorbance = np.nan_to_num(absorbance, nan=0.0, posinf=0.0, neginf=0.0)
 
     return absorbance
@@ -401,9 +402,10 @@ def blend_datasets(
     NDDataset
         Blended mixture with ground truth in meta["blend_ground_truth"]
     """
-    from spectra_sherpa.app.lib.scp_compat import scp, require_scp
+    from spectra_sherpa.app.lib.scp_compat import require_scp, scp
+
     require_scp("Spectral blending")
-    from ..spectral.dataset import create_spectral_dataset, SpectralUnit
+    from ..spectral.dataset import SpectralUnit, create_spectral_dataset
 
     if not species_datasets:
         raise ValueError("At least one species dataset is required")
@@ -415,8 +417,7 @@ def blend_datasets(
     for ds in species_datasets[1:]:
         if not np.allclose(ds.x.data, reference_wn, atol=1e-6):
             raise ValueError(
-                f"Species '{ds.title}' has misaligned wavenumber grid. "
-                "Use preprocessing alignment first."
+                f"Species '{ds.title}' has misaligned wavenumber grid. " "Use preprocessing alignment first."
             )
 
     # Determine time axis from concentration timeseries
@@ -429,8 +430,7 @@ def blend_datasets(
             times = np.arange(n_times, dtype=float)
         elif len(concentrations) != n_times:
             raise ValueError(
-                f"Concentration timeseries for '{label}' has {len(concentrations)} points, "
-                f"but expected {n_times}."
+                f"Concentration timeseries for '{label}' has {len(concentrations)} points, " f"but expected {n_times}."
             )
 
     if times is None or n_times == 0:

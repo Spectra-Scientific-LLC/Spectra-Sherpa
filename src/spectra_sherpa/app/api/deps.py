@@ -66,6 +66,7 @@ async def _resolve_user(
     """
     # 0. Local mode: implicit user identity (single-user, no login needed)
     from spectra_sherpa.app.core.mode_policy import is_local
+
     if is_local():
         return await _get_or_create_local_user(session)
 
@@ -85,9 +86,7 @@ async def _resolve_user(
                 return None
             # Map to a real DB user instead of a synthetic superuser so auth
             # honors actual account state/permissions in non-local modes.
-            result = await session.execute(
-                select(User).where(User.is_active.is_(True)).order_by(User.id).limit(1)
-            )
+            result = await session.execute(select(User).where(User.is_active.is_(True)).order_by(User.id).limit(1))
             return result.scalar_one_or_none()
 
         # Check cache first (avoids expensive bcrypt on every request)
@@ -101,9 +100,7 @@ async def _resolve_user(
         # Cache miss - do expensive bcrypt verification
         # We need to iterate over users with API keys and verify each one
         # because bcrypt hashes include random salts
-        result = await session.execute(
-            select(User).where(User.api_key_hash.isnot(None))
-        )
+        result = await session.execute(select(User).where(User.api_key_hash.isnot(None)))
         users_with_keys = result.scalars().all()
 
         for user in users_with_keys:
@@ -130,6 +127,7 @@ async def _resolve_user(
     # credentials were provided AND the client is loopback (defense-in-depth;
     # gateway middleware already enforces this, but we double-check here).
     from spectra_sherpa.app.core.mode_policy import is_hybrid
+
     if is_hybrid() and not has_credentials:
         if client_host is not None and not security._is_loopback(client_host):
             return None
@@ -146,7 +144,9 @@ async def get_current_user(
 ) -> User:
     """FastAPI dependency that returns the authenticated user or raises 401."""
     user = await _resolve_user(
-        session, api_key=api_key, token=token,
+        session,
+        api_key=api_key,
+        token=token,
         client_host=security.get_client_host(request),
     )
     if user is None:
@@ -172,14 +172,16 @@ async def get_current_active_user(
 
 def demo_guard(capability: str):
     """Factory for demo mode route guards. Checks the Demo Contract."""
+
     def _guard():
         if app_config.site_profile == "demo":
             contract = app_config.demo_contract
             if capability in contract.disabled_capabilities:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"This feature is not available in demo mode.",
+                    detail="This feature is not available in demo mode.",
                 )
+
     return _guard
 
 
@@ -195,7 +197,7 @@ def check_demo_capability(capability: str) -> None:
         if capability in contract.disabled_capabilities:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"This feature is not available in demo mode.",
+                detail="This feature is not available in demo mode.",
             )
 
 

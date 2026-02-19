@@ -21,10 +21,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session
+from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
 
-from spectra_sherpa.app.lib.scp_compat import NDDataset, HAS_SCP
 HAS_NDDATASET = HAS_SCP
 
 router = APIRouter(prefix="/workflows")
@@ -33,6 +33,7 @@ router = APIRouter(prefix="/workflows")
 # ---------------------------------------------------------------------------
 # Request / Response schemas
 # ---------------------------------------------------------------------------
+
 
 class PredictRequest(BaseModel):
     """Payload for the flat prediction endpoint."""
@@ -43,8 +44,7 @@ class PredictRequest(BaseModel):
     )
     wavenumbers: list[float] | None = Field(
         None,
-        description="Optional X-axis values (wavenumbers / wavelengths). "
-                    "Length must match n_features.",
+        description="Optional X-axis values (wavenumbers / wavelengths). " "Length must match n_features.",
     )
 
 
@@ -72,6 +72,7 @@ class PredictResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Endpoint
 # ---------------------------------------------------------------------------
+
 
 @router.post("/{workflow_id}/predict", response_model=PredictResponse)
 async def predict(
@@ -138,8 +139,7 @@ async def predict(
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    f"Wavenumber length ({len(payload.wavenumbers)}) does not "
-                    f"match feature count ({n_features})"
+                    f"Wavenumber length ({len(payload.wavenumbers)}) does not " f"match feature count ({n_features})"
                 ),
             )
 
@@ -147,12 +147,17 @@ async def predict(
     dataset = NDDataset(data_array)
     if payload.wavenumbers is not None:
         from spectra_sherpa.app.lib.scp_compat import Coord
+
         dataset.set_coordset(x=Coord(payload.wavenumbers, title="Wavenumbers"))
 
     # --- 4. Build DAGExecutor --------------------------------------------
     from spectra_sherpa.app.services.dag import (
         DAGExecutor,
+    )
+    from spectra_sherpa.app.services.dag import (
         WorkflowEdge as DAGEdge,
+    )
+    from spectra_sherpa.app.services.dag import (
         WorkflowNode as DAGNode,
     )
 
@@ -163,9 +168,7 @@ async def predict(
             node_id=node.node_id,
             node_type=node.node_type,
             parameters=node.parameters,
-            position={"x": node.position_x, "y": node.position_y}
-            if node.position_x and node.position_y
-            else None,
+            position={"x": node.position_x, "y": node.position_y} if node.position_x and node.position_y else None,
         )
         executor.add_node(dag_node)
 

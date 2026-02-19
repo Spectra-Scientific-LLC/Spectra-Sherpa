@@ -158,6 +158,7 @@ def test_ws_enterprise_superuser_can_subscribe_any_jobs_channel(ws_client, monke
 # Helpers for WS tool tests
 # ---------------------------------------------------------------------------
 
+
 def _setup_local_ws(monkeypatch, *, is_superuser: bool = False, user_id: int = 1):
     """Common setup for local-mode WS tool tests."""
     app_config.mode = "local"
@@ -169,6 +170,3 @@ def _setup_local_ws(monkeypatch, *, is_superuser: bool = False, user_id: int = 1
         return SimpleNamespace(id=user_id, is_superuser=is_superuser, is_active=True)
 
     monkeypatch.setattr(app_main, "get_user_from_credentials", _resolve_user)
-
-
-

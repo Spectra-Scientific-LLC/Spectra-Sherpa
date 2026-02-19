@@ -7,14 +7,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Table, Column, func
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Table, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from spectra_sherpa.app.db.base import Base
 
 if TYPE_CHECKING:
-    from spectra_sherpa.app.models.user import User
-    from spectra_sherpa.app.models.workflow import Workflow
+    pass
 
 
 # Association table for many-to-many relationship between workflows and tags
@@ -37,16 +36,10 @@ class WorkflowTag(Base):
     __tablename__ = "workflow_tag"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("user.id"), nullable=False, index=True
-    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    color: Mapped[str | None] = mapped_column(
-        String(7)
-    )  # Hex color code (e.g., "#FF5733")
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    color: Mapped[str | None] = mapped_column(String(7))  # Hex color code (e.g., "#FF5733")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
     user = relationship("User")

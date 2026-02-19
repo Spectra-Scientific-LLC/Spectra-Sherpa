@@ -23,18 +23,14 @@ import zipfile
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session
-from spectra_sherpa.app.db.base import Base
 from spectra_sherpa.app.main import app
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
-from spectra_sherpa.app.models.project import Project, ProjectVersion
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────
 
@@ -50,9 +46,7 @@ async def user2(test_session: AsyncSession) -> User:
 
 
 @pytest.fixture
-async def auth_client(
-    test_session: AsyncSession, test_user: User
-) -> AsyncClient:
+async def auth_client(test_session: AsyncSession, test_user: User) -> AsyncClient:
     """HTTP client authenticated as test_user."""
 
     async def override_get_session():
@@ -64,9 +58,7 @@ async def auth_client(
     app.dependency_overrides[get_session] = override_get_session
     app.dependency_overrides[get_current_user] = override_get_current_user
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
 
     app.dependency_overrides.clear()
@@ -91,9 +83,7 @@ def swap_user(test_session: AsyncSession):
 
 
 @pytest.fixture
-async def sample_experiment(
-    test_session: AsyncSession, test_user: User
-) -> Experiment:
+async def sample_experiment(test_session: AsyncSession, test_user: User) -> Experiment:
     """Create a sample experiment for linking tests."""
     exp = Experiment(
         user_id=test_user.id,
@@ -108,9 +98,7 @@ async def sample_experiment(
 
 
 @pytest.fixture
-async def sample_experiment_with_files(
-    test_session: AsyncSession, test_user: User
-) -> Experiment:
+async def sample_experiment_with_files(test_session: AsyncSession, test_user: User) -> Experiment:
     """Create an experiment with files for snapshot tests."""
     exp = Experiment(
         user_id=test_user.id,
@@ -140,9 +128,7 @@ async def sample_experiment_with_files(
 
 
 @pytest.fixture
-async def sample_workflow(
-    test_session: AsyncSession, test_user: User
-) -> Workflow:
+async def sample_workflow(test_session: AsyncSession, test_user: User) -> Workflow:
     """Create a sample workflow for linking tests."""
     wf = Workflow(
         user_id=test_user.id,
@@ -284,9 +270,7 @@ class TestProjectCRUD:
 
     @pytest.mark.anyio
     async def test_update_project_self_parent_rejected(self, auth_client: AsyncClient):
-        create_resp = await auth_client.post(
-            "/api/v1/projects", json={"name": "Self"}
-        )
+        create_resp = await auth_client.post("/api/v1/projects", json={"name": "Self"})
         project_id = create_resp.json()["id"]
 
         resp = await auth_client.put(
@@ -297,9 +281,7 @@ class TestProjectCRUD:
 
     @pytest.mark.anyio
     async def test_delete_project(self, auth_client: AsyncClient):
-        create_resp = await auth_client.post(
-            "/api/v1/projects", json={"name": "To Delete"}
-        )
+        create_resp = await auth_client.post("/api/v1/projects", json={"name": "To Delete"})
         project_id = create_resp.json()["id"]
 
         resp = await auth_client.delete(f"/api/v1/projects/{project_id}")
@@ -322,9 +304,7 @@ class TestSubProjects:
 
     @pytest.mark.anyio
     async def test_create_sub_project(self, auth_client: AsyncClient):
-        parent_resp = await auth_client.post(
-            "/api/v1/projects", json={"name": "Parent"}
-        )
+        parent_resp = await auth_client.post("/api/v1/projects", json={"name": "Parent"})
         parent_id = parent_resp.json()["id"]
 
         child_resp = await auth_client.post(
@@ -337,9 +317,7 @@ class TestSubProjects:
 
     @pytest.mark.anyio
     async def test_children_in_parent_detail(self, auth_client: AsyncClient):
-        parent_resp = await auth_client.post(
-            "/api/v1/projects", json={"name": "Parent"}
-        )
+        parent_resp = await auth_client.post("/api/v1/projects", json={"name": "Parent"})
         parent_id = parent_resp.json()["id"]
 
         await auth_client.post(
@@ -360,9 +338,7 @@ class TestSubProjects:
 
     @pytest.mark.anyio
     async def test_sub_projects_not_in_top_level_list(self, auth_client: AsyncClient):
-        parent_resp = await auth_client.post(
-            "/api/v1/projects", json={"name": "Parent"}
-        )
+        parent_resp = await auth_client.post("/api/v1/projects", json={"name": "Parent"})
         parent_id = parent_resp.json()["id"]
 
         await auth_client.post(
@@ -377,12 +353,8 @@ class TestSubProjects:
         assert data[0]["name"] == "Parent"
 
     @pytest.mark.anyio
-    async def test_delete_parent_cascades_children(
-        self, auth_client: AsyncClient, test_session: AsyncSession
-    ):
-        parent_resp = await auth_client.post(
-            "/api/v1/projects", json={"name": "Parent"}
-        )
+    async def test_delete_parent_cascades_children(self, auth_client: AsyncClient, test_session: AsyncSession):
+        parent_resp = await auth_client.post("/api/v1/projects", json={"name": "Parent"})
         parent_id = parent_resp.json()["id"]
 
         child_resp = await auth_client.post(
@@ -406,17 +378,11 @@ class TestLinkUnlink:
     """Linking and unlinking experiments and workflows."""
 
     @pytest.mark.anyio
-    async def test_link_experiment(
-        self, auth_client: AsyncClient, sample_experiment: Experiment
-    ):
-        proj_resp = await auth_client.post(
-            "/api/v1/projects", json={"name": "Link Test"}
-        )
+    async def test_link_experiment(self, auth_client: AsyncClient, sample_experiment: Experiment):
+        proj_resp = await auth_client.post("/api/v1/projects", json={"name": "Link Test"})
         proj_id = proj_resp.json()["id"]
 
-        resp = await auth_client.post(
-            f"/api/v1/projects/{proj_id}/experiments/{sample_experiment.id}"
-        )
+        resp = await auth_client.post(f"/api/v1/projects/{proj_id}/experiments/{sample_experiment.id}")
         assert resp.status_code == 200
         data = resp.json()
         assert data["experiment_count"] == 1
@@ -424,38 +390,24 @@ class TestLinkUnlink:
         assert data["experiments"][0]["name"] == "Test Experiment"
 
     @pytest.mark.anyio
-    async def test_unlink_experiment(
-        self, auth_client: AsyncClient, sample_experiment: Experiment
-    ):
-        proj_resp = await auth_client.post(
-            "/api/v1/projects", json={"name": "Unlink Test"}
-        )
+    async def test_unlink_experiment(self, auth_client: AsyncClient, sample_experiment: Experiment):
+        proj_resp = await auth_client.post("/api/v1/projects", json={"name": "Unlink Test"})
         proj_id = proj_resp.json()["id"]
 
         # Link then unlink
-        await auth_client.post(
-            f"/api/v1/projects/{proj_id}/experiments/{sample_experiment.id}"
-        )
-        resp = await auth_client.delete(
-            f"/api/v1/projects/{proj_id}/experiments/{sample_experiment.id}"
-        )
+        await auth_client.post(f"/api/v1/projects/{proj_id}/experiments/{sample_experiment.id}")
+        resp = await auth_client.delete(f"/api/v1/projects/{proj_id}/experiments/{sample_experiment.id}")
         assert resp.status_code == 200
         data = resp.json()
         assert data["experiment_count"] == 0
         assert data["experiments"] == []
 
     @pytest.mark.anyio
-    async def test_link_workflow(
-        self, auth_client: AsyncClient, sample_workflow: Workflow
-    ):
-        proj_resp = await auth_client.post(
-            "/api/v1/projects", json={"name": "WF Link Test"}
-        )
+    async def test_link_workflow(self, auth_client: AsyncClient, sample_workflow: Workflow):
+        proj_resp = await auth_client.post("/api/v1/projects", json={"name": "WF Link Test"})
         proj_id = proj_resp.json()["id"]
 
-        resp = await auth_client.post(
-            f"/api/v1/projects/{proj_id}/workflows/{sample_workflow.id}"
-        )
+        resp = await auth_client.post(f"/api/v1/projects/{proj_id}/workflows/{sample_workflow.id}")
         assert resp.status_code == 200
         data = resp.json()
         assert data["workflow_count"] == 1
@@ -463,21 +415,13 @@ class TestLinkUnlink:
         assert data["workflows"][0]["name"] == "Test Workflow"
 
     @pytest.mark.anyio
-    async def test_unlink_workflow(
-        self, auth_client: AsyncClient, sample_workflow: Workflow
-    ):
-        proj_resp = await auth_client.post(
-            "/api/v1/projects", json={"name": "WF Unlink Test"}
-        )
+    async def test_unlink_workflow(self, auth_client: AsyncClient, sample_workflow: Workflow):
+        proj_resp = await auth_client.post("/api/v1/projects", json={"name": "WF Unlink Test"})
         proj_id = proj_resp.json()["id"]
 
         # Link then unlink
-        await auth_client.post(
-            f"/api/v1/projects/{proj_id}/workflows/{sample_workflow.id}"
-        )
-        resp = await auth_client.delete(
-            f"/api/v1/projects/{proj_id}/workflows/{sample_workflow.id}"
-        )
+        await auth_client.post(f"/api/v1/projects/{proj_id}/workflows/{sample_workflow.id}")
+        resp = await auth_client.delete(f"/api/v1/projects/{proj_id}/workflows/{sample_workflow.id}")
         assert resp.status_code == 200
         data = resp.json()
         assert data["workflow_count"] == 0
@@ -485,40 +429,26 @@ class TestLinkUnlink:
 
     @pytest.mark.anyio
     async def test_link_nonexistent_experiment(self, auth_client: AsyncClient):
-        proj_resp = await auth_client.post(
-            "/api/v1/projects", json={"name": "Bad Link"}
-        )
+        proj_resp = await auth_client.post("/api/v1/projects", json={"name": "Bad Link"})
         proj_id = proj_resp.json()["id"]
 
-        resp = await auth_client.post(
-            f"/api/v1/projects/{proj_id}/experiments/9999"
-        )
+        resp = await auth_client.post(f"/api/v1/projects/{proj_id}/experiments/9999")
         assert resp.status_code == 404
 
     @pytest.mark.anyio
     async def test_link_nonexistent_workflow(self, auth_client: AsyncClient):
-        proj_resp = await auth_client.post(
-            "/api/v1/projects", json={"name": "Bad WF Link"}
-        )
+        proj_resp = await auth_client.post("/api/v1/projects", json={"name": "Bad WF Link"})
         proj_id = proj_resp.json()["id"]
 
-        resp = await auth_client.post(
-            f"/api/v1/projects/{proj_id}/workflows/9999"
-        )
+        resp = await auth_client.post(f"/api/v1/projects/{proj_id}/workflows/9999")
         assert resp.status_code == 404
 
     @pytest.mark.anyio
-    async def test_unlink_not_linked_experiment(
-        self, auth_client: AsyncClient, sample_experiment: Experiment
-    ):
-        proj_resp = await auth_client.post(
-            "/api/v1/projects", json={"name": "Not Linked"}
-        )
+    async def test_unlink_not_linked_experiment(self, auth_client: AsyncClient, sample_experiment: Experiment):
+        proj_resp = await auth_client.post("/api/v1/projects", json={"name": "Not Linked"})
         proj_id = proj_resp.json()["id"]
 
-        resp = await auth_client.delete(
-            f"/api/v1/projects/{proj_id}/experiments/{sample_experiment.id}"
-        )
+        resp = await auth_client.delete(f"/api/v1/projects/{proj_id}/experiments/{sample_experiment.id}")
         assert resp.status_code == 404
 
 
@@ -535,15 +465,11 @@ class TestDeleteUnlinks:
         sample_experiment: Experiment,
         test_session: AsyncSession,
     ):
-        proj_resp = await auth_client.post(
-            "/api/v1/projects", json={"name": "To Delete"}
-        )
+        proj_resp = await auth_client.post("/api/v1/projects", json={"name": "To Delete"})
         proj_id = proj_resp.json()["id"]
 
         # Link experiment
-        await auth_client.post(
-            f"/api/v1/projects/{proj_id}/experiments/{sample_experiment.id}"
-        )
+        await auth_client.post(f"/api/v1/projects/{proj_id}/experiments/{sample_experiment.id}")
 
         # Delete project
         await auth_client.delete(f"/api/v1/projects/{proj_id}")
@@ -559,15 +485,11 @@ class TestDeleteUnlinks:
         sample_workflow: Workflow,
         test_session: AsyncSession,
     ):
-        proj_resp = await auth_client.post(
-            "/api/v1/projects", json={"name": "To Delete WF"}
-        )
+        proj_resp = await auth_client.post("/api/v1/projects", json={"name": "To Delete WF"})
         proj_id = proj_resp.json()["id"]
 
         # Link workflow
-        await auth_client.post(
-            f"/api/v1/projects/{proj_id}/workflows/{sample_workflow.id}"
-        )
+        await auth_client.post(f"/api/v1/projects/{proj_id}/workflows/{sample_workflow.id}")
 
         # Delete project
         await auth_client.delete(f"/api/v1/projects/{proj_id}")
@@ -603,9 +525,7 @@ class TestVersioning:
 
     @pytest.mark.anyio
     async def test_save_increments_version(self, auth_client: AsyncClient):
-        proj_resp = await auth_client.post(
-            "/api/v1/projects", json={"name": "Multi-save"}
-        )
+        proj_resp = await auth_client.post("/api/v1/projects", json={"name": "Multi-save"})
         proj_id = proj_resp.json()["id"]
 
         v1 = await auth_client.post(
@@ -626,15 +546,11 @@ class TestVersioning:
         auth_client: AsyncClient,
         sample_experiment_with_files: Experiment,
     ):
-        proj_resp = await auth_client.post(
-            "/api/v1/projects", json={"name": "Snapshot Test"}
-        )
+        proj_resp = await auth_client.post("/api/v1/projects", json={"name": "Snapshot Test"})
         proj_id = proj_resp.json()["id"]
 
         # Link experiment with files
-        await auth_client.post(
-            f"/api/v1/projects/{proj_id}/experiments/{sample_experiment_with_files.id}"
-        )
+        await auth_client.post(f"/api/v1/projects/{proj_id}/experiments/{sample_experiment_with_files.id}")
 
         save_resp = await auth_client.post(
             f"/api/v1/projects/{proj_id}/save",
@@ -643,9 +559,7 @@ class TestVersioning:
         version_id = save_resp.json()["id"]
 
         # Retrieve version detail to check snapshot
-        ver_resp = await auth_client.get(
-            f"/api/v1/projects/{proj_id}/versions/{version_id}"
-        )
+        ver_resp = await auth_client.get(f"/api/v1/projects/{proj_id}/versions/{version_id}")
         assert ver_resp.status_code == 200
         snapshot = ver_resp.json()["snapshot"]
         assert snapshot["name"] == "Snapshot Test"
@@ -655,9 +569,7 @@ class TestVersioning:
 
     @pytest.mark.anyio
     async def test_list_versions(self, auth_client: AsyncClient):
-        proj_resp = await auth_client.post(
-            "/api/v1/projects", json={"name": "Version List"}
-        )
+        proj_resp = await auth_client.post("/api/v1/projects", json={"name": "Version List"})
         proj_id = proj_resp.json()["id"]
 
         await auth_client.post(
@@ -680,29 +592,19 @@ class TestVersioning:
 
     @pytest.mark.anyio
     async def test_get_version_not_found(self, auth_client: AsyncClient):
-        proj_resp = await auth_client.post(
-            "/api/v1/projects", json={"name": "No Versions"}
-        )
+        proj_resp = await auth_client.post("/api/v1/projects", json={"name": "No Versions"})
         proj_id = proj_resp.json()["id"]
 
-        resp = await auth_client.get(
-            f"/api/v1/projects/{proj_id}/versions/9999"
-        )
+        resp = await auth_client.get(f"/api/v1/projects/{proj_id}/versions/9999")
         assert resp.status_code == 404
 
     @pytest.mark.anyio
     async def test_version_count_in_summary(self, auth_client: AsyncClient):
-        proj_resp = await auth_client.post(
-            "/api/v1/projects", json={"name": "Version Count"}
-        )
+        proj_resp = await auth_client.post("/api/v1/projects", json={"name": "Version Count"})
         proj_id = proj_resp.json()["id"]
 
-        await auth_client.post(
-            f"/api/v1/projects/{proj_id}/save", json={}
-        )
-        await auth_client.post(
-            f"/api/v1/projects/{proj_id}/save", json={}
-        )
+        await auth_client.post(f"/api/v1/projects/{proj_id}/save", json={})
+        await auth_client.post(f"/api/v1/projects/{proj_id}/save", json={})
 
         resp = await auth_client.get(f"/api/v1/projects/{proj_id}")
         assert resp.json()["version_count"] == 2
@@ -787,9 +689,7 @@ class TestExportImport:
         proj_id = resp.json()["id"]
 
         # Check that version 1 was created
-        ver_resp = await auth_client.get(
-            f"/api/v1/projects/{proj_id}/versions"
-        )
+        ver_resp = await auth_client.get(f"/api/v1/projects/{proj_id}/versions")
         data = ver_resp.json()
         assert data["total"] == 1
         assert data["versions"][0]["version_number"] == 1
@@ -835,9 +735,7 @@ class TestExportImport:
         proj_id = proj_resp.json()["id"]
 
         # Export
-        export_resp = await auth_client.get(
-            f"/api/v1/projects/{proj_id}/export"
-        )
+        export_resp = await auth_client.get(f"/api/v1/projects/{proj_id}/export")
 
         # Import
         buf = io.BytesIO(export_resp.content)
@@ -869,9 +767,7 @@ class TestOwnership:
         swap_user,
     ):
         # User 1 creates a project
-        resp = await auth_client.post(
-            "/api/v1/projects", json={"name": "User1 Project"}
-        )
+        resp = await auth_client.post("/api/v1/projects", json={"name": "User1 Project"})
         assert resp.status_code == 201
 
         # Swap to user2
@@ -893,9 +789,7 @@ class TestOwnership:
         user2: User,
         swap_user,
     ):
-        resp = await auth_client.post(
-            "/api/v1/projects", json={"name": "Private"}
-        )
+        resp = await auth_client.post("/api/v1/projects", json={"name": "Private"})
         proj_id = resp.json()["id"]
 
         # Swap to user2
@@ -913,9 +807,7 @@ class TestOwnership:
         user2: User,
         swap_user,
     ):
-        resp = await auth_client.post(
-            "/api/v1/projects", json={"name": "Not Yours"}
-        )
+        resp = await auth_client.post("/api/v1/projects", json={"name": "Not Yours"})
         proj_id = resp.json()["id"]
 
         # Swap to user2

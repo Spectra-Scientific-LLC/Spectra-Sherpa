@@ -21,9 +21,7 @@ logger = logging.getLogger(__name__)
 
 # ── URI helpers ──────────────────────────────────────────────────────────
 
-_URI_RE = re.compile(
-    r"^spectrasherpa://types/(?P<name>[A-Za-z0-9_]+)/(?P<major>\d+)\.(?P<minor>\d+)$"
-)
+_URI_RE = re.compile(r"^spectrasherpa://types/(?P<name>[A-Za-z0-9_]+)/(?P<major>\d+)\.(?P<minor>\d+)$")
 
 
 def parse_type_ref(type_ref: str) -> tuple[str, int, int]:
@@ -39,16 +37,17 @@ def parse_type_ref(type_ref: str) -> tuple[str, int, int]:
 
 # ── Data classes ─────────────────────────────────────────────────────────
 
+
 @dataclass
 class TypeDef:
     """Resolved type definition."""
 
     uri: str
     name: str
-    version: str          # "1.0"
+    version: str  # "1.0"
     major: int
     minor: int
-    category: str         # "dataset", "model", "target", etc.
+    category: str  # "dataset", "model", "target", etc.
     parent: Optional[str]  # Parent type *name* (e.g. "Array2D"), or None
     parent_uri: Optional[str] = None
     description: str = ""
@@ -56,13 +55,14 @@ class TypeDef:
 
 # ── Registry ─────────────────────────────────────────────────────────────
 
+
 class TypeRegistry:
     """Singleton registry of all SpectraSherpa data types."""
 
     def __init__(self) -> None:
-        self._types: Dict[str, TypeDef] = {}      # keyed by URI
-        self._by_name: Dict[str, TypeDef] = {}     # keyed by short name
-        self._children: Dict[str, Set[str]] = {}   # parent_name → {child_names}
+        self._types: Dict[str, TypeDef] = {}  # keyed by URI
+        self._by_name: Dict[str, TypeDef] = {}  # keyed by short name
+        self._children: Dict[str, Set[str]] = {}  # parent_name → {child_names}
         self.version: str = "0.0"
         self._loaded = False
 
@@ -187,9 +187,7 @@ class TypeRegistry:
         if self.is_subtype(source_ref, target_ref):
             return True, ""
 
-        return False, (
-            f"Type mismatch: {src.name} cannot connect to {tgt.name}"
-        )
+        return False, (f"Type mismatch: {src.name} cannot connect to {tgt.name}")
 
     def is_subtype(self, child_ref: str, parent_ref: str) -> bool:
         """Return ``True`` if *child_ref* is a (transitive) subtype of *parent_ref*."""

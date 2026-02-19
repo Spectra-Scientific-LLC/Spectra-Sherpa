@@ -14,13 +14,7 @@ Submodules:
 - compat: Backward compatibility layer (SpectrumRecord ↔ NDDataset)
 """
 
-from . import spectral
-from . import blending
-from . import preprocessing
-from . import curves
-from . import io
-from . import visualization
-from . import compat
+from . import blending, compat, curves, io, preprocessing, spectral, visualization
 
 __all__ = [
     "spectral",

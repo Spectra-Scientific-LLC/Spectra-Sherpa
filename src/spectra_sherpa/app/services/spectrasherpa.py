@@ -4,13 +4,14 @@ SpectraSherpa Server Integration
 Handles authentication and data exchange with a SpectraSherpa server
 for hybrid mode deployments.
 """
+
 from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional
-from dataclasses import dataclass
 
 import httpx
 from pydantic import BaseModel, Field
@@ -30,25 +31,17 @@ SPECTRASHERPA_TIMEOUT = 10.0  # seconds
 
 class SpectraSherpaConfig(BaseModel):
     """Configuration for SpectraSherpa integration"""
-    api_base_url: str = Field(
-        default=SPECTRASHERPA_API_BASE,
-        description="Base URL for SpectraSherpa API"
-    )
-    api_key: Optional[str] = Field(
-        default=None,
-        description="SpectraSherpa API key for this deployment"
-    )
-    timeout: float = Field(
-        default=SPECTRASHERPA_TIMEOUT,
-        description="HTTP request timeout in seconds"
-    )
+
+    api_base_url: str = Field(default=SPECTRASHERPA_API_BASE, description="Base URL for SpectraSherpa API")
+    api_key: Optional[str] = Field(default=None, description="SpectraSherpa API key for this deployment")
+    timeout: float = Field(default=SPECTRASHERPA_TIMEOUT, description="HTTP request timeout in seconds")
 
     @classmethod
     def from_env(cls) -> "SpectraSherpaConfig":
         return cls(
             api_base_url=os.getenv("SPECTRASHERPA_API_URL", SPECTRASHERPA_API_BASE),
             api_key=os.getenv("SPECTRASHERPA_API_KEY"),
-            timeout=float(os.getenv("SPECTRASHERPA_TIMEOUT", str(SPECTRASHERPA_TIMEOUT)))
+            timeout=float(os.getenv("SPECTRASHERPA_TIMEOUT", str(SPECTRASHERPA_TIMEOUT))),
         )
 
 
@@ -60,9 +53,11 @@ spectrasherpa_config = SpectraSherpaConfig.from_env()
 # Response Models
 # ============================================================================
 
+
 @dataclass
 class SpectraSherpaUser:
     """User info from SpectraSherpa server (/auth/me response)."""
+
     id: int
     email: str
     username: str
@@ -74,6 +69,7 @@ class SpectraSherpaUser:
 @dataclass
 class ManagedLLMKey:
     """LLM key metadata from Spectra-Server (metadata-only, no raw secrets)."""
+
     provider: str  # openai, anthropic, deepseek, gemini
     model: Optional[str] = None
     available: bool = False
@@ -82,6 +78,7 @@ class ManagedLLMKey:
 @dataclass
 class AuthResult:
     """Result of SpectraSherpa authentication"""
+
     success: bool
     user: Optional[SpectraSherpaUser] = None
     error: Optional[str] = None
@@ -95,6 +92,7 @@ class AuthResult:
 @dataclass
 class DeploymentValidation:
     """Result of deployment key validation via /keys/deployment/validate."""
+
     success: bool
     label: str = ""
     plan: str = "none"
@@ -106,6 +104,7 @@ class DeploymentValidation:
 # ============================================================================
 # Service Implementation
 # ============================================================================
+
 
 class SpectraSherpaService:
     """
@@ -140,7 +139,7 @@ class SpectraSherpaService:
                     "X-API-Key": self.config.api_key,
                     "User-Agent": f"SpectraScientific/{settings.app_version}",
                     "X-Client-Mode": app_config.mode,
-                }
+                },
             )
         return self._client
 
@@ -210,7 +209,7 @@ class SpectraSherpaService:
                 headers={
                     "X-API-Key": key_to_validate,
                     "User-Agent": f"SpectraScientific/{settings.app_version}",
-                }
+                },
             ) as client:
                 response = await client.get("/auth/me")
 
@@ -233,7 +232,10 @@ class SpectraSherpaService:
 
         except httpx.HTTPStatusError as e:
             if e.response.status_code >= 500:
-                logger.info("SpectraSherpa /auth/me returned %s (server-side — identity linking unavailable)", e.response.status_code)
+                logger.info(
+                    "SpectraSherpa /auth/me returned %s (server-side — identity linking unavailable)",
+                    e.response.status_code,
+                )
             else:
                 logger.warning("SpectraSherpa auth failed: %s", e)
             return AuthResult(success=False, error=f"Authentication failed: {e.response.status_code}")
@@ -259,7 +261,7 @@ class SpectraSherpaService:
                 headers={
                     "X-Deployment-Key": key_to_validate,
                     "User-Agent": f"SpectraScientific/{settings.app_version}",
-                }
+                },
             ) as client:
                 response = await client.post("/keys/deployment/validate")
 
@@ -316,15 +318,18 @@ class SpectraSherpaService:
 
             keys = []
             for key_data in data.get("keys", []):
-                keys.append(ManagedLLMKey(
-                    provider=key_data["provider"],
-                    model=key_data.get("model"),
-                    available=key_data.get("available", False),
-                ))
+                keys.append(
+                    ManagedLLMKey(
+                        provider=key_data["provider"],
+                        model=key_data.get("model"),
+                        available=key_data.get("available", False),
+                    )
+                )
 
             # Cache for 1 hour
             self._cached_keys = keys
             from datetime import timedelta
+
             self._cache_expires = datetime.now(timezone.utc) + timedelta(hours=1)
 
             logger.info(f"Fetched {len(keys)} managed LLM key metadata from Spectra-Server")

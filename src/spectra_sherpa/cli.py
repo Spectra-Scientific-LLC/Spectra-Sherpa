@@ -7,6 +7,7 @@ Usage::
     spectra-sherpa --no-browser     # Don't auto-open browser
     spectra-sherpa --data-dir ~/my_data
 """
+
 from __future__ import annotations
 
 import argparse
@@ -14,8 +15,8 @@ import os
 import shutil
 import signal
 import subprocess
-import time
 import threading
+import time
 import webbrowser
 
 
@@ -97,8 +98,7 @@ def _clear_port(
     """
     if shutil.which("lsof") is None:
         print(
-            "Warning: KILL_PORT_ON_START is enabled but `lsof` is not available; "
-            "skipping automatic port cleanup.",
+            "Warning: KILL_PORT_ON_START is enabled but `lsof` is not available; " "skipping automatic port cleanup.",
         )
         return False
 
@@ -107,8 +107,7 @@ def _clear_port(
         return True
 
     print(
-        f"Port {port} is already in use by PID(s): "
-        + ", ".join(str(pid) for pid in initial),
+        f"Port {port} is already in use by PID(s): " + ", ".join(str(pid) for pid in initial),
     )
     print("Attempting to free the port before startup...")
 
@@ -137,8 +136,7 @@ def _clear_port(
 
     if remaining:
         print(
-            "Warning: port remains occupied by PID(s): "
-            + ", ".join(str(pid) for pid in remaining),
+            "Warning: port remains occupied by PID(s): " + ", ".join(str(pid) for pid in remaining),
         )
         return False
 
@@ -182,8 +180,9 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     # Load .env before setting defaults, so .env values take precedence
-    from spectra_sherpa._paths import get_env_file_search_paths
     from dotenv import load_dotenv
+
+    from spectra_sherpa._paths import get_env_file_search_paths
 
     for _env_candidate in get_env_file_search_paths():
         if _env_candidate.is_file():
@@ -207,8 +206,7 @@ def main(argv: list[str] | None = None) -> None:
         cleared = _clear_port(args.port, grace_seconds=grace, force_kill=force)
         if not cleared:
             print(
-                "Continuing startup. If the port is still occupied, "
-                "uvicorn may fail to bind.",
+                "Continuing startup. If the port is still occupied, " "uvicorn may fail to bind.",
             )
 
     # Auto-open browser

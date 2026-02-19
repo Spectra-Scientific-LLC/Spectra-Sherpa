@@ -6,6 +6,7 @@ Mirrors the DAG ``NodeRegistry`` pattern:
 - Plugin tools registered via ``tool_registry.register()``
 - Serialization helpers for LLM function-calling payloads
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -196,8 +197,7 @@ def register_tool(
             name=name,
             description=description,
             category=category,
-            parameters=parameters
-            or {"type": "object", "properties": {}, "required": []},
+            parameters=parameters or {"type": "object", "properties": {}, "required": []},
             requires_session=requires_session,
             requires_user=requires_user,
             requires_egress=requires_egress,

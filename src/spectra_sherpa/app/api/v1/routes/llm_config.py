@@ -18,25 +18,23 @@ async def get_llm_config(
     current_user: User = Depends(get_current_user),
 ) -> LLMConfigResponse | None:
     """Get LLM configuration for the authenticated user."""
-    result = await session.execute(
-        select(LLMConfig).where(LLMConfig.user_id == current_user.id)
-    )
+    result = await session.execute(select(LLMConfig).where(LLMConfig.user_id == current_user.id))
     config = result.scalar_one_or_none()
     if config is None:
         return None
     return LLMConfigResponse.model_validate(config)
 
 
-@router.post("/llm-config", response_model=LLMConfigResponse, status_code=201, dependencies=[Depends(demo_guard("llm_config"))])
+@router.post(
+    "/llm-config", response_model=LLMConfigResponse, status_code=201, dependencies=[Depends(demo_guard("llm_config"))]
+)
 async def create_or_update_llm_config(
     payload: LLMConfigCreate,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> LLMConfigResponse:
     """Create or update LLM configuration for the authenticated user."""
-    result = await session.execute(
-        select(LLMConfig).where(LLMConfig.user_id == current_user.id)
-    )
+    result = await session.execute(select(LLMConfig).where(LLMConfig.user_id == current_user.id))
     config = result.scalar_one_or_none()
 
     if config:
@@ -68,9 +66,7 @@ async def update_llm_config(
     current_user: User = Depends(get_current_user),
 ) -> LLMConfigResponse:
     """Partially update LLM configuration for the authenticated user."""
-    result = await session.execute(
-        select(LLMConfig).where(LLMConfig.user_id == current_user.id)
-    )
+    result = await session.execute(select(LLMConfig).where(LLMConfig.user_id == current_user.id))
     config = result.scalar_one_or_none()
 
     if config is None:
@@ -97,9 +93,7 @@ async def delete_llm_config(
     current_user: User = Depends(get_current_user),
 ):
     """Delete LLM configuration for the authenticated user."""
-    result = await session.execute(
-        select(LLMConfig).where(LLMConfig.user_id == current_user.id)
-    )
+    result = await session.execute(select(LLMConfig).where(LLMConfig.user_id == current_user.id))
     config = result.scalar_one_or_none()
 
     if config is None:

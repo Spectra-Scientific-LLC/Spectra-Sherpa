@@ -10,15 +10,15 @@ MIGRATED FROM: project0/preprocess.py
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 import numpy as np
 
 try:
-    from scipy.interpolate import interp1d, PchipInterpolator
-    from scipy.signal import savgol_filter as scipy_savgol
-    from scipy.ndimage import gaussian_filter1d as scipy_gaussian_filter1d
     from scipy import sparse
+    from scipy.interpolate import PchipInterpolator, interp1d
+    from scipy.ndimage import gaussian_filter1d as scipy_gaussian_filter1d
+    from scipy.signal import savgol_filter as scipy_savgol
 
     HAS_SCIPY = True
 except ImportError:
@@ -43,10 +43,13 @@ def _get_parallel_threshold() -> int:
     """Read parallel threshold from app settings, with env-var fallback."""
     try:
         from spectra_sherpa.app.core.config import settings
+
         return settings.parallel_threshold
     except Exception:
         import os
+
         return int(os.getenv("PARALLEL_THRESHOLD", "100"))
+
 
 if TYPE_CHECKING:
     from spectra_sherpa.app.lib.scp_compat import NDDataset
@@ -203,9 +206,11 @@ def interpolate_to_grid(
     NDDataset
         Interpolated dataset with new x-coordinates and resolution metadata
     """
-    from spectra_sherpa.app.lib.scp_compat import scp, require_scp
+    from spectra_sherpa.app.lib.scp_compat import require_scp, scp
+
     require_scp("Spectral interpolation")
     import warnings
+
     from .spectral.dataset import add_provenance
 
     if method not in {"none", "sinc", "pchip", "linear"}:
@@ -275,9 +280,7 @@ def interpolate_to_grid(
             result = interp(target_within)
             interpolated[i, within] = np.nan_to_num(result, nan=0.0)
         elif method == "linear":
-            interp = interp1d(
-                unique_wn, spec_unique, kind="linear", bounds_error=False, fill_value=0.0
-            )
+            interp = interp1d(unique_wn, spec_unique, kind="linear", bounds_error=False, fill_value=0.0)
             interpolated[i, within] = interp(target_within)
 
     # Create result dataset
@@ -308,12 +311,16 @@ def interpolate_to_grid(
         "interpolation_ratio": target_spacing / original_spacing if original_spacing > 0 else None,
     }
 
-    add_provenance(result, "interpolate_to_grid", {
-        "method": method,
-        "n_points": len(target_grid),
-        "original_spacing": original_spacing,
-        "target_spacing": target_spacing,
-    })
+    add_provenance(
+        result,
+        "interpolate_to_grid",
+        {
+            "method": method,
+            "n_points": len(target_grid),
+            "original_spacing": original_spacing,
+            "target_spacing": target_spacing,
+        },
+    )
 
     return result
 
@@ -345,7 +352,8 @@ def remove_cosmic_rays(
     NDDataset
         Dataset with cosmic rays replaced by local median
     """
-    from spectra_sherpa.app.lib.scp_compat import scp, require_scp
+    from spectra_sherpa.app.lib.scp_compat import require_scp, scp
+
     require_scp("Spectral preprocessing")
     from .spectral.dataset import add_provenance
 
@@ -431,7 +439,8 @@ def smooth_savgol(
     NDDataset
         Smoothed dataset
     """
-    from spectra_sherpa.app.lib.scp_compat import scp, require_scp
+    from spectra_sherpa.app.lib.scp_compat import require_scp, scp
+
     require_scp("Spectral preprocessing")
     from .spectral.dataset import add_provenance
 
@@ -445,9 +454,7 @@ def smooth_savgol(
     if data.ndim == 1:
         smoothed = scipy_savgol(data, window_size, polyorder)
     else:
-        smoothed = np.apply_along_axis(
-            lambda x: scipy_savgol(x, window_size, polyorder), axis=-1, arr=data
-        )
+        smoothed = np.apply_along_axis(lambda x: scipy_savgol(x, window_size, polyorder), axis=-1, arr=data)
 
     result = scp.NDDataset(smoothed)
 
@@ -463,9 +470,7 @@ def smooth_savgol(
     if hasattr(dataset, "meta") and dataset.meta:
         result.meta.update(dict(dataset.meta))
 
-    add_provenance(
-        result, "smooth_savgol", {"window_size": window_size, "polyorder": polyorder}
-    )
+    add_provenance(result, "smooth_savgol", {"window_size": window_size, "polyorder": polyorder})
 
     return result
 
@@ -497,7 +502,8 @@ def clip_range(
     NDDataset
         Clipped dataset
     """
-    from spectra_sherpa.app.lib.scp_compat import scp, require_scp
+    from spectra_sherpa.app.lib.scp_compat import require_scp, scp
+
     require_scp("Spectral preprocessing")
     from .spectral.dataset import add_provenance
 
@@ -574,31 +580,19 @@ def preprocess_pipeline(
     # 1. Build golden grid and align
     if settings.align_wavenumbers and len(processed) > 1:
         golden_grid = build_golden_grid(processed, settings.merge_tolerance)
-        processed = [
-            interpolate_to_grid(ds, golden_grid, method=settings.alignment_method)
-            for ds in processed
-        ]
+        processed = [interpolate_to_grid(ds, golden_grid, method=settings.alignment_method) for ds in processed]
 
     # 2. Cosmic ray removal
     if settings.remove_cosmic_rays:
-        processed = [
-            remove_cosmic_rays(ds, settings.cosmic_ray_window, settings.cosmic_ray_zscore)
-            for ds in processed
-        ]
+        processed = [remove_cosmic_rays(ds, settings.cosmic_ray_window, settings.cosmic_ray_zscore) for ds in processed]
 
     # 3. Smoothing
     if settings.apply_smoothing:
-        processed = [
-            smooth_savgol(ds, settings.smoothing_window, settings.smoothing_polyorder)
-            for ds in processed
-        ]
+        processed = [smooth_savgol(ds, settings.smoothing_window, settings.smoothing_polyorder) for ds in processed]
 
     # 4. Range clipping
     if settings.clip_range:
-        processed = [
-            clip_range(ds, settings.min_wavenumber, settings.max_wavenumber)
-            for ds in processed
-        ]
+        processed = [clip_range(ds, settings.min_wavenumber, settings.max_wavenumber) for ds in processed]
 
     if golden_grid is None and processed:
         golden_grid = processed[0].x.data
@@ -824,9 +818,7 @@ def baseline_penalized_ls(
 
     n_samples = data.shape[0]
     if HAS_JOBLIB and n_samples >= _get_parallel_threshold():
-        baselines = Parallel(n_jobs=-2, prefer="threads")(
-            delayed(func)(data[i], **kwargs) for i in range(n_samples)
-        )
+        baselines = Parallel(n_jobs=-2, prefer="threads")(delayed(func)(data[i], **kwargs) for i in range(n_samples))
         corrected = data - np.array(baselines)
     else:
         corrected = np.empty_like(data)
@@ -953,9 +945,7 @@ def norris_williams(
             raise ValueError(f"deriv must be 1 or 2, got {deriv}")
 
     if HAS_JOBLIB and n_samples >= _get_parallel_threshold():
-        rows = Parallel(n_jobs=-2, prefer="threads")(
-            delayed(_compute_row)(data[i]) for i in range(n_samples)
-        )
+        rows = Parallel(n_jobs=-2, prefer="threads")(delayed(_compute_row)(data[i]) for i in range(n_samples))
         output = np.array(rows)
     else:
         output = np.empty_like(data)
@@ -997,8 +987,7 @@ def gaussian_smooth(
 
     if HAS_JOBLIB and data.shape[0] >= _get_parallel_threshold():
         rows = Parallel(n_jobs=-2, prefer="threads")(
-            delayed(scipy_gaussian_filter1d)(data[i], sigma=sigma)
-            for i in range(data.shape[0])
+            delayed(scipy_gaussian_filter1d)(data[i], sigma=sigma) for i in range(data.shape[0])
         )
         return np.array(rows)
 

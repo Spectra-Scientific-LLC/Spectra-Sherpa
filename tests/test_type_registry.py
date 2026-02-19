@@ -12,18 +12,20 @@ Covers:
 Run:
     PYTHONPATH=src/spectra_sherpa python -m pytest tests/test_type_registry.py -v --no-cov
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
 
-from spectra_sherpa.app.types.registry import TypeRegistry, TypeDef, parse_type_ref
+from spectra_sherpa.app.types.registry import TypeRegistry, parse_type_ref
 
 TYPES_DIR = Path(__file__).resolve().parent.parent / "src" / "spectra_sherpa" / "app" / "types"
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────
+
 
 @pytest.fixture()
 def registry() -> TypeRegistry:
@@ -34,6 +36,7 @@ def registry() -> TypeRegistry:
 
 
 # ── URI parsing ───────────────────────────────────────────────────────────
+
 
 class TestParseTypeRef:
     def test_valid_uri(self):
@@ -59,6 +62,7 @@ class TestParseTypeRef:
 
 # ── Loading ───────────────────────────────────────────────────────────────
 
+
 class TestRegistryLoading:
     def test_loads_all_types(self, registry: TypeRegistry):
         assert len(registry) == 19
@@ -81,6 +85,7 @@ class TestRegistryLoading:
 
 
 # ── Resolution ────────────────────────────────────────────────────────────
+
 
 class TestResolution:
     def test_resolve_exact_uri(self, registry: TypeRegistry):
@@ -113,6 +118,7 @@ class TestResolution:
 
 
 # ── Compatibility ─────────────────────────────────────────────────────────
+
 
 class TestCompatibility:
     """Core compatibility matrix tests."""
@@ -224,33 +230,46 @@ class TestCompatibility:
 
 class TestSubtype:
     def test_direct_subtype(self, registry: TypeRegistry):
-        assert registry.is_subtype(
-            "spectrasherpa://types/ScoreMatrix/1.0",
-            "spectrasherpa://types/Array2D/1.0",
-        ) is True
+        assert (
+            registry.is_subtype(
+                "spectrasherpa://types/ScoreMatrix/1.0",
+                "spectrasherpa://types/Array2D/1.0",
+            )
+            is True
+        )
 
     def test_not_subtype(self, registry: TypeRegistry):
-        assert registry.is_subtype(
-            "spectrasherpa://types/Scalar/1.0",
-            "spectrasherpa://types/Array2D/1.0",
-        ) is False
+        assert (
+            registry.is_subtype(
+                "spectrasherpa://types/Scalar/1.0",
+                "spectrasherpa://types/Array2D/1.0",
+            )
+            is False
+        )
 
     def test_reflexive_not_subtype(self, registry: TypeRegistry):
         """A type is NOT a subtype of itself."""
-        assert registry.is_subtype(
-            "spectrasherpa://types/Scalar/1.0",
-            "spectrasherpa://types/Scalar/1.0",
-        ) is False
+        assert (
+            registry.is_subtype(
+                "spectrasherpa://types/Scalar/1.0",
+                "spectrasherpa://types/Scalar/1.0",
+            )
+            is False
+        )
 
     def test_reversed_not_subtype(self, registry: TypeRegistry):
         """Array2D is NOT a subtype of ScoreMatrix."""
-        assert registry.is_subtype(
-            "spectrasherpa://types/Array2D/1.0",
-            "spectrasherpa://types/ScoreMatrix/1.0",
-        ) is False
+        assert (
+            registry.is_subtype(
+                "spectrasherpa://types/Array2D/1.0",
+                "spectrasherpa://types/ScoreMatrix/1.0",
+            )
+            is False
+        )
 
 
 # ── Category from TypeDef ─────────────────────────────────────────────────
+
 
 class TestTypeCategory:
     def test_dataset_category(self, registry: TypeRegistry):
@@ -275,6 +294,7 @@ class TestTypeCategory:
 
 
 # ── API JSON ──────────────────────────────────────────────────────────────
+
 
 class TestApiJson:
     def test_structure(self, registry: TypeRegistry):

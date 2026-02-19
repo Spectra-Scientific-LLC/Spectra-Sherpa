@@ -7,9 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.api.deps import demo_guard, get_current_user, get_session
 from spectra_sherpa.app.core.config import settings
-from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.exp_version import ExpVersion
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
+from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.schemas.experiments import (
     ExperimentCreate,
     ExperimentDetail,
@@ -24,6 +24,7 @@ from spectra_sherpa.app.schemas.experiments import (
 from spectra_sherpa.app.services.experiments import (
     ALLOWED_STAGES,
     add_experiment_file,
+    create_experiment,
     delete_experiment,
     delete_experiment_file,
     delete_experiment_files,
@@ -37,7 +38,6 @@ from spectra_sherpa.app.services.experiments import (
     read_metadata,
     resolve_data_path,
     update_experiment,
-    create_experiment,
 )
 from spectra_sherpa.app.services.file_storage import FileValidationError, save_upload_file
 from spectra_sherpa.app.services.version_storage import ContentAddressableStorage
@@ -100,9 +100,7 @@ async def create_experiment_endpoint(
     )
     metadata_path = resolve_data_path(experiment.metadata_path)
     metadata = read_metadata(metadata_path)
-    return ExperimentDetail(
-        **ExperimentSummary.model_validate(experiment).model_dump(), metadata=metadata
-    )
+    return ExperimentDetail(**ExperimentSummary.model_validate(experiment).model_dump(), metadata=metadata)
 
 
 @router.get("/{experiment_id}", response_model=ExperimentDetail)
@@ -119,9 +117,7 @@ async def get_experiment_endpoint(
         raise HTTPException(status_code=404, detail="Experiment not found")
     metadata_path = resolve_data_path(experiment.metadata_path)
     metadata = read_metadata(metadata_path)
-    return ExperimentDetail(
-        **ExperimentSummary.model_validate(experiment).model_dump(), metadata=metadata
-    )
+    return ExperimentDetail(**ExperimentSummary.model_validate(experiment).model_dump(), metadata=metadata)
 
 
 @router.put("/{experiment_id}", response_model=ExperimentDetail)
@@ -146,9 +142,7 @@ async def update_experiment_endpoint(
     )
     metadata_path = resolve_data_path(updated.metadata_path)
     metadata = read_metadata(metadata_path)
-    return ExperimentDetail(
-        **ExperimentSummary.model_validate(updated).model_dump(), metadata=metadata
-    )
+    return ExperimentDetail(**ExperimentSummary.model_validate(updated).model_dump(), metadata=metadata)
 
 
 @router.delete("/{experiment_id}")
@@ -170,7 +164,12 @@ async def delete_experiment_endpoint(
     return {"status": "deleted"}
 
 
-@router.post("/{experiment_id}/files", response_model=ExperimentFileOut, status_code=201, dependencies=[Depends(demo_guard("data_upload"))])
+@router.post(
+    "/{experiment_id}/files",
+    response_model=ExperimentFileOut,
+    status_code=201,
+    dependencies=[Depends(demo_guard("data_upload"))],
+)
 async def upload_experiment_file(
     experiment_id: int,
     stage: str = Form(...),
@@ -249,9 +248,7 @@ async def import_reference_datasets_endpoint(
 
     try:
         for ds in payload.datasets:
-            files = await import_reference_dataset(
-                session, experiment_id, ds.source, ds.name
-            )
+            files = await import_reference_dataset(session, experiment_id, ds.source, ds.name)
             all_files.extend(files)
         # Commit all DB rows atomically
         await session.commit()
@@ -337,9 +334,7 @@ async def list_versions_endpoint(
         raise HTTPException(status_code=404, detail="Experiment not found")
 
     result = await session.execute(
-        select(ExpVersion)
-        .where(ExpVersion.experiment_id == experiment_id)
-        .order_by(ExpVersion.created_at.desc())
+        select(ExpVersion).where(ExpVersion.experiment_id == experiment_id).order_by(ExpVersion.created_at.desc())
     )
     versions = result.scalars().all()
 
@@ -380,18 +375,14 @@ async def create_version_endpoint(
         raise HTTPException(status_code=404, detail="Experiment not found")
 
     if payload.file_ids and payload.stages:
-        raise HTTPException(
-            status_code=400, detail="Provide file_ids or stages, not both"
-        )
+        raise HTTPException(status_code=400, detail="Provide file_ids or stages, not both")
 
     if payload.stages:
         for stage in payload.stages:
             if stage not in ALLOWED_STAGES:
                 raise HTTPException(status_code=400, detail="Invalid stage")
 
-    existing_version = await get_version_by_name(
-        session, experiment_id, payload.version_name
-    )
+    existing_version = await get_version_by_name(session, experiment_id, payload.version_name)
     if existing_version:
         raise HTTPException(status_code=409, detail="Version name already exists")
 
@@ -407,9 +398,7 @@ async def create_version_endpoint(
             raise HTTPException(status_code=404, detail="Parent version not found")
         parent_version_name = parent.version_name
 
-    files_query = select(ExperimentFile).where(
-        ExperimentFile.experiment_id == experiment_id
-    )
+    files_query = select(ExperimentFile).where(ExperimentFile.experiment_id == experiment_id)
     if payload.file_ids:
         files_query = files_query.where(ExperimentFile.id.in_(payload.file_ids))
     if payload.stages:

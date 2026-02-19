@@ -12,13 +12,9 @@ class CalibrationFile(Base):
     __tablename__ = "calibration_file"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    calibration_id: Mapped[int] = mapped_column(
-        ForeignKey("calibration.id"), nullable=False, index=True
-    )
+    calibration_id: Mapped[int] = mapped_column(ForeignKey("calibration.id"), nullable=False, index=True)
     file_path: Mapped[str] = mapped_column(String(500), nullable=False)
     concentration: Mapped[float] = mapped_column(nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     calibration = relationship("Calibration", back_populates="files")

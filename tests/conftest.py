@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+
 def _configure_writable_runtime_dirs() -> None:
     """Force third-party runtime state into writable temp directories.
 
@@ -40,14 +41,15 @@ _configure_writable_runtime_dirs()
 # "ValueError: I/O operation on closed file" when printing to stdout/stderr.
 # We disable its console logging here before it gets imported by the app.
 import logging
+
 # Force-configure the logger before import to prevent handler attachment
 logging.getLogger("spectrochempy").handlers = []
 logging.getLogger("spectrochempy").propagate = False
 # Also silence the root logger for good measure during tests
 logging.getLogger().setLevel(logging.CRITICAL)
 
-from spectra_sherpa.app.db.base import Base
 from spectra_sherpa.app.api.deps import get_session
+from spectra_sherpa.app.db.base import Base
 from spectra_sherpa.app.main import app
 from spectra_sherpa.app.models.user import User
 
@@ -75,9 +77,7 @@ async def test_engine():
 @pytest.fixture
 async def test_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
     """Create a test database session"""
-    async_session = sessionmaker(
-        test_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    async_session = sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
 
     async with async_session() as session:
         yield session
@@ -102,9 +102,7 @@ async def client(test_session: AsyncSession) -> AsyncGenerator[AsyncClient, None
 
     app.dependency_overrides[get_session] = override_get_session
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
 
     app.dependency_overrides.clear()

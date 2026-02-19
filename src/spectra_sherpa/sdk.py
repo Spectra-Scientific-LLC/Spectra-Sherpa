@@ -52,6 +52,30 @@ Version policy
 
 from __future__ import annotations
 
+# ── Provenance / processing history ────────────────────────────────
+# ── Sample management (PLS_Toolbox-style) ──────────────────────────
+# ── Spectral detection utilities ───────────────────────────────────
+from spectra_sherpa.app.services.dag.meta_helpers import (
+    add_processing_step,
+    clear_processing_history,
+    copy_processing_history,
+    detect_data_quantity,
+    detect_spectral_technique,
+    detect_x_axis_type,
+    exclude_samples,
+    filter_by_class,
+    get_classes,
+    get_include_mask,
+    get_included_data,
+    get_processing_history,
+    get_sample_labels,
+    get_spectral_info,
+    include_samples,
+    safe_get_coord,
+    set_class,
+    set_sample_labels,
+)
+
 # ── Core node system ────────────────────────────────────────────────
 from spectra_sherpa.app.services.dag.node_base import (
     Node,
@@ -62,36 +86,6 @@ from spectra_sherpa.app.services.dag.node_base import (
     PortMetadata,
     node_registry,
     register_node,
-)
-
-# ── Provenance / processing history ────────────────────────────────
-from spectra_sherpa.app.services.dag.meta_helpers import (
-    add_processing_step,
-    copy_processing_history,
-    get_processing_history,
-    clear_processing_history,
-    safe_get_coord,
-)
-
-# ── Sample management (PLS_Toolbox-style) ──────────────────────────
-from spectra_sherpa.app.services.dag.meta_helpers import (
-    exclude_samples,
-    include_samples,
-    get_included_data,
-    get_include_mask,
-    set_class,
-    get_classes,
-    filter_by_class,
-    set_sample_labels,
-    get_sample_labels,
-)
-
-# ── Spectral detection utilities ───────────────────────────────────
-from spectra_sherpa.app.services.dag.meta_helpers import (
-    detect_spectral_technique,
-    detect_data_quantity,
-    detect_x_axis_type,
-    get_spectral_info,
 )
 
 __all__ = [

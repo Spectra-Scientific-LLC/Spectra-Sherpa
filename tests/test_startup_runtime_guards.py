@@ -159,15 +159,12 @@ def test_dag_pool_creation_gracefully_handles_permission_error(
 ) -> None:
     from concurrent.futures import ProcessPoolExecutor
 
-    original_init = ProcessPoolExecutor.__init__
-
     def _failing_init(self, *args, **kwargs):
         raise PermissionError("semaphore not available")
 
     monkeypatch.setattr(ProcessPoolExecutor, "__init__", _failing_init)
 
     # Import the function that creates the pool
-    import spectra_sherpa.app.main as app_main
 
     pool_result = None
 

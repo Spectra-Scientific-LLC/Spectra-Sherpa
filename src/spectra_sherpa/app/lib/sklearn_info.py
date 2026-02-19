@@ -1,4 +1,5 @@
 """Scikit-learn reference dataset catalog and metadata extraction."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -35,10 +36,7 @@ _LOADERS = {
 def get_sklearn_dataset_info(name: str) -> dict[str, Any]:
     """Extract rich metadata from a scikit-learn dataset."""
     if name not in SKLEARN_CATALOG:
-        raise ValueError(
-            f"Unknown sklearn dataset: {name!r}. "
-            f"Available: {', '.join(SKLEARN_CATALOG)}"
-        )
+        raise ValueError(f"Unknown sklearn dataset: {name!r}. " f"Available: {', '.join(SKLEARN_CATALOG)}")
 
     from sklearn import datasets
 
@@ -56,9 +54,7 @@ def get_sklearn_dataset_info(name: str) -> dict[str, Any]:
         "n_samples": int(bunch.data.shape[0]),
         "n_features": int(bunch.data.shape[1]),
         "feature_names": list(getattr(bunch, "feature_names", [])),
-        "target_names": [str(t) for t in bunch.target_names]
-        if hasattr(bunch, "target_names")
-        else [],
+        "target_names": [str(t) for t in bunch.target_names] if hasattr(bunch, "target_names") else [],
         "data_min": float(np.min(bunch.data)),
         "data_max": float(np.max(bunch.data)),
         "data_mean": float(np.mean(bunch.data)),

@@ -11,7 +11,6 @@ import pytest
 
 from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo, from_sklearn_bunch
 
-
 # ===========================================================================
 # AxisInfo
 # ===========================================================================
@@ -519,7 +518,9 @@ class TestToDict:
     def _make_ds(self):
         return AnalysisDataset(
             X=np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
-            x_axis=AxisInfo(values=np.array([100.0, 200.0, 300.0]), labels=["a", "b", "c"], units="cm^-1", title="wavenumber"),
+            x_axis=AxisInfo(
+                values=np.array([100.0, 200.0, 300.0]), labels=["a", "b", "c"], units="cm^-1", title="wavenumber"
+            ),
             y_axis=AxisInfo(values=np.array([0.0, 1.0]), labels=["s1", "s2"], units=None, title="samples"),
             target=np.array([0, 1]),
             meta={"custom": "value"},
@@ -607,6 +608,7 @@ class TestToDict:
     def test_metadata_datetime_serialized(self):
         """datetime values in metadata must be JSON-serialized to ISO strings."""
         from datetime import datetime
+
         ts = datetime(2026, 2, 13, 10, 30, 0)
         ds = AnalysisDataset(
             X=np.zeros((2, 3)),
@@ -851,9 +853,7 @@ class TestFromSklearnBunch:
     def _make_bunch(self):
         """Create a mock sklearn Bunch."""
         return SimpleNamespace(
-            data=np.array([[5.1, 3.5, 1.4, 0.2],
-                           [4.9, 3.0, 1.4, 0.2],
-                           [7.0, 3.2, 4.7, 1.4]]),
+            data=np.array([[5.1, 3.5, 1.4, 0.2], [4.9, 3.0, 1.4, 0.2], [7.0, 3.2, 4.7, 1.4]]),
             target=np.array([0, 0, 1]),
             feature_names=["sepal_length", "sepal_width", "petal_length", "petal_width"],
             target_names=["setosa", "versicolor"],

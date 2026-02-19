@@ -5,10 +5,11 @@ Revises: e5b3c8d1f204
 Create Date: 2026-02-11 12:00:00.000000
 
 """
+
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "f6a4b7c2d815"
@@ -51,9 +52,7 @@ def upgrade() -> None:
         op.create_table(
             "folder_watch",
             sa.Column("id", sa.Integer(), primary_key=True),
-            sa.Column(
-                "user_id", sa.Integer(), sa.ForeignKey("user.id"), nullable=False, index=True
-            ),
+            sa.Column("user_id", sa.Integer(), sa.ForeignKey("user.id"), nullable=False, index=True),
             sa.Column(
                 "workflow_id",
                 sa.Integer(),

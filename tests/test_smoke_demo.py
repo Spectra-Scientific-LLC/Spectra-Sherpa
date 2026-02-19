@@ -23,22 +23,21 @@ import os
 from types import SimpleNamespace
 
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import StaticPool
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from starlette.testclient import TestClient
 
+import spectra_sherpa.app.main as app_main
+from spectra_sherpa.app.api.deps import get_current_user, get_session
+from spectra_sherpa.app.core.config import app_config
 from spectra_sherpa.app.db.base import Base
 from spectra_sherpa.app.main import app
-from spectra_sherpa.app.core.config import app_config
-from spectra_sherpa.app.api.deps import get_session, get_current_user
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
 from spectra_sherpa.app.models.workflow_node import WorkflowNode
-import spectra_sherpa.app.main as app_main
 from spectra_sherpa.app.services.websocket_manager import ws_manager
-
 
 # ---------------------------------------------------------------------------
 # Detect if full auth routes exist (server distribution)
@@ -94,9 +93,7 @@ async def smoke_user(smoke_session: AsyncSession) -> User:
 
 
 @pytest.fixture
-async def auth_client(
-    smoke_session: AsyncSession, smoke_user: User
-) -> AsyncClient:
+async def auth_client(smoke_session: AsyncSession, smoke_user: User) -> AsyncClient:
     """HTTP client authenticated as smoke_user."""
     # Guard against test-ordering contamination: ensure local mode so the
     # api_key_middleware does not reject requests before dependency overrides
@@ -113,9 +110,7 @@ async def auth_client(
     app.dependency_overrides[get_session] = override_get_session
     app.dependency_overrides[get_current_user] = override_get_current_user
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
 
     app.dependency_overrides.clear()
@@ -137,7 +132,6 @@ def _reset_ws_state():
     ws_manager._channels.clear()
     yield
     ws_manager._channels.clear()
-
 
 
 # ---------------------------------------------------------------------------
@@ -328,10 +322,12 @@ class TestWebSocket:
         monkeypatch.setattr(app_main, "get_user_from_credentials", _resolve_user)
 
         with ws_client.websocket_connect("/ws") as ws:
-            ws.send_json({
-                "action": "sherpa_sync",
-                "workflow_state": {"nodes": [], "edges": []},
-            })
+            ws.send_json(
+                {
+                    "action": "sherpa_sync",
+                    "workflow_state": {"nodes": [], "edges": []},
+                }
+            )
             resp = ws.receive_json()
             # Either a sync response or an error (both are valid round-trips)
             assert resp["type"] in ("sherpa_sync", "sherpa_status", "sherpa_error", "error")

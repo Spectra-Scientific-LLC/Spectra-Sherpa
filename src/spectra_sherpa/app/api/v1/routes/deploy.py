@@ -16,7 +16,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session
 from spectra_sherpa.app.models.background_job import BackgroundJob
@@ -25,10 +24,10 @@ from spectra_sherpa.app.models.execution_run import ExecutionRun
 from spectra_sherpa.app.models.folder_watch import FolderWatch
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.schemas.deploy import (
-    BatchPredictRequest,
-    BatchPredictResponse,
     BatchPredictionList,
     BatchPredictionOut,
+    BatchPredictRequest,
+    BatchPredictResponse,
     FolderWatchCreate,
     FolderWatchOut,
     FolderWatchUpdate,
@@ -45,6 +44,7 @@ router = APIRouter(prefix="/deploy")
 # ---------------------------------------------------------------------------
 # Labels
 # ---------------------------------------------------------------------------
+
 
 @router.patch("/runs/{run_id}/labels", response_model=ExecutionRunOut)
 async def update_labels(
@@ -72,6 +72,7 @@ async def update_labels(
 # ---------------------------------------------------------------------------
 # Batch Predict (called from Experiments page)
 # ---------------------------------------------------------------------------
+
 
 @router.post(
     "/workflows/{workflow_id}/predict/batch",
@@ -176,6 +177,7 @@ async def batch_predict(
 # Per-file prediction results
 # ---------------------------------------------------------------------------
 
+
 @router.get("/runs/{run_id}/predictions", response_model=BatchPredictionList)
 async def list_predictions(
     run_id: int,
@@ -192,11 +194,7 @@ async def list_predictions(
     if run_result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Run not found")
 
-    query = (
-        select(BatchPrediction)
-        .where(BatchPrediction.run_id == run_id)
-        .order_by(BatchPrediction.id)
-    )
+    query = select(BatchPrediction).where(BatchPrediction.run_id == run_id).order_by(BatchPrediction.id)
     result = await session.execute(query)
     predictions = list(result.scalars().all())
 
@@ -238,6 +236,7 @@ async def get_prediction(
 # ---------------------------------------------------------------------------
 # Folder Watches
 # ---------------------------------------------------------------------------
+
 
 @router.post("/watches", response_model=FolderWatchOut, status_code=201)
 async def create_watch(
@@ -287,11 +286,7 @@ async def list_watches(
     current_user: User = Depends(get_current_user),
 ) -> list[FolderWatchOut]:
     """List the current user's folder watches."""
-    query = (
-        select(FolderWatch)
-        .where(FolderWatch.user_id == current_user.id)
-        .order_by(FolderWatch.created_at.desc())
-    )
+    query = select(FolderWatch).where(FolderWatch.user_id == current_user.id).order_by(FolderWatch.created_at.desc())
     result = await session.execute(query)
     watches = list(result.scalars().all())
     return [FolderWatchOut.model_validate(w) for w in watches]
@@ -378,6 +373,7 @@ async def disable_watch(
 # Deploy runs (filtered view)
 # ---------------------------------------------------------------------------
 
+
 @router.get("/runs", response_model=ExecutionRunList)
 async def list_deploy_runs(
     source_type: str | None = Query(None, description="Filter by source type"),
@@ -387,9 +383,7 @@ async def list_deploy_runs(
 ) -> ExecutionRunList:
     """List execution runs filtered by source type and/or label."""
     query = (
-        select(ExecutionRun)
-        .where(ExecutionRun.user_id == current_user.id)
-        .order_by(ExecutionRun.executed_at.desc())
+        select(ExecutionRun).where(ExecutionRun.user_id == current_user.id).order_by(ExecutionRun.executed_at.desc())
     )
 
     if source_type:
@@ -412,9 +406,8 @@ async def list_deploy_runs(
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def _get_user_watch(
-    session: AsyncSession, watch_id: int, user_id: int
-) -> FolderWatch:
+
+async def _get_user_watch(session: AsyncSession, watch_id: int, user_id: int) -> FolderWatch:
     """Load a folder watch with ownership check."""
     query = select(FolderWatch).where(
         FolderWatch.id == watch_id,

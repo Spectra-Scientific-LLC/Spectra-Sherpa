@@ -8,13 +8,28 @@ and cross-validation metrics for chemometrics models.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
+
 import numpy as np
 
 logger = logging.getLogger(__name__)
-from spectra_sherpa.app.lib.scp_compat import NDDataset
+from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
 
-from ..node_base import Node, NodeMetadata, NodeParameter, InputPort, PortMetadata, register_node
+from ..io_contracts import resolve_legacy_input, to_numpy_1d, to_numpy_2d
+from ..node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
+
+
+def _unwrap_data(value: Any) -> Any:
+    """Return raw numeric data for dataset-like inputs, otherwise passthrough."""
+    if isinstance(value, AnalysisDataset):
+        return value.data
+    # Avoid ndarray.data memoryview by checking ndarray first.
+    if not isinstance(value, np.ndarray) and hasattr(value, "data"):
+        try:
+            return value.data
+        except Exception:
+            return value
+    return value
 
 
 @register_node
@@ -102,9 +117,7 @@ class OutlierDetectionNode(Node):
         n_components = pca_model["n_components"]
         n_observations = pca_model["n_observations"]
 
-        # Get scores (T) and loadings (P) - NDDataset directly
-        scores = np.array(pca_model["scores"].data)
-        loadings = np.array(pca_model["loadings"].data)
+        scores = to_numpy_2d(_unwrap_data(pca_model["scores"]), name="scores", dtype=np.float64)
 
         # Calculate Hotelling T² statistic
         # CRITICAL: T² = t' * Λ⁻¹ * t, where Λ are the eigenvalues from PCA (explained_variance)
@@ -115,18 +128,16 @@ class OutlierDetectionNode(Node):
         # Try to get eigenvalues from PCA model's explained_variance (NDDataset)
         if "explained_variance" in pca_model:
             ev = pca_model["explained_variance"]
-            if hasattr(ev, "data"):
-                eigenvalues = np.array(ev.data).flatten()
-            elif isinstance(ev, (list, np.ndarray)):
-                eigenvalues = np.array(ev).flatten()
+            try:
+                eigenvalues = to_numpy_1d(_unwrap_data(ev), name="explained_variance", dtype=np.float64)
+            except Exception:
+                if isinstance(ev, (list, np.ndarray)):
+                    eigenvalues = np.array(ev, dtype=np.float64).flatten()
 
         # Try model object if not found in dict
         if eigenvalues is None and hasattr(model, "explained_variance"):
             ev = model.explained_variance
-            if hasattr(ev, "data"):
-                eigenvalues = np.array(ev.data).flatten()
-            else:
-                eigenvalues = np.array(ev).flatten()
+            eigenvalues = to_numpy_1d(_unwrap_data(ev), name="explained_variance", dtype=np.float64)
 
         # Fallback to score variance (less accurate but functional)
         if eigenvalues is None:
@@ -139,13 +150,18 @@ class OutlierDetectionNode(Node):
         # Ensure eigenvalues are positive and match component count
         eigenvalues = np.maximum(eigenvalues[:n_components], 1e-10)
 
-        T2 = np.sum((scores ** 2) / eigenvalues, axis=1)
+        T2 = np.sum((scores**2) / eigenvalues, axis=1)
 
         # T² control limit (F-distribution)
         from scipy.stats import f
+
         alpha = 1 - confidence_level
         F_crit = f.ppf(1 - alpha, n_components, n_observations - n_components)
-        T2_limit = (n_components * (n_observations - 1) * (n_observations + 1)) / (n_observations * (n_observations - n_components)) * F_crit
+        T2_limit = (
+            (n_components * (n_observations - 1) * (n_observations + 1))
+            / (n_observations * (n_observations - n_components))
+            * F_crit
+        )
 
         # Calculate Q statistic (SPE) from reconstruction residuals
         internal = pca_model.get("_internal", {})
@@ -171,14 +187,14 @@ class OutlierDetectionNode(Node):
         if reconstructed is None:
             raise RuntimeError("PCA model does not support reconstruction for SPE calculation")
 
-        reconstructed_data = np.array(reconstructed.data) if hasattr(reconstructed, "data") else np.array(reconstructed)
-        input_matrix = np.array(input_data.data) if hasattr(input_data, "data") else np.array(input_data)
+        reconstructed_data = to_numpy_2d(_unwrap_data(reconstructed), name="reconstructed", dtype=np.float64)
+        input_matrix = to_numpy_2d(_unwrap_data(input_data), name="input_data", dtype=np.float64)
 
         if reconstructed_data.shape != input_matrix.shape:
             raise RuntimeError("Reconstructed data shape does not match input data")
 
         residuals = input_matrix - reconstructed_data
-        Q = np.sum(residuals ** 2, axis=1)
+        Q = np.sum(residuals**2, axis=1)
         Q_limit = float(np.quantile(Q, confidence_level)) if Q.size else 0.0
 
         # Identify outliers
@@ -211,7 +227,10 @@ class OutlierDetectionNode(Node):
             },
         }
 
-        logger.debug(f"[Outlier Detection] Found {n_outliers} outliers ({100*n_outliers/n_observations:.1f}%) at {confidence_level*100}% confidence")
+        logger.debug(
+            f"[Outlier Detection] Found {n_outliers} outliers "
+            f"({100*n_outliers/n_observations:.1f}%) at {confidence_level*100}% confidence"
+        )
 
         return result
 
@@ -306,23 +325,23 @@ class CrossValidationNode(Node):
         Returns:
             Dict containing CV metrics
         """
-        from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
-        from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+        from sklearn.metrics import (
+            accuracy_score,
+            classification_report,
+            confusion_matrix,
+            mean_absolute_error,
+            mean_squared_error,
+            r2_score,
+        )
 
-        # Handle both positional and keyword arguments
-        if y_true is None and "input_0" in kwargs:
-            y_true = kwargs["input_0"]
-        if y_pred is None and "input_1" in kwargs:
-            y_pred = kwargs["input_1"]
+        y_true = resolve_legacy_input(y_true, kwargs, "input_0")
+        y_pred = resolve_legacy_input(y_pred, kwargs, "input_1")
 
         if y_true is None or y_pred is None:
             raise ValueError("Missing required inputs: y_true and y_pred")
 
-        y_true = np.array(y_true).flatten()
-        y_pred = np.array(y_pred).flatten()
-
-        if len(y_true) != len(y_pred):
-            raise ValueError(f"Length mismatch: y_true ({len(y_true)}) vs y_pred ({len(y_pred)})")
+        y_true = to_numpy_1d(_unwrap_data(y_true), name="y_true")
+        y_pred = to_numpy_1d(_unwrap_data(y_pred), name="y_pred", expected_length=y_true.shape[0])
 
         # Determine if regression or classification
         unique_true = np.unique(y_true)
@@ -339,23 +358,23 @@ class CrossValidationNode(Node):
             cm = confusion_matrix(y_true, y_pred)
 
             class_report = classification_report(
-                y_true, y_pred,
-                target_names=[str(c) for c in unique_true],
-                output_dict=True
+                y_true, y_pred, target_names=[str(c) for c in unique_true], output_dict=True
             )
 
-            result.update({
-                "accuracy": accuracy,
-                "confusion_matrix": cm.tolist(),
-                "classification_report": class_report,
-                "n_classes": len(unique_true),
-                "classes": unique_true.tolist(),
-                "metadata": {
-                    "type": "ClassificationCV",
+            result.update(
+                {
                     "accuracy": accuracy,
+                    "confusion_matrix": cm.tolist(),
+                    "classification_report": class_report,
                     "n_classes": len(unique_true),
-                },
-            })
+                    "classes": unique_true.tolist(),
+                    "metadata": {
+                        "type": "ClassificationCV",
+                        "accuracy": accuracy,
+                        "n_classes": len(unique_true),
+                    },
+                }
+            )
 
             logger.debug(f"[Cross-Validation] Classification accuracy: {accuracy:.3f}")
 
@@ -371,21 +390,23 @@ class CrossValidationNode(Node):
             PRESS = np.sum((y_true - y_pred) ** 2)
             Q2 = 1 - (PRESS / TSS) if TSS > 0 else 0
 
-            result.update({
-                "RMSE": rmse,
-                "RMSECV": rmse,  # Same as RMSE for CV predictions
-                "MAE": mae,
-                "R2": r2,
-                "Q2": Q2,
-                "PRESS": PRESS,
-                "residuals": (y_true - y_pred).tolist(),
-                "metadata": {
-                    "type": "RegressionCV",
-                    "RMSECV": rmse,
-                    "Q2": Q2,
+            result.update(
+                {
+                    "RMSE": rmse,
+                    "RMSECV": rmse,  # Same as RMSE for CV predictions
+                    "MAE": mae,
                     "R2": r2,
-                },
-            })
+                    "Q2": Q2,
+                    "PRESS": PRESS,
+                    "residuals": (y_true - y_pred).tolist(),
+                    "metadata": {
+                        "type": "RegressionCV",
+                        "RMSECV": rmse,
+                        "Q2": Q2,
+                        "R2": r2,
+                    },
+                }
+            )
 
             logger.debug(f"[Cross-Validation] RMSECV: {rmse:.4f}, Q²: {Q2:.4f}, R²: {r2:.4f}")
 
@@ -394,7 +415,9 @@ class CrossValidationNode(Node):
 
         # Ensure explicit ports are populated
         result["model"] = None
-        result["cv_metrics"] = {k: v for k, v in result.items() if k not in ["model", "predictions", "plots", "data", "metadata"]}
+        result["cv_metrics"] = {
+            k: v for k, v in result.items() if k not in ["model", "predictions", "plots", "data", "metadata"]
+        }
         result["predictions"] = y_pred.tolist()
         result["plots"] = {"true_vs_pred": result["data"]}
 

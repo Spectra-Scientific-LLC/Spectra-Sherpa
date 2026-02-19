@@ -35,25 +35,17 @@ class ProjectScript(Base):
     __tablename__ = "project_script"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(
-        ForeignKey("project.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("user.id"), nullable=False, index=True
-    )
+    project_id: Mapped[int] = mapped_column(ForeignKey("project.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False, index=True)
     source_workflow_id: Mapped[int | None] = mapped_column(
         ForeignKey("workflow.id", ondelete="SET NULL"), nullable=True, index=True
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    language: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="python"
-    )
+    language: Mapped[str] = mapped_column(String(20), nullable=False, default="python")
     code: Mapped[str] = mapped_column(Text, nullable=False)
     priority: Mapped[float] = mapped_column(Float, nullable=False, default=50.0)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), index=True
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

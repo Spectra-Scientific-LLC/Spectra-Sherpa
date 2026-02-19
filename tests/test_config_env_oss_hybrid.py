@@ -77,4 +77,3 @@ def test_from_env_hybrid_accepts_site_profile_without_changing_runtime_mode(
     assert safe["mode"] == "hybrid"
     assert safe["siteProfile"] == "internal"
     assert safe["demo"] is None  # Not a demo profile
-

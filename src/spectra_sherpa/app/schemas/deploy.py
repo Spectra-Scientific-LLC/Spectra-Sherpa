@@ -9,22 +9,21 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 # ---------------------------------------------------------------------------
 # Labels
 # ---------------------------------------------------------------------------
 
+
 class UpdateLabelsRequest(BaseModel):
     """Update the labels on an execution run."""
 
-    labels: list[str] = Field(
-        ..., max_length=20, description="List of label strings (max 20)"
-    )
+    labels: list[str] = Field(..., max_length=20, description="List of label strings (max 20)")
 
 
 # ---------------------------------------------------------------------------
 # Batch Predict
 # ---------------------------------------------------------------------------
+
 
 class BatchPredictRequest(BaseModel):
     """Start a batch prediction job from a server folder."""
@@ -69,6 +68,7 @@ class BatchPredictionList(BaseModel):
 # Folder Watch
 # ---------------------------------------------------------------------------
 
+
 class FolderWatchCreate(BaseModel):
     """Create a new folder watch."""
 
@@ -76,9 +76,7 @@ class FolderWatchCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, description="Watch name")
     folder_path: str = Field(..., min_length=1, description="Server folder to monitor")
     file_pattern: str = Field("*", description="Glob pattern for file matching")
-    poll_interval_sec: int = Field(
-        60, ge=10, le=86400, description="Polling interval in seconds"
-    )
+    poll_interval_sec: int = Field(60, ge=10, le=86400, description="Polling interval in seconds")
 
 
 class FolderWatchUpdate(BaseModel):

@@ -1,4 +1,5 @@
 """Tests for per-user demo execution and Sherpa interaction limits."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -11,7 +12,6 @@ from spectra_sherpa.app.core.demo_limits import (
     check_demo_sherpa,
     demo_execution_remaining,
     demo_limit_error_detail,
-    demo_sherpa_remaining,
     is_demo_limited,
     reset_limiters,
 )

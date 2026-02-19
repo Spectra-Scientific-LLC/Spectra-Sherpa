@@ -8,15 +8,15 @@ supporting batch monitoring, drift detection, and real-time process control appl
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
+
 import numpy as np
 
 logger = logging.getLogger(__name__)
-from spectra_sherpa.app.lib.scp_compat import scp, NDDataset
-from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo
+from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
+from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
 
-from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
-
+from ..io_contracts import build_dataset_like, coerce_dataset, to_numpy_2d
 from ..node_base import Node, NodeMetadata, NodeParameter, register_node
 
 
@@ -74,23 +74,24 @@ class MovingWindowNode(Node):
         output_type="NDDataset",
     )
 
-    async def execute(self, input_data: NDDataset) -> Any:
+    async def execute(self, input_data: AnalysisDataset) -> Any:
         """
         Execute moving window segmentation.
 
         Args:
-            input_data: NDDataset containing time series spectral data
+            input_data: AnalysisDataset containing time series spectral data
 
         Returns:
-            NDDataset with windowed data
+            AnalysisDataset with windowed data
         """
         window_size = self.parameters.get("window_size", 10)
         step_size = self.parameters.get("step_size", 1)
         aggregation = self.parameters.get("aggregation", "none")
 
-        data = np.array(input_data.data)
+        input_ds = coerce_dataset(input_data, input_name="input_data")
+        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
         n_samples, n_features = data.shape
-        input_shape = input_data.shape
+        input_shape = input_ds.shape
 
         if window_size > n_samples:
             raise ValueError(f"Window size ({window_size}) cannot exceed number of samples ({n_samples})")
@@ -100,7 +101,7 @@ class MovingWindowNode(Node):
         window_indices = []
 
         for i in range(0, n_samples - window_size + 1, step_size):
-            window = data[i:i + window_size]
+            window = data[i : i + window_size]
             windows.append(window)
             window_indices.append((i, i + window_size))
 
@@ -118,14 +119,10 @@ class MovingWindowNode(Node):
             # No aggregation: flatten windows into (n_windows * window_size, n_features)
             windowed_data = np.vstack(windows)
 
-        result = AnalysisDataset(X=windowed_data)
-        # Copy coords and meta from input_data
-        x_coord = safe_get_coord(input_data, 'x')
-        if x_coord is not None:
-            result.x = x_coord.copy()
-        if hasattr(input_data, 'units') and input_data.units:
-            result.units = input_data.units
-        copy_processing_history(input_data, result)
+        result = build_dataset_like(windowed_data, input_ds)
+        # Windowing changes sample cardinality: clear sample-coupled fields.
+        result.y = None
+        result.target = None
         add_processing_step(
             result,
             "time_series.moving_window",
@@ -203,23 +200,24 @@ class TrendRemovalNode(Node):
         output_type="NDDataset",
     )
 
-    async def execute(self, input_data: NDDataset) -> Any:
+    async def execute(self, input_data: AnalysisDataset) -> Any:
         """
         Execute trend removal.
 
         Args:
-            input_data: NDDataset containing time series spectral data
+            input_data: AnalysisDataset containing time series spectral data
 
         Returns:
-            NDDataset with detrended data
+            AnalysisDataset with detrended data
         """
         method = self.parameters.get("method", "linear")
         poly_order = self.parameters.get("poly_order", 2)
         window_size = self.parameters.get("window_size", 5)
 
-        data = np.array(input_data.data)
+        input_ds = coerce_dataset(input_data, input_name="input_data")
+        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
         n_samples, n_features = data.shape
-        input_shape = input_data.shape
+        input_shape = input_ds.shape
 
         detrended_data = np.zeros_like(data)
 
@@ -249,23 +247,14 @@ class TrendRemovalNode(Node):
         elif method == "moving_average":
             # Remove moving average baseline
             from scipy.ndimage import uniform_filter1d
+
             for j in range(n_features):
-                baseline = uniform_filter1d(data[:, j], window_size, mode='nearest')
+                baseline = uniform_filter1d(data[:, j], window_size, mode="nearest")
                 detrended_data[:, j] = data[:, j] - baseline
 
         logger.debug(f"[Trend Removal] Applied {method} detrending")
 
-        result = AnalysisDataset(X=detrended_data)
-        # Copy coords and meta from input_data
-        x_coord = safe_get_coord(input_data, 'x')
-        if x_coord is not None:
-            result.x = x_coord.copy()
-        y_coord = safe_get_coord(input_data, 'y')
-        if y_coord is not None:
-            result.y = y_coord.copy()
-        if hasattr(input_data, 'units') and input_data.units:
-            result.units = input_data.units
-        copy_processing_history(input_data, result)
+        result = build_dataset_like(detrended_data, input_ds)
         add_processing_step(
             result,
             "time_series.trend_removal",

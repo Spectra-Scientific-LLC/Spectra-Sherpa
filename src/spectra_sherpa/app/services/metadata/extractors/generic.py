@@ -25,23 +25,53 @@ class GenericExtractor(BaseMetadataExtractor):
 
     # Common metadata key patterns (case-insensitive matching)
     COMMON_INSTRUMENT_KEYS = [
-        "instrument", "spectrometer", "manufacturer", "model", "detector",
-        "source", "beamsplitter", "serial", "hardware"
+        "instrument",
+        "spectrometer",
+        "manufacturer",
+        "model",
+        "detector",
+        "source",
+        "beamsplitter",
+        "serial",
+        "hardware",
     ]
 
     COMMON_ACQUISITION_KEYS = [
-        "scans", "resolution", "date", "time", "datetime", "timestamp",
-        "velocity", "apodization", "aperture", "gain", "points"
+        "scans",
+        "resolution",
+        "date",
+        "time",
+        "datetime",
+        "timestamp",
+        "velocity",
+        "apodization",
+        "aperture",
+        "gain",
+        "points",
     ]
 
     COMMON_SAMPLE_KEYS = [
-        "sample", "name", "title", "id", "description", "concentration",
-        "pathlength", "cell", "preparation"
+        "sample",
+        "name",
+        "title",
+        "id",
+        "description",
+        "concentration",
+        "pathlength",
+        "cell",
+        "preparation",
     ]
 
     COMMON_PROVENANCE_KEYS = [
-        "operator", "user", "owner", "author", "lab", "organization",
-        "comment", "note", "remarks"
+        "operator",
+        "user",
+        "owner",
+        "author",
+        "lab",
+        "organization",
+        "comment",
+        "note",
+        "remarks",
     ]
 
     def extract(self, dataset: Any, file_path: str) -> Dict[str, Any]:
@@ -104,10 +134,10 @@ class GenericExtractor(BaseMetadataExtractor):
         what might be important.
         """
         all_patterns = (
-            self.COMMON_INSTRUMENT_KEYS +
-            self.COMMON_ACQUISITION_KEYS +
-            self.COMMON_SAMPLE_KEYS +
-            self.COMMON_PROVENANCE_KEYS
+            self.COMMON_INSTRUMENT_KEYS
+            + self.COMMON_ACQUISITION_KEYS
+            + self.COMMON_SAMPLE_KEYS
+            + self.COMMON_PROVENANCE_KEYS
         )
 
         extra = {}

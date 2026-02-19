@@ -4,8 +4,8 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Request
 
-from spectra_sherpa.app.core.config import settings, app_config
-from spectra_sherpa.app.core.logging import log_buffer, RemoteAuditHandler
+from spectra_sherpa.app.core.config import app_config, settings
+from spectra_sherpa.app.core.logging import RemoteAuditHandler, log_buffer
 from spectra_sherpa.app.core.security import _is_loopback, get_client_host
 from spectra_sherpa.app.schemas.logs import LogResponse
 
@@ -47,18 +47,14 @@ async def get_log_sync_status(request: Request):
         return {
             "mode": app_config.mode,
             "remote_logging_enabled": False,
-            "message": "Remote logging only available in hybrid mode"
+            "message": "Remote logging only available in hybrid mode",
         }
 
     if not remote_handler:
         return {
             "mode": app_config.mode,
             "remote_logging_enabled": False,
-            "message": "Remote audit handler not configured (SPECTRASHERPA_LOG_URL not set)"
+            "message": "Remote audit handler not configured (SPECTRASHERPA_LOG_URL not set)",
         }
 
-    return {
-        "mode": app_config.mode,
-        "remote_logging_enabled": True,
-        **remote_handler.get_status()
-    }
+    return {"mode": app_config.mode, "remote_logging_enabled": True, **remote_handler.get_status()}

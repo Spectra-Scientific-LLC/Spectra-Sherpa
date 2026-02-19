@@ -4,22 +4,22 @@ Built-in workflow inspection tools.
 These tools let the LLM inspect and validate the user's current
 workflow state without requiring raw data egress.
 """
+
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from spectra_sherpa.app.services.tools.registry import register_tool
 from spectra_sherpa.app.services.tools.schemas import ToolCategory
-
 
 # ---------------------------------------------------------------------------
 # get_workflow_summary
 # ---------------------------------------------------------------------------
 
+
 @register_tool(
     "get_workflow_summary",
-    "Get a human-readable summary of a saved workflow's DAG structure "
-    "(nodes, edges, parameters) from the database.",
+    "Get a human-readable summary of a saved workflow's DAG structure " "(nodes, edges, parameters) from the database.",
     category=ToolCategory.workflow,
     parameters={
         "type": "object",
@@ -87,6 +87,7 @@ async def get_workflow_summary(
 # ---------------------------------------------------------------------------
 # validate_workflow
 # ---------------------------------------------------------------------------
+
 
 @register_tool(
     "validate_workflow",
@@ -218,9 +219,7 @@ def validate_workflow(
         color[node] = BLACK
         return False
 
-    has_cycles = any(
-        has_cycle(nid) for nid in adj if color.get(nid, 0) == 0
-    )
+    has_cycles = any(has_cycle(nid) for nid in adj if color.get(nid, 0) == 0)
     if has_cycles:
         issues.append(
             {
@@ -240,6 +239,7 @@ def validate_workflow(
 # ---------------------------------------------------------------------------
 # list_workflows
 # ---------------------------------------------------------------------------
+
 
 @register_tool(
     "list_workflows",

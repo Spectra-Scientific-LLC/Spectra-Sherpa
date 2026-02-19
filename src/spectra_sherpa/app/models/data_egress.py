@@ -4,16 +4,15 @@ Data Egress Permission Model
 Tracks user-configurable permissions for data sharing in HYBRID mode.
 Each user can control what data types can be sent to which destinations.
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
-    Enum,
     ForeignKey,
     Integer,
     String,
@@ -25,11 +24,12 @@ from sqlalchemy.orm import relationship
 from spectra_sherpa.app.db.base import Base
 
 if TYPE_CHECKING:
-    from spectra_sherpa.app.models.user import User
+    pass
 
 
 class DataType:
     """Data types that can be subject to egress controls"""
+
     SPECTRA = "spectra"
     MODELS = "models"
     METADATA = "metadata"
@@ -42,6 +42,7 @@ class DataType:
 
 class EgressDestination:
     """Destinations where data can be sent"""
+
     SPECTRASHERPA = "spectrasherpa"  # SpectraSherpa cloud sync
     LLM_CONTEXT = "llm_context"  # Send to LLM providers
     EXPORT = "export"  # Export to external files
@@ -59,6 +60,7 @@ class DataEgressPermission(Base):
     - User A blocks spectra from being synced to SpectraSherpa
     - User A allows metadata to go anywhere
     """
+
     __tablename__ = "data_egress_permissions"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -66,25 +68,14 @@ class DataEgressPermission(Base):
     data_type = Column(String(50), nullable=False)  # spectra, models, metadata, etc.
     destination = Column(String(50), nullable=False)  # spectrasherpa, llm, export
     allowed = Column(Boolean, nullable=False, default=True)
-    created_at = Column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False
-    )
-    updated_at = Column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False
-    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     # Relationships
     user = relationship("User", back_populates="egress_permissions")
 
     # Unique constraint: one permission per user/data_type/destination combo
-    __table_args__ = (
-        UniqueConstraint("user_id", "data_type", "destination", name="uq_user_datatype_destination"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", "data_type", "destination", name="uq_user_datatype_destination"),)
 
     def __repr__(self) -> str:
         status = "allowed" if self.allowed else "blocked"
@@ -98,6 +89,7 @@ class UserEgressDefaults(Base):
     This provides a quick toggle for "allow all" or "block all" scenarios,
     with individual DataEgressPermission entries serving as overrides.
     """
+
     __tablename__ = "user_egress_defaults"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -109,17 +101,8 @@ class UserEgressDefaults(Base):
     allow_export = Column(Boolean, nullable=False, default=False)  # Default: explicit opt-in
     allow_nist_queries = Column(Boolean, nullable=False, default=False)  # Default: explicit opt-in
 
-    created_at = Column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False
-    )
-    updated_at = Column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False
-    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     # Relationship
     user = relationship("User", back_populates="egress_defaults", uselist=False)

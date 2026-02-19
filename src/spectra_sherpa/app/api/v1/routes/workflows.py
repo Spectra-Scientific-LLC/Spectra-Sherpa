@@ -22,24 +22,25 @@ from spectra_sherpa.app.services.dag.serialize import serialize_for_api
 
 logger = logging.getLogger(__name__)
 
-from spectra_sherpa.app.lib.scp_compat import NDDataset, HAS_SCP
 from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
+from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset
+
 HAS_NDDATASET = HAS_SCP
 
 
 def _is_model_object(obj: Any) -> bool:
     """Check if an object is a non-serializable model (sklearn, spectrochempy)."""
-    if not hasattr(obj, '__module__') or obj.__module__ is None:
+    if not hasattr(obj, "__module__") or obj.__module__ is None:
         return False
     module_name = obj.__module__
-    if module_name.startswith('sklearn.'):
+    if module_name.startswith("sklearn."):
         return True
-    if module_name.startswith('spectrochempy.'):
+    if module_name.startswith("spectrochempy."):
         type_name = type(obj).__name__
         # SpectroChemPy model objects (PCA, PLS, MCR-ALS, EFA, etc.)
-        if type_name in ('PCA', 'PLS', 'PLSRegression', 'IRIS', 'MCRALS', 'MCR_ALS', 'EFA'):
+        if type_name in ("PCA", "PLS", "PLSRegression", "IRIS", "MCRALS", "MCR_ALS", "EFA"):
             return True
-        if hasattr(obj, 'fit') or hasattr(obj, 'transform') or hasattr(obj, 'predict'):
+        if hasattr(obj, "fit") or hasattr(obj, "transform") or hasattr(obj, "predict"):
             return True
     return False
 
@@ -51,11 +52,11 @@ def serialize_result(obj: Any) -> Any:
     Note: Full data is sent without truncation. The frontend handles display limits
     separately (e.g., DataTableModal has a row limit dropdown).
 
-    ARCHITECTURE: NDDataset is the SINGLE data type. Serialization happens at API
-    boundary only via serialize_for_api().
+    ARCHITECTURE: AnalysisDataset is the SINGLE canonical data type. Serialization
+    happens at API boundary only via serialize_for_api().
 
     Serialization priority:
-    1. NDDataset → serialize_for_api() (primary path for all spectral data)
+    1. AnalysisDataset → serialize_for_api() (primary path for all spectral data)
     2. Model objects → placeholder dict
     3. numpy arrays → .tolist()
     4. dict → recursive serialization (handles multi-output node results)
@@ -100,11 +101,13 @@ def serialize_result(obj: Any) -> Any:
                 result_dict[k] = {"__model_placeholder__": type(v).__name__}
                 continue
             # Nested dicts of models (e.g., {"models": {"class_a": model, "class_b": model}})
-            if k == 'models' and isinstance(v, dict):
+            if k == "models" and isinstance(v, dict):
                 serialized_models = {}
                 for model_key, model_val in v.items():
                     if isinstance(model_val, AnalysisDataset) or (HAS_NDDATASET and isinstance(model_val, NDDataset)):
-                        serialized_models[model_key] = serialize_for_api(model_val, sanitize_paths=settings.sanitize_paths)
+                        serialized_models[model_key] = serialize_for_api(
+                            model_val, sanitize_paths=settings.sanitize_paths
+                        )
                     elif _is_model_object(model_val):
                         serialized_models[model_key] = {"__model_placeholder__": type(model_val).__name__}
                     else:
@@ -149,9 +152,13 @@ from spectra_sherpa.app.schemas.workflows import (
 )
 from spectra_sherpa.app.services.dag import (
     DAGExecutor,
-    WorkflowEdge as DAGEdge,
-    WorkflowNode as DAGNode,
     node_registry,
+)
+from spectra_sherpa.app.services.dag import (
+    WorkflowEdge as DAGEdge,
+)
+from spectra_sherpa.app.services.dag import (
+    WorkflowNode as DAGNode,
 )
 from spectra_sherpa.app.services.dag.integrity import compute_workflow_hash
 from spectra_sherpa.app.services.python_export import generate_python_code
@@ -209,10 +216,7 @@ async def list_workflows(
     if search:
         # Full-text search on name and description
         search_pattern = f"%{search}%"
-        query = query.where(
-            (Workflow.name.ilike(search_pattern)) |
-            (Workflow.description.ilike(search_pattern))
-        )
+        query = query.where((Workflow.name.ilike(search_pattern)) | (Workflow.description.ilike(search_pattern)))
 
     if folder_id is not None:
         query = query.where(Workflow.folder_id == folder_id)
@@ -310,7 +314,9 @@ async def execute_trial(
         # Build a fresh DAG executor for this trial (no caching)
         executor = DAGExecutor()
 
-        logger.debug("[Trial Execution] Target node: %s (type: %s)", payload.target_node_id, type(payload.target_node_id))
+        logger.debug(
+            "[Trial Execution] Target node: %s (type: %s)", payload.target_node_id, type(payload.target_node_id)
+        )
         logger.debug("[Trial Execution] Trial params: %s", payload.trial_params)
         logger.debug("[Trial Execution] Total nodes: %s", len(payload.nodes))
 
@@ -318,15 +324,16 @@ async def execute_trial(
         for node in payload.nodes:
             # Override params for target node with trial_params
             is_target = node.node_id == payload.target_node_id
-            params = (
-                payload.trial_params
-                if is_target
-                else node.parameters
-            )
+            params = payload.trial_params if is_target else node.parameters
 
             logger.debug("[Trial Execution] Node %s (type: %s):", node.node_id, node.node_type)
             logger.debug("  - Is target: %s", is_target)
-            logger.debug("  - String comparison: '%s' == '%s': %s", node.node_id, payload.target_node_id, node.node_id == payload.target_node_id)
+            logger.debug(
+                "  - String comparison: '%s' == '%s': %s",
+                node.node_id,
+                payload.target_node_id,
+                node.node_id == payload.target_node_id,
+            )
             logger.debug("  - Node params from payload: %s", node.parameters)
             logger.debug("  - Params being used: %s", params)
 
@@ -348,9 +355,7 @@ async def execute_trial(
             executor.add_edge(dag_edge)
 
         # Execute the target node (and its dependencies)
-        results = await executor.execute_node(
-            payload.target_node_id, initial_data=payload.initial_data
-        )
+        results = await executor.execute_node(payload.target_node_id, initial_data=payload.initial_data)
 
         # Get the target node's result
         target_result = results.get(payload.target_node_id)
@@ -465,6 +470,7 @@ async def list_spectrochempy_examples(
     to lists of available files with their labels, paths, and metadata.
     """
     from pathlib import Path
+
     from spectra_sherpa.app.lib.scp_compat import HAS_SCP, get_scp_datadirs, scp
 
     if not HAS_SCP:
@@ -570,7 +576,7 @@ async def list_spectrochempy_examples(
                     for file_path in sorted(folder_path.rglob("*")):
                         if not file_path.is_file():
                             continue
-                        if file_path.name.startswith(('__', '.')):
+                        if file_path.name.startswith(("__", ".")):
                             continue
 
                         suffix_lower = file_path.suffix.lower()
@@ -581,9 +587,7 @@ async def list_spectrochempy_examples(
                         rel_path = file_path.relative_to(datadir)
                         label = str(rel_path).replace(f"{dataset_name}/", "")
                         source_kind = (
-                            "primary"
-                            if datadir.expanduser().resolve(strict=False) == primary_resolved
-                            else "fallback"
+                            "primary" if datadir.expanduser().resolve(strict=False) == primary_resolved else "fallback"
                         )
 
                         # Deduplicate: only add if not already seen
@@ -604,10 +608,7 @@ async def list_spectrochempy_examples(
         return result
 
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to list SpectroChemPy examples: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to list SpectroChemPy examples: {str(e)}")
 
 
 @router.get("/{workflow_id}", response_model=WorkflowDetail)
@@ -693,9 +694,7 @@ async def update_workflow(
         # Add new tags
         if payload.tag_ids:
             tag_query = (
-                select(WorkflowTag)
-                .where(WorkflowTag.id.in_(payload.tag_ids))
-                .where(WorkflowTag.user_id == user_id)
+                select(WorkflowTag).where(WorkflowTag.id.in_(payload.tag_ids)).where(WorkflowTag.user_id == user_id)
             )
             tag_result = await session.execute(tag_query)
             tags = tag_result.scalars().all()
@@ -704,14 +703,8 @@ async def update_workflow(
     # Update nodes if provided
     if payload.nodes is not None:
         # Delete existing nodes
-        await session.execute(
-            select(WorkflowNode).where(WorkflowNode.workflow_id == workflow_id)
-        )
-        await session.execute(
-            WorkflowNode.__table__.delete().where(
-                WorkflowNode.workflow_id == workflow_id
-            )
-        )
+        await session.execute(select(WorkflowNode).where(WorkflowNode.workflow_id == workflow_id))
+        await session.execute(WorkflowNode.__table__.delete().where(WorkflowNode.workflow_id == workflow_id))
 
         # Create new nodes
         for node_data in payload.nodes:
@@ -729,11 +722,7 @@ async def update_workflow(
     # Update edges if provided
     if payload.edges is not None:
         # Delete existing edges
-        await session.execute(
-            WorkflowEdge.__table__.delete().where(
-                WorkflowEdge.workflow_id == workflow_id
-            )
-        )
+        await session.execute(WorkflowEdge.__table__.delete().where(WorkflowEdge.workflow_id == workflow_id))
 
         # Create new edges
         for edge_data in payload.edges:
@@ -748,15 +737,32 @@ async def update_workflow(
 
     # Recompute integrity hash if nodes or edges changed
     if payload.nodes is not None or payload.edges is not None:
-        hash_nodes = [n.model_dump() for n in payload.nodes] if payload.nodes else [
-            {"node_id": n.node_id, "node_type": n.node_type, "parameters": n.parameters}
-            for n in workflow.nodes
-        ] if hasattr(workflow, "nodes") else []
-        hash_edges = [e.model_dump() for e in payload.edges] if payload.edges else [
-            {"from_node_id": e.from_node_id, "to_node_id": e.to_node_id,
-             "from_output": e.from_output, "to_input": e.to_input}
-            for e in workflow.edges
-        ] if hasattr(workflow, "edges") else []
+        hash_nodes = (
+            [n.model_dump() for n in payload.nodes]
+            if payload.nodes
+            else (
+                [{"node_id": n.node_id, "node_type": n.node_type, "parameters": n.parameters} for n in workflow.nodes]
+                if hasattr(workflow, "nodes")
+                else []
+            )
+        )
+        hash_edges = (
+            [e.model_dump() for e in payload.edges]
+            if payload.edges
+            else (
+                [
+                    {
+                        "from_node_id": e.from_node_id,
+                        "to_node_id": e.to_node_id,
+                        "from_output": e.from_output,
+                        "to_input": e.to_input,
+                    }
+                    for e in workflow.edges
+                ]
+                if hasattr(workflow, "edges")
+                else []
+            )
+        )
         workflow.integrity_hash = compute_workflow_hash(hash_nodes, hash_edges)
 
     # Flush changes to database before creating snapshot
@@ -778,9 +784,8 @@ async def update_workflow(
 
     # Create version snapshot from actual workflow state in database
     # Get the latest version number for this workflow
-    latest_version_query = (
-        select(func.max(WorkflowVersion.version_number))
-        .where(WorkflowVersion.workflow_id == workflow_id)
+    latest_version_query = select(func.max(WorkflowVersion.version_number)).where(
+        WorkflowVersion.workflow_id == workflow_id
     )
     latest_version_result = await session.execute(latest_version_query)
     latest_version = latest_version_result.scalar() or 0
@@ -823,9 +828,7 @@ async def update_workflow(
         workflow_id=workflow_id,
         version_number=new_version_number,
         created_by=user_id,
-        change_description=payload.change_description
-        if hasattr(payload, "change_description")
-        else None,
+        change_description=payload.change_description if hasattr(payload, "change_description") else None,
         snapshot=snapshot,
     )
     session.add(version)
@@ -861,11 +864,7 @@ async def list_workflow_versions(
     user_id = current_user.id
 
     # Verify workflow exists and user owns it
-    workflow_query = (
-        select(Workflow)
-        .where(Workflow.id == workflow_id)
-        .where(Workflow.user_id == user_id)
-    )
+    workflow_query = select(Workflow).where(Workflow.id == workflow_id).where(Workflow.user_id == user_id)
     workflow_result = await session.execute(workflow_query)
     workflow = workflow_result.scalar_one_or_none()
 
@@ -873,9 +872,7 @@ async def list_workflow_versions(
         raise HTTPException(status_code=404, detail="Workflow not found")
 
     # Get total count
-    count_query = select(func.count(WorkflowVersion.id)).where(
-        WorkflowVersion.workflow_id == workflow_id
-    )
+    count_query = select(func.count(WorkflowVersion.id)).where(WorkflowVersion.workflow_id == workflow_id)
     count_result = await session.execute(count_query)
     total = count_result.scalar() or 0
 
@@ -907,11 +904,7 @@ async def get_workflow_version(
     user_id = current_user.id
 
     # Verify workflow exists and user owns it
-    workflow_query = (
-        select(Workflow)
-        .where(Workflow.id == workflow_id)
-        .where(Workflow.user_id == user_id)
-    )
+    workflow_query = select(Workflow).where(Workflow.id == workflow_id).where(Workflow.user_id == user_id)
     workflow_result = await session.execute(workflow_query)
     workflow = workflow_result.scalar_one_or_none()
 
@@ -944,11 +937,7 @@ async def restore_workflow_version(
     user_id = current_user.id
 
     # Verify workflow exists and user owns it
-    workflow_query = (
-        select(Workflow)
-        .where(Workflow.id == workflow_id)
-        .where(Workflow.user_id == user_id)
-    )
+    workflow_query = select(Workflow).where(Workflow.id == workflow_id).where(Workflow.user_id == user_id)
     workflow_result = await session.execute(workflow_query)
     workflow = workflow_result.scalar_one_or_none()
 
@@ -987,12 +976,8 @@ async def restore_workflow_version(
         workflow.sample_type = snapshot["sample_type"]
 
     # Delete existing nodes and edges
-    await session.execute(
-        WorkflowNode.__table__.delete().where(WorkflowNode.workflow_id == workflow_id)
-    )
-    await session.execute(
-        WorkflowEdge.__table__.delete().where(WorkflowEdge.workflow_id == workflow_id)
-    )
+    await session.execute(WorkflowNode.__table__.delete().where(WorkflowNode.workflow_id == workflow_id))
+    await session.execute(WorkflowEdge.__table__.delete().where(WorkflowEdge.workflow_id == workflow_id))
 
     # Restore nodes from snapshot
     if "nodes" in snapshot:
@@ -1021,10 +1006,8 @@ async def restore_workflow_version(
             session.add(edge)
 
     # Create a new version record for the restore action
-    latest_version_query = (
-        select(func.max(WorkflowVersion.version_number)).where(
-            WorkflowVersion.workflow_id == workflow_id
-        )
+    latest_version_query = select(func.max(WorkflowVersion.version_number)).where(
+        WorkflowVersion.workflow_id == workflow_id
     )
     latest_version_result = await session.execute(latest_version_query)
     latest_version = latest_version_result.scalar() or 0
@@ -1067,11 +1050,7 @@ async def delete_workflow(
     """Delete a workflow for the authenticated user."""
     user_id = current_user.id
 
-    query = (
-        select(Workflow)
-        .where(Workflow.id == workflow_id)
-        .where(Workflow.user_id == user_id)
-    )
+    query = select(Workflow).where(Workflow.id == workflow_id).where(Workflow.user_id == user_id)
     result = await session.execute(query)
     workflow = result.scalar_one_or_none()
 
@@ -1121,9 +1100,7 @@ async def execute_workflow(
                 node_id=node.node_id,
                 node_type=node.node_type,
                 parameters=node.parameters,
-                position={"x": node.position_x, "y": node.position_y}
-                if node.position_x and node.position_y
-                else None,
+                position={"x": node.position_x, "y": node.position_y} if node.position_x and node.position_y else None,
             )
             executor.add_node(dag_node)
 
@@ -1140,9 +1117,7 @@ async def execute_workflow(
         # Execute
         if payload.node_id:
             # Execute single node and its dependencies (with initial_data for DATA nodes)
-            results = await executor.execute_node(
-                payload.node_id, initial_data=payload.initial_data
-            )
+            results = await executor.execute_node(payload.node_id, initial_data=payload.initial_data)
         else:
             # Execute entire workflow
             results = await executor.execute(initial_data=payload.initial_data)
@@ -1163,7 +1138,9 @@ async def execute_workflow(
                 else:
                     logger.debug("  Serialized node %s (%s): type=%s", node_id, result_type, type(sr).__name__)
             except Exception as ser_err:
-                logger.warning("  Serialization failed for node %s (%s): %s", node_id, result_type, ser_err, exc_info=True)
+                logger.warning(
+                    "  Serialization failed for node %s (%s): %s", node_id, result_type, ser_err, exc_info=True
+                )
                 serialization_errors.append(f"Node {node_id}: {ser_err}")
                 serialized_results[node_id] = {
                     "error": f"Serialization failed: {ser_err}",
@@ -1177,7 +1154,12 @@ async def execute_workflow(
         error_msg = "; ".join(serialization_errors) if serialization_errors else None
         final_status = executor.status.value if not serialization_errors else "partial"
         node_statuses = executor.get_status()["node_statuses"]
-        logger.debug("[Serialization] Done. status=%s, result_keys=%s, node_statuses=%s", final_status, list(serialized_results.keys()), node_statuses)
+        logger.debug(
+            "[Serialization] Done. status=%s, result_keys=%s, node_statuses=%s",
+            final_status,
+            list(serialized_results.keys()),
+            node_statuses,
+        )
         if error_msg:
             logger.debug("[Serialization] Errors: %s", error_msg)
 
@@ -1267,7 +1249,6 @@ async def get_node_library(
                 NodePortInfo(
                     name=port.name,
                     type_ref=port.type_ref,
-
                     required=port.required,
                     label=port.label,
                     description=port.description,
@@ -1282,7 +1263,6 @@ async def get_node_library(
                 NodePortInfo(
                     name=port.name,
                     type_ref=port.type_ref,
-
                     required=port.required,
                     label=port.label,
                     description=port.description,
@@ -1306,9 +1286,7 @@ async def get_node_library(
         )
 
     return NodeLibraryResponse(
-        nodes=node_infos,
-        total=len(node_infos),
-        version=settings.app_version  # For cache invalidation
+        nodes=node_infos, total=len(node_infos), version=settings.app_version  # For cache invalidation
     )
 
 
@@ -1323,6 +1301,7 @@ async def get_type_registry(
     so the frontend can validate connections without per-edge API calls.
     """
     from spectra_sherpa.app.types import type_registry
+
     return type_registry.to_api_json()
 
 
@@ -1367,11 +1346,9 @@ async def export_workflow_to_python(
     except ValueError as e:
         # Unsupported node types or cycles — client-actionable error
         raise HTTPException(status_code=422, detail=str(e))
-    except Exception as e:
+    except Exception:
         logger.exception("Unexpected error exporting workflow %s", workflow_id)
-        raise HTTPException(
-            status_code=500, detail="Failed to export workflow. Check server logs."
-        )
+        raise HTTPException(status_code=500, detail="Failed to export workflow. Check server logs.")
 
 
 @router.get("/{workflow_id}/export/notebook")
@@ -1416,8 +1393,6 @@ async def export_workflow_to_notebook(
         }
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    except Exception as e:
+    except Exception:
         logger.exception("Unexpected error exporting notebook for workflow %s", workflow_id)
-        raise HTTPException(
-            status_code=500, detail="Failed to export notebook. Check server logs."
-        )
+        raise HTTPException(status_code=500, detail="Failed to export notebook. Check server logs.")

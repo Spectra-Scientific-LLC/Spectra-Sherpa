@@ -115,7 +115,7 @@ def _split_python_code(code: str) -> dict[str, list[str]]:
                 imports.append(line)
 
         elif section == "function":
-            if line.startswith('if __name__'):
+            if line.startswith("if __name__"):
                 section = "main"
                 main.append(line)
             else:
@@ -144,10 +144,7 @@ def _docstring_to_markdown(docstring_lines: list[str]) -> list[str]:
     markdown heading.
     """
     # Remove triple-quote delimiters
-    inner = [
-        line for line in docstring_lines
-        if line.strip() != '"""'
-    ]
+    inner = [line for line in docstring_lines if line.strip() != '"""']
     if not inner:
         return ["# Workflow"]
 
@@ -217,7 +214,7 @@ def generate_notebook(workflow: Workflow) -> dict:
         # so the cell is immediately runnable in a notebook
         main_lines = []
         for line in sections["main"]:
-            if line.startswith('if __name__'):
+            if line.startswith("if __name__"):
                 main_lines.append("# Run the workflow")
             else:
                 # Remove one level of indentation (4 spaces)

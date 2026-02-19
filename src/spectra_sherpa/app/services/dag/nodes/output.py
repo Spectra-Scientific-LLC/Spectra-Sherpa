@@ -7,12 +7,15 @@ These nodes handle visualization and export of spectral data.
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
+
 import numpy as np
-from spectra_sherpa.app.lib.scp_compat import NDDataset
+
 from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
+from spectra_sherpa.app.lib.scp_compat import NDDataset
+from spectra_sherpa.app.services.dag.io_contracts import coerce_dataset
+from spectra_sherpa.app.services.dag.meta_helpers import safe_get_coord
 
 from ..node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
-from spectra_sherpa.app.services.dag.meta_helpers import safe_get_coord
 
 
 @register_node
@@ -73,7 +76,7 @@ class PlotNode(Node):
         Generate plot data from input.
 
         Args:
-            input_data: NDDataset or dict with spectral/model data
+            input_data: AnalysisDataset or dict with spectral/model data
 
         Returns:
             Dict with plot configuration and data
@@ -82,8 +85,12 @@ class PlotNode(Node):
         x_axis = self.parameters.get("x_axis", 0)
         y_axis = self.parameters.get("y_axis", 1)
 
+        # Coerce NDDataset → AnalysisDataset so all dataset paths work
+        if isinstance(input_data, NDDataset):
+            input_data = coerce_dataset(input_data)
+
         # Handle NDDataset / AnalysisDataset input
-        if isinstance(input_data, (NDDataset, AnalysisDataset)):
+        if isinstance(input_data, AnalysisDataset):
             return self._plot_spectra(input_data)
 
         # Handle dict input (e.g., from PCA node)
@@ -104,16 +111,16 @@ class PlotNode(Node):
         }
         return {"visualization": result}
 
-    def _plot_spectra(self, dataset: NDDataset) -> Dict[str, Any]:
+    def _plot_spectra(self, dataset: AnalysisDataset) -> Dict[str, Any]:
         """Generate spectra plot data, preserving axis titles from dataset."""
         traces = []
 
         # Get x-axis data and title from dataset
-        x_coord = safe_get_coord(dataset, 'x')
+        x_coord = safe_get_coord(dataset, "x")
         if x_coord is not None:
             x_data = x_coord.data.tolist()
-            x_title = x_coord.title if hasattr(x_coord, 'title') and x_coord.title else "Index"
-            x_units = str(x_coord.units) if hasattr(x_coord, 'units') and x_coord.units else ""
+            x_title = x_coord.title if hasattr(x_coord, "title") and x_coord.title else "Index"
+            x_units = str(x_coord.units) if hasattr(x_coord, "units") and x_coord.units else ""
         else:
             x_data = list(range(dataset.shape[-1]))
             x_title = "Index"
@@ -126,15 +133,15 @@ class PlotNode(Node):
             x_label = x_title
 
         # Get y-axis title from dataset (data values title/units)
-        if hasattr(dataset, 'units') and dataset.units:
+        if hasattr(dataset, "units") and dataset.units:
             y_label = str(dataset.units)
-        elif hasattr(dataset, 'title') and dataset.title:
+        elif hasattr(dataset, "title") and dataset.title:
             y_label = dataset.title
         else:
             y_label = "Value"
 
         # Determine if x-axis should be reversed (only for wavenumber-like axes)
-        is_wavenumber = any(term in x_title.lower() for term in ['wavenumber', 'cm-1', 'cm⁻¹'])
+        is_wavenumber = any(term in x_title.lower() for term in ["wavenumber", "cm-1", "cm⁻¹"])
         x_axis_config = {"title": x_label}
         if is_wavenumber:
             x_axis_config["autorange"] = "reversed"
@@ -146,20 +153,22 @@ class PlotNode(Node):
 
         # Create trace for each spectrum/sample
         for i in range(min(data.shape[0], 50)):  # Limit to 50 spectra
-            traces.append({
-                "x": x_data,
-                "y": data[i].tolist(),
-                "type": "scatter",
-                "mode": "lines",
-                "name": f"Sample {i+1}",
-            })
+            traces.append(
+                {
+                    "x": x_data,
+                    "y": data[i].tolist(),
+                    "type": "scatter",
+                    "mode": "lines",
+                    "name": f"Sample {i+1}",
+                }
+            )
 
         return {
             "visualization": {
                 "plot_type": "spectra",
                 "data": traces,
                 "layout": {
-                    "title": dataset.title if hasattr(dataset, 'title') and dataset.title else "Data Plot",
+                    "title": dataset.title if hasattr(dataset, "title") and dataset.title else "Data Plot",
                     "xaxis": x_axis_config,
                     "yaxis": {"title": y_label},
                 },
@@ -173,7 +182,7 @@ class PlotNode(Node):
             return {"plot_type": "scores", "data": [], "layout": {}}
 
         # Convert to numpy if NDDataset/AnalysisDataset
-        if isinstance(scores, (NDDataset, AnalysisDataset)):
+        if isinstance(scores, AnalysisDataset):
             scores_array = np.array(scores.data)
         else:
             scores_array = np.array(scores)
@@ -214,7 +223,7 @@ class PlotNode(Node):
         if scores is None:
             return {"visualization": {"plot_type": "biplot", "data": [], "layout": {}}}
 
-        if isinstance(scores, (NDDataset, AnalysisDataset)):
+        if isinstance(scores, AnalysisDataset):
             scores_array = np.array(scores.data)
         else:
             scores_array = np.array(scores)
@@ -231,17 +240,19 @@ class PlotNode(Node):
 
         scores_x = scores_array[:, pc_x].astype(float)
         scores_y = scores_array[:, pc_y].astype(float)
-        traces: list[dict[str, Any]] = [{
-            "x": scores_x.tolist(),
-            "y": scores_y.tolist(),
-            "type": "scatter",
-            "mode": "markers",
-            "marker": {"size": 8, "color": "#60a5fa", "opacity": 0.8, "line": {"width": 1, "color": "#1d4ed8"}},
-            "name": "Scores",
-        }]
+        traces: list[dict[str, Any]] = [
+            {
+                "x": scores_x.tolist(),
+                "y": scores_y.tolist(),
+                "type": "scatter",
+                "mode": "markers",
+                "marker": {"size": 8, "color": "#60a5fa", "opacity": 0.8, "line": {"width": 1, "color": "#1d4ed8"}},
+                "name": "Scores",
+            }
+        ]
 
         if loadings is not None:
-            if isinstance(loadings, (NDDataset, AnalysisDataset)):
+            if isinstance(loadings, AnalysisDataset):
                 loadings_array = np.array(loadings.data)
             else:
                 loadings_array = np.array(loadings)
@@ -308,7 +319,12 @@ class PlotNode(Node):
                                     "textfont": {"size": 10, "color": "#92400e"},
                                     "marker": {"size": 6, "color": "#f97316", "line": {"width": 1, "color": "#7c2d12"}},
                                     "customdata": customdata,
-                                    "hovertemplate": "%%{customdata[0]}<br>PC%d loading: %%{customdata[1]:.3f}<br>PC%d loading: %%{customdata[2]:.3f}<extra></extra>"
+                                    "hovertemplate": (
+                                        "%%{customdata[0]}<br>"
+                                        "PC%d loading: %%{customdata[1]:.3f}<br>"
+                                        "PC%d loading: %%{customdata[2]:.3f}"
+                                        "<extra></extra>"
+                                    )
                                     % (pc_x + 1, pc_y + 1),
                                     "showlegend": False,
                                 }
@@ -399,7 +415,11 @@ class ExportNode(Node):
         # For now, just return metadata about what would be exported
         # Actual file writing would happen here in production
 
-        if isinstance(input_data, (NDDataset, AnalysisDataset)):
+        # Coerce NDDataset → AnalysisDataset so all dataset paths work
+        if isinstance(input_data, NDDataset):
+            input_data = coerce_dataset(input_data)
+
+        if isinstance(input_data, AnalysisDataset):
             shape = input_data.shape
             n_points = np.prod(shape)
         elif isinstance(input_data, dict):
@@ -483,7 +503,7 @@ class StatsSummaryNode(Node):
         Compute adaptive statistics based on input type.
 
         Args:
-            input_data: NDDataset, PCA/MCR dict, or array data
+            input_data: AnalysisDataset, PCA/MCR dict, or array data
 
         Returns:
             Dict with comprehensive statistics and visualization data
@@ -497,14 +517,18 @@ class StatsSummaryNode(Node):
             elif "data" in input_data:
                 return await self._stats_array(input_data["data"], input_data.get("metadata"))
 
-        if isinstance(input_data, (NDDataset, AnalysisDataset)):
-            return await self._stats_nddataset(input_data)
+        # Coerce NDDataset → AnalysisDataset so all dataset paths work
+        if isinstance(input_data, NDDataset):
+            input_data = coerce_dataset(input_data)
+
+        if isinstance(input_data, AnalysisDataset):
+            return await self._stats_dataset(input_data)
 
         # Fallback to array statistics
         return await self._stats_array(np.array(input_data), None)
 
-    async def _stats_nddataset(self, dataset: NDDataset) -> Dict[str, Any]:
-        """Compute statistics for NDDataset (raw spectra)."""
+    async def _stats_dataset(self, dataset: AnalysisDataset) -> Dict[str, Any]:
+        """Compute statistics for AnalysisDataset (raw spectra)."""
         data = np.array(dataset.data)
         if data.ndim == 1:
             data = data.reshape(1, -1)
@@ -529,14 +553,16 @@ class StatsSummaryNode(Node):
         max_samples = int(self.parameters.get("max_samples", 100))
         sample_stats = []
         for i in range(min(n_samples, max_samples)):
-            sample_stats.append({
-                "sample": i + 1,
-                "mean": float(np.mean(data[i])),
-                "std": float(np.std(data[i])),
-                "min": float(np.min(data[i])),
-                "max": float(np.max(data[i])),
-                "median": float(np.median(data[i])),
-            })
+            sample_stats.append(
+                {
+                    "sample": i + 1,
+                    "mean": float(np.mean(data[i])),
+                    "std": float(np.std(data[i])),
+                    "min": float(np.min(data[i])),
+                    "max": float(np.max(data[i])),
+                    "median": float(np.median(data[i])),
+                }
+            )
 
         # Per-feature statistics (which wavenumbers vary most)
         feature_means = np.mean(data, axis=0)
@@ -544,7 +570,7 @@ class StatsSummaryNode(Node):
         feature_cv = feature_stds / (feature_means + 1e-10)  # Coefficient of variation
 
         # Get wavenumber axis if available
-        x_coord = safe_get_coord(dataset, 'x')
+        x_coord = safe_get_coord(dataset, "x")
         if x_coord is not None:
             wavenumbers = np.array(x_coord.data).tolist()
         else:
@@ -600,14 +626,16 @@ class StatsSummaryNode(Node):
         # Scores statistics per PC
         pc_stats = []
         for i in range(n_comp):
-            pc_stats.append({
-                "pc": i + 1,
-                "mean": float(np.mean(scores_data[:, i])),
-                "std": float(np.std(scores_data[:, i])),
-                "min": float(np.min(scores_data[:, i])),
-                "max": float(np.max(scores_data[:, i])),
-                "range": float(np.ptp(scores_data[:, i])),
-            })
+            pc_stats.append(
+                {
+                    "pc": i + 1,
+                    "mean": float(np.mean(scores_data[:, i])),
+                    "std": float(np.std(scores_data[:, i])),
+                    "min": float(np.min(scores_data[:, i])),
+                    "max": float(np.max(scores_data[:, i])),
+                    "range": float(np.ptp(scores_data[:, i])),
+                }
+            )
 
         # Outlier detection using Hotelling's T² (if enabled)
         outliers = []
@@ -620,17 +648,20 @@ class StatsSummaryNode(Node):
 
                 threshold = self.parameters.get("outlier_threshold", 0.95)
                 from scipy.stats import chi2
+
                 t2_limit = chi2.ppf(threshold, n_comp)
 
                 for i in range(n_obs):
                     diff = scores_data[i] - means
                     t2 = diff @ inv_cov @ diff
                     if t2 > t2_limit:
-                        outliers.append({
-                            "sample": i + 1,
-                            "t2_statistic": float(t2),
-                            "threshold": float(t2_limit),
-                        })
+                        outliers.append(
+                            {
+                                "sample": i + 1,
+                                "t2_statistic": float(t2),
+                                "threshold": float(t2_limit),
+                            }
+                        )
             except (np.linalg.LinAlgError, ValueError):
                 # Singular covariance or insufficient data — skip outlier detection
                 pass
@@ -702,22 +733,26 @@ class StatsSummaryNode(Node):
         # Concentration statistics
         conc_stats = []
         for i in range(n_comp):
-            conc_stats.append({
-                "component": i + 1,
-                "mean_conc": float(np.mean(C[:, i])),
-                "max_conc": float(np.max(C[:, i])),
-                "min_conc": float(np.min(C[:, i])),
-                "range": float(np.ptp(C[:, i])),
-            })
+            conc_stats.append(
+                {
+                    "component": i + 1,
+                    "mean_conc": float(np.mean(C[:, i])),
+                    "max_conc": float(np.max(C[:, i])),
+                    "min_conc": float(np.min(C[:, i])),
+                    "range": float(np.ptp(C[:, i])),
+                }
+            )
 
         # Pure spectra statistics
         spectra_stats = []
         for i in range(n_comp):
-            spectra_stats.append({
-                "component": i + 1,
-                "max_absorbance": float(np.max(St[i])) if St.size > 0 else 0.0,
-                "mean_absorbance": float(np.mean(St[i])) if St.size > 0 else 0.0,
-            })
+            spectra_stats.append(
+                {
+                    "component": i + 1,
+                    "max_absorbance": float(np.max(St[i])) if St.size > 0 else 0.0,
+                    "mean_absorbance": float(np.mean(St[i])) if St.size > 0 else 0.0,
+                }
+            )
 
         return {
             "statistics": {
@@ -846,7 +881,7 @@ class ContourPlotNode(Node):
         Generate contour/heatmap plot data from input.
 
         Args:
-            input_data: NDDataset with 2D spectral data (samples × wavenumbers)
+            input_data: AnalysisDataset with 2D spectral data (samples × wavenumbers)
 
         Returns:
             Dict with Plotly-compatible contour/heatmap configuration
@@ -856,8 +891,12 @@ class ContourPlotNode(Node):
         reverse_x = self.parameters.get("reverse_x", True)
         transpose = self.parameters.get("transpose", False)
 
+        # Coerce NDDataset → AnalysisDataset so all dataset paths work
+        if isinstance(input_data, NDDataset):
+            input_data = coerce_dataset(input_data)
+
         # Handle NDDataset / AnalysisDataset input
-        if isinstance(input_data, (NDDataset, AnalysisDataset)):
+        if isinstance(input_data, AnalysisDataset):
             return self._create_contour(input_data, colorscale, plot_type, reverse_x, transpose)
 
         # Handle dict with data field
@@ -880,14 +919,9 @@ class ContourPlotNode(Node):
         return {"visualization": result}
 
     def _create_contour(
-        self,
-        dataset: NDDataset,
-        colorscale: str,
-        plot_type: str,
-        reverse_x: bool,
-        transpose: bool
+        self, dataset: AnalysisDataset, colorscale: str, plot_type: str, reverse_x: bool, transpose: bool
     ) -> Dict[str, Any]:
-        """Generate contour/heatmap plot from NDDataset."""
+        """Generate contour/heatmap plot from AnalysisDataset."""
 
         # Get spectral data as 2D array
         data = np.array(dataset.data)
@@ -895,7 +929,7 @@ class ContourPlotNode(Node):
             data = data.reshape(1, -1)
 
         # Get axes - preserve titles from source data
-        x_coord = safe_get_coord(dataset, 'x')
+        x_coord = safe_get_coord(dataset, "x")
         if x_coord is not None:
             x_data = np.array(x_coord.data).tolist()
             x_title = str(x_coord.title) if x_coord.title else "Feature"
@@ -905,7 +939,7 @@ class ContourPlotNode(Node):
             x_title = "Feature"
             x_units = ""
 
-        y_coord = safe_get_coord(dataset, 'y')
+        y_coord = safe_get_coord(dataset, "y")
         if y_coord is not None:
             y_data = np.array(y_coord.data).tolist()
             y_title = str(y_coord.title) if y_coord.title else "Sample"
@@ -923,13 +957,22 @@ class ContourPlotNode(Node):
             x_units, y_units = y_units, x_units
 
         # Auto-detect wavenumber axes and enable reverse_x if appropriate
-        is_wavenumber = any(term in x_title.lower() for term in ['wavenumber', 'cm-1', 'cm⁻¹'])
+        is_wavenumber = any(term in x_title.lower() for term in ["wavenumber", "cm-1", "cm⁻¹"])
         should_reverse = reverse_x or is_wavenumber  # User override OR auto-detect
 
         plot_data = self._create_contour_from_arrays(
-            data, x_data, y_data, colorscale, plot_type, should_reverse, transpose,
-            x_title=x_title, x_units=x_units, y_title=y_title, y_units=y_units,
-            z_title=str(dataset.units) if dataset.units else "Intensity"
+            data,
+            x_data,
+            y_data,
+            colorscale,
+            plot_type,
+            should_reverse,
+            transpose,
+            x_title=x_title,
+            x_units=x_units,
+            y_title=y_title,
+            y_units=y_units,
+            z_title=str(dataset.units) if dataset.units else "Intensity",
         )
         return {"visualization": plot_data}
 
@@ -946,7 +989,7 @@ class ContourPlotNode(Node):
         x_units: str = "",
         y_title: str = "Sample",
         y_units: str = "",
-        z_title: str = "Value"
+        z_title: str = "Value",
     ) -> Dict[str, Any]:
         """Create contour plot data from arrays."""
 
@@ -1076,7 +1119,7 @@ class DataTableNode(Node):
         Convert input data to table format.
 
         Args:
-            input_data: Data to display in table (NDDataset, dict, or array)
+            input_data: Data to display in table (AnalysisDataset, dict, or array)
 
         Returns:
             Dict with table data (columns, rows) and metadata
@@ -1085,8 +1128,12 @@ class DataTableNode(Node):
         transpose = self.parameters.get("transpose", False)
         show_index = self.parameters.get("show_index", True)
 
+        # Coerce NDDataset → AnalysisDataset so all dataset paths work
+        if isinstance(input_data, NDDataset):
+            input_data = coerce_dataset(input_data)
+
         # Convert input to table format
-        if isinstance(input_data, (NDDataset, AnalysisDataset)):
+        if isinstance(input_data, AnalysisDataset):
             table_data = self._table_from_dataset(input_data, max_rows, transpose, show_index)
         elif isinstance(input_data, dict):
             table_data = self._table_from_dict(input_data, max_rows, transpose, show_index)
@@ -1098,11 +1145,13 @@ class DataTableNode(Node):
                 "rows": [],
                 "metadata": {"type": "empty", "message": "No data to display"},
             }
-        
+
         return {"visualization": table_data}
 
-    def _table_from_dataset(self, dataset: NDDataset, max_rows: int, transpose: bool, show_index: bool) -> Dict[str, Any]:
-        """Convert NDDataset to table format."""
+    def _table_from_dataset(
+        self, dataset: AnalysisDataset, max_rows: int, transpose: bool, show_index: bool
+    ) -> Dict[str, Any]:
+        """Convert AnalysisDataset to table format."""
         data = np.array(dataset.data)
 
         # Handle 1D data
@@ -1124,7 +1173,7 @@ class DataTableNode(Node):
             n_rows, n_cols = n_cols, n_rows
 
         # Build column headers
-        x_coord = safe_get_coord(dataset, 'x')
+        x_coord = safe_get_coord(dataset, "x")
         if x_coord is not None and not transpose:
             # Use wavenumbers/x-axis as column headers
             x_vals = np.array(x_coord.data)
@@ -1154,7 +1203,9 @@ class DataTableNode(Node):
             },
         }
 
-    def _table_from_dict(self, data: Dict[str, Any], max_rows: int, transpose: bool, show_index: bool) -> Dict[str, Any]:
+    def _table_from_dict(
+        self, data: Dict[str, Any], max_rows: int, transpose: bool, show_index: bool
+    ) -> Dict[str, Any]:
         """Convert dict to table format."""
         # Handle common dict structures from modeling nodes
         if "data" in data and isinstance(data["data"], (list, np.ndarray)):

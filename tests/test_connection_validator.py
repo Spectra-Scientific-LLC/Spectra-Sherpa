@@ -7,13 +7,13 @@ Covers:
 Run:
     PYTHONPATH=src/spectra_sherpa python -m pytest tests/test_connection_validator.py -v --no-cov
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
 
-from spectra_sherpa.app.types.registry import TypeRegistry
 from spectra_sherpa.app.types.validator import can_connect
 
 TYPES_DIR = Path(__file__).resolve().parent.parent / "src" / "spectra_sherpa" / "app" / "types"
@@ -23,6 +23,7 @@ TYPES_DIR = Path(__file__).resolve().parent.parent / "src" / "spectra_sherpa" / 
 def _load_registry():
     """Ensure the singleton type_registry is loaded for every test."""
     from spectra_sherpa.app.types import type_registry
+
     if not type_registry.is_loaded:
         type_registry.load(TYPES_DIR)
 

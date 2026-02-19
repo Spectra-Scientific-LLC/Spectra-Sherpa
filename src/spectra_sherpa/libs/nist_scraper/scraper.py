@@ -12,6 +12,7 @@ CAS_PATTERN = re.compile(r"\b\d{2,7}-\d{2}-\d\b")
 
 class EgressDisabledError(Exception):
     """Raised when a network operation is attempted with egress disabled."""
+
     pass
 
 
@@ -21,6 +22,7 @@ class NISTScraper:
     def _check_egress(self) -> None:
         """Check if egress is enabled before making network calls."""
         from spectra_sherpa.app.core.security import is_egress_enabled
+
         if not is_egress_enabled():
             raise EgressDisabledError(
                 "Network egress is disabled. Enable EGRESS_ENABLED=true or set APP_MODE=hybrid "
@@ -95,9 +97,7 @@ class NISTScraper:
             parent_text = link.parent.get_text(" ", strip=True) if link.parent else ""
             cas_match = CAS_PATTERN.search(parent_text)
             cas_number = cas_match.group(0) if cas_match else ""
-            results.append(
-                {"name": name, "cas_number": cas_number, "nist_id": nist_id}
-            )
+            results.append({"name": name, "cas_number": cas_number, "nist_id": nist_id})
             seen_ids.add(nist_id)
 
         return results

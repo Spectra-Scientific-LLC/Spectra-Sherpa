@@ -13,16 +13,16 @@ Wire-format contract: ``to_dict()`` emits ``type: "NDDataset"`` and
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 import numpy as np
-
 
 # ---------------------------------------------------------------------------
 # JSON safety helper
 # ---------------------------------------------------------------------------
+
 
 def _json_safe(obj: Any) -> Any:
     """Recursively convert values to JSON-serializable types."""
@@ -46,6 +46,7 @@ def _json_safe(obj: Any) -> Any:
 # ---------------------------------------------------------------------------
 # AxisInfo — lightweight coordinate axis
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class AxisInfo:
@@ -92,6 +93,7 @@ class AxisInfo:
 # ---------------------------------------------------------------------------
 # AnalysisDataset — canonical DAG container
 # ---------------------------------------------------------------------------
+
 
 class AnalysisDataset:
     """Canonical runtime dataset for DAG execution.
@@ -219,9 +221,7 @@ class AnalysisDataset:
             new_X = self.X[key]
             new_y = _slice_axis(self.y_axis, key)
             new_target = (
-                self.target[key]
-                if self.target is not None and hasattr(self.target, "__getitem__")
-                else self.target
+                self.target[key] if self.target is not None and hasattr(self.target, "__getitem__") else self.target
             )
             return AnalysisDataset(
                 X=new_X,
@@ -252,7 +252,11 @@ class AnalysisDataset:
 
         if isinstance(key, tuple) and len(key) == 2:
             row_key, col_key = key
-            new_X = self.X[row_key, col_key] if not isinstance(col_key, slice) else self.X[row_key][:, col_key] if isinstance(row_key, slice) else self.X[key]
+            new_X = (
+                self.X[row_key, col_key]
+                if not isinstance(col_key, slice)
+                else self.X[row_key][:, col_key] if isinstance(row_key, slice) else self.X[key]
+            )
             # Ensure 2-D
             new_X = np.atleast_2d(new_X)
             new_y = _slice_axis(self.y_axis, row_key) if not isinstance(row_key, type(None)) else self.y_axis
@@ -328,11 +332,7 @@ class AnalysisDataset:
                 "title": self.y_axis.title,
             }
         if self.target is not None:
-            result["target"] = (
-                self.target.tolist()
-                if isinstance(self.target, np.ndarray)
-                else list(self.target)
-            )
+            result["target"] = self.target.tolist() if isinstance(self.target, np.ndarray) else list(self.target)
         result["metadata"]["processing_history"] = _json_safe(self.provenance)
         result["metadata"]["data_type"] = "generic"
         result["metadata"]["is_spectra"] = False
@@ -380,15 +380,13 @@ class AnalysisDataset:
         )
 
     def __repr__(self) -> str:
-        return (
-            f"AnalysisDataset(shape={self.shape}, backend={self.backend!r}, "
-            f"title={self.title!r})"
-        )
+        return f"AnalysisDataset(shape={self.shape}, backend={self.backend!r}, " f"title={self.title!r})"
 
 
 # ---------------------------------------------------------------------------
 # Adapter: from_sklearn_bunch
 # ---------------------------------------------------------------------------
+
 
 def from_sklearn_bunch(bunch: Any, name: str = "") -> AnalysisDataset:
     """Convert an sklearn Bunch to AnalysisDataset.
@@ -423,6 +421,7 @@ def from_sklearn_bunch(bunch: Any, name: str = "") -> AnalysisDataset:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _coord_to_axis_info(coord: Any) -> AxisInfo:
     """Convert a Coord-like object to AxisInfo."""
     labels = None
@@ -450,9 +449,7 @@ def _coord_to_axis_info(coord: Any) -> AxisInfo:
     )
 
 
-def _slice_axis(
-    axis: Optional[AxisInfo], key: Any
-) -> Optional[AxisInfo]:
+def _slice_axis(axis: Optional[AxisInfo], key: Any) -> Optional[AxisInfo]:
     """Slice an AxisInfo along its primary dimension."""
     if axis is None:
         return None

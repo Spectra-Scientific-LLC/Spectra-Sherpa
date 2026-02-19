@@ -58,6 +58,7 @@ def extract_metadata(dataset, file_path: str, debug: bool = False) -> dict:
     if extractor is None:
         # No specific extractor - use generic fallback with WARNING
         from .extractors.generic import GenericExtractor
+
         extractor = GenericExtractor()
         extractor_name = "GenericExtractor (fallback)"
         extraction_info["extractor"] = extractor_name
@@ -102,10 +103,7 @@ def extract_metadata(dataset, file_path: str, debug: bool = False) -> dict:
                 logger.debug(f"[METADATA]   {section}: {list(data.keys())}")
 
     # Check if extraction yielded any metadata
-    total_fields = sum(
-        len(v) if isinstance(v, dict) else 0
-        for k, v in raw_metadata.items() if k != "extra"
-    )
+    total_fields = sum(len(v) if isinstance(v, dict) else 0 for k, v in raw_metadata.items() if k != "extra")
     if total_fields == 0:
         warning_msg = "No metadata fields extracted from file"
         extraction_info["warnings"].append(warning_msg)

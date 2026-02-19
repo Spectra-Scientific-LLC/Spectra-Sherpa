@@ -2,15 +2,16 @@
 
 Thanks for your interest in improving SpectraSherpa.
 
-This project is open source under AGPL-3.0, with centralized copyright
-ownership to support consistent license enforcement, compliance handling,
-and long-term stewardship.
+This project is open source under AGPL-3.0, with an exclusive license grant
+CLA to support consistent license enforcement, compliance handling, and
+long-term stewardship. Contributors retain copyright ownership.
 
 ## Before You Contribute
 
 1. Read `README.md` and this file.
 2. Review the project license in `LICENSE`.
-3. Sign the Contributor License Agreement in `CLA.md` before any non-trivial
+3. Sign the Contributor License Agreement ([`CLA.md`](CLA.md) for individuals,
+   [`CLA-entity.md`](CLA-entity.md) for organizations) before any non-trivial
    contribution is merged.
 
 ## Development Setup
@@ -90,6 +91,22 @@ Before submitting:
 - [ ] If new env var: added to `.env.example` (and `.env.enterprise.example` if enterprise-only)
 - [ ] If new DAG node: registered via `@register_node` decorator with `NodeMetadata`
 
+## New Node Checklist
+
+Adding a new DAG node? Follow these steps:
+
+- [ ] Choose the right base class:
+  - `TransformSpecNode` for stateless Dataset-in / Dataset-out transforms (preferred)
+  - `EstimatorSpecNode` for sklearn-style fit/predict workflows (preferred)
+  - `Node` for everything else (diagnostics, visualization, custom logic)
+- [ ] Set `numpy_expr` (TransformSpec) or `estimator_import` (EstimatorSpec) for automatic Python export
+- [ ] Verify `node.supports_python_export()` returns `True`
+- [ ] Register via `@register_node` — node appears in the Workflow Builder palette
+- [ ] Add a test for `execute()` with known input/output
+- [ ] Add a test for `generate_python()` output (both SCP and numpy modes if applicable)
+- [ ] Use the scaffold generator: `python scripts/node_template.py transform|estimator|custom <type> <Class>`
+- [ ] See [docs/dev/first_plugin.md](docs/dev/first_plugin.md) for a full walkthrough
+
 ## Code Style
 
 ### Backend
@@ -98,11 +115,8 @@ Before submitting:
 - **Linter:** ruff (E, F, I rule sets) — config in `pyproject.toml`
 - Imports: always use `from spectra_sherpa.app.X import Y` (never bare `from app.`)
 - Async: use `async def` for all DB and I/O operations
-- Format locally: `make fmt`
-
-> **Note:** The backend has not yet been bulk-formatted with black/ruff. A dedicated
-> format-only PR will establish the baseline. Until then, `make fmt` is available
-> locally but not enforced in CI.
+- Format before committing: `make fmt` (runs black + ruff --fix + prettier)
+- CI enforces `black --check` and `ruff check` on every PR
 
 ### Frontend
 
@@ -134,25 +148,35 @@ Maintainers prioritize:
 
 ## Contributor License Agreement (CLA)
 
-To contribute, you must agree to the terms in `CLA.md`.
+All contributors must sign a CLA before their first non-trivial PR is merged.
 
-Summary:
+- **Individuals:** Read and sign [`CLA.md`](CLA.md) — the CLA bot will prompt
+  you automatically when you open a PR. Sign by commenting on the PR.
+- **Organizations:** Read and sign [`CLA-entity.md`](CLA-entity.md) — requires
+  an offline signature from an authorized representative. Contact maintainers
+  to arrange.
 
-- You assign copyright in accepted contributions to Spectra Scientific LLC.
-- Your accepted contributions are distributed under AGPL-3.0 (or later, if
-  chosen by the project maintainers).
+Summary of terms (Harmony HA-CLA-I/E-E v1.0, Exclusive License Grant):
+
+- **You retain copyright** in your contributions.
+- You grant Spectra Scientific LLC an exclusive, perpetual, irrevocable license
+  to use, sublicense, and distribute your contributions under any terms —
+  including open source (AGPL-3.0) and commercial licenses.
+- You grant a non-exclusive patent license covering your contributions.
 - You represent that you have the legal right to submit the contribution.
-- If you contribute on behalf of an employer, required employer or entity
-  authorization must be in place.
 
-Pull requests may be blocked until CLA requirements are satisfied.
+Pull requests are blocked by the CLA bot until requirements are satisfied.
 
 ## Trivial Changes
 
 Maintainers may, at their sole discretion, merge changes that affect **only**
 whitespace, spelling, punctuation, or comment text — touching no executable
-code, configuration, or build files — without a signed CLA. This does not
-create a waiver for future contributions.
+code, configuration, or build files — without a signed CLA. This exception:
+
+- Applies only when a maintainer explicitly invokes it on the PR.
+- Does not create a waiver or precedent for future contributions.
+- May be revoked at any time; maintainers may still require a signed CLA for
+  any contribution regardless of scope.
 
 ## Code of Conduct
 

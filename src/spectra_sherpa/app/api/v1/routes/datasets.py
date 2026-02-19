@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -10,10 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session
 from spectra_sherpa.app.core.security import check_export_allowed
-from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
 from spectra_sherpa.app.models.nist_library import NistLibrary
+from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.services.experiments import experiment_dir
 
 
@@ -56,9 +54,7 @@ async def list_available_datasets(
     """
     # Get experiments owned by current user
     experiments_result = await session.execute(
-        select(Experiment)
-        .where(Experiment.user_id == current_user.id)
-        .order_by(Experiment.created_at.desc())
+        select(Experiment).where(Experiment.user_id == current_user.id).order_by(Experiment.created_at.desc())
     )
     experiments = list(experiments_result.scalars())
 
@@ -76,12 +72,14 @@ async def list_available_datasets(
         stages: dict[str, list[dict]] = {"raw": [], "preprocessed": [], "synthetic": []}
         for file in files:
             if file.stage in stages:
-                stages[file.stage].append({
-                    "id": file.id,
-                    "file_path": file.file_path,
-                    "file_type": file.file_type,
-                    "file_size_bytes": file.file_size_bytes,
-                })
+                stages[file.stage].append(
+                    {
+                        "id": file.id,
+                        "file_path": file.file_path,
+                        "file_type": file.file_type,
+                        "file_size_bytes": file.file_size_bytes,
+                    }
+                )
 
         experiment_datasets.append(
             ExperimentDataset(
@@ -93,10 +91,7 @@ async def list_available_datasets(
         )
 
     # Get all library entries (NIST library is shared, not per-user)
-    library_result = await session.execute(
-        select(NistLibrary)
-        .order_by(NistLibrary.compound_name)
-    )
+    library_result = await session.execute(select(NistLibrary).order_by(NistLibrary.compound_name))
     library_entries = list(library_result.scalars())
 
     library_datasets = [
@@ -155,8 +150,4 @@ async def download_dataset(
         raise HTTPException(status_code=404, detail="File missing from storage")
 
     # 4. Stream File
-    return FileResponse(
-        path=file_path,
-        filename=file_path.name,
-        media_type="application/octet-stream"
-    )
+    return FileResponse(path=file_path, filename=file_path.name, media_type="application/octet-stream")

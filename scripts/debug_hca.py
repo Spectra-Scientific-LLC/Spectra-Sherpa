@@ -10,8 +10,7 @@ import asyncio
 import json
 import traceback
 from spectra_sherpa.app.services.dag.nodes.modeling import HCANode
-from spectrochempy import NDDataset
-import spectrochempy as scp
+from spectra_sherpa.app.lib.scp_compat import scp, NDDataset
 
 async def debug_hca():
     print("--- STARTING HCA DEBUG ---")

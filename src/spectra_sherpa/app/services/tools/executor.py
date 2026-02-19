@@ -10,6 +10,7 @@ Responsibilities:
 6. Call handler (sync or async)
 7. Wrap result in ToolResult
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -48,6 +49,7 @@ def _validate_arguments(schema: dict[str, Any], arguments: dict[str, Any]) -> st
     """
     try:
         import jsonschema
+
         jsonschema.validate(instance=arguments, schema=schema)
         return None
     except ImportError:
@@ -87,9 +89,7 @@ async def execute_tool(
     """
     entry = tool_registry.get(invocation.tool_name)
     if entry is None:
-        available = ", ".join(
-            d.name for d in tool_registry.list_definitions()
-        )
+        available = ", ".join(d.name for d in tool_registry.list_definitions())
         return ToolResult(
             invocation_id=invocation.invocation_id,
             tool_name=invocation.tool_name,
@@ -189,7 +189,9 @@ async def execute_tool(
     try:
         logger.info(
             "Executing tool %s (id=%s, origin=%s)",
-            invocation.tool_name, invocation.invocation_id, defn.origin.value,
+            invocation.tool_name,
+            invocation.invocation_id,
+            defn.origin.value,
         )
 
         if inspect.iscoroutinefunction(handler):

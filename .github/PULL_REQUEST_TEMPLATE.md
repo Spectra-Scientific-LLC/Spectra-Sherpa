@@ -18,4 +18,4 @@ How were these changes tested?
 - [ ] Build passes (`npm run build`)
 - [ ] Tests pass (`pytest`)
 - [ ] Docs updated (if applicable)
-- [ ] CLA signed (the bot will prompt you -- zero exceptions)
+- [ ] CLA signed ([Individual](CLA.md) or [Entity](CLA-entity.md) — the bot will prompt you)

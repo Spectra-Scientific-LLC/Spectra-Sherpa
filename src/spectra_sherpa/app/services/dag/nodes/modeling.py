@@ -8,20 +8,34 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Optional
-import numpy as np
-from spectra_sherpa.app.lib.scp_compat import scp, NDDataset, to_nddataset
-from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo
 
+import numpy as np
+
+# sklearn is required for modeling nodes — import at module level for spec definitions
+from sklearn.linear_model import LinearRegression
+from sklearn.svm import SVR
+
+from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo
+from spectra_sherpa.app.lib.scp_compat import from_nddataset, scp, to_nddataset
+from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
+
+from ..io_contracts import (
+    bind_X,
+    bind_y,
+    coerce_dataset,
+    resolve_legacy_input,
+    to_numpy_1d,
+    to_numpy_2d,
+)
 from ..node_base import (
     Node,
     NodeMetadata,
     NodeParameter,
-    InputPort,
-    PortMetadata,
     NodeResult,
+    PortMetadata,
     register_node,
 )
-from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
+from ..spec_nodes import EstimatorSpec, EstimatorSpecNode
 
 logger = logging.getLogger(__name__)
 
@@ -121,9 +135,23 @@ def _create_spectral_dataset(
     )
 
 
-def _is_dataset(obj: Any) -> bool:
-    """Check if obj is a dataset (AnalysisDataset or NDDataset)."""
-    return isinstance(obj, (AnalysisDataset, NDDataset))
+def _unwrap_data(value: Any) -> Any:
+    """Safely unwrap dataset-like .data while avoiding ndarray memoryview traps."""
+    if isinstance(value, AnalysisDataset):
+        return value.data
+    if hasattr(value, "data") and not isinstance(value, np.ndarray):
+        return value.data
+    return value
+
+
+def _to_numpy_2d_any(value: Any, *, name: str, dtype: Any = np.float64) -> np.ndarray:
+    """Convert dataset-like values to a strict 2D numpy array."""
+    return to_numpy_2d(_unwrap_data(value), name=name, dtype=dtype)
+
+
+def _to_numpy_1d_any(value: Any, *, name: str, dtype: Any = np.float64) -> np.ndarray:
+    """Convert dataset-like values to a strict 1D numpy array."""
+    return to_numpy_1d(_unwrap_data(value), name=name, dtype=dtype)
 
 
 def _is_sequential_numeric(values: list) -> bool:
@@ -185,7 +213,11 @@ class PCANode(Node):
                 label="Number of Components",
                 param_type="text",
                 default="2",
-                description="Number of components: integer (e.g., '2'), 'mle' (auto-select via Maximum Likelihood), or float 0-1 (e.g., '0.95' for 95% variance)",
+                description=(
+                    "Number of components: integer (e.g., '2'), 'mle'"
+                    " (auto-select via Maximum Likelihood), or float 0-1"
+                    " (e.g., '0.95' for 95% variance)"
+                ),
                 required=True,
                 category="basic",
             ),
@@ -239,7 +271,9 @@ class PCANode(Node):
                 type_ref="spectrasherpa://types/LoadingMatrix/1.0",
                 required=True,
                 label="Loadings",
-                description="Principal component loadings as NDDataset (n_components × n_features) with wavenumber axis",
+                description=(
+                    "Principal component loadings as NDDataset" " (n_components × n_features) with wavenumber axis"
+                ),
             ),
             PortMetadata(
                 name="explained_variance",
@@ -261,30 +295,25 @@ class PCANode(Node):
         requires_scp=True,
     )
 
-    async def execute(self, input_data: Any) -> Any:
+    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         """
         Execute PCA on input dataset.
 
         Args:
-            input_data: NDDataset or SpectralResult containing spectral data
+            input_data: AnalysisDataset containing spectral data
 
         Returns:
             PCA model object with scores, loadings, and explained variance
         """
-        # SpectroChemPy PCA expects an NDDataset. Preprocessing nodes may emit
-        # AnalysisDataset (e.g., SNV), so adapt explicitly to avoid SCP trait
-        # errors when auto-conversion sees string units like "dimensionless".
-        if isinstance(input_data, AnalysisDataset):
-            try:
-                input_data = to_nddataset(input_data)
-            except Exception as exc:
-                raise RuntimeError(
-                    f"Failed to convert AnalysisDataset to NDDataset for PCA: {exc}"
-                ) from exc
-        elif not isinstance(input_data, NDDataset):
-            raise TypeError(
-                f"PCA expects AnalysisDataset or NDDataset input, got {type(input_data).__name__}"
-            )
+        input_data = resolve_legacy_input(input_data, kwargs, "default")
+        input_ds = bind_X(
+            input_data,
+            kwargs,
+            missing_message="Missing required input: input_data (spectra)",
+            dataset_error_message="input_data must be an NDDataset or AnalysisDataset object",
+            allow_array=False,
+        )
+        input_ndd = to_nddataset(input_ds)
 
         # Get parameters
         n_components_str = self.parameters.get("n_components", "5")
@@ -318,7 +347,7 @@ class PCANode(Node):
             n_components_parsed = n_components_str
 
         # Validate MLE constraint: n_observations >= n_features
-        n_observations, n_features = input_data.shape
+        n_observations, n_features = input_ds.shape
         if n_components_parsed == "mle" and n_observations < n_features:
             raise ValueError(
                 f"n_components='mle' requires n_observations >= n_features. "
@@ -333,7 +362,7 @@ class PCANode(Node):
 
         # Perform PCA using SpectroChemPy
         pca = scp.PCA(n_components=n_components_parsed, standardized=standardized, scaled=scaled)
-        pca.fit(input_data)
+        pca.fit(input_ndd)
 
         # Use SpectroChemPy's native NDDataset outputs — they carry proper
         # coordinates from the input dataset (wavenumbers, sample labels, etc.)
@@ -341,9 +370,7 @@ class PCANode(Node):
         loadings_dataset = pca.components
 
         # Extract numeric scores array for T²/SPE computation
-        scores_data = np.array(scores_dataset.data) if hasattr(scores_dataset, "data") else np.array(scores_dataset)
-        if scores_data.ndim == 1:
-            scores_data = scores_data.reshape(-1, 1)
+        scores_data = _to_numpy_2d_any(scores_dataset, name="scores_dataset", dtype=np.float64)
 
         actual_n_components = scores_data.shape[1]
 
@@ -351,13 +378,13 @@ class PCANode(Node):
         evr_raw = pca.explained_variance_ratio
         if evr_raw is not None:
             # SpectroChemPy returns NDDataset, extract the underlying data
-            evr = np.array(evr_raw.data).flatten() if hasattr(evr_raw, "data") else np.array(evr_raw).flatten()
+            evr = _to_numpy_1d_any(evr_raw, name="explained_variance_ratio", dtype=np.float64)
         else:
             evr = np.zeros(actual_n_components)
 
         # Ensure evr has at least actual_n_components elements (pad with zeros if needed)
         if len(evr) < actual_n_components:
-            evr = np.pad(evr, (0, actual_n_components - len(evr)), mode='constant', constant_values=0)
+            evr = np.pad(evr, (0, actual_n_components - len(evr)), mode="constant", constant_values=0)
 
         # Normalize EVR to ratio form (0-1) for consistent handling
         max_evr = evr.max() if len(evr) > 0 else 0
@@ -387,11 +414,11 @@ class PCANode(Node):
             # Reference: Nomikos & MacGregor (1995), Technometrics
             eigenvalues_raw = pca.explained_variance
             if eigenvalues_raw is not None:
-                eigenvalues = np.array(eigenvalues_raw.data).flatten() if hasattr(eigenvalues_raw, "data") else np.array(eigenvalues_raw).flatten()
+                eigenvalues = _to_numpy_1d_any(eigenvalues_raw, name="explained_variance", dtype=np.float64)
             else:
                 eigenvalues = np.var(scores_matrix, axis=0)
             eigenvalues = np.maximum(eigenvalues[:actual_n_components], 1e-12)
-            t2_stats = np.sum((scores_matrix ** 2) / eigenvalues, axis=1)
+            t2_stats = np.sum((scores_matrix**2) / eigenvalues, axis=1)
 
             # SPE (Squared Prediction Error) from reconstruction residuals
             reconstructed = None
@@ -407,17 +434,18 @@ class PCANode(Node):
                     reconstructed = None
 
             if reconstructed is not None:
-                reconstructed_data = np.array(reconstructed.data) if hasattr(reconstructed, "data") else np.array(reconstructed)
-                input_matrix = np.array(input_data.data) if hasattr(input_data, "data") else np.array(input_data)
+                reconstructed_data = _to_numpy_2d_any(reconstructed, name="reconstructed", dtype=np.float64)
+                input_matrix = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
                 if reconstructed_data.shape == input_matrix.shape:
                     residuals = input_matrix - reconstructed_data
-                    spe_stats = np.sum(residuals ** 2, axis=1)
+                    spe_stats = np.sum(residuals**2, axis=1)
 
         # Extract label_categories for categorical coloring
         label_categories = None
-        _y_coord = safe_get_coord(input_data, 'y')
+        _y_coord = safe_get_coord(input_ds, "y")
         if _y_coord is not None:
             try:
+
                 def _label_to_string(label: Any) -> str:
                     if label is None:
                         return ""
@@ -425,9 +453,7 @@ class PCANode(Node):
                         for item in reversed(label):
                             if isinstance(item, str) and item.strip():
                                 return item.strip()
-                        return " | ".join(
-                            part for part in (_label_to_string(item) for item in label) if part
-                        )
+                        return " | ".join(part for part in (_label_to_string(item) for item in label) if part)
                     if isinstance(label, np.ndarray):
                         if label.ndim == 0:
                             return _label_to_string(label.item())
@@ -439,19 +465,16 @@ class PCANode(Node):
                             pass
                     return str(label)
 
-                if hasattr(_y_coord, 'labels') and _y_coord.labels is not None:
-                    raw = _y_coord.labels.tolist() if hasattr(_y_coord.labels, 'tolist') else list(_y_coord.labels)
+                if hasattr(_y_coord, "labels") and _y_coord.labels is not None:
+                    raw = _y_coord.labels.tolist() if hasattr(_y_coord.labels, "tolist") else list(_y_coord.labels)
                     str_labels = [_label_to_string(l) for l in raw]
                     unique_labels = sorted(set(str_labels))
                     # Keep categories only when they provide real grouping signal.
                     # If almost every sample is unique, treat as unlabeled for coloring.
-                    if (
-                        1 < len(unique_labels) <= 12
-                        and len(unique_labels) <= max(3, int(0.5 * len(str_labels)))
-                    ):
+                    if 1 < len(unique_labels) <= 12 and len(unique_labels) <= max(3, int(0.5 * len(str_labels))):
                         label_categories = unique_labels
-                elif hasattr(_y_coord, 'data') and _y_coord.data is not None:
-                    raw = _y_coord.data.tolist() if hasattr(_y_coord.data, 'tolist') else list(_y_coord.data)
+                elif hasattr(_y_coord, "data") and _y_coord.data is not None:
+                    raw = _y_coord.data.tolist() if hasattr(_y_coord.data, "tolist") else list(_y_coord.data)
                     str_labels = [str(l) for l in raw]
                     unique = sorted(set(str_labels))
                     if len(unique) < 20 and not _is_sequential_numeric(raw):
@@ -462,7 +485,7 @@ class PCANode(Node):
         # scores_dataset and loadings_dataset are already SpectroChemPy NDDatasets
         # from pca.transform() / pca.components — coordinates inherited from input.
         # Add processing history for provenance tracking.
-        copy_processing_history(input_data, scores_dataset)
+        copy_processing_history(input_ds, scores_dataset)
         add_processing_step(
             scores_dataset,
             "model.pca.scores",
@@ -470,7 +493,7 @@ class PCANode(Node):
             node_id=self.node_id,
         )
 
-        copy_processing_history(input_data, loadings_dataset)
+        copy_processing_history(input_ds, loadings_dataset)
         add_processing_step(
             loadings_dataset,
             "model.pca.loadings",
@@ -481,23 +504,30 @@ class PCANode(Node):
         # Store only scientific metadata that coordinates can't carry.
         # serialize_for_api() extracts wavenumbers, sample_labels, x_title, etc.
         # from NDDataset coordinates automatically at the API boundary.
-        scores_dataset.meta.update({
-            "type": "PCA",
-            "isPCA": True,
-            "pc_labels": pc_labels,
-            "explained_variance_ratio": evr_ratio.tolist(),
-            "n_components": actual_n_components,
-            "t2": t2_stats.tolist() if t2_stats is not None else [],
-            "spe": spe_stats.tolist() if spe_stats is not None else [],
-            "t2_p95": float(np.percentile(t2_stats, 95)) if t2_stats is not None else None,
-            "spe_p95": float(np.percentile(spe_stats, 95)) if spe_stats is not None else None,
-            "t2_mean": float(np.mean(t2_stats)) if t2_stats is not None else None,
-            "spe_mean": float(np.mean(spe_stats)) if spe_stats is not None else None,
-            "label_categories": label_categories,
-        })
+        scores_dataset.meta.update(
+            {
+                "type": "PCA",
+                "isPCA": True,
+                "pc_labels": pc_labels,
+                "explained_variance_ratio": evr_ratio.tolist(),
+                "n_components": actual_n_components,
+                "t2": t2_stats.tolist() if t2_stats is not None else [],
+                "spe": spe_stats.tolist() if spe_stats is not None else [],
+                "t2_p95": float(np.percentile(t2_stats, 95)) if t2_stats is not None else None,
+                "spe_p95": float(np.percentile(spe_stats, 95)) if spe_stats is not None else None,
+                "t2_mean": float(np.mean(t2_stats)) if t2_stats is not None else None,
+                "spe_mean": float(np.mean(spe_stats)) if spe_stats is not None else None,
+                "label_categories": label_categories,
+            }
+        )
 
-        # NDDataset-only return: one serialization boundary at API layer
-        logger.debug("[PCA Node] Requested n_components=%s, fitted with %s components", n_components_parsed, actual_n_components)
+        # Convert NDDataset outputs to AnalysisDataset for DAG uniformity
+        scores_dataset = from_nddataset(scores_dataset)
+        loadings_dataset = from_nddataset(loadings_dataset)
+
+        logger.debug(
+            "[PCA Node] Requested n_components=%s, fitted with %s components", n_components_parsed, actual_n_components
+        )
         logger.debug("[PCA Node] Scores shape: %s, Loadings shape: %s", scores_dataset.shape, loadings_dataset.shape)
 
         cumulative_variance = np.cumsum(evr_ratio).tolist()
@@ -518,13 +548,14 @@ class PCANode(Node):
 
         return NodeResult(
             outputs={
-                "default": scores_dataset,      # Backwards-compatible default port
+                "default": scores_dataset,  # Backwards-compatible default port
                 "scores": scores_dataset,
                 "loadings": loadings_dataset,
                 "model": pca,
                 "explained_variance": evr_ratio.tolist(),
                 "_internal": {
                     "input_data": input_data,
+                    "input_data_ds": input_ds,
                 },
             },
             diagnostics=diagnostics,
@@ -631,38 +662,38 @@ class PLSNode(Node):
         Execute PLS regression.
 
         Args:
-            X: NDDataset or SpectralResult containing spectral data (predictors)
+            X: AnalysisDataset containing spectral data (predictors)
             y: Target values (concentrations)
 
         Returns:
             PLS model with regression results
         """
-        # Handle both positional and keyword arguments for backward compatibility
-        if X is None and "input_0" in kwargs:
-            X = kwargs["input_0"]
-        if y is None and "input_1" in kwargs:
-            y = kwargs["input_1"]
+        X_ds = bind_X(
+            X,
+            kwargs,
+            missing_message="Missing required input: X (spectra)",
+            dataset_error_message="X must be an NDDataset or AnalysisDataset object",
+            allow_array=False,
+        )
+        y_value = bind_y(
+            y,
+            kwargs,
+            X=X_ds,
+            required=True,
+            infer_from_X=False,
+            dataset_as_data=True,
+            missing_message="Missing required input: y (concentrations)",
+        )
 
-        if X is None:
-            raise ValueError("Missing required input: X (spectra)")
-        if y is None:
-            raise ValueError("Missing required input: y (concentrations)")
-        # X should already be NDDataset from DAG pipeline
+        X_ndd = to_nddataset(X_ds)
+        y_array = to_numpy_1d(y_value, name="y", expected_length=X_ds.shape[0], dtype=np.float64)
+        y_dataset = scp.NDDataset(y_array.reshape(-1, 1))
 
         n_components = self.parameters.get("n_components", 3)
         scale = self.parameters.get("scale", True)
 
-        # Prepare y as NDDataset if it's not already
-        if isinstance(y, NDDataset):
-            y_dataset = y
-        else:
-            y_array = np.array(y).flatten()
-            if X.shape[0] != y_array.shape[0]:
-                raise ValueError("X and y must have the same number of samples")
-            y_dataset = scp.NDDataset(y_array.reshape(-1, 1))
-
         # Validate n_components
-        max_components = min(X.shape[0] - 1, X.shape[1])
+        max_components = min(X_ds.shape[0] - 1, X_ds.shape[1])
         if n_components > max_components:
             raise ValueError(
                 f"n_components must be <= min(n_samples - 1, n_features). Got {n_components} with max {max_components}."
@@ -671,12 +702,12 @@ class PLSNode(Node):
         logger.debug("[PLS Node] Executing with:")
         logger.debug("  - n_components: %s", n_components)
         logger.debug("  - scale: %s", scale)
-        logger.debug("  - X shape: %s", X.shape)
+        logger.debug("  - X shape: %s", X_ds.shape)
         logger.debug("  - y shape: %s", y_dataset.shape)
 
         # Perform PLS using SpectroChemPy
         pls = scp.PLSRegression(n_components=n_components, scale=scale)
-        pls.fit(X, y_dataset)
+        pls.fit(X_ndd, y_dataset)
 
         # Extract results - SpectroChemPy PLSRegression follows sklearn API
         X_scores_data = np.array(pls.x_scores_) if hasattr(pls, "x_scores_") else None
@@ -686,19 +717,19 @@ class PLSNode(Node):
         coef_data = np.array(pls.coef_) if hasattr(pls, "coef_") else None
 
         logger.debug("[PLS Node] PLS model fitted successfully")
-        logger.debug("  - X_scores shape: %s", X_scores_data.shape if X_scores_data is not None else 'N/A')
-        logger.debug("  - Coefficients shape: %s", coef_data.shape if coef_data is not None else 'N/A')
+        logger.debug("  - X_scores shape: %s", X_scores_data.shape if X_scores_data is not None else "N/A")
+        logger.debug("  - Coefficients shape: %s", coef_data.shape if coef_data is not None else "N/A")
 
         # Extract label_categories for categorical coloring
         label_categories = None
-        _y_coord = safe_get_coord(X, 'y')
+        _y_coord = safe_get_coord(X_ds, "y")
         if _y_coord is not None:
             try:
-                if hasattr(_y_coord, 'labels') and _y_coord.labels is not None:
-                    raw = _y_coord.labels.tolist() if hasattr(_y_coord.labels, 'tolist') else list(_y_coord.labels)
+                if hasattr(_y_coord, "labels") and _y_coord.labels is not None:
+                    raw = _y_coord.labels.tolist() if hasattr(_y_coord.labels, "tolist") else list(_y_coord.labels)
                     label_categories = sorted(set(str(l) for l in raw))
-                elif hasattr(_y_coord, 'data') and _y_coord.data is not None:
-                    raw = _y_coord.data.tolist() if hasattr(_y_coord.data, 'tolist') else list(_y_coord.data)
+                elif hasattr(_y_coord, "data") and _y_coord.data is not None:
+                    raw = _y_coord.data.tolist() if hasattr(_y_coord.data, "tolist") else list(_y_coord.data)
                     str_labels = [str(l) for l in raw]
                     unique = sorted(set(str_labels))
                     if len(unique) < 20 and not _is_sequential_numeric(raw):
@@ -707,14 +738,14 @@ class PLSNode(Node):
                 label_categories = None
 
         # Get input x_coord for loadings NDDataset
-        _x_coord = safe_get_coord(X, 'x')
+        _x_coord = safe_get_coord(X_ds, "x")
 
         # Build LV labels with physical quantity context for scientific traceability
         x_data_quantity = None
-        if hasattr(X, "units") and X.units:
-            x_data_quantity = str(X.units) if str(X.units) != "dimensionless" else None
-        if x_data_quantity is None and hasattr(X, "title") and X.title:
-            x_data_quantity = str(X.title)
+        if hasattr(X_ds, "units") and X_ds.units:
+            x_data_quantity = str(X_ds.units) if str(X_ds.units) != "dimensionless" else None
+        if x_data_quantity is None and hasattr(X_ds, "title") and X_ds.title:
+            x_data_quantity = str(X_ds.title)
 
         # =====================================================================
         # Create proper NDDataset objects for scores and loadings with coordinate coupling
@@ -752,7 +783,9 @@ class PLSNode(Node):
         X_loadings_dataset = None
         if X_loadings_data is not None:
             X_loadings_dataset = _create_spectral_dataset(
-                data=X_loadings_data.T if X_loadings_data.ndim == 2 else X_loadings_data,  # Transpose to (n_components, n_features)
+                data=(
+                    X_loadings_data.T if X_loadings_data.ndim == 2 else X_loadings_data
+                ),  # Transpose to (n_components, n_features)
                 x_coord=_x_coord,
                 y_coord=_make_safe_coord(lv_labels, title="Latent Variable"),
                 units="loading",
@@ -771,7 +804,7 @@ class PLSNode(Node):
 
         # Add processing history to NDDataset outputs
         if X_scores_dataset is not None:
-            copy_processing_history(X, X_scores_dataset)
+            copy_processing_history(X_ds, X_scores_dataset)
             add_processing_step(
                 X_scores_dataset,
                 "model.pls.x_scores",
@@ -780,7 +813,7 @@ class PLSNode(Node):
             )
 
         if Y_scores_dataset is not None:
-            copy_processing_history(X, Y_scores_dataset)
+            copy_processing_history(X_ds, Y_scores_dataset)
             add_processing_step(
                 Y_scores_dataset,
                 "model.pls.y_scores",
@@ -789,7 +822,7 @@ class PLSNode(Node):
             )
 
         if X_loadings_dataset is not None:
-            copy_processing_history(X, X_loadings_dataset)
+            copy_processing_history(X_ds, X_loadings_dataset)
             add_processing_step(
                 X_loadings_dataset,
                 "model.pls.x_loadings",
@@ -798,7 +831,7 @@ class PLSNode(Node):
             )
 
         if Y_loadings_dataset is not None:
-            copy_processing_history(X, Y_loadings_dataset)
+            copy_processing_history(X_ds, Y_loadings_dataset)
             add_processing_step(
                 Y_loadings_dataset,
                 "model.pls.y_loadings",
@@ -808,19 +841,21 @@ class PLSNode(Node):
 
         # Store scientific metadata in X_scores NDDataset meta
         if X_scores_dataset is not None:
-            X_scores_dataset.meta.update({
-                "n_components": n_components,
-                "pc_labels": lv_labels,  # LV labels (no EVR for PLS, so store explicitly)
-                "label_categories": label_categories,
-            })
+            X_scores_dataset.meta.update(
+                {
+                    "n_components": n_components,
+                    "pc_labels": lv_labels,  # LV labels (no EVR for PLS, so store explicitly)
+                    "label_categories": label_categories,
+                }
+            )
 
         # NDDataset-only return: one serialization boundary at API layer
         return {
-            "default": X_scores_dataset,       # NDDataset: X scores + sample labels (y) + LV coords (x)
-            "X_loadings": X_loadings_dataset,   # NDDataset: loadings + wavenumbers (x) + LV coords (y)
-            "Y_scores": Y_scores_dataset,       # NDDataset: Y scores
-            "Y_loadings": Y_loadings_dataset,   # NDDataset: Y loadings
-            "model": pls,                        # Model port for Apply PLS Model
+            "default": X_scores_dataset,  # NDDataset: X scores + sample labels (y) + LV coords (x)
+            "X_loadings": X_loadings_dataset,  # NDDataset: loadings + wavenumbers (x) + LV coords (y)
+            "Y_scores": Y_scores_dataset,  # NDDataset: Y scores
+            "Y_loadings": Y_loadings_dataset,  # NDDataset: Y loadings
+            "model": pls,  # Model port for Apply PLS Model
             "coef": coef_data,
         }
 
@@ -909,7 +944,7 @@ class PCRNode(Node):
         Execute PCR regression.
 
         Args:
-            X: NDDataset or SpectralResult containing spectral data (predictors)
+            X: AnalysisDataset containing spectral data (predictors)
             y: Target values (concentrations)
 
         Returns:
@@ -921,30 +956,25 @@ class PCRNode(Node):
         from sklearn.pipeline import Pipeline
         from sklearn.preprocessing import StandardScaler
 
-        # Handle both positional and keyword arguments for backward compatibility
-        if X is None and "input_0" in kwargs:
-            X = kwargs["input_0"]
-        if y is None and "input_1" in kwargs:
-            y = kwargs["input_1"]
+        X_ds = bind_X(
+            X,
+            kwargs,
+            missing_message="Missing required input: X (spectra)",
+            dataset_error_message="X must be an NDDataset or AnalysisDataset object",
+            allow_array=True,
+        )
+        y_value = bind_y(
+            y,
+            kwargs,
+            X=X_ds,
+            required=True,
+            infer_from_X=False,
+            dataset_as_data=True,
+            missing_message="Missing required input: y (targets)",
+        )
 
-        if X is None:
-            raise ValueError("Missing required input: X (spectra)")
-        if y is None:
-            raise ValueError("Missing required input: y (targets)")
-
-        # Convert to numpy arrays - accept NDDataset or array
-        X_orig = X
-        if _is_dataset(X):
-            X_data = np.array(X.data)
-        else:
-            X_data = np.array(X)
-
-        if X_data.ndim == 1:
-            X_data = X_data.reshape(-1, 1)
-
-        y_array = np.array(y).flatten()
-        if X_data.shape[0] != y_array.shape[0]:
-            raise ValueError("X and y must have the same number of samples")
+        X_data = to_numpy_2d(X_ds, name="X", dtype=np.float64)
+        y_array = to_numpy_1d(y_value, name="y", expected_length=X_data.shape[0], dtype=np.float64)
 
         n_components = self.parameters.get("n_components", 3)
         scale = self.parameters.get("scale", True)
@@ -981,14 +1011,14 @@ class PCRNode(Node):
 
         # Extract label_categories for categorical coloring
         label_categories = None
-        _y_coord = safe_get_coord(X, 'y') if _is_dataset(X) else None
+        _y_coord = safe_get_coord(X_ds, "y")
         if _y_coord is not None:
             try:
-                if hasattr(_y_coord, 'labels') and _y_coord.labels is not None:
-                    raw = _y_coord.labels.tolist() if hasattr(_y_coord.labels, 'tolist') else list(_y_coord.labels)
+                if hasattr(_y_coord, "labels") and _y_coord.labels is not None:
+                    raw = _y_coord.labels.tolist() if hasattr(_y_coord.labels, "tolist") else list(_y_coord.labels)
                     label_categories = sorted(set(str(l) for l in raw))
-                elif hasattr(_y_coord, 'data') and _y_coord.data is not None:
-                    raw = _y_coord.data.tolist() if hasattr(_y_coord.data, 'tolist') else list(_y_coord.data)
+                elif hasattr(_y_coord, "data") and _y_coord.data is not None:
+                    raw = _y_coord.data.tolist() if hasattr(_y_coord.data, "tolist") else list(_y_coord.data)
                     str_labels = [str(l) for l in raw]
                     unique = sorted(set(str_labels))
                     if len(unique) < 20 and not _is_sequential_numeric(raw):
@@ -997,7 +1027,7 @@ class PCRNode(Node):
                 label_categories = None
 
         # Get input coordinates for NDDataset creation
-        _x_coord = safe_get_coord(X, 'x') if _is_dataset(X) else None
+        _x_coord = safe_get_coord(X_ds, "x")
 
         # Build PC labels with explained variance ratio
         evr = pca.explained_variance_ratio_
@@ -1026,9 +1056,8 @@ class PCRNode(Node):
         )
 
         # Add processing history to NDDataset outputs
-        if _is_dataset(X):
-            copy_processing_history(X, scores_dataset)
-            copy_processing_history(X, loadings_dataset)
+        copy_processing_history(X_ds, scores_dataset)
+        copy_processing_history(X_ds, loadings_dataset)
         add_processing_step(
             scores_dataset,
             "model.pcr.scores",
@@ -1043,28 +1072,88 @@ class PCRNode(Node):
         )
 
         # Store only scientific metadata that coordinates can't carry
-        scores_dataset.meta.update({
-            "n_components": n_components,
-            "explained_variance_ratio": evr.tolist(),
-            "label_categories": label_categories,
-            "r2": float(r2),
-            "rmse": rmse,
-            "coef": regressor.coef_.tolist(),
-            "intercept": float(regressor.intercept_),
-            "y_pred": y_pred.tolist(),
-        })
+        scores_dataset.meta.update(
+            {
+                "n_components": n_components,
+                "explained_variance_ratio": evr.tolist(),
+                "label_categories": label_categories,
+                "r2": float(r2),
+                "rmse": rmse,
+                "coef": regressor.coef_.tolist(),
+                "intercept": float(regressor.intercept_),
+                "y_pred": y_pred.tolist(),
+            }
+        )
 
         logger.debug("[PCR Node] Scores shape: %s, Loadings shape: %s", scores_dataset.shape, loadings_dataset.shape)
 
         return {
-            "default": scores_dataset,      # NDDataset: scores + sample labels (y) + PC coords (x)
-            "loadings": loadings_dataset,    # NDDataset: loadings + wavenumbers (x) + PC coords (y)
-            "model": model,                  # Model port for downstream use
+            "default": scores_dataset,  # NDDataset: scores + sample labels (y) + PC coords (x)
+            "loadings": loadings_dataset,  # NDDataset: loadings + wavenumbers (x) + PC coords (y)
+            "model": model,  # Model port for downstream use
         }
 
 
+def _svr_post_fit(model, X_data, y_array, X_ds, params, node_id):
+    """Extra outputs for SVR: support vectors, obs/pred data, metadata."""
+    # Extract the raw SVR estimator from Pipeline or bare model
+    svr = model.named_steps["estimator"] if hasattr(model, "named_steps") else model
+
+    y_pred = model.predict(X_data)
+
+    # Extract sample labels from input data for categorical coloring
+    sample_labels = None
+    label_categories = None
+    n_observations = X_data.shape[0]
+
+    if X_ds.y is not None:
+        if hasattr(X_ds.y, "labels") and X_ds.y.labels is not None:
+            try:
+                labels = X_ds.y.labels
+                raw = labels.tolist() if hasattr(labels, "tolist") else list(labels)
+                sample_labels = [str(l) for l in raw]
+                label_categories = sorted(set(sample_labels))
+            except Exception:
+                sample_labels = None
+                label_categories = None
+
+        if sample_labels is None and hasattr(X_ds.y, "data") and X_ds.y.data is not None:
+            try:
+                y_data = X_ds.y.data
+                raw = y_data.tolist() if hasattr(y_data, "tolist") else list(y_data)
+                sample_labels = [str(l) for l in raw]
+                unique_values = sorted(set(sample_labels))
+                if len(unique_values) < 20 and not _is_sequential_numeric(raw):
+                    label_categories = unique_values
+            except Exception:
+                sample_labels = None
+                label_categories = None
+
+    if sample_labels is None:
+        sample_labels = [f"Sample {i+1}" for i in range(n_observations)]
+
+    return {
+        "support_vectors": svr.support_vectors_.tolist(),
+        "data": [[float(y_true), float(y_hat)] for y_true, y_hat in zip(y_array, y_pred)],
+        "metadata": {
+            "type": "SVR",
+            "output_type": "regression",
+            "n_observations": n_observations,
+            "n_features": X_data.shape[1],
+            "kernel": params.get("kernel", "rbf"),
+            "C": params.get("C", 1.0),
+            "epsilon": params.get("epsilon", 0.1),
+            "gamma": params.get("gamma", "scale"),
+            "r2": float(model.score(X_data, y_array)) if y_array is not None else None,
+            "rmse": float(np.sqrt(np.mean((y_array - y_pred) ** 2))) if y_array is not None else None,
+            "sample_labels": sample_labels,
+            "label_categories": label_categories,
+        },
+    }
+
+
 @register_node
-class SVRNode(Node):
+class SVRNode(EstimatorSpecNode):
     """
     Support Vector Regression (SVR) node.
 
@@ -1198,142 +1287,26 @@ class SVRNode(Node):
         ],
     )
 
-    async def execute(self, X: Any = None, y: Any = None, **kwargs) -> Any:
-        """
-        Execute SVR regression.
+    spec = EstimatorSpec(
+        estimator_class=SVR,
+        scale=True,
+        scale_param="scale",
+        post_fit_fn=_svr_post_fit,
+        estimator_import="from sklearn.svm import SVR",
+    )
 
-        Args:
-            X: NDDataset or SpectralResult containing spectral data (predictors)
-            y: Target values (concentrations)
 
-        Returns:
-            SVR model with regression results
-        """
-        from sklearn.metrics import mean_squared_error, r2_score
-        from sklearn.pipeline import Pipeline
-        from sklearn.preprocessing import StandardScaler
-        from sklearn.svm import SVR
-
-        # Handle both positional and keyword arguments for backward compatibility
-        if X is None and "input_0" in kwargs:
-            X = kwargs["input_0"]
-        if y is None and "input_1" in kwargs:
-            y = kwargs["input_1"]
-
-        if X is None:
-            raise ValueError("Missing required input: X (spectra)")
-        if y is None:
-            raise ValueError("Missing required input: y (targets)")
-
-        # Convert to numpy arrays - accept NDDataset or array
-        if _is_dataset(X):
-            X_data = np.array(X.data)
-        else:
-            X_data = np.array(X)
-
-        if X_data.ndim == 1:
-            X_data = X_data.reshape(-1, 1)
-
-        y_array = np.array(y).flatten()
-        if X_data.shape[0] != y_array.shape[0]:
-            raise ValueError("X and y must have the same number of samples")
-
-        kernel = self.parameters.get("kernel", "rbf")
-        C = self.parameters.get("C", 1.0)
-        epsilon = self.parameters.get("epsilon", 0.1)
-        gamma = self.parameters.get("gamma", "scale")
-        degree = self.parameters.get("degree", 3)
-        coef0 = self.parameters.get("coef0", 0.0)
-        scale = self.parameters.get("scale", True)
-
-        logger.debug("[SVR Node] Executing with:")
-        logger.debug("  - kernel: %s", kernel)
-        logger.debug("  - C: %s", C)
-        logger.debug("  - epsilon: %s", epsilon)
-        logger.debug("  - gamma: %s", gamma)
-        logger.debug("  - X shape: %s", X_data.shape)
-        logger.debug("  - y shape: %s", y_array.shape)
-
-        scaler = StandardScaler(with_mean=True, with_std=scale)
-        svr = SVR(kernel=kernel, C=C, epsilon=epsilon, gamma=gamma, degree=degree, coef0=coef0)
-        model = Pipeline(
-            [
-                ("scaler", scaler),
-                ("svr", svr),
-            ]
-        )
-        model.fit(X_data, y_array)
-
-        y_pred = model.predict(X_data)
-        r2 = r2_score(y_array, y_pred)
-        rmse = float(np.sqrt(mean_squared_error(y_array, y_pred)))
-
-        # Extract sample labels from input data for categorical coloring
-        sample_labels = None
-        label_categories = None
-        n_observations = X_data.shape[0]
-
-        if _is_dataset(X) and X.y is not None:
-            if hasattr(X.y, "labels") and X.y.labels is not None:
-                try:
-                    labels = X.y.labels
-                    raw = labels.tolist() if hasattr(labels, "tolist") else list(labels)
-                    # Convert ALL labels to native Python str — avoids numpy StrDType
-                    # ufunc errors when sorting/comparing numpy string scalars
-                    sample_labels = [str(l) for l in raw]
-                    label_categories = sorted(set(sample_labels))
-                except Exception as e:
-                    logger.warning("[SVR Node] Could not extract categorical labels from y.labels: %s", e, exc_info=True)
-                    sample_labels = None
-                    label_categories = None
-
-            if sample_labels is None and hasattr(X.y, "data") and X.y.data is not None:
-                try:
-                    y_data = X.y.data
-                    raw = y_data.tolist() if hasattr(y_data, "tolist") else list(y_data)
-                    sample_labels = [str(l) for l in raw]
-                    unique_values = sorted(set(sample_labels))
-                    if len(unique_values) < 20 and not _is_sequential_numeric(raw):
-                        label_categories = unique_values
-                except Exception as e:
-                    logger.warning("[SVR Node] Could not extract categorical labels from y.data: %s", e, exc_info=True)
-                    sample_labels = None
-                    label_categories = None
-
-        if sample_labels is None:
-            sample_labels = [f"Sample {i+1}" for i in range(n_observations)]
-
-        # Calculate residuals
-        residuals = y_array - y_pred
-
-        return {
-            "model": model,
-            "predictions": y_pred.tolist(),
-            "residuals": residuals.tolist(),
-            "support_vectors": svr.support_vectors_.tolist(),
-            "y_pred": y_pred.tolist(),
-            "r2": float(r2),
-            "rmse": rmse,
-            "data": [[float(y_true), float(y_hat)] for y_true, y_hat in zip(y_array, y_pred)],
-            "metadata": {
-                "type": "SVR",
-                "output_type": "regression",
-                "n_observations": n_observations,
-                "n_features": X_data.shape[1],
-                "kernel": kernel,
-                "C": C,
-                "epsilon": epsilon,
-                "gamma": gamma,
-                "r2": float(r2),
-                "rmse": rmse,
-                "sample_labels": sample_labels,
-                "label_categories": label_categories,
-            },
-        }
+def _lr_post_fit(model, X_data, y_array, X_ds, params, node_id):
+    fit_intercept = params.get("fit_intercept", True)
+    return {
+        "coef": model.coef_.tolist(),
+        "intercept": model.intercept_ if fit_intercept else 0,
+        "score": model.score(X_data, y_array),
+    }
 
 
 @register_node
-class LinearRegressionNode(Node):
+class LinearRegressionNode(EstimatorSpecNode):
     """
     Simple Linear Regression node.
 
@@ -1399,54 +1372,11 @@ class LinearRegressionNode(Node):
         ],
     )
 
-    async def execute(self, X: Any = None, y: Any = None, **kwargs) -> Any:
-        """
-        Execute linear regression.
-
-        Args:
-            X: Feature matrix
-            y: Target values
-
-        Returns:
-            Linear regression model
-        """
-        from sklearn.linear_model import LinearRegression
-        import numpy as np
-
-        # Handle both positional and keyword arguments for backward compatibility
-        if X is None and "input_0" in kwargs:
-            X = kwargs["input_0"]
-        if y is None and "input_1" in kwargs:
-            y = kwargs["input_1"]
-
-        if X is None:
-            raise ValueError("Missing required input: X (features)")
-        if y is None:
-            raise ValueError("Missing required input: y (targets)")
-
-        fit_intercept = self.parameters.get("fit_intercept", True)
-
-        # Ensure X is 2D - accept NDDataset or array
-        if _is_dataset(X):
-            X = np.array(X.data)
-        X_array = np.array(X)
-        if X_array.ndim == 1:
-            X_array = X_array.reshape(-1, 1)
-
-        model = LinearRegression(fit_intercept=fit_intercept)
-        model.fit(X_array, y)
-
-        y_pred = model.predict(X_array)
-        residuals = y - y_pred
-
-        return {
-            "model": model,
-            "predictions": y_pred.tolist(),
-            "residuals": residuals.tolist(),
-            "coef": model.coef_.tolist(),
-            "intercept": model.intercept_ if fit_intercept else 0,
-            "score": model.score(X_array, y),
-        }
+    spec = EstimatorSpec(
+        estimator_class=LinearRegression,
+        post_fit_fn=_lr_post_fit,
+        estimator_import="from sklearn.linear_model import LinearRegression",
+    )
 
 
 @register_node
@@ -1556,12 +1486,12 @@ class MCRNode(Node):
         requires_scp=True,
     )
 
-    async def execute(self, input_data: Any) -> Any:
+    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         """
         Execute MCR-ALS decomposition on input dataset.
 
         Args:
-            input_data: NDDataset or SpectralResult containing spectral mixture data (D matrix)
+            input_data: AnalysisDataset containing spectral mixture data (D matrix)
                        Shape should be (n_samples, n_wavenumbers)
 
         Returns:
@@ -1571,7 +1501,15 @@ class MCRNode(Node):
             - St: Pure spectra (n_components, n_wavenumbers) as SpectralResult
             - n_components: Number of resolved components
         """
-        # Input should already be NDDataset from DAG pipeline
+        input_data = resolve_legacy_input(input_data, kwargs, "default")
+        input_ds = bind_X(
+            input_data,
+            kwargs,
+            missing_message="Missing required input: input_data (spectral mixtures)",
+            dataset_error_message="input_data must be an NDDataset or AnalysisDataset object",
+            allow_array=False,
+        )
+        input_ndd = to_nddataset(input_ds)
 
         # Get parameters
         n_components = self.parameters.get("n_components", 3)
@@ -1579,10 +1517,10 @@ class MCRNode(Node):
         tol = self.parameters.get("tol", 0.1)
 
         # Validate input shape
-        if len(input_data.shape) != 2:
-            raise ValueError(f"Expected 2D input, got shape {input_data.shape}")
+        if len(input_ds.shape) != 2:
+            raise ValueError(f"Expected 2D input, got shape {input_ds.shape}")
 
-        n_samples, n_features = input_data.shape
+        n_samples, n_features = input_ds.shape
         if n_components > min(n_samples, n_features):
             raise ValueError(
                 f"n_components ({n_components}) cannot exceed min(n_samples, n_features) = {min(n_samples, n_features)}"
@@ -1592,7 +1530,7 @@ class MCRNode(Node):
         # This provides a good starting point for ALS
         from numpy.linalg import svd
 
-        data = np.array(input_data.data)
+        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
         U, S, Vt = svd(data, full_matrices=False)
 
         # Initial C estimate from first n_components of U*S
@@ -1603,25 +1541,25 @@ class MCRNode(Node):
 
         # Create and fit MCR-ALS model
         mcr = scp.MCRALS(max_iter=max_iter, tol=tol)
-        mcr.fit(input_data, C0)
+        mcr.fit(input_ndd, C0)
 
         # Extract results
-        C_data = np.array(mcr.C.data) if hasattr(mcr.C, "data") else np.array(mcr.C)
-        St_data = np.array(mcr.St.data) if hasattr(mcr.St, "data") else np.array(mcr.St)
+        C_data = _to_numpy_2d_any(mcr.C, name="mcr.C", dtype=np.float64)
+        St_data = _to_numpy_2d_any(mcr.St, name="mcr.St", dtype=np.float64)
 
         # Get input coordinates for NDDataset creation
-        _x_coord = safe_get_coord(input_data, 'x')
-        _y_coord = safe_get_coord(input_data, 'y')
+        _x_coord = safe_get_coord(input_ds, "x")
+        _y_coord = safe_get_coord(input_ds, "y")
 
         # Extract label_categories for categorical coloring
         label_categories = None
         if _y_coord is not None:
             try:
-                if hasattr(_y_coord, 'labels') and _y_coord.labels is not None:
-                    raw = _y_coord.labels.tolist() if hasattr(_y_coord.labels, 'tolist') else list(_y_coord.labels)
+                if hasattr(_y_coord, "labels") and _y_coord.labels is not None:
+                    raw = _y_coord.labels.tolist() if hasattr(_y_coord.labels, "tolist") else list(_y_coord.labels)
                     label_categories = sorted(set(str(l) for l in raw))
-                elif hasattr(_y_coord, 'data') and _y_coord.data is not None:
-                    raw = _y_coord.data.tolist() if hasattr(_y_coord.data, 'tolist') else list(_y_coord.data)
+                elif hasattr(_y_coord, "data") and _y_coord.data is not None:
+                    raw = _y_coord.data.tolist() if hasattr(_y_coord.data, "tolist") else list(_y_coord.data)
                     str_labels = [str(l) for l in raw]
                     unique = sorted(set(str_labels))
                     if len(unique) < 20 and not _is_sequential_numeric(raw):
@@ -1631,8 +1569,8 @@ class MCRNode(Node):
 
         # Try to extract species names from input metadata (from BlendNode ground truth)
         species_names = None
-        if hasattr(input_data, 'meta') and input_data.meta:
-            spectra_meta = input_data.meta.get("spectra", {})
+        if hasattr(input_ds, "meta") and input_ds.meta:
+            spectra_meta = input_ds.meta.get("spectra", {})
             if isinstance(spectra_meta, dict):
                 species_list = spectra_meta.get("species", [])
                 if species_list and len(species_list) >= n_components:
@@ -1665,7 +1603,7 @@ class MCRNode(Node):
             data=St_data,
             x_coord=_x_coord,
             y_coord=_make_safe_coord(spectrum_labels, title="Component"),
-            units=input_data.units if hasattr(input_data, 'units') else None,
+            units=input_ds.units if hasattr(input_ds, "units") else None,
             title="MCR-ALS Pure Component Spectra",
         )
 
@@ -1681,17 +1619,17 @@ class MCRNode(Node):
 
         # Compute residuals as NDDataset
         reconstructed = C_data @ St_data
-        residuals_data = np.array(input_data.data) - reconstructed
+        residuals_data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64) - reconstructed
         residuals_dataset = _create_spectral_dataset(
             data=residuals_data,
             x_coord=_x_coord,
             y_coord=_y_coord,  # Preserve sample labels from input
-            units=input_data.units if hasattr(input_data, 'units') else None,
+            units=input_ds.units if hasattr(input_ds, "units") else None,
             title="MCR-ALS Residuals",
         )
 
         # Add processing history to NDDataset outputs
-        copy_processing_history(input_data, C_dataset)
+        copy_processing_history(input_ds, C_dataset)
         add_processing_step(
             C_dataset,
             "model.mcr_als.concentrations",
@@ -1699,7 +1637,7 @@ class MCRNode(Node):
             node_id=self.node_id,
         )
 
-        copy_processing_history(input_data, St_dataset)
+        copy_processing_history(input_ds, St_dataset)
         add_processing_step(
             St_dataset,
             "model.mcr_als.spectra",
@@ -1707,7 +1645,7 @@ class MCRNode(Node):
             node_id=self.node_id,
         )
 
-        copy_processing_history(input_data, residuals_dataset)
+        copy_processing_history(input_ds, residuals_dataset)
         add_processing_step(
             residuals_dataset,
             "model.mcr_als.residuals",
@@ -1716,18 +1654,20 @@ class MCRNode(Node):
         )
 
         # Store only scientific metadata that coordinates can't carry
-        C_dataset.meta.update({
-            "n_components": n_components,
-            "label_categories": label_categories,
-            "species_names": species_names,
-        })
+        C_dataset.meta.update(
+            {
+                "n_components": n_components,
+                "label_categories": label_categories,
+                "species_names": species_names,
+            }
+        )
 
         return {
-            "default": C_dataset,                # NDDataset: concentration profiles + sample labels (y) + component coords (x)
-            "C": C_dataset,                      # Alias for concentrations
-            "St": St_dataset,                    # NDDataset: pure spectra + wavenumbers (x) + component coords (y)
-            "residuals": residuals_dataset,      # NDDataset: residuals
-            "model": mcr,                        # Model port
+            "default": C_dataset,  # NDDataset: concentration profiles + sample labels (y) + component coords (x)
+            "C": C_dataset,  # Alias for concentrations
+            "St": St_dataset,  # NDDataset: pure spectra + wavenumbers (x) + component coords (y)
+            "residuals": residuals_dataset,  # NDDataset: residuals
+            "model": mcr,  # Model port
         }
 
 
@@ -1788,31 +1728,38 @@ class EFANode(Node):
         requires_scp=True,
     )
 
-    async def execute(self, input_data: Any) -> Any:
+    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         """
         Execute EFA on input dataset.
 
         Args:
-            input_data: NDDataset or SpectralResult containing evolving spectral data
+            input_data: AnalysisDataset containing evolving spectral data
 
         Returns:
             Dict containing forward and backward eigenvalues
         """
-        # Input should already be NDDataset from DAG pipeline
+        input_data = resolve_legacy_input(input_data, kwargs, "default")
+        input_ds = bind_X(
+            input_data,
+            kwargs,
+            missing_message="Missing required input: input_data (evolving spectra)",
+            dataset_error_message="input_data must be an NDDataset or AnalysisDataset object",
+            allow_array=False,
+        )
+        input_ndd = to_nddataset(input_ds)
 
         n_components = self.parameters.get("n_components", 10)
 
         # Perform EFA using SpectroChemPy
         efa = scp.EFA(n_components=n_components)
-        efa.fit(input_data)
+        efa.fit(input_ndd)
 
         # Extract forward and backward results
-        forward_ev = np.array(efa.f_ev) if hasattr(efa, "f_ev") else None
-        backward_ev = np.array(efa.b_ev) if hasattr(efa, "b_ev") else None
+        forward_ev = _to_numpy_2d_any(efa.f_ev, name="efa.f_ev") if hasattr(efa, "f_ev") else None
+        backward_ev = _to_numpy_2d_any(efa.b_ev, name="efa.b_ev") if hasattr(efa, "b_ev") else None
 
         # Get input y_coord for sample labels
-        n_samples = input_data.shape[0]
-        _y_coord = safe_get_coord(input_data, 'y')
+        _y_coord = safe_get_coord(input_ds, "y")
 
         # =====================================================================
         # Create proper NDDataset objects for eigenvalues with coordinate coupling
@@ -1845,7 +1792,7 @@ class EFANode(Node):
 
         # Add processing history to NDDataset outputs
         if forward_ev_dataset is not None:
-            copy_processing_history(input_data, forward_ev_dataset)
+            copy_processing_history(input_ds, forward_ev_dataset)
             add_processing_step(
                 forward_ev_dataset,
                 "model.efa.forward_eigenvalues",
@@ -1854,7 +1801,7 @@ class EFANode(Node):
             )
 
         if backward_ev_dataset is not None:
-            copy_processing_history(input_data, backward_ev_dataset)
+            copy_processing_history(input_ds, backward_ev_dataset)
             add_processing_step(
                 backward_ev_dataset,
                 "model.efa.backward_eigenvalues",
@@ -1866,15 +1813,17 @@ class EFANode(Node):
         # Use forward_ev_dataset as default output
         default_dataset = forward_ev_dataset or backward_ev_dataset
         if default_dataset is not None:
-            default_dataset.meta.update({
-                "n_components": n_components,
-            })
+            default_dataset.meta.update(
+                {
+                    "n_components": n_components,
+                }
+            )
 
         return {
-            "default": default_dataset,                    # NDDataset: forward eigenvalues (primary output)
-            "forward_eigenvalues": forward_ev_dataset,     # NDDataset: forward eigenvalues
-            "backward_eigenvalues": backward_ev_dataset,   # NDDataset: backward eigenvalues
-            "model": efa,                                  # Model port
+            "default": default_dataset,  # NDDataset: forward eigenvalues (primary output)
+            "forward_eigenvalues": forward_ev_dataset,  # NDDataset: forward eigenvalues
+            "backward_eigenvalues": backward_ev_dataset,  # NDDataset: backward eigenvalues
+            "model": efa,  # Model port
         }
 
 
@@ -1963,7 +1912,7 @@ class HCANode(Node):
         ],
     )
 
-    async def execute(self, input_data: Any) -> Any:
+    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         """
         Execute hierarchical clustering.
 
@@ -1973,18 +1922,18 @@ class HCANode(Node):
         Returns:
             Dict containing cluster labels and metadata
         """
-        from scipy.cluster.hierarchy import linkage, fcluster
+        from scipy.cluster.hierarchy import fcluster, linkage
         from scipy.spatial.distance import pdist
         from sklearn.decomposition import PCA as SkPCA
 
-        # Convert input to numpy array - accept NDDataset or array
-        if _is_dataset(input_data):
-            X_data = np.array(input_data.data)
-        else:
-            X_data = np.array(input_data)
-
-        if X_data.ndim == 1:
-            X_data = X_data.reshape(-1, 1)
+        input_data = resolve_legacy_input(input_data, kwargs, "default")
+        input_ds = coerce_dataset(
+            input_data,
+            input_name="input_data",
+            allow_array=True,
+            dataset_error_message=("input_data must be an NDDataset, AnalysisDataset, or array-like object"),
+        )
+        X_data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
 
         n_clusters = self.parameters.get("n_clusters", 3)
         linkage_method = self.parameters.get("linkage", "ward")
@@ -2010,7 +1959,7 @@ class HCANode(Node):
 
         # 2. Extract Cluster Labels
         # fcluster returns 1-based labels, convert to 0-based
-        labels = fcluster(Z, t=n_clusters, criterion='maxclust') - 1
+        labels = fcluster(Z, t=n_clusters, criterion="maxclust") - 1
 
         if X_data.shape[1] == 1:
             embedding = np.column_stack([X_data[:, 0], np.zeros(X_data.shape[0])])
@@ -2027,7 +1976,7 @@ class HCANode(Node):
         label_categories = sorted(list(set(sample_labels)))
 
         source_labels = None
-        _y_coord = safe_get_coord(input_data, 'y') if _is_dataset(input_data) else None
+        _y_coord = safe_get_coord(input_ds, "y")
         if _y_coord is not None:
             if hasattr(_y_coord, "labels") and _y_coord.labels is not None:
                 labels_data = _y_coord.labels
@@ -2092,21 +2041,23 @@ class HCANode(Node):
         traces = []
         for i, (idx_coords, dist_coords) in enumerate(zip(icoord, dcoord)):
             color = colors[i]
-            
+
             # ROTATION MAP: Map Index(icoord) to Y, Distance(dcoord) to X
             x_vals = [float(val) for val in dist_coords]
             y_vals = [float(val) for val in idx_coords]
-            
-            traces.append({
-                "x": x_vals,
-                "y": y_vals,
-                "type": "scatter",
-                "mode": "lines",
-                "line": {"color": color, "width": 3},
-                "text": [f"Dist: {x:.2f}" for x in x_vals], # Simple hover info
-                "hoverinfo": "text+x+y",
-                "showlegend": False,
-            })
+
+            traces.append(
+                {
+                    "x": x_vals,
+                    "y": y_vals,
+                    "type": "scatter",
+                    "mode": "lines",
+                    "line": {"color": color, "width": 3},
+                    "text": [f"Dist: {x:.2f}" for x in x_vals],  # Simple hover info
+                    "hoverinfo": "text+x+y",
+                    "showlegend": False,
+                }
+            )
 
         # Compute max distance for tight x-axis range (with null safety)
         # Handle edge cases: empty dcoord, empty rows, or all-zero values
@@ -2148,10 +2099,14 @@ class HCANode(Node):
             # Extract actual Y-positions from icoord (leaf positions are at the bottom of links)
             # scipy dendrogram places leaves at y = 5, 15, 25, ... (spacing of 10, starting at 5)
             # We use the icoord values which represent actual positions
-            leaf_positions = sorted(set(
-                coord for link in icoord for coord in [link[0], link[-1]]
-                if coord == link[0] or coord == link[-1]  # Only endpoints (leaf positions)
-            ))
+            leaf_positions = sorted(
+                set(
+                    coord
+                    for link in icoord
+                    for coord in [link[0], link[-1]]
+                    if coord == link[0] or coord == link[-1]  # Only endpoints (leaf positions)
+                )
+            )
             # If we can't extract positions reliably, fall back to standard spacing
             if len(leaf_positions) != len(leaves):
                 leaf_positions = list(range(5, len(leaves) * 10 + 5, 10))
@@ -2261,7 +2216,7 @@ class KMeansNode(Node):
         ],
     )
 
-    async def execute(self, input_data: Any) -> Any:
+    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         """
         Execute K-Means clustering.
 
@@ -2274,14 +2229,14 @@ class KMeansNode(Node):
         from sklearn.cluster import KMeans
         from sklearn.decomposition import PCA as SkPCA
 
-        # Accept NDDataset or array
-        if _is_dataset(input_data):
-            X_data = np.array(input_data.data)
-        else:
-            X_data = np.array(input_data)
-
-        if X_data.ndim == 1:
-            X_data = X_data.reshape(-1, 1)
+        input_data = resolve_legacy_input(input_data, kwargs, "default")
+        input_ds = coerce_dataset(
+            input_data,
+            input_name="input_data",
+            allow_array=True,
+            dataset_error_message=("input_data must be an NDDataset, AnalysisDataset, or array-like object"),
+        )
+        X_data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
 
         n_clusters = self.parameters.get("n_clusters", 3)
         n_init = self.parameters.get("n_init", 10)
@@ -2317,7 +2272,7 @@ class KMeansNode(Node):
         label_categories = sorted(list(set(sample_labels)))
 
         source_labels = None
-        _y_coord = safe_get_coord(input_data, 'y') if _is_dataset(input_data) else None
+        _y_coord = safe_get_coord(input_ds, "y")
         if _y_coord is not None:
             if hasattr(_y_coord, "labels") and _y_coord.labels is not None:
                 labels_data = _y_coord.labels
@@ -2414,7 +2369,7 @@ class DBSCANNode(Node):
         ],
     )
 
-    async def execute(self, input_data: Any) -> Any:
+    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         """
         Execute DBSCAN clustering.
 
@@ -2427,14 +2382,14 @@ class DBSCANNode(Node):
         from sklearn.cluster import DBSCAN
         from sklearn.decomposition import PCA as SkPCA
 
-        # Accept NDDataset or array
-        if _is_dataset(input_data):
-            X_data = np.array(input_data.data)
-        else:
-            X_data = np.array(input_data)
-
-        if X_data.ndim == 1:
-            X_data = X_data.reshape(-1, 1)
+        input_data = resolve_legacy_input(input_data, kwargs, "default")
+        input_ds = coerce_dataset(
+            input_data,
+            input_name="input_data",
+            allow_array=True,
+            dataset_error_message=("input_data must be an NDDataset, AnalysisDataset, or array-like object"),
+        )
+        X_data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
 
         eps = self.parameters.get("eps", 0.5)
         min_samples = self.parameters.get("min_samples", 5)
@@ -2465,7 +2420,7 @@ class DBSCANNode(Node):
         n_clusters = len([label for label in label_categories if label != "-1"])
 
         source_labels = None
-        _y_coord = safe_get_coord(input_data, 'y') if _is_dataset(input_data) else None
+        _y_coord = safe_get_coord(input_ds, "y")
         if _y_coord is not None:
             if hasattr(_y_coord, "labels") and _y_coord.labels is not None:
                 labels_data = _y_coord.labels
@@ -2594,19 +2549,26 @@ class PeakFindingNode(Node):
         ],
     )
 
-    async def execute(self, input_data: Any) -> Any:
+    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         """
         Execute peak finding on spectral data.
 
         Args:
-            input_data: NDDataset or SpectralResult containing spectral data
+            input_data: AnalysisDataset containing spectral data
 
         Returns:
             Dict containing peak positions, heights, widths, and areas
         """
         from scipy.signal import find_peaks as scipy_find_peaks
 
-        # Input should already be NDDataset from DAG pipeline
+        input_data = resolve_legacy_input(input_data, kwargs, "default")
+        input_ds = bind_X(
+            input_data,
+            kwargs,
+            missing_message="Missing required input: input_data (spectrum)",
+            dataset_error_message="input_data must be an NDDataset or AnalysisDataset object",
+            allow_array=False,
+        )
 
         # Get parameters
         height = self.parameters.get("height")
@@ -2616,7 +2578,7 @@ class PeakFindingNode(Node):
         width = self.parameters.get("width")
 
         # Convert to numpy array
-        data = np.array(input_data.data)
+        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
 
         # Handle multi-spectrum input (take first spectrum for peak finding)
         if data.ndim > 1:
@@ -2628,25 +2590,25 @@ class PeakFindingNode(Node):
         # Build kwargs for scipy find_peaks
         peak_kwargs = {}
         if height is not None:
-            peak_kwargs['height'] = height
+            peak_kwargs["height"] = height
         if threshold is not None:
-            peak_kwargs['threshold'] = threshold
+            peak_kwargs["threshold"] = threshold
         if distance is not None:
-            peak_kwargs['distance'] = distance
+            peak_kwargs["distance"] = distance
         if prominence is not None:
-            peak_kwargs['prominence'] = prominence
+            peak_kwargs["prominence"] = prominence
         if width is not None:
-            peak_kwargs['width'] = width
+            peak_kwargs["width"] = width
 
         # Find peaks using scipy
         peak_indices, peak_properties = scipy_find_peaks(spectrum, **peak_kwargs)
 
         # Get wavenumber/ppm positions if available
-        _x_coord = safe_get_coord(input_data, 'x')
+        _x_coord = safe_get_coord(input_ds, "x")
         if _x_coord is not None:
-            x_axis = np.array(_x_coord.data)
+            x_axis = _to_numpy_1d_any(_x_coord, name="x_axis", dtype=np.float64)
             peak_positions = x_axis[peak_indices].tolist()
-            x_unit = str(_x_coord.units) if hasattr(_x_coord, 'units') else "cm⁻¹"
+            x_unit = str(_x_coord.units) if hasattr(_x_coord, "units") else "cm⁻¹"
         else:
             peak_positions = peak_indices.tolist()
             x_unit = "index"
@@ -2655,10 +2617,10 @@ class PeakFindingNode(Node):
         peak_heights = spectrum[peak_indices].tolist()
 
         # Get widths if calculated
-        peak_widths = peak_properties.get('widths', np.zeros(len(peak_indices))).tolist()
+        peak_widths = peak_properties.get("widths", np.zeros(len(peak_indices))).tolist()
 
         # Get prominences if calculated
-        peak_prominences = peak_properties.get('prominences', np.zeros(len(peak_indices))).tolist()
+        peak_prominences = peak_properties.get("prominences", np.zeros(len(peak_indices))).tolist()
 
         # Estimate peak areas (simple trapezoidal integration around peak)
         peak_areas = []
@@ -2687,7 +2649,7 @@ class PeakFindingNode(Node):
             },
             "spectrum": spectrum.tolist(),
             "annotated_spectrum": annotated_spectrum.tolist(),
-            "x_axis": (np.array(_x_coord.data).tolist() if _x_coord is not None else list(range(len(spectrum)))),
+            "x_axis": (x_axis.tolist() if _x_coord is not None else list(range(len(spectrum)))),
             "x_unit": x_unit,
             # Visualization data
             "data": [[pos, height] for pos, height in zip(peak_positions, peak_heights)],
@@ -2805,12 +2767,12 @@ class SIMPLISMANode(Node):
         requires_scp=True,
     )
 
-    async def execute(self, input_data: Any) -> Any:
+    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         """
         Execute SIMPLISMA decomposition on input dataset.
 
         Args:
-            input_data: NDDataset or SpectralResult containing spectral mixture data
+            input_data: AnalysisDataset containing spectral mixture data
                        Shape should be (n_samples, n_wavenumbers)
 
         Returns:
@@ -2819,7 +2781,15 @@ class SIMPLISMANode(Node):
             - St: Pure spectra (n_components, n_wavenumbers)
             - n_components: Number of resolved components
         """
-        # Input should already be NDDataset from DAG pipeline
+        input_data = resolve_legacy_input(input_data, kwargs, "default")
+        input_ds = bind_X(
+            input_data,
+            kwargs,
+            missing_message="Missing required input: input_data (spectral mixtures)",
+            dataset_error_message="input_data must be an NDDataset or AnalysisDataset object",
+            allow_array=False,
+        )
+        input_ndd = to_nddataset(input_ds)
 
         # Get parameters
         n_components = self.parameters.get("n_components", 3)
@@ -2827,10 +2797,10 @@ class SIMPLISMANode(Node):
         noise = self.parameters.get("noise", 3.0)
 
         # Validate input shape
-        if len(input_data.shape) != 2:
-            raise ValueError(f"Expected 2D input, got shape {input_data.shape}")
+        if len(input_ds.shape) != 2:
+            raise ValueError(f"Expected 2D input, got shape {input_ds.shape}")
 
-        n_samples, n_features = input_data.shape
+        n_samples, n_features = input_ds.shape
         if n_components > min(n_samples, n_features):
             raise ValueError(
                 f"n_components ({n_components}) cannot exceed min(n_samples, n_features) = {min(n_samples, n_features)}"
@@ -2844,23 +2814,23 @@ class SIMPLISMANode(Node):
 
         # Perform SIMPLISMA using SpectroChemPy
         simplisma = scp.SIMPLISMA(n_components=n_components, tol=tol, noise=noise)
-        simplisma.fit(input_data)
+        simplisma.fit(input_ndd)
 
         # Extract results
-        C_data = np.array(simplisma.C.data) if hasattr(simplisma.C, "data") else np.array(simplisma.C)
-        St_data = np.array(simplisma.St.data) if hasattr(simplisma.St, "data") else np.array(simplisma.St)
+        C_data = _to_numpy_2d_any(simplisma.C, name="simplisma.C", dtype=np.float64)
+        St_data = _to_numpy_2d_any(simplisma.St, name="simplisma.St", dtype=np.float64)
 
         # Get wavenumber axis from input if available
         wavenumbers = None
-        _x_coord = safe_get_coord(input_data, 'x')
+        _x_coord = safe_get_coord(input_ds, "x")
         if _x_coord is not None:
-            wavenumbers = np.array(_x_coord.data).tolist()
+            wavenumbers = _to_numpy_1d_any(_x_coord, name="wavenumbers", dtype=np.float64).tolist()
 
         # Get time axis from input if available
         times = None
-        _y_coord = safe_get_coord(input_data, 'y')
+        _y_coord = safe_get_coord(input_ds, "y")
         if _y_coord is not None:
-            times = np.array(_y_coord.data).tolist()
+            times = _to_numpy_1d_any(_y_coord, name="times", dtype=np.float64).tolist()
         else:
             # Use sample indices as time points
             times = list(range(n_samples))
@@ -2874,25 +2844,31 @@ class SIMPLISMANode(Node):
         label_categories = None
 
         if _y_coord is not None:
-            if hasattr(_y_coord, 'labels') and _y_coord.labels is not None:
+            if hasattr(_y_coord, "labels") and _y_coord.labels is not None:
                 try:
                     labels = _y_coord.labels
-                    raw = labels.tolist() if hasattr(labels, 'tolist') else list(labels)
+                    raw = labels.tolist() if hasattr(labels, "tolist") else list(labels)
                     # Convert ALL labels to native Python str — avoids numpy StrDType
                     # ufunc errors when sorting/comparing numpy string scalars
                     sample_labels = [str(l) for l in raw]
                     label_categories = sorted(set(sample_labels))
-                    logger.debug("[SIMPLISMA Node] Extracted %s sample labels with %s unique categories", len(sample_labels), len(label_categories))
+                    logger.debug(
+                        "[SIMPLISMA Node] Extracted %s sample labels with %s unique categories",
+                        len(sample_labels),
+                        len(label_categories),
+                    )
                 except Exception as e:
-                    logger.warning("[SIMPLISMA Node] Could not extract categorical labels from y.labels: %s", e, exc_info=True)
+                    logger.warning(
+                        "[SIMPLISMA Node] Could not extract categorical labels from y.labels: %s", e, exc_info=True
+                    )
                     sample_labels = None
                     label_categories = None
 
-            if sample_labels is None and hasattr(_y_coord, 'data') and _y_coord.data is not None:
+            if sample_labels is None and hasattr(_y_coord, "data") and _y_coord.data is not None:
                 try:
                     # Fallback: use y-axis data as numeric labels
                     y_data = _y_coord.data
-                    raw = y_data.tolist() if hasattr(y_data, 'tolist') else list(y_data)
+                    raw = y_data.tolist() if hasattr(y_data, "tolist") else list(y_data)
                     sample_labels = [str(l) for l in raw]
 
                     # For numeric data, only treat as categorical if:
@@ -2901,9 +2877,14 @@ class SIMPLISMANode(Node):
                     unique_values = sorted(set(sample_labels))
                     if len(unique_values) < 20 and not _is_sequential_numeric(raw):
                         label_categories = unique_values
-                        logger.debug("[SIMPLISMA Node] Using numeric y.data as categorical labels: %s categories", len(label_categories))
+                        logger.debug(
+                            "[SIMPLISMA Node] Using numeric y.data as categorical labels: %s categories",
+                            len(label_categories),
+                        )
                 except Exception as e:
-                    logger.warning("[SIMPLISMA Node] Could not extract categorical labels from y.data: %s", e, exc_info=True)
+                    logger.warning(
+                        "[SIMPLISMA Node] Could not extract categorical labels from y.data: %s", e, exc_info=True
+                    )
                     sample_labels = None
                     label_categories = None
 
@@ -2921,8 +2902,8 @@ class SIMPLISMANode(Node):
             "concentrations": C_data.tolist(),
             "spectra": St_data.tolist(),
             "purity_values": purities if purities is not None else [],
-            "C": C_data.tolist(),          # Concentration profiles (n_samples, n_components)
-            "St": St_data.tolist(),        # Pure spectra (n_components, n_features)
+            "C": C_data.tolist(),  # Concentration profiles (n_samples, n_components)
+            "St": St_data.tolist(),  # Pure spectra (n_components, n_features)
             "n_components": n_components,
             "n_samples": n_samples,
             "n_features": n_features,
@@ -3051,12 +3032,12 @@ class NMFNode(Node):
         ],
     )
 
-    async def execute(self, input_data: Any) -> Any:
+    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         """
         Execute NMF decomposition on input dataset.
 
         Args:
-            input_data: NDDataset or SpectralResult containing non-negative spectral data
+            input_data: AnalysisDataset containing non-negative spectral data
                        Shape should be (n_samples, n_wavenumbers)
 
         Returns:
@@ -3065,7 +3046,14 @@ class NMFNode(Node):
             - H: Coefficient matrix / pure spectra (n_components, n_wavenumbers) as SpectralResult
             - n_components: Number of components
         """
-        # Input should already be NDDataset from DAG pipeline
+        input_data = resolve_legacy_input(input_data, kwargs, "default")
+        input_ds = bind_X(
+            input_data,
+            kwargs,
+            missing_message="Missing required input: input_data (non-negative spectra)",
+            dataset_error_message="input_data must be an NDDataset or AnalysisDataset object",
+            allow_array=False,
+        )
 
         # Get parameters
         n_components = self.parameters.get("n_components", 3)
@@ -3074,17 +3062,17 @@ class NMFNode(Node):
         tol = self.parameters.get("tol", 0.0001)
 
         # Validate input shape
-        if len(input_data.shape) != 2:
-            raise ValueError(f"Expected 2D input, got shape {input_data.shape}")
+        if len(input_ds.shape) != 2:
+            raise ValueError(f"Expected 2D input, got shape {input_ds.shape}")
 
-        n_samples, n_features = input_data.shape
+        n_samples, n_features = input_ds.shape
         if n_components > min(n_samples, n_features):
             raise ValueError(
                 f"n_components ({n_components}) cannot exceed min(n_samples, n_features) = {min(n_samples, n_features)}"
             )
 
         # Check for negative values (NMF requires non-negative data)
-        data_array = np.array(input_data.data)
+        data_array = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
         if np.any(data_array < 0):
             logger.warning("[NMF Node] Input contains negative values, shifting to non-negative range")
             data_array = data_array - data_array.min()
@@ -3098,13 +3086,14 @@ class NMFNode(Node):
 
         # Perform NMF using sklearn
         from sklearn.decomposition import NMF
+
         nmf = NMF(n_components=n_components, solver=solver, max_iter=max_iter, tol=tol)
         W_data = nmf.fit_transform(data_array)
         H_data = nmf.components_
 
         # Get input coordinates for NDDataset creation
-        _x_coord = safe_get_coord(input_data, 'x')
-        _y_coord = safe_get_coord(input_data, 'y')
+        _x_coord = safe_get_coord(input_ds, "x")
+        _y_coord = safe_get_coord(input_ds, "y")
 
         # Get reconstruction error if available
         reconstruction_err = None
@@ -3121,11 +3110,11 @@ class NMFNode(Node):
         label_categories = None
         if _y_coord is not None:
             try:
-                if hasattr(_y_coord, 'labels') and _y_coord.labels is not None:
-                    raw = _y_coord.labels.tolist() if hasattr(_y_coord.labels, 'tolist') else list(_y_coord.labels)
+                if hasattr(_y_coord, "labels") and _y_coord.labels is not None:
+                    raw = _y_coord.labels.tolist() if hasattr(_y_coord.labels, "tolist") else list(_y_coord.labels)
                     label_categories = sorted(set(str(l) for l in raw))
-                elif hasattr(_y_coord, 'data') and _y_coord.data is not None:
-                    raw = _y_coord.data.tolist() if hasattr(_y_coord.data, 'tolist') else list(_y_coord.data)
+                elif hasattr(_y_coord, "data") and _y_coord.data is not None:
+                    raw = _y_coord.data.tolist() if hasattr(_y_coord.data, "tolist") else list(_y_coord.data)
                     str_labels = [str(l) for l in raw]
                     unique = sorted(set(str_labels))
                     if len(unique) < 20 and not _is_sequential_numeric(raw):
@@ -3147,7 +3136,7 @@ class NMFNode(Node):
             data=H_data,
             x_coord=_x_coord,
             y_coord=_make_safe_coord(spectrum_labels, title="Component"),
-            units=input_data.units if hasattr(input_data, 'units') else None,
+            units=input_ds.units if hasattr(input_ds, "units") else None,
             title="NMF Basis Spectra (H)",
         )
 
@@ -3162,7 +3151,7 @@ class NMFNode(Node):
         )
 
         # Add processing history to NDDataset outputs
-        copy_processing_history(input_data, W_dataset)
+        copy_processing_history(input_ds, W_dataset)
         add_processing_step(
             W_dataset,
             "model.nmf.concentrations",
@@ -3170,7 +3159,7 @@ class NMFNode(Node):
             node_id=self.node_id,
         )
 
-        copy_processing_history(input_data, H_dataset)
+        copy_processing_history(input_ds, H_dataset)
         add_processing_step(
             H_dataset,
             "model.nmf.spectra",
@@ -3179,19 +3168,21 @@ class NMFNode(Node):
         )
 
         # Store only scientific metadata that coordinates can't carry
-        W_dataset.meta.update({
-            "n_components": n_components,
-            "label_categories": label_categories,
-            "reconstruction_error": reconstruction_err,
-        })
+        W_dataset.meta.update(
+            {
+                "n_components": n_components,
+                "label_categories": label_categories,
+                "reconstruction_error": reconstruction_err,
+            }
+        )
 
         return {
-            "default": W_dataset,                # NDDataset: concentration profiles + sample labels (y) + component coords (x)
-            "concentrations": W_dataset,         # Alias for default
-            "spectra": H_dataset,                # NDDataset: basis spectra + wavenumbers (x) + component coords (y)
-            "W": W_dataset,                      # Alias for concentrations
-            "H": H_dataset,                      # Alias for spectra
-            "model": nmf,                        # Model port
+            "default": W_dataset,  # NDDataset: concentration profiles + sample labels (y) + component coords (x)
+            "concentrations": W_dataset,  # Alias for default
+            "spectra": H_dataset,  # NDDataset: basis spectra + wavenumbers (x) + component coords (y)
+            "W": W_dataset,  # Alias for concentrations
+            "H": H_dataset,  # Alias for spectra
+            "model": nmf,  # Model port
         }
 
 
@@ -3304,12 +3295,12 @@ class FastICANode(Node):
         ],
     )
 
-    async def execute(self, input_data: Any) -> Any:
+    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         """
         Execute FastICA decomposition on input dataset.
 
         Args:
-            input_data: NDDataset or SpectralResult containing spectral mixture data
+            input_data: AnalysisDataset containing spectral mixture data
                        Shape should be (n_samples, n_wavenumbers)
 
         Returns:
@@ -3318,7 +3309,14 @@ class FastICANode(Node):
             - A: Mixing matrix (n_components, n_wavenumbers)
             - n_components: Number of components
         """
-        # Input should already be NDDataset from DAG pipeline
+        input_data = resolve_legacy_input(input_data, kwargs, "default")
+        input_ds = bind_X(
+            input_data,
+            kwargs,
+            missing_message="Missing required input: input_data (spectral mixtures)",
+            dataset_error_message="input_data must be an NDDataset or AnalysisDataset object",
+            allow_array=False,
+        )
 
         # Get parameters
         n_components = self.parameters.get("n_components", 3)
@@ -3328,10 +3326,10 @@ class FastICANode(Node):
         tol = self.parameters.get("tol", 0.0001)
 
         # Validate input shape
-        if len(input_data.shape) != 2:
-            raise ValueError(f"Expected 2D input, got shape {input_data.shape}")
+        if len(input_ds.shape) != 2:
+            raise ValueError(f"Expected 2D input, got shape {input_ds.shape}")
 
-        n_samples, n_features = input_data.shape
+        n_samples, n_features = input_ds.shape
         if n_components > min(n_samples, n_features):
             raise ValueError(
                 f"n_components ({n_components}) cannot exceed min(n_samples, n_features) = {min(n_samples, n_features)}"
@@ -3347,7 +3345,8 @@ class FastICANode(Node):
 
         # Perform FastICA using sklearn
         from sklearn.decomposition import FastICA
-        data_array = np.array(input_data.data)
+
+        data_array = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
         ica = FastICA(
             n_components=n_components,
             algorithm=algorithm,
@@ -3360,8 +3359,8 @@ class FastICANode(Node):
         A_data = ica.mixing_ if hasattr(ica, "mixing_") else None
 
         # Get input coordinates for NDDataset creation
-        _x_coord = safe_get_coord(input_data, 'x')
-        _y_coord = safe_get_coord(input_data, 'y')
+        _x_coord = safe_get_coord(input_ds, "x")
+        _y_coord = safe_get_coord(input_ds, "y")
 
         logger.debug("[FastICA Node] Decomposition completed successfully")
         logger.debug("  - S (sources) shape: %s", S_data.shape)
@@ -3374,11 +3373,11 @@ class FastICANode(Node):
         label_categories = None
         if _y_coord is not None:
             try:
-                if hasattr(_y_coord, 'labels') and _y_coord.labels is not None:
-                    raw = _y_coord.labels.tolist() if hasattr(_y_coord.labels, 'tolist') else list(_y_coord.labels)
+                if hasattr(_y_coord, "labels") and _y_coord.labels is not None:
+                    raw = _y_coord.labels.tolist() if hasattr(_y_coord.labels, "tolist") else list(_y_coord.labels)
                     label_categories = sorted(set(str(l) for l in raw))
-                elif hasattr(_y_coord, 'data') and _y_coord.data is not None:
-                    raw = _y_coord.data.tolist() if hasattr(_y_coord.data, 'tolist') else list(_y_coord.data)
+                elif hasattr(_y_coord, "data") and _y_coord.data is not None:
+                    raw = _y_coord.data.tolist() if hasattr(_y_coord.data, "tolist") else list(_y_coord.data)
                     str_labels = [str(l) for l in raw]
                     unique = sorted(set(str_labels))
                     if len(unique) < 20 and not _is_sequential_numeric(raw):
@@ -3388,8 +3387,8 @@ class FastICANode(Node):
 
         # Try to extract species names from input metadata (from BlendNode ground truth)
         species_names = None
-        if hasattr(input_data, 'meta') and input_data.meta:
-            spectra_meta = input_data.meta.get("spectra", {})
+        if hasattr(input_ds, "meta") and input_ds.meta:
+            spectra_meta = input_ds.meta.get("spectra", {})
             if isinstance(spectra_meta, dict):
                 species_list = spectra_meta.get("species", [])
                 if species_list and len(species_list) >= n_components:
@@ -3434,7 +3433,7 @@ class FastICANode(Node):
                 data=St_data,
                 x_coord=_x_coord,
                 y_coord=_make_safe_coord(spectrum_labels, title="Independent Component"),
-                units=input_data.units if hasattr(input_data, 'units') else None,
+                units=input_ds.units if hasattr(input_ds, "units") else None,
                 title="FastICA Spectral Profiles",
             )
 
@@ -3450,7 +3449,7 @@ class FastICANode(Node):
             )
 
         # Add processing history to NDDataset outputs
-        copy_processing_history(input_data, S_dataset)
+        copy_processing_history(input_ds, S_dataset)
         add_processing_step(
             S_dataset,
             "model.ica.sources",
@@ -3459,7 +3458,7 @@ class FastICANode(Node):
         )
 
         if St_dataset is not None:
-            copy_processing_history(input_data, St_dataset)
+            copy_processing_history(input_ds, St_dataset)
             add_processing_step(
                 St_dataset,
                 "model.ica.components",
@@ -3468,7 +3467,7 @@ class FastICANode(Node):
             )
 
         if A_dataset is not None:
-            copy_processing_history(input_data, A_dataset)
+            copy_processing_history(input_ds, A_dataset)
             add_processing_step(
                 A_dataset,
                 "model.ica.mixing_matrix",
@@ -3477,18 +3476,20 @@ class FastICANode(Node):
             )
 
         # Store only scientific metadata that coordinates can't carry
-        S_dataset.meta.update({
-            "n_components": n_components,
-            "label_categories": label_categories,
-            "species_names": species_names,
-        })
+        S_dataset.meta.update(
+            {
+                "n_components": n_components,
+                "label_categories": label_categories,
+                "species_names": species_names,
+            }
+        )
 
         return {
-            "default": S_dataset,                # NDDataset: source signals + sample labels (y) + IC coords (x)
-            "sources": S_dataset,                # Alias for default
-            "components": St_dataset,            # NDDataset: spectral profiles + wavenumbers (x) + IC coords (y)
-            "mixing_matrix": A_dataset,          # NDDataset: mixing matrix
-            "model": ica,                        # Model port
+            "default": S_dataset,  # NDDataset: source signals + sample labels (y) + IC coords (x)
+            "sources": S_dataset,  # Alias for default
+            "components": St_dataset,  # NDDataset: spectral profiles + wavenumbers (x) + IC coords (y)
+            "mixing_matrix": A_dataset,  # NDDataset: mixing matrix
+            "model": ica,  # Model port
         }
 
 
@@ -3501,11 +3502,11 @@ class FastICANode(Node):
 class PLSPredictNode(Node):
     """
     Apply trained PLS model to predict new samples.
-    
+
     Takes a trained PLS model and new data, returns predictions.
     Critical for train/test validation and production inference.
     """
-    
+
     metadata = NodeMetadata(
         node_type="model.pls_predict",
         category="modeling",
@@ -3540,22 +3541,30 @@ class PLSPredictNode(Node):
         input_types=["NDDataset", "dict"],
         output_type="array",
     )
-    
+
     async def execute(self, X_new: Any = None, model: Any = None, **kwargs: Any) -> dict[str, Any]:
         """
         Apply PLS model to new data.
 
         Args:
-            X_new: New spectral data (NDDataset or SpectralResult)
+            X_new: New spectral data (AnalysisDataset)
             model: Trained PLS model dict from PLS node
 
         Returns:
             dict with 'y_pred' key containing predictions
         """
+        X_new = resolve_legacy_input(X_new, kwargs, "input_0")
+        model = resolve_legacy_input(model, kwargs, "input_1")
+
         if X_new is None or model is None:
             raise ValueError("Both X_new and model inputs are required")
-
-        # X_new should already be NDDataset from DAG pipeline
+        X_new_ds = bind_X(
+            X_new,
+            kwargs,
+            missing_message="Missing required input: X_new (new spectra)",
+            dataset_error_message="X_new must be an NDDataset or AnalysisDataset object",
+            allow_array=True,
+        )
 
         # Extract model from result dict
         if isinstance(model, dict):
@@ -3567,23 +3576,9 @@ class PLSPredictNode(Node):
 
         # Make predictions - SpectroChemPy PLSRegression can accept NDDataset or array
         try:
-            # Prefer passing NDDataset for SpectroChemPy models (preserves metadata)
-            if _is_dataset(X_new):
-                y_pred = pls_model.predict(X_new)
-            else:
-                # Fallback to array for non-NDDataset inputs
-                X_array = np.array(X_new)
-                y_pred = pls_model.predict(X_array)
-
-            # Extract underlying data if result is NDDataset
-            if hasattr(y_pred, "data"):
-                y_pred_array = np.array(y_pred.data)
-            else:
-                y_pred_array = np.array(y_pred)
-
-            # Flatten if needed
-            if y_pred_array.ndim > 1 and y_pred_array.shape[1] == 1:
-                y_pred_array = y_pred_array.ravel()
+            X_ndd = to_nddataset(X_new_ds)
+            y_pred = pls_model.predict(X_ndd)
+            y_pred_array = to_numpy_1d(y_pred, name="y_pred", dtype=np.float64)
 
             logger.debug("[PLS Predict] Generated %s predictions", len(y_pred_array))
 
@@ -3597,11 +3592,11 @@ class PLSPredictNode(Node):
 class PCATransformNode(Node):
     """
     Transform new data using trained PCA model.
-    
+
     Projects new samples into the principal component space
     defined by a trained PCA model.
     """
-    
+
     metadata = NodeMetadata(
         node_type="model.pca_transform",
         category="modeling",
@@ -3636,18 +3631,21 @@ class PCATransformNode(Node):
         input_types=["NDDataset", "dict"],
         output_type="array",
     )
-    
+
     async def execute(self, X_new: Any = None, model: Any = None, **kwargs: Any) -> dict[str, Any]:
         """
         Transform new data using PCA model.
 
         Args:
-            X_new: New spectral data (NDDataset or SpectralResult)
+            X_new: New spectral data (AnalysisDataset)
             model: Trained PCA model dict from PCA node
 
         Returns:
             dict with 'scores' key containing PC scores
         """
+        X_new = resolve_legacy_input(X_new, kwargs, "input_0")
+        model = resolve_legacy_input(model, kwargs, "input_1")
+
         if X_new is None or model is None:
             raise ValueError("Both X_new and model inputs are required")
 
@@ -3659,23 +3657,29 @@ class PCATransformNode(Node):
             pca_model = model
             n_components = 5
 
-        # Accept NDDataset or array
-        if hasattr(X_new, "data"):
-            X_array = np.array(X_new.data)
-        else:
-            X_array = np.array(X_new)
-        
+        X_new_ds = bind_X(
+            X_new,
+            kwargs,
+            missing_message="Missing required input: X_new (new spectra)",
+            dataset_error_message="X_new must be an NDDataset or AnalysisDataset object",
+            allow_array=True,
+        )
+        X_array = to_numpy_2d(X_new_ds, name="X_new", dtype=np.float64)
+
         # Transform data
         try:
-            scores = pca_model.transform(X_array)
-            
+            try:
+                scores = pca_model.transform(to_nddataset(X_new_ds))
+            except Exception:
+                scores = pca_model.transform(X_array)
+
             # Limit to n_components
             if scores.shape[1] > n_components:
                 scores = scores[:, :n_components]
-            
+
             logger.debug("PCA Transform: Projected %s samples to %s PCs", len(scores), scores.shape[1])
-            
+
             return {"scores": scores}
-            
+
         except Exception as e:
             raise RuntimeError(f"PCA transform failed: {str(e)}") from e

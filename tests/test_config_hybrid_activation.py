@@ -41,13 +41,16 @@ class _FakeAsyncClient:
 
     async def post(self, url: str, headers: dict | None = None, **kwargs):
         if url.endswith("/keys/deployment/validate"):
-            return _FakeResponse(200, {
-                "valid": True,
-                "label": "test-key",
-                "plan": "pro",
-                "plan_status": "active",
-                "entitlements": {"sherpa_sync": True, "sherpa_chat": True},
-            })
+            return _FakeResponse(
+                200,
+                {
+                    "valid": True,
+                    "label": "test-key",
+                    "plan": "pro",
+                    "plan_status": "active",
+                    "entitlements": {"sherpa_sync": True, "sherpa_chat": True},
+                },
+            )
         return _FakeResponse(200, {})
 
 
@@ -102,7 +105,9 @@ async def test_activate_hybrid_endpoint_updates_runtime_state(client, monkeypatc
 
     monkeypatch.setattr(config_routes, "_find_or_create_env_path", lambda: str(env_file))
     monkeypatch.setattr(config_routes.httpx, "AsyncClient", _FakeAsyncClient)
-    monkeypatch.setattr(config_routes, "ALLOWED_SPECTRASHERPA_HOSTS", ["localhost", "127.0.0.1", "endpoint.example.com"])
+    monkeypatch.setattr(
+        config_routes, "ALLOWED_SPECTRASHERPA_HOSTS", ["localhost", "127.0.0.1", "endpoint.example.com"]
+    )
     monkeypatch.setattr(
         "spectra_sherpa.app.services.spectrasherpa.reset_spectrasherpa_service",
         AsyncMock(),
@@ -195,7 +200,9 @@ async def test_spectrasherpa_test_endpoint_works_when_egress_disabled(client, mo
     import spectra_sherpa.app.api.v1.routes.config as config_routes
 
     monkeypatch.setattr(config_routes.httpx, "AsyncClient", _FakeAsyncClient)
-    monkeypatch.setattr(config_routes, "ALLOWED_SPECTRASHERPA_HOSTS", ["localhost", "127.0.0.1", "endpoint.example.com"])
+    monkeypatch.setattr(
+        config_routes, "ALLOWED_SPECTRASHERPA_HOSTS", ["localhost", "127.0.0.1", "endpoint.example.com"]
+    )
     app_config.mode = "local"
     app_config.egress_enabled = False
 

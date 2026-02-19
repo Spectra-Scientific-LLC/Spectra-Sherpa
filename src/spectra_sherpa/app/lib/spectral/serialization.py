@@ -29,9 +29,7 @@ def _serialize_meta(meta: Dict[str, Any]) -> Dict[str, Any]:
         elif isinstance(value, dict):
             result[key] = _serialize_meta(value)
         elif isinstance(value, list):
-            result[key] = [
-                _serialize_meta(v) if isinstance(v, dict) else v for v in value
-            ]
+            result[key] = [_serialize_meta(v) if isinstance(v, dict) else v for v in value]
         else:
             result[key] = value
     return result
@@ -59,9 +57,7 @@ def save_dataset_parquet(dataset: "NDDataset", path: Path) -> None:
     if data.ndim == 1:
         data = data.reshape(1, -1)
 
-    df = pd.DataFrame(
-        data, columns=[f"wn_{i}" for i in range(data.shape[-1])]
-    )
+    df = pd.DataFrame(data, columns=[f"wn_{i}" for i in range(data.shape[-1])])
     df.to_parquet(path.with_suffix(".parquet"), engine="pyarrow")
 
     # Build metadata sidecar
@@ -73,11 +69,7 @@ def save_dataset_parquet(dataset: "NDDataset", path: Path) -> None:
 
     # X coordinate (wavenumbers)
     if hasattr(dataset, "x") and dataset.x is not None:
-        meta["x_coord"] = (
-            dataset.x.data.tolist()
-            if hasattr(dataset.x, "data")
-            else list(dataset.x)
-        )
+        meta["x_coord"] = dataset.x.data.tolist() if hasattr(dataset.x, "data") else list(dataset.x)
         meta["x_units"] = str(dataset.x.units) if hasattr(dataset.x, "units") else None
         meta["x_title"] = dataset.x.title if hasattr(dataset.x, "title") else None
 
@@ -115,7 +107,8 @@ def load_dataset_parquet(path: Path) -> "NDDataset":
     NDDataset
         Loaded dataset with coordinates and metadata
     """
-    from spectra_sherpa.app.lib.scp_compat import scp, require_scp
+    from spectra_sherpa.app.lib.scp_compat import require_scp, scp
+
     require_scp("Dataset deserialization")
 
     path = Path(path)

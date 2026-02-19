@@ -36,6 +36,7 @@ regardless of whether the plugin uses ``@register_tool`` or
 trust boundary constraints (no ``scope=internal``, forced
 ``requires_user=True``).
 """
+
 from __future__ import annotations
 
 import importlib

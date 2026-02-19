@@ -30,9 +30,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/workflows/{workflow_id}/runs")
 
 
-async def _get_workflow_for_user(
-    workflow_id: int, user_id: int, session: AsyncSession
-) -> Workflow:
+async def _get_workflow_for_user(workflow_id: int, user_id: int, session: AsyncSession) -> Workflow:
     """Load workflow with ownership check."""
     query = (
         select(Workflow)
@@ -56,9 +54,7 @@ async def list_runs(
     await _get_workflow_for_user(workflow_id, current_user.id, session)
 
     query = (
-        select(ExecutionRun)
-        .where(ExecutionRun.workflow_id == workflow_id)
-        .order_by(ExecutionRun.executed_at.desc())
+        select(ExecutionRun).where(ExecutionRun.workflow_id == workflow_id).order_by(ExecutionRun.executed_at.desc())
     )
     result = await session.execute(query)
     runs = list(result.scalars().all())
@@ -79,9 +75,7 @@ async def get_run(
     """Get a single execution run."""
     await _get_workflow_for_user(workflow_id, current_user.id, session)
 
-    query = select(ExecutionRun).where(
-        ExecutionRun.id == run_id, ExecutionRun.workflow_id == workflow_id
-    )
+    query = select(ExecutionRun).where(ExecutionRun.id == run_id, ExecutionRun.workflow_id == workflow_id)
     result = await session.execute(query)
     run = result.scalar_one_or_none()
     if run is None:
@@ -151,9 +145,7 @@ async def delete_run(
     """Delete an execution run."""
     await _get_workflow_for_user(workflow_id, current_user.id, session)
 
-    query = select(ExecutionRun).where(
-        ExecutionRun.id == run_id, ExecutionRun.workflow_id == workflow_id
-    )
+    query = select(ExecutionRun).where(ExecutionRun.id == run_id, ExecutionRun.workflow_id == workflow_id)
     result = await session.execute(query)
     run = result.scalar_one_or_none()
     if run is None:
@@ -175,10 +167,14 @@ async def compare_runs(
     """Compare multiple execution runs side-by-side."""
     await _get_workflow_for_user(workflow_id, current_user.id, session)
 
-    query = select(ExecutionRun).where(
-        ExecutionRun.workflow_id == workflow_id,
-        ExecutionRun.id.in_(payload.run_ids),
-    ).order_by(ExecutionRun.id)
+    query = (
+        select(ExecutionRun)
+        .where(
+            ExecutionRun.workflow_id == workflow_id,
+            ExecutionRun.id.in_(payload.run_ids),
+        )
+        .order_by(ExecutionRun.id)
+    )
     result = await session.execute(query)
     runs = list(result.scalars().all())
 

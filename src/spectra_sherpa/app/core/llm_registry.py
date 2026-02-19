@@ -10,18 +10,19 @@ from typing import Literal, TypedDict
 
 class ProviderMetadata(TypedDict):
     """Complete provider configuration"""
-    id: str                                      # Provider identifier
-    name: str                                    # Human-readable name
-    default_model: str                           # Default model to use
-    base_url: str                                # API endpoint
-    env_var: str                                 # Environment variable name
+
+    id: str  # Provider identifier
+    name: str  # Human-readable name
+    default_model: str  # Default model to use
+    base_url: str  # API endpoint
+    env_var: str  # Environment variable name
     client_type: Literal["openai", "anthropic"]  # SDK type to use
-    supports_streaming: bool                     # Streaming capability
-    cost_per_million_input: float               # Cost in USD per million input tokens
-    cost_per_million_output: float              # Cost in USD per million output tokens
-    max_tokens: int                              # Maximum context window
-    supports_vision: bool                        # Image input support
-    supports_function_calling: bool              # Tool use support
+    supports_streaming: bool  # Streaming capability
+    cost_per_million_input: float  # Cost in USD per million input tokens
+    cost_per_million_output: float  # Cost in USD per million output tokens
+    max_tokens: int  # Maximum context window
+    supports_vision: bool  # Image input support
+    supports_function_calling: bool  # Tool use support
 
 
 # Complete provider registry
@@ -114,10 +115,7 @@ def get_provider(provider_id: str) -> ProviderMetadata:
     """
     if provider_id not in PROVIDERS:
         available = ", ".join(PROVIDERS.keys())
-        raise ValueError(
-            f"Unknown provider: {provider_id}. "
-            f"Available providers: {available}"
-        )
+        raise ValueError(f"Unknown provider: {provider_id}. " f"Available providers: {available}")
     return PROVIDERS[provider_id]
 
 
@@ -139,14 +137,14 @@ def get_default_provider() -> str:
         Default provider identifier
     """
     import os
+
     provider = os.getenv("LLM_PROVIDER", "deepseek")
 
     # Validate that the provider exists
     if provider not in PROVIDERS:
         import logging
-        logging.getLogger(__name__).warning(
-            f"Invalid LLM_PROVIDER={provider}, falling back to deepseek"
-        )
+
+        logging.getLogger(__name__).warning(f"Invalid LLM_PROVIDER={provider}, falling back to deepseek")
         return "deepseek"
 
     return provider

@@ -14,6 +14,7 @@ Both the HTTP middleware (``RateLimitMiddleware``) and the WebSocket
 dispatcher call into these helpers so enforcement is consistent across
 REST and WS paths.
 """
+
 from __future__ import annotations
 
 import logging

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+
 scp = pytest.importorskip("spectrochempy")
 from spectrochempy import NDDataset
 
@@ -63,6 +64,37 @@ async def test_svr_node_regression_fit():
 
     assert len(outputs["y_pred"]) == X_dataset.shape[0]
     assert outputs["r2"] > 0.9
+    # Verify post-fit outputs from _svr_post_fit
+    assert "support_vectors" in outputs, "SVR should return support_vectors"
+    assert isinstance(outputs["support_vectors"], list)
+    assert "data" in outputs, "SVR should return obs/pred data pairs"
+    assert isinstance(outputs["data"], list)
+    assert "metadata" in outputs, "SVR should return metadata dict"
+    assert outputs["metadata"]["type"] == "SVR"
+    assert outputs["metadata"]["kernel"] == "linear"
+
+
+@pytest.mark.asyncio
+async def test_linear_regression_node_fit():
+    X_dataset, y = _make_regression_dataset(seed=99)
+    node = node_registry.create_node(
+        node_type="model.linear_regression",
+        node_id="lr_test",
+        parameters={"fit_intercept": True},
+    )
+
+    result = await node.run(X=X_dataset, y=y)
+    outputs = result.outputs
+
+    assert len(outputs["y_pred"]) == X_dataset.shape[0]
+    assert outputs["r2"] > 0.9
+    # Verify post-fit outputs from _lr_post_fit
+    assert "coef" in outputs, "LR should return coefficients"
+    assert isinstance(outputs["coef"], list)
+    assert len(outputs["coef"]) == X_dataset.shape[1]
+    assert "intercept" in outputs
+    assert "score" in outputs
+    assert outputs["score"] > 0.9
 
 
 @pytest.mark.asyncio
@@ -149,5 +181,5 @@ async def test_pca_node_after_snv_accepts_analysis_dataset_units():
     outputs = pca_result.outputs
 
     assert "scores" in outputs
-    assert isinstance(outputs["scores"], NDDataset)
+    assert isinstance(outputs["scores"], AnalysisDataset)
     assert outputs["scores"].shape == (18, 3)

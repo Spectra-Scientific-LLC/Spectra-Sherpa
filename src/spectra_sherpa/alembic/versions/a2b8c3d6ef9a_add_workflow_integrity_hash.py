@@ -5,15 +5,15 @@ Revises: f1a7b2c5de8f
 Create Date: 2026-02-05 14:00:00.000000
 
 """
+
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = 'a2b8c3d6ef9a'
-down_revision = 'f1a7b2c5de8f'
+revision = "a2b8c3d6ef9a"
+down_revision = "f1a7b2c5de8f"
 branch_labels = None
 depends_on = None
 
@@ -44,5 +44,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index('ix_workflow_integrity_hash', table_name='workflow')
-    op.drop_column('workflow', 'integrity_hash')
+    op.drop_index("ix_workflow_integrity_hash", table_name="workflow")
+    op.drop_column("workflow", "integrity_hash")

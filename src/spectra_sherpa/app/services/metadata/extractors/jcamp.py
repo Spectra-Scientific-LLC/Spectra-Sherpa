@@ -124,8 +124,7 @@ class JCAMPExtractor(BaseMetadataExtractor):
             if value is not None:
                 if field in ["n_scans", "n_points"]:
                     acquisition[field] = self._to_int(value)
-                elif field in ["resolution_cm", "first_x", "last_x", "delta_x",
-                               "x_factor", "y_factor"]:
+                elif field in ["resolution_cm", "first_x", "last_x", "delta_x", "x_factor", "y_factor"]:
                     acquisition[field] = self._to_float(value)
                 else:
                     acquisition[field] = self._clean_value(value)
@@ -183,13 +182,13 @@ class JCAMPExtractor(BaseMetadataExtractor):
     def _extract_extra(self, meta: dict) -> dict:
         """Extract unrecognized metadata (vendor extensions, etc.)."""
         recognized = set()
-        for key_map in [self.INSTRUMENT_KEYS, self.ACQUISITION_KEYS,
-                        self.SAMPLE_KEYS, self.PROVENANCE_KEYS]:
+        for key_map in [self.INSTRUMENT_KEYS, self.ACQUISITION_KEYS, self.SAMPLE_KEYS, self.PROVENANCE_KEYS]:
             for keys in key_map.values():
                 recognized.update(k.lower() for k in keys)
 
-        recognized.update(["processing_history", "provenance", "spectra", "_",
-                          "xydata", "xypoints", "peak table", "peak assignments"])
+        recognized.update(
+            ["processing_history", "provenance", "spectra", "_", "xydata", "xypoints", "peak table", "peak assignments"]
+        )
 
         extra = {}
         for key, value in meta.items():

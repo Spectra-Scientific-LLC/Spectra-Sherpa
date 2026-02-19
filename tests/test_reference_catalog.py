@@ -10,14 +10,14 @@ Covers:
 Run:
     PYTHONPATH=src/spectra_sherpa python -m pytest tests/test_reference_catalog.py -v --no-cov
 """
+
 from __future__ import annotations
 
 import pytest
 
-from spectra_sherpa.app.lib.sklearn_info import SKLEARN_CATALOG, get_sklearn_dataset_info
-from spectra_sherpa.app.lib.scp_catalog import SCP_CATALOG, get_scp_dataset_info
 from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG, get_dataset_info
-
+from spectra_sherpa.app.lib.scp_catalog import SCP_CATALOG, get_scp_dataset_info
+from spectra_sherpa.app.lib.sklearn_info import SKLEARN_CATALOG, get_sklearn_dataset_info
 
 # ---------------------------------------------------------------------------
 # Tests: sklearn_info module

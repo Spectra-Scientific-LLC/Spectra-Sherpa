@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, String, Text, JSON, Boolean, func
+from sqlalchemy import JSON, Boolean, DateTime, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from spectra_sherpa.app.db.base import Base
@@ -35,12 +35,8 @@ class WorkflowTemplate(Base):
     template_data: Mapped[dict] = mapped_column(
         JSON, nullable=False
     )  # Complete workflow structure: nodes, edges, canvas_state
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True
-    )  # Can be disabled without deletion
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)  # Can be disabled without deletion
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

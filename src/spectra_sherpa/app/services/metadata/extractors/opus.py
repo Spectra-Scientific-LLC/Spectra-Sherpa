@@ -34,7 +34,16 @@ class OPUSExtractor(BaseMetadataExtractor):
     # OPUS files can have numeric extensions (.0, .1, .0000, etc.) or .opus
     # The registry will also check for numeric patterns dynamically
     extensions = [
-        ".0", ".1", ".2", ".3", ".4", ".5", ".6", ".7", ".8", ".9",
+        ".0",
+        ".1",
+        ".2",
+        ".3",
+        ".4",
+        ".5",
+        ".6",
+        ".7",
+        ".8",
+        ".9",
         ".opus",  # Explicit .opus extension
     ]
 
@@ -169,9 +178,16 @@ class OPUSExtractor(BaseMetadataExtractor):
                 # Type conversion for numeric fields
                 if field in ["n_scans", "n_background_scans", "zero_fill_factor"]:
                     acquisition[field] = self._to_int(value)
-                elif field in ["resolution_cm", "scan_velocity_khz", "phase_resolution",
-                               "aperture_mm", "acquisition_duration_s",
-                               "high_frequency_limit", "low_frequency_limit", "laser_wavenumber"]:
+                elif field in [
+                    "resolution_cm",
+                    "scan_velocity_khz",
+                    "phase_resolution",
+                    "aperture_mm",
+                    "acquisition_duration_s",
+                    "high_frequency_limit",
+                    "low_frequency_limit",
+                    "laser_wavenumber",
+                ]:
                     acquisition[field] = self._to_float(value)
                 else:
                     acquisition[field] = self._clean_value(value)
@@ -190,8 +206,14 @@ class OPUSExtractor(BaseMetadataExtractor):
         for field, keys in self.CONDITION_KEYS.items():
             value = self._safe_get(meta, keys)
             if value is not None:
-                if field in ["temperature_c", "pressure_mbar", "humidity_percent",
-                             "purge_time_min", "co2_level", "h2o_level"]:
+                if field in [
+                    "temperature_c",
+                    "pressure_mbar",
+                    "humidity_percent",
+                    "purge_time_min",
+                    "co2_level",
+                    "h2o_level",
+                ]:
                     conditions[field] = self._to_float(value)
                 else:
                     conditions[field] = self._clean_value(value)
@@ -231,8 +253,13 @@ class OPUSExtractor(BaseMetadataExtractor):
         """
         # Collect all recognized keys
         recognized = set()
-        for key_map in [self.INSTRUMENT_KEYS, self.ACQUISITION_KEYS,
-                        self.CONDITION_KEYS, self.SAMPLE_KEYS, self.PROVENANCE_KEYS]:
+        for key_map in [
+            self.INSTRUMENT_KEYS,
+            self.ACQUISITION_KEYS,
+            self.CONDITION_KEYS,
+            self.SAMPLE_KEYS,
+            self.PROVENANCE_KEYS,
+        ]:
             for keys in key_map.values():
                 recognized.update(k.lower() for k in keys)
 

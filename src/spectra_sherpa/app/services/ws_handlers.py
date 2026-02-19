@@ -17,14 +17,14 @@ All handlers follow the same signature::
 Handlers send responses directly on the WebSocket. They never raise — all
 exceptions are caught and turned into error messages.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 from fastapi import WebSocket
 
-from spectra_sherpa.app.core.config import app_config
 from spectra_sherpa.app.core.security import check_egress_permission
 from spectra_sherpa.app.db.session import async_session
 from spectra_sherpa.app.services.llm import LLMService
@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Subscribe / Unsubscribe
 # ---------------------------------------------------------------------------
+
 
 async def handle_subscribe(
     ws: WebSocket,
@@ -74,6 +75,7 @@ async def handle_unsubscribe(
 # LLM Chat
 # ---------------------------------------------------------------------------
 
+
 async def handle_llm_chat(
     ws: WebSocket,
     payload: dict,
@@ -89,8 +91,10 @@ async def handle_llm_chat(
         # Per-user permission check (skip global egress flag — BYOK is user-initiated consent)
         async with async_session() as permission_session:
             allowed = await check_egress_permission(
-                user, "allow_llm_context",
-                data_type="metadata", destination="llm_context",
+                user,
+                "allow_llm_context",
+                data_type="metadata",
+                destination="llm_context",
                 session=permission_session,
                 skip_global_check=True,
             )
@@ -132,9 +136,11 @@ async def handle_llm_chat(
 # Sherpa Sync / Decide / Chat
 # ---------------------------------------------------------------------------
 
+
 async def _check_demo_sherpa_limit(ws: WebSocket, user: Any) -> bool:
     """Check demo Sherpa interaction quota. Returns False (and sends error) if exhausted."""
     from spectra_sherpa.app.core.demo_limits import check_demo_sherpa, demo_limit_error_detail
+
     user_id = getattr(user, "id", None) if user else None
     allowed, remaining = check_demo_sherpa(user_id)
     if not allowed:
@@ -167,12 +173,19 @@ async def handle_sherpa_sync(
         # Cloud proxy sends workflow data to SpectraSherpa — gate by allow_spectrasherpa_sync
         async with async_session() as permission_session:
             allowed = await check_egress_permission(
-                user, "allow_spectrasherpa_sync",
-                data_type="workflow", destination="spectrasherpa",
+                user,
+                "allow_spectrasherpa_sync",
+                data_type="workflow",
+                destination="spectrasherpa",
                 session=permission_session,
             )
         if not allowed:
-            await ws.send_json({"type": "sherpa_error", "detail": "Sherpa sync not permitted. Enable cloud sync in Settings > Data & Privacy."})
+            await ws.send_json(
+                {
+                    "type": "sherpa_error",
+                    "detail": "Sherpa sync not permitted. Enable cloud sync in Settings > Data & Privacy.",
+                }
+            )
             return
 
         sync_data = dict(payload.get("payload", {}))
@@ -180,10 +193,12 @@ async def handle_sherpa_sync(
         sync_msg = WorkflowStateSync(**sync_data)
         recommendations = await advisor.sync_workflow(sync_msg, tier=tier)
         logger.info("sherpa_sync (proxy): %d nodes → %d recommendations", len(sync_msg.nodes), len(recommendations))
-        await ws.send_json({
-            "type": "sherpa_recommendations",
-            "payload": [r.model_dump(mode="json") for r in recommendations],
-        })
+        await ws.send_json(
+            {
+                "type": "sherpa_recommendations",
+                "payload": [r.model_dump(mode="json") for r in recommendations],
+            }
+        )
     except Exception as exc:
         logger.exception("sherpa_sync failed: %s", exc)
         await ws.send_json({"type": "sherpa_error", "detail": "Sherpa sync failed. Check server logs for details."})
@@ -198,17 +213,19 @@ async def handle_sherpa_decide(
     if not await _check_demo_sherpa_limit(ws, user):
         return
 
-    from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
     from spectra_sherpa.app.schemas.sherpa import UserDecision
+    from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
 
     advisor = get_sherpa_advisor()
     try:
         decision = UserDecision(**payload.get("payload", {}))
         delivered = await advisor.send_decision(decision)
-        await ws.send_json({
-            "type": "sherpa_decision_ack",
-            "payload": {"delivered": delivered, "suggestion_id": decision.suggestion_id},
-        })
+        await ws.send_json(
+            {
+                "type": "sherpa_decision_ack",
+                "payload": {"delivered": delivered, "suggestion_id": decision.suggestion_id},
+            }
+        )
     except Exception as exc:
         logger.exception("sherpa_decide failed: %s", exc)
         await ws.send_json({"type": "sherpa_error", "detail": "Sherpa decision failed. Check server logs for details."})
@@ -239,8 +256,10 @@ async def handle_sherpa_chat(
         # Cloud proxy sends chat to SpectraSherpa — gate by allow_spectrasherpa_sync
         async with async_session() as permission_session:
             allowed = await check_egress_permission(
-                user, "allow_spectrasherpa_sync",
-                data_type="chat", destination="spectrasherpa",
+                user,
+                "allow_spectrasherpa_sync",
+                data_type="chat",
+                destination="spectrasherpa",
                 session=permission_session,
             )
         if not allowed:
@@ -253,7 +272,9 @@ async def handle_sherpa_chat(
 
         await ws.send_json({"type": "sherpa_chat_start"})
         async for chunk in advisor.chat_followup(
-            message=message, workflow_id=workflow_id, history=history,
+            message=message,
+            workflow_id=workflow_id,
+            history=history,
             workflow_context=workflow_context_raw,
         ):
             await ws.send_json({"type": "sherpa_chat_chunk", "chunk": chunk})
@@ -281,23 +302,29 @@ async def _sherpa_proxy_preamble(ws: WebSocket, user: Any) -> bool:
 
     advisor = get_sherpa_advisor()
     if not advisor.is_available:
-        await ws.send_json({
-            "type": "sherpa_status",
-            "payload": {"connected": False, "reason": "not_configured"},
-        })
+        await ws.send_json(
+            {
+                "type": "sherpa_status",
+                "payload": {"connected": False, "reason": "not_configured"},
+            }
+        )
         return False
 
     async with async_session() as permission_session:
         allowed = await check_egress_permission(
-            user, "allow_spectrasherpa_sync",
-            data_type="analysis", destination="spectrasherpa",
+            user,
+            "allow_spectrasherpa_sync",
+            data_type="analysis",
+            destination="spectrasherpa",
             session=permission_session,
         )
     if not allowed:
-        await ws.send_json({
-            "type": "sherpa_error",
-            "detail": "Sherpa features not permitted. Enable cloud sync in Settings > Data & Privacy.",
-        })
+        await ws.send_json(
+            {
+                "type": "sherpa_error",
+                "detail": "Sherpa features not permitted. Enable cloud sync in Settings > Data & Privacy.",
+            }
+        )
         return False
     return True
 
@@ -418,7 +445,9 @@ async def handle_sherpa_chat_with_tools(
 
         await ws.send_json({"type": "sherpa_chat_start"})
         async for event in advisor.chat_with_tools(
-            message=message, history=history, workflow_context=workflow_context,
+            message=message,
+            history=history,
+            workflow_context=workflow_context,
         ):
             event_type = event.get("type", "chunk")
             if event_type == "chunk":
@@ -427,19 +456,23 @@ async def handle_sherpa_chat_with_tools(
                 await ws.send_json({"type": "sherpa_chat_chunk", "chunk": chunk_text})
             elif event_type == "tool_start":
                 # Flatten: surface tool_name at top level for frontend
-                await ws.send_json({
-                    "type": "sherpa_tool_start",
-                    "tool_name": event.get("tool", event.get("tool_name", "unknown")),
-                    "round": event.get("round"),
-                    "arguments": event.get("arguments"),
-                })
+                await ws.send_json(
+                    {
+                        "type": "sherpa_tool_start",
+                        "tool_name": event.get("tool", event.get("tool_name", "unknown")),
+                        "round": event.get("round"),
+                        "arguments": event.get("arguments"),
+                    }
+                )
             elif event_type == "tool_result":
-                await ws.send_json({
-                    "type": "sherpa_tool_result",
-                    "tool_name": event.get("tool", event.get("tool_name", "unknown")),
-                    "success": event.get("success"),
-                    "summary": event.get("summary"),
-                })
+                await ws.send_json(
+                    {
+                        "type": "sherpa_tool_result",
+                        "tool_name": event.get("tool", event.get("tool_name", "unknown")),
+                        "success": event.get("success"),
+                        "summary": event.get("summary"),
+                    }
+                )
             elif event_type == "error":
                 await ws.send_json({"type": "sherpa_error", "detail": event.get("content", event.get("text", ""))})
         await ws.send_json({"type": "sherpa_chat_done"})

@@ -3,10 +3,10 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from spectra_sherpa.app import models  # noqa: F401  # Ensure models are registered
 from spectra_sherpa.app.core.config import app_config
 from spectra_sherpa.app.db.base import Base
 from spectra_sherpa.app.db.session import engine
-from spectra_sherpa.app import models  # noqa: F401  # Ensure models are registered
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +29,9 @@ async def init_db() -> None:
     # Run the Alembic command in a worker thread because Alembic's env.py
     # executes asyncio.run(...), which fails inside an active event loop.
     try:
-        from alembic.config import Config
         from alembic import command
+        from alembic.config import Config
+
         from spectra_sherpa._paths import get_package_root
 
         package_root = get_package_root()
@@ -38,9 +39,7 @@ async def init_db() -> None:
         alembic_ini = package_root / "alembic.ini"
 
         if not alembic_ini.exists() or not alembic_dir.exists():
-            raise RuntimeError(
-                f"Alembic config missing (ini={alembic_ini}, dir={alembic_dir})"
-            )
+            raise RuntimeError(f"Alembic config missing (ini={alembic_ini}, dir={alembic_dir})")
 
         cfg = Config(str(alembic_ini))
         cfg.set_main_option("script_location", str(alembic_dir))

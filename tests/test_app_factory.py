@@ -127,9 +127,13 @@ async def test_lifespan_runs_extra_shutdown_before_core_teardown(monkeypatch: py
     monkeypatch.setattr(app_main, "link_hybrid_identity", _async_event(events, "link_hybrid_identity"))
     monkeypatch.setattr(app_main, "reconcile_stale_jobs", _async_event(events, "reconcile_stale_jobs"))
     monkeypatch.setattr(app_main, "ensure_spectrochempy_data", _sync_event(events, "ensure_spectrochempy_data"))
-    monkeypatch.setattr(app_main, "ensure_spectrochempy_testdata", _async_event(events, "ensure_spectrochempy_testdata"))
+    monkeypatch.setattr(
+        app_main, "ensure_spectrochempy_testdata", _async_event(events, "ensure_spectrochempy_testdata")
+    )
     monkeypatch.setattr(app_main, "ensure_workflow_templates", _async_event(events, "ensure_workflow_templates"))
-    monkeypatch.setattr("spectra_sherpa.app.services.plugin_loader.discover_plugins", _sync_event(events, "discover_plugins"))
+    monkeypatch.setattr(
+        "spectra_sherpa.app.services.plugin_loader.discover_plugins", _sync_event(events, "discover_plugins")
+    )
     monkeypatch.setattr(
         "spectra_sherpa.app.services.network_health.start_network_health_service",
         _async_event(events, "start_network_health_service"),

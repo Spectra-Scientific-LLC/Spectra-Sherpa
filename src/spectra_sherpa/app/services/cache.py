@@ -12,7 +12,7 @@ from functools import lru_cache
 from typing import Any
 
 from spectra_sherpa.app.lib.io import load_spectrum
-from spectra_sherpa.app.lib.preprocessing import preprocess_pipeline, PreprocessingSettings
+from spectra_sherpa.app.lib.preprocessing import PreprocessingSettings, preprocess_pipeline
 
 _SETTINGS_REGISTRY: dict[str, dict[str, Any]] = {}
 
@@ -79,9 +79,7 @@ def build_preprocessing_settings(settings: dict[str, Any]) -> PreprocessingSetti
 
 
 @lru_cache(maxsize=128)
-def load_preprocessed_spectrum(
-    file_path: str, file_mtime: float, settings_hash: str
-) -> tuple[Any, dict | None]:
+def load_preprocessed_spectrum(file_path: str, file_mtime: float, settings_hash: str) -> tuple[Any, dict | None]:
     """
     Load and preprocess a spectrum with caching.
 

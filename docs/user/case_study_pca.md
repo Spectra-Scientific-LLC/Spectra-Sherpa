@@ -11,8 +11,8 @@ This guide demonstrates the exact parity between the native SpectroChemPy librar
 | ```python<br>dataset = scp.read("irdata/CO@Mo_Al2O3.SPG")<br>``` | **Node:** `Data Source`<br>**Source:** `spectrochempy`<br>**Example Dataset:** `irdata`<br>**Example File:** `CO@Mo_Al2O3.SPG` |
 
 **Verification:**
-- **Python Output:** `NDDataset: [20 samples x 5549 wavenumbers]`
-- **Bench Output:** Output port shows `NDDataset (20, 5549)`
+- **Python Output:** `NDDataset: [20 samples x 5549 wavenumbers]` (SpectroChemPy native)
+- **Bench Output:** Output port shows `AnalysisDataset (20, 5549)` (wire format: `type: "NDDataset"` for backward compatibility)
 
 ---
 

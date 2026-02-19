@@ -27,13 +27,9 @@ def sanitize_filename(filename: str) -> str:
     return sanitized
 
 
-def validate_extension(
-    filename: str, allowed_extensions: Iterable[str] | None = None
-) -> str:
+def validate_extension(filename: str, allowed_extensions: Iterable[str] | None = None) -> str:
     extension = Path(filename).suffix.lower()
-    allowed = {
-        ext.lower() for ext in (allowed_extensions or settings.allowed_extensions)
-    }
+    allowed = {ext.lower() for ext in (allowed_extensions or settings.allowed_extensions)}
     if extension not in allowed:
         raise FileValidationError("Unsupported file type")
     return extension

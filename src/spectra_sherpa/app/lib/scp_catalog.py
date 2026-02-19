@@ -4,6 +4,7 @@ Scans the SpectroChemPy testdata directories at runtime to build a
 file-level catalog.  Each entry represents either a single loadable file
 or a subdirectory group of related files.
 """
+
 from __future__ import annotations
 
 import logging
@@ -35,8 +36,20 @@ _IGNORE_NAMES = {"__index__", ".DS_Store", "README.txt", "__downloaded__"}
 
 # Recognised spectral file extensions
 _SPECTRAL_EXTENSIONS = {
-    ".spg", ".spa", ".spc", ".csv", ".mat", ".jdx", ".dx",
-    ".txt", ".wdf", ".asc", ".dat", ".srs", ".opus", ".0",
+    ".spg",
+    ".spa",
+    ".spc",
+    ".csv",
+    ".mat",
+    ".jdx",
+    ".dx",
+    ".txt",
+    ".wdf",
+    ".asc",
+    ".dat",
+    ".srs",
+    ".opus",
+    ".0",
 }
 
 # ---------------------------------------------------------------------------
@@ -159,16 +172,18 @@ def build_scp_catalog(force: bool = False) -> list[dict[str, Any]]:
             # Add individual root files as entries
             for f in root_files:
                 rel = f"{cat_name}/{f.name}"
-                entries.append({
-                    "name": rel,
-                    "label": _label_for(rel, is_dir=False),
-                    "technique": technique,
-                    "category": cat_name,
-                    "file_path": rel,
-                    "file_count": 1,
-                    "entry_type": "single",
-                    "description": f"{f.suffix.lstrip('.').upper() or 'data'} file from {meta['technique_label']}",
-                })
+                entries.append(
+                    {
+                        "name": rel,
+                        "label": _label_for(rel, is_dir=False),
+                        "technique": technique,
+                        "category": cat_name,
+                        "file_path": rel,
+                        "file_count": 1,
+                        "entry_type": "single",
+                        "description": f"{f.suffix.lstrip('.').upper() or 'data'} file from {meta['technique_label']}",
+                    }
+                )
 
             # Add subdirectories as group entries
             for d in subdirs:
@@ -176,16 +191,18 @@ def build_scp_catalog(force: bool = False) -> list[dict[str, Any]]:
                 if fc == 0:
                     continue
                 rel = f"{cat_name}/{d.name}"
-                entries.append({
-                    "name": rel,
-                    "label": _label_for(rel, is_dir=True, file_count=fc),
-                    "technique": technique,
-                    "category": cat_name,
-                    "file_path": rel + "/",
-                    "file_count": fc,
-                    "entry_type": "group",
-                    "description": f"Folder with {fc} files from {meta['technique_label']}",
-                })
+                entries.append(
+                    {
+                        "name": rel,
+                        "label": _label_for(rel, is_dir=True, file_count=fc),
+                        "technique": technique,
+                        "category": cat_name,
+                        "file_path": rel + "/",
+                        "file_count": fc,
+                        "entry_type": "group",
+                        "description": f"Folder with {fc} files from {meta['technique_label']}",
+                    }
+                )
 
         # Only scan the first valid datadir (avoid duplicates)
         break
@@ -204,8 +221,11 @@ def build_scp_catalog(force: bool = False) -> list[dict[str, Any]]:
 
 # Keep a minimal static fallback for the old category-level API
 SCP_CATALOG: dict[str, dict[str, Any]] = {
-    cat: {"label": meta["technique_label"], "technique": meta["technique"],
-          "description": f"{meta['technique_label']} example datasets from SpectroChemPy testdata."}
+    cat: {
+        "label": meta["technique_label"],
+        "technique": meta["technique"],
+        "description": f"{meta['technique_label']} example datasets from SpectroChemPy testdata.",
+    }
     for cat, meta in _CATEGORY_META.items()
 }
 
@@ -226,7 +246,4 @@ def get_scp_dataset_info(name: str) -> dict[str, Any]:
     if name in SCP_CATALOG:
         return {"name": name, "source": "spectrochempy", **SCP_CATALOG[name]}
 
-    raise ValueError(
-        f"Unknown SCP dataset: {name!r}. "
-        f"Available: {', '.join(e['name'] for e in catalog)}"
-    )
+    raise ValueError(f"Unknown SCP dataset: {name!r}. " f"Available: {', '.join(e['name'] for e in catalog)}")

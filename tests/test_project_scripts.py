@@ -32,11 +32,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session
 from spectra_sherpa.app.main import app
-from spectra_sherpa.app.models.project import Project
 from spectra_sherpa.app.models.project_script import ProjectScript
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────
 
@@ -52,9 +50,7 @@ async def user2(test_session: AsyncSession) -> User:
 
 
 @pytest.fixture
-async def auth_client(
-    test_session: AsyncSession, test_user: User
-) -> AsyncClient:
+async def auth_client(test_session: AsyncSession, test_user: User) -> AsyncClient:
     """HTTP client authenticated as test_user."""
 
     async def override_get_session():
@@ -66,9 +62,7 @@ async def auth_client(
     app.dependency_overrides[get_session] = override_get_session
     app.dependency_overrides[get_current_user] = override_get_current_user
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
 
     app.dependency_overrides.clear()
@@ -104,9 +98,7 @@ async def sample_project(auth_client: AsyncClient) -> dict:
 
 
 @pytest.fixture
-async def sample_workflow(
-    test_session: AsyncSession, test_user: User
-) -> Workflow:
+async def sample_workflow(test_session: AsyncSession, test_user: User) -> Workflow:
     """Create a sample workflow for generate tests."""
     wf = Workflow(
         user_id=test_user.id,
@@ -127,9 +119,7 @@ class TestScriptCRUD:
     """Script create, list, get, update, delete."""
 
     @pytest.mark.anyio
-    async def test_create_script(
-        self, auth_client: AsyncClient, sample_project: dict
-    ):
+    async def test_create_script(self, auth_client: AsyncClient, sample_project: dict):
         proj_id = sample_project["id"]
         resp = await auth_client.post(
             f"/api/v1/projects/{proj_id}/scripts",
@@ -153,9 +143,7 @@ class TestScriptCRUD:
         assert data["source_workflow_id"] is None
 
     @pytest.mark.anyio
-    async def test_create_script_minimal(
-        self, auth_client: AsyncClient, sample_project: dict
-    ):
+    async def test_create_script_minimal(self, auth_client: AsyncClient, sample_project: dict):
         proj_id = sample_project["id"]
         resp = await auth_client.post(
             f"/api/v1/projects/{proj_id}/scripts",
@@ -168,9 +156,7 @@ class TestScriptCRUD:
         assert data["priority"] == 50.0  # default
 
     @pytest.mark.anyio
-    async def test_create_script_validation(
-        self, auth_client: AsyncClient, sample_project: dict
-    ):
+    async def test_create_script_validation(self, auth_client: AsyncClient, sample_project: dict):
         proj_id = sample_project["id"]
         # Missing name
         resp = await auth_client.post(
@@ -187,18 +173,14 @@ class TestScriptCRUD:
         assert resp.status_code == 422
 
     @pytest.mark.anyio
-    async def test_list_scripts_empty(
-        self, auth_client: AsyncClient, sample_project: dict
-    ):
+    async def test_list_scripts_empty(self, auth_client: AsyncClient, sample_project: dict):
         proj_id = sample_project["id"]
         resp = await auth_client.get(f"/api/v1/projects/{proj_id}/scripts")
         assert resp.status_code == 200
         assert resp.json() == []
 
     @pytest.mark.anyio
-    async def test_list_scripts(
-        self, auth_client: AsyncClient, sample_project: dict
-    ):
+    async def test_list_scripts(self, auth_client: AsyncClient, sample_project: dict):
         proj_id = sample_project["id"]
         await auth_client.post(
             f"/api/v1/projects/{proj_id}/scripts",
@@ -222,9 +204,7 @@ class TestScriptCRUD:
         assert data[0]["code_length"] == len("# second")
 
     @pytest.mark.anyio
-    async def test_get_script_detail(
-        self, auth_client: AsyncClient, sample_project: dict
-    ):
+    async def test_get_script_detail(self, auth_client: AsyncClient, sample_project: dict):
         proj_id = sample_project["id"]
         create_resp = await auth_client.post(
             f"/api/v1/projects/{proj_id}/scripts",
@@ -232,28 +212,20 @@ class TestScriptCRUD:
         )
         script_id = create_resp.json()["id"]
 
-        resp = await auth_client.get(
-            f"/api/v1/projects/{proj_id}/scripts/{script_id}"
-        )
+        resp = await auth_client.get(f"/api/v1/projects/{proj_id}/scripts/{script_id}")
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "detail.py"
         assert data["code"] == "x = 42"
 
     @pytest.mark.anyio
-    async def test_get_script_not_found(
-        self, auth_client: AsyncClient, sample_project: dict
-    ):
+    async def test_get_script_not_found(self, auth_client: AsyncClient, sample_project: dict):
         proj_id = sample_project["id"]
-        resp = await auth_client.get(
-            f"/api/v1/projects/{proj_id}/scripts/9999"
-        )
+        resp = await auth_client.get(f"/api/v1/projects/{proj_id}/scripts/9999")
         assert resp.status_code == 404
 
     @pytest.mark.anyio
-    async def test_update_script(
-        self, auth_client: AsyncClient, sample_project: dict
-    ):
+    async def test_update_script(self, auth_client: AsyncClient, sample_project: dict):
         proj_id = sample_project["id"]
         create_resp = await auth_client.post(
             f"/api/v1/projects/{proj_id}/scripts",
@@ -276,9 +248,7 @@ class TestScriptCRUD:
         assert data["priority"] == 5.0
 
     @pytest.mark.anyio
-    async def test_update_script_partial(
-        self, auth_client: AsyncClient, sample_project: dict
-    ):
+    async def test_update_script_partial(self, auth_client: AsyncClient, sample_project: dict):
         proj_id = sample_project["id"]
         create_resp = await auth_client.post(
             f"/api/v1/projects/{proj_id}/scripts",
@@ -299,9 +269,7 @@ class TestScriptCRUD:
         assert data["description"] == "Added desc"
 
     @pytest.mark.anyio
-    async def test_delete_script(
-        self, auth_client: AsyncClient, sample_project: dict
-    ):
+    async def test_delete_script(self, auth_client: AsyncClient, sample_project: dict):
         proj_id = sample_project["id"]
         create_resp = await auth_client.post(
             f"/api/v1/projects/{proj_id}/scripts",
@@ -309,25 +277,17 @@ class TestScriptCRUD:
         )
         script_id = create_resp.json()["id"]
 
-        resp = await auth_client.delete(
-            f"/api/v1/projects/{proj_id}/scripts/{script_id}"
-        )
+        resp = await auth_client.delete(f"/api/v1/projects/{proj_id}/scripts/{script_id}")
         assert resp.status_code == 204
 
         # Verify it's gone
-        get_resp = await auth_client.get(
-            f"/api/v1/projects/{proj_id}/scripts/{script_id}"
-        )
+        get_resp = await auth_client.get(f"/api/v1/projects/{proj_id}/scripts/{script_id}")
         assert get_resp.status_code == 404
 
     @pytest.mark.anyio
-    async def test_delete_script_not_found(
-        self, auth_client: AsyncClient, sample_project: dict
-    ):
+    async def test_delete_script_not_found(self, auth_client: AsyncClient, sample_project: dict):
         proj_id = sample_project["id"]
-        resp = await auth_client.delete(
-            f"/api/v1/projects/{proj_id}/scripts/9999"
-        )
+        resp = await auth_client.delete(f"/api/v1/projects/{proj_id}/scripts/9999")
         assert resp.status_code == 404
 
 
@@ -347,9 +307,7 @@ class TestGenerateScript:
         proj_id = sample_project["id"]
 
         # Link workflow to project
-        await auth_client.post(
-            f"/api/v1/projects/{proj_id}/workflows/{sample_workflow.id}"
-        )
+        await auth_client.post(f"/api/v1/projects/{proj_id}/workflows/{sample_workflow.id}")
 
         with patch(
             "spectra_sherpa.app.api.v1.routes.project_scripts.generate_python_code",
@@ -397,9 +355,7 @@ class TestGenerateScript:
         assert "Export Workflow" in data["description"]
 
     @pytest.mark.anyio
-    async def test_generate_script_workflow_not_found(
-        self, auth_client: AsyncClient, sample_project: dict
-    ):
+    async def test_generate_script_workflow_not_found(self, auth_client: AsyncClient, sample_project: dict):
         proj_id = sample_project["id"]
 
         resp = await auth_client.post(
@@ -439,9 +395,7 @@ class TestScriptSnapshot:
     """Scripts in project snapshots and import."""
 
     @pytest.mark.anyio
-    async def test_script_in_snapshot(
-        self, auth_client: AsyncClient, sample_project: dict
-    ):
+    async def test_script_in_snapshot(self, auth_client: AsyncClient, sample_project: dict):
         proj_id = sample_project["id"]
 
         # Create a script
@@ -464,9 +418,7 @@ class TestScriptSnapshot:
         version_id = save_resp.json()["id"]
 
         # Retrieve version and check snapshot
-        ver_resp = await auth_client.get(
-            f"/api/v1/projects/{proj_id}/versions/{version_id}"
-        )
+        ver_resp = await auth_client.get(f"/api/v1/projects/{proj_id}/versions/{version_id}")
         snapshot = ver_resp.json()["snapshot"]
         assert "scripts" in snapshot
         assert len(snapshot["scripts"]) == 1
@@ -477,9 +429,7 @@ class TestScriptSnapshot:
         assert s["description"] == "Snapshot test"
 
     @pytest.mark.anyio
-    async def test_script_count_in_summary(
-        self, auth_client: AsyncClient, sample_project: dict
-    ):
+    async def test_script_count_in_summary(self, auth_client: AsyncClient, sample_project: dict):
         proj_id = sample_project["id"]
 
         # Create two scripts
@@ -499,9 +449,7 @@ class TestScriptSnapshot:
         assert len(data["scripts"]) == 2
 
     @pytest.mark.anyio
-    async def test_scripts_in_project_detail(
-        self, auth_client: AsyncClient, sample_project: dict
-    ):
+    async def test_scripts_in_project_detail(self, auth_client: AsyncClient, sample_project: dict):
         proj_id = sample_project["id"]
 
         await auth_client.post(
@@ -567,18 +515,14 @@ class TestScriptSnapshot:
 
         # Verify scripts were created
         proj_id = data["id"]
-        scripts_resp = await auth_client.get(
-            f"/api/v1/projects/{proj_id}/scripts"
-        )
+        scripts_resp = await auth_client.get(f"/api/v1/projects/{proj_id}/scripts")
         scripts = scripts_resp.json()
         assert len(scripts) == 2
         names = {s["name"] for s in scripts}
         assert names == {"imported.py", "analysis.py"}
 
     @pytest.mark.anyio
-    async def test_export_includes_scripts(
-        self, auth_client: AsyncClient, sample_project: dict
-    ):
+    async def test_export_includes_scripts(self, auth_client: AsyncClient, sample_project: dict):
         proj_id = sample_project["id"]
 
         await auth_client.post(
@@ -630,9 +574,7 @@ class TestScriptCascade:
         assert resp.status_code == 204
 
         # Scripts should be gone
-        result = await test_session.execute(
-            select(ProjectScript).where(ProjectScript.id == s1_id)
-        )
+        result = await test_session.execute(select(ProjectScript).where(ProjectScript.id == s1_id))
         assert result.scalar_one_or_none() is None
 
 
@@ -664,9 +606,7 @@ class TestScriptOwnership:
         swap_user(user2)
 
         # User2 should get 404 trying to list scripts in user1's project
-        list_resp = await auth_client.get(
-            f"/api/v1/projects/{proj_id}/scripts"
-        )
+        list_resp = await auth_client.get(f"/api/v1/projects/{proj_id}/scripts")
         assert list_resp.status_code == 404
 
         # Restore user1

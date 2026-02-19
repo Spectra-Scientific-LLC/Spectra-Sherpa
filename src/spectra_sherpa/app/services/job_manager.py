@@ -34,9 +34,7 @@ class JobManager:
     def _uses_postgres(self) -> bool:
         return settings.database_url.lower().startswith("postgresql")
 
-    async def _resolve_job_owner(
-        self, job_id: int, session: AsyncSession | None = None
-    ) -> int | None:
+    async def _resolve_job_owner(self, job_id: int, session: AsyncSession | None = None) -> int | None:
         """Resolve and cache the owner user_id for a job."""
         owner_id = self._job_owners.get(job_id)
         if owner_id is not None:
@@ -46,9 +44,7 @@ class JobManager:
             async with async_session() as lookup_session:
                 return await self._resolve_job_owner(job_id, session=lookup_session)
 
-        result = await session.execute(
-            select(BackgroundJob.user_id).where(BackgroundJob.id == job_id)
-        )
+        result = await session.execute(select(BackgroundJob.user_id).where(BackgroundJob.id == job_id))
         owner_id = result.scalar_one_or_none()
         if owner_id is not None:
             self._job_owners[job_id] = owner_id
@@ -57,15 +53,11 @@ class JobManager:
     async def _count_running_jobs(self, session: AsyncSession) -> int:
         """Count running jobs across all workers from database."""
         result = await session.execute(
-            select(func.count()).select_from(BackgroundJob).where(
-                BackgroundJob.status == "running"
-            )
+            select(func.count()).select_from(BackgroundJob).where(BackgroundJob.status == "running")
         )
         return result.scalar() or 0
 
-    async def _count_running_jobs_for_user(
-        self, session: AsyncSession, user_id: int
-    ) -> int:
+    async def _count_running_jobs_for_user(self, session: AsyncSession, user_id: int) -> int:
         """Count running jobs for a specific user."""
         result = await session.execute(
             select(func.count())
@@ -77,9 +69,7 @@ class JobManager:
         )
         return result.scalar() or 0
 
-    async def run_job(
-        self, job_id: int, work: Callable[[], Awaitable[None]]
-    ) -> None:
+    async def run_job(self, job_id: int, work: Callable[[], Awaitable[None]]) -> None:
         """Execute a background job with full session ownership.
 
         This method is designed to run as a detached ``asyncio.create_task``
@@ -180,9 +170,7 @@ class JobManager:
                     )
                 )
                 await done_session.commit()
-            await self._broadcast_job(
-                job_id, status="completed", progress=100
-            )
+            await self._broadcast_job(job_id, status="completed", progress=100)
         except Exception as exc:
             async with async_session() as err_session:
                 await err_session.execute(
@@ -195,9 +183,7 @@ class JobManager:
                     )
                 )
                 await err_session.commit()
-            await self._broadcast_job(
-                job_id, status="failed", message=str(exc)
-            )
+            await self._broadcast_job(job_id, status="failed", message=str(exc))
         finally:
             self._local_jobs.discard(job_id)
             self._job_owners.pop(job_id, None)
@@ -207,9 +193,7 @@ class JobManager:
 
     async def heartbeat(self, session: AsyncSession, job_id: int) -> None:
         await session.execute(
-            update(BackgroundJob)
-            .where(BackgroundJob.id == job_id)
-            .values(last_heartbeat=datetime.now(timezone.utc))
+            update(BackgroundJob).where(BackgroundJob.id == job_id).values(last_heartbeat=datetime.now(timezone.utc))
         )
         await session.commit()
         await asyncio.sleep(0)
@@ -240,9 +224,7 @@ class JobManager:
             )
         )
         await session.commit()
-        await self._broadcast_job(
-            job_id, status="cancelled", message="Cancelled by user", session=session
-        )
+        await self._broadcast_job(job_id, status="cancelled", message="Cancelled by user", session=session)
         self._job_owners.pop(job_id, None)
 
     async def shutdown(self) -> None:

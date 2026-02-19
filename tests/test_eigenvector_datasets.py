@@ -16,6 +16,7 @@ Covers:
 Run:
     PYTHONPATH=src/spectra_sherpa python -m pytest tests/test_eigenvector_datasets.py -v --no-cov
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -25,17 +26,18 @@ import pytest
 from sklearn.decomposition import PCA as SklearnPCA
 from sklearn.preprocessing import StandardScaler
 
-from spectra_sherpa.app.lib.scp_compat import scp, NDDataset, HAS_SCP
+from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
 from spectra_sherpa.app.lib.eigenvector import (
-    parse_eigenvector_csv,
-    parse_eigenvector_mat,
-    load_eigenvector_dataset,
+    DATASET_CATALOG,
+    EIGENVECTOR_DATA_DIR,
     extract_csv_metadata,
     extract_mat_metadata,
     get_dataset_info,
-    DATASET_CATALOG,
-    EIGENVECTOR_DATA_DIR,
+    load_eigenvector_dataset,
+    parse_eigenvector_csv,
+    parse_eigenvector_mat,
 )
+from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset, scp
 
 # ---------------------------------------------------------------------------
 # Paths (test fixtures — duplicated from bundled data for test isolation)
@@ -219,9 +221,7 @@ class TestDieselPca:
         pca.fit(data)
 
         cumulative_var = np.cumsum(pca.explained_variance_ratio_)
-        assert cumulative_var[-1] > 0.80, (
-            f"First 5 PCs explain only {cumulative_var[-1]:.1%} variance"
-        )
+        assert cumulative_var[-1] > 0.80, f"First 5 PCs explain only {cumulative_var[-1]:.1%} variance"
 
     def test_pca_scores_shape(self, diesel_spectra):
         """PCA scores should have correct dimensions."""
@@ -245,9 +245,7 @@ class TestDieselPca:
         mse = np.mean((data - reconstructed) ** 2)
         data_var = np.var(data)
         relative_error = mse / data_var
-        assert relative_error < 0.05, (
-            f"Reconstruction error {relative_error:.4f} is too high (expected <5%)"
-        )
+        assert relative_error < 0.05, f"Reconstruction error {relative_error:.4f} is too high (expected <5%)"
 
     def test_pca_standardized(self, diesel_spectra):
         """PCA on standardized data should work correctly."""
@@ -269,7 +267,7 @@ class TestDieselPca:
 
         # Hotelling T² = sum(scores^2 / eigenvalues)
         eigenvalues = pca.explained_variance_
-        t2 = np.sum((scores ** 2) / eigenvalues, axis=1)
+        t2 = np.sum((scores**2) / eigenvalues, axis=1)
 
         assert t2.shape == (data.shape[0],)
         assert np.all(t2 >= 0), "T² values should be non-negative"
@@ -312,9 +310,7 @@ class TestCornMatParsing:
         for name in ("m5spec", "mp5spec", "mp6spec"):
             ds = corn_data[name]
             # Eigenvector DataSet is a structured array
-            assert ds.dtype.names is not None, (
-                f"{name} should be a structured array"
-            )
+            assert ds.dtype.names is not None, f"{name} should be a structured array"
             # Expected fields in Eigenvector DataSet format
             field_names = ds.dtype.names
             assert "data" in field_names, f"{name} missing 'data' field"
@@ -347,9 +343,7 @@ class TestCornMatParsing:
         assert scores.shape == (80, 3)
         # Corn NIR data should have strong structure (>80% in 3 PCs)
         total_var = pca.explained_variance_ratio_.sum()
-        assert total_var > 0.80, (
-            f"First 3 PCs explain only {total_var:.1%} — expected >80% for corn NIR"
-        )
+        assert total_var > 0.80, f"First 3 PCs explain only {total_var:.1%} — expected >80% for corn NIR"
 
     @pytest.mark.skipif(not HAS_SCP, reason="SpectroChemPy not installed")
     def test_corn_scp_nddataset(self, corn_data):
@@ -512,6 +506,7 @@ class TestDataSourceNodeEigenvector:
         def _make(params: dict):
             node = DataSourceNode(node_id="test_ev", parameters=params)
             return node
+
         return _make
 
     @pytest.mark.asyncio
@@ -529,10 +524,8 @@ class TestDataSourceNodeEigenvector:
         node = make_node({"source": "eigenvector", "eigenvector_dataset": "diesel_nir"})
         result = await node.execute()
         dataset = result["default"]
-        if isinstance(dataset, NDDataset):
-            assert dataset.shape == (784, 401)
-        else:
-            assert dataset.shape == (784, 401)
+        assert isinstance(dataset, AnalysisDataset)
+        assert dataset.shape == (784, 401)
 
     @pytest.mark.asyncio
     async def test_eigenvector_diesel_properties_on_target(self, make_node):
@@ -551,20 +544,18 @@ class TestDataSourceNodeEigenvector:
         node = make_node({"source": "eigenvector", "eigenvector_dataset": "corn_m5"})
         result = await node.execute()
         dataset = result["default"]
-        if isinstance(dataset, NDDataset):
-            assert dataset.shape == (80, 700)
-        else:
-            assert dataset.shape == (80, 700)
+        assert isinstance(dataset, AnalysisDataset)
+        assert dataset.shape == (80, 700)
         assert len(result["target"]["columns"]) == 4
 
     @pytest.mark.skipif(not HAS_SCP, reason="SpectroChemPy not installed")
     @pytest.mark.asyncio
     async def test_eigenvector_scp_nddataset(self, make_node):
-        """With SCP, eigenvector should return NDDataset with wavelength Coord."""
+        """With SCP, eigenvector should return AnalysisDataset with wavelength axis."""
         node = make_node({"source": "eigenvector", "eigenvector_dataset": "diesel_nir"})
         result = await node.execute()
         dataset = result["default"]
-        assert isinstance(dataset, NDDataset)
+        assert isinstance(dataset, AnalysisDataset)
         assert dataset.shape == (784, 401)
         # Check wavelength axis
         x_coord = dataset.x

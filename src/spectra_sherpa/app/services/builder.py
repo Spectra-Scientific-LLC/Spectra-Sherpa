@@ -9,19 +9,22 @@ from __future__ import annotations
 
 from dataclasses import fields
 from pathlib import Path
-from typing import Any, List, Dict, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import numpy as np
 
 from spectra_sherpa.app.core.config import settings
-from spectra_sherpa.app.services.cache import build_preprocessing_settings, load_preprocessed_spectrum, register_settings
-from spectra_sherpa.app.services.experiments import resolve_data_path
-
 from spectra_sherpa.app.lib.blending import BlendSettings, blend_datasets
-from spectra_sherpa.app.lib.curves import curve_segments, initial_curve_points, generate_concentration_curve
+from spectra_sherpa.app.lib.curves import curve_segments, generate_concentration_curve, initial_curve_points
 from spectra_sherpa.app.lib.io import load_spectrum
-from spectra_sherpa.app.lib.spectral.dataset import create_spectral_dataset, SpectralUnit
 from spectra_sherpa.app.lib.preprocessing import preprocess_pipeline
+from spectra_sherpa.app.lib.spectral.dataset import SpectralUnit, create_spectral_dataset
+from spectra_sherpa.app.services.cache import (
+    build_preprocessing_settings,
+    load_preprocessed_spectrum,
+    register_settings,
+)
+from spectra_sherpa.app.services.experiments import resolve_data_path
 
 if TYPE_CHECKING:
     from spectra_sherpa.app.lib.scp_compat import NDDataset
@@ -98,9 +101,7 @@ class BuilderService:
         self.max_spectra = settings.max_spectra_per_job
         self.max_wavenumbers = settings.max_wavenumbers
 
-    def preprocess(
-        self, spectra: list[dict[str, Any]], settings_dict: dict[str, Any]
-    ) -> tuple[list[Any], dict | None]:
+    def preprocess(self, spectra: list[dict[str, Any]], settings_dict: dict[str, Any]) -> tuple[list[Any], dict | None]:
         """
         Preprocess spectra according to settings.
 
@@ -132,9 +133,7 @@ class BuilderService:
                 source_file = datasets[0].meta.get("source_file")
                 if source_file:
                     file_mtime = Path(source_file).stat().st_mtime
-                    cached_data, metadata = load_preprocessed_spectrum(
-                        source_file, file_mtime, settings_hash
-                    )
+                    cached_data, metadata = load_preprocessed_spectrum(source_file, file_mtime, settings_hash)
                     return [cached_data], metadata
 
             # For multi-spectrum files (like MAT), process all datasets
@@ -246,10 +245,7 @@ class BuilderService:
         self._validate_wavenumbers_ds(datasets)
 
         blend_settings = self._build_blend_settings(settings_dict)
-        concentration_arrays = {
-            label: np.array(values, dtype=float)
-            for label, values in concentrations.items()
-        }
+        concentration_arrays = {label: np.array(values, dtype=float) for label, values in concentrations.items()}
 
         return blend_datasets(
             datasets,
@@ -272,6 +268,7 @@ class BuilderService:
         This method is preserved for backward compatibility.
         """
         import warnings
+
         warnings.warn(
             "blend() is deprecated, use synthesize_spectra() instead",
             DeprecationWarning,

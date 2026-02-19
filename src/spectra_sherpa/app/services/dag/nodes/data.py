@@ -14,33 +14,41 @@ from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
+
+from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo, from_sklearn_bunch
+from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG
 from spectra_sherpa.app.lib.scp_compat import (
     HAS_SCP,
     NDDataset,
+    from_nddataset,
     get_scp_datadirs,
     require_scp,
     resolve_scp_path,
     scp,
 )
-from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo, from_sklearn_bunch
-from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG
-
-from ..node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
-from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
 from spectra_sherpa.app.models.spectra_meta import (
-    SpectraMeta,
-    SpeciesInfo,
-    ConcentrationProfile,
-    DataProvenance,
     AcquisitionParams,
-    ExperimentalConditions,
-    InstrumentInfo,
-    SourceType,
-    PhysicalState,
+    ConcentrationProfile,
     ConcentrationUnit,
+    DataProvenance,
+    ExperimentalConditions,
+    PhysicalState,
+    SourceType,
+    SpeciesInfo,
+    SpectraMeta,
     set_spectra_meta,
-    create_minimal_meta,
 )
+from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, safe_get_coord
+
+from ..io_contracts import (
+    bind_X,
+    bind_y,
+    build_dataset_like,
+    coerce_dataset,
+    to_numpy_1d,
+    to_numpy_2d,
+)
+from ..node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
 
 logger = logging.getLogger(__name__)
 
@@ -89,20 +97,23 @@ def is_index_column(data_column: np.ndarray) -> bool:
         return False
 
 
-def remove_index_columns(dataset: NDDataset) -> NDDataset:
+def remove_index_columns(dataset: NDDataset | AnalysisDataset) -> NDDataset | AnalysisDataset:
     """
     Remove index columns from dataset if detected.
 
     Detects and removes columns that appear to be row indices
     (monotonic integer sequences with step=1).
 
+    Handles both NDDataset (from raw SCP loading) and AnalysisDataset,
+    preserving the input type in the return value.
+
     Args:
-        dataset: Input NDDataset
+        dataset: Input dataset (NDDataset or AnalysisDataset)
 
     Returns:
-        NDDataset with index columns removed (if any were found)
+        Dataset of the same type with index columns removed (if any were found)
     """
-    if not hasattr(dataset, 'data') or dataset.ndim != 2:
+    if not hasattr(dataset, "data") or dataset.ndim != 2:
         return dataset
 
     data = np.array(dataset.data)
@@ -112,27 +123,29 @@ def remove_index_columns(dataset: NDDataset) -> NDDataset:
     if n_cols > 1:  # Only remove if there are other columns
         first_col = data[:, 0]
         if is_index_column(first_col):
-            logger.debug(f"[DATA] Detected index column in first position (values: {first_col[0]:.0f}-{first_col[-1]:.0f}), removing from data")
+            logger.debug(
+                f"[DATA] Detected index column in first position "
+                f"(values: {first_col[0]:.0f}-{first_col[-1]:.0f}), removing from data"
+            )
             # Remove first column
             cleaned_data = data[:, 1:]
 
             # Create new dataset without the index column
             if isinstance(dataset, AnalysisDataset):
-                cleaned_dataset = AnalysisDataset(
-                    X=cleaned_data,
-                    x_axis=dataset.x_axis.copy() if dataset.x_axis else None,
-                    y_axis=dataset.y_axis.copy() if dataset.y_axis else None,
-                    meta=dict(dataset.meta) if dataset.meta else {},
-                    provenance=list(dataset.provenance),
-                    backend=dataset.backend,
-                    title=dataset.title,
-                    units=dataset.units,
-                )
+                cleaned_dataset = build_dataset_like(cleaned_data, dataset)
                 # Trim x-axis if it matched original column count
-                if cleaned_dataset.x_axis and cleaned_dataset.x_axis.values is not None and len(cleaned_dataset.x_axis.values) == n_cols:
+                if (
+                    cleaned_dataset.x_axis
+                    and cleaned_dataset.x_axis.values is not None
+                    and len(cleaned_dataset.x_axis.values) == n_cols
+                ):
                     cleaned_dataset.x_axis = AxisInfo(
                         values=cleaned_dataset.x_axis.values[1:],
-                        labels=cleaned_dataset.x_axis.labels[1:] if cleaned_dataset.x_axis.labels and len(cleaned_dataset.x_axis.labels) == n_cols else cleaned_dataset.x_axis.labels,
+                        labels=(
+                            cleaned_dataset.x_axis.labels[1:]
+                            if cleaned_dataset.x_axis.labels and len(cleaned_dataset.x_axis.labels) == n_cols
+                            else cleaned_dataset.x_axis.labels
+                        ),
                         units=cleaned_dataset.x_axis.units,
                         title=cleaned_dataset.x_axis.title,
                     )
@@ -140,37 +153,69 @@ def remove_index_columns(dataset: NDDataset) -> NDDataset:
                 cleaned_dataset = scp.NDDataset(cleaned_data)
 
                 # Preserve coordinate system if present
-                ric_x_coord = safe_get_coord(dataset, 'x')
+                ric_x_coord = safe_get_coord(dataset, "x")
                 if ric_x_coord is not None and len(ric_x_coord) == n_cols:
-                    cleaned_dataset.x = ric_x_coord[1:].copy() if hasattr(ric_x_coord, '__getitem__') else ric_x_coord
+                    cleaned_dataset.x = ric_x_coord[1:].copy() if hasattr(ric_x_coord, "__getitem__") else ric_x_coord
                 elif ric_x_coord is not None:
                     cleaned_dataset.x = ric_x_coord.copy()
 
-                ric_y_coord = safe_get_coord(dataset, 'y')
+                ric_y_coord = safe_get_coord(dataset, "y")
                 if ric_y_coord is not None:
                     cleaned_dataset.y = ric_y_coord.copy()
 
                 # Preserve metadata
-                if hasattr(dataset, 'meta') and dataset.meta:
+                if hasattr(dataset, "meta") and dataset.meta:
                     cleaned_dataset.meta = dataset.meta.copy()
 
-                if hasattr(dataset, 'title'):
+                if hasattr(dataset, "title"):
                     cleaned_dataset.title = dataset.title
 
-                if hasattr(dataset, 'units'):
+                if hasattr(dataset, "units"):
                     cleaned_dataset.units = dataset.units
             else:
                 # Plain ndarray fallback
-                cleaned_dataset = AnalysisDataset(X=cleaned_data)
+                cleaned_dataset = build_dataset_like(cleaned_data, dataset, copy_history=False)
 
             return cleaned_dataset
 
     return dataset
 
 
+def slice_axis_for_indices(coord: Any, indices: np.ndarray) -> Any | None:
+    """
+    Slice sample-axis metadata for integer index selection.
+
+    Supports both AnalysisDataset AxisInfo and SCP Coord-like objects.
+    """
+    if coord is None:
+        return None
+
+    if isinstance(coord, AxisInfo):
+        values = None
+        if coord.values is not None:
+            values = np.asarray(coord.values)[indices]
+
+        labels = None
+        if coord.labels is not None:
+            labels = np.asarray(coord.labels, dtype=object)[indices].astype(str).tolist()
+
+        return AxisInfo(
+            values=values,
+            labels=labels,
+            units=coord.units,
+            title=coord.title,
+        )
+
+    try:
+        sliced = coord[indices]
+        return sliced.copy() if hasattr(sliced, "copy") else sliced
+    except Exception:
+        return coord.copy() if hasattr(coord, "copy") else coord
+
+
 def extract_dataset_from_result(result: Any, file_path: str) -> NDDataset:
     """
-    Extract a single NDDataset from a file read result.
+    Extract a single NDDataset from a SpectroChemPy file read result.
 
     Handles ScpObjectList which is returned by read_matlab() when .MAT files
     contain multiple variables (common for MCR-ALS datasets like als2004dataset.MAT).
@@ -178,14 +223,16 @@ def extract_dataset_from_result(result: Any, file_path: str) -> NDDataset:
     Strategy: Select the 2D dataset with the largest total size (rows * cols),
     which is typically the main spectral matrix D = C * S^T.
 
-    Note: This function is only called from SCP file-loading paths.
+    This is an SCP-internal utility called before the NDDataset-to-AnalysisDataset
+    conversion step.  Callers are responsible for calling ``from_nddataset()``
+    on the returned value when an AnalysisDataset is needed downstream.
 
     Args:
         result: The result from SpectroChemPy read operation
         file_path: Path to the file being read (for error messages)
 
     Returns:
-        NDDataset: A single dataset extracted from the result
+        A single NDDataset extracted from the result
     """
     require_scp("File loading")
 
@@ -194,7 +241,7 @@ def extract_dataset_from_result(result: Any, file_path: str) -> NDDataset:
         return result
 
     # Handle ScpObjectList (list of datasets)
-    if hasattr(result, '__iter__') and not isinstance(result, (str, bytes)):
+    if hasattr(result, "__iter__") and not isinstance(result, (str, bytes)):
         datasets = list(result)
 
         if len(datasets) == 0:
@@ -205,7 +252,7 @@ def extract_dataset_from_result(result: Any, file_path: str) -> NDDataset:
 
         # Multiple datasets - find the best candidate
         # Prefer 2D datasets (spectral matrices) over 1D
-        candidates_2d = [d for d in datasets if hasattr(d, 'shape') and len(d.shape) == 2]
+        candidates_2d = [d for d in datasets if hasattr(d, "shape") and len(d.shape) == 2]
 
         if candidates_2d:
             # Select largest 2D dataset by total elements
@@ -214,8 +261,11 @@ def extract_dataset_from_result(result: Any, file_path: str) -> NDDataset:
             return best
         else:
             # No 2D candidates - select largest overall (encapsulate as NDDataset)
-            best = max(datasets, key=lambda d: np.prod(getattr(d, 'shape', (0,))))
-            logger.debug(f"MAT file contains {len(datasets)} items with no 2D arrays, selected largest dataset with shape {getattr(best, 'shape', 'unknown')}")
+            best = max(datasets, key=lambda d: np.prod(getattr(d, "shape", (0,))))
+            logger.debug(
+                f"MAT file contains {len(datasets)} items with no 2D arrays, "
+                f"selected largest dataset with shape {getattr(best, 'shape', 'unknown')}"
+            )
             return best
 
     # Ensure result is encapsulated as NDDataset for consistency
@@ -224,16 +274,14 @@ def extract_dataset_from_result(result: Any, file_path: str) -> NDDataset:
         try:
             if isinstance(result, np.ndarray):
                 result = scp.NDDataset(result)
-            elif hasattr(result, '__array__'):
+            elif hasattr(result, "__array__"):
                 result = scp.NDDataset(np.array(result))
             else:
                 # Last resort - try direct conversion
                 result = scp.NDDataset(result)
         except Exception as e:
             raise TypeError(
-                f"Cannot convert to NDDataset: {type(result).__name__}\n"
-                f"File: {file_path}\n"
-                f"Error: {str(e)}"
+                f"Cannot convert to NDDataset: {type(result).__name__}\n" f"File: {file_path}\n" f"Error: {str(e)}"
             ) from e
     return result
 
@@ -245,7 +293,14 @@ _SCP_KNOWN_DEFAULTS: dict[str, tuple[str, str]] = {
 
 
 def _normalize_scp_read_output(result: Any) -> NDDataset | None:
-    """Normalize SpectroChemPy reader outputs across versions."""
+    """Normalize SpectroChemPy reader outputs across versions.
+
+    SCP-internal: recursively unwraps dicts, lists, and iterables returned
+    by various SCP reader functions to find the first NDDataset.
+
+    Returns:
+        The first NDDataset found in the result, or None.
+    """
     if result is None:
         return None
     if isinstance(result, NDDataset):
@@ -279,7 +334,14 @@ def _normalize_scp_read_output(result: Any) -> NDDataset | None:
 
 
 def _try_load_scp_file(path: Path) -> NDDataset | None:
-    """Load one SCP file with extension-aware reader selection."""
+    """Load one SCP file with extension-aware reader selection.
+
+    SCP-internal: returns a raw NDDataset before AnalysisDataset conversion.
+    For CSV files, index columns are stripped via ``remove_index_columns()``.
+
+    Returns:
+        An NDDataset on success, or None if the file cannot be read.
+    """
     from spectra_sherpa.app.core.config import get_reader_for_extension
 
     try:
@@ -314,7 +376,14 @@ def _try_load_scp_file(path: Path) -> NDDataset | None:
 
 
 def _try_load_first_file(folder: Path) -> NDDataset | None:
-    """Find the first readable file in a dataset folder (recursive)."""
+    """Find the first readable file in a dataset folder (recursive).
+
+    SCP-internal: delegates to ``_try_load_scp_file()`` and returns a raw
+    NDDataset before AnalysisDataset conversion.
+
+    Returns:
+        An NDDataset from the first successfully loaded file, or None.
+    """
     for file_path in sorted(folder.rglob("*")):
         if not file_path.is_file() or file_path.name.startswith((".", "_")):
             continue
@@ -357,6 +426,7 @@ def extract_instrument_metadata(dataset: NDDataset, file_path: str) -> dict:
     try:
         # Use the new metadata extraction service
         from spectra_sherpa.app.services.metadata import extract_metadata
+
         return extract_metadata(dataset, file_path)
     except ImportError:
         # Fallback if metadata service not available (shouldn't happen)
@@ -379,10 +449,10 @@ def _minimal_metadata_extraction(dataset: NDDataset, file_path: str) -> dict:
     }
 
     # Extract x-axis info if available
-    mme_x_coord = safe_get_coord(dataset, 'x')
+    mme_x_coord = safe_get_coord(dataset, "x")
     if mme_x_coord is not None:
         try:
-            x_data = np.array(mme_x_coord.data) if hasattr(mme_x_coord, 'data') else np.array(mme_x_coord)
+            x_data = np.array(mme_x_coord.data) if hasattr(mme_x_coord, "data") else np.array(mme_x_coord)
             if len(x_data) > 0:
                 metadata["acquisition_params"] = {
                     "wavenumber_min": float(np.min(x_data)),
@@ -463,10 +533,7 @@ class DataSourceNode(Node):
                 label="Eigenvector Dataset",
                 param_type="select",
                 default="diesel_nir",
-                options=[
-                    {"label": v["label"], "value": k}
-                    for k, v in DATASET_CATALOG.items()
-                ],
+                options=[{"label": v["label"], "value": k} for k, v in DATASET_CATALOG.items()],
                 description="Eigenvector Research public dataset (bundled reference data with properties)",
                 required=False,
                 category="basic",
@@ -523,7 +590,10 @@ class DataSourceNode(Node):
                 label="Example File",
                 param_type="text",
                 default="",
-                description="Specific file within the selected dataset (e.g., 'CO@Mo_Al2O3.SPG'). Leave empty for default file.",
+                description=(
+                    "Specific file within the selected dataset"
+                    " (e.g., 'CO@Mo_Al2O3.SPG'). Leave empty for default file."
+                ),
                 required=False,
                 category="advanced",
             ),
@@ -533,7 +603,9 @@ class DataSourceNode(Node):
                 label="Transpose on Load",
                 param_type="boolean",
                 default=False,
-                description="Swap rows/columns if data is (n_wavenumbers, n_samples) instead of (n_samples, n_wavenumbers)",
+                description=(
+                    "Swap rows/columns if data is (n_wavenumbers, n_samples)" " instead of (n_samples, n_wavenumbers)"
+                ),
                 required=False,
                 category="advanced",
             ),
@@ -581,7 +653,7 @@ class DataSourceNode(Node):
         Execute data loading.
 
         Returns:
-            NDDataset containing the loaded spectral data
+            dict with "default" (AnalysisDataset) and "target" (optional labels)
         """
         source = self.parameters.get("source", "spectrochempy")
         experiment_id = self.parameters.get("experiment_id")
@@ -635,57 +707,60 @@ class DataSourceNode(Node):
                 f"library_id={library_id}, file_path={file_path!r}"
             )
 
-        # ----- Non-NDDataset fast path (no SCP) -----
-        # When data is a raw numpy array or AnalysisDataset, ensure uniform container.
-        if not isinstance(dataset, NDDataset):
+        # ----- Normalize to AnalysisDataset -----
+        # Convert NDDataset to AnalysisDataset immediately so all downstream
+        # code has a single type to work with.  NDDataset meta/provenance is
+        # preserved losslessly by from_nddataset().
+        if isinstance(dataset, NDDataset):
+            # Apply axis config while still NDDataset (SCP Coord operations)
+            dataset = self._apply_axis_config(dataset)
+            # Preserve any existing meta before conversion
+            if not hasattr(dataset, "meta") or dataset.meta is None:
+                dataset.meta = {}
+            # Merge provenance summary from file metadata (OPUS, JCAMP, etc.)
+            existing_provenance = dataset.meta.get("provenance", {})
+            if isinstance(existing_provenance, dict):
+                existing_operations = existing_provenance.get("operations", [])
+                merged_provenance = dict(existing_provenance)
+                original_source_type = (
+                    existing_provenance.get("original_source_type")
+                    or existing_provenance.get("source_type")
+                    or existing_provenance.get("original_source")
+                )
+                merged_provenance["current_source_type"] = source
+                if original_source_type:
+                    merged_provenance["original_source_type"] = original_source_type
+                merged_provenance["source_type"] = original_source_type or source
+                merged_provenance["original_source"] = original_source_type or source
+                merged_provenance["operations"] = ["data.source"] + existing_operations
+                merged_provenance["last_modified"] = datetime.utcnow().isoformat()
+                merged_provenance["last_operation"] = "data.source"
+                dataset.meta["provenance"] = merged_provenance
+            # Extract target before conversion (needs SCP Coord access)
+            if source == "sklearn":
+                target = self._extract_target_labels(dataset)
+            elif source == "eigenvector" and hasattr(self, "_eigenvector_properties"):
+                target = self._eigenvector_properties
+            else:
+                target = None
+            # Convert NDDataset → AnalysisDataset (lossless)
+            dataset = from_nddataset(dataset)
+        else:
+            # Non-NDDataset path (no SCP, or already AnalysisDataset)
             target = None
             if source == "sklearn" and hasattr(self, "_sklearn_bunch"):
                 dataset = from_sklearn_bunch(self._sklearn_bunch, name=sklearn_dataset)
                 target = self._sklearn_bunch.target.tolist()
             elif source == "eigenvector" and hasattr(self, "_eigenvector_properties"):
                 target = self._eigenvector_properties
-                # _load_eigenvector_dataset already returns AnalysisDataset in no-SCP mode
-                if not isinstance(dataset, AnalysisDataset):
-                    dataset = AnalysisDataset(X=dataset, backend="numpy")
-            elif isinstance(dataset, AnalysisDataset):
-                pass  # Already wrapped (e.g., eigenvector no-SCP, synthetic)
-            else:
-                # Generic numpy array (e.g., synthetic no-SCP)
-                dataset = AnalysisDataset(X=dataset, backend="numpy")
-            # Apply axis config on AnalysisDataset too
-            if isinstance(dataset, AnalysisDataset):
-                dataset = self._apply_axis_config(dataset)
+            dataset = coerce_dataset(dataset, input_name="dataset", allow_array=True)
+            dataset = self._apply_axis_config(dataset)
 
-            # Initialize provenance with data.source step (matches NDDataset path)
-            if isinstance(dataset, AnalysisDataset):
-                add_processing_step(
-                    dataset,
-                    "data.source",
-                    {
-                        "source": source,
-                        "sklearn_dataset": sklearn_dataset if source == "sklearn" else None,
-                        "eigenvector_dataset": self.parameters.get("eigenvector_dataset") if source == "eigenvector" else None,
-                    },
-                    node_id=self.node_id,
-                    input_shape=None,
-                )
-
-            return {"default": dataset, "target": target}
-
-        # ----- NDDataset path (SCP available) -----
-        # Apply axis configuration
-        dataset = self._apply_axis_config(dataset)
-
-        # Initialize or MERGE provenance tracking for the data pipeline
-        # IMPORTANT: Preserve any existing provenance from the loaded file
-        # (e.g., OPUS/JCAMP files may carry instrument metadata in dataset.meta)
-        if not hasattr(dataset, 'meta') or dataset.meta is None:
-            dataset.meta = {}
-
-        # Create the data.source step
-        source_step = {
-            "operation": "data.source",
-            "parameters": {
+        # ----- Unified provenance (always AnalysisDataset from here) -----
+        add_processing_step(
+            dataset,
+            "data.source",
+            {
                 "source": source,
                 "example_dataset": example_dataset if source == "spectrochempy" else None,
                 "sklearn_dataset": sklearn_dataset if source == "sklearn" else None,
@@ -693,79 +768,9 @@ class DataSourceNode(Node):
                 "experiment_id": experiment_id if source == "experiment" else None,
                 "file_path": file_path if source == "file" else None,
             },
-            "timestamp": datetime.utcnow().isoformat(),
-            "node_id": self.node_id,
-            "input_shape": None,  # No input for source node
-            "output_shape": list(dataset.shape),
-        }
-
-        # MERGE with existing processing_history (don't overwrite!)
-        try:
-            existing_history = dataset.meta.get("processing_history", [])
-            if existing_history:
-                # Prepend source step to existing history (this load is the new origin)
-                dataset.meta["processing_history"] = [source_step] + existing_history
-            else:
-                dataset.meta["processing_history"] = [source_step]
-        except (TypeError, AttributeError):
-            # Some dataset meta containers are immutable; replace with a mutable copy when possible.
-            try:
-                mutable_meta = dict(dataset.meta)
-                existing_history = mutable_meta.get("processing_history", [])
-                if existing_history:
-                    mutable_meta["processing_history"] = [source_step] + existing_history
-                else:
-                    mutable_meta["processing_history"] = [source_step]
-                dataset.meta = mutable_meta
-            except Exception:
-                logger.debug(
-                    "Could not write processing_history to dataset.meta for %s",
-                    getattr(dataset, "name", "<unknown>"),
-                )
-
-        # MERGE provenance summary - PRESERVE all existing fields from file metadata
-        existing_provenance = dataset.meta.get("provenance", {})
-        if not isinstance(existing_provenance, dict):
-            existing_provenance = {}
-
-        existing_operations = existing_provenance.get("operations", [])
-
-        # Start with existing provenance to preserve all file-extracted fields
-        # (operator, original_title, original_file_path, lab_name, etc.)
-        merged_provenance = dict(existing_provenance)
-
-        # CRITICAL: Preserve original_source_type if this is a re-load
-        # Don't overwrite rich provenance (e.g., "opus" -> "experiment")
-        original_source_type = (
-            existing_provenance.get("original_source_type") or
-            existing_provenance.get("source_type") or
-            existing_provenance.get("original_source")
+            node_id=self.node_id,
+            input_shape=None,
         )
-
-        # Add/update processing-related fields - use .setdefault() to not overwrite existing
-        # Only add current_source_type, preserve original_source_type chain
-        merged_provenance["current_source_type"] = source
-        if original_source_type:
-            merged_provenance["original_source_type"] = original_source_type
-        # Keep source_type for backwards compat but set to original if available
-        merged_provenance["source_type"] = original_source_type or source
-        merged_provenance["original_source"] = original_source_type or source
-        merged_provenance["operations"] = ["data.source"] + existing_operations
-        merged_provenance["last_modified"] = datetime.utcnow().isoformat()
-        merged_provenance["last_operation"] = "data.source"
-
-        dataset.meta["provenance"] = merged_provenance
-
-        if source == "sklearn":
-            target = self._extract_target_labels(dataset)
-        elif source == "eigenvector" and hasattr(self, "_eigenvector_properties"):
-            target = self._eigenvector_properties
-        else:
-            target = None
-
-        # NOTE: data.source step is already recorded in processing_history
-        # above (lines 589-612) via the manual merge.  Do NOT call
-        # add_processing_step() here — that would create a duplicate entry.
 
         return {
             "default": dataset,
@@ -776,9 +781,11 @@ class DataSourceNode(Node):
         """
         Extract target labels from an NDDataset if present.
 
-        Prefers y-axis labels over y-axis data.
+        Called **before** the NDDataset-to-AnalysisDataset conversion so that
+        SCP Coord label access is still available.  Prefers y-axis labels
+        over y-axis numeric data.
         """
-        etl_y_coord = safe_get_coord(dataset, 'y')
+        etl_y_coord = safe_get_coord(dataset, "y")
         if etl_y_coord is not None:
             if hasattr(etl_y_coord, "labels") and etl_y_coord.labels is not None:
                 labels = etl_y_coord.labels
@@ -829,13 +836,13 @@ class DataSourceNode(Node):
             logger.debug(f"[DATA] Transposed data to {dataset.shape[0]} samples × {dataset.shape[1]} features")
 
         if dataset.ndim >= 2:
-            current_y = safe_get_coord(dataset, 'y')
-            current_x = safe_get_coord(dataset, 'x')
+            current_y = safe_get_coord(dataset, "y")
+            current_x = safe_get_coord(dataset, "x")
 
             # Determine y-axis (sample) title
             if sample_axis_override:
                 y_title = sample_axis_override
-            elif current_y is not None and hasattr(current_y, 'title') and current_y.title:
+            elif current_y is not None and hasattr(current_y, "title") and current_y.title:
                 y_title = current_y.title
             else:
                 y_title = "Sample"
@@ -843,7 +850,7 @@ class DataSourceNode(Node):
             # Determine x-axis (spectral/feature) title
             if spectral_axis_override:
                 x_title = spectral_axis_override
-            elif current_x is not None and hasattr(current_x, 'title') and current_x.title:
+            elif current_x is not None and hasattr(current_x, "title") and current_x.title:
                 x_title = current_x.title
             else:
                 x_title = "Feature"
@@ -853,9 +860,13 @@ class DataSourceNode(Node):
                 if current_y is not None:
                     if current_y.title != y_title:
                         dataset.y_axis = AxisInfo(
-                            values=current_y.values if hasattr(current_y, 'values') else current_y.data if hasattr(current_y, 'data') else None,
-                            labels=current_y.labels if hasattr(current_y, 'labels') else None,
-                            units=current_y.units if hasattr(current_y, 'units') else None,
+                            values=(
+                                current_y.values
+                                if hasattr(current_y, "values")
+                                else current_y.data if hasattr(current_y, "data") else None
+                            ),
+                            labels=current_y.labels if hasattr(current_y, "labels") else None,
+                            units=current_y.units if hasattr(current_y, "units") else None,
                             title=y_title,
                         )
                 else:
@@ -867,9 +878,13 @@ class DataSourceNode(Node):
                 if current_x is not None:
                     if current_x.title != x_title:
                         dataset.x_axis = AxisInfo(
-                            values=current_x.values if hasattr(current_x, 'values') else current_x.data if hasattr(current_x, 'data') else None,
-                            labels=current_x.labels if hasattr(current_x, 'labels') else None,
-                            units=current_x.units if hasattr(current_x, 'units') else None,
+                            values=(
+                                current_x.values
+                                if hasattr(current_x, "values")
+                                else current_x.data if hasattr(current_x, "data") else None
+                            ),
+                            labels=current_x.labels if hasattr(current_x, "labels") else None,
+                            units=current_x.units if hasattr(current_x, "units") else None,
                             title=x_title,
                         )
                 else:
@@ -886,11 +901,8 @@ class DataSourceNode(Node):
                     except (AttributeError, TypeError):
                         pass
                 else:
-                    dataset.set_coordset(
-                        y=scp.Coord(np.arange(dataset.shape[0]), title=y_title),
-                        x=current_x
-                    )
-                    current_y = safe_get_coord(dataset, 'y')
+                    dataset.set_coordset(y=scp.Coord(np.arange(dataset.shape[0]), title=y_title), x=current_x)
+                    current_y = safe_get_coord(dataset, "y")
 
                 if current_x is not None:
                     try:
@@ -899,17 +911,14 @@ class DataSourceNode(Node):
                     except (AttributeError, TypeError):
                         pass
                 else:
-                    dataset.set_coordset(
-                        y=current_y,
-                        x=scp.Coord(np.arange(dataset.shape[1]), title=x_title)
-                    )
+                    dataset.set_coordset(y=current_y, x=scp.Coord(np.arange(dataset.shape[1]), title=x_title))
 
         elif dataset.ndim == 1:
             # For 1D data, only x-axis
-            aac_1d_x_coord = safe_get_coord(dataset, 'x')
+            aac_1d_x_coord = safe_get_coord(dataset, "x")
             if spectral_axis_override:
                 x_title = spectral_axis_override
-            elif aac_1d_x_coord is not None and hasattr(aac_1d_x_coord, 'title') and aac_1d_x_coord.title:
+            elif aac_1d_x_coord is not None and hasattr(aac_1d_x_coord, "title") and aac_1d_x_coord.title:
                 x_title = aac_1d_x_coord.title
             else:
                 x_title = "Feature"
@@ -918,7 +927,11 @@ class DataSourceNode(Node):
                 if aac_1d_x_coord is not None:
                     if aac_1d_x_coord.title != x_title:
                         dataset.x_axis = AxisInfo(
-                            values=aac_1d_x_coord.values if hasattr(aac_1d_x_coord, 'values') else aac_1d_x_coord.data if hasattr(aac_1d_x_coord, 'data') else None,
+                            values=(
+                                aac_1d_x_coord.values
+                                if hasattr(aac_1d_x_coord, "values")
+                                else aac_1d_x_coord.data if hasattr(aac_1d_x_coord, "data") else None
+                            ),
                             title=x_title,
                         )
                 else:
@@ -931,9 +944,7 @@ class DataSourceNode(Node):
                     if aac_1d_x_coord.title != x_title:
                         aac_1d_x_coord.title = x_title
                 else:
-                    dataset.set_coordset(
-                        x=scp.Coord(np.arange(dataset.shape[0]), title=x_title)
-                    )
+                    dataset.set_coordset(x=scp.Coord(np.arange(dataset.shape[0]), title=x_title))
 
         return dataset
 
@@ -965,8 +976,7 @@ class DataSourceNode(Node):
 
         if dataset_name not in _loaders:
             raise ValueError(
-                f"Unsupported sklearn dataset: {dataset_name}\n"
-                f"Supported datasets: {', '.join(_loaders)}"
+                f"Unsupported sklearn dataset: {dataset_name}\n" f"Supported datasets: {', '.join(_loaders)}"
             )
 
         if HAS_SCP:
@@ -984,7 +994,8 @@ class DataSourceNode(Node):
             except (AttributeError, Exception) as e:
                 logger.warning(
                     "[DATA] SCP loader failed for %s, falling back to sklearn: %s",
-                    dataset_name, e,
+                    dataset_name,
+                    e,
                 )
                 # Fall through to direct sklearn path
 
@@ -995,7 +1006,9 @@ class DataSourceNode(Node):
         self._sklearn_bunch = bunch
         logger.debug(
             "[DATA] Loaded %s: %d samples × %d features",
-            dataset_name, bunch.data.shape[0], bunch.data.shape[1],
+            dataset_name,
+            bunch.data.shape[0],
+            bunch.data.shape[1],
         )
         return bunch.data  # numpy array
 
@@ -1055,14 +1068,20 @@ class DataSourceNode(Node):
 
             logger.debug(
                 "[DATA] Loaded Eigenvector %s via SCP: %s (%s)",
-                dataset_name, dataset.shape, catalog.get("technique", ""),
+                dataset_name,
+                dataset.shape,
+                catalog.get("technique", ""),
             )
             return dataset
 
         # No-SCP path: return AnalysisDataset with proper axes
         x_title = catalog.get("x_title", "Channel")
         x_units = catalog.get("x_units")
-        x_values = wavelengths if wavelengths is not None and len(wavelengths) == spectra.shape[1] else np.arange(spectra.shape[1])
+        x_values = (
+            wavelengths
+            if wavelengths is not None and len(wavelengths) == spectra.shape[1]
+            else np.arange(spectra.shape[1])
+        )
 
         dataset = AnalysisDataset(
             X=spectra,
@@ -1073,7 +1092,9 @@ class DataSourceNode(Node):
         )
         logger.debug(
             "[DATA] Loaded Eigenvector %s: %d samples × %d features",
-            dataset_name, spectra.shape[0], spectra.shape[1],
+            dataset_name,
+            spectra.shape[0],
+            spectra.shape[1],
         )
         return dataset
 
@@ -1112,7 +1133,7 @@ class DataSourceNode(Node):
         raise ValueError(
             f"No loadable files found for '{example_name}'.\n"
             "Ensure SpectroChemPy data is downloaded:\n"
-            "  python -c \"from spectra_sherpa.app.lib.scp_compat import download_testdata; download_testdata()\""
+            '  python -c "from spectra_sherpa.app.lib.scp_compat import download_testdata; download_testdata()"'
         )
 
     def _load_spectrochempy_custom_file(self, file_path: str) -> NDDataset:
@@ -1178,9 +1199,7 @@ class DataSourceNode(Node):
 
         except Exception as e:
             raise ValueError(
-                f"Failed to load {file_path}: {str(e)}\n"
-                f"File type: {full_path.suffix}\n"
-                f"Full path: {full_path}"
+                f"Failed to load {file_path}: {str(e)}\n" f"File type: {full_path.suffix}\n" f"Full path: {full_path}"
             ) from e
 
     def _is_pattern(self, file_path: str) -> bool:
@@ -1198,7 +1217,7 @@ class DataSourceNode(Node):
         Returns:
             True if pattern detected, False otherwise
         """
-        return '*' in file_path or '?' in file_path or file_path.endswith('/')
+        return "*" in file_path or "?" in file_path or file_path.endswith("/")
 
     def _load_spectrochempy_group(self, example_dataset: str, pattern: str) -> NDDataset:
         """
@@ -1219,19 +1238,18 @@ class DataSourceNode(Node):
         Returns:
             NDDataset with all matching files concatenated along sample axis
         """
-        import re
 
         # Parse pattern to extract folder and glob pattern
-        if pattern.endswith('/'):
+        if pattern.endswith("/"):
             # Folder indicator: load all files from specified folder
             # Remove trailing slash and use as folder path
-            folder_path = pattern.rstrip('/')
-            glob_pattern = '*'
-        elif '/' in pattern:
+            folder_path = pattern.rstrip("/")
+            glob_pattern = "*"
+        elif "/" in pattern:
             # Pattern with subfolder: "irdata/subfolder/*.spa"
-            parts = pattern.rsplit('/', 1)
+            parts = pattern.rsplit("/", 1)
             folder_path = parts[0] if parts[0] else example_dataset
-            glob_pattern = parts[1] if len(parts) > 1 else '*'
+            glob_pattern = parts[1] if len(parts) > 1 else "*"
         else:
             # Just a pattern: "*.spa" - apply to example_dataset
             folder_path = example_dataset
@@ -1263,11 +1281,11 @@ class DataSourceNode(Node):
         files = []
         for f in all_files:
             # Skip directories, hidden files, and system files
-            if not f.is_file() or f.name.startswith(('.', '__')):
+            if not f.is_file() or f.name.startswith((".", "__")):
                 continue
 
             # Case-insensitive pattern matching
-            if '*' in glob_pattern or '?' in glob_pattern:
+            if "*" in glob_pattern or "?" in glob_pattern:
                 # Wildcard pattern - use fnmatch
                 if fnmatch.fnmatch(f.name.lower(), glob_pattern.lower()):
                     files.append(f)
@@ -1377,18 +1395,21 @@ class DataSourceNode(Node):
                         y_labels.append(f"{file_label}_{j+1}")
 
             total_spectra = concatenated_data.shape[0]
-            logger.debug(f"[DATA] Concatenated {len(datasets)} files ({total_spectra} spectra) into shape {concatenated_data.shape}")
+            logger.debug(
+                f"[DATA] Concatenated {len(datasets)} files "
+                f"({total_spectra} spectra) into shape {concatenated_data.shape}"
+            )
 
             # Create new NDDataset with stacked data
             concatenated = scp.NDDataset(concatenated_data)
 
             # Copy x-axis from reference (all validated to be identical)
-            lsg_ref_x_coord = safe_get_coord(datasets[0], 'x')
+            lsg_ref_x_coord = safe_get_coord(datasets[0], "x")
             if lsg_ref_x_coord is not None:
                 concatenated.x = lsg_ref_x_coord.copy()
 
             # Set units from reference if available
-            if hasattr(datasets[0], 'units') and datasets[0].units is not None:
+            if hasattr(datasets[0], "units") and datasets[0].units is not None:
                 concatenated.units = datasets[0].units
 
         except Exception as e:
@@ -1401,19 +1422,14 @@ class DataSourceNode(Node):
         # Set title and y-axis labels
         concatenated.title = f"{folder.name} ({len(datasets)} files, {total_spectra} spectra)"
 
-        lsg_cat_y_coord = safe_get_coord(concatenated, 'y')
+        lsg_cat_y_coord = safe_get_coord(concatenated, "y")
         if lsg_cat_y_coord is not None:
             lsg_cat_y_coord.title = "Sample"
             lsg_cat_y_coord.labels = y_labels
         else:
-            lsg_cat_x_coord = safe_get_coord(concatenated, 'x')
+            lsg_cat_x_coord = safe_get_coord(concatenated, "x")
             concatenated.set_coordset(
-                y=scp.Coord(
-                    np.arange(len(y_labels)),
-                    title="Sample",
-                    labels=y_labels
-                ),
-                x=lsg_cat_x_coord
+                y=scp.Coord(np.arange(len(y_labels)), title="Sample", labels=y_labels), x=lsg_cat_x_coord
             )
 
         return concatenated
@@ -1435,17 +1451,16 @@ class DataSourceNode(Node):
         reference = datasets[0]
         reference_name = file_names[0]
 
-        vga_ref_x_coord = safe_get_coord(reference, 'x')
+        vga_ref_x_coord = safe_get_coord(reference, "x")
         if vga_ref_x_coord is None:
             raise ValueError(
-                f"Reference file '{reference_name}' has no x-axis.\n"
-                f"Cannot validate axes for group loading."
+                f"Reference file '{reference_name}' has no x-axis.\n" f"Cannot validate axes for group loading."
             )
 
         reference_x = np.array(vga_ref_x_coord.data)
 
         for i, (dataset, file_name) in enumerate(zip(datasets[1:], file_names[1:]), 2):
-            vga_ds_x_coord = safe_get_coord(dataset, 'x')
+            vga_ds_x_coord = safe_get_coord(dataset, "x")
             if vga_ds_x_coord is None:
                 raise ValueError(
                     f"File {i}/{len(datasets)}: '{file_name}' has no x-axis.\n"
@@ -1490,17 +1505,17 @@ class DataSourceNode(Node):
             noise = np.random.randn(n_wavenumbers) * 0.005
 
             # OH stretching region (3000-3800 cm-1) - increases with activation
-            oh_peak = (0.3 + temp_factor * 0.5) * np.exp(-((wavenumbers - 3650) ** 2) / (2 * 80 ** 2))
-            oh_peak2 = (0.2 + temp_factor * 0.3) * np.exp(-((wavenumbers - 3550) ** 2) / (2 * 100 ** 2))
+            oh_peak = (0.3 + temp_factor * 0.5) * np.exp(-((wavenumbers - 3650) ** 2) / (2 * 80**2))
+            oh_peak2 = (0.2 + temp_factor * 0.3) * np.exp(-((wavenumbers - 3550) ** 2) / (2 * 100**2))
 
             # NH4+ peaks (1400-1500 cm-1) - decreases with activation
-            nh4_peak = (0.6 - temp_factor * 0.5) * np.exp(-((wavenumbers - 1450) ** 2) / (2 * 40 ** 2))
+            nh4_peak = (0.6 - temp_factor * 0.5) * np.exp(-((wavenumbers - 1450) ** 2) / (2 * 40**2))
 
             # Si-O-Si framework (1000-1200 cm-1) - relatively constant
-            sio_peak = 0.8 * np.exp(-((wavenumbers - 1050) ** 2) / (2 * 100 ** 2))
+            sio_peak = 0.8 * np.exp(-((wavenumbers - 1050) ** 2) / (2 * 100**2))
 
             # Water bending (1640 cm-1) - decreases with activation
-            h2o_peak = (0.3 - temp_factor * 0.25) * np.exp(-((wavenumbers - 1640) ** 2) / (2 * 30 ** 2))
+            h2o_peak = (0.3 - temp_factor * 0.25) * np.exp(-((wavenumbers - 1640) ** 2) / (2 * 30**2))
 
             spectra[i] = base + oh_peak + oh_peak2 + nh4_peak + sio_peak + h2o_peak + noise
 
@@ -1559,9 +1574,9 @@ class DataSourceNode(Node):
             noise = np.random.randn(n_wavenumbers) * 50
 
             # Simulate some typical Raman peaks
-            peak1 = concentration * 1000 * np.exp(-((wavenumbers - 1000) ** 2) / (2 * 20 ** 2))
-            peak2 = concentration * 800 * np.exp(-((wavenumbers - 1600) ** 2) / (2 * 30 ** 2))
-            peak3 = concentration * 500 * np.exp(-((wavenumbers - 2900) ** 2) / (2 * 50 ** 2))
+            peak1 = concentration * 1000 * np.exp(-((wavenumbers - 1000) ** 2) / (2 * 20**2))
+            peak2 = concentration * 800 * np.exp(-((wavenumbers - 1600) ** 2) / (2 * 30**2))
+            peak3 = concentration * 500 * np.exp(-((wavenumbers - 2900) ** 2) / (2 * 50**2))
 
             spectra[i] = 100 + peak1 + peak2 + peak3 + noise
 
@@ -1608,17 +1623,19 @@ class DataSourceNode(Node):
             file_id: Specific file ID to load (if None, loads first file of the stage)
             stage: Data stage (raw, preprocessed, synthetic)
         """
+        from sqlalchemy import select
+
         from spectra_sherpa.app.core.config import settings
         from spectra_sherpa.app.db.session import async_session
         from spectra_sherpa.app.models.experiment_file import ExperimentFile
-        from sqlalchemy import select
 
         async with async_session() as session:
             # Find experiment files for the specified stage
-            query = select(ExperimentFile).where(
-                ExperimentFile.experiment_id == experiment_id,
-                ExperimentFile.stage == stage
-            ).order_by(ExperimentFile.created_at)  # Deterministic ordering
+            query = (
+                select(ExperimentFile)
+                .where(ExperimentFile.experiment_id == experiment_id, ExperimentFile.stage == stage)
+                .order_by(ExperimentFile.created_at)
+            )  # Deterministic ordering
 
             # If specific file_id is provided, filter by it
             if file_id is not None:
@@ -1642,8 +1659,7 @@ class DataSourceNode(Node):
 
             if not full_path.exists():
                 raise FileNotFoundError(
-                    f"File not found: {full_path}. "
-                    f"File record exists in database but file is missing on disk."
+                    f"File not found: {full_path}. " f"File record exists in database but file is missing on disk."
                 )
 
             return self._load_from_file(str(full_path))
@@ -1655,10 +1671,11 @@ class DataSourceNode(Node):
         Args:
             library_id: ID of the NIST library entry
         """
+        from sqlalchemy import select
+
         from spectra_sherpa.app.core.config import settings
         from spectra_sherpa.app.db.session import async_session
         from spectra_sherpa.app.models.nist_library import NistLibrary
-        from sqlalchemy import select
 
         async with async_session() as session:
             # Find library entry
@@ -1689,8 +1706,7 @@ class DataSourceNode(Node):
         """
         if not os.path.exists(file_path):
             raise FileNotFoundError(
-                f"File not found: {file_path}. "
-                f"Please verify the file exists and the path is correct."
+                f"File not found: {file_path}. " f"Please verify the file exists and the path is correct."
             )
 
         ext = os.path.splitext(file_path)[1]
@@ -1716,21 +1732,27 @@ class DataSourceNode(Node):
             extracted_meta = extract_instrument_metadata(dataset, file_path)
 
             # Store extracted metadata in dataset.meta for provenance
-            if not hasattr(dataset, 'meta') or dataset.meta is None:
+            if not hasattr(dataset, "meta") or dataset.meta is None:
                 dataset.meta = {}
 
             # Use the normalizer's merge function to preserve existing values
             # and never overwrite blindly
             try:
                 from spectra_sherpa.app.services.metadata.normalizer import MetadataNormalizer
+
                 normalizer = MetadataNormalizer()
                 dataset.meta = normalizer.merge_with_existing(extracted_meta, dataset.meta)
             except ImportError:
                 # Fallback: manual merge (shouldn't happen in normal operation)
                 # New structure uses: instrument_metadata, acquisition_params,
                 # experimental_conditions, sample_info, provenance, raw_file_metadata
-                for key in ["instrument_metadata", "acquisition_params",
-                           "experimental_conditions", "sample_info", "provenance"]:
+                for key in [
+                    "instrument_metadata",
+                    "acquisition_params",
+                    "experimental_conditions",
+                    "sample_info",
+                    "provenance",
+                ]:
                     if extracted_meta.get(key):
                         if key not in dataset.meta:
                             dataset.meta[key] = {}
@@ -1774,7 +1796,7 @@ class DataSourceNode(Node):
             for peak_pos in [3400, 2900, 1700, 1500, 1000]:
                 peak_height = np.random.rand() * 0.5 + 0.2
                 peak_width = np.random.rand() * 50 + 30
-                peak = peak_height * np.exp(-((wavenumbers - peak_pos) ** 2) / (2 * peak_width ** 2))
+                peak = peak_height * np.exp(-((wavenumbers - peak_pos) ** 2) / (2 * peak_width**2))
                 spectra[i] += peak
 
             spectra[i] += base + noise
@@ -1877,10 +1899,11 @@ class FileLoadNode(Node):
     async def execute(self, *args) -> Any:
         """Load data from a specific experiment file."""
         require_scp("File loading")
+        from sqlalchemy import select
+
         from spectra_sherpa.app.core.config import settings
         from spectra_sherpa.app.db.session import async_session
         from spectra_sherpa.app.models.experiment_file import ExperimentFile
-        from sqlalchemy import select
 
         experiment_id = self.parameters.get("experiment_id")
         file_id = self.parameters.get("file_id")
@@ -1936,7 +1959,8 @@ class FileLoadNode(Node):
                     },
                     node_id=self.node_id,
                 )
-                return dataset
+                # Convert to AnalysisDataset for uniform DAG contract
+                return from_nddataset(dataset)
         except Exception as e:
             raise ValueError(f"Error loading file: {e}")
 
@@ -2022,29 +2046,32 @@ class MyDatasetNode(Node):
     async def execute(self, *args) -> Any:
         """Load all files, group by compatible x-axis, stack each group."""
         require_scp("My Dataset loading")
+        from sqlalchemy import select as sa_select
+
         from spectra_sherpa.app.core.config import settings
         from spectra_sherpa.app.db.session import async_session
         from spectra_sherpa.app.models.experiment import Experiment
         from spectra_sherpa.app.models.experiment_file import ExperimentFile as EF
-        from sqlalchemy import select as sa_select
 
         dataset_id = self.parameters.get("dataset_id")
         if not dataset_id:
             raise ValueError("dataset_id is required")
 
         async with async_session() as session:
-            exp_result = await session.execute(
-                sa_select(Experiment).where(Experiment.id == dataset_id)
-            )
+            exp_result = await session.execute(sa_select(Experiment).where(Experiment.id == dataset_id))
             experiment = exp_result.scalar_one_or_none()
             if not experiment:
                 raise ValueError(f"Dataset {dataset_id} not found.")
             exp_name = experiment.name
 
-            query = sa_select(EF).where(
-                EF.experiment_id == dataset_id,
-                EF.stage == "raw",
-            ).order_by(EF.id)
+            query = (
+                sa_select(EF)
+                .where(
+                    EF.experiment_id == dataset_id,
+                    EF.stage == "raw",
+                )
+                .order_by(EF.id)
+            )
             result = await session.execute(query)
             file_records = list(result.scalars().all())
 
@@ -2093,13 +2120,14 @@ class MyDatasetNode(Node):
         )
         set_spectra_meta(spectra, meta)
         add_processing_step(
-            spectra, "data.my_dataset",
+            spectra,
+            "data.my_dataset",
             {"dataset_id": dataset_id, "file_count": len(loaded)},
             node_id=self.node_id,
         )
 
         # Stack properties (if any)
-        target: Optional[NDDataset] = None
+        target: Optional[Any] = None
         if prop_groups:
             all_props = []
             all_pnames = []
@@ -2110,21 +2138,25 @@ class MyDatasetNode(Node):
             target = self._concatenate(all_props, all_pnames) if len(all_props) > 1 else all_props[0]
             target.title = f"{exp_name} properties"
             logger.debug(
-                f"[MY_DATASET] Loaded {len(s_names)} spectral + "
-                f"{len(all_pnames)} property files from '{exp_name}'"
+                f"[MY_DATASET] Loaded {len(s_names)} spectral + " f"{len(all_pnames)} property files from '{exp_name}'"
             )
 
-        return {"default": spectra, "target": target}
+        # Convert to AnalysisDataset for uniform DAG contract
+        spectra_out = from_nddataset(spectra) if isinstance(spectra, NDDataset) else spectra
+        target_out = from_nddataset(target) if isinstance(target, NDDataset) else target
+        return {"default": spectra_out, "target": target_out}
 
     @staticmethod
     def _x_length(ds: NDDataset) -> int:
-        """Return number of x-axis points (0 if no x-axis)."""
-        coord = safe_get_coord(ds, 'x')
+        """Return number of x-axis points (0 if no x-axis).
+
+        Operates on raw NDDataset instances loaded by ``_load_file()``
+        before the AnalysisDataset conversion step.
+        """
+        coord = safe_get_coord(ds, "x")
         return len(np.array(coord.data)) if coord is not None else 0
 
-    def _group_by_x_axis(
-        self, loaded: list[tuple[NDDataset, str]]
-    ) -> list[list[tuple[NDDataset, str]]]:
+    def _group_by_x_axis(self, loaded: list[tuple[NDDataset, str]]) -> list[list[tuple[NDDataset, str]]]:
         """Group loaded datasets by compatible x-axis.
 
         Two datasets are compatible if they have the same number of x points
@@ -2135,7 +2167,7 @@ class MyDatasetNode(Node):
         group_keys: list[tuple[int, np.ndarray | None]] = []  # (length, x_values)
 
         for ds, fname in loaded:
-            coord = safe_get_coord(ds, 'x')
+            coord = safe_get_coord(ds, "x")
             if coord is not None:
                 x = np.array(coord.data)
                 length = len(x)
@@ -2167,18 +2199,15 @@ class MyDatasetNode(Node):
         if len(datasets) < 2:
             return
         ref = datasets[0]
-        ref_x_coord = safe_get_coord(ref, 'x')
+        ref_x_coord = safe_get_coord(ref, "x")
         if ref_x_coord is None:
             return  # no x-axis to compare
         ref_x = np.array(ref_x_coord.data)
 
         for i, (ds, fname) in enumerate(zip(datasets[1:], file_names[1:]), 2):
-            ds_x_coord = safe_get_coord(ds, 'x')
+            ds_x_coord = safe_get_coord(ds, "x")
             if ds_x_coord is None:
-                raise ValueError(
-                    f"Cannot merge: '{fname}' has no x-axis but "
-                    f"'{file_names[0]}' does."
-                )
+                raise ValueError(f"Cannot merge: '{fname}' has no x-axis but " f"'{file_names[0]}' does.")
             ds_x = np.array(ds_x_coord.data)
             if ds_x.shape != ref_x.shape:
                 raise ValueError(
@@ -2209,9 +2238,7 @@ class MyDatasetNode(Node):
             elif arr.ndim == 2:
                 data_arrays_2d.append(arr)
             else:
-                raise ValueError(
-                    f"Unexpected dimensionality in file '{file_names[i]}': shape {arr.shape}"
-                )
+                raise ValueError(f"Unexpected dimensionality in file '{file_names[i]}': shape {arr.shape}")
 
         concatenated_data = np.concatenate(data_arrays_2d, axis=0)
 
@@ -2227,19 +2254,19 @@ class MyDatasetNode(Node):
 
         merged = scp.NDDataset(concatenated_data)
 
-        ref_x = safe_get_coord(datasets[0], 'x')
+        ref_x = safe_get_coord(datasets[0], "x")
         if ref_x is not None:
             merged.x = ref_x.copy()
 
-        if hasattr(datasets[0], 'units') and datasets[0].units is not None:
+        if hasattr(datasets[0], "units") and datasets[0].units is not None:
             merged.units = datasets[0].units
 
-        cat_y = safe_get_coord(merged, 'y')
+        cat_y = safe_get_coord(merged, "y")
         if cat_y is not None:
             cat_y.title = "Sample"
             cat_y.labels = y_labels
         else:
-            cat_x = safe_get_coord(merged, 'x')
+            cat_x = safe_get_coord(merged, "x")
             merged.set_coordset(
                 y=scp.Coord(
                     np.arange(len(y_labels)),
@@ -2319,9 +2346,7 @@ class MyDatasetNode(Node):
         dataset.title = Path(file_path).stem
 
         # Set x-axis from column header values and y-axis for samples
-        y_labels = (
-            df[label_cols[0]].astype(str).tolist() if label_cols else None
-        )
+        y_labels = df[label_cols[0]].astype(str).tolist() if label_cols else None
         dataset.set_coordset(
             y=scp.Coord(
                 np.arange(data.shape[0]),
@@ -2375,10 +2400,11 @@ class NISTLibraryNode(Node):
 
     async def execute(self, *args) -> Any:
         """Load spectrum from NIST library."""
+        from sqlalchemy import select
+
         from spectra_sherpa.app.core.config import settings
         from spectra_sherpa.app.db.session import async_session
         from spectra_sherpa.app.models.nist_library import NistLibrary
-        from sqlalchemy import select
 
         library_id = self.parameters.get("library_id")
 
@@ -2447,7 +2473,8 @@ class NISTLibraryNode(Node):
                     },
                     node_id=self.node_id,
                 )
-                return dataset
+                # Convert to AnalysisDataset for uniform DAG contract
+                return from_nddataset(dataset)
         except Exception as e:
             raise ValueError(f"Error loading NIST library entry: {e}")
 
@@ -2535,7 +2562,7 @@ class SyntheticCurveNode(Node):
         if curve_type == "sigmoid":
             curve = max_conc / (1 + np.exp(-(t - center) / width))
         elif curve_type == "gaussian":
-            curve = max_conc * np.exp(-((t - center) ** 2) / (2 * width ** 2))
+            curve = max_conc * np.exp(-((t - center) ** 2) / (2 * width**2))
         elif curve_type == "linear":
             curve = max_conc * t
         elif curve_type == "exponential":
@@ -2545,21 +2572,13 @@ class SyntheticCurveNode(Node):
         else:
             curve = np.ones(n_points) * max_conc
 
-        if HAS_SCP:
-            dataset = scp.NDDataset(curve)
-            dataset.set_coordset(
-                x=scp.Coord(t * n_points, title="Time", units="s"),
-            )
-            dataset.title = f"Concentration ({curve_type})"
-            dataset.units = "mol/L"
-        else:
-            dataset = AnalysisDataset(
-                X=curve.reshape(1, -1),
-                x_axis=AxisInfo(values=t * n_points, title="Time", units="s"),
-                backend="numpy",
-                title=f"Concentration ({curve_type})",
-                units="mol/L",
-            )
+        dataset = AnalysisDataset(
+            X=curve.reshape(1, -1),
+            x_axis=AxisInfo(values=t * n_points, title="Time", units="s"),
+            backend="numpy",
+            title=f"Concentration ({curve_type})",
+            units="mol/L",
+        )
 
         # Attach metadata with concentration profile
         concentration_profile = ConcentrationProfile(
@@ -2666,7 +2685,11 @@ class LoadGroupNode(Node):
                 param_type="select",
                 options=["filename", "numeric_suffix", "modified_time"],
                 default="filename",
-                description="How to order files before concatenation (filename=alphabetical, numeric_suffix=extract numbers from filename, modified_time=file modification timestamp)",
+                description=(
+                    "How to order files before concatenation"
+                    " (filename=alphabetical, numeric_suffix=extract numbers"
+                    " from filename, modified_time=file modification timestamp)"
+                ),
                 required=False,
             ),
             NodeParameter(
@@ -2674,7 +2697,10 @@ class LoadGroupNode(Node):
                 label="Validate X-Axes Match",
                 param_type="boolean",
                 default=True,
-                description="Require all files to have identical x-axes (wavenumbers). Recommended: True for strict validation.",
+                description=(
+                    "Require all files to have identical x-axes (wavenumbers)."
+                    " Recommended: True for strict validation."
+                ),
                 required=False,
             ),
             NodeParameter(
@@ -2741,7 +2767,7 @@ class LoadGroupNode(Node):
         if recursive:
             # Walk directory tree recursively
             all_files = []
-            for item in folder.rglob('*'):
+            for item in folder.rglob("*"):
                 if item.is_file():
                     all_files.append(item)
         else:
@@ -2752,17 +2778,17 @@ class LoadGroupNode(Node):
         files = []
         for f in all_files:
             # Skip hidden files and system files
-            if f.name.startswith(('.', '__')):
+            if f.name.startswith((".", "__")):
                 continue
 
             # Case-insensitive pattern matching
             # For recursive patterns, compare relative path; otherwise just filename
-            if recursive and '/' in pattern:
+            if recursive and "/" in pattern:
                 # Pattern includes path (e.g., "subfolder/*.spa")
                 # Compare relative path from folder root
                 try:
                     rel_path = f.relative_to(folder)
-                    match_str = str(rel_path).replace('\\', '/')  # Normalize path separators
+                    match_str = str(rel_path).replace("\\", "/")  # Normalize path separators
                 except ValueError:
                     continue
             else:
@@ -2770,7 +2796,7 @@ class LoadGroupNode(Node):
                 match_str = f.name
 
             # Apply case-insensitive matching
-            if '*' in pattern or '?' in pattern:
+            if "*" in pattern or "?" in pattern:
                 # Wildcard pattern - use fnmatch
                 if fnmatch.fnmatch(match_str.lower(), pattern.lower()):
                     files.append(f)
@@ -2793,7 +2819,7 @@ class LoadGroupNode(Node):
         if sort_by == "numeric_suffix":
             # Extract numeric suffix from filename (e.g., "sample_001.spa" -> 1)
             def extract_number(file_path: Path) -> int:
-                match = re.search(r'(\d+)', file_path.stem)
+                match = re.search(r"(\d+)", file_path.stem)
                 return int(match.group(1)) if match else 0
 
             files.sort(key=extract_number)
@@ -2812,7 +2838,6 @@ class LoadGroupNode(Node):
         # Load all files (FAIL-FAST: stop on first error)
         datasets = []
         file_names = []
-        errors_encountered = []
 
         for i, file_path in enumerate(files, 1):
             try:
@@ -2890,18 +2915,21 @@ class LoadGroupNode(Node):
                         y_labels.append(f"{file_label}_{j+1}")
 
             total_spectra = concatenated_data.shape[0]
-            logger.debug(f"[LOAD_GROUP] Concatenated {len(datasets)} files ({total_spectra} spectra) into shape {concatenated_data.shape}")
+            logger.debug(
+                f"[LOAD_GROUP] Concatenated {len(datasets)} files "
+                f"({total_spectra} spectra) into shape {concatenated_data.shape}"
+            )
 
             # Create new NDDataset with stacked data
             concatenated = scp.NDDataset(concatenated_data)
 
             # Copy x-axis from reference (all validated to be identical)
-            lgn_ref_x_coord = safe_get_coord(datasets[0], 'x')
+            lgn_ref_x_coord = safe_get_coord(datasets[0], "x")
             if lgn_ref_x_coord is not None:
                 concatenated.x = lgn_ref_x_coord.copy()
 
             # Set units from reference if available
-            if hasattr(datasets[0], 'units') and datasets[0].units is not None:
+            if hasattr(datasets[0], "units") and datasets[0].units is not None:
                 concatenated.units = datasets[0].units
 
         except Exception as e:
@@ -2919,25 +2947,20 @@ class LoadGroupNode(Node):
             concatenated.title = f"{folder.name} ({len(datasets)} files, {total_spectra} spectra)"
 
         # Update y-axis with file names
-        lgn_cat_y_coord = safe_get_coord(concatenated, 'y')
+        lgn_cat_y_coord = safe_get_coord(concatenated, "y")
         if lgn_cat_y_coord is not None:
             lgn_cat_y_coord.title = "Sample"
             # Set labels to spectrum names (accounting for multi-spectrum files)
             lgn_cat_y_coord.labels = y_labels
         else:
             # Create y-axis with spectrum names
-            lgn_cat_x_coord = safe_get_coord(concatenated, 'x')
+            lgn_cat_x_coord = safe_get_coord(concatenated, "x")
             concatenated.set_coordset(
-                y=scp.Coord(
-                    np.arange(len(y_labels)),
-                    title="Sample",
-                    labels=y_labels
-                ),
-                x=lgn_cat_x_coord
+                y=scp.Coord(np.arange(len(y_labels)), title="Sample", labels=y_labels), x=lgn_cat_x_coord
             )
 
         # Attach rich metadata (SECURITY: only folder name, not full path)
-        folder_name = folder.name if hasattr(folder, 'name') else os.path.basename(str(folder))
+        folder_name = folder.name if hasattr(folder, "name") else os.path.basename(str(folder))
         meta = SpectraMeta(
             provenance=DataProvenance(
                 source_type=SourceType.EXPERIMENT,  # Closest match for file group
@@ -2975,7 +2998,8 @@ class LoadGroupNode(Node):
             },
             node_id=self.node_id,
         )
-        return concatenated
+        # Convert to AnalysisDataset for uniform DAG contract
+        return from_nddataset(concatenated)
 
     def _load_single_file(self, file_path: Path) -> NDDataset:
         """
@@ -3019,9 +3043,7 @@ class LoadGroupNode(Node):
 
         except Exception as e:
             raise ValueError(
-                f"Failed to load {file_path.name}: {str(e)}\n"
-                f"File type: {ext}\n"
-                f"Full path: {file_path}"
+                f"Failed to load {file_path.name}: {str(e)}\n" f"File type: {ext}\n" f"Full path: {file_path}"
             ) from e
 
     def _validate_axes_match(self, datasets: list[NDDataset], file_names: list[str]) -> None:
@@ -3044,7 +3066,7 @@ class LoadGroupNode(Node):
         reference_name = file_names[0]
 
         # Check if reference has x-axis
-        vam_ref_x_coord = safe_get_coord(reference, 'x')
+        vam_ref_x_coord = safe_get_coord(reference, "x")
         if vam_ref_x_coord is None:
             raise ValueError(
                 f"Reference file '{reference_name}' has no x-axis (wavenumbers).\n"
@@ -3057,7 +3079,7 @@ class LoadGroupNode(Node):
         # Compare all other datasets to reference
         for i, (dataset, file_name) in enumerate(zip(datasets[1:], file_names[1:]), 2):
             # Check if dataset has x-axis
-            vam_ds_x_coord = safe_get_coord(dataset, 'x')
+            vam_ds_x_coord = safe_get_coord(dataset, "x")
             if vam_ds_x_coord is None:
                 raise ValueError(
                     f"X-axis validation failed:\n"
@@ -3095,7 +3117,10 @@ class LoadGroupNode(Node):
                     f"Consider reprocessing files to ensure consistent spectral range and resolution."
                 )
 
-        logger.debug(f"[LOAD_GROUP] X-axis validation passed: All {len(datasets)} spectra have identical x-axes ({len(reference_x)} points)")
+        logger.debug(
+            f"[LOAD_GROUP] X-axis validation passed: All {len(datasets)} spectra "
+            f"have identical x-axes ({len(reference_x)} points)"
+        )
 
 
 @register_node
@@ -3205,7 +3230,7 @@ class TrainTestSplitNode(Node):
         input_types=["NDDataset"],
         output_type="dict",  # Returns dict with multiple outputs
     )
-    
+
     async def execute(self, X: Any = None, y: Any = None, **kwargs: Any) -> dict[str, Any]:
         """
         Split data into train and test sets.
@@ -3223,35 +3248,46 @@ class TrainTestSplitNode(Node):
         random_seed = self.parameters.get("random_seed", 42)
         shuffle = self.parameters.get("shuffle", True)
 
-        # Convert NDDataset to numpy array
-        if hasattr(X, "data"):
-            X_array = np.array(X.data)
-        else:
-            X_array = np.array(X)
-        
+        X_ds = bind_X(
+            X,
+            kwargs,
+            missing_message="Missing required input: X (dataset)",
+            dataset_error_message="X must be an NDDataset or AnalysisDataset object",
+            allow_array=True,
+        )
+        y_value = bind_y(
+            y,
+            kwargs,
+            X=X_ds,
+            required=False,
+            infer_from_X=True,
+            dataset_as_data=False,
+        )
+
+        X_array = to_numpy_2d(X_ds, name="X", dtype=np.float64)
+        y_array = to_numpy_1d(y_value, name="y", expected_length=X_array.shape[0]) if y_value is not None else None
+
         n_samples = X_array.shape[0]
         n_test = int(n_samples * test_size)
         n_train = n_samples - n_test
-        
+
         if n_test < 1 or n_train < 1:
             raise ValueError(
-                f"Test size {test_size} results in {n_test} test samples. "
-                f"Need at least 1 train and 1 test sample."
+                f"Test size {test_size} results in {n_test} test samples. " f"Need at least 1 train and 1 test sample."
             )
-        
+
         # Generate indices
         if split_method == "sequential":
             # Sequential split (first N for train, rest for test)
             train_idx = np.arange(n_train)
             test_idx = np.arange(n_train, n_samples)
-            
-        elif split_method == "stratified" and y is not None:
+
+        elif split_method == "stratified" and y_array is not None:
             # Stratified split (preserve class proportions)
             from sklearn.model_selection import train_test_split
-            
-            y_array = np.array(y) if not isinstance(y, np.ndarray) else y
+
             indices = np.arange(n_samples)
-            
+
             train_idx, test_idx = train_test_split(
                 indices,
                 test_size=test_size,
@@ -3259,41 +3295,40 @@ class TrainTestSplitNode(Node):
                 stratify=y_array,
                 shuffle=shuffle,
             )
-            
+
         else:
             # Random split
             indices = np.arange(n_samples)
             if shuffle:
                 rng = np.random.RandomState(random_seed)
                 rng.shuffle(indices)
-            
+
             train_idx = indices[:n_train]
             test_idx = indices[n_train:]
-        
+
         # Split data
         X_train_array = X_array[train_idx]
         X_test_array = X_array[test_idx]
-        
-        # Wrap split arrays as AnalysisDataset (no SCP dependency)
-        X_train = AnalysisDataset(X=X_train_array)
-        X_test = AnalysisDataset(X=X_test_array)
 
-        # Copy coordinate system if present
-        tts_x_coord = safe_get_coord(X, 'x')
-        if tts_x_coord is not None:
-            X_train.x = tts_x_coord.copy()
-            X_test.x = tts_x_coord.copy()
+        X_train = build_dataset_like(X_train_array, X_ds)
+        X_test = build_dataset_like(X_test_array, X_ds)
 
-        # Copy y-axis labels for selected samples
-        tts_y_coord = safe_get_coord(X, 'y')
-        if tts_y_coord is not None:
-            X_train.y = tts_y_coord[train_idx].copy() if len(tts_y_coord) > 1 else tts_y_coord.copy()
-            X_test.y = tts_y_coord[test_idx].copy() if len(tts_y_coord) > 1 else tts_y_coord.copy()
-        
-        # Copy metadata
-        if hasattr(X, "meta") and X.meta:
-            X_train.meta = X.meta.copy()
-            X_test.meta = X.meta.copy()
+        # Slice sample-axis metadata to match train/test rows.
+        tts_y_coord = safe_get_coord(X_ds, "y")
+        if tts_y_coord is not None and len(tts_y_coord) > 1:
+            X_train.y = slice_axis_for_indices(tts_y_coord, train_idx)
+            X_test.y = slice_axis_for_indices(tts_y_coord, test_idx)
+
+        # Keep dataset.target aligned after row splitting.
+        target = getattr(X_ds, "target", None)
+        if target is not None:
+            target_array = np.asarray(target)
+            if target_array.shape[0] == n_samples:
+                X_train.target = target_array[train_idx]
+                X_test.target = target_array[test_idx]
+            else:
+                X_train.target = None
+                X_test.target = None
 
         # Record provenance in dataset.meta
         add_processing_step(
@@ -3332,9 +3367,8 @@ class TrainTestSplitNode(Node):
             "X_test": X_test,
         }
 
-        # Split targets if provided (keep arrays as-is)
-        if y is not None:
-            y_array = np.array(y) if not isinstance(y, np.ndarray) else y
+        # Split targets if provided/inferred
+        if y_array is not None:
             result["y_train"] = y_array[train_idx]
             result["y_test"] = y_array[test_idx]
 

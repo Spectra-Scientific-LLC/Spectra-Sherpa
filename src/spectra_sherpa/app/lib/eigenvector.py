@@ -13,6 +13,7 @@ Usage::
     props   = result["properties"]    # (784, 7) numpy array (with NaN)
     wl      = result["wavelengths"]   # (401,) numpy array [750..1550 nm]
 """
+
 from __future__ import annotations
 
 import logging
@@ -28,9 +29,7 @@ logger = logging.getLogger(__name__)
 # Data directory (bundled with the package)
 # ---------------------------------------------------------------------------
 
-EIGENVECTOR_DATA_DIR = (
-    Path(__file__).resolve().parent.parent.parent / "data" / "eigenvector"
-)
+EIGENVECTOR_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "eigenvector"
 
 # ---------------------------------------------------------------------------
 # Dataset catalog
@@ -300,9 +299,7 @@ def parse_eigenvector_csv(
     if has_axisscale:
         axisscale_row = raw.iloc[9]
         if axisscale_row.iloc[0].strip('"') != "Axisscale":
-            raise ValueError(
-                f"Expected 'Axisscale' in row 9, got: {axisscale_row.iloc[0]!r}"
-            )
+            raise ValueError(f"Expected 'Axisscale' in row 9, got: {axisscale_row.iloc[0]!r}")
         axis_vals = []
         for v in axisscale_row.iloc[2:]:
             v = str(v).strip().rstrip(",")
@@ -395,10 +392,7 @@ def parse_eigenvector_mat(
 
     if spec_key not in mat:
         available = [k for k in mat.keys() if not k.startswith("_")]
-        raise ValueError(
-            f"Key '{spec_key}' not found in {path.name}. "
-            f"Available keys: {available}"
-        )
+        raise ValueError(f"Key '{spec_key}' not found in {path.name}. " f"Available keys: {available}")
 
     ds = mat[spec_key]
     spec_data = ds["data"][0, 0]
@@ -546,8 +540,7 @@ def load_eigenvector_dataset(
     """
     if name not in DATASET_CATALOG:
         raise ValueError(
-            f"Unsupported Eigenvector dataset: {name!r}\n"
-            f"Supported datasets: {', '.join(DATASET_CATALOG)}"
+            f"Unsupported Eigenvector dataset: {name!r}\n" f"Supported datasets: {', '.join(DATASET_CATALOG)}"
         )
 
     catalog = DATASET_CATALOG[name]
@@ -557,8 +550,7 @@ def load_eigenvector_dataset(
         spec_path = base_dir / catalog["spec_file"]
         if not spec_path.exists():
             raise FileNotFoundError(
-                f"Eigenvector data file not found: {spec_path}\n"
-                f"Expected bundled data at: {base_dir}"
+                f"Eigenvector data file not found: {spec_path}\n" f"Expected bundled data at: {base_dir}"
             )
 
         spectra, sample_ids, wavelengths = parse_eigenvector_csv(
@@ -571,9 +563,7 @@ def load_eigenvector_dataset(
         if "prop_file" in catalog:
             prop_path = base_dir / catalog["prop_file"]
             if prop_path.exists():
-                properties, _, _ = parse_eigenvector_csv(
-                    prop_path, has_axisscale=False
-                )
+                properties, _, _ = parse_eigenvector_csv(prop_path, has_axisscale=False)
 
         return {
             "spectra": spectra,
@@ -589,8 +579,7 @@ def load_eigenvector_dataset(
         mat_path = base_dir / catalog["mat_file"]
         if not mat_path.exists():
             raise FileNotFoundError(
-                f"Eigenvector data file not found: {mat_path}\n"
-                f"Expected bundled data at: {base_dir}"
+                f"Eigenvector data file not found: {mat_path}\n" f"Expected bundled data at: {base_dir}"
             )
 
         spectra, wavelengths, properties, file_metadata = parse_eigenvector_mat(
@@ -613,8 +602,7 @@ def load_eigenvector_dataset(
         mat_path = base_dir / catalog["mat_file"]
         if not mat_path.exists():
             raise FileNotFoundError(
-                f"Eigenvector data file not found: {mat_path}\n"
-                f"Expected bundled data at: {base_dir}"
+                f"Eigenvector data file not found: {mat_path}\n" f"Expected bundled data at: {base_dir}"
             )
 
         spectra, wavelengths, fault_labels, info_meta = parse_metal_etch_mat(
@@ -686,14 +674,16 @@ def get_dataset_info(
         for i, pname in enumerate(result["prop_names"]):
             col = properties[:, i] if i < properties.shape[1] else np.array([])
             nan_count = int(np.isnan(col).sum())
-            prop_stats.append({
-                "name": pname,
-                "min": float(np.nanmin(col)) if col.size > nan_count else None,
-                "max": float(np.nanmax(col)) if col.size > nan_count else None,
-                "mean": float(np.nanmean(col)) if col.size > nan_count else None,
-                "nan_count": nan_count,
-                "nan_pct": round(100 * nan_count / len(col), 1) if len(col) > 0 else 0,
-            })
+            prop_stats.append(
+                {
+                    "name": pname,
+                    "min": float(np.nanmin(col)) if col.size > nan_count else None,
+                    "max": float(np.nanmax(col)) if col.size > nan_count else None,
+                    "mean": float(np.nanmean(col)) if col.size > nan_count else None,
+                    "nan_count": nan_count,
+                    "nan_pct": round(100 * nan_count / len(col), 1) if len(col) > 0 else 0,
+                }
+            )
         info["property_stats"] = prop_stats
 
     return info

@@ -14,9 +14,7 @@ class SaveRunRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, description="Run label")
     notes: str | None = Field(None, description="Optional notes about this run")
     status: str = Field(..., description="Execution status: completed, partial, error")
-    results_summary: dict[str, Any] = Field(
-        ..., description="Scalar metrics per node {node_id: {metric: value}}"
-    )
+    results_summary: dict[str, Any] = Field(..., description="Scalar metrics per node {node_id: {metric: value}}")
     diagnostics: dict[str, Any] | None = Field(None, description="Per-node diagnostics")
     node_statuses: dict[str, str] | None = Field(None, description="Per-node status")
     error: str | None = Field(None, description="Error message if execution failed")
@@ -60,18 +58,14 @@ class ExecutionRunList(BaseModel):
 class CompareRunsRequest(BaseModel):
     """Schema for run comparison request."""
 
-    run_ids: list[int] = Field(
-        ..., min_length=2, max_length=10, description="IDs of runs to compare"
-    )
+    run_ids: list[int] = Field(..., min_length=2, max_length=10, description="IDs of runs to compare")
 
 
 class ComparisonResponse(BaseModel):
     """Schema for run comparison response."""
 
     runs: list[ExecutionRunOut]
-    metric_keys: list[str] = Field(
-        ..., description="Union of all metric keys across compared runs"
-    )
+    metric_keys: list[str] = Field(..., description="Union of all metric keys across compared runs")
     diff: dict[str, dict[str, Any]] = Field(
         ..., description="Per-metric values keyed by run_id: {metric: {run_id: value}}"
     )

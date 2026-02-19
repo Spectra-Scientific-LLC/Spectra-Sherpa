@@ -4,6 +4,7 @@ When running from a dev checkout (``pyproject.toml`` + ``frontend/`` exist
 two levels up from the package), paths resolve relative to the repo root.
 When pip-installed, user data goes to ``~/.spectra_sherpa/``.
 """
+
 from __future__ import annotations
 
 import os

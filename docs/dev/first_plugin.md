@@ -1,37 +1,149 @@
 # Tutorial: Creating Your First Analysis Node
 
-This guide walks you through adding a custom workflow node to SpectraSherpa. We'll create a **"Signal-to-Noise Ratio (SNR)"** node that calculates the SNR for each spectrum in a dataset.
+This guide walks you through adding a custom workflow node to SpectraSherpa. Two approaches are available:
 
-By the end, your node will appear in the Workflow Builder under the "Diagnostics" category and be usable in any pipeline.
+1. **Declarative (preferred)** — Use `TransformSpecNode` or `EstimatorSpecNode` for standard patterns. Less code, automatic Python export.
+2. **Imperative (advanced)** — Extend `Node` directly for custom logic. Full control, but you must implement `execute()` and optionally `generate_python()` yourself.
+
+By the end, your node will appear in the Workflow Builder and be usable in any pipeline.
 
 ## Prerequisites
 
 - A working development environment (see [Developer Setup](setup.md))
 - Basic knowledge of Python and NumPy
 
-## How Nodes Work
+---
 
-Every node in SpectraSherpa:
+## Approach 1: Declarative Node (Preferred)
 
-1. **Extends `Node`** — the abstract base class in `services/dag/node_base.py`
-2. **Declares `metadata`** — a `NodeMetadata` dataclass that defines the node's type, category, parameters, and ports
-3. **Implements `execute()`** — an async method that receives input data and returns results
-4. **Registers via `@register_node`** — a decorator that adds the node to the global registry at import time
+For preprocessing transforms and sklearn-style estimators, declare a `spec` object and let the base class handle execution and export.
 
-## Step 1: Choose Where to Put Your Node
+### Example: Clip Floor Transform
 
-There are two paths depending on whether you're contributing to the core project or building an external plugin:
+This node clips all values below a threshold. It's a real production node in SpectraSherpa:
 
-| Approach | Location | Registration |
-|----------|----------|--------------|
-| **Core contribution** | `src/spectra_sherpa/app/services/dag/nodes/` | Add to existing module or create new one |
-| **External plugin** | `~/.spectra_sherpa/plugins/my_plugin/` | Auto-discovered at startup |
+```python
+import numpy as np
 
-This tutorial shows the **core contribution** path. For the plugin approach, see [Plugin Loading](#as-an-external-plugin) at the end.
+from spectra_sherpa.app.services.dag.node_base import (
+    NodeMetadata, NodeParameter, register_node,
+)
+from spectra_sherpa.app.services.dag.spec_nodes import TransformSpec, TransformSpecNode
 
-## Step 2: Define the Node
 
-Open `src/spectra_sherpa/app/services/dag/nodes/diagnostics.py` and add the following at the bottom of the file:
+@register_node
+class ClipFloorNode(TransformSpecNode):
+    """Clip values below a specified floor (e.g., remove negative values)."""
+
+    metadata = NodeMetadata(
+        node_type="preprocess.clip_floor",
+        category="preprocessing",
+        label="Clip Floor",
+        description="Clip values below a specified floor",
+        parameters=[
+            NodeParameter(
+                name="floor",
+                label="Floor Value",
+                param_type="number",
+                default=0.0,
+                min_value=-10.0,
+                max_value=10.0,
+                step=0.001,
+            ),
+        ],
+        input_types=["NDDataset"],
+        output_type="NDDataset",
+    )
+
+    spec = TransformSpec(
+        transform_fn=lambda data, floor: np.maximum(data, floor),
+        numpy_expr="np.maximum(_data, {floor})",
+        extra_imports=["import numpy as np"],
+    )
+```
+
+**What the spec provides automatically:**
+
+| Feature | How |
+|---------|-----|
+| `execute()` | Extracts 2D numpy data, calls `transform_fn`, wraps result with metadata |
+| `generate_python()` | Substitutes parameters into `numpy_expr` for Python export |
+| `supports_python_export()` | Returns `True` because `numpy_expr` is set |
+| Processing history | Recorded automatically in `dataset.meta["processing_history"]` |
+
+**Key points:**
+
+- `transform_fn` receives a 2D `np.float64` array and keyword arguments matching parameter names
+- `numpy_expr` is a format string where `{param_name}` is replaced with the resolved value. `_data` refers to the extracted numpy array.
+- `extra_imports` are collected by the export system automatically
+
+### When to use `export_lines_fn` instead of `numpy_expr`
+
+If your export code needs branching logic (e.g., conditional centering), provide an `export_lines_fn` callback:
+
+```python
+from spectra_sherpa.app.services.dag.export_helpers import (
+    extract_data_lines, header_line, wrap_result_lines,
+)
+
+def _my_export(params, inp, node_id, indent, use_scp):
+    lines = [header_line("My Transform", node_id, indent)]
+    lines += extract_data_lines(inp, indent)
+    if params.get("center", True):
+        lines.append(f"{indent}_data = _data - np.mean(_data, axis=0)")
+    lines += wrap_result_lines(node_id, "_data", inp, indent, use_scp)
+    return lines
+```
+
+### Estimator Example
+
+For sklearn-style nodes, use `EstimatorSpecNode`:
+
+```python
+from sklearn.linear_model import LinearRegression
+
+from spectra_sherpa.app.services.dag.spec_nodes import EstimatorSpec, EstimatorSpecNode
+
+
+@register_node
+class LinearRegressionNode(EstimatorSpecNode):
+    metadata = NodeMetadata(
+        node_type="model.linear_regression",
+        category="modeling",
+        label="Linear Regression",
+        description="Simple linear regression for calibration",
+        parameters=[
+            NodeParameter(name="fit_intercept", label="Fit Intercept",
+                          param_type="boolean", default=True),
+        ],
+        input_ports=[...],   # X and y ports
+        output_ports=[...],  # model, predictions, residuals ports
+    )
+
+    spec = EstimatorSpec(
+        estimator_class=LinearRegression,
+        estimator_import="from sklearn.linear_model import LinearRegression",
+    )
+```
+
+The base class handles `bind_X`, `bind_y`, fitting, predicting, metrics (R², RMSE), and auto-generates Python export from `estimator_import`.
+
+### Generate a scaffold
+
+Use the template generator:
+
+```bash
+python scripts/node_template.py transform preprocess.my_op MyOpNode
+python scripts/node_template.py estimator model.my_model MyModelNode
+```
+
+---
+
+## Approach 2: Imperative Node (Advanced)
+
+For nodes that don't fit the transform/estimator pattern (diagnostics, visualization, custom algorithms), extend `Node` directly.
+
+### Example: Signal-to-Noise Ratio
 
 ```python
 @register_node
@@ -60,7 +172,7 @@ class SNRNode(Node):
                 description="Number of points from the start of the spectrum to use as noise estimate",
             ),
         ],
-        input_types=["NDDataset"],
+        input_types=["AnalysisDataset"],
         output_type="dict",
         output_ports=[
             PortMetadata(
@@ -75,7 +187,6 @@ class SNRNode(Node):
     async def execute(self, data: Any) -> NodeResult:
         noise_points = self.parameters.get("noise_points", 20)
 
-        # Get the data matrix (works with both NDDataset and AnalysisDataset)
         X = np.array(data.data) if hasattr(data, "data") else np.array(data)
         if X.ndim == 1:
             X = X.reshape(1, -1)
@@ -100,62 +211,38 @@ class SNRNode(Node):
         )
 ```
 
-**Key things to notice:**
+**Key points:**
 
-- **`node_type`** uses dot notation (`diagnostics.snr`) — the prefix matches the category
-- **`@register_node`** is already imported at the top of `diagnostics.py` (from `..node_base`)
-- **`execute()`** is `async` — all node execution is async even if your logic is synchronous
-- **`NodeResult`** wraps both `outputs` (data passed to downstream nodes) and `diagnostics` (ephemeral metrics shown in the UI)
-- **`PortMetadata`** declares typed output ports using URIs from the type registry
+- `execute()` is `async` — all node execution is async even if your logic is synchronous
+- `NodeResult` wraps both `outputs` (data for downstream) and `diagnostics` (ephemeral metrics for UI)
+- For Python export support, override `generate_python()` or set `scp_method`
 
-## Step 3: Verify Registration
-
-The `@register_node` decorator handles registration automatically when the module is imported. The `diagnostics` module is already imported in `src/spectra_sherpa/app/services/dag/nodes/__init__.py`, so your new node will be discovered at startup — no additional wiring needed.
-
-## Step 4: Test It
+### Generate a scaffold
 
 ```bash
-# Start the dev server
-make dev
-
-# Or directly:
-poetry run spectra-sherpa
+python scripts/node_template.py custom diagnostics.snr SNRNode diagnostics
 ```
 
-1. Open the Workflow Builder
-2. Look in the node palette — "Signal-to-Noise Ratio" should appear under **Diagnostics**
-3. Connect a Data Source node → your SNR node
-4. Run the workflow and check the diagnostics panel for mean/min/max SNR
+---
 
-## Next Steps
+## Where to Put Your Node
 
-- **Add a noise region selector**: Let users pick a wavenumber range instead of a fixed point count. Add a `"select"` parameter with options like `"first_n"`, `"last_n"`, `"min_region"`.
-- **Return a visualization**: Add an output port with `type_ref="spectrasherpa://types/PlotData/1.0"` and return a bar chart of per-spectrum SNR values.
-- **Add processing history**: Call `add_processing_step()` from `..meta_helpers` so the SNR calculation appears in the dataset's provenance chain.
-- **Write a test**: Add a test in `tests/` that creates an `SNRNode`, feeds it synthetic data, and asserts the output shape and values.
+| Approach | Location | Registration |
+|----------|----------|--------------|
+| **Core contribution** | `src/spectra_sherpa/app/services/dag/nodes/` | Add to existing module or create new one |
+| **External plugin** | `~/.spectra_sherpa/plugins/my_plugin/` | Auto-discovered at startup |
+
+## Verify Registration
+
+The `@register_node` decorator handles registration automatically when the module is imported. Core node modules are already imported in `nodes/__init__.py`.
 
 ## As an External Plugin
-
-If you want to distribute your node as a standalone package instead of a core contribution, use the plugin system:
 
 ```
 ~/.spectra_sherpa/plugins/
 └── snr_plugin/
     ├── __init__.py      # imports nodes.py
     └── nodes.py         # @register_node classes
-```
-
-**`nodes.py`:**
-
-```python
-import numpy as np
-from spectra_sherpa.app.services.dag.node_base import (
-    Node, NodeMetadata, NodeParameter, NodeResult, PortMetadata, register_node,
-)
-
-@register_node
-class SNRNode(Node):
-    # ... same class definition as above ...
 ```
 
 **`__init__.py`:**

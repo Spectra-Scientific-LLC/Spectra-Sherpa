@@ -4,6 +4,7 @@ Data Egress Settings API
 Allows users to configure what data can be shared with external services
 (SpectraSherpa, LLM providers, exports, NIST).
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -15,20 +16,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from spectra_sherpa.app.api.deps import get_current_user, get_session
 from spectra_sherpa.app.models.data_egress import (
     DataEgressPermission as DataEgressPermissionModel,
-    UserEgressDefaults as UserEgressDefaultsModel,
+)
+from spectra_sherpa.app.models.data_egress import (
     DataType,
     EgressDestination,
 )
+from spectra_sherpa.app.models.data_egress import (
+    UserEgressDefaults as UserEgressDefaultsModel,
+)
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.schemas.data_egress import (
+    BulkPermissionUpdate,
     DataEgressPermission,
     DataEgressPermissionCreate,
     DataEgressPermissionUpdate,
-    UserEgressDefaults,
-    UserEgressDefaultsCreate,
-    UserEgressDefaultsUpdate,
     EgressSettingsSummary,
-    BulkPermissionUpdate,
+    UserEgressDefaults,
+    UserEgressDefaultsUpdate,
 )
 
 router = APIRouter(prefix="/egress", tags=["egress"])
@@ -38,6 +42,7 @@ router = APIRouter(prefix="/egress", tags=["egress"])
 # Egress Defaults
 # ============================================================================
 
+
 @router.get("/defaults", response_model=Optional[UserEgressDefaults])
 async def get_egress_defaults(
     session: AsyncSession = Depends(get_session),
@@ -45,9 +50,7 @@ async def get_egress_defaults(
 ):
     """Get the current user's default egress settings"""
     result = await session.execute(
-        select(UserEgressDefaultsModel).where(
-            UserEgressDefaultsModel.user_id == current_user.id
-        )
+        select(UserEgressDefaultsModel).where(UserEgressDefaultsModel.user_id == current_user.id)
     )
     defaults = result.scalar_one_or_none()
     return defaults
@@ -61,9 +64,7 @@ async def update_egress_defaults(
 ):
     """Update the current user's default egress settings (creates if not exists)"""
     result = await session.execute(
-        select(UserEgressDefaultsModel).where(
-            UserEgressDefaultsModel.user_id == current_user.id
-        )
+        select(UserEgressDefaultsModel).where(UserEgressDefaultsModel.user_id == current_user.id)
     )
     defaults = result.scalar_one_or_none()
 
@@ -72,9 +73,13 @@ async def update_egress_defaults(
         defaults = UserEgressDefaultsModel(
             user_id=current_user.id,
             allow_spectrasherpa_sync=defaults_update.allow_spectrasherpa_sync or False,
-            allow_llm_context=defaults_update.allow_llm_context if defaults_update.allow_llm_context is not None else False,
+            allow_llm_context=(
+                defaults_update.allow_llm_context if defaults_update.allow_llm_context is not None else False
+            ),
             allow_export=defaults_update.allow_export if defaults_update.allow_export is not None else False,
-            allow_nist_queries=defaults_update.allow_nist_queries if defaults_update.allow_nist_queries is not None else False,
+            allow_nist_queries=(
+                defaults_update.allow_nist_queries if defaults_update.allow_nist_queries is not None else False
+            ),
         )
         session.add(defaults)
     else:
@@ -97,6 +102,7 @@ async def update_egress_defaults(
 # Per-Data-Type Permissions
 # ============================================================================
 
+
 @router.get("/permissions", response_model=list[DataEgressPermission])
 async def list_permissions(
     data_type: Optional[str] = None,
@@ -105,9 +111,7 @@ async def list_permissions(
     current_user: User = Depends(get_current_user),
 ):
     """List the current user's egress permissions with optional filtering"""
-    query = select(DataEgressPermissionModel).where(
-        DataEgressPermissionModel.user_id == current_user.id
-    )
+    query = select(DataEgressPermissionModel).where(DataEgressPermissionModel.user_id == current_user.id)
 
     if data_type:
         query = query.where(DataEgressPermissionModel.data_type == data_type)
@@ -129,12 +133,12 @@ async def create_permission(
     if permission.data_type not in DataType.ALL:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid data_type. Must be one of: {', '.join(DataType.ALL)}"
+            detail=f"Invalid data_type. Must be one of: {', '.join(DataType.ALL)}",
         )
     if permission.destination not in EgressDestination.ALL:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid destination. Must be one of: {', '.join(EgressDestination.ALL)}"
+            detail=f"Invalid destination. Must be one of: {', '.join(EgressDestination.ALL)}",
         )
 
     # Check if exists
@@ -184,10 +188,7 @@ async def update_permission(
     permission = result.scalar_one_or_none()
 
     if not permission:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Permission not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Permission not found")
 
     permission.allowed = permission_update.allowed
     await session.commit()
@@ -211,10 +212,7 @@ async def delete_permission(
     permission = result.scalar_one_or_none()
 
     if not permission:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Permission not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Permission not found")
 
     await session.delete(permission)
     await session.commit()
@@ -232,14 +230,10 @@ async def bulk_update_permissions(
     for perm in bulk.permissions:
         # Validate
         if perm.data_type not in DataType.ALL:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid data_type: {perm.data_type}"
-            )
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid data_type: {perm.data_type}")
         if perm.destination not in EgressDestination.ALL:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid destination: {perm.destination}"
+                status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid destination: {perm.destination}"
             )
 
         # Check if exists
@@ -276,6 +270,7 @@ async def bulk_update_permissions(
 # Summary
 # ============================================================================
 
+
 @router.get("/summary", response_model=EgressSettingsSummary)
 async def get_egress_summary(
     session: AsyncSession = Depends(get_session),
@@ -284,29 +279,23 @@ async def get_egress_summary(
     """Get a complete summary of the user's egress settings"""
     # Get defaults
     defaults_result = await session.execute(
-        select(UserEgressDefaultsModel).where(
-            UserEgressDefaultsModel.user_id == current_user.id
-        )
+        select(UserEgressDefaultsModel).where(UserEgressDefaultsModel.user_id == current_user.id)
     )
     defaults = defaults_result.scalar_one_or_none()
 
     # Get all permissions
     perms_result = await session.execute(
-        select(DataEgressPermissionModel).where(
-            DataEgressPermissionModel.user_id == current_user.id
-        )
+        select(DataEgressPermissionModel).where(DataEgressPermissionModel.user_id == current_user.id)
     )
     permissions = perms_result.scalars().all()
 
-    return EgressSettingsSummary(
-        defaults=defaults,
-        permissions=list(permissions)
-    )
+    return EgressSettingsSummary(defaults=defaults, permissions=list(permissions))
 
 
 # ============================================================================
 # Utility Endpoints
 # ============================================================================
+
 
 @router.get("/data-types", response_model=list[str])
 async def list_data_types():

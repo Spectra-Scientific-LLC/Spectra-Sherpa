@@ -24,6 +24,7 @@ engine = create_async_engine(settings.database_url, **_engine_kwargs)
 
 
 if _is_sqlite:
+
     @event.listens_for(engine.sync_engine, "connect")
     def _set_sqlite_pragma(dbapi_connection, _connection_record) -> None:
         cursor = dbapi_connection.cursor()

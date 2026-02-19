@@ -1,4 +1,5 @@
 """Tests for the Demo Contract and demo_guard route guard."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -16,9 +17,7 @@ class TestDemoGuard:
     def test_blocks_disabled_capability(self, monkeypatch: pytest.MonkeyPatch) -> None:
         contract = DemoContract(disabled_capabilities=["data_upload"])
         fake_config = SimpleNamespace(site_profile="demo", demo_contract=contract)
-        monkeypatch.setattr(
-            "spectra_sherpa.app.api.deps.app_config", fake_config
-        )
+        monkeypatch.setattr("spectra_sherpa.app.api.deps.app_config", fake_config)
         guard = demo_guard("data_upload")
         with pytest.raises(HTTPException) as exc_info:
             guard()
@@ -27,9 +26,7 @@ class TestDemoGuard:
     def test_allows_enabled_capability(self, monkeypatch: pytest.MonkeyPatch) -> None:
         contract = DemoContract(disabled_capabilities=["data_upload"])
         fake_config = SimpleNamespace(site_profile="demo", demo_contract=contract)
-        monkeypatch.setattr(
-            "spectra_sherpa.app.api.deps.app_config", fake_config
-        )
+        monkeypatch.setattr("spectra_sherpa.app.api.deps.app_config", fake_config)
         guard = demo_guard("some_other_thing")
         # Should not raise
         guard()
@@ -37,9 +34,7 @@ class TestDemoGuard:
     def test_non_demo_profile_allows_all(self, monkeypatch: pytest.MonkeyPatch) -> None:
         contract = DemoContract(disabled_capabilities=["data_upload"])
         fake_config = SimpleNamespace(site_profile="production", demo_contract=contract)
-        monkeypatch.setattr(
-            "spectra_sherpa.app.api.deps.app_config", fake_config
-        )
+        monkeypatch.setattr("spectra_sherpa.app.api.deps.app_config", fake_config)
         guard = demo_guard("data_upload")
         # Should not raise even for disabled capability
         guard()
@@ -47,9 +42,7 @@ class TestDemoGuard:
     def test_no_profile_allows_all(self, monkeypatch: pytest.MonkeyPatch) -> None:
         contract = DemoContract(disabled_capabilities=["data_upload"])
         fake_config = SimpleNamespace(site_profile=None, demo_contract=contract)
-        monkeypatch.setattr(
-            "spectra_sherpa.app.api.deps.app_config", fake_config
-        )
+        monkeypatch.setattr("spectra_sherpa.app.api.deps.app_config", fake_config)
         guard = demo_guard("data_upload")
         guard()
 
@@ -61,9 +54,7 @@ class TestDemoGuard:
             available_plans=["hybrid", "enterprise"],
         )
         fake_config = SimpleNamespace(site_profile="demo", demo_contract=contract)
-        monkeypatch.setattr(
-            "spectra_sherpa.app.api.deps.app_config", fake_config
-        )
+        monkeypatch.setattr("spectra_sherpa.app.api.deps.app_config", fake_config)
         guard = demo_guard("data_upload")
         with pytest.raises(HTTPException) as exc_info:
             guard()
@@ -135,15 +126,23 @@ class TestDemoContractDefaults:
         contract = DemoContract()
         # These are the template IDs defined in frontend/src/stores/workflow.ts
         known_template_ids = {
-            "pca", "pls_regression", "project1", "ir_opus_analysis",
-            "preprocessing", "peak_detection", "exploratory_analysis",
-            "classification", "anomaly_detection", "compare_models",
-            "calibration_transfer", "data_fusion",
+            "pca",
+            "pls_regression",
+            "project1",
+            "ir_opus_analysis",
+            "preprocessing",
+            "peak_detection",
+            "exploratory_analysis",
+            "classification",
+            "anomaly_detection",
+            "compare_models",
+            "calibration_transfer",
+            "data_fusion",
         }
         for tmpl_id in contract.featured_templates:
-            assert tmpl_id in known_template_ids, (
-                f"featured_template '{tmpl_id}' does not match any known frontend template ID"
-            )
+            assert (
+                tmpl_id in known_template_ids
+            ), f"featured_template '{tmpl_id}' does not match any known frontend template ID"
 
 
 class TestDemoAnalyticsEndpoint:
@@ -152,16 +151,12 @@ class TestDemoAnalyticsEndpoint:
     @pytest.fixture
     def _demo_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
         fake_config = SimpleNamespace(site_profile="demo")
-        monkeypatch.setattr(
-            "spectra_sherpa.app.api.v1.routes.config.app_config", fake_config
-        )
+        monkeypatch.setattr("spectra_sherpa.app.api.v1.routes.config.app_config", fake_config)
 
     @pytest.fixture
     def _non_demo_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
         fake_config = SimpleNamespace(site_profile="production")
-        monkeypatch.setattr(
-            "spectra_sherpa.app.api.v1.routes.config.app_config", fake_config
-        )
+        monkeypatch.setattr("spectra_sherpa.app.api.v1.routes.config.app_config", fake_config)
 
     @pytest.mark.asyncio
     async def test_non_superuser_gets_403(self, _demo_config) -> None:

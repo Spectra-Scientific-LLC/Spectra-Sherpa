@@ -16,13 +16,11 @@ Run:
 from __future__ import annotations
 
 import os
-import tempfile
 import time
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # 1. Path traversal validation
@@ -152,38 +150,46 @@ class TestIsExecutionPath:
     @pytest.fixture
     def mw(self):
         """Get a RateLimitMiddleware instance for testing _is_execution_path."""
-        from spectra_sherpa.app.core.rate_limit_middleware import RateLimitMiddleware
         from unittest.mock import MagicMock
+
+        from spectra_sherpa.app.core.rate_limit_middleware import RateLimitMiddleware
+
         return RateLimitMiddleware(MagicMock())
 
     # --- True positives: these SHOULD consume demo quota ---
 
-    @pytest.mark.parametrize("path", [
-        "/api/v1/workflows/42/execute",       # workflow execute
-        "/api/v1/workflows/trial/execute",     # trial execute
-        "/api/v1/workflows/999/predict",       # workflow predict
-        "/api/v1/jobs",                        # job submission
-        "/api/v1/jobs/batch",                  # batch jobs
-        "/api/v1/compute",                     # compute endpoint
-        "/api/v1/compute/some-sub",            # compute sub-path
-        "/api/v1/deploy",                      # deployment
-        "/api/v1/deploy/model-1",              # deploy sub-path
-    ])
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/api/v1/workflows/42/execute",  # workflow execute
+            "/api/v1/workflows/trial/execute",  # trial execute
+            "/api/v1/workflows/999/predict",  # workflow predict
+            "/api/v1/jobs",  # job submission
+            "/api/v1/jobs/batch",  # batch jobs
+            "/api/v1/compute",  # compute endpoint
+            "/api/v1/compute/some-sub",  # compute sub-path
+            "/api/v1/deploy",  # deployment
+            "/api/v1/deploy/model-1",  # deploy sub-path
+        ],
+    )
     def test_execution_paths_detected(self, mw, path):
         assert mw._is_execution_path(path) is True, f"{path} should be an execution path"
 
     # --- True negatives: these should NOT consume demo quota ---
 
-    @pytest.mark.parametrize("path", [
-        "/api/v1/workflows",                   # workflow create
-        "/api/v1/workflows/42",                # workflow update
-        "/api/v1/workflows/42/versions/1/restore",  # version restore
-        "/api/v1/workflows/42/nodes",          # node CRUD
-        "/api/v1/auth/login",                  # auth
-        "/api/v1/auth/register",               # auth
-        "/api/v1/config",                      # config
-        "/api/v1/experiments/1/files",          # file upload
-    ])
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/api/v1/workflows",  # workflow create
+            "/api/v1/workflows/42",  # workflow update
+            "/api/v1/workflows/42/versions/1/restore",  # version restore
+            "/api/v1/workflows/42/nodes",  # node CRUD
+            "/api/v1/auth/login",  # auth
+            "/api/v1/auth/register",  # auth
+            "/api/v1/config",  # config
+            "/api/v1/experiments/1/files",  # file upload
+        ],
+    )
     def test_non_execution_paths_excluded(self, mw, path):
         assert mw._is_execution_path(path) is False, f"{path} should NOT be an execution path"
 
@@ -209,22 +215,20 @@ class TestComparisonOrdering:
     def test_execution_runs_compare_has_order_by(self):
         """execution_runs.py compare endpoint query uses .order_by()."""
         import inspect
+
         from spectra_sherpa.app.api.v1.routes.execution_runs import compare_runs
 
         source = inspect.getsource(compare_runs)
-        assert "order_by" in source, (
-            "compare_runs query must include .order_by() for deterministic ordering"
-        )
+        assert "order_by" in source, "compare_runs query must include .order_by() for deterministic ordering"
 
     def test_workflow_export_report_data_has_order_by(self):
         """workflow_export.py report-data endpoint query uses .order_by()."""
         import inspect
+
         from spectra_sherpa.app.api.v1.routes.workflow_export import get_report_data
 
         source = inspect.getsource(get_report_data)
-        assert "order_by" in source, (
-            "get_report_data query must include .order_by() for deterministic ordering"
-        )
+        assert "order_by" in source, "get_report_data query must include .order_by() for deterministic ordering"
 
 
 # ---------------------------------------------------------------------------
@@ -238,6 +242,7 @@ class TestWorkflowProvenanceFields:
     def test_create_workflow_passes_technique_and_sample_type(self):
         """create_workflow route constructor includes technique and sample_type."""
         import inspect
+
         from spectra_sherpa.app.api.v1.routes.workflows import create_workflow
 
         source = inspect.getsource(create_workflow)
@@ -247,6 +252,7 @@ class TestWorkflowProvenanceFields:
     def test_update_workflow_handles_technique_and_sample_type(self):
         """update_workflow route sets technique and sample_type when provided."""
         import inspect
+
         from spectra_sherpa.app.api.v1.routes.workflows import update_workflow
 
         source = inspect.getsource(update_workflow)
@@ -256,6 +262,7 @@ class TestWorkflowProvenanceFields:
     def test_list_workflows_includes_technique_and_sample_type(self):
         """list_workflows serialization includes technique and sample_type."""
         import inspect
+
         from spectra_sherpa.app.api.v1.routes.workflows import list_workflows
 
         source = inspect.getsource(list_workflows)
@@ -265,6 +272,7 @@ class TestWorkflowProvenanceFields:
     def test_version_snapshot_includes_technique_and_sample_type(self):
         """Version snapshot dict (in update_workflow) includes technique and sample_type."""
         import inspect
+
         from spectra_sherpa.app.api.v1.routes.workflows import update_workflow
 
         source = inspect.getsource(update_workflow)
@@ -275,13 +283,12 @@ class TestWorkflowProvenanceFields:
     def test_version_restore_handles_technique_sample_type_notes(self):
         """Version restore checks for technique, sample_type, and notes in snapshot."""
         import inspect
+
         from spectra_sherpa.app.api.v1.routes.workflows import restore_workflow_version
 
         source = inspect.getsource(restore_workflow_version)
         for field in ["technique", "sample_type", "notes"]:
-            assert field in source, (
-                f"restore_workflow_version must restore '{field}' from snapshot"
-            )
+            assert field in source, f"restore_workflow_version must restore '{field}' from snapshot"
 
 
 # ---------------------------------------------------------------------------
@@ -295,14 +302,15 @@ class TestFolderWatchDedupe:
     def test_processed_files_key_is_full_path(self):
         """folder_watch_service marks files with str(file_path), not file_path.name."""
         import inspect
+
         from spectra_sherpa.app.services.folder_watch_service import FolderWatchService
 
         source = inspect.getsource(FolderWatchService)
         # The key should be str(file_path), not file_path.name
-        assert "processed[str(file_path)]" in source, (
-            "Processed files dict must use str(file_path) as key for uniqueness"
-        )
+        assert (
+            "processed[str(file_path)]" in source
+        ), "Processed files dict must use str(file_path) as key for uniqueness"
         # Old pattern should NOT be present
-        assert "processed[file_path.name]" not in source, (
-            "Processed files dict must NOT use file_path.name as key (collision risk)"
-        )
+        assert (
+            "processed[file_path.name]" not in source
+        ), "Processed files dict must NOT use file_path.name as key (collision risk)"

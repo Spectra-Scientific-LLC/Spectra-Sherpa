@@ -79,9 +79,7 @@ class ContentAddressableStorage(VersionStorage):
             manifest["files"][relative_path] = {
                 "hash": file_hash,
                 "size": file_path.stat().st_size,
-                "modified": datetime.fromtimestamp(
-                    file_path.stat().st_mtime, tz=timezone.utc
-                ).isoformat(),
+                "modified": datetime.fromtimestamp(file_path.stat().st_mtime, tz=timezone.utc).isoformat(),
             }
 
         manifest_path.write_text(json.dumps(manifest, indent=2))
@@ -121,11 +119,7 @@ class ContentAddressableStorage(VersionStorage):
         referenced = self.get_all_referenced_hashes()
         if not self.objects_dir.exists():
             return []
-        return [
-            path
-            for path in self.objects_dir.iterdir()
-            if path.is_file() and path.name not in referenced
-        ]
+        return [path for path in self.objects_dir.iterdir() if path.is_file() and path.name not in referenced]
 
     def garbage_collect(self, grace_period_days: int = 7) -> list[Path]:
         if grace_period_days < 0:

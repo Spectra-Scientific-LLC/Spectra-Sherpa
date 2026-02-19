@@ -219,7 +219,6 @@ async def import_reference_dataset(
     """
     import shutil
 
-    import numpy as np
     import pandas as pd
 
     exp_dir = experiment_dir(experiment_id)
@@ -239,7 +238,9 @@ async def import_reference_dataset(
             result = load_eigenvector_dataset(name)
             spectra = result["spectra"]
             wavelengths = result["wavelengths"]
-            columns = [str(w) for w in wavelengths] if wavelengths is not None else [str(i) for i in range(spectra.shape[1])]
+            columns = (
+                [str(w) for w in wavelengths] if wavelengths is not None else [str(i) for i in range(spectra.shape[1])]
+            )
 
             df = pd.DataFrame(spectra, columns=columns)
             if result.get("sample_ids"):
@@ -253,7 +254,11 @@ async def import_reference_dataset(
             df.to_csv(csv_path)
             written_files.append(csv_path)
             rel = csv_path.relative_to(exp_dir).as_posix()
-            created.append(await add_experiment_file(session, experiment_id, "raw", rel, csv_path.stat().st_size, "csv", flush_only=True))
+            created.append(
+                await add_experiment_file(
+                    session, experiment_id, "raw", rel, csv_path.stat().st_size, "csv", flush_only=True
+                )
+            )
 
             if result.get("properties") is not None and result.get("prop_names"):
                 prop_df = pd.DataFrame(result["properties"], columns=result["prop_names"])
@@ -267,10 +272,14 @@ async def import_reference_dataset(
                 prop_df.to_csv(prop_path)
                 written_files.append(prop_path)
                 rel = prop_path.relative_to(exp_dir).as_posix()
-                created.append(await add_experiment_file(session, experiment_id, "raw", rel, prop_path.stat().st_size, "csv", flush_only=True))
+                created.append(
+                    await add_experiment_file(
+                        session, experiment_id, "raw", rel, prop_path.stat().st_size, "csv", flush_only=True
+                    )
+                )
 
         elif source == "sklearn":
-            from spectra_sherpa.app.lib.sklearn_info import SKLEARN_CATALOG, _LOADERS
+            from spectra_sherpa.app.lib.sklearn_info import _LOADERS, SKLEARN_CATALOG
 
             if name not in SKLEARN_CATALOG:
                 raise ValueError(f"Unknown sklearn dataset: {name}")
@@ -296,7 +305,11 @@ async def import_reference_dataset(
             df.to_csv(csv_path, index=False)
             written_files.append(csv_path)
             rel = csv_path.relative_to(exp_dir).as_posix()
-            created.append(await add_experiment_file(session, experiment_id, "raw", rel, csv_path.stat().st_size, "csv", flush_only=True))
+            created.append(
+                await add_experiment_file(
+                    session, experiment_id, "raw", rel, csv_path.stat().st_size, "csv", flush_only=True
+                )
+            )
 
         elif source == "spectrochempy":
             resolved = _resolve_scp_path(name)
@@ -311,7 +324,17 @@ async def import_reference_dataset(
                 shutil.copy2(resolved, dest)
                 written_files.append(dest)
                 rel = dest.relative_to(exp_dir).as_posix()
-                created.append(await add_experiment_file(session, experiment_id, "raw", rel, dest.stat().st_size, dest.suffix.lstrip(".") or None, flush_only=True))
+                created.append(
+                    await add_experiment_file(
+                        session,
+                        experiment_id,
+                        "raw",
+                        rel,
+                        dest.stat().st_size,
+                        dest.suffix.lstrip(".") or None,
+                        flush_only=True,
+                    )
+                )
             elif resolved.is_dir():
                 for child in sorted(resolved.iterdir()):
                     if child.is_file() and not child.name.startswith((".", "_")):
@@ -322,7 +345,17 @@ async def import_reference_dataset(
                         shutil.copy2(child, dest)
                         written_files.append(dest)
                         rel = dest.relative_to(exp_dir).as_posix()
-                        created.append(await add_experiment_file(session, experiment_id, "raw", rel, dest.stat().st_size, child.suffix.lstrip(".") or None, flush_only=True))
+                        created.append(
+                            await add_experiment_file(
+                                session,
+                                experiment_id,
+                                "raw",
+                                rel,
+                                dest.stat().st_size,
+                                child.suffix.lstrip(".") or None,
+                                flush_only=True,
+                            )
+                        )
         else:
             raise ValueError(f"Unknown reference source: {source}")
 
@@ -346,13 +379,9 @@ async def list_experiment_files(
     return list(result.scalars())
 
 
-async def get_experiment_file(
-    session: AsyncSession, experiment_id: int, file_id: int
-) -> ExperimentFile | None:
+async def get_experiment_file(session: AsyncSession, experiment_id: int, file_id: int) -> ExperimentFile | None:
     result = await session.execute(
-        select(ExperimentFile)
-        .where(ExperimentFile.experiment_id == experiment_id)
-        .where(ExperimentFile.id == file_id)
+        select(ExperimentFile).where(ExperimentFile.experiment_id == experiment_id).where(ExperimentFile.id == file_id)
     )
     return result.scalar_one_or_none()
 
@@ -362,9 +391,7 @@ async def delete_experiment_file(session: AsyncSession, experiment_file: Experim
     await session.commit()
 
 
-async def get_version_by_name(
-    session: AsyncSession, experiment_id: int, version_name: str
-) -> ExpVersion | None:
+async def get_version_by_name(session: AsyncSession, experiment_id: int, version_name: str) -> ExpVersion | None:
     result = await session.execute(
         select(ExpVersion)
         .where(ExpVersion.experiment_id == experiment_id)
@@ -395,9 +422,7 @@ class ExperimentService:
     async def get_experiment(self, experiment_id: int) -> Experiment | None:
         return await get_experiment(self.session, experiment_id)
 
-    async def list_experiments(
-        self, limit: int = 50, offset: int = 0
-    ) -> list[Experiment]:
+    async def list_experiments(self, limit: int = 50, offset: int = 0) -> list[Experiment]:
         return await list_experiments(self.session, limit=limit, offset=offset)
 
     async def update_experiment(
@@ -435,17 +460,11 @@ class ExperimentService:
             file_type=file_type,
         )
 
-    async def list_files(
-        self, experiment_id: int, stage: str | None = None
-    ) -> list[ExperimentFile]:
+    async def list_files(self, experiment_id: int, stage: str | None = None) -> list[ExperimentFile]:
         return await list_experiment_files(self.session, experiment_id, stage=stage)
 
     async def delete_file(self, experiment_file: ExperimentFile) -> None:
         await delete_experiment_file(self.session, experiment_file)
 
-    async def get_version_by_name(
-        self, experiment_id: int, version_name: str
-    ) -> ExpVersion | None:
-        return await get_version_by_name(
-            self.session, experiment_id=experiment_id, version_name=version_name
-        )
+    async def get_version_by_name(self, experiment_id: int, version_name: str) -> ExpVersion | None:
+        return await get_version_by_name(self.session, experiment_id=experiment_id, version_name=version_name)

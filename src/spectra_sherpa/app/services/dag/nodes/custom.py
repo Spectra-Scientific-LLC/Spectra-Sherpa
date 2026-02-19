@@ -15,15 +15,24 @@ The SaturationModelNode is shared between both sets.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, List
+
 import numpy as np
 
-from spectra_sherpa.app.lib.scp_compat import scp, NDDataset, HAS_SCP
-from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo
-
-from ..node_base import Node, NodeMetadata, NodeParameter, register_node
+from spectra_sherpa.app.lib.analysis_dataset import AxisInfo
+from spectra_sherpa.app.lib.scp_compat import NDDataset
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
 
+from ..io_contracts import (
+    bind_X,
+    bind_y,
+    build_dataset_like,
+    coerce_dataset,
+    resolve_legacy_input,
+    to_numpy_1d,
+    to_numpy_2d,
+)
+from ..node_base import Node, NodeMetadata, NodeParameter, register_node
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CUSTOM NODE SET #1: BLENDING NODES
@@ -107,17 +116,35 @@ class LinearCalibrationNode(Node):
             Absorbance spectra for each concentration
         """
         import warnings
-        from spectra_sherpa.app.lib.blending import eval_linear_model, SAFE_MIN_THRESHOLD
-        from spectra_sherpa.app.lib.spectral.dataset import create_spectral_dataset, SpectralUnit
 
+        from spectra_sherpa.app.lib.blending import SAFE_MIN_THRESHOLD, eval_linear_model
+
+        spectrum_ds = bind_X(
+            spectrum,
+            kwargs,
+            missing_message="Missing required input: spectrum",
+            dataset_error_message="spectrum must be an NDDataset or AnalysisDataset object",
+        )
+        concentrations_bound = bind_y(
+            concentrations,
+            kwargs,
+            infer_from_X=False,
+            required=True,
+            dataset_as_data=True,
+            missing_message="Missing required input: concentrations",
+        )
         s_max = self.parameters.get("s_max", SAFE_MIN_THRESHOLD)
         conc_unit = self.parameters.get("concentration_unit", "ppm")
         ref_confirmed = self.parameters.get("reference_confirmed", False)
-        concentrations = np.atleast_1d(concentrations)
+        concentrations_array = to_numpy_1d(
+            concentrations_bound,
+            name="concentrations",
+            dtype=np.float64,
+        )
 
         # Get calibration from metadata
-        calib = spectrum.meta.get("calibration", {})
-        n_wn = spectrum.shape[-1]
+        calib = spectrum_ds.meta.get("calibration", {})
+        n_wn = spectrum_ds.shape[-1]
 
         # Validate unit compatibility
         calib_unit = calib.get("concentration_unit")
@@ -130,8 +157,10 @@ class LinearCalibrationNode(Node):
 
         # Warn about reference status
         if not ref_confirmed:
-            meta = spectrum.meta if hasattr(spectrum, "meta") else {}
-            ref_applied = meta.get("reference_applied", meta.get("chemometrics", {}).get("reference", {}).get("applied", False))
+            meta = spectrum_ds.meta if hasattr(spectrum_ds, "meta") else {}
+            ref_applied = meta.get(
+                "reference_applied", meta.get("chemometrics", {}).get("reference", {}).get("applied", False)
+            )
             if not ref_applied:
                 warnings.warn(
                     "Reference spectrum status not confirmed. If input data is not "
@@ -146,21 +175,23 @@ class LinearCalibrationNode(Node):
         s_cap = np.full(n_wn, s_max)
 
         # Evaluate linear model
-        absorbance = eval_linear_model(concentrations, slope, intercept, s=s_cap)
+        absorbance = eval_linear_model(concentrations_array, slope, intercept, s=s_cap)
 
         # Create output dataset (n_wn, n_times) -> (n_times, n_wn)
-        spec_x_coord = safe_get_coord(spectrum, 'x')
+        spec_x_coord = safe_get_coord(spectrum_ds, "x")
         if spec_x_coord is None:
             raise ValueError("Input spectrum must have an x coordinate (wavenumber axis)")
-        result = create_spectral_dataset(
-            data=absorbance.T,
-            wavenumbers=spec_x_coord.data,
-            units=SpectralUnit.ABSORBANCE,
-            title=f"{spectrum.title}_linear",
+        result = build_dataset_like(
+            absorbance.T,
+            spectrum_ds,
+            units="absorbance",
+            title=f"{spectrum_ds.title}_linear",
         )
+        result.x = spec_x_coord.copy()
+        result.y = AxisInfo(values=np.arange(len(concentrations_array)), title="Sample Index")
 
         result.meta["calibration_model"] = "linear"
-        result.meta["concentrations"] = concentrations.tolist()
+        result.meta["concentrations"] = concentrations_array.tolist()
         result.meta["concentration_unit"] = conc_unit
         result.meta["reference_confirmed"] = ref_confirmed
 
@@ -253,17 +284,35 @@ class SaturationModelNode(Node):
             Absorbance spectra for each concentration
         """
         import warnings
-        from spectra_sherpa.app.lib.blending import eval_saturation_model
-        from spectra_sherpa.app.lib.spectral.dataset import create_spectral_dataset, SpectralUnit
 
+        from spectra_sherpa.app.lib.blending import eval_saturation_model
+
+        spectrum_ds = bind_X(
+            spectrum,
+            kwargs,
+            missing_message="Missing required input: spectrum",
+            dataset_error_message="spectrum must be an NDDataset or AnalysisDataset object",
+        )
+        concentrations_bound = bind_y(
+            concentrations,
+            kwargs,
+            infer_from_X=False,
+            required=True,
+            dataset_as_data=True,
+            missing_message="Missing required input: concentrations",
+        )
         conc_unit = self.parameters.get("concentration_unit", "ppm")
         warn_extrap = self.parameters.get("warn_extrapolation", True)
-        concentrations = np.atleast_1d(concentrations)
+        concentrations_array = to_numpy_1d(
+            concentrations_bound,
+            name="concentrations",
+            dtype=np.float64,
+        )
 
         # Get calibration from metadata
-        calib = spectrum.meta.get("calibration", {})
-        meta = spectrum.meta if hasattr(spectrum, "meta") else {}
-        n_wn = spectrum.shape[-1]
+        calib = spectrum_ds.meta.get("calibration", {})
+        meta = spectrum_ds.meta if hasattr(spectrum_ds, "meta") else {}
+        n_wn = spectrum_ds.shape[-1]
 
         # Validate unit compatibility
         calib_unit = calib.get("concentration_unit")
@@ -284,9 +333,11 @@ class SaturationModelNode(Node):
                 min_c = calib_range.get("min_concentration")
                 max_c = calib_range.get("max_concentration")
                 if min_c is not None and max_c is not None:
-                    if np.any(concentrations < min_c) or np.any(concentrations > max_c):
+                    if np.any(concentrations_array < min_c) or np.any(concentrations_array > max_c):
+                        c_min = concentrations_array.min()
+                        c_max = concentrations_array.max()
                         warnings.warn(
-                            f"Concentration values [{concentrations.min():.2f}, {concentrations.max():.2f}] "
+                            f"Concentration values [{c_min:.2f}, {c_max:.2f}] "
                             f"extend beyond calibration range [{min_c}, {max_c}]. "
                             f"Saturation model extrapolation may be unreliable.",
                             UserWarning,
@@ -303,24 +354,24 @@ class SaturationModelNode(Node):
             raise ValueError("No valid saturation parameters (s, p, c must be > 0)")
 
         # Evaluate saturation model
-        absorbance = np.zeros((n_wn, len(concentrations)))
-        absorbance[valid] = eval_saturation_model(
-            concentrations, s[valid], p[valid], c[valid]
-        )
+        absorbance = np.zeros((n_wn, len(concentrations_array)))
+        absorbance[valid] = eval_saturation_model(concentrations_array, s[valid], p[valid], c[valid])
 
         # Create output dataset
-        spec_x_coord = safe_get_coord(spectrum, 'x')
+        spec_x_coord = safe_get_coord(spectrum_ds, "x")
         if spec_x_coord is None:
             raise ValueError("Input spectrum must have an x coordinate (wavenumber axis)")
-        result = create_spectral_dataset(
-            data=absorbance.T,
-            wavenumbers=spec_x_coord.data,
-            units=SpectralUnit.ABSORBANCE,
-            title=f"{spectrum.title}_saturation",
+        result = build_dataset_like(
+            absorbance.T,
+            spectrum_ds,
+            units="absorbance",
+            title=f"{spectrum_ds.title}_saturation",
         )
+        result.x = spec_x_coord.copy()
+        result.y = AxisInfo(values=np.arange(len(concentrations_array)), title="Sample Index")
 
         result.meta["calibration_model"] = "saturation"
-        result.meta["concentrations"] = concentrations.tolist()
+        result.meta["concentrations"] = concentrations_array.tolist()
         result.meta["concentration_unit"] = conc_unit
 
         add_processing_step(
@@ -391,33 +442,22 @@ class SystemSaturationNode(Node):
         """
         from spectra_sherpa.app.lib.blending import apply_system_saturation
 
+        input_data = resolve_legacy_input(input_data, kwargs, "default")
+        input_ds = bind_X(
+            input_data,
+            kwargs,
+            missing_message="Missing required input: input_data",
+            dataset_error_message="input_data must be an NDDataset or AnalysisDataset object",
+        )
         s_system = self.parameters.get("s_system", 2.0)
         p_system = self.parameters.get("p_system", 1.0)
 
         # Apply saturation
-        data = input_data.data
-        if data.ndim == 1:
-            data = data.reshape(1, -1)
+        data = to_numpy_2d(input_ds, name="input_data")
 
         saturated = apply_system_saturation(data.T, s_system, p_system).T
 
-        # Create result
-        result = AnalysisDataset(X=saturated)
-
-        x_coord = safe_get_coord(input_data, 'x')
-        if x_coord is not None:
-            result.x = x_coord.copy()
-        y_coord = safe_get_coord(input_data, 'y')
-        if y_coord is not None:
-            result.y = y_coord.copy()
-        if hasattr(input_data, "units") and input_data.units:
-            result.units = input_data.units
-        if hasattr(input_data, "title"):
-            result.title = input_data.title
-        if hasattr(input_data, "meta") and input_data.meta:
-            result.meta.update(dict(input_data.meta))
-
-        copy_processing_history(input_data, result)
+        result = build_dataset_like(saturated, input_ds)
         add_processing_step(
             result,
             "custom.system_saturation",
@@ -566,15 +606,23 @@ class HybridSelectorNode(Node):
             Hybrid-selected absorbance spectra
         """
 
+        linear_result = resolve_legacy_input(linear_result, kwargs, "input_0")
+        saturation_result = resolve_legacy_input(saturation_result, kwargs, "input_1")
+        linear_ds = coerce_dataset(
+            linear_result,
+            input_name="linear_result",
+            dataset_error_message=("linear_result must be an NDDataset or AnalysisDataset object"),
+        )
+        saturation_ds = coerce_dataset(
+            saturation_result,
+            input_name="saturation_result",
+            dataset_error_message=("saturation_result must be an NDDataset or AnalysisDataset object"),
+        )
         auto_select = self.parameters.get("auto_select", True)
         threshold = self.parameters.get("saturation_threshold", 0.5)
 
-        linear_data = linear_result.data
-        sat_data = saturation_result.data
-
-        if linear_data.ndim == 1:
-            linear_data = linear_data.reshape(1, -1)
-            sat_data = sat_data.reshape(1, -1)
+        linear_data = to_numpy_2d(linear_ds, name="linear_result")
+        sat_data = to_numpy_2d(saturation_ds, name="saturation_result")
 
         n_times, n_wn = linear_data.shape
 
@@ -584,31 +632,24 @@ class HybridSelectorNode(Node):
             sat_mask = np.max(sat_data, axis=0) > threshold
         else:
             # Use saturation model everywhere saturation parameters exist
-            calib = saturation_result.meta.get("calibration", {})
+            calib = saturation_ds.meta.get("calibration", {})
             s = np.array(calib.get("s", np.zeros(n_wn)))
             sat_mask = s > 0
 
         # Select per wavenumber
         hybrid_data = np.where(sat_mask, sat_data, linear_data)
 
-        # Create result
-        result = AnalysisDataset(X=hybrid_data)
-
-        x_coord = safe_get_coord(linear_result, 'x')
-        if x_coord is not None:
-            result.x = x_coord.copy()
-        y_coord = safe_get_coord(linear_result, 'y')
-        if y_coord is not None:
-            result.y = y_coord.copy()
-
-        result.units = "absorbance"
-        result.title = "Hybrid Model Output"
+        result = build_dataset_like(
+            hybrid_data,
+            linear_ds,
+            units="absorbance",
+            title="Hybrid Model Output",
+        )
 
         result.meta["hybrid_mask"] = sat_mask.tolist()
         result.meta["n_saturation"] = int(np.sum(sat_mask))
         result.meta["n_linear"] = int(n_wn - np.sum(sat_mask))
 
-        copy_processing_history(linear_result, result)
         add_processing_step(
             result,
             "custom.hybrid_selector",
@@ -770,17 +811,24 @@ class GoldenGridAlignNode(Node):
         if len(input_data) == 0:
             raise ValueError("At least one input spectrum required")
 
+        datasets = [
+            coerce_dataset(
+                ds,
+                input_name=f"input_data[{idx}]",
+                dataset_error_message="Each input must be an NDDataset or AnalysisDataset object",
+            )
+            for idx, ds in enumerate(input_data)
+        ]
+
         # Build golden grid
-        golden_grid = build_golden_grid(list(input_data), merge_tolerance=tolerance)
+        golden_grid = build_golden_grid(datasets, merge_tolerance=tolerance)
 
         # Interpolate all spectra to golden grid
-        aligned = [
-            interpolate_to_grid(ds, golden_grid, method=method) for ds in input_data
-        ]
+        aligned = [interpolate_to_grid(ds, golden_grid, method=method) for ds in datasets]
 
         # Add processing step to each aligned NDDataset
         for i, ds in enumerate(aligned):
-            copy_processing_history(input_data[i], ds)
+            copy_processing_history(datasets[i], ds)
             add_processing_step(
                 ds,
                 "custom.golden_grid_align",
@@ -853,6 +901,13 @@ class NoiseInjectionNode(Node):
             Noisy spectra
         """
 
+        input_data = resolve_legacy_input(input_data, kwargs, "default")
+        input_ds = bind_X(
+            input_data,
+            kwargs,
+            missing_message="Missing required input: input_data",
+            dataset_error_message="input_data must be an NDDataset or AnalysisDataset object",
+        )
         noise_level = self.parameters.get("noise_level", 0.01)
         noise_type = self.parameters.get("noise_type", "relative")
         seed = int(self.parameters.get("seed", -1))
@@ -860,7 +915,7 @@ class NoiseInjectionNode(Node):
         if seed >= 0:
             np.random.seed(seed)
 
-        data = input_data.data.copy()
+        data = to_numpy_2d(input_ds, name="input_data").copy()
 
         if noise_type == "relative":
             # Noise proportional to signal magnitude
@@ -872,23 +927,7 @@ class NoiseInjectionNode(Node):
         noise = np.random.randn(*data.shape) * noise_std
         noisy_data = data + noise
 
-        # Create result
-        result = AnalysisDataset(X=noisy_data)
-
-        x_coord = safe_get_coord(input_data, 'x')
-        if x_coord is not None:
-            result.x = x_coord.copy()
-        y_coord = safe_get_coord(input_data, 'y')
-        if y_coord is not None:
-            result.y = y_coord.copy()
-        if hasattr(input_data, "units") and input_data.units:
-            result.units = input_data.units
-        if hasattr(input_data, "title"):
-            result.title = input_data.title
-        if hasattr(input_data, "meta") and input_data.meta:
-            result.meta.update(dict(input_data.meta))
-
-        copy_processing_history(input_data, result)
+        result = build_dataset_like(noisy_data, input_ds)
         add_processing_step(
             result,
             "custom.noise_injection",

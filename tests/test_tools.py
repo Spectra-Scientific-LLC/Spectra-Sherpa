@@ -11,13 +11,15 @@ Covers:
 Run:
     PYTHONPATH=src/spectra_sherpa python -m pytest tests/test_tools.py -v --no-cov
 """
+
 from __future__ import annotations
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from spectra_sherpa.app.services.tools.executor import ToolExecutionContext, execute_tool
+from spectra_sherpa.app.services.tools.registry import ToolRegistry, tool_registry
 from spectra_sherpa.app.services.tools.schemas import (
     ToolCategory,
     ToolDefinition,
@@ -25,9 +27,6 @@ from spectra_sherpa.app.services.tools.schemas import (
     ToolResult,
     ToolScope,
 )
-from spectra_sherpa.app.services.tools.registry import ToolRegistry, register_tool, tool_registry
-from spectra_sherpa.app.services.tools.executor import ToolExecutionContext, execute_tool
-
 
 # ===========================================================================
 # 1. Schema tests
@@ -141,7 +140,10 @@ class TestToolRegistry:
     def test_register_and_lookup(self):
         reg = ToolRegistry()
         defn = ToolDefinition(name="alpha", description="Alpha tool")
-        handler = lambda: "ok"
+
+        def handler():
+            return "ok"
+
         reg.register(defn, handler)
 
         assert "alpha" in reg
@@ -364,8 +366,10 @@ class TestToolExecutor:
         )
         reg.register(defn, lambda: "ok")
 
-        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg), \
-             patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=False):
+        with (
+            patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg),
+            patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=False),
+        ):
             result = await execute_tool(
                 ToolInvocation(tool_name="net_tool"),
             )
@@ -765,12 +769,12 @@ class TestPerUserEgress:
         async def deny_permission(*args, **kwargs):
             return False
 
-        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg), \
-             patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True), \
-             patch("spectra_sherpa.app.core.security.check_egress_permission", side_effect=deny_permission):
-            result = await execute_tool(
-                ToolInvocation(tool_name="cloud_tool"), ctx
-            )
+        with (
+            patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg),
+            patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True),
+            patch("spectra_sherpa.app.core.security.check_egress_permission", side_effect=deny_permission),
+        ):
+            result = await execute_tool(ToolInvocation(tool_name="cloud_tool"), ctx)
         assert result.success is False
         assert "egress permission" in result.error.lower()
 
@@ -793,12 +797,12 @@ class TestPerUserEgress:
         async def allow_permission(*args, **kwargs):
             return True
 
-        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg), \
-             patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True), \
-             patch("spectra_sherpa.app.core.security.check_egress_permission", side_effect=allow_permission):
-            result = await execute_tool(
-                ToolInvocation(tool_name="cloud_tool_ok"), ctx
-            )
+        with (
+            patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg),
+            patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True),
+            patch("spectra_sherpa.app.core.security.check_egress_permission", side_effect=allow_permission),
+        ):
+            result = await execute_tool(ToolInvocation(tool_name="cloud_tool_ok"), ctx)
         assert result.success is True
         assert result.result == "cloud ok"
 
@@ -816,11 +820,11 @@ class TestPerUserEgress:
 
         ctx = ToolExecutionContext(session=MagicMock(), user=MagicMock())
 
-        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg), \
-             patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=False):
-            result = await execute_tool(
-                ToolInvocation(tool_name="net_perm_tool"), ctx
-            )
+        with (
+            patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg),
+            patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=False),
+        ):
+            result = await execute_tool(ToolInvocation(tool_name="net_perm_tool"), ctx)
         assert result.success is False
         assert "egress" in result.error.lower()
         # Should fail at global level, not per-user
@@ -892,6 +896,7 @@ class TestPluginTrustBoundaries:
         entry = tool_registry.get("list_node_types")
         assert entry is not None
         from spectra_sherpa.app.services.tools.schemas import ToolOrigin
+
         assert entry[0].origin == ToolOrigin.builtin
 
     def test_register_plugin_tool_sets_origin(self):

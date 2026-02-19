@@ -10,15 +10,16 @@ Features:
 - Offline log queuing
 - Reconnection retry logic
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
-from enum import Enum
-from typing import Optional, Callable, Any
 import threading
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Callable, Optional
 
 from spectra_sherpa.app.core.config import app_config
 
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 class ConnectionStatus(Enum):
     """Network connection status states"""
+
     CONNECTED = "connected"
     DISCONNECTED = "disconnected"
     DEGRADED = "degraded"  # Partial connectivity
@@ -37,6 +39,7 @@ class ConnectionStatus(Enum):
 @dataclass
 class HealthCheckResult:
     """Result of a health check"""
+
     status: ConnectionStatus
     message: str
     latency_ms: Optional[float] = None
@@ -47,6 +50,7 @@ class HealthCheckResult:
 @dataclass
 class NetworkState:
     """Current network state"""
+
     spectrasherpa_status: ConnectionStatus = ConnectionStatus.UNKNOWN
     last_check: Optional[datetime] = None
     last_connected: Optional[datetime] = None
@@ -136,7 +140,7 @@ class NetworkHealthService:
             return HealthCheckResult(
                 status=ConnectionStatus.DISCONNECTED,
                 message="SpectraSherpa not configured",
-                details={"reason": "no_api_key"}
+                details={"reason": "no_api_key"},
             )
 
         try:
@@ -147,25 +151,19 @@ class NetworkHealthService:
             latency_ms = (end_time - start_time).total_seconds() * 1000
 
             if is_healthy:
-                return HealthCheckResult(
-                    status=ConnectionStatus.CONNECTED,
-                    message=message,
-                    latency_ms=latency_ms
-                )
+                return HealthCheckResult(status=ConnectionStatus.CONNECTED, message=message, latency_ms=latency_ms)
             else:
                 return HealthCheckResult(
                     status=ConnectionStatus.DISCONNECTED,
                     message=message,
                     latency_ms=latency_ms,
-                    details={"reason": "health_check_failed"}
+                    details={"reason": "health_check_failed"},
                 )
 
         except Exception as e:
             logger.warning(f"Health check exception: {e}")
             return HealthCheckResult(
-                status=ConnectionStatus.DISCONNECTED,
-                message=str(e),
-                details={"reason": "exception", "error": str(e)}
+                status=ConnectionStatus.DISCONNECTED, message=str(e), details={"reason": "exception", "error": str(e)}
             )
 
     async def _update_state(self, result: HealthCheckResult):
@@ -188,8 +186,7 @@ class NetworkHealthService:
                 self._state.consecutive_failures += 1
 
                 # Enter degraded mode after threshold failures
-                if (self._state.consecutive_failures >= self.FAILURE_THRESHOLD
-                        and not self._state.is_degraded_mode):
+                if self._state.consecutive_failures >= self.FAILURE_THRESHOLD and not self._state.is_degraded_mode:
                     logger.warning(
                         f"Entering degraded mode after {self._state.consecutive_failures} "
                         f"consecutive failures: {result.message}"

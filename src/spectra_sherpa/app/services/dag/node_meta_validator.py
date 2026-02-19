@@ -46,10 +46,7 @@ def validate_node_meta(node_class: Type[Node]) -> tuple[bool, List[str]]:
             try:
                 type_registry.resolve(port.type_ref)
             except Exception as exc:
-                errors.append(
-                    f"{meta.node_type} input '{port.name}' has invalid type_ref "
-                    f"{port.type_ref!r}: {exc}"
-                )
+                errors.append(f"{meta.node_type} input '{port.name}' has invalid type_ref " f"{port.type_ref!r}: {exc}")
 
     if meta.output_ports:
         for port in meta.output_ports:
@@ -57,14 +54,11 @@ def validate_node_meta(node_class: Type[Node]) -> tuple[bool, List[str]]:
                 type_registry.resolve(port.type_ref)
             except Exception as exc:
                 errors.append(
-                    f"{meta.node_type} output '{port.name}' has invalid type_ref "
-                    f"{port.type_ref!r}: {exc}"
+                    f"{meta.node_type} output '{port.name}' has invalid type_ref " f"{port.type_ref!r}: {exc}"
                 )
 
     if not isinstance(meta.diagnostics, list):
-        errors.append(
-            f"{meta.node_type} diagnostics must be a list, got {type(meta.diagnostics).__name__}"
-        )
+        errors.append(f"{meta.node_type} diagnostics must be a list, got {type(meta.diagnostics).__name__}")
 
     return len(errors) == 0, errors
 

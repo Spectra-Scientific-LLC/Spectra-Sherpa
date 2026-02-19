@@ -5,10 +5,11 @@ Revises: f6a4b7c2d815
 Create Date: 2026-02-12 12:00:00.000000
 
 """
+
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "g7b5c9d3e926"
@@ -51,12 +52,16 @@ def _ensure_experiment_table() -> None:
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("metadata_path", sa.String(length=500), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
-            server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False,
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("(CURRENT_TIMESTAMP)"),
+            nullable=False,
         ),
         sa.Column(
-            "updated_at", sa.DateTime(timezone=True),
-            server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False,
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("(CURRENT_TIMESTAMP)"),
+            nullable=False,
         ),
         sa.ForeignKeyConstraint(["user_id"], ["user.id"]),
         sa.PrimaryKeyConstraint("id"),
@@ -73,9 +78,7 @@ def upgrade() -> None:
         op.create_table(
             "project",
             sa.Column("id", sa.Integer(), primary_key=True),
-            sa.Column(
-                "user_id", sa.Integer(), sa.ForeignKey("user.id"), nullable=False, index=True
-            ),
+            sa.Column("user_id", sa.Integer(), sa.ForeignKey("user.id"), nullable=False, index=True),
             sa.Column(
                 "parent_id",
                 sa.Integer(),

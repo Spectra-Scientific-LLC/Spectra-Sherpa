@@ -12,6 +12,7 @@ from typing import Deque, Generator
 # File locking for multi-process safety
 try:
     import fcntl
+
     HAS_FCNTL = True
 except ImportError:
     # Windows doesn't have fcntl
@@ -105,9 +106,7 @@ class RateLimiter:
             payload = json.loads(self.state_path.read_text())
             timestamps = payload.get(key, [])
             if isinstance(timestamps, list):
-                return deque(
-                    float(ts) for ts in timestamps if isinstance(ts, (int, float))
-                )
+                return deque(float(ts) for ts in timestamps if isinstance(ts, (int, float)))
         except (json.JSONDecodeError, IOError):
             pass
 

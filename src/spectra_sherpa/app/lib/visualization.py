@@ -7,8 +7,6 @@ using Plotly.
 
 from __future__ import annotations
 
-from typing import Optional
-
 try:
     import plotly.graph_objects as go
 

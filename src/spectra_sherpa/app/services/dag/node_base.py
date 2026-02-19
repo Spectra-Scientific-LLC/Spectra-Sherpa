@@ -7,12 +7,11 @@ Nodes can be connected to form directed acyclic graphs (DAGs).
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Type
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any, Dict, List, Optional, Type
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +25,7 @@ class NodeResult:
     Diagnostics are ephemeral — recomputed on every run, not saved
     with the workflow definition.
     """
+
     outputs: Dict[str, Any] = field(default_factory=dict)
     diagnostics: Dict[str, Any] = field(default_factory=dict)
 
@@ -46,6 +46,7 @@ class NodeResult:
 
 class NodeStatus(str, Enum):
     """Node execution status."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -55,6 +56,7 @@ class NodeStatus(str, Enum):
 @dataclass
 class NodeParameter:
     """Definition of a node parameter."""
+
     name: str
     label: str
     param_type: str  # "number", "boolean", "select", "text"
@@ -78,6 +80,7 @@ class PortMetadata:
     resolves URIs and checks subtype / version compatibility at connection
     time.
     """
+
     name: str  # Port identifier (e.g., "X_train", "y_class", "model")
     type_ref: str  # "spectrasherpa://types/SpectralDataset/1.0"
     required: bool = True
@@ -97,6 +100,7 @@ InputPort = PortMetadata
 @dataclass
 class NodeMetadata:
     """Metadata about a node type."""
+
     node_type: str
     category: str  # "preprocessing", "modeling", "diagnostics", "export"
     label: str
@@ -214,23 +218,15 @@ class Node(ABC):
             # Type validation
             if param_def.param_type == "number":
                 if not isinstance(value, (int, float)):
-                    raise ValueError(
-                        f"Parameter {param_def.name} must be a number, got {type(value)}"
-                    )
+                    raise ValueError(f"Parameter {param_def.name} must be a number, got {type(value)}")
                 if param_def.min_value is not None and value < param_def.min_value:
-                    raise ValueError(
-                        f"Parameter {param_def.name} must be >= {param_def.min_value}"
-                    )
+                    raise ValueError(f"Parameter {param_def.name} must be >= {param_def.min_value}")
                 if param_def.max_value is not None and value > param_def.max_value:
-                    raise ValueError(
-                        f"Parameter {param_def.name} must be <= {param_def.max_value}"
-                    )
+                    raise ValueError(f"Parameter {param_def.name} must be <= {param_def.max_value}")
 
             elif param_def.param_type == "boolean":
                 if not isinstance(value, bool):
-                    raise ValueError(
-                        f"Parameter {param_def.name} must be a boolean, got {type(value)}"
-                    )
+                    raise ValueError(f"Parameter {param_def.name} must be a boolean, got {type(value)}")
 
     # ------------------------------------------------------------------
     # Python export / code generation
@@ -258,7 +254,9 @@ class Node(ABC):
         return type(self).generate_python is not Node.generate_python
 
     def generate_python(
-        self, inputs: Dict[str, str], indent: str = "    ",
+        self,
+        inputs: Dict[str, str],
+        indent: str = "    ",
         use_scp: bool = True,
     ) -> List[str]:
         """
@@ -285,8 +283,7 @@ class Node(ABC):
         if self.scp_method is None:
             return [
                 f"{indent}# TODO: {self.metadata.node_type} does not support Python export yet",
-                f"{indent}raise NotImplementedError("
-                f"'{self.metadata.node_type} export not implemented')",
+                f"{indent}raise NotImplementedError(" f"'{self.metadata.node_type} export not implemented')",
             ]
 
         # SCP-only nodes can't generate no-SCP code
@@ -294,8 +291,7 @@ class Node(ABC):
             return [
                 f"{indent}# --- {self.metadata.label} ({self.node_id}) ---",
                 f"{indent}# This node requires SpectroChemPy (pip install spectra-sherpa[scp])",
-                f"{indent}raise ImportError("
-                f"'{self.metadata.label} requires spectrochempy')",
+                f"{indent}raise ImportError(" f"'{self.metadata.label} requires spectrochempy')",
             ]
 
         lines: List[str] = []
@@ -336,6 +332,7 @@ class Node(ABC):
             # Per-node SCP gate (replaces former blanket _SCP_CATEGORIES check)
             if self.metadata and self.metadata.requires_scp:
                 from spectra_sherpa.app.lib.scp_compat import HAS_SCP
+
                 if not HAS_SCP:
                     raise ImportError(
                         f"{self.metadata.label} requires SpectroChemPy. "
@@ -393,9 +390,7 @@ class NodeRegistry:
         """
         self._builtin_types = set(self._nodes.keys())
         self._frozen = True
-        logger.info(
-            "Node registry frozen: %d built-in types", len(self._builtin_types)
-        )
+        logger.info("Node registry frozen: %d built-in types", len(self._builtin_types))
 
     def register(self, node_class: Type[Node]) -> None:
         """
@@ -430,9 +425,7 @@ class NodeRegistry:
 
         self._nodes[node_type] = node_class
 
-    def create_node(
-        self, node_type: str, node_id: str, parameters: Optional[Dict[str, Any]] = None
-    ) -> Node:
+    def create_node(self, node_type: str, node_id: str, parameters: Optional[Dict[str, Any]] = None) -> Node:
         """
         Create a node instance.
 
@@ -471,10 +464,7 @@ class NodeRegistry:
 
     def list_by_category(self, category: str) -> List[NodeMetadata]:
         """List nodes in a specific category."""
-        return [
-            metadata for metadata in self.list_nodes()
-            if metadata.category == category
-        ]
+        return [metadata for metadata in self.list_nodes() if metadata.category == category]
 
 
 # Global registry instance

@@ -5,56 +5,54 @@ These nodes implement various preprocessing techniques like baseline correction,
 smoothing, normalization, and derivatives.
 
 All nodes:
-- Accept NDDataset as input
-- Return NDDataset as output
+- Accept AnalysisDataset as input
+- Return AnalysisDataset as output
 - Record processing history in dataset.meta["processing_history"]
 """
 
 from __future__ import annotations
 
-from typing import Any, Optional, List, Dict
-import numpy as np
-from spectra_sherpa.app.lib.scp_compat import scp, NDDataset
-from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
+from typing import Any, Dict
 
+import numpy as np
+
+from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
+from spectra_sherpa.app.lib.preprocessing import (
+    baseline_penalized_ls,
+    gaussian_smooth,
+    norris_williams,
+    remove_cosmic_rays,
+    whittaker_smooth,
+)
+from spectra_sherpa.app.lib.scp_compat import NDDataset, from_nddataset, scp, to_nddataset
+
+from ..export_helpers import (
+    extract_data_lines,
+    header_line,
+)
+from ..export_helpers import (
+    wrap_result_lines as _wrap_result_lines,
+)
+from ..io_contracts import (
+    bind_X,
+    bind_y,
+    build_dataset_like,
+    coerce_dataset,
+    resolve_legacy_input,
+    to_numpy_1d,
+    to_numpy_2d,
+)
+from ..meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
 from ..node_base import (
     Node,
     NodeMetadata,
     NodeParameter,
-    InputPort,
-    PortMetadata,
     NodeResult,
-    register_node,
+    PortMetadata,
     _format_value,
+    register_node,
 )
-from ..meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
-from spectra_sherpa.app.lib.preprocessing import (
-    remove_cosmic_rays,
-    baseline_penalized_ls,
-    whittaker_smooth,
-    norris_williams,
-    gaussian_smooth,
-)
-
-
-def _wrap_result_lines(
-    node_id: str, data_expr: str, input_expr: str,
-    indent: str, use_scp: bool,
-) -> list[str]:
-    """Generate result-wrapping code lines for Python export.
-
-    SCP mode:  ``scp.NDDataset(data) + coordinate copy``
-    numpy mode: ``_Result(data, x=...)``
-    """
-    if use_scp:
-        return [
-            f"{indent}results['{node_id}'] = scp.NDDataset({data_expr})",
-            f"{indent}if hasattr({input_expr}, 'x') and {input_expr}.x is not None:",
-            f"{indent}    results['{node_id}'].x = {input_expr}.x.copy()",
-        ]
-    return [
-        f"{indent}results['{node_id}'] = _Result({data_expr}, x=getattr({input_expr}, 'x', None))",
-    ]
+from ..spec_nodes import TransformSpec, TransformSpecNode
 
 
 @register_node
@@ -152,39 +150,37 @@ class BaselinePenalizedLSNode(Node):
             f"{indent}# --- Baseline Penalized LS ({self.node_id}) ---",
             f"{indent}from spectra_sherpa.app.lib.preprocessing import baseline_penalized_ls",
             f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
-            f"{indent}_corrected = baseline_penalized_ls(_data, method='{method}', lam={_format_value(lam)}, p={_format_value(p)}, max_iter={max_iter}, tol={_format_value(tol)})",
+            f"{indent}_corrected = baseline_penalized_ls("
+            f"_data, method='{method}', lam={_format_value(lam)}, "
+            f"p={_format_value(p)}, max_iter={max_iter}, "
+            f"tol={_format_value(tol)})",
         ]
         lines += _wrap_result_lines(self.node_id, "_corrected", inp, indent, use_scp)
         return lines
 
-    async def execute(self, input_data: NDDataset) -> NDDataset:
+    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
         """Execute penalized LS baseline correction."""
+        input_ds = coerce_dataset(input_data, input_name="input_data")
         method = self.parameters.get("method", "als")
         lam = self.parameters.get("lam", 1e5)
         p = self.parameters.get("p", 0.001)
         max_iter = self.parameters.get("max_iter", 50)
         tol = self.parameters.get("tol", 1e-6)
 
-        data = np.array(input_data.data, dtype=np.float64)
+        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
         corrected = baseline_penalized_ls(
-            data, method=method, lam=lam, p=p, max_iter=max_iter, tol=tol,
+            data,
+            method=method,
+            lam=lam,
+            p=p,
+            max_iter=max_iter,
+            tol=tol,
         )
 
-        result = AnalysisDataset(X=corrected)
-        x_coord = safe_get_coord(input_data, 'x')
-        if x_coord is not None:
-            result.x = x_coord.copy()
-        y_coord = safe_get_coord(input_data, 'y')
-        if y_coord is not None:
-            result.y = y_coord.copy()
-        if hasattr(input_data, 'title'):
-            result.title = input_data.title
-        if hasattr(input_data, 'units'):
-            result.units = input_data.units
-
-        copy_processing_history(input_data, result)
+        result = build_dataset_like(corrected, input_ds)
         add_processing_step(
-            result, "baseline.penalized_ls",
+            result,
+            "baseline.penalized_ls",
             {"method": method, "lam": lam, "p": p, "max_iter": max_iter, "tol": tol},
             node_id=self.node_id,
         )
@@ -223,15 +219,15 @@ class BaselineRubberbandNode(Node):
         requires_scp=True,
     )
 
-    async def execute(self, input_data: NDDataset) -> NDDataset:
+    async def execute(self, input_data) -> AnalysisDataset:
         """Execute rubberband baseline correction."""
         ranges_str = self.parameters.get("ranges", "").strip()
 
-        result = input_data.copy()
+        # Convert to NDDataset for SCP .basc() method
+        ndd = to_nddataset(input_data) if isinstance(input_data, AnalysisDataset) else input_data.copy()
 
         kwargs: Dict[str, Any] = {"method": "rubberband"}
         if ranges_str:
-            # Parse "4000:3800, 1800:1700" → list of (start, end) tuples
             parsed = []
             for part in ranges_str.split(","):
                 part = part.strip()
@@ -241,9 +237,14 @@ class BaselineRubberbandNode(Node):
             if parsed:
                 kwargs["ranges"] = parsed
 
-        result.basc(**kwargs)
+        ndd.basc(**kwargs)
+
+        # Convert back to AnalysisDataset
+        result = from_nddataset(ndd)
+        copy_processing_history(input_data, result)
         add_processing_step(
-            result, "baseline.rubberband",
+            result,
+            "baseline.rubberband",
             {"method": "rubberband", "ranges": ranges_str or None},
             node_id=self.node_id,
         )
@@ -314,25 +315,29 @@ class SmoothSavitzkyGolayNode(Node):
             f"{indent}# --- Smooth (Savitzky-Golay) ({self.node_id}) ---",
             f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
             f"{indent}if _data.ndim >= 2:",
-            f"{indent}    _data = np.apply_along_axis(savgol_filter, -1, _data, window_length={size}, polyorder={order})",
+            f"{indent}    _data = np.apply_along_axis("
+            f"savgol_filter, -1, _data, window_length={size}, polyorder={order})",
             f"{indent}else:",
-            f"{indent}    _data = savgol_filter(_data, window_length={size}, polyorder={order})",
+            f"{indent}    _data = savgol_filter(" f"_data, window_length={size}, polyorder={order})",
         ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
 
-    async def execute(self, input_data: NDDataset) -> NDDataset:
+    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
         """Execute Savitzky-Golay smoothing."""
         size = self.parameters.get("size", 11)
         order = self.parameters.get("order", 2)
 
         result = input_data.copy()
-        if hasattr(result, 'smooth'):
+        if hasattr(result, "smooth"):
             result.smooth(size=size, order=order)
         else:
             from scipy.signal import savgol_filter
+
             raw = np.asarray(result.data, dtype=np.float64)
-            smoothed = np.apply_along_axis(
-                savgol_filter, -1, raw, window_length=int(size), polyorder=int(order)
-            ) if raw.ndim >= 2 else savgol_filter(raw, window_length=int(size), polyorder=int(order))
+            smoothed = (
+                np.apply_along_axis(savgol_filter, -1, raw, window_length=int(size), polyorder=int(order))
+                if raw.ndim >= 2
+                else savgol_filter(raw, window_length=int(size), polyorder=int(order))
+            )
             result.X = smoothed
         add_processing_step(result, "smooth.savitzky_golay", {"size": size, "order": order}, node_id=self.node_id)
 
@@ -400,35 +405,22 @@ class NormalizeSNVNode(Node):
             f"{indent}    _data = (_data - _mean) / _std",
         ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
 
-    async def execute(self, input_data: NDDataset) -> NodeResult:
+    async def execute(self, input_data: AnalysisDataset) -> NodeResult:
         """Execute SNV normalization."""
-        data = np.array(input_data.data, dtype=np.float64)
+        input_ds = coerce_dataset(input_data, input_name="input_data")
+        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
         before = data.copy()
 
-        if data.ndim == 1:
-            mean_val = np.mean(data)
-            std_val = np.std(data)
-            if std_val == 0:
-                std_val = 1.0
-            normalized_data = (data - mean_val) / std_val
-        else:
-            mean_vals = np.mean(data, axis=1, keepdims=True)
-            std_vals = np.std(data, axis=1, keepdims=True)
-            std_vals[std_vals == 0] = 1.0
-            normalized_data = (data - mean_vals) / std_vals
+        mean_vals = np.mean(data, axis=1, keepdims=True)
+        std_vals = np.std(data, axis=1, keepdims=True)
+        std_vals[std_vals == 0] = 1.0
+        normalized_data = (data - mean_vals) / std_vals
 
-        result = AnalysisDataset(X=normalized_data)
-        x_coord = safe_get_coord(input_data, 'x')
-        if x_coord is not None:
-            result.x = x_coord.copy()
-        y_coord = safe_get_coord(input_data, 'y')
-        if y_coord is not None:
-            result.y = y_coord.copy()
-        if hasattr(input_data, 'title'):
-            result.title = input_data.title
-        result.units = "dimensionless"
-
-        copy_processing_history(input_data, result)
+        result = build_dataset_like(
+            normalized_data,
+            input_ds,
+            units="dimensionless",
+        )
         add_processing_step(result, "normalize.snv", {}, node_id=self.node_id)
 
         eps = 1e-12
@@ -508,10 +500,11 @@ class NormalizeScaleNode(Node):
         lines += _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
         return lines
 
-    async def execute(self, input_data: NDDataset) -> NDDataset:
+    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
         """Execute scale normalization."""
+        input_ds = coerce_dataset(input_data, input_name="input_data")
         method = self.parameters.get("method", "max")
-        data = np.array(input_data.data, dtype=np.float64)
+        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
 
         if method == "max":
             max_vals = np.abs(data).max(axis=-1, keepdims=True)
@@ -528,18 +521,7 @@ class NormalizeScaleNode(Node):
             range_vals[range_vals == 0] = 1
             data = (data - min_vals) / range_vals
 
-        result = AnalysisDataset(X=data)
-        x_coord = safe_get_coord(input_data, 'x')
-        if x_coord is not None:
-            result.x = x_coord.copy()
-        y_coord = safe_get_coord(input_data, 'y')
-        if y_coord is not None:
-            result.y = y_coord.copy()
-        if hasattr(input_data, 'title'):
-            result.title = input_data.title
-        result.units = "normalized"
-
-        copy_processing_history(input_data, result)
+        result = build_dataset_like(data, input_ds, units="normalized")
         add_processing_step(result, "normalize.scale", {"method": method}, node_id=self.node_id)
 
         return result
@@ -576,14 +558,18 @@ class NormalizeMSCNode(Node):
         requires_scp=True,
     )
 
-    async def execute(self, input_data: NDDataset) -> NDDataset:
+    async def execute(self, input_data) -> AnalysisDataset:
         """Execute MSC normalization."""
         reference = self.parameters.get("reference", "mean")
 
-        result = input_data.copy()
-        result.msc(reference=reference)
-        result.units = "dimensionless"
+        # Convert to NDDataset for SCP .msc() method
+        ndd = to_nddataset(input_data) if isinstance(input_data, AnalysisDataset) else input_data.copy()
+        ndd.msc(reference=reference)
+        ndd.units = "dimensionless"
 
+        # Convert back to AnalysisDataset
+        result = from_nddataset(ndd)
+        copy_processing_history(input_data, result)
         add_processing_step(result, "normalize.msc", {"reference": reference}, node_id=self.node_id)
 
         return result
@@ -651,32 +637,36 @@ class DerivativeFirstNode(Node):
             f"{indent}# --- 1st Derivative ({self.node_id}) ---",
             f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
             f"{indent}if _data.ndim >= 2:",
-            f"{indent}    _data = np.apply_along_axis(savgol_filter, -1, _data, window_length={size}, polyorder={order}, deriv=1)",
+            f"{indent}    _data = np.apply_along_axis("
+            f"savgol_filter, -1, _data, window_length={size}, polyorder={order}, deriv=1)",
             f"{indent}else:",
-            f"{indent}    _data = savgol_filter(_data, window_length={size}, polyorder={order}, deriv=1)",
+            f"{indent}    _data = savgol_filter(" f"_data, window_length={size}, polyorder={order}, deriv=1)",
         ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
 
-    async def execute(self, input_data: NDDataset) -> NDDataset:
+    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
         """Execute first derivative calculation."""
         size = self.parameters.get("size", 11)
         order = self.parameters.get("order", 2)
 
         result = input_data.copy()
-        if hasattr(result, 'savgol'):
+        if hasattr(result, "savgol"):
             result.savgol(size=size, order=order, deriv=1)
         else:
             from scipy.signal import savgol_filter
+
             raw = np.asarray(result.data, dtype=np.float64)
-            derived = np.apply_along_axis(
-                savgol_filter, -1, raw, window_length=int(size), polyorder=int(order), deriv=1
-            ) if raw.ndim >= 2 else savgol_filter(raw, window_length=int(size), polyorder=int(order), deriv=1)
+            derived = (
+                np.apply_along_axis(savgol_filter, -1, raw, window_length=int(size), polyorder=int(order), deriv=1)
+                if raw.ndim >= 2
+                else savgol_filter(raw, window_length=int(size), polyorder=int(order), deriv=1)
+            )
             result.X = derived
 
         # Update units — only when meaningful units exist on both axes
         try:
-            original_units = str(input_data.units) if hasattr(input_data, 'units') and input_data.units else None
-            x_coord = safe_get_coord(input_data, 'x')
-            x_units = str(x_coord.units) if x_coord is not None and x_coord and hasattr(x_coord, 'units') else None
+            original_units = str(input_data.units) if hasattr(input_data, "units") and input_data.units else None
+            x_coord = safe_get_coord(input_data, "x")
+            x_units = str(x_coord.units) if x_coord is not None and x_coord and hasattr(x_coord, "units") else None
 
             if original_units and x_units and original_units != "dimensionless":
                 result.units = f"d({original_units})/d({x_units})"
@@ -752,32 +742,36 @@ class DerivativeSecondNode(Node):
             f"{indent}# --- 2nd Derivative ({self.node_id}) ---",
             f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
             f"{indent}if _data.ndim >= 2:",
-            f"{indent}    _data = np.apply_along_axis(savgol_filter, -1, _data, window_length={size}, polyorder={order}, deriv=2)",
+            f"{indent}    _data = np.apply_along_axis("
+            f"savgol_filter, -1, _data, window_length={size}, polyorder={order}, deriv=2)",
             f"{indent}else:",
-            f"{indent}    _data = savgol_filter(_data, window_length={size}, polyorder={order}, deriv=2)",
+            f"{indent}    _data = savgol_filter(" f"_data, window_length={size}, polyorder={order}, deriv=2)",
         ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
 
-    async def execute(self, input_data: NDDataset) -> NDDataset:
+    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
         """Execute second derivative calculation."""
         size = self.parameters.get("size", 11)
         order = self.parameters.get("order", 2)
 
         result = input_data.copy()
-        if hasattr(result, 'savgol'):
+        if hasattr(result, "savgol"):
             result.savgol(size=size, order=order, deriv=2)
         else:
             from scipy.signal import savgol_filter
+
             raw = np.asarray(result.data, dtype=np.float64)
-            derived = np.apply_along_axis(
-                savgol_filter, -1, raw, window_length=int(size), polyorder=int(order), deriv=2
-            ) if raw.ndim >= 2 else savgol_filter(raw, window_length=int(size), polyorder=int(order), deriv=2)
+            derived = (
+                np.apply_along_axis(savgol_filter, -1, raw, window_length=int(size), polyorder=int(order), deriv=2)
+                if raw.ndim >= 2
+                else savgol_filter(raw, window_length=int(size), polyorder=int(order), deriv=2)
+            )
             result.X = derived
 
         # Update units — only when meaningful units exist on both axes
         try:
-            original_units = str(input_data.units) if hasattr(input_data, 'units') and input_data.units else None
-            x_coord = safe_get_coord(input_data, 'x')
-            x_units = str(x_coord.units) if x_coord is not None and x_coord and hasattr(x_coord, 'units') else None
+            original_units = str(input_data.units) if hasattr(input_data, "units") and input_data.units else None
+            x_coord = safe_get_coord(input_data, "x")
+            x_units = str(x_coord.units) if x_coord is not None and x_coord and hasattr(x_coord, "units") else None
 
             if original_units and x_units and original_units != "dimensionless":
                 result.units = f"d²({original_units})/d({x_units})²"
@@ -865,15 +859,16 @@ class CosmicRayRemovalNode(Node):
             f"{indent}        _data[_i] = _remove_cosmic_rays(_data[_i])",
         ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
 
-    async def execute(self, input_data: NDDataset) -> NDDataset:
+    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
         """Execute cosmic ray removal."""
+        input_ds = coerce_dataset(input_data, input_name="input_data")
         window = self.parameters.get("window", 7)
         zscore = self.parameters.get("zscore", 3.0)
 
         if window % 2 == 0:
             window += 1
 
-        data = np.array(input_data.data)
+        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
 
         if data.ndim == 1:
             data = remove_cosmic_rays(data, window=window, zscore_threshold=zscore)
@@ -881,19 +876,7 @@ class CosmicRayRemovalNode(Node):
             for i in range(data.shape[0]):
                 data[i] = remove_cosmic_rays(data[i], window=window, zscore_threshold=zscore)
 
-        result = AnalysisDataset(X=data)
-        x_coord = safe_get_coord(input_data, 'x')
-        if x_coord is not None:
-            result.x = x_coord.copy()
-        y_coord = safe_get_coord(input_data, 'y')
-        if y_coord is not None:
-            result.y = y_coord.copy()
-        if hasattr(input_data, 'title'):
-            result.title = input_data.title
-        if hasattr(input_data, 'units'):
-            result.units = input_data.units
-
-        copy_processing_history(input_data, result)
+        result = build_dataset_like(data, input_ds)
         add_processing_step(result, "preprocess.cosmic_ray", {"window": window, "zscore": zscore}, node_id=self.node_id)
 
         return result
@@ -967,7 +950,10 @@ class ClipRangeNode(Node):
             if max_wn is not None:
                 lines.append(f"{indent}    _mask &= _x_vals <= {max_wn}")
             lines.append(f"{indent}    _new_data = np.array({inp}.data)[:, _mask]")
-            lines.append(f"{indent}    results['{self.node_id}'] = _Result(_new_data, x=type('Ax', (), {{'data': _x_vals[_mask]}}))")
+            lines.append(
+                f"{indent}    results['{self.node_id}'] = _Result("
+                f"_new_data, x=type('Ax', (), {{'data': _x_vals[_mask]}}))"
+            )
             lines.append(f"{indent}else:")
             # No axis info — integer column slicing fallback
             lo = int(min_wn) if min_wn is not None else 0
@@ -977,7 +963,7 @@ class ClipRangeNode(Node):
             lines.append(f"{indent}    results['{self.node_id}'] = _Result(_new_data)")
         return lines
 
-    async def execute(self, input_data: NDDataset) -> NDDataset:
+    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
         """Execute wavenumber range clipping."""
         min_wn = self.parameters.get("min_wavenumber")
         max_wn = self.parameters.get("max_wavenumber")
@@ -987,25 +973,16 @@ class ClipRangeNode(Node):
         if min_wn is not None and max_wn is not None and min_wn > max_wn:
             min_wn, max_wn = max_wn, min_wn
 
-        # NDDataset: coordinate-aware slicing ([:, 400:4000] selects by wavenumber)
-        # AnalysisDataset: find column indices from x_axis.values, then integer-slice
-        if isinstance(input_data, AnalysisDataset):
-            result = self._clip_by_index(input_data, min_wn, max_wn)
-        else:
-            result = input_data.copy()
-            if min_wn is not None and max_wn is not None:
-                result = result[:, min_wn:max_wn]
-            elif min_wn is not None:
-                result = result[:, min_wn:]
-            elif max_wn is not None:
-                result = result[:, :max_wn]
+        # Clip by x_axis values (wavenumber range)
+        result = self._clip_by_index(input_data, min_wn, max_wn)
 
         copy_processing_history(input_data, result)
         add_processing_step(
-            result, "preprocess.clip_range",
+            result,
+            "preprocess.clip_range",
             {"min_wavenumber": min_wn, "max_wavenumber": max_wn},
             node_id=self.node_id,
-            input_shape=input_shape
+            input_shape=input_shape,
         )
 
         return result
@@ -1028,10 +1005,10 @@ class ClipRangeNode(Node):
             mask &= x_vals <= max_wn
 
         from spectra_sherpa.app.lib.analysis_dataset import AxisInfo
+
         new_x = AxisInfo(
             values=x_vals[mask],
-            labels=([l for l, m in zip(ds.x_axis.labels, mask) if m]
-                    if ds.x_axis.labels else None),
+            labels=([l for l, m in zip(ds.x_axis.labels, mask) if m] if ds.x_axis.labels else None),
             units=ds.x_axis.units,
             title=ds.x_axis.title,
         )
@@ -1049,7 +1026,7 @@ class ClipRangeNode(Node):
 
 
 @register_node
-class ClipFloorNode(Node):
+class ClipFloorNode(TransformSpecNode):
     """
     Floor clipping node.
 
@@ -1078,39 +1055,11 @@ class ClipFloorNode(Node):
         output_type="NDDataset",
     )
 
-    python_extra_imports = ["import numpy as np"]
-
-    def generate_python(self, inputs, indent="    ", use_scp=True):
-        inp = next(iter(inputs.values())) if inputs else "input_data"
-        floor_val = self._resolve_params().get("floor", 0.0)
-        return [
-            f"{indent}# --- Clip Floor ({self.node_id}) ---",
-            f"{indent}_data = np.maximum(np.array({inp}.data, dtype=np.float64), {_format_value(floor_val)})",
-        ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
-
-    async def execute(self, input_data: NDDataset) -> NDDataset:
-        """Execute floor clipping."""
-        floor = self.parameters.get("floor", 0.0)
-
-        data = np.array(input_data.data, dtype=np.float64)
-        data = np.maximum(data, floor)
-
-        result = AnalysisDataset(X=data)
-        x_coord = safe_get_coord(input_data, 'x')
-        if x_coord is not None:
-            result.x = x_coord.copy()
-        y_coord = safe_get_coord(input_data, 'y')
-        if y_coord is not None:
-            result.y = y_coord.copy()
-        if hasattr(input_data, 'title'):
-            result.title = input_data.title
-        if hasattr(input_data, 'units'):
-            result.units = input_data.units
-
-        copy_processing_history(input_data, result)
-        add_processing_step(result, "preprocess.clip_floor", {"floor": floor}, node_id=self.node_id)
-
-        return result
+    spec = TransformSpec(
+        transform_fn=lambda data, floor: np.maximum(data, floor),
+        numpy_expr="np.maximum(_data, {floor})",
+        extra_imports=["import numpy as np"],
+    )
 
 
 @register_node
@@ -1169,9 +1118,9 @@ class WavenumberAlignNode(Node):
         ]
         return lines
 
-    async def execute(self, input_data: NDDataset) -> NDDataset:
+    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
         """Execute wavenumber alignment via interpolation to a uniform grid."""
-        from spectra_sherpa.app.lib.preprocessing import interpolate_to_grid, build_golden_grid
+        from spectra_sherpa.app.lib.preprocessing import build_golden_grid, interpolate_to_grid
 
         method = self.parameters.get("method", "pchip")
         merge_tolerance = self.parameters.get("merge_tolerance", 0.5)
@@ -1182,7 +1131,8 @@ class WavenumberAlignNode(Node):
 
         copy_processing_history(input_data, result)
         add_processing_step(
-            result, "preprocess.wavenumber_align",
+            result,
+            "preprocess.wavenumber_align",
             {"method": method, "merge_tolerance": merge_tolerance, "n_points": len(target_grid)},
             node_id=self.node_id,
         )
@@ -1237,11 +1187,12 @@ class ScaleMaxNode(Node):
             f"{indent}    _data = _data * ({_format_value(target)} / _rmax)",
         ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
 
-    async def execute(self, input_data: NDDataset) -> NDDataset:
+    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
         """Execute scale to maximum normalization."""
+        input_ds = coerce_dataset(input_data, input_name="input_data")
         target_max = self.parameters.get("target_max", 1.0)
 
-        data = np.array(input_data.data, dtype=np.float64)
+        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
 
         if data.ndim == 1:
             current_max = np.abs(data).max()
@@ -1252,25 +1203,27 @@ class ScaleMaxNode(Node):
             row_max[row_max == 0] = 1.0
             data = data * (target_max / row_max)
 
-        result = AnalysisDataset(X=data)
-        x_coord = safe_get_coord(input_data, 'x')
-        if x_coord is not None:
-            result.x = x_coord.copy()
-        y_coord = safe_get_coord(input_data, 'y')
-        if y_coord is not None:
-            result.y = y_coord.copy()
-        if hasattr(input_data, 'title'):
-            result.title = input_data.title
-        result.units = "normalized"
-
-        copy_processing_history(input_data, result)
+        result = build_dataset_like(data, input_ds, units="normalized")
         add_processing_step(result, "preprocess.scale_max", {"target_max": target_max}, node_id=self.node_id)
 
         return result
 
 
+def _center_mean_export(params, inp, node_id, indent, use_scp):
+    lines = [header_line("Mean Center", node_id, indent)]
+    lines += extract_data_lines(inp, indent)
+    lines += [
+        f"{indent}if _data.ndim == 1:",
+        f"{indent}    _data = _data - np.mean(_data)",
+        f"{indent}else:",
+        f"{indent}    _data = _data - np.mean(_data, axis=0)",
+    ]
+    lines += _wrap_result_lines(node_id, "_data", inp, indent, use_scp)
+    return lines
+
+
 @register_node
-class CenterMeanNode(Node):
+class CenterMeanNode(TransformSpecNode):
     """
     Mean centering node.
 
@@ -1287,49 +1240,40 @@ class CenterMeanNode(Node):
         output_type="NDDataset",
     )
 
-    python_extra_imports = ["import numpy as np"]
+    spec = TransformSpec(
+        transform_fn=lambda data: data - np.mean(data, axis=0),
+        export_lines_fn=_center_mean_export,
+        extra_imports=["import numpy as np"],
+    )
 
-    def generate_python(self, inputs, indent="    ", use_scp=True):
-        inp = next(iter(inputs.values())) if inputs else "input_data"
-        return [
-            f"{indent}# --- Mean Center ({self.node_id}) ---",
-            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
-            f"{indent}if _data.ndim == 1:",
-            f"{indent}    _data = _data - np.mean(_data)",
-            f"{indent}else:",
-            f"{indent}    _data = _data - np.mean(_data, axis=0)",
-        ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
 
-    async def execute(self, input_data: NDDataset) -> NDDataset:
-        """Execute mean centering."""
-        data = np.array(input_data.data, dtype=np.float64)
+def _pareto_scale(data: np.ndarray, center: bool = True) -> np.ndarray:
+    if center:
+        data = data - np.mean(data, axis=0, keepdims=True)
+    std = np.std(data, axis=0, keepdims=True)
+    sf = np.sqrt(std)
+    sf[sf == 0] = 1.0
+    return data / sf
 
-        if data.ndim == 1:
-            data = data - np.mean(data)
-        else:
-            mean_spectrum = np.mean(data, axis=0)
-            data = data - mean_spectrum
 
-        result = AnalysisDataset(X=data)
-        x_coord = safe_get_coord(input_data, 'x')
-        if x_coord is not None:
-            result.x = x_coord.copy()
-        y_coord = safe_get_coord(input_data, 'y')
-        if y_coord is not None:
-            result.y = y_coord.copy()
-        if hasattr(input_data, 'title'):
-            result.title = input_data.title
-        if hasattr(input_data, 'units'):
-            result.units = input_data.units
-
-        copy_processing_history(input_data, result)
-        add_processing_step(result, "preprocess.center_mean", {}, node_id=self.node_id)
-
-        return result
+def _pareto_export(params, inp, node_id, indent, use_scp):
+    center = params.get("center", True)
+    lines = [header_line("Pareto Scaling", node_id, indent)]
+    lines += extract_data_lines(inp, indent)
+    if center:
+        lines.append(f"{indent}_data = _data - np.mean(_data, axis=0, keepdims=True)")
+    lines += [
+        f"{indent}_std = np.std(np.array({inp}.data, dtype=np.float64), axis=0, keepdims=True)",
+        f"{indent}_sf = np.sqrt(_std)",
+        f"{indent}_sf[_sf == 0] = 1.0",
+        f"{indent}_data = _data / _sf",
+    ]
+    lines += _wrap_result_lines(node_id, "_data", inp, indent, use_scp)
+    return lines
 
 
 @register_node
-class ParetoScalingNode(Node):
+class ParetoScalingNode(TransformSpecNode):
     """
     Pareto Scaling node.
 
@@ -1355,59 +1299,12 @@ class ParetoScalingNode(Node):
         output_type="NDDataset",
     )
 
-    python_extra_imports = ["import numpy as np"]
-
-    def generate_python(self, inputs, indent="    ", use_scp=True):
-        inp = next(iter(inputs.values())) if inputs else "input_data"
-        center = self._resolve_params().get("center", True)
-        lines = [
-            f"{indent}# --- Pareto Scaling ({self.node_id}) ---",
-            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
-        ]
-        if center:
-            lines.append(f"{indent}_data = _data - np.mean(_data, axis=0, keepdims=True)")
-        lines += [
-            f"{indent}_std = np.std(np.array({inp}.data, dtype=np.float64), axis=0, keepdims=True)",
-            f"{indent}_sf = np.sqrt(_std)",
-            f"{indent}_sf[_sf == 0] = 1.0",
-            f"{indent}_data = _data / _sf",
-        ]
-        lines += _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
-        return lines
-
-    async def execute(self, input_data: NDDataset) -> NDDataset:
-        """Execute Pareto scaling."""
-        center = self.parameters.get("center", True)
-
-        data = np.array(input_data.data, dtype=np.float64)
-
-        if center:
-            mean = np.mean(data, axis=0, keepdims=True)
-            data_centered = data - mean
-        else:
-            data_centered = data
-
-        std = np.std(data, axis=0, keepdims=True)
-        scaling_factor = np.sqrt(std)
-        scaling_factor[scaling_factor == 0] = 1.0
-
-        data_scaled = data_centered / scaling_factor
-
-        result = AnalysisDataset(X=data_scaled)
-        x_coord = safe_get_coord(input_data, 'x')
-        if x_coord is not None:
-            result.x = x_coord.copy()
-        y_coord = safe_get_coord(input_data, 'y')
-        if y_coord is not None:
-            result.y = y_coord.copy()
-        if hasattr(input_data, 'title'):
-            result.title = input_data.title
-        result.units = "dimensionless"
-
-        copy_processing_history(input_data, result)
-        add_processing_step(result, "preprocess.pareto_scaling", {"center": center}, node_id=self.node_id)
-
-        return result
+    spec = TransformSpec(
+        transform_fn=_pareto_scale,
+        output_units="dimensionless",
+        export_lines_fn=_pareto_export,
+        extra_imports=["import numpy as np"],
+    )
 
 
 @register_node
@@ -1523,24 +1420,36 @@ class OSCNode(Node):
             f"{indent}    results['{self.node_id}'].x = {x_expr}.x.copy()",
         ]
 
-    async def execute(self, X=None, y=None, **kwargs) -> NDDataset:
+    async def execute(self, X=None, y=None, **kwargs) -> AnalysisDataset:
         """Execute OSC filtering."""
-        if X is None and "input_0" in kwargs:
-            X = kwargs["input_0"]
-        if y is None and "input_1" in kwargs:
-            y = kwargs["input_1"]
-
-        if X is None:
-            raise ValueError("Missing required input: X (spectra)")
-        if y is None:
-            raise ValueError("Missing required input: y (target)")
+        X_ds = bind_X(
+            X,
+            kwargs,
+            missing_message="Missing required input: X (spectra)",
+            dataset_error_message="X must be an NDDataset or AnalysisDataset object",
+            allow_array=True,
+        )
+        y_value = bind_y(
+            y,
+            kwargs,
+            X=X_ds,
+            required=True,
+            infer_from_X=False,
+            dataset_as_data=True,
+            missing_message="Missing required input: y (target)",
+        )
 
         n_components = self.parameters.get("n_components", 1)
         tol = self.parameters.get("tol", 1e-6)
         max_iter = self.parameters.get("max_iter", 100)
 
-        X_data = np.array(X.data)
-        y_data = np.array(y).reshape(-1, 1) if len(np.array(y).shape) == 1 else np.array(y)
+        X_data = to_numpy_2d(X_ds, name="X", dtype=np.float64)
+        y_data = to_numpy_1d(
+            y_value,
+            name="y",
+            expected_length=X_data.shape[0],
+            dtype=np.float64,
+        ).reshape(-1, 1)
         y_dataset = scp.NDDataset(y_data)
 
         X_osc = X_data.copy()
@@ -1556,7 +1465,6 @@ class OSCNode(Node):
             x_weights = np.array(pls.x_weights_)
 
             t_osc_old = None
-            converged = False
 
             for iteration in range(max_iter):
                 w_osc = X_osc.T @ (X_osc @ t_pred.flatten())
@@ -1579,7 +1487,6 @@ class OSCNode(Node):
                 t_osc = X_osc @ w_osc
 
                 if t_osc_old is not None and np.linalg.norm(t_osc - t_osc_old) < tol:
-                    converged = True
                     break
                 t_osc_old = t_osc.copy()
 
@@ -1598,31 +1505,47 @@ class OSCNode(Node):
         total_var_corrected = np.var(X_osc)
         total_variance_removed = 100 * (1 - total_var_corrected / total_var_original) if total_var_original > 0 else 0
 
-        result = scp.NDDataset(X_osc)
-        x_coord = safe_get_coord(X, 'x')
-        if x_coord is not None:
-            result.x = x_coord.copy()
-        y_coord = safe_get_coord(X, 'y')
-        if y_coord is not None:
-            result.y = y_coord.copy()
-        if hasattr(X, 'title'):
-            result.title = X.title
-        if hasattr(X, 'units'):
-            result.units = X.units
-
-        copy_processing_history(X, result)
-        add_processing_step(result, "preprocess.osc", {
-            "n_components": n_components,
-            "tol": tol,
-            "max_iter": max_iter,
-            "variance_removed_percent": total_variance_removed,
-        }, node_id=self.node_id)
+        result = build_dataset_like(X_osc, X_ds)
+        add_processing_step(
+            result,
+            "preprocess.osc",
+            {
+                "n_components": n_components,
+                "tol": tol,
+                "max_iter": max_iter,
+                "variance_removed_percent": total_variance_removed,
+            },
+            node_id=self.node_id,
+        )
 
         return result
 
 
+def _autoscale(data: np.ndarray, center: bool = True) -> np.ndarray:
+    if center:
+        data = data - np.mean(data, axis=0, keepdims=True)
+    std = np.std(data, axis=0, keepdims=True)
+    std[std == 0] = 1.0
+    return data / std
+
+
+def _autoscale_export(params, inp, node_id, indent, use_scp):
+    center = params.get("center", True)
+    lines = [header_line("Autoscaling", node_id, indent)]
+    lines += extract_data_lines(inp, indent)
+    if center:
+        lines.append(f"{indent}_data = _data - np.mean(_data, axis=0, keepdims=True)")
+    lines += [
+        f"{indent}_std = np.std(np.array({inp}.data, dtype=np.float64), axis=0, keepdims=True)",
+        f"{indent}_std[_std == 0] = 1.0",
+        f"{indent}_data = _data / _std",
+    ]
+    lines += _wrap_result_lines(node_id, "_data", inp, indent, use_scp)
+    return lines
+
+
 @register_node
-class AutoscalingNode(Node):
+class AutoscalingNode(TransformSpecNode):
     """
     Autoscaling (Unit Variance Scaling) node.
 
@@ -1648,57 +1571,12 @@ class AutoscalingNode(Node):
         output_type="NDDataset",
     )
 
-    python_extra_imports = ["import numpy as np"]
-
-    def generate_python(self, inputs, indent="    ", use_scp=True):
-        inp = next(iter(inputs.values())) if inputs else "input_data"
-        center = self._resolve_params().get("center", True)
-        lines = [
-            f"{indent}# --- Autoscaling ({self.node_id}) ---",
-            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
-        ]
-        if center:
-            lines.append(f"{indent}_data = _data - np.mean(_data, axis=0, keepdims=True)")
-        lines += [
-            f"{indent}_std = np.std(np.array({inp}.data, dtype=np.float64), axis=0, keepdims=True)",
-            f"{indent}_std[_std == 0] = 1.0",
-            f"{indent}_data = _data / _std",
-        ]
-        lines += _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
-        return lines
-
-    async def execute(self, input_data: NDDataset) -> NDDataset:
-        """Execute autoscaling."""
-        center = self.parameters.get("center", True)
-
-        data = np.array(input_data.data, dtype=np.float64)
-
-        if center:
-            mean = np.mean(data, axis=0, keepdims=True)
-            data_centered = data - mean
-        else:
-            data_centered = data
-
-        std = np.std(data, axis=0, keepdims=True)
-        std[std == 0] = 1.0
-
-        data_scaled = data_centered / std
-
-        result = AnalysisDataset(X=data_scaled)
-        x_coord = safe_get_coord(input_data, 'x')
-        if x_coord is not None:
-            result.x = x_coord.copy()
-        y_coord = safe_get_coord(input_data, 'y')
-        if y_coord is not None:
-            result.y = y_coord.copy()
-        if hasattr(input_data, 'title'):
-            result.title = input_data.title
-        result.units = "dimensionless"
-
-        copy_processing_history(input_data, result)
-        add_processing_step(result, "preprocess.autoscaling", {"center": center}, node_id=self.node_id)
-
-        return result
+    spec = TransformSpec(
+        transform_fn=_autoscale,
+        output_units="dimensionless",
+        export_lines_fn=_autoscale_export,
+        extra_imports=["import numpy as np"],
+    )
 
 
 @register_node
@@ -1772,12 +1650,14 @@ class SGDerivativeNode(Node):
             f"{indent}# --- SG Derivative ({self.node_id}) ---",
             f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
             f"{indent}if _data.ndim >= 2:",
-            f"{indent}    _data = np.apply_along_axis(savgol_filter, -1, _data, window_length={size}, polyorder={order}, deriv={deriv_order})",
+            f"{indent}    _data = np.apply_along_axis("
+            f"savgol_filter, -1, _data, window_length={size}, polyorder={order}, deriv={deriv_order})",
             f"{indent}else:",
-            f"{indent}    _data = savgol_filter(_data, window_length={size}, polyorder={order}, deriv={deriv_order})",
+            f"{indent}    _data = savgol_filter("
+            f"_data, window_length={size}, polyorder={order}, deriv={deriv_order})",
         ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
 
-    async def execute(self, input_data: NDDataset) -> NDDataset:
+    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
         """Execute Savitzky-Golay derivative."""
         size = self.parameters.get("size", 11)
         order = self.parameters.get("order", 2)
@@ -1787,21 +1667,26 @@ class SGDerivativeNode(Node):
             size += 1
 
         result = input_data.copy()
-        if hasattr(result, 'savgol'):
+        if hasattr(result, "savgol"):
             result.savgol(size=size, order=order, deriv=deriv_order)
         else:
             from scipy.signal import savgol_filter
+
             raw = np.asarray(result.data, dtype=np.float64)
-            derived = np.apply_along_axis(
-                savgol_filter, -1, raw, window_length=int(size), polyorder=int(order), deriv=int(deriv_order)
-            ) if raw.ndim >= 2 else savgol_filter(raw, window_length=int(size), polyorder=int(order), deriv=int(deriv_order))
+            derived = (
+                np.apply_along_axis(
+                    savgol_filter, -1, raw, window_length=int(size), polyorder=int(order), deriv=int(deriv_order)
+                )
+                if raw.ndim >= 2
+                else savgol_filter(raw, window_length=int(size), polyorder=int(order), deriv=int(deriv_order))
+            )
             result.X = derived
 
         # Update units
         if deriv_order > 0:
-            original_units = str(input_data.units) if hasattr(input_data, 'units') and input_data.units else None
-            x_coord = safe_get_coord(input_data, 'x')
-            x_units = str(x_coord.units) if x_coord is not None and x_coord and hasattr(x_coord, 'units') else None
+            original_units = str(input_data.units) if hasattr(input_data, "units") and input_data.units else None
+            x_coord = safe_get_coord(input_data, "x")
+            x_units = str(x_coord.units) if x_coord is not None and x_coord and hasattr(x_coord, "units") else None
 
             if deriv_order == 1:
                 if original_units and x_units and original_units != "dimensionless":
@@ -1818,7 +1703,12 @@ class SGDerivativeNode(Node):
                 else:
                     result.units = "d²/dx²"
 
-        add_processing_step(result, "preprocess.sg_derivative", {"size": size, "order": order, "deriv": deriv_order}, node_id=self.node_id)
+        add_processing_step(
+            result,
+            "preprocess.sg_derivative",
+            {"size": size, "order": order, "deriv": deriv_order},
+            node_id=self.node_id,
+        )
 
         return result
 
@@ -1926,17 +1816,22 @@ class EMSCNode(Node):
         lines += _wrap_result_lines(self.node_id, "_corrected", inp, indent, use_scp)
         return lines
 
-    async def execute(self, input_data=None, constituents=None, **kwargs) -> NDDataset:
+    async def execute(self, input_data=None, constituents=None, **kwargs) -> AnalysisDataset:
         """Execute EMSC correction with optional constituent spectra."""
-        if input_data is None:
-            input_data = kwargs.get("default") or kwargs.get("input_0")
-        if constituents is None:
-            constituents = kwargs.get("input_1")
+        input_data = resolve_legacy_input(input_data, kwargs, "default")
+        input_ds = bind_X(
+            input_data,
+            kwargs,
+            missing_message="Missing required input: input_data (spectra)",
+            dataset_error_message="input_data must be an NDDataset or AnalysisDataset object",
+            allow_array=True,
+        )
+        constituents = resolve_legacy_input(constituents, kwargs, "input_1")
 
         reference_type = self.parameters.get("reference", "mean")
         poly_order = self.parameters.get("poly_order", 2)
 
-        data = np.array(input_data.data, dtype=np.float64)
+        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
         n_samples, n_features = data.shape
 
         if reference_type == "mean":
@@ -1954,13 +1849,20 @@ class EMSCNode(Node):
             x_axis = np.arange(n_features)
             x_norm = (x_axis - x_axis.mean()) / x_axis.std()
             for deg in range(1, poly_order + 1):
-                X_design.append(x_norm ** deg)
+                X_design.append(x_norm**deg)
 
         n_constituents = 0
         if constituents is not None:
-            const_data = np.array(constituents.data, dtype=np.float64)
+            if isinstance(constituents, AnalysisDataset):
+                const_data = np.asarray(constituents.data, dtype=np.float64)
+            elif isinstance(constituents, NDDataset):
+                const_data = np.asarray(constituents.data, dtype=np.float64)
+            else:
+                const_data = np.asarray(constituents, dtype=np.float64)
             if const_data.ndim == 1:
                 const_data = const_data.reshape(1, -1)
+            elif const_data.ndim != 2:
+                raise ValueError("constituents must be 1D or 2D array-like")
             n_constituents = const_data.shape[0]
             for k in range(n_constituents):
                 X_design.append(const_data[k])
@@ -1986,21 +1888,10 @@ class EMSCNode(Node):
                 else:
                     corrected_data[i] = spectrum
 
-        result = AnalysisDataset(X=corrected_data)
-        x_coord = safe_get_coord(input_data, 'x')
-        if x_coord is not None:
-            result.x = x_coord.copy()
-        y_coord = safe_get_coord(input_data, 'y')
-        if y_coord is not None:
-            result.y = y_coord.copy()
-        if hasattr(input_data, 'title'):
-            result.title = input_data.title
-        if hasattr(input_data, 'units'):
-            result.units = input_data.units
-
-        copy_processing_history(input_data, result)
+        result = build_dataset_like(corrected_data, input_ds)
         add_processing_step(
-            result, "preprocess.emsc",
+            result,
+            "preprocess.emsc",
             {"reference": reference_type, "poly_order": poly_order, "n_constituents": n_constituents},
             node_id=self.node_id,
         )
@@ -2081,29 +1972,23 @@ class NorrisWilliamsDerivativeNode(Node):
         lines += _wrap_result_lines(self.node_id, "_derived", inp, indent, use_scp)
         return lines
 
-    async def execute(self, input_data: NDDataset) -> NDDataset:
+    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
         """Execute Norris-Williams gap-segment derivative."""
+        input_ds = coerce_dataset(input_data, input_name="input_data")
         gap = self.parameters.get("gap", 5)
         segment = self.parameters.get("segment", 5)
         deriv_order = int(self.parameters.get("deriv", "1"))
 
-        data = np.array(input_data.data, dtype=np.float64)
+        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
         derived = norris_williams(data, gap=gap, segment=segment, deriv=deriv_order)
 
-        result = AnalysisDataset(X=derived)
-        x_coord = safe_get_coord(input_data, 'x')
-        if x_coord is not None:
-            result.x = x_coord.copy()
-        y_coord = safe_get_coord(input_data, 'y')
-        if y_coord is not None:
-            result.y = y_coord.copy()
-        if hasattr(input_data, 'title'):
-            result.title = input_data.title
+        result = build_dataset_like(derived, input_ds)
+        x_coord = safe_get_coord(input_ds, "x")
 
         # Update units for derivative
         try:
-            original_units = str(input_data.units) if hasattr(input_data, 'units') and input_data.units else None
-            x_units = str(x_coord.units) if x_coord is not None and hasattr(x_coord, 'units') else None
+            original_units = str(input_ds.units) if hasattr(input_ds, "units") and input_ds.units else None
+            x_units = str(x_coord.units) if x_coord is not None and hasattr(x_coord, "units") else None
             if deriv_order == 1:
                 if original_units and x_units and original_units != "dimensionless":
                     result.units = f"d({original_units})/d({x_units})"
@@ -2117,9 +2002,9 @@ class NorrisWilliamsDerivativeNode(Node):
         except Exception:
             pass
 
-        copy_processing_history(input_data, result)
         add_processing_step(
-            result, "preprocess.norris_williams",
+            result,
+            "preprocess.norris_williams",
             {"gap": gap, "segment": segment, "deriv": deriv_order},
             node_id=self.node_id,
         )
@@ -2187,29 +2072,19 @@ class SmoothWhittakerNode(Node):
         lines += _wrap_result_lines(self.node_id, "_smoothed", inp, indent, use_scp)
         return lines
 
-    async def execute(self, input_data: NDDataset) -> NDDataset:
+    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
         """Execute Whittaker smoothing."""
+        input_ds = coerce_dataset(input_data, input_name="input_data")
         lam = self.parameters.get("lam", 1e2)
         d = int(self.parameters.get("d", "2"))
 
-        data = np.array(input_data.data, dtype=np.float64)
+        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
         smoothed = whittaker_smooth(data, lam=lam, d=d)
 
-        result = AnalysisDataset(X=smoothed)
-        x_coord = safe_get_coord(input_data, 'x')
-        if x_coord is not None:
-            result.x = x_coord.copy()
-        y_coord = safe_get_coord(input_data, 'y')
-        if y_coord is not None:
-            result.y = y_coord.copy()
-        if hasattr(input_data, 'title'):
-            result.title = input_data.title
-        if hasattr(input_data, 'units'):
-            result.units = input_data.units
-
-        copy_processing_history(input_data, result)
+        result = build_dataset_like(smoothed, input_ds)
         add_processing_step(
-            result, "smooth.whittaker",
+            result,
+            "smooth.whittaker",
             {"lam": lam, "d": d},
             node_id=self.node_id,
         )
@@ -2269,28 +2144,18 @@ class SmoothGaussianNode(Node):
         lines += _wrap_result_lines(self.node_id, "_smoothed", inp, indent, use_scp)
         return lines
 
-    async def execute(self, input_data: NDDataset) -> NDDataset:
+    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
         """Execute Gaussian smoothing."""
+        input_ds = coerce_dataset(input_data, input_name="input_data")
         sigma = self.parameters.get("sigma", 2.0)
 
-        data = np.array(input_data.data, dtype=np.float64)
+        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
         smoothed = gaussian_smooth(data, sigma=sigma)
 
-        result = AnalysisDataset(X=smoothed)
-        x_coord = safe_get_coord(input_data, 'x')
-        if x_coord is not None:
-            result.x = x_coord.copy()
-        y_coord = safe_get_coord(input_data, 'y')
-        if y_coord is not None:
-            result.y = y_coord.copy()
-        if hasattr(input_data, 'title'):
-            result.title = input_data.title
-        if hasattr(input_data, 'units'):
-            result.units = input_data.units
-
-        copy_processing_history(input_data, result)
+        result = build_dataset_like(smoothed, input_ds)
         add_processing_step(
-            result, "smooth.gaussian",
+            result,
+            "smooth.gaussian",
             {"sigma": sigma},
             node_id=self.node_id,
         )

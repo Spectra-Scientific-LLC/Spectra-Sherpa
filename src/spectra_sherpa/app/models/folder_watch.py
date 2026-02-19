@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, JSON, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from spectra_sherpa.app.db.base import Base
@@ -29,29 +29,17 @@ class FolderWatch(Base):
     __tablename__ = "folder_watch"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("user.id"), nullable=False, index=True
-    )
-    workflow_id: Mapped[int] = mapped_column(
-        ForeignKey("workflow.id", ondelete="CASCADE"), nullable=False, index=True
-    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False, index=True)
+    workflow_id: Mapped[int] = mapped_column(ForeignKey("workflow.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     folder_path: Mapped[str] = mapped_column(String(1000), nullable=False)
-    file_pattern: Mapped[str] = mapped_column(
-        String(255), nullable=False, server_default="*"
-    )
-    poll_interval_sec: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default="60"
-    )
-    is_enabled: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default="0"
-    )
+    file_pattern: Mapped[str] = mapped_column(String(255), nullable=False, server_default="*")
+    poll_interval_sec: Mapped[int] = mapped_column(Integer, nullable=False, server_default="60")
+    is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0")
     processed_files: Mapped[dict | None] = mapped_column(JSON)
     last_poll_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Relationships

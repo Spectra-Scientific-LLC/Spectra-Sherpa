@@ -38,9 +38,7 @@ async def get_job(
 ) -> JobInfo:
     """Get a specific job for the authenticated user."""
     result = await session.execute(
-        select(BackgroundJob)
-        .where(BackgroundJob.id == job_id)
-        .where(BackgroundJob.user_id == current_user.id)
+        select(BackgroundJob).where(BackgroundJob.id == job_id).where(BackgroundJob.user_id == current_user.id)
     )
     job = result.scalar_one_or_none()
     if job is None:
@@ -56,9 +54,7 @@ async def cancel_job(
 ):
     """Cancel a job for the authenticated user."""
     result = await session.execute(
-        select(BackgroundJob)
-        .where(BackgroundJob.id == job_id)
-        .where(BackgroundJob.user_id == current_user.id)
+        select(BackgroundJob).where(BackgroundJob.id == job_id).where(BackgroundJob.user_id == current_user.id)
     )
     job = result.scalar_one_or_none()
     if job is None:

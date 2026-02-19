@@ -70,10 +70,15 @@ addopts = "-v --cov=spectra_sherpa --cov-report=term-missing"
 
 [tool.ruff]
 target-version = "py311"
+line-length = 120
 src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+ignore = [
+    "E402",   # module-import-not-at-top — conditional/optional imports are by design
+    "E741",   # ambiguous-variable-name — X, C, l are standard in scientific code
+]
 
 [tool.black]
 target-version = ["py311"]

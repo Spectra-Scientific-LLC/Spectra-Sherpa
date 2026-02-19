@@ -10,16 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session
 from spectra_sherpa.app.models.user import User
-from spectra_sherpa.app.models.workflow_tag import WorkflowTag
 from spectra_sherpa.app.models.workflow_folder import WorkflowFolder
-from spectra_sherpa.app.models.workflow import Workflow
+from spectra_sherpa.app.models.workflow_tag import WorkflowTag
 from spectra_sherpa.app.schemas.workflows import (
-    WorkflowTagCreate,
-    WorkflowTagOut,
-    WorkflowTagUpdate,
     WorkflowFolderCreate,
     WorkflowFolderOut,
     WorkflowFolderUpdate,
+    WorkflowTagCreate,
+    WorkflowTagOut,
+    WorkflowTagUpdate,
 )
 
 router = APIRouter()
@@ -53,18 +52,12 @@ async def create_tag(
     user_id = current_user.id
 
     # Check if tag with same name already exists for this user
-    existing_query = (
-        select(WorkflowTag)
-        .where(WorkflowTag.user_id == user_id)
-        .where(WorkflowTag.name == payload.name)
-    )
+    existing_query = select(WorkflowTag).where(WorkflowTag.user_id == user_id).where(WorkflowTag.name == payload.name)
     existing_result = await session.execute(existing_query)
     existing_tag = existing_result.scalar_one_or_none()
 
     if existing_tag:
-        raise HTTPException(
-            status_code=400, detail=f"Tag with name '{payload.name}' already exists"
-        )
+        raise HTTPException(status_code=400, detail=f"Tag with name '{payload.name}' already exists")
 
     tag = WorkflowTag(
         user_id=user_id,
@@ -87,11 +80,7 @@ async def get_tag(
     """Get a specific tag by ID."""
     user_id = current_user.id
 
-    query = (
-        select(WorkflowTag)
-        .where(WorkflowTag.id == tag_id)
-        .where(WorkflowTag.user_id == user_id)
-    )
+    query = select(WorkflowTag).where(WorkflowTag.id == tag_id).where(WorkflowTag.user_id == user_id)
     result = await session.execute(query)
     tag = result.scalar_one_or_none()
 
@@ -111,11 +100,7 @@ async def update_tag(
     """Update a tag."""
     user_id = current_user.id
 
-    query = (
-        select(WorkflowTag)
-        .where(WorkflowTag.id == tag_id)
-        .where(WorkflowTag.user_id == user_id)
-    )
+    query = select(WorkflowTag).where(WorkflowTag.id == tag_id).where(WorkflowTag.user_id == user_id)
     result = await session.execute(query)
     tag = result.scalar_one_or_none()
 
@@ -125,17 +110,13 @@ async def update_tag(
     # Check if new name conflicts with existing tag
     if payload.name and payload.name != tag.name:
         existing_query = (
-            select(WorkflowTag)
-            .where(WorkflowTag.user_id == user_id)
-            .where(WorkflowTag.name == payload.name)
+            select(WorkflowTag).where(WorkflowTag.user_id == user_id).where(WorkflowTag.name == payload.name)
         )
         existing_result = await session.execute(existing_query)
         existing_tag = existing_result.scalar_one_or_none()
 
         if existing_tag:
-            raise HTTPException(
-                status_code=400, detail=f"Tag with name '{payload.name}' already exists"
-            )
+            raise HTTPException(status_code=400, detail=f"Tag with name '{payload.name}' already exists")
 
     if payload.name is not None:
         tag.name = payload.name
@@ -157,11 +138,7 @@ async def delete_tag(
     """Delete a tag."""
     user_id = current_user.id
 
-    query = (
-        select(WorkflowTag)
-        .where(WorkflowTag.id == tag_id)
-        .where(WorkflowTag.user_id == user_id)
-    )
+    query = select(WorkflowTag).where(WorkflowTag.id == tag_id).where(WorkflowTag.user_id == user_id)
     result = await session.execute(query)
     tag = result.scalar_one_or_none()
 
@@ -239,11 +216,7 @@ async def get_folder(
     """Get a specific folder by ID."""
     user_id = current_user.id
 
-    query = (
-        select(WorkflowFolder)
-        .where(WorkflowFolder.id == folder_id)
-        .where(WorkflowFolder.user_id == user_id)
-    )
+    query = select(WorkflowFolder).where(WorkflowFolder.id == folder_id).where(WorkflowFolder.user_id == user_id)
     result = await session.execute(query)
     folder = result.scalar_one_or_none()
 
@@ -263,11 +236,7 @@ async def update_folder(
     """Update a folder."""
     user_id = current_user.id
 
-    query = (
-        select(WorkflowFolder)
-        .where(WorkflowFolder.id == folder_id)
-        .where(WorkflowFolder.user_id == user_id)
-    )
+    query = select(WorkflowFolder).where(WorkflowFolder.id == folder_id).where(WorkflowFolder.user_id == user_id)
     result = await session.execute(query)
     folder = result.scalar_one_or_none()
 
@@ -278,9 +247,7 @@ async def update_folder(
     if payload.parent_id is not None:
         # Prevent setting folder as its own parent
         if payload.parent_id == folder_id:
-            raise HTTPException(
-                status_code=400, detail="Folder cannot be its own parent"
-            )
+            raise HTTPException(status_code=400, detail="Folder cannot be its own parent")
 
         # Verify parent folder exists and belongs to user
         parent_query = (
@@ -319,11 +286,7 @@ async def delete_folder(
     """
     user_id = current_user.id
 
-    query = (
-        select(WorkflowFolder)
-        .where(WorkflowFolder.id == folder_id)
-        .where(WorkflowFolder.user_id == user_id)
-    )
+    query = select(WorkflowFolder).where(WorkflowFolder.id == folder_id).where(WorkflowFolder.user_id == user_id)
     result = await session.execute(query)
     folder = result.scalar_one_or_none()
 

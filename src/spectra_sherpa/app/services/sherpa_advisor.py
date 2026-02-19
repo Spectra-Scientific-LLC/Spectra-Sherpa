@@ -13,14 +13,13 @@ Responsibilities:
 All outgoing data is filtered by the user's EgressTier *before* leaving
 this module — the cloud never sees more than the user allowed.
 """
+
 from __future__ import annotations
 
+import json
 import logging
-from datetime import datetime, timezone
 from collections.abc import AsyncIterator
 from typing import Any
-
-import json
 
 import httpx
 
@@ -33,13 +32,14 @@ class SubscriptionRequiredError(Exception):
     def __init__(self, detail: str = ""):
         self.detail = detail
         super().__init__(detail)
+
+
 from spectra_sherpa.app.schemas.sherpa import (
     EgressTier,
     ExplorationResult,
     SherpaRecommendation,
     SuggestionStatus,
     UserDecision,
-    WorkflowContextEdge,
     WorkflowContextNode,
     WorkflowStateSync,
 )
@@ -69,6 +69,7 @@ def _sherpa_api_key() -> str | None:
 
 
 # ── Tier-aware filtering ─────────────────────────────────────────────
+
 
 def filter_workflow_for_tier(
     sync: WorkflowStateSync,
@@ -125,6 +126,7 @@ def filter_workflow_for_tier(
 
 # ── Service ──────────────────────────────────────────────────────────
 
+
 class SherpaAdvisorService:
     """
     Client that talks to the cloud Sherpa brain on behalf of the local app.
@@ -158,11 +160,7 @@ class SherpaAdvisorService:
         """True when the cloud Sherpa is configured and egress is on."""
         from spectra_sherpa.app.core.security import is_egress_enabled
 
-        return (
-            app_config.mode != "local"
-            and _sherpa_api_key() is not None
-            and is_egress_enabled()
-        )
+        return app_config.mode != "local" and _sherpa_api_key() is not None and is_egress_enabled()
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -238,10 +236,7 @@ class SherpaAdvisorService:
             response.raise_for_status()
             data = response.json()
 
-            recommendations = [
-                SherpaRecommendation(**rec)
-                for rec in data.get("recommendations", [])
-            ]
+            recommendations = [SherpaRecommendation(**rec) for rec in data.get("recommendations", [])]
 
             # Cache locally
             for rec in recommendations:
@@ -277,10 +272,7 @@ class SherpaAdvisorService:
         # Update local cache
         rec = self._recommendations.get(decision.suggestion_id)
         if rec:
-            rec.status = (
-                SuggestionStatus.ACCEPTED if decision.accepted
-                else SuggestionStatus.REJECTED
-            )
+            rec.status = SuggestionStatus.ACCEPTED if decision.accepted else SuggestionStatus.REJECTED
 
         try:
             client = await self._get_client()
@@ -356,7 +348,10 @@ class SherpaAdvisorService:
                         yield line
         except httpx.ConnectError:
             logger.warning("Sherpa cloud unreachable for chat")
-            yield "The Sherpa cloud service is currently unreachable. Your workflow recommendations are based on the last successful sync."
+            yield (
+                "The Sherpa cloud service is currently unreachable."
+                " Your workflow recommendations are based on the last successful sync."
+            )
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
                 yield "Sherpa follow-up chat is not yet available on the cloud service. This feature is coming soon."
@@ -424,7 +419,8 @@ class SherpaAdvisorService:
         try:
             client = await self._get_client()
             response = await client.post(
-                "/sherpa/write-report", json={"experiment": experiment},
+                "/sherpa/write-report",
+                json={"experiment": experiment},
             )
             if response.status_code == 403:
                 raise SubscriptionRequiredError(response.json().get("detail", ""))
@@ -455,7 +451,9 @@ class SherpaAdvisorService:
             if workflow_context:
                 body["workflow_context"] = workflow_context
             async with client.stream(
-                "POST", "/sherpa/chat-with-tools", json=body,
+                "POST",
+                "/sherpa/chat-with-tools",
+                json=body,
             ) as response:
                 if response.status_code == 403:
                     raise SubscriptionRequiredError("Plan does not include agentic tools")
@@ -516,9 +514,9 @@ class SherpaAdvisorService:
     def get_pending(self, workflow_id: int | None = None) -> list[SherpaRecommendation]:
         """Return all pending recommendations, optionally filtered by workflow."""
         return [
-            rec for rec in self._recommendations.values()
-            if rec.status == SuggestionStatus.PENDING
-            and (workflow_id is None or rec.workflow_id == workflow_id)
+            rec
+            for rec in self._recommendations.values()
+            if rec.status == SuggestionStatus.PENDING and (workflow_id is None or rec.workflow_id == workflow_id)
         ]
 
     def _expire_old(

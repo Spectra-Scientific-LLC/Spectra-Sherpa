@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
+import queue
 import re
+import threading
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Deque
-import threading
-import requests
-import queue
 
-from spectra_sherpa.app.core.config import settings, app_config
+import requests
+
+from spectra_sherpa.app.core.config import app_config, settings
 
 log_buffer: Deque[dict] = deque(maxlen=settings.log_buffer_size)
 
@@ -34,9 +35,7 @@ class BufferHandler(logging.Handler):
             message = redact_message(self.format(record))
             log_buffer.append(
                 {
-                    "timestamp": datetime.fromtimestamp(
-                        record.created, tz=timezone.utc
-                    ).isoformat(),
+                    "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
                     "level": record.levelname,
                     "message": message,
                     "logger": record.name,
@@ -44,6 +43,7 @@ class BufferHandler(logging.Handler):
             )
         except Exception:
             self.handleError(record)
+
 
 class RemoteAuditHandler(logging.Handler):
     """
@@ -83,6 +83,7 @@ class RemoteAuditHandler(logging.Handler):
         """Check if we're in degraded mode (hybrid fallback to local)."""
         try:
             from spectra_sherpa.app.services.network_health import get_network_health_service
+
             health_service = get_network_health_service()
             return health_service.is_degraded
         except Exception:
@@ -105,7 +106,7 @@ class RemoteAuditHandler(logging.Handler):
                 "level": record.levelname,
                 "message": redact_message(msg),
                 "logger": record.name,
-                "source": settings.app_name
+                "source": settings.app_name,
             }
             self.queue.put(payload)
         except Exception:
@@ -162,11 +163,7 @@ class RemoteAuditHandler(logging.Handler):
             return True
 
         try:
-            response = requests.post(
-                self.endpoint_url,
-                json={"logs": batch, "batch": True},
-                timeout=10
-            )
+            response = requests.post(self.endpoint_url, json={"logs": batch, "batch": True}, timeout=10)
             if response.status_code < 400:
                 self._is_online = True
                 return True
@@ -241,9 +238,7 @@ def configure_logging(level: int = logging.INFO) -> None:
     if not any(isinstance(h, logging.StreamHandler) for h in root_logger.handlers):
         stream_handler = logging.StreamHandler()
         stream_handler.setLevel(level)
-        stream_handler.setFormatter(
-            logging.Formatter("%(levelname)s %(name)s: %(message)s")
-        )
+        stream_handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
         root_logger.addHandler(stream_handler)
 
     # Persistent file logging (local audit log)
@@ -256,20 +251,19 @@ def configure_logging(level: int = logging.INFO) -> None:
                 log_path,
                 maxBytes=settings.log_file_max_bytes,
                 backupCount=settings.log_file_backup_count,
-                encoding="utf-8"
+                encoding="utf-8",
             )
             file_handler.setLevel(level)
             file_handler.setFormatter(
-                logging.Formatter(
-                    "%(asctime)s %(levelname)s %(name)s: %(message)s",
-                    datefmt="%Y-%m-%d %H:%M:%S"
-                )
+                logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
             )
+
             # Add a filter to redact sensitive data before writing to file
             class RedactionFilter(logging.Filter):
                 def filter(self, record: logging.LogRecord) -> bool:
                     record.msg = redact_message(str(record.msg))
                     return True
+
             file_handler.addFilter(RedactionFilter())
             root_logger.addHandler(file_handler)
 

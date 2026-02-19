@@ -8,10 +8,11 @@ creating properly configured NDDataset objects with spectral metadata.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional, List
+from typing import List, Optional
+
 import numpy as np
 
-from spectra_sherpa.app.lib.scp_compat import scp, NDDataset, Coord, HAS_SCP, require_scp
+from spectra_sherpa.app.lib.scp_compat import Coord, NDDataset, require_scp, scp
 
 
 class SpectralUnit(Enum):
@@ -154,18 +155,14 @@ def create_spectral_dataset(
     dataset = scp.NDDataset(data, title=title)
 
     # Set spectral axis (x)
-    dataset.x = Coord(
-        wavenumbers, title="Wavenumber", units=x_units.value
-    )
+    dataset.x = Coord(wavenumbers, title="Wavenumber", units=x_units.value)
 
     # Set sample axis (y) if labels provided
     if sample_labels is not None:
         dataset.y = Coord(sample_labels, title="Samples")
     elif data.shape[0] > 1:
         # Auto-generate sample indices
-        dataset.y = Coord(
-            np.arange(data.shape[0]), title="Sample Index"
-        )
+        dataset.y = Coord(np.arange(data.shape[0]), title="Sample Index")
 
     # Set intensity units
     dataset.units = units.value

@@ -15,19 +15,19 @@ but excludes them from API responses by default.
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from .parsers import (
-    parse_temperature,
-    parse_pressure,
-    parse_length,
-    parse_wavenumber,
-    parse_datetime,
     combine_date_time,
+    map_apodization,
     map_detector_type,
     map_sampling_technique,
     map_window_material,
-    map_apodization,
+    parse_datetime,
+    parse_length,
+    parse_pressure,
+    parse_temperature,
+    parse_wavenumber,
 )
 
 
@@ -60,22 +60,11 @@ class MetadataNormalizer:
             }
         """
         result = {
-            "instrument_metadata": self._normalize_instrument(
-                raw_metadata.get("instrument", {})
-            ),
-            "acquisition_params": self._normalize_acquisition(
-                raw_metadata.get("acquisition", {})
-            ),
-            "experimental_conditions": self._normalize_conditions(
-                raw_metadata.get("conditions", {})
-            ),
-            "sample_info": self._normalize_sample(
-                raw_metadata.get("sample", {})
-            ),
-            "provenance": self._normalize_provenance(
-                raw_metadata.get("provenance", {}),
-                file_path
-            ),
+            "instrument_metadata": self._normalize_instrument(raw_metadata.get("instrument", {})),
+            "acquisition_params": self._normalize_acquisition(raw_metadata.get("acquisition", {})),
+            "experimental_conditions": self._normalize_conditions(raw_metadata.get("conditions", {})),
+            "sample_info": self._normalize_sample(raw_metadata.get("sample", {})),
+            "provenance": self._normalize_provenance(raw_metadata.get("provenance", {}), file_path),
             # Raw metadata preserved for debugging but excluded from API by default
             "raw_file_metadata": raw_metadata.get("extra", {}),
         }
@@ -412,11 +401,7 @@ class MetadataNormalizer:
 
         return provenance
 
-    def merge_with_existing(
-        self,
-        normalized: Dict[str, Any],
-        existing_meta: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def merge_with_existing(self, normalized: Dict[str, Any], existing_meta: Dict[str, Any]) -> Dict[str, Any]:
         """
         Merge normalized metadata with existing dataset.meta, preserving existing values.
 
@@ -433,8 +418,13 @@ class MetadataNormalizer:
         merged = dict(existing_meta)  # Copy existing
 
         # Merge each section, preserving existing values
-        for section_key in ["instrument_metadata", "acquisition_params",
-                           "experimental_conditions", "sample_info", "provenance"]:
+        for section_key in [
+            "instrument_metadata",
+            "acquisition_params",
+            "experimental_conditions",
+            "sample_info",
+            "provenance",
+        ]:
             if section_key in normalized:
                 existing_section = merged.get(section_key, {})
                 new_section = normalized[section_key]

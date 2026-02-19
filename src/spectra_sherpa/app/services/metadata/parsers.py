@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 
 # =============================================================================
 # UNIT PARSING
@@ -22,9 +22,7 @@ from typing import Any, Optional, Tuple
 
 # Temperature patterns - capture value and unit
 TEMPERATURE_PATTERN = re.compile(
-    r"(?P<value>[-+]?\d+\.?\d*)\s*"
-    r"(?P<unit>°?[CcFfKk]|celsius|fahrenheit|kelvin|deg\s*[CcFfKk])?",
-    re.IGNORECASE
+    r"(?P<value>[-+]?\d+\.?\d*)\s*" r"(?P<unit>°?[CcFfKk]|celsius|fahrenheit|kelvin|deg\s*[CcFfKk])?", re.IGNORECASE
 )
 
 
@@ -60,6 +58,7 @@ def parse_temperature(value: Any, target_unit: str = "C", return_unit_source: bo
         return (None, None) if return_unit_source else None
 
     import logging
+
     logger = logging.getLogger(__name__)
 
     # If already a number, try to infer unit from magnitude with better heuristics
@@ -171,9 +170,8 @@ def _convert_temperature(value: float, from_unit: str, to_unit: str) -> float:
 
 # Pressure patterns
 PRESSURE_PATTERN = re.compile(
-    r"(?P<value>[-+]?\d+\.?\d*(?:[eE][-+]?\d+)?)\s*"
-    r"(?P<unit>mbar|bar|atm|pa|kpa|mpa|torr|mmhg|psi|hpa)?",
-    re.IGNORECASE
+    r"(?P<value>[-+]?\d+\.?\d*(?:[eE][-+]?\d+)?)\s*" r"(?P<unit>mbar|bar|atm|pa|kpa|mpa|torr|mmhg|psi|hpa)?",
+    re.IGNORECASE,
 )
 
 
@@ -198,6 +196,7 @@ def parse_pressure(value: Any, target_unit: str = "mbar", return_unit_source: bo
         return (None, None) if return_unit_source else None
 
     import logging
+
     logger = logging.getLogger(__name__)
 
     # If already a number, assume mbar (common FTIR unit) but log warning
@@ -258,9 +257,7 @@ def _convert_pressure(value: float, from_unit: str, to_unit: str) -> float:
 
 # Length patterns (for pathlength, aperture, etc.)
 LENGTH_PATTERN = re.compile(
-    r"(?P<value>[-+]?\d+\.?\d*(?:[eE][-+]?\d+)?)\s*"
-    r"(?P<unit>mm|cm|m|um|µm|nm|in|inch)?",
-    re.IGNORECASE
+    r"(?P<value>[-+]?\d+\.?\d*(?:[eE][-+]?\d+)?)\s*" r"(?P<unit>mm|cm|m|um|µm|nm|in|inch)?", re.IGNORECASE
 )
 
 
@@ -285,6 +282,7 @@ def parse_length(value: Any, target_unit: str = "mm", return_unit_source: bool =
         return (None, None) if return_unit_source else None
 
     import logging
+
     logger = logging.getLogger(__name__)
 
     if isinstance(value, (int, float)):
@@ -342,9 +340,8 @@ def _convert_length(value: float, from_unit: str, to_unit: str) -> float:
 
 # Resolution / wavenumber patterns
 WAVENUMBER_PATTERN = re.compile(
-    r"(?P<value>[-+]?\d+\.?\d*(?:[eE][-+]?\d+)?)\s*"
-    r"(?P<unit>cm-1|cm\^-1|cm⁻¹|1/cm|wavenumber|per cm)?",
-    re.IGNORECASE
+    r"(?P<value>[-+]?\d+\.?\d*(?:[eE][-+]?\d+)?)\s*" r"(?P<unit>cm-1|cm\^-1|cm⁻¹|1/cm|wavenumber|per cm)?",
+    re.IGNORECASE,
 )
 
 
@@ -452,10 +449,7 @@ def parse_datetime(value: Any) -> Optional[str]:
 
     # Try to extract just a date from complex strings
     # E.g., "Collected on 15 Jan 2024 at 10:30"
-    date_match = re.search(
-        r"(\d{1,2}[-/\.]\d{1,2}[-/\.]\d{2,4}|\d{4}[-/\.]\d{1,2}[-/\.]\d{1,2})",
-        date_str
-    )
+    date_match = re.search(r"(\d{1,2}[-/\.]\d{1,2}[-/\.]\d{2,4}|\d{4}[-/\.]\d{1,2}[-/\.]\d{1,2})", date_str)
     if date_match:
         extracted = date_match.group(1)
         for fmt in DATE_FORMATS:
@@ -492,6 +486,7 @@ def combine_date_time(date_value: Any, time_value: Any) -> Optional[str]:
 # =============================================================================
 # ENUMERATION MAPPING
 # =============================================================================
+
 
 def map_detector_type(raw_value: Any) -> Optional[str]:
     """

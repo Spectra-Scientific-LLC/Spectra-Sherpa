@@ -5,16 +5,18 @@ This package contains all available node types organized by category.
 """
 
 # Import all node modules to trigger registration
-from . import data
-from . import modeling
-from . import output
-from . import preprocessing
-from . import blend
-from . import classification
-from . import cloud
-from . import diagnostics
-from . import time_series
-from . import custom  # Atomic blending & synthetic data nodes
+from . import (
+    blend,
+    classification,
+    cloud,
+    custom,  # Atomic blending & synthetic data nodes
+    data,
+    diagnostics,
+    modeling,
+    output,
+    preprocessing,
+    time_series,
+)
 
 __all__ = [
     "data",

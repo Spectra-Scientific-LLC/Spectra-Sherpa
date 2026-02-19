@@ -153,11 +153,11 @@ class ExtractorRegistry:
     def _register_defaults(self):
         """Register all built-in extractors."""
         # Import extractors here to avoid circular imports
+        from .extractors.generic import GenericExtractor
+        from .extractors.jcamp import JCAMPExtractor
         from .extractors.opus import OPUSExtractor
         from .extractors.spa import SPAExtractor
-        from .extractors.jcamp import JCAMPExtractor
         from .extractors.spc import SPCExtractor
-        from .extractors.generic import GenericExtractor
 
         self.register(OPUSExtractor)
         self.register(SPAExtractor)
@@ -200,11 +200,12 @@ class ExtractorRegistry:
         if ext_stripped.isdigit():
             # Use OPUS extractor for any numeric extension
             from .extractors.opus import OPUSExtractor
+
             return OPUSExtractor()
 
         # Check if any extractor class has a handles_extension method
         for extractor_cls in set(self._extractors.values()):
-            if hasattr(extractor_cls, 'handles_extension'):
+            if hasattr(extractor_cls, "handles_extension"):
                 if extractor_cls.handles_extension(ext):
                     return extractor_cls()
 

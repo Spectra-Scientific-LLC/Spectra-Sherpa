@@ -5,7 +5,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-
 # ==================== Sample Database ====================
 
 
@@ -67,9 +66,7 @@ class MixtureBase(BaseModel):
 
 
 class MixtureCreate(MixtureBase):
-    components: list[MixtureComponentCreate] = Field(
-        default_factory=list, description="Mixture components"
-    )
+    components: list[MixtureComponentCreate] = Field(default_factory=list, description="Mixture components")
 
 
 class Mixture(MixtureBase):

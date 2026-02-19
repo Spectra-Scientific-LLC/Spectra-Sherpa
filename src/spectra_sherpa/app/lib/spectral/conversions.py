@@ -13,11 +13,11 @@ from __future__ import annotations
 
 import logging
 import warnings
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from .dataset import SpectralUnit, parse_spectral_unit, add_provenance
+from .dataset import SpectralUnit, add_provenance, parse_spectral_unit
 
 if TYPE_CHECKING:
     from spectra_sherpa.app.lib.scp_compat import NDDataset
@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 class ReferenceNotAppliedWarning(UserWarning):
     """Warning raised when converting data that may not have reference applied."""
+
     pass
 
 
@@ -109,10 +110,7 @@ def ensure_absorbance(
                 "Set dataset.meta['reference_applied'] = True to suppress this warning.",
                 ReferenceNotAppliedWarning,
             )
-        logger.warning(
-            f"Auto-converting from {unit.value} to absorbance. "
-            "Original data units were transmittance."
-        )
+        logger.warning(f"Auto-converting from {unit.value} to absorbance. " "Original data units were transmittance.")
         return transmittance_to_absorbance(dataset, validate_reference=False)
 
     if unit == SpectralUnit.REFLECTANCE:
@@ -123,9 +121,7 @@ def ensure_absorbance(
         return reflectance_to_kubelka_munk(dataset)
 
     # Dimensionless or unknown - assume already absorbance-like
-    logger.warning(
-        f"Unknown unit '{dataset.units}' - treating as absorbance without conversion."
-    )
+    logger.warning(f"Unknown unit '{dataset.units}' - treating as absorbance without conversion.")
     result = dataset.copy()
     result.units = SpectralUnit.ABSORBANCE.value
     return result

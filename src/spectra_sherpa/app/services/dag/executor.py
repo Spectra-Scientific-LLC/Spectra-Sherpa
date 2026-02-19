@@ -22,18 +22,19 @@ from spectra_sherpa.app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-from .node_base import Node, NodeResult, NodeStatus, node_registry
-from .meta_helpers import safe_get_coord
-from .graph_utils import Edge as _Edge, build_dependency_map, topological_sort
-
-from spectra_sherpa.app.lib.scp_compat import NDDataset, HAS_SCP
 from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
-from spectra_sherpa.app.types.registry import parse_type_ref
+from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset
+
+from .graph_utils import Edge as _Edge
+from .graph_utils import build_dependency_map, topological_sort
+from .meta_helpers import safe_get_coord
+from .node_base import Node, NodeResult, NodeStatus, node_registry
+
 HAS_NDDATASET = HAS_SCP
 
 
 def _is_dataset(obj: Any) -> bool:
-    """Check if obj is a dataset (AnalysisDataset or NDDataset)."""
+    """Check if obj is a dataset (AnalysisDataset; also catches stray NDDataset)."""
     if isinstance(obj, AnalysisDataset):
         return True
     if HAS_SCP and isinstance(obj, NDDataset):
@@ -49,10 +50,12 @@ def _category_from_type_ref(type_ref: str) -> str:
     """
     try:
         from spectra_sherpa.app.types import type_registry
+
         td = type_registry.resolve(type_ref)
         return td.category
     except Exception:
         return "dataset"
+
 
 # SpectralResult removed - using NDDataset-only
 HAS_SPECTRAL_RESULT = False
@@ -61,6 +64,7 @@ SpectralResult = None
 # Import unit validation from app/lib
 try:
     from spectra_sherpa.app.lib.spectral.validators import validate_and_normalize_units
+
     HAS_UNIT_VALIDATION = True
 except ImportError:
     validate_and_normalize_units = None
@@ -217,9 +221,7 @@ def _validate_port_type(
                     )
             elif data_spectral_dim > 1:
                 # Missing X-axis on multi-point data is a warning
-                coord_issues.append(
-                    "No X-axis coordinates defined (wavenumbers will be unavailable for display)"
-                )
+                coord_issues.append("No X-axis coordinates defined (wavenumbers will be unavailable for display)")
 
             # Check for NaN in data (best effort; ignore non-numeric payloads)
             try:
@@ -242,7 +244,6 @@ def _validate_port_type(
                 UserWarning,
                 stacklevel=3,
             )
-
 
 
 # ---------------------------------------------------------------------------
@@ -279,8 +280,9 @@ def _run_node_in_worker(
     # Import node modules to populate the registry in the worker process.
     # These are guarded at module scope in the main process by conftest /
     # app startup, but spawned workers start fresh.
-    import spectra_sherpa.app.services.dag.nodes.preprocessing  # noqa: F401
     import spectra_sherpa.app.services.dag.nodes.modeling  # noqa: F401
+    import spectra_sherpa.app.services.dag.nodes.preprocessing  # noqa: F401
+
     try:
         import spectra_sherpa.app.services.dag.nodes.output  # noqa: F401
     except Exception:
@@ -450,9 +452,7 @@ class DAGExecutor:
         """
         incoming = {e.to_node for e in self.edges}
         return [
-            nid for nid in self.nodes
-            if nid not in incoming
-            or self.nodes[nid].metadata.node_type.startswith("data.")
+            nid for nid in self.nodes if nid not in incoming or self.nodes[nid].metadata.node_type.startswith("data.")
         ]
 
     def find_exit_nodes(self) -> List[str]:
@@ -510,15 +510,12 @@ class DAGExecutor:
             node = self.nodes[node_id]
             # Skip source nodes (no input_types or first input_type is empty)
             is_source = (
-                not node.metadata.input_types or
-                node.metadata.input_types == [""] or
-                node.metadata.node_type.startswith("data.")
+                not node.metadata.input_types
+                or node.metadata.input_types == [""]
+                or node.metadata.node_type.startswith("data.")
             )
             if not is_source and len(dep_list) == 0:
-                errors.append(
-                    f"Node '{node_id}' ({node.metadata.label}): "
-                    f"Has no input connections"
-                )
+                errors.append(f"Node '{node_id}' ({node.metadata.label}): " f"Has no input connections")
 
         return errors
 
@@ -552,10 +549,7 @@ class DAGExecutor:
 
     def _normalized_edges(self) -> List[_Edge]:
         """Convert executor WorkflowEdge objects to graph_utils Edge tuples."""
-        return [
-            _Edge(e.from_node, e.to_node, e.from_output, e.to_input)
-            for e in self.edges
-        ]
+        return [_Edge(e.from_node, e.to_node, e.from_output, e.to_input) for e in self.edges]
 
     def _get_dependencies(self) -> Dict[str, List[str]]:
         """
@@ -564,9 +558,7 @@ class DAGExecutor:
         Returns:
             Dict mapping node_id to list of nodes it depends on
         """
-        return build_dependency_map(
-            list(self.nodes.keys()), self._normalized_edges()
-        )
+        return build_dependency_map(list(self.nodes.keys()), self._normalized_edges())
 
     def _topological_sort(self) -> List[str]:
         """
@@ -578,9 +570,7 @@ class DAGExecutor:
         Raises:
             ValueError: If workflow contains cycles
         """
-        return topological_sort(
-            list(self.nodes.keys()), self._normalized_edges()
-        )
+        return topological_sort(list(self.nodes.keys()), self._normalized_edges())
 
     def _should_offload(self, node: Node) -> bool:
         """Whether a node should run in the process pool.
@@ -597,14 +587,19 @@ class DAGExecutor:
 
     @staticmethod
     def _sanitize_for_pool(value: Any) -> Any:
-        """Convert NDDataset values to AnalysisDataset for pickle safety.
+        """Safety net: convert any stray NDDataset to AnalysisDataset.
 
-        Spawned worker processes may not have SpectroChemPy initialised,
-        so NDDataset objects can fail to unpickle.  AnalysisDataset
-        contains only numpy arrays and plain Python types.
+        Data source nodes now always emit AnalysisDataset, so this should
+        be a no-op.  Kept as a defensive guard in case an NDDataset leaks
+        through (e.g. from a third-party node).
         """
         if HAS_SCP and isinstance(value, NDDataset):
+            logger.warning(
+                "NDDataset reached pool boundary — converting to AnalysisDataset. "
+                "Data source nodes should emit AnalysisDataset directly."
+            )
             from spectra_sherpa.app.lib.scp_compat import from_nddataset
+
             return from_nddataset(value)
         return value
 
@@ -625,13 +620,8 @@ class DAGExecutor:
             try:
                 # Sanitise inputs: convert NDDataset → AnalysisDataset so
                 # only numpy arrays cross the process boundary.
-                safe_pos = tuple(
-                    self._sanitize_for_pool(v) for v in positional_inputs
-                ) if not named_inputs else ()
-                safe_named = {
-                    k: self._sanitize_for_pool(v)
-                    for k, v in named_inputs.items()
-                } if named_inputs else {}
+                safe_pos = tuple(self._sanitize_for_pool(v) for v in positional_inputs) if not named_inputs else ()
+                safe_named = {k: self._sanitize_for_pool(v) for k, v in named_inputs.items()} if named_inputs else {}
 
                 future = loop.run_in_executor(
                     self._process_pool,
@@ -648,11 +638,15 @@ class DAGExecutor:
                 # a broken worker, or a shut-down pool, fall back to
                 # in-process execution.
                 from concurrent.futures.process import BrokenProcessPool
+
                 exc_str = str(exc)
                 is_pool_error = isinstance(exc, BrokenProcessPool) or any(
                     kw in exc_str
                     for kw in (
-                        "pickle", "Pickling", "serialize", "can't pickle",
+                        "pickle",
+                        "Pickling",
+                        "serialize",
+                        "can't pickle",
                         "after shutdown",
                     )
                 )
@@ -672,13 +666,9 @@ class DAGExecutor:
         # require NDDataset.  JSON-safety is ensured at the API boundary
         # by serialize_result() and _json_safe() in to_dict().
         if named_inputs:
-            return await asyncio.wait_for(
-                node.run(**named_inputs), timeout=timeout
-            )
+            return await asyncio.wait_for(node.run(**named_inputs), timeout=timeout)
         else:
-            return await asyncio.wait_for(
-                node.run(*positional_inputs), timeout=timeout
-            )
+            return await asyncio.wait_for(node.run(*positional_inputs), timeout=timeout)
 
     def _get_node_inputs(self, node_id: str, validate_types: bool = True) -> Tuple[List[Any], Dict[str, Any]]:
         """
@@ -711,9 +701,7 @@ class DAGExecutor:
             named_inputs: Dict[str, Any] = {}
             for edge in incoming_edges:
                 if edge.from_node not in self.results:
-                    raise ValueError(
-                        f"Node {edge.from_node} has not been executed yet (required by {node_id})"
-                    )
+                    raise ValueError(f"Node {edge.from_node} has not been executed yet (required by {node_id})")
                 port_name = edge.to_input
                 if port_name == "default":
                     # If edge uses legacy "default" port, try to infer from port order
@@ -763,10 +751,7 @@ class DAGExecutor:
             # Do NOT include target/config/model ports even if they are NDDataset objects
             # (e.g., class-label dataset on y port), or numeric conversion may fail.
             if validate_types and len(named_inputs) > 1:
-                spectral_keys = [
-                    key for key in named_inputs.keys()
-                    if port_types.get(key) == "dataset"
-                ]
+                spectral_keys = [key for key in named_inputs.keys() if port_types.get(key) == "dataset"]
                 if len(spectral_keys) > 1:
                     spectral_values = [named_inputs[key] for key in spectral_keys]
                     normalized = _validate_spectral_units(
@@ -783,9 +768,7 @@ class DAGExecutor:
             positional_inputs = []
             for idx, edge in enumerate(incoming_edges):
                 if edge.from_node not in self.results:
-                    raise ValueError(
-                        f"Node {edge.from_node} has not been executed yet (required by {node_id})"
-                    )
+                    raise ValueError(f"Node {edge.from_node} has not been executed yet (required by {node_id})")
 
                 # Extract specific output from multi-output nodes
                 result = self.results[edge.from_node]
@@ -841,17 +824,14 @@ class DAGExecutor:
                 if len(spectral_indices) > 1:
                     spectral_values = [positional_inputs[i] for i in spectral_indices]
                     normalized = _validate_spectral_units(
-                        spectral_values,
-                        node.metadata.label if node.metadata else node_id
+                        spectral_values, node.metadata.label if node.metadata else node_id
                     )
                     for idx, i in enumerate(spectral_indices):
                         positional_inputs[i] = normalized[idx]
 
             return positional_inputs, {}
 
-    async def execute(
-        self, initial_data: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+    async def execute(self, initial_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Execute the workflow.
 
@@ -872,9 +852,7 @@ class DAGExecutor:
             # Validate workflow before execution
             validation_errors = self.validate()
             if validation_errors:
-                raise ValueError(
-                    "Workflow validation failed:\n" + "\n".join(f"  - {e}" for e in validation_errors)
-                )
+                raise ValueError("Workflow validation failed:\n" + "\n".join(f"  - {e}" for e in validation_errors))
 
             # Inject initial_data as parameters into DATA nodes
             if initial_data:
@@ -905,9 +883,7 @@ class DAGExecutor:
                 label = node.metadata.label if node.metadata else node_id
                 logger.debug("Executing node: %s (%s)", node_id, label)
                 try:
-                    result = await self._run_one_node(
-                        node, positional_inputs, named_inputs, node_timeout
-                    )
+                    result = await self._run_one_node(node, positional_inputs, named_inputs, node_timeout)
                 except asyncio.TimeoutError:
                     raise ValueError(
                         f"Node '{label}' exceeded {node_timeout}s timeout. "
@@ -940,9 +916,7 @@ class DAGExecutor:
                 ) from e
             raise ValueError(f"Workflow execution failed: {str(e)}") from e
 
-    async def execute_node(
-        self, node_id: str, initial_data: Optional[Dict[str, Any]] = None
-    ) -> Any:
+    async def execute_node(self, node_id: str, initial_data: Optional[Dict[str, Any]] = None) -> Any:
         """
         Execute a single node (and its dependencies if needed).
 
@@ -992,14 +966,11 @@ class DAGExecutor:
             node_timeout = settings.max_job_duration_sec
             logger.debug("Executing node: %s (%s)", dep_node_id, node.metadata.label)
             try:
-                result = await self._run_one_node(
-                    node, positional_inputs, named_inputs, node_timeout
-                )
+                result = await self._run_one_node(node, positional_inputs, named_inputs, node_timeout)
             except asyncio.TimeoutError:
                 label = node.metadata.label if node.metadata else dep_node_id
                 raise ValueError(
-                    f"Node '{label}' exceeded {node_timeout}s timeout. "
-                    f"Reduce dataset size or simplify parameters."
+                    f"Node '{label}' exceeded {node_timeout}s timeout. " f"Reduce dataset size or simplify parameters."
                 )
 
             # Unpack NodeResult
@@ -1016,9 +987,7 @@ class DAGExecutor:
         # Return all results from this execution (target + dependencies)
         return {nid: self.results[nid] for nid in executed_in_this_run}
 
-    def _get_execution_path(
-        self, node_id: str, deps: Dict[str, List[str]]
-    ) -> List[str]:
+    def _get_execution_path(self, node_id: str, deps: Dict[str, List[str]]) -> List[str]:
         """
         Get list of nodes that need to be executed for a given node.
 
@@ -1065,10 +1034,6 @@ class DAGExecutor:
         return {
             "workflow_status": self.status.value,
             "total_nodes": len(self.nodes),
-            "completed_nodes": sum(
-                1 for n in self.nodes.values() if n.status == NodeStatus.COMPLETED
-            ),
-            "node_statuses": {
-                node_id: node.status.value for node_id, node in self.nodes.items()
-            },
+            "completed_nodes": sum(1 for n in self.nodes.values() if n.status == NodeStatus.COMPLETED),
+            "node_statuses": {node_id: node.status.value for node_id, node in self.nodes.items()},
         }

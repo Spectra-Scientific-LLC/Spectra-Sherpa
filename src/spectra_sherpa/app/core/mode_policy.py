@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from spectra_sherpa.app.core.config import app_config
 
-
 # ── Identity shortcuts ───────────────────────────────────────────
+
 
 def is_local() -> bool:
     """True when running in single-user desktop mode."""
@@ -46,6 +46,7 @@ def is_multi_user() -> bool:
 
 # ── Authentication ───────────────────────────────────────────────
 
+
 def requires_http_auth(client_host: str | None) -> bool:
     """Whether an HTTP request from *client_host* must carry credentials.
 
@@ -57,6 +58,7 @@ def requires_http_auth(client_host: str | None) -> bool:
         return False
     if app_config.mode == "hybrid":
         from spectra_sherpa.app.core.security import _is_loopback
+
         return not _is_loopback(client_host)
     # enterprise (and any future mode): always require auth
     return True
@@ -88,6 +90,7 @@ def allows_admin() -> bool:
 
 # ── API key validation ───────────────────────────────────────────
 
+
 def api_key_always_valid() -> bool:
     """In local mode, all API keys are accepted without database check."""
     return app_config.mode == "local"
@@ -100,6 +103,7 @@ def system_api_key_always_accepted() -> bool:
 
 # ── Egress & exports ────────────────────────────────────────────
 
+
 def export_always_allowed() -> bool:
     """In local mode, data exports are always permitted (single-user)."""
     return app_config.mode == "local"
@@ -111,6 +115,7 @@ def cors_allow_all() -> bool:
 
 
 # ── Limits ───────────────────────────────────────────────────────
+
 
 def has_rate_limits() -> bool:
     """True when rate limiting / session expiry enforcement is active."""

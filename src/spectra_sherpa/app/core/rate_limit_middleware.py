@@ -11,7 +11,7 @@ restarts and is consistent across Gunicorn workers.
 Enterprise-specific enforcement (password gating, session expiry, CORS
 validation) lives in spectra-server and is injected via create_app() hooks.
 """
-from typing import Optional
+
 import json
 
 from fastapi import Request, Response, status
@@ -43,8 +43,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     # Auth endpoints get stricter per-IP rate limiting
     AUTH_RATE_LIMITS = {
-        "/api/v1/auth/login": (10, 900),      # 10 attempts per 15 minutes
-        "/api/v1/auth/register": (5, 3600),    # 5 registrations per hour
+        "/api/v1/auth/login": (10, 900),  # 10 attempts per 15 minutes
+        "/api/v1/auth/register": (5, 3600),  # 5 registrations per hour
     }
 
     def __init__(self, app):
@@ -69,6 +69,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         # Only active in multi-user modes (Hybrid and Enterprise)
         from spectra_sherpa.app.core.mode_policy import has_rate_limits
+
         if not has_rate_limits():
             return await call_next(request)
 
@@ -83,7 +84,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 return self._error_response(
                     status.HTTP_429_TOO_MANY_REQUESTS,
                     "Too many attempts. Please try again later.",
-                    {"retry_after": "15 minutes" if "login" in path else "1 hour"}
+                    {"retry_after": "15 minutes" if "login" in path else "1 hour"},
                 )
 
         # Skip public paths after auth limiter checks
@@ -94,6 +95,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Only actual execution endpoints consume demo quota — not workflow
         # creation, version restore, or other management POSTs.
         from spectra_sherpa.app.core.demo_limits import check_demo_execution, demo_limit_error_detail
+
         if request.method == "POST" and self._is_execution_path(path):
             user_id = self._get_user_id(request)
             allowed, remaining = check_demo_execution(user_id)
@@ -117,8 +119,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                         {
                             "limit": app_config.rate_limit_executions,
                             "window": "1 hour",
-                            "retry_after": "Try again later"
-                        }
+                            "retry_after": "Try again later",
+                        },
                     )
                 # Add rate limit headers to response
                 remaining = self._rate_limiter.remaining(client_id)
@@ -177,8 +179,4 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         body = {"detail": message}
         if details:
             body.update(details)
-        return Response(
-            content=json.dumps(body),
-            status_code=status_code,
-            media_type="application/json"
-        )
+        return Response(content=json.dumps(body), status_code=status_code, media_type="application/json")

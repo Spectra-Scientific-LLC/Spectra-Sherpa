@@ -32,9 +32,7 @@ async def set_api_key(
 ) -> dict:
     """Create or update API key for the authenticated user."""
     result = await session.execute(
-        select(APIKey).where(
-            APIKey.user_id == current_user.id, APIKey.service_name == payload.service_name
-        )
+        select(APIKey).where(APIKey.user_id == current_user.id, APIKey.service_name == payload.service_name)
     )
     api_key = result.scalar_one_or_none()
     encrypted = encrypt_value(payload.key)
@@ -61,9 +59,7 @@ async def delete_api_key(
 ):
     """Delete API key for the authenticated user."""
     result = await session.execute(
-        select(APIKey).where(
-            APIKey.user_id == current_user.id, APIKey.service_name == service_name
-        )
+        select(APIKey).where(APIKey.user_id == current_user.id, APIKey.service_name == service_name)
     )
     api_key = result.scalar_one_or_none()
     if api_key is None:

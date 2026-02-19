@@ -58,8 +58,7 @@ def get_server_routers() -> list[RouterInclude]:
         from spectra_sherpa.app.api.v1.routes import auth_compat
 
         logger.info(
-            "Server auth routes unavailable in this distribution; "
-            "registering OSS auth compatibility router",
+            "Server auth routes unavailable in this distribution; " "registering OSS auth compatibility router",
         )
         routers.append((auth_compat.router, {"prefix": "/auth", "tags": ["auth"]}))
     else:
@@ -100,9 +99,7 @@ def build_api_router(
     router.include_router(doe_config.router, prefix="/doe-configs", tags=["doe-configs"])
     router.include_router(workflows.router, tags=["workflows"])
     router.include_router(execution_runs.router, tags=["execution-runs"])
-    router.include_router(
-        workflow_organization.router, prefix="/workflows", tags=["workflow-organization"]
-    )
+    router.include_router(workflow_organization.router, prefix="/workflows", tags=["workflow-organization"])
     router.include_router(workflow_templates.router, tags=["workflow-templates"])
     router.include_router(workflow_export.router, tags=["workflow-export"])
     router.include_router(predict.router, tags=["predict"])
@@ -134,7 +131,7 @@ def build_api_router(
             router.include_router(auth_compat.router, prefix="/auth", tags=["auth"])
 
     # Extension point: Repo 2 passes extra routers here
-    for extra, kwargs in (extra_routers or []):
+    for extra, kwargs in extra_routers or []:
         router.include_router(extra, **dict(kwargs))
 
     return router

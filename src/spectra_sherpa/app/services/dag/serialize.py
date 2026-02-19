@@ -15,18 +15,19 @@ from __future__ import annotations
 
 import os
 import re
-from datetime import datetime, date
-from typing import Any, Dict, Optional
+from datetime import date, datetime
+from typing import Any, Dict
+
 import numpy as np
 
-from spectra_sherpa.app.lib.scp_compat import NDDataset, HAS_SCP
 from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
+from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset
+
 HAS_NDDATASET = HAS_SCP
 
 from .meta_helpers import (
-    get_processing_history,
-    detect_spectral_technique,
     detect_data_quantity,
+    detect_spectral_technique,
 )
 
 
@@ -224,78 +225,46 @@ def serialize_for_api(
     """
     Serialize dataset to API-compatible JSON format.
 
-    Accepts both AnalysisDataset and NDDataset. AnalysisDataset uses its
-    own to_dict() which emits the same wire format (type: "NDDataset",
-    x_axis.data, etc.) so the frontend renders identically.
-
     This is the SINGLE SOURCE OF TRUTH for serialization.
     Called only at API boundary, not inside nodes.
 
+    All DAG nodes now emit AnalysisDataset. Any stray NDDataset is converted
+    via from_nddataset() as a safety net (and logged as a warning).
+
     Args:
-        dataset: AnalysisDataset or NDDataset to serialize
+        dataset: AnalysisDataset (or NDDataset as safety fallback) to serialize
         sanitize_paths: If True, strip file paths to basenames
 
     Returns:
         Dict ready for JSON response
     """
-    # AnalysisDataset has its own wire-format-compatible serializer
-    if isinstance(dataset, AnalysisDataset):
-        return dataset.to_dict()
-    # Convert data, replacing NaN/Inf with None for JSON safety
-    try:
-        raw_data = np.asarray(dataset.data, dtype=float)
-    except Exception:
-        # Defensive fallback: keep serializer alive even if backend data payload
-        # is temporarily malformed.
-        raw_data = np.asarray([], dtype=float)
-    # Replace NaN and Inf with None (JSON-safe)
-    data_list = np.where(np.isfinite(raw_data), raw_data, None).tolist()
+    import logging
 
-    try:
-        dataset_shape = list(dataset.shape)
-    except Exception:
-        dataset_shape = list(raw_data.shape)
-    if len(dataset_shape) == 0:
-        dataset_shape = [0]
+    _logger = logging.getLogger(__name__)
 
-    result = {
-        "type": "NDDataset",
-        "shape": dataset_shape,
-        "data": data_list,
-        "n_samples": dataset_shape[0] if len(dataset_shape) > 1 else 1,
-        "n_features": dataset_shape[-1] if len(dataset_shape) > 0 else 0,
-        "metadata": {},
-    }
+    # Safety net: convert any stray NDDataset to AnalysisDataset
+    if HAS_SCP and isinstance(dataset, NDDataset):
+        _logger.warning(
+            "NDDataset reached serialize_for_api — converting to AnalysisDataset. "
+            "Nodes should emit AnalysisDataset directly."
+        )
+        from spectra_sherpa.app.lib.scp_compat import from_nddataset
 
-    # X-axis
-    # NOTE: SpectroChemPy's __getattr__ raises KeyError (not AttributeError)
-    # when a coordinate name like 'x' is not found, so hasattr() alone is insufficient.
-    try:
-        x_coord = dataset.x
-    except Exception:
-        x_coord = None
+        dataset = from_nddataset(dataset)
 
-    if x_coord is not None:
-        x_raw = _safe_coord_data(x_coord)
-        try:
-            x_data = np.array(x_raw, dtype=float).tolist() if x_raw is not None else []
-        except Exception:
-            x_data = [str(v) for v in _safe_coord_list(x_raw)]
-        x_title = _safe_str_attr(x_coord, "title", "Feature") or "Feature"
-        x_units = _safe_str_attr(x_coord, "units", "")
-        if x_units == "dimensionless":
-            x_units = ""
-
-        result["x_axis"] = {
-            "title": x_title,
-            "units": x_units,
-            "data": x_data,
+    if not isinstance(dataset, AnalysisDataset):
+        # Non-dataset fallback (shouldn't happen in normal flow)
+        return {
+            "type": "NDDataset",
+            "shape": [],
+            "data": [],
+            "metadata": {"error": f"Unexpected type: {type(dataset).__name__}"},
         }
-        result["metadata"]["wavenumbers"] = x_data
-        result["metadata"]["x_title"] = x_title
-        result["metadata"]["x_units"] = x_units
 
-    # Spectral detection
+    # Base serialization from AnalysisDataset
+    result = dataset.to_dict()
+
+    # --- Enrich with spectral detection ---
     try:
         technique = detect_spectral_technique(dataset)
         data_quantity = detect_data_quantity(dataset)
@@ -303,99 +272,50 @@ def serialize_for_api(
         technique = None
         data_quantity = None
     is_spectra = technique is not None
-
     result["metadata"]["data_type"] = "spectra" if is_spectra else "generic"
     result["metadata"]["is_spectra"] = is_spectra
     result["metadata"]["spectral_technique"] = technique
     result["metadata"]["data_quantity"] = data_quantity
-    dataset_meta = _safe_attr(dataset, "meta", None)
 
-    # Y-axis (sample labels)
-    try:
-        y_coord = dataset.y
-    except Exception:
-        y_coord = None
+    # --- Convenience copies of axis info into metadata ---
+    if result.get("x_axis"):
+        x_ax = result["x_axis"]
+        x_units = x_ax.get("units") or ""
+        if x_units == "dimensionless":
+            x_ax["units"] = ""
+            x_units = ""
+        result["metadata"]["wavenumbers"] = x_ax.get("data", [])
+        result["metadata"]["x_title"] = x_ax.get("title") or "Feature"
+        result["metadata"]["x_units"] = x_units
 
-    if y_coord is not None:
-        y_title = _safe_str_attr(y_coord, "title", "Sample") or "Sample"
-        y_units = _safe_str_attr(y_coord, "units", "")
+    if result.get("y_axis"):
+        y_ax = result["y_axis"]
+        y_units = y_ax.get("units") or ""
         if y_units == "dimensionless":
+            y_ax["units"] = ""
             y_units = ""
-        y_raw = _safe_coord_data(y_coord)
-        try:
-            y_data = np.array(y_raw, dtype=float).tolist() if y_raw is not None else []
-        except Exception:
-            # String or non-numeric y-axis data — convert to string list
-            y_data = [str(v) for v in _safe_coord_list(y_raw)]
-
-        # Extract labels from y-axis (file names, sample names, etc.)
-        y_labels = None
-        try:
-            labels_raw = _safe_coord_labels(y_coord)
-            if labels_raw is not None:
-                # Handle both list and ndarray of labels
-                if hasattr(labels_raw, 'tolist'):
-                    labels_list = labels_raw.tolist()
-                elif isinstance(labels_raw, (list, tuple)):
-                    labels_list = list(labels_raw)
-                else:
-                    labels_list = None
-
-                if labels_list is not None:
-                    # Convert to readable strings. Labels may contain
-                    # datetime objects or tuple/list payloads.
-                    y_labels = [_format_sample_label(v) for v in labels_list]
-        except Exception:
-            y_labels = None
-
-        # If coord values are unavailable but we do have labels, synthesize row indices.
-        if len(y_data) == 0 and y_labels:
-            y_data = list(range(len(y_labels)))
-
-        result["y_axis"] = {
-            "title": y_title,
-            "units": y_units,
-            "data": y_data,
-            "labels": y_labels,  # Include labels in y_axis
-        }
-        result["metadata"]["y_title"] = y_title
+        result["metadata"]["y_title"] = y_ax.get("title") or "Sample"
         result["metadata"]["y_units"] = y_units
+        # Format labels for frontend (DataTableModal expects sample_labels)
+        if y_ax.get("labels"):
+            formatted = [_format_sample_label(v) for v in y_ax["labels"]]
+            result["metadata"]["sample_labels"] = formatted
+            result["metadata"]["labels"] = formatted
 
-        # Also add to metadata for frontend compatibility (DataTableModal expects these)
-        if y_labels:
-            result["metadata"]["sample_labels"] = y_labels
-            result["metadata"]["labels"] = y_labels  # Alias for backwards compat
+    # --- Data units ---
+    if dataset.units and str(dataset.units) != "dimensionless":
+        result["metadata"]["value_units"] = str(dataset.units)
+    semantic_units = dataset.meta.get("value_units_label")
+    if semantic_units:
+        result["metadata"]["value_units_label"] = str(semantic_units)
+        result["metadata"].setdefault("value_units", str(semantic_units))
 
-    # Data units
-    dataset_units = _safe_str_attr(dataset, "units", "")
-    if dataset_units and dataset_units != "dimensionless":
-        result["metadata"]["value_units"] = dataset_units
-    if dataset_meta is not None:
-        semantic_units = _meta_get(dataset_meta, "value_units_label")
-        if semantic_units:
-            semantic_units_text = str(semantic_units)
-            result["metadata"]["value_units_label"] = semantic_units_text
-            result["metadata"].setdefault("value_units", semantic_units_text)
+    # --- Rich provenance ---
+    history = result["metadata"].get("processing_history", [])
+    rich_provenance = dataset.meta.get("provenance")
+    if isinstance(rich_provenance, dict):
+        rich_provenance = dict(rich_provenance)
 
-    # Processing history from meta
-    try:
-        history = get_processing_history(dataset)
-    except Exception:
-        history = []
-    if history:
-        result["metadata"]["processing_history"] = history
-
-    # Build provenance: merge rich provenance from meta with processing history summary
-    # Start with rich provenance from dataset.meta (original_source_type, operator, lab_name, etc.)
-    rich_provenance: dict | Any | None = None
-    if dataset_meta:
-        meta_provenance = _meta_get(dataset_meta, "provenance")
-        if isinstance(meta_provenance, dict):
-            rich_provenance = dict(meta_provenance)
-        elif meta_provenance:
-            rich_provenance = meta_provenance
-
-    # Add/update processing history derived fields without clobbering rich provenance
     if history:
         if rich_provenance is None:
             rich_provenance = {
@@ -411,32 +331,21 @@ def serialize_for_api(
                 "last_modified",
                 history[-1].get("timestamp") if history else None,
             )
-
     if rich_provenance is not None:
         result["metadata"]["provenance"] = rich_provenance
 
-    # Include all other meta fields
-    PATH_FIELDS = {"original_file_path", "original_source", "background_file", "original_filename"}
+    # --- Path sanitization ---
+    if sanitize_paths:
+        PATH_FIELDS = {"original_file_path", "original_source", "background_file", "original_filename"}
+        for key in PATH_FIELDS:
+            if key in result["metadata"] and isinstance(result["metadata"][key], str):
+                result["metadata"][key] = os.path.basename(result["metadata"][key])
 
-    meta_items = _meta_items(dataset_meta)
-    if meta_items:
-        for key, value in meta_items:
-            if key in ("processing_history", "samples", "provenance", "raw_file_metadata"):
-                continue  # Already handled or internal
-            if isinstance(key, str) and key.startswith("_"):
-                continue  # Internal/debug-only fields
-            if sanitize_paths and key in PATH_FIELDS and isinstance(value, str):
-                value = os.path.basename(value)
-            result["metadata"][key] = _json_safe(value)
+    # --- Title fallback ---
+    if not result.get("title"):
+        result["title"] = "Spectra" if is_spectra else "Data"
 
-    # Title
-    dataset_title = _safe_str_attr(dataset, "title", "")
-    result["title"] = dataset_title if dataset_title else (
-        "Spectra" if is_spectra else "Data"
-    )
-
-    # Ensure all metadata values are JSON-serializable
-    # SpectroChemPy may include datetime, numpy types, or other non-serializable objects
+    # Final JSON-safety pass
     result["metadata"] = _json_safe(result["metadata"])
 
     return result

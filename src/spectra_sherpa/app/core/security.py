@@ -1,21 +1,21 @@
-from datetime import datetime, timedelta, timezone
-import ipaddress
 import hashlib
+import ipaddress
 import logging
 import os
 import time
-from typing import Any, Optional, TYPE_CHECKING
+from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING, Any, Optional
 
 import bcrypt
-from fastapi import Depends, HTTPException, Request, Response, status
+from fastapi import Depends, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import jwt, JWTError
+from jose import JWTError, jwt
 
 from spectra_sherpa.app.core.config import app_config, settings
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
-    from spectra_sherpa.app.models.user import User
+
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +109,7 @@ def invalidate_gateway_api_key_cache(api_key: Optional[str] = None) -> None:
     _api_key_cache = {}
     _invalid_api_key_cache = {}
 
+
 # HTTP Bearer token extraction for Authorization header parsing.
 # We intentionally avoid OAuth2 password flow metadata in OSS OpenAPI because
 # login/register endpoints are provided only by the server distribution.
@@ -193,6 +194,7 @@ async def is_valid_api_key(api_key: Optional[str]) -> bool:
     """
     # Local mode: always valid (no auth required)
     from spectra_sherpa.app.core.mode_policy import api_key_always_valid
+
     if api_key_always_valid():
         return True
 
@@ -209,6 +211,7 @@ async def is_valid_api_key(api_key: Optional[str]) -> bool:
     # Check user-specific API keys in database
     try:
         from sqlalchemy import select
+
         from spectra_sherpa.app.db.session import async_session
         from spectra_sherpa.app.models.user import User
 
@@ -216,9 +219,7 @@ async def is_valid_api_key(api_key: Optional[str]) -> bool:
             # Check cache first
             cached_user_id = _get_cached_user_id(api_key)
             if cached_user_id is not None:
-                result = await session.execute(
-                    select(User).where(User.id == cached_user_id)
-                )
+                result = await session.execute(select(User).where(User.id == cached_user_id))
                 user = result.scalar_one_or_none()
                 if user and getattr(user, "is_active", True):
                     return True
@@ -257,6 +258,7 @@ def _is_loopback(host: str | None) -> bool:
 def is_system_api_key_auth_enabled() -> bool:
     """Return whether APP_API_KEY is accepted for request authentication."""
     from spectra_sherpa.app.core.mode_policy import system_api_key_always_accepted
+
     if system_api_key_always_accepted():
         return True
     return os.getenv("ALLOW_SYSTEM_API_KEY_AUTH", "").strip().lower() in {
@@ -274,11 +276,7 @@ _TRUSTED_PROXY_CIDRS_ENV = os.getenv("TRUSTED_PROXY_CIDRS", "").strip()
 
 def _parse_trusted_proxy_cidrs(raw: str) -> tuple[ipaddress._BaseNetwork, ...]:
     # Safe default: only trust loopback proxy peers when CIDRs are not specified.
-    values = (
-        ["127.0.0.1/32", "::1/128"]
-        if not raw
-        else [value.strip() for value in raw.split(",") if value.strip()]
-    )
+    values = ["127.0.0.1/32", "::1/128"] if not raw else [value.strip() for value in raw.split(",") if value.strip()]
     networks: list[ipaddress._BaseNetwork] = []
     for value in values:
         try:
@@ -370,18 +368,13 @@ async def api_key_middleware(request: Request, call_next) -> Response:
     # Allow static frontend and SPA routes through without auth.
     # The SPA catchall serves index.html for any non-API path — these
     # contain no sensitive data. Actual data is protected by /api/ auth.
-    is_frontend_path = (
-        not path.startswith("/api/")
-        and not path.startswith("/ws")
-    )
-    if (path in public_paths
-            or is_frontend_path
-            or path.startswith("/docs")
-            or path.startswith("/redoc")):
+    is_frontend_path = not path.startswith("/api/") and not path.startswith("/ws")
+    if path in public_paths or is_frontend_path or path.startswith("/docs") or path.startswith("/redoc"):
         return await call_next(request)
 
     # Mode-based auth bypass: local always passes, hybrid loopback passes.
     from spectra_sherpa.app.core.mode_policy import requires_http_auth
+
     if not requires_http_auth(get_client_host(request)):
         return await call_next(request)
 
@@ -427,6 +420,7 @@ def is_egress_enabled() -> bool:
     if app_config.mode == "hybrid":
         try:
             from spectra_sherpa.app.services.network_health import get_network_health_service
+
             health_service = get_network_health_service()
             if health_service.is_degraded:
                 # In degraded mode, disable egress to enforce local-only behavior
@@ -490,6 +484,7 @@ async def check_egress_permission(
     ):
         try:
             from sqlalchemy import select
+
             from spectra_sherpa.app.models.data_egress import DataEgressPermission
 
             result = await session.execute(
@@ -510,7 +505,7 @@ async def check_egress_permission(
     # Wrapped in try/except because the user object may be detached from its
     # original session (e.g. WS handler), causing a lazy-load error.
     try:
-        if hasattr(user, 'egress_defaults') and user.egress_defaults is not None:
+        if hasattr(user, "egress_defaults") and user.egress_defaults is not None:
             egress_defaults = user.egress_defaults
             if hasattr(egress_defaults, permission):
                 return getattr(egress_defaults, permission, False)
@@ -522,14 +517,11 @@ async def check_egress_permission(
         if session is not None and getattr(user, "id", None) is not None:
             try:
                 from sqlalchemy import select
+
                 from spectra_sherpa.app.models.data_egress import UserEgressDefaults
 
                 row = (
-                    await session.execute(
-                        select(UserEgressDefaults).where(
-                            UserEgressDefaults.user_id == user.id
-                        )
-                    )
+                    await session.execute(select(UserEgressDefaults).where(UserEgressDefaults.user_id == user.id))
                 ).scalar_one_or_none()
                 if row is not None and hasattr(row, permission):
                     return getattr(row, permission, False)
@@ -543,9 +535,9 @@ async def check_egress_permission(
     # These are intentionally conservative: new users are created with
     # allow_spectrasherpa_sync=False, so the default here must match.
     DEFAULT_PERMISSIONS = {
-        "allow_llm_context": False,     # Explicit opt-in required
-        "allow_nist_queries": False,    # Explicit opt-in required
-        "allow_export": False,          # Explicit opt-in required
+        "allow_llm_context": False,  # Explicit opt-in required
+        "allow_nist_queries": False,  # Explicit opt-in required
+        "allow_export": False,  # Explicit opt-in required
         "allow_spectrasherpa_sync": False,
     }
     return DEFAULT_PERMISSIONS.get(permission, False)
@@ -567,6 +559,7 @@ async def check_export_allowed(
     via the user's ``allow_export`` egress default.
     """
     from spectra_sherpa.app.core.mode_policy import export_always_allowed
+
     if export_always_allowed():
         return True
 
@@ -581,18 +574,17 @@ async def check_export_allowed(
         if session is not None and getattr(user, "id", None) is not None:
             try:
                 from sqlalchemy import select
+
                 from spectra_sherpa.app.models.data_egress import UserEgressDefaults
 
                 row = (
-                    await session.execute(
-                        select(UserEgressDefaults).where(
-                            UserEgressDefaults.user_id == user.id
-                        )
-                    )
+                    await session.execute(select(UserEgressDefaults).where(UserEgressDefaults.user_id == user.id))
                 ).scalar_one_or_none()
                 if row is not None:
                     return getattr(row, "allow_export", True)
             except Exception:
-                logger.debug("Export permission DB fallback failed for user %s", getattr(user, "id", "?"), exc_info=True)
+                logger.debug(
+                    "Export permission DB fallback failed for user %s", getattr(user, "id", "?"), exc_info=True
+                )
 
     return True  # default: allow exports
