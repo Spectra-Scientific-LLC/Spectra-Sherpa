@@ -385,12 +385,6 @@ class AppConfig(BaseModel):
 
     def to_client_safe(self) -> dict:
         """Return client-safe configuration (no secrets)"""
-        # Sherpa Advisor requires cloud connection (hybrid/enterprise mode with API key).
-        # Local engine was removed — all Sherpa intelligence runs on Spectra-Server.
-        sherpa_configured = (
-            self.mode in ("hybrid", "enterprise") and bool(os.getenv("SPECTRASHERPA_API_KEY"))
-        )
-
         has_llm = len(self.get_configured_llms()) > 0
 
         # Pull subscription-derived feature flags from the advisor cache.
@@ -433,7 +427,7 @@ class AppConfig(BaseModel):
                 "cloudOffload": self.execution.mode == "hybrid",
                 "chatAssistant": has_llm,
                 "nistDownloads": self.egress_enabled,
-                "sherpaAdvisor": sherpa_configured or sub_features.get("sherpa_sync", False),
+                "sherpaAdvisor": bool(sub_features.get("sherpa_sync", False)),
                 "pluginSystem": True,  # Always available (local discovery)
                 # Subscription-gated Sherpa capabilities
                 "sherpaPeakId": sub_features.get("identify_peaks", False),

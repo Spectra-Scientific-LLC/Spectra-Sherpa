@@ -93,28 +93,23 @@ class TestFeatureFlags:
             cfg = _make_config(mode=mode, egress_enabled=egress)
             assert cfg.to_client_safe()["features"]["nistDownloads"] is egress
 
-    def test_sherpa_advisor_requires_hybrid_or_enterprise_and_key(self):
-        """sherpaAdvisor requires hybrid/enterprise mode AND SPECTRASHERPA_API_KEY."""
-        # Local mode: always False regardless of key
-        with patch.dict("os.environ", {"SPECTRASHERPA_API_KEY": "test-key"}):
-            cfg = _make_config(mode="local")
-            assert cfg.to_client_safe()["features"]["sherpaAdvisor"] is False
+    def test_sherpa_advisor_requires_subscription(self):
+        """sherpaAdvisor is subscription-driven, not key-presence-driven."""
+        # Without subscription entitlements: always False regardless of mode/key
+        for mode in ("local", "hybrid", "enterprise"):
+            with patch.dict("os.environ", {"SPECTRASHERPA_API_KEY": "test-key"}):
+                cfg = _make_config(mode=mode)
+                assert cfg.to_client_safe()["features"]["sherpaAdvisor"] is False
 
-        # Hybrid without key: False
-        with patch.dict("os.environ", {}, clear=False):
-            import os
-            os.environ.pop("SPECTRASHERPA_API_KEY", None)
+        # With subscription entitlements: True when advisor reports sherpa_sync
+        mock_advisor = MagicMock()
+        mock_advisor._subscription_features = {"sherpa_sync": True}
+        mock_advisor._subscription_plan = "pro"
+        with patch(
+            "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
+            return_value=mock_advisor,
+        ):
             cfg = _make_config(mode="hybrid")
-            assert cfg.to_client_safe()["features"]["sherpaAdvisor"] is False
-
-        # Hybrid with key: True
-        with patch.dict("os.environ", {"SPECTRASHERPA_API_KEY": "test-key"}):
-            cfg = _make_config(mode="hybrid")
-            assert cfg.to_client_safe()["features"]["sherpaAdvisor"] is True
-
-        # Enterprise with key: True
-        with patch.dict("os.environ", {"SPECTRASHERPA_API_KEY": "test-key"}):
-            cfg = _make_config(mode="enterprise")
             assert cfg.to_client_safe()["features"]["sherpaAdvisor"] is True
 
 
