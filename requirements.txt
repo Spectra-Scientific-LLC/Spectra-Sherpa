@@ -41,5 +41,5 @@ bcrypt>=4.0.1,<4.1
 # asyncpg>=0.29.0,<0.30.0
 # gunicorn>=22.0.0,<23.0.0
 
-# Sherpa Engine (required for AI-guided analysis via Anthropic Claude)
-anthropic>=0.39.0,<1.0.0
+# Optional: Anthropic Claude as LLM provider (uncomment if needed)
+# anthropic>=0.39.0,<1.0.0
