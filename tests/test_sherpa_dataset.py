@@ -234,9 +234,7 @@ class TestDomainContext:
         assert dc.sample_type == "polymer"
 
     def test_with_inferred(self):
-        inf = InferredDomain(
-            technique="NIR", confidence=0.8, source="axis_range", reasoning="test"
-        )
+        inf = InferredDomain(technique="NIR", confidence=0.8, source="axis_range", reasoning="test")
         dc = DomainContext(inferred=inf)
         assert dc.inferred.technique == "NIR"
         assert dc.inferred.confidence == 0.8
@@ -430,9 +428,9 @@ class TestDatasetState:
 
     def test_convenience_properties(self):
         prov = Provenance()
-        prov.append("a", {}, state_effects=[
-            EFFECT_BASELINE_CORRECTED, EFFECT_SMOOTHED, EFFECT_MEAN_CENTERED, EFFECT_SCALED
-        ])
+        prov.append(
+            "a", {}, state_effects=[EFFECT_BASELINE_CORRECTED, EFFECT_SMOOTHED, EFFECT_MEAN_CENTERED, EFFECT_SCALED]
+        )
         state = DatasetState.from_provenance(prov)
         assert state.is_baseline_corrected
         assert state.is_smoothed
@@ -1087,12 +1085,8 @@ class TestSherpaDatasetSerialization:
     def _make_ds(self):
         ds = SherpaDataset(
             X=np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
-            spectral_axis=SpectralAxis(
-                values=np.array([100.0, 200.0, 300.0]), units="cm-1", title="wavenumber"
-            ),
-            sample_axis=SampleAxis(
-                values=np.array([0.0, 1.0]), labels=["s1", "s2"], title="samples"
-            ),
+            spectral_axis=SpectralAxis(values=np.array([100.0, 200.0, 300.0]), units="cm-1", title="wavenumber"),
+            sample_axis=SampleAxis(values=np.array([0.0, 1.0]), labels=["s1", "s2"], title="samples"),
             target=np.array([0, 1]),
             domain=DomainContext(technique="IR"),
             backend="numpy",
@@ -1212,15 +1206,14 @@ class TestDatasetSummarizer:
     @pytest.fixture
     def summarizer(self):
         from spectra_sherpa.app.lib.dataset_summarizer import DatasetSummarizer
+
         return DatasetSummarizer()
 
     @pytest.fixture
     def sample_ds(self):
         ds = SherpaDataset(
             X=np.random.rand(10, 100),
-            spectral_axis=SpectralAxis(
-                values=np.linspace(400, 4000, 100), units="cm-1", title="wavenumber"
-            ),
+            spectral_axis=SpectralAxis(values=np.linspace(400, 4000, 100), units="cm-1", title="wavenumber"),
             sample_axis=SampleAxis(
                 values=np.arange(10, dtype=float),
                 labels=[f"sample_{i}" for i in range(10)],
@@ -1232,12 +1225,18 @@ class TestDatasetSummarizer:
             units="absorbance",
         )
         ds.provenance.append(
-            "preprocess.snv", {"normalize": True},
+            "preprocess.snv",
+            {"normalize": True},
             state_effects=[EFFECT_NORMALIZED, EFFECT_SCATTER_CORRECTED],
         )
-        ds.quality.add_evaluation(EvaluationResult(
-            evaluation_id="ev1", model_type="PLS", r2=0.95, rmse=0.05,
-        ))
+        ds.quality.add_evaluation(
+            EvaluationResult(
+                evaluation_id="ev1",
+                model_type="PLS",
+                r2=0.95,
+                rmse=0.05,
+            )
+        )
         return ds
 
     def test_tier0(self, summarizer, sample_ds):

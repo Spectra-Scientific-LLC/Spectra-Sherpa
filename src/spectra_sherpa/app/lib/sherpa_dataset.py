@@ -45,20 +45,14 @@ class _NpArrayPydanticAnnotation:
     """
 
     @classmethod
-    def __get_pydantic_core_schema__(
-        cls, _source_type: Any, _handler: _GetCoreSchemaHandler
-    ) -> _cs.CoreSchema:
+    def __get_pydantic_core_schema__(cls, _source_type: Any, _handler: _GetCoreSchemaHandler) -> _cs.CoreSchema:
         return _cs.no_info_plain_validator_function(
             cls._validate,
-            serialization=_cs.plain_serializer_function_ser_schema(
-                cls._serialize, info_arg=False
-            ),
+            serialization=_cs.plain_serializer_function_ser_schema(cls._serialize, info_arg=False),
         )
 
     @classmethod
-    def __get_pydantic_json_schema__(
-        cls, _schema: _cs.CoreSchema, handler: _GetJsonSchemaHandler
-    ) -> _JsonSchemaValue:
+    def __get_pydantic_json_schema__(cls, _schema: _cs.CoreSchema, handler: _GetJsonSchemaHandler) -> _JsonSchemaValue:
         return {"type": "array", "items": {"type": "number"}}
 
     @staticmethod
@@ -96,6 +90,7 @@ class FrozenDict(dict):
     popitem = _readonly  # type: ignore[assignment]
     setdefault = _readonly  # type: ignore[assignment]
     update = _readonly  # type: ignore[assignment]
+
 
 # ---------------------------------------------------------------------------
 # JSON safety helper
@@ -303,9 +298,7 @@ class SampleAxis(AxisInfo):
 
     def set_column(self, name: str, values: list[Any]) -> None:
         if self.length > 0 and len(values) != self.length:
-            raise ValueError(
-                f"Column '{name}' length ({len(values)}) != sample axis length ({self.length})"
-            )
+            raise ValueError(f"Column '{name}' length ({len(values)}) != sample axis length ({self.length})")
         if self.sample_table is None:
             self.sample_table = {}
         self.sample_table[name] = values
@@ -721,9 +714,7 @@ class SherpaDataset:
 
         if spectral_axis is not None:
             if spectral_axis.length > 0 and spectral_axis.length != n_features:
-                raise ValueError(
-                    f"spectral_axis length ({spectral_axis.length}) != n_features ({n_features})"
-                )
+                raise ValueError(f"spectral_axis length ({spectral_axis.length}) != n_features ({n_features})")
             spectral_copy = spectral_axis.copy()
             spectral_copy.bind_expected_length(n_features)
             self._axes[self._SPECTRAL_DIM] = spectral_copy
@@ -732,9 +723,7 @@ class SherpaDataset:
             if sample_axis.length > 0 and sample_axis.length != n_samples:
                 raise ValueError(f"sample_axis length ({sample_axis.length}) != n_samples ({n_samples})")
             if sample_axis.classes is not None and len(sample_axis.classes) != n_samples:
-                raise ValueError(
-                    f"sample_axis.classes length ({len(sample_axis.classes)}) != n_samples ({n_samples})"
-                )
+                raise ValueError(f"sample_axis.classes length ({len(sample_axis.classes)}) != n_samples ({n_samples})")
             if sample_axis.include_mask is not None and len(sample_axis.include_mask) != n_samples:
                 raise ValueError(
                     f"sample_axis.include_mask length ({len(sample_axis.include_mask)}) != n_samples ({n_samples})"
@@ -764,8 +753,8 @@ class SherpaDataset:
         self.units = units
         self._dataset_id = dataset_id or str(uuid.uuid4())
 
-        # Extra metadata (namespaced)
-        self._extra: dict[str, Any] = extra if extra is not None else {}
+        # Extra metadata (namespaced) — deep-copy to isolate from caller
+        self._extra: dict[str, Any] = copy.deepcopy(extra) if extra is not None else {}
 
         # Branching
         self._branch: BranchInfo | None = None
@@ -834,7 +823,9 @@ class SherpaDataset:
         if value.classes is not None and len(value.classes) != self._X.shape[0]:
             raise ValueError(f"sample_axis.classes length ({len(value.classes)}) != n_samples ({self._X.shape[0]})")
         if value.include_mask is not None and len(value.include_mask) != self._X.shape[0]:
-            raise ValueError(f"sample_axis.include_mask length ({len(value.include_mask)}) != n_samples ({self._X.shape[0]})")
+            raise ValueError(
+                f"sample_axis.include_mask length ({len(value.include_mask)}) != n_samples ({self._X.shape[0]})"
+            )
         copied = value.copy()
         copied.bind_expected_length(self._X.shape[0])
         self._axes[self._SAMPLE_DIM] = copied

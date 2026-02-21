@@ -217,10 +217,9 @@ class OutlierDetectionNode(Node):
             q_limit=Q_limit,
         )
 
-        # Attach evaluation to source dataset if available
-        input_ds = internal.get("input_data_ds")
-        if input_ds is not None and isinstance(input_ds, SherpaDataset):
-            input_ds.quality.add_evaluation(evaluation)
+        # Evaluation is returned in the result dict — consumers attach it
+        # to the appropriate dataset. We do NOT mutate the input dataset
+        # here, as that creates non-deterministic side-effects in the DAG.
 
         result = {
             "model": model,  # Pass through original model

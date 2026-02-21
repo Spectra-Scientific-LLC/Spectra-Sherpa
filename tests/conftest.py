@@ -53,11 +53,6 @@ from spectra_sherpa.app.db.base import Base
 from spectra_sherpa.app.main import app
 from spectra_sherpa.app.models.user import User
 
-from spectra_sherpa.app.api.deps import get_session
-from spectra_sherpa.app.db.base import Base
-from spectra_sherpa.app.main import app
-from spectra_sherpa.app.models.user import User
-
 
 @pytest.fixture
 async def test_engine():
