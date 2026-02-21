@@ -27,7 +27,8 @@ class LLMConversation(BaseModel):
 
 
 class LLMDataStoryRequest(BaseModel):
-    dataset_info: Dict[str, Any] = Field(..., description="Dataset metadata for narrative generation")
+    dataset_id: str = Field(..., description="Dataset handle ID")
+    tier: int = Field(2, ge=0, le=3, description="Summary detail tier (0-3)")
 
 
 class LLMTextResponse(BaseModel):

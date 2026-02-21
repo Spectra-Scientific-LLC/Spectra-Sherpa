@@ -5,9 +5,9 @@ These nodes implement various preprocessing techniques like baseline correction,
 smoothing, normalization, and derivatives.
 
 All nodes:
-- Accept AnalysisDataset as input
-- Return AnalysisDataset as output
-- Record processing history in dataset.meta["processing_history"]
+- Accept SherpaDataset (or legacy NDDataset via coercion) as input
+- Return SherpaDataset as output
+- Record processing history via provenance
 """
 
 from __future__ import annotations
@@ -16,7 +16,15 @@ from typing import Any, Dict
 
 import numpy as np
 
-from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
+from spectra_sherpa.app.lib.sherpa_dataset import (
+    EFFECT_BASELINE_CORRECTED,
+    EFFECT_DERIVATIVE,
+    EFFECT_NORMALIZED,
+    EFFECT_SCALED,
+    EFFECT_SCATTER_CORRECTED,
+    EFFECT_SMOOTHED,
+    SherpaDataset,
+)
 from spectra_sherpa.app.lib.preprocessing import (
     baseline_penalized_ls,
     gaussian_smooth,
@@ -24,7 +32,7 @@ from spectra_sherpa.app.lib.preprocessing import (
     remove_cosmic_rays,
     whittaker_smooth,
 )
-from spectra_sherpa.app.lib.scp_compat import NDDataset, from_nddataset, scp, to_nddataset
+from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset, from_nddataset, scp, to_nddataset
 
 from ..export_helpers import (
     extract_data_lines,
@@ -37,16 +45,17 @@ from ..io_contracts import (
     bind_X,
     bind_y,
     build_dataset_like,
-    coerce_dataset,
+    coerce_to_sherpa,
     resolve_legacy_input,
     to_numpy_1d,
     to_numpy_2d,
 )
-from ..meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
+from ..meta_helpers import add_processing_step, copy_processing_history
 from ..node_base import (
     Node,
     NodeMetadata,
     NodeParameter,
+    NodePolicy,
     NodeResult,
     PortMetadata,
     _format_value,
@@ -158,9 +167,9 @@ class BaselinePenalizedLSNode(Node):
         lines += _wrap_result_lines(self.node_id, "_corrected", inp, indent, use_scp)
         return lines
 
-    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
+    async def execute(self, input_data: Any) -> SherpaDataset:
         """Execute penalized LS baseline correction."""
-        input_ds = coerce_dataset(input_data, input_name="input_data")
+        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
         method = self.parameters.get("method", "als")
         lam = self.parameters.get("lam", 1e5)
         p = self.parameters.get("p", 0.001)
@@ -183,6 +192,7 @@ class BaselinePenalizedLSNode(Node):
             "baseline.penalized_ls",
             {"method": method, "lam": lam, "p": p, "max_iter": max_iter, "tol": tol},
             node_id=self.node_id,
+            state_effects=[EFFECT_BASELINE_CORRECTED],
         )
 
         return result
@@ -219,12 +229,13 @@ class BaselineRubberbandNode(Node):
         requires_scp=True,
     )
 
-    async def execute(self, input_data) -> AnalysisDataset:
+    async def execute(self, input_data) -> SherpaDataset:
         """Execute rubberband baseline correction."""
+        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
         ranges_str = self.parameters.get("ranges", "").strip()
 
         # Convert to NDDataset for SCP .basc() method
-        ndd = to_nddataset(input_data) if isinstance(input_data, AnalysisDataset) else input_data.copy()
+        ndd = to_nddataset(input_ds)
 
         kwargs: Dict[str, Any] = {"method": "rubberband"}
         if ranges_str:
@@ -239,13 +250,14 @@ class BaselineRubberbandNode(Node):
 
         ndd.basc(**kwargs)
 
-        # Convert back to AnalysisDataset
+        # Convert back to SherpaDataset
         result = from_nddataset(ndd)
-        copy_processing_history(input_data, result)
+        copy_processing_history(input_ds, result)
         add_processing_step(
             result,
             "baseline.rubberband",
             {"method": "rubberband", "ranges": ranges_str or None},
+            state_effects=[EFFECT_BASELINE_CORRECTED],
             node_id=self.node_id,
         )
 
@@ -321,25 +333,25 @@ class SmoothSavitzkyGolayNode(Node):
             f"{indent}    _data = savgol_filter(" f"_data, window_length={size}, polyorder={order})",
         ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
 
-    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
+    async def execute(self, input_data: Any) -> Any:
         """Execute Savitzky-Golay smoothing."""
         size = self.parameters.get("size", 11)
         order = self.parameters.get("order", 2)
 
-        result = input_data.copy()
-        if hasattr(result, "smooth"):
-            result.smooth(size=size, order=order)
-        else:
-            from scipy.signal import savgol_filter
+        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
+        from scipy.signal import savgol_filter
 
-            raw = np.asarray(result.data, dtype=np.float64)
-            smoothed = (
-                np.apply_along_axis(savgol_filter, -1, raw, window_length=int(size), polyorder=int(order))
-                if raw.ndim >= 2
-                else savgol_filter(raw, window_length=int(size), polyorder=int(order))
-            )
-            result.X = smoothed
-        add_processing_step(result, "smooth.savitzky_golay", {"size": size, "order": order}, node_id=self.node_id)
+        raw = np.asarray(input_ds.data, dtype=np.float64)
+        smoothed = (
+            np.apply_along_axis(savgol_filter, -1, raw, window_length=int(size), polyorder=int(order))
+            if raw.ndim >= 2
+            else savgol_filter(raw, window_length=int(size), polyorder=int(order))
+        )
+        result = build_dataset_like(smoothed, input_ds)
+        add_processing_step(
+            result, "smooth.savitzky_golay", {"size": size, "order": order},
+            node_id=self.node_id, state_effects=[EFFECT_SMOOTHED],
+        )
 
         return result
 
@@ -384,6 +396,11 @@ class NormalizeSNVNode(Node):
             "mean_spectrum_shift",
             "max_absolute_change",
         ],
+        policy=NodePolicy(
+            safe_for_auto_apply=True,
+            requires_human_review=False,
+            data_egress_risk="none",
+        ),
     )
 
     python_extra_imports = ["import numpy as np"]
@@ -405,9 +422,9 @@ class NormalizeSNVNode(Node):
             f"{indent}    _data = (_data - _mean) / _std",
         ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
 
-    async def execute(self, input_data: AnalysisDataset) -> NodeResult:
+    async def execute(self, input_data: Any) -> NodeResult:
         """Execute SNV normalization."""
-        input_ds = coerce_dataset(input_data, input_name="input_data")
+        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
         data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
         before = data.copy()
 
@@ -421,7 +438,10 @@ class NormalizeSNVNode(Node):
             input_ds,
             units="dimensionless",
         )
-        add_processing_step(result, "normalize.snv", {}, node_id=self.node_id)
+        add_processing_step(
+            result, "normalize.snv", {}, node_id=self.node_id,
+            state_effects=[EFFECT_NORMALIZED, EFFECT_SCATTER_CORRECTED],
+        )
 
         eps = 1e-12
         snr_before = float(np.mean(np.abs(before)) / (np.std(before) + eps))
@@ -500,9 +520,9 @@ class NormalizeScaleNode(Node):
         lines += _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
         return lines
 
-    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
+    async def execute(self, input_data: Any) -> SherpaDataset:
         """Execute scale normalization."""
-        input_ds = coerce_dataset(input_data, input_name="input_data")
+        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
         method = self.parameters.get("method", "max")
         data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
 
@@ -522,7 +542,10 @@ class NormalizeScaleNode(Node):
             data = (data - min_vals) / range_vals
 
         result = build_dataset_like(data, input_ds, units="normalized")
-        add_processing_step(result, "normalize.scale", {"method": method}, node_id=self.node_id)
+        add_processing_step(
+            result, "normalize.scale", {"method": method}, node_id=self.node_id,
+            state_effects=[EFFECT_SCALED],
+        )
 
         return result
 
@@ -558,19 +581,23 @@ class NormalizeMSCNode(Node):
         requires_scp=True,
     )
 
-    async def execute(self, input_data) -> AnalysisDataset:
+    async def execute(self, input_data) -> SherpaDataset:
         """Execute MSC normalization."""
+        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
         reference = self.parameters.get("reference", "mean")
 
         # Convert to NDDataset for SCP .msc() method
-        ndd = to_nddataset(input_data) if isinstance(input_data, AnalysisDataset) else input_data.copy()
+        ndd = to_nddataset(input_ds)
         ndd.msc(reference=reference)
         ndd.units = "dimensionless"
 
-        # Convert back to AnalysisDataset
+        # Convert back to SherpaDataset
         result = from_nddataset(ndd)
-        copy_processing_history(input_data, result)
-        add_processing_step(result, "normalize.msc", {"reference": reference}, node_id=self.node_id)
+        copy_processing_history(input_ds, result)
+        add_processing_step(
+            result, "normalize.msc", {"reference": reference}, node_id=self.node_id,
+            state_effects=[EFFECT_SCATTER_CORRECTED],
+        )
 
         return result
 
@@ -643,30 +670,26 @@ class DerivativeFirstNode(Node):
             f"{indent}    _data = savgol_filter(" f"_data, window_length={size}, polyorder={order}, deriv=1)",
         ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
 
-    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
+    async def execute(self, input_data: Any) -> Any:
         """Execute first derivative calculation."""
         size = self.parameters.get("size", 11)
         order = self.parameters.get("order", 2)
 
-        result = input_data.copy()
-        if hasattr(result, "savgol"):
-            result.savgol(size=size, order=order, deriv=1)
-        else:
-            from scipy.signal import savgol_filter
+        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
+        from scipy.signal import savgol_filter
 
-            raw = np.asarray(result.data, dtype=np.float64)
-            derived = (
-                np.apply_along_axis(savgol_filter, -1, raw, window_length=int(size), polyorder=int(order), deriv=1)
-                if raw.ndim >= 2
-                else savgol_filter(raw, window_length=int(size), polyorder=int(order), deriv=1)
-            )
-            result.X = derived
+        raw = np.asarray(input_ds.data, dtype=np.float64)
+        derived = (
+            np.apply_along_axis(savgol_filter, -1, raw, window_length=int(size), polyorder=int(order), deriv=1)
+            if raw.ndim >= 2
+            else savgol_filter(raw, window_length=int(size), polyorder=int(order), deriv=1)
+        )
+        result = build_dataset_like(derived, input_ds)
 
         # Update units — only when meaningful units exist on both axes
         try:
-            original_units = str(input_data.units) if hasattr(input_data, "units") and input_data.units else None
-            x_coord = safe_get_coord(input_data, "x")
-            x_units = str(x_coord.units) if x_coord is not None and x_coord and hasattr(x_coord, "units") else None
+            original_units = str(input_ds.units) if getattr(input_ds, "units", None) else None
+            x_units = input_ds.spectral_axis.units if input_ds.spectral_axis is not None else None
 
             if original_units and x_units and original_units != "dimensionless":
                 result.units = f"d({original_units})/d({x_units})"
@@ -675,7 +698,10 @@ class DerivativeFirstNode(Node):
         except Exception:
             pass  # leave units unchanged if assignment fails
 
-        add_processing_step(result, "derivative.first", {"size": size, "order": order}, node_id=self.node_id)
+        add_processing_step(
+            result, "derivative.first", {"size": size, "order": order},
+            node_id=self.node_id, state_effects=[EFFECT_DERIVATIVE],
+        )
 
         return result
 
@@ -748,30 +774,26 @@ class DerivativeSecondNode(Node):
             f"{indent}    _data = savgol_filter(" f"_data, window_length={size}, polyorder={order}, deriv=2)",
         ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
 
-    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
+    async def execute(self, input_data: Any) -> Any:
         """Execute second derivative calculation."""
         size = self.parameters.get("size", 11)
         order = self.parameters.get("order", 2)
 
-        result = input_data.copy()
-        if hasattr(result, "savgol"):
-            result.savgol(size=size, order=order, deriv=2)
-        else:
-            from scipy.signal import savgol_filter
+        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
+        from scipy.signal import savgol_filter
 
-            raw = np.asarray(result.data, dtype=np.float64)
-            derived = (
-                np.apply_along_axis(savgol_filter, -1, raw, window_length=int(size), polyorder=int(order), deriv=2)
-                if raw.ndim >= 2
-                else savgol_filter(raw, window_length=int(size), polyorder=int(order), deriv=2)
-            )
-            result.X = derived
+        raw = np.asarray(input_ds.data, dtype=np.float64)
+        derived = (
+            np.apply_along_axis(savgol_filter, -1, raw, window_length=int(size), polyorder=int(order), deriv=2)
+            if raw.ndim >= 2
+            else savgol_filter(raw, window_length=int(size), polyorder=int(order), deriv=2)
+        )
+        result = build_dataset_like(derived, input_ds)
 
         # Update units — only when meaningful units exist on both axes
         try:
-            original_units = str(input_data.units) if hasattr(input_data, "units") and input_data.units else None
-            x_coord = safe_get_coord(input_data, "x")
-            x_units = str(x_coord.units) if x_coord is not None and x_coord and hasattr(x_coord, "units") else None
+            original_units = str(input_ds.units) if getattr(input_ds, "units", None) else None
+            x_units = input_ds.spectral_axis.units if input_ds.spectral_axis is not None else None
 
             if original_units and x_units and original_units != "dimensionless":
                 result.units = f"d²({original_units})/d({x_units})²"
@@ -780,7 +802,10 @@ class DerivativeSecondNode(Node):
         except Exception:
             pass  # leave units unchanged if assignment fails
 
-        add_processing_step(result, "derivative.second", {"size": size, "order": order}, node_id=self.node_id)
+        add_processing_step(
+            result, "derivative.second", {"size": size, "order": order},
+            node_id=self.node_id, state_effects=[EFFECT_DERIVATIVE],
+        )
 
         return result
 
@@ -859,9 +884,9 @@ class CosmicRayRemovalNode(Node):
             f"{indent}        _data[_i] = _remove_cosmic_rays(_data[_i])",
         ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
 
-    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
+    async def execute(self, input_data: Any) -> SherpaDataset:
         """Execute cosmic ray removal."""
-        input_ds = coerce_dataset(input_data, input_name="input_data")
+        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
         window = self.parameters.get("window", 7)
         zscore = self.parameters.get("zscore", 3.0)
 
@@ -877,7 +902,10 @@ class CosmicRayRemovalNode(Node):
                 data[i] = remove_cosmic_rays(data[i], window=window, zscore_threshold=zscore)
 
         result = build_dataset_like(data, input_ds)
-        add_processing_step(result, "preprocess.cosmic_ray", {"window": window, "zscore": zscore}, node_id=self.node_id)
+        add_processing_step(
+            result, "preprocess.cosmic_ray", {"window": window, "zscore": zscore},
+            node_id=self.node_id,
+        )
 
         return result
 
@@ -963,20 +991,20 @@ class ClipRangeNode(Node):
             lines.append(f"{indent}    results['{self.node_id}'] = _Result(_new_data)")
         return lines
 
-    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
+    async def execute(self, input_data: Any) -> Any:
         """Execute wavenumber range clipping."""
+        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
+
         min_wn = self.parameters.get("min_wavenumber")
         max_wn = self.parameters.get("max_wavenumber")
 
-        input_shape = input_data.shape
+        input_shape = input_ds.shape
 
         if min_wn is not None and max_wn is not None and min_wn > max_wn:
             min_wn, max_wn = max_wn, min_wn
 
         # Clip by x_axis values (wavenumber range)
-        result = self._clip_by_index(input_data, min_wn, max_wn)
-
-        copy_processing_history(input_data, result)
+        result = self._clip_by_index(input_ds, min_wn, max_wn)
         add_processing_step(
             result,
             "preprocess.clip_range",
@@ -988,41 +1016,42 @@ class ClipRangeNode(Node):
         return result
 
     @staticmethod
-    def _clip_by_index(ds: AnalysisDataset, min_wn, max_wn) -> AnalysisDataset:
-        """Clip AnalysisDataset columns by x_axis values (wavenumber range)."""
-        x_vals = ds.x_axis.values if ds.x_axis is not None else None
+    def _clip_by_index(ds: Any, min_wn, max_wn) -> Any:
+        """Clip columns by x-axis values (wavenumber range) when available."""
+        # SherpaDataset path (canonical)
+        if hasattr(ds, "spectral_axis"):
+            spectral_axis = ds.spectral_axis
+            x_vals = spectral_axis.values if spectral_axis is not None else None
+
+            if x_vals is None:
+                lo = int(min_wn) if min_wn is not None else 0
+                hi = int(max_wn) if max_wn is not None else ds.shape[1]
+                return ds[:, lo:hi]
+
+            mask = np.ones(len(x_vals), dtype=bool)
+            if min_wn is not None:
+                mask &= x_vals >= min_wn
+            if max_wn is not None:
+                mask &= x_vals <= max_wn
+            return ds[:, mask]
+
+        # Index-based fallback
+        x_vals = None
+        if hasattr(ds, "x") and ds.x is not None:
+            x_vals = ds.x.data
+            
         if x_vals is None:
-            # No axis info — fall back to integer column slicing
             lo = int(min_wn) if min_wn is not None else 0
             hi = int(max_wn) if max_wn is not None else ds.shape[1]
             return ds[:, lo:hi]
 
-        # Build boolean mask: keep columns within [min_wn, max_wn]
         mask = np.ones(len(x_vals), dtype=bool)
         if min_wn is not None:
             mask &= x_vals >= min_wn
         if max_wn is not None:
             mask &= x_vals <= max_wn
 
-        from spectra_sherpa.app.lib.analysis_dataset import AxisInfo
-
-        new_x = AxisInfo(
-            values=x_vals[mask],
-            labels=([l for l, m in zip(ds.x_axis.labels, mask) if m] if ds.x_axis.labels else None),
-            units=ds.x_axis.units,
-            title=ds.x_axis.title,
-        )
-        return AnalysisDataset(
-            X=ds.X[:, mask],
-            x_axis=new_x,
-            y_axis=ds.y_axis.copy() if ds.y_axis else None,
-            target=ds.target,
-            meta={k: v for k, v in ds.meta.items()},
-            provenance=list(ds.provenance),
-            backend=ds.backend,
-            title=ds.title,
-            units=ds.units,
-        )
+        return ds[:, mask]
 
 
 @register_node
@@ -1118,7 +1147,7 @@ class WavenumberAlignNode(Node):
         ]
         return lines
 
-    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
+    async def execute(self, input_data: Any) -> SherpaDataset:
         """Execute wavenumber alignment via interpolation to a uniform grid."""
         from spectra_sherpa.app.lib.preprocessing import build_golden_grid, interpolate_to_grid
 
@@ -1187,9 +1216,9 @@ class ScaleMaxNode(Node):
             f"{indent}    _data = _data * ({_format_value(target)} / _rmax)",
         ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
 
-    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
+    async def execute(self, input_data: Any) -> SherpaDataset:
         """Execute scale to maximum normalization."""
-        input_ds = coerce_dataset(input_data, input_name="input_data")
+        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
         target_max = self.parameters.get("target_max", 1.0)
 
         data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
@@ -1204,7 +1233,10 @@ class ScaleMaxNode(Node):
             data = data * (target_max / row_max)
 
         result = build_dataset_like(data, input_ds, units="normalized")
-        add_processing_step(result, "preprocess.scale_max", {"target_max": target_max}, node_id=self.node_id)
+        add_processing_step(
+            result, "preprocess.scale_max", {"target_max": target_max},
+            node_id=self.node_id, state_effects=[EFFECT_SCALED],
+        )
 
         return result
 
@@ -1420,13 +1452,13 @@ class OSCNode(Node):
             f"{indent}    results['{self.node_id}'].x = {x_expr}.x.copy()",
         ]
 
-    async def execute(self, X=None, y=None, **kwargs) -> AnalysisDataset:
+    async def execute(self, X=None, y=None, **kwargs) -> SherpaDataset:
         """Execute OSC filtering."""
         X_ds = bind_X(
             X,
             kwargs,
             missing_message="Missing required input: X (spectra)",
-            dataset_error_message="X must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="X must be a dataset object",
             allow_array=True,
         )
         y_value = bind_y(
@@ -1516,6 +1548,7 @@ class OSCNode(Node):
                 "variance_removed_percent": total_variance_removed,
             },
             node_id=self.node_id,
+            state_effects=[EFFECT_SCATTER_CORRECTED],
         )
 
         return result
@@ -1657,7 +1690,7 @@ class SGDerivativeNode(Node):
             f"_data, window_length={size}, polyorder={order}, deriv={deriv_order})",
         ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
 
-    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
+    async def execute(self, input_data: Any) -> Any:
         """Execute Savitzky-Golay derivative."""
         size = self.parameters.get("size", 11)
         order = self.parameters.get("order", 2)
@@ -1666,27 +1699,23 @@ class SGDerivativeNode(Node):
         if size % 2 == 0:
             size += 1
 
-        result = input_data.copy()
-        if hasattr(result, "savgol"):
-            result.savgol(size=size, order=order, deriv=deriv_order)
-        else:
-            from scipy.signal import savgol_filter
+        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
+        from scipy.signal import savgol_filter
 
-            raw = np.asarray(result.data, dtype=np.float64)
-            derived = (
-                np.apply_along_axis(
-                    savgol_filter, -1, raw, window_length=int(size), polyorder=int(order), deriv=int(deriv_order)
-                )
-                if raw.ndim >= 2
-                else savgol_filter(raw, window_length=int(size), polyorder=int(order), deriv=int(deriv_order))
+        raw = np.asarray(input_ds.data, dtype=np.float64)
+        derived = (
+            np.apply_along_axis(
+                savgol_filter, -1, raw, window_length=int(size), polyorder=int(order), deriv=int(deriv_order)
             )
-            result.X = derived
+            if raw.ndim >= 2
+            else savgol_filter(raw, window_length=int(size), polyorder=int(order), deriv=int(deriv_order))
+        )
+        result = build_dataset_like(derived, input_ds)
 
         # Update units
         if deriv_order > 0:
-            original_units = str(input_data.units) if hasattr(input_data, "units") and input_data.units else None
-            x_coord = safe_get_coord(input_data, "x")
-            x_units = str(x_coord.units) if x_coord is not None and x_coord and hasattr(x_coord, "units") else None
+            original_units = str(input_ds.units) if getattr(input_ds, "units", None) else None
+            x_units = input_ds.spectral_axis.units if input_ds.spectral_axis is not None else None
 
             if deriv_order == 1:
                 if original_units and x_units and original_units != "dimensionless":
@@ -1708,6 +1737,7 @@ class SGDerivativeNode(Node):
             "preprocess.sg_derivative",
             {"size": size, "order": order, "deriv": deriv_order},
             node_id=self.node_id,
+            state_effects=[EFFECT_DERIVATIVE, EFFECT_SMOOTHED],
         )
 
         return result
@@ -1816,14 +1846,14 @@ class EMSCNode(Node):
         lines += _wrap_result_lines(self.node_id, "_corrected", inp, indent, use_scp)
         return lines
 
-    async def execute(self, input_data=None, constituents=None, **kwargs) -> AnalysisDataset:
+    async def execute(self, input_data=None, constituents=None, **kwargs) -> SherpaDataset:
         """Execute EMSC correction with optional constituent spectra."""
         input_data = resolve_legacy_input(input_data, kwargs, "default")
         input_ds = bind_X(
             input_data,
             kwargs,
             missing_message="Missing required input: input_data (spectra)",
-            dataset_error_message="input_data must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="input_data must be a dataset object",
             allow_array=True,
         )
         constituents = resolve_legacy_input(constituents, kwargs, "input_1")
@@ -1853,9 +1883,9 @@ class EMSCNode(Node):
 
         n_constituents = 0
         if constituents is not None:
-            if isinstance(constituents, AnalysisDataset):
+            if isinstance(constituents, SherpaDataset):
                 const_data = np.asarray(constituents.data, dtype=np.float64)
-            elif isinstance(constituents, NDDataset):
+            elif HAS_SCP and isinstance(constituents, NDDataset):
                 const_data = np.asarray(constituents.data, dtype=np.float64)
             else:
                 const_data = np.asarray(constituents, dtype=np.float64)
@@ -1894,6 +1924,7 @@ class EMSCNode(Node):
             "preprocess.emsc",
             {"reference": reference_type, "poly_order": poly_order, "n_constituents": n_constituents},
             node_id=self.node_id,
+            state_effects=[EFFECT_SCATTER_CORRECTED],
         )
 
         return result
@@ -1972,9 +2003,9 @@ class NorrisWilliamsDerivativeNode(Node):
         lines += _wrap_result_lines(self.node_id, "_derived", inp, indent, use_scp)
         return lines
 
-    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
+    async def execute(self, input_data: Any) -> SherpaDataset:
         """Execute Norris-Williams gap-segment derivative."""
-        input_ds = coerce_dataset(input_data, input_name="input_data")
+        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
         gap = self.parameters.get("gap", 5)
         segment = self.parameters.get("segment", 5)
         deriv_order = int(self.parameters.get("deriv", "1"))
@@ -1983,12 +2014,12 @@ class NorrisWilliamsDerivativeNode(Node):
         derived = norris_williams(data, gap=gap, segment=segment, deriv=deriv_order)
 
         result = build_dataset_like(derived, input_ds)
-        x_coord = safe_get_coord(input_ds, "x")
+        spectral = input_ds.spectral_axis
 
         # Update units for derivative
         try:
             original_units = str(input_ds.units) if hasattr(input_ds, "units") and input_ds.units else None
-            x_units = str(x_coord.units) if x_coord is not None and hasattr(x_coord, "units") else None
+            x_units = spectral.units if spectral is not None else None
             if deriv_order == 1:
                 if original_units and x_units and original_units != "dimensionless":
                     result.units = f"d({original_units})/d({x_units})"
@@ -2007,6 +2038,7 @@ class NorrisWilliamsDerivativeNode(Node):
             "preprocess.norris_williams",
             {"gap": gap, "segment": segment, "deriv": deriv_order},
             node_id=self.node_id,
+            state_effects=[EFFECT_DERIVATIVE, EFFECT_SMOOTHED],
         )
 
         return result
@@ -2072,9 +2104,9 @@ class SmoothWhittakerNode(Node):
         lines += _wrap_result_lines(self.node_id, "_smoothed", inp, indent, use_scp)
         return lines
 
-    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
+    async def execute(self, input_data: Any) -> SherpaDataset:
         """Execute Whittaker smoothing."""
-        input_ds = coerce_dataset(input_data, input_name="input_data")
+        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
         lam = self.parameters.get("lam", 1e2)
         d = int(self.parameters.get("d", "2"))
 
@@ -2087,6 +2119,7 @@ class SmoothWhittakerNode(Node):
             "smooth.whittaker",
             {"lam": lam, "d": d},
             node_id=self.node_id,
+            state_effects=[EFFECT_SMOOTHED],
         )
 
         return result
@@ -2144,9 +2177,9 @@ class SmoothGaussianNode(Node):
         lines += _wrap_result_lines(self.node_id, "_smoothed", inp, indent, use_scp)
         return lines
 
-    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
+    async def execute(self, input_data: Any) -> SherpaDataset:
         """Execute Gaussian smoothing."""
-        input_ds = coerce_dataset(input_data, input_name="input_data")
+        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
         sigma = self.parameters.get("sigma", 2.0)
 
         data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
@@ -2158,6 +2191,7 @@ class SmoothGaussianNode(Node):
             "smooth.gaussian",
             {"sigma": sigma},
             node_id=self.node_id,
+            state_effects=[EFFECT_SMOOTHED],
         )
 
         return result

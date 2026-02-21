@@ -41,12 +41,41 @@ _configure_writable_runtime_dirs()
 # "ValueError: I/O operation on closed file" when printing to stdout/stderr.
 # We disable its console logging here before it gets imported by the app.
 import logging
+import subprocess
+from unittest.mock import patch
 
 # Force-configure the logger before import to prevent handler attachment
 logging.getLogger("spectrochempy").handlers = []
 logging.getLogger("spectrochempy").propagate = False
 # Also silence the root logger for good measure during tests
 logging.getLogger().setLevel(logging.CRITICAL)
+
+# Prevent matplotlib.font_manager (loaded by spectrochempy) from hanging on macOS
+# when it calls `system_profiler -xml SPFontsDataType` within pytest's captured environment.
+_original_check_output = subprocess.check_output
+
+def _mock_check_output(*args, **kwargs):
+    if args and isinstance(args[0], list) and args[0][:2] == ["system_profiler", "-xml"]:
+        # Return valid empty plist XML to short-circuit macOS font discovery
+        # Matplotlib's font_manager extracts: d, = plistlib.loads(...)
+        # So it needs a root array containing one dictionary.
+        return b"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+<dict>
+<key>_name</key><string>Fonts</string>
+<key>_items</key><array></array>
+</dict>
+</array>
+</plist>"""
+    return _original_check_output(*args, **kwargs)
+
+with patch("subprocess.check_output", side_effect=_mock_check_output):
+    from spectra_sherpa.app.api.deps import get_session
+    from spectra_sherpa.app.db.base import Base
+    from spectra_sherpa.app.main import app
+    from spectra_sherpa.app.models.user import User
 
 from spectra_sherpa.app.api.deps import get_session
 from spectra_sherpa.app.db.base import Base

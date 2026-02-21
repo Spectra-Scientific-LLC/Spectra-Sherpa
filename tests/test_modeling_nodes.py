@@ -8,7 +8,7 @@ import pytest
 scp = pytest.importorskip("spectrochempy")
 from spectrochempy import NDDataset
 
-from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, SpectralAxis, SampleAxis
 from spectra_sherpa.app.services.dag import node_registry
 
 
@@ -48,6 +48,30 @@ async def test_pcr_node_regression_fit():
     scores_ds = outputs["default"]
     assert scores_ds.shape == (X_dataset.shape[0], 7)
     assert scores_ds.meta["r2"] > 0.8
+    assert scores_ds.quality.latest is not None
+    assert scores_ds.quality.latest.model_type == "PCR"
+    assert scores_ds.quality.latest.r2 is not None
+
+
+@pytest.mark.asyncio
+async def test_pls_node_attaches_quality_evaluation():
+    X_dataset, y = _make_regression_dataset(n_samples=36, n_features=6, seed=24)
+    node = node_registry.create_node(
+        node_type="model.pls",
+        node_id="pls_test",
+        parameters={"n_components": 3, "scale": True},
+    )
+
+    result = await node.run(X=X_dataset, y=y)
+    outputs = result.outputs
+
+    scores_ds = outputs["default"]
+    assert isinstance(scores_ds, SherpaDataset)
+    assert scores_ds.quality.latest is not None
+    assert scores_ds.quality.latest.model_type == "PLS"
+    assert scores_ds.quality.latest.n_components == 3
+    assert scores_ds.quality.latest.r2 is None or isinstance(scores_ds.quality.latest.r2, float)
+    assert scores_ds.quality.latest.rmse is None or isinstance(scores_ds.quality.latest.rmse, float)
 
 
 @pytest.mark.asyncio
@@ -150,14 +174,14 @@ async def test_dbscan_node_clusters():
 async def test_pca_node_after_snv_accepts_analysis_dataset_units():
     rng = np.random.default_rng(21)
     data = rng.normal(size=(18, 40))
-    dataset = AnalysisDataset(
+    dataset = SherpaDataset(
         X=data,
-        x_axis=AxisInfo(
+        spectral_axis=SpectralAxis(
             values=np.linspace(950.0, 1650.0, 40),
             units="cm^-1",
             title="Wavenumber",
         ),
-        y_axis=AxisInfo(values=np.arange(18), title="Sample"),
+        sample_axis=SampleAxis(values=np.arange(18), title="Sample"),
         units="absorbance",
     )
 
@@ -169,7 +193,7 @@ async def test_pca_node_after_snv_accepts_analysis_dataset_units():
     snv_result = await snv_node.run(default=dataset)
     snv_output = snv_result.outputs["default"]
 
-    assert isinstance(snv_output, AnalysisDataset)
+    assert isinstance(snv_output, SherpaDataset)
     assert snv_output.units == "dimensionless"
 
     pca_node = node_registry.create_node(
@@ -181,5 +205,7 @@ async def test_pca_node_after_snv_accepts_analysis_dataset_units():
     outputs = pca_result.outputs
 
     assert "scores" in outputs
-    assert isinstance(outputs["scores"], AnalysisDataset)
+    assert isinstance(outputs["scores"], SherpaDataset)
     assert outputs["scores"].shape == (18, 3)
+    assert outputs["scores"].quality.latest is not None
+    assert outputs["scores"].quality.latest.model_type == "PCA"

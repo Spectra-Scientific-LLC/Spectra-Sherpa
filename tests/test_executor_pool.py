@@ -64,9 +64,9 @@ class TestRunNodeInWorker:
 
     def test_snv_in_worker(self):
         """A preprocessing node can execute in a fresh worker context."""
-        from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
-        ds = AnalysisDataset(X=np.random.default_rng(42).normal(size=(10, 50)))
+        ds = SherpaDataset(X=np.random.default_rng(42).normal(size=(10, 50)))
         result = _run_node_in_worker(
             node_type="normalize.snv",
             node_id="snv_w",
@@ -110,12 +110,12 @@ class TestShouldOffload:
 
 
 class TestSanitizeForPool:
-    """Test NDDataset -> AnalysisDataset conversion before pool dispatch."""
+    """Test NDDataset -> SherpaDataset conversion before pool dispatch."""
 
     def test_analysis_dataset_passes_through(self):
-        from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
-        ds = AnalysisDataset(X=np.ones((3, 5)))
+        ds = SherpaDataset(X=np.ones((3, 5)))
         result = DAGExecutor._sanitize_for_pool(ds)
         assert result is ds  # same object, not copied
 
@@ -124,18 +124,18 @@ class TestSanitizeForPool:
         assert DAGExecutor._sanitize_for_pool("hello") == "hello"
 
     def test_nddataset_converted(self):
-        """If SCP is installed, NDDataset is converted to AnalysisDataset."""
+        """If SCP is installed, NDDataset is converted to SherpaDataset."""
         from spectra_sherpa.app.lib.scp_compat import HAS_SCP
 
         if not HAS_SCP:
             pytest.skip("SpectroChemPy not installed")
         import spectrochempy as scp
 
-        from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
         nds = scp.NDDataset(np.random.default_rng(0).normal(size=(5, 10)))
         result = DAGExecutor._sanitize_for_pool(nds)
-        assert isinstance(result, AnalysisDataset)
+        assert isinstance(result, SherpaDataset)
         np.testing.assert_array_equal(result.X, np.asarray(nds.data))
 
 

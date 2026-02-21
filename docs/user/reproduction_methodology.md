@@ -24,7 +24,7 @@ We verify that file parsing, metadata extraction, and CSV export match exactly.
 Algorithms like Smoothing and Baseline Correction are verified for numerical precision.
 
 *   **Tool:** Unit tests (`tests/`)
-*   **Check:** Output `AnalysisDataset` data arrays.
+*   **Check:** Output `SherpaDataset` data arrays.
 *   **Tolerance:** Floating point epsilon (`1e-9`).
 
 ### C. Chemometrics (PCA, MCR, PLS)

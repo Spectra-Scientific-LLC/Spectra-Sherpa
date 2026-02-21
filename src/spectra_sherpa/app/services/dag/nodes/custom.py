@@ -19,15 +19,15 @@ from typing import Any, List
 
 import numpy as np
 
-from spectra_sherpa.app.lib.analysis_dataset import AxisInfo
+from spectra_sherpa.app.lib.sherpa_dataset import AxisInfo
 from spectra_sherpa.app.lib.scp_compat import NDDataset
-from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
+from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
 
 from ..io_contracts import (
     bind_X,
     bind_y,
     build_dataset_like,
-    coerce_dataset,
+    coerce_to_sherpa,
     resolve_legacy_input,
     to_numpy_1d,
     to_numpy_2d,
@@ -123,7 +123,7 @@ class LinearCalibrationNode(Node):
             spectrum,
             kwargs,
             missing_message="Missing required input: spectrum",
-            dataset_error_message="spectrum must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="spectrum must be an dataset object",
         )
         concentrations_bound = bind_y(
             concentrations,
@@ -178,7 +178,7 @@ class LinearCalibrationNode(Node):
         absorbance = eval_linear_model(concentrations_array, slope, intercept, s=s_cap)
 
         # Create output dataset (n_wn, n_times) -> (n_times, n_wn)
-        spec_x_coord = safe_get_coord(spectrum_ds, "x")
+        spec_x_coord = spectrum_ds.spectral_axis
         if spec_x_coord is None:
             raise ValueError("Input spectrum must have an x coordinate (wavenumber axis)")
         result = build_dataset_like(
@@ -291,7 +291,7 @@ class SaturationModelNode(Node):
             spectrum,
             kwargs,
             missing_message="Missing required input: spectrum",
-            dataset_error_message="spectrum must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="spectrum must be an dataset object",
         )
         concentrations_bound = bind_y(
             concentrations,
@@ -358,7 +358,7 @@ class SaturationModelNode(Node):
         absorbance[valid] = eval_saturation_model(concentrations_array, s[valid], p[valid], c[valid])
 
         # Create output dataset
-        spec_x_coord = safe_get_coord(spectrum_ds, "x")
+        spec_x_coord = spectrum_ds.spectral_axis
         if spec_x_coord is None:
             raise ValueError("Input spectrum must have an x coordinate (wavenumber axis)")
         result = build_dataset_like(
@@ -447,7 +447,7 @@ class SystemSaturationNode(Node):
             input_data,
             kwargs,
             missing_message="Missing required input: input_data",
-            dataset_error_message="input_data must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="input_data must be an dataset object",
         )
         s_system = self.parameters.get("s_system", 2.0)
         p_system = self.parameters.get("p_system", 1.0)
@@ -608,15 +608,15 @@ class HybridSelectorNode(Node):
 
         linear_result = resolve_legacy_input(linear_result, kwargs, "input_0")
         saturation_result = resolve_legacy_input(saturation_result, kwargs, "input_1")
-        linear_ds = coerce_dataset(
+        linear_ds = coerce_to_sherpa(
             linear_result,
             input_name="linear_result",
-            dataset_error_message=("linear_result must be an NDDataset or AnalysisDataset object"),
+            dataset_error_message=("linear_result must be an dataset object"),
         )
-        saturation_ds = coerce_dataset(
+        saturation_ds = coerce_to_sherpa(
             saturation_result,
             input_name="saturation_result",
-            dataset_error_message=("saturation_result must be an NDDataset or AnalysisDataset object"),
+            dataset_error_message=("saturation_result must be an dataset object"),
         )
         auto_select = self.parameters.get("auto_select", True)
         threshold = self.parameters.get("saturation_threshold", 0.5)
@@ -812,10 +812,10 @@ class GoldenGridAlignNode(Node):
             raise ValueError("At least one input spectrum required")
 
         datasets = [
-            coerce_dataset(
+            coerce_to_sherpa(
                 ds,
                 input_name=f"input_data[{idx}]",
-                dataset_error_message="Each input must be an NDDataset or AnalysisDataset object",
+                dataset_error_message="Each input must be an dataset object",
             )
             for idx, ds in enumerate(input_data)
         ]
@@ -906,7 +906,7 @@ class NoiseInjectionNode(Node):
             input_data,
             kwargs,
             missing_message="Missing required input: input_data",
-            dataset_error_message="input_data must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="input_data must be an dataset object",
         )
         noise_level = self.parameters.get("noise_level", 0.01)
         noise_type = self.parameters.get("noise_type", "relative")

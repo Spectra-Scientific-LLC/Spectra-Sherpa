@@ -12,7 +12,7 @@ This guide demonstrates the exact parity between the native SpectroChemPy librar
 
 **Verification:**
 - **Python Output:** `NDDataset: [20 samples x 5549 wavenumbers]` (SpectroChemPy native)
-- **Bench Output:** Output port shows `AnalysisDataset (20, 5549)` (wire format: `type: "NDDataset"` for backward compatibility)
+- **Bench Output:** Output port shows `SherpaDataset (20, 5549)` (wire format: `type: "SherpaDataset"`)
 
 ---
 

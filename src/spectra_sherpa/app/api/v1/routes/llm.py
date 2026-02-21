@@ -113,7 +113,7 @@ async def generate_data_story(
     _check_llm_rate_limit(current_user)
     service = LLMService(session, user=current_user)
     try:
-        response = await service.write_data_story(payload.dataset_info)
+        response = await service.write_data_story(dataset_id=payload.dataset_id, tier=payload.tier)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return LLMTextResponse(response=response)

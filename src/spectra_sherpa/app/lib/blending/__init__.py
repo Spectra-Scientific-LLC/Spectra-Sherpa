@@ -1,7 +1,7 @@
 """
 Multi-species spectral blending with calibration models.
 
-This module provides AnalysisDataset-native blending operations,
+This module provides SherpaDataset-native blending operations,
 preserving the numerical algorithms from project0/blend.py.
 
 Core algorithms:

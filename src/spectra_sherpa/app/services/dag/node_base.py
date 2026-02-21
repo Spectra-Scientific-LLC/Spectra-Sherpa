@@ -98,6 +98,19 @@ InputPort = PortMetadata
 
 
 @dataclass
+class NodePolicy:
+    """Per-node safety and automation metadata.
+
+    Used by the advisor to decide which operations can be applied
+    automatically vs. requiring human review.
+    """
+
+    safe_for_auto_apply: bool = False
+    requires_human_review: bool = True
+    data_egress_risk: str = "none"  # "none", "metadata", "full_data"
+
+
+@dataclass
 class NodeMetadata:
     """Metadata about a node type."""
 
@@ -118,6 +131,8 @@ class NodeMetadata:
     diagnostics: List[str] = field(default_factory=list)
     # Per-node SCP gate: True = requires SpectroChemPy at runtime
     requires_scp: bool = False
+    # Per-node safety and automation policy
+    policy: Optional[NodePolicy] = None
 
 
 def _format_value(value: Any) -> str:

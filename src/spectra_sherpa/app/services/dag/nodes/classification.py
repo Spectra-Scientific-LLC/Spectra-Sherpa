@@ -12,9 +12,9 @@ from typing import Any
 
 import numpy as np
 
-from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo
+from spectra_sherpa.app.lib.sherpa_dataset import AxisInfo, SherpaDataset, SpectralAxis, SampleAxis
 from spectra_sherpa.app.lib.scp_compat import scp
-from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
+from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
 
 from ..io_contracts import (
     bind_X,
@@ -255,7 +255,7 @@ class PLSDANode(Node):
         requires_scp=True,
     )
 
-    async def execute(self, X: AnalysisDataset = None, y: Any = None, **kwargs) -> Any:
+    async def execute(self, X: Any = None, y: Any = None, **kwargs) -> Any:
         """
         Execute PLS-DA classification.
 
@@ -278,7 +278,7 @@ class PLSDANode(Node):
             X,
             kwargs,
             missing_message="Missing required input: X (spectra)",
-            dataset_error_message="X must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="X must be an dataset object",
             allow_array=False,
         )
         y = bind_y(
@@ -334,7 +334,7 @@ class PLSDANode(Node):
             Y_dummy[y_array == cls, i] = 1
 
         # Prepare data as NDDatasets for SpectroChemPy.
-        # X may be AnalysisDataset (sklearn path) so wrap X_data explicitly.
+        # X may be SherpaDataset (sklearn path) so wrap X_data explicitly.
         X_ndd = scp.NDDataset(X_data)
         Y_dummy_dataset = scp.NDDataset(Y_dummy)
 
@@ -410,8 +410,8 @@ class PLSDANode(Node):
             vip_error = f"{type(e).__name__}: {e}"
 
         # Extract wavenumbers and feature_names from input coordinates for plot generation
-        _x_coord = safe_get_coord(X_ds, "x")
-        _y_coord = safe_get_coord(X_ds, "y")
+        _x_coord = X_ds.spectral_axis
+        _y_coord = X_ds.sample_axis
         wavenumbers = None
         feature_names = None
 
@@ -1138,7 +1138,7 @@ class KNNNode(Node):
         ],
     )
 
-    async def execute(self, X: AnalysisDataset = None, y: Any = None, **kwargs) -> Any:
+    async def execute(self, X: Any = None, y: Any = None, **kwargs) -> Any:
         """
         Execute KNN classification.
 
@@ -1157,7 +1157,7 @@ class KNNNode(Node):
             X,
             kwargs,
             missing_message="Missing required input: X (features)",
-            dataset_error_message="X must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="X must be an dataset object",
             allow_array=False,
         )
         y = bind_y(
@@ -1226,8 +1226,8 @@ class KNNNode(Node):
         label_categories = [str(c) for c in classes]
 
         # Get input coordinates for NDDataset creation
-        _x_coord = safe_get_coord(X, "x")
-        _y_coord = safe_get_coord(X, "y")
+        _x_coord = X.spectral_axis
+        _y_coord = X.sample_axis
 
         # For visualization: if feature space is high-dimensional (>10 features),
         # compute PCA internally for meaningful 2D/3D visualization
@@ -1595,7 +1595,7 @@ class SIMCANode(Node):
         requires_scp=True,
     )
 
-    async def execute(self, X: AnalysisDataset = None, y: Any = None, **kwargs) -> Any:
+    async def execute(self, X: Any = None, y: Any = None, **kwargs) -> Any:
         """
         Execute SIMCA classification.
 
@@ -1612,7 +1612,7 @@ class SIMCANode(Node):
             X,
             kwargs,
             missing_message="Missing required input: X (features)",
-            dataset_error_message="X must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="X must be an dataset object",
             allow_array=False,
         )
         y = bind_y(
@@ -1800,7 +1800,7 @@ class SIMCANode(Node):
         label_categories = [str(c) for c in classes]
 
         # Get input coordinates for NDDataset creation
-        _y_coord = safe_get_coord(X_ds, "y")
+        _y_coord = X_ds.sample_axis
 
         # Generate plots
         plots = {}
@@ -1945,7 +1945,7 @@ class PLSDAPredictNode(Node):
             X_new,
             kwargs,
             missing_message="Missing required input: X_new (new spectra)",
-            dataset_error_message="X_new must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="X_new must be an dataset object",
             allow_array=True,
         )
         X_array = to_numpy_2d(X_new_ds, name="X_new", dtype=np.float64)
@@ -2069,7 +2069,7 @@ class KNNPredictNode(Node):
             X_new,
             kwargs,
             missing_message="Missing required input: X_new (new features)",
-            dataset_error_message="X_new must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="X_new must be an dataset object",
             allow_array=True,
         )
         X_array = to_numpy_2d(X_new_ds, name="X_new", dtype=np.float64)
@@ -2177,7 +2177,7 @@ class SIMCAPredictNode(Node):
             X_new,
             kwargs,
             missing_message="Missing required input: X_new (new spectra)",
-            dataset_error_message="X_new must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="X_new must be an dataset object",
             allow_array=True,
         )
         X_array = to_numpy_2d(X_new_ds, name="X_new", dtype=np.float64)

@@ -316,14 +316,32 @@ class LLMService:
 
             return conversation_id, openai_generator()
 
-    async def write_data_story(self, dataset_info: dict[str, Any]) -> str:
-        """Generate a narrative 'data story' for a reference dataset."""
+    async def write_data_story(
+        self,
+        dataset_id: str,
+        tier: int = 2,
+    ) -> str:
+        """Generate a narrative 'data story' for a dataset handle."""
+        from spectra_sherpa.app.lib.dataset_summarizer import DatasetSummarizer
+        from spectra_sherpa.app.services.dataset_registry import dataset_registry
+
+        user_id = self.user.id if self.user is not None else None
+        try:
+            dataset = dataset_registry.get(dataset_id, user_id=user_id)
+        except KeyError as exc:
+            raise ValueError(f"Unknown dataset_id: {dataset_id}") from exc
+        except PermissionError as exc:
+            raise ValueError("Dataset is not accessible for this user") from exc
+
+        tier = max(0, min(3, int(tier)))
+        context = DatasetSummarizer().summarize(dataset, tier=tier, max_tokens=1500)
+
         prompt = (
             "Write a concise, informative narrative about the following spectroscopy dataset. "
             "Include what the data measures, its scientific context, typical applications, "
             "and any notable characteristics (sample count, spectral range, reference properties). "
             "Write 2-3 paragraphs in a professional scientific tone.\n\n"
-            "Dataset info:\n" + json.dumps(dataset_info, default=str)[:6000]
+            "Dataset info:\n" + context
         )
         return await self._single_turn(prompt)
 
@@ -529,6 +547,20 @@ class LLMService:
                 basic["experiments"] = summaries
         return basic
 
+    # Maximum characters for serialized metadata injected into LLM context.
+    # Prevents token blowups from large workflow states.
+    _MAX_METADATA_CHARS = 8000
+
+    def _summarize_metadata(self, metadata: dict[str, Any]) -> str:
+        """Format metadata for LLM context, tier-aware and size-bounded."""
+        if self._has_full_context():
+            raw = json.dumps(metadata, default=str)
+        else:
+            raw = json.dumps(self._extract_basic_context(metadata), default=str)
+        if len(raw) > self._MAX_METADATA_CHARS:
+            return raw[: self._MAX_METADATA_CHARS] + "...(truncated)"
+        return raw
+
     def _build_messages(
         self, history: list[dict[str, str]], metadata: Optional[dict[str, Any]], config: dict[str, Any]
     ) -> list[dict[str, str]]:
@@ -542,11 +574,6 @@ class LLMService:
 
         # Add experiment metadata context
         if metadata:
-            # Apply context tiering: full subscribers get everything,
-            # free-tier users get only technique + node types.
-            if not self._has_full_context():
-                metadata = self._extract_basic_context(metadata)
-
             # Extract spectrochempy info for better context
             context_parts = []
             if "experiments" in metadata:
@@ -565,8 +592,8 @@ class LLMService:
                                 f"{pdf_note}"
                             )
 
-            # Add metadata as JSON context
-            context_parts.append(json.dumps(metadata, default=str))
+            # Apply context tiering and add metadata as JSON context
+            context_parts.append(self._summarize_metadata(metadata))
             messages.append({"role": "system", "content": "Context:\n" + "\n\n".join(context_parts)})
 
         messages.extend(history[-MAX_HISTORY_MESSAGES:])

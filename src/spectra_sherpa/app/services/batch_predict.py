@@ -115,13 +115,13 @@ def discover_files(
 
 def load_single_file(file_path: Path) -> Any:
     """
-    Load a single spectral file into an AnalysisDataset.
+    Load a single spectral file into a SherpaDataset.
 
     Uses ``get_reader_for_extension()`` to pick the correct SpectroChemPy reader,
     then ensures the result is 2-D.
 
     Returns:
-        AnalysisDataset with shape (n_samples, n_features).
+        SherpaDataset with shape (n_samples, n_features).
 
     Raises:
         ValueError: If the extension is unsupported or reading fails.

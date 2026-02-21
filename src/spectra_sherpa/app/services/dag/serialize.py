@@ -1,8 +1,7 @@
 """
-Single source of truth for NDDataset -> API JSON serialization.
+Single source of truth for dataset -> API JSON serialization.
 
-This replaces SpectralResult.to_api_json() with a standalone function.
-Called ONLY at API boundary (in routes/workflows.py).
+Called ONLY at the API boundary (in routes/workflows.py).
 
 Usage:
     from spectra_sherpa.app.services.dag.serialize import serialize_for_api
@@ -20,7 +19,7 @@ from typing import Any, Dict
 
 import numpy as np
 
-from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset
 
 HAS_NDDATASET = HAS_SCP
@@ -218,9 +217,113 @@ def _meta_items(meta: Any) -> list[tuple[Any, Any]]:
         return []
 
 
+def _serialize_sherpa_dataset(
+    dataset: SherpaDataset,
+    sanitize_paths: bool = False,
+    owner_user_id: int | None = None,
+) -> Dict[str, Any]:
+    """Serialize SherpaDataset to API-compatible JSON format."""
+    from spectra_sherpa.app.services.dataset_registry import dataset_registry
+
+    dataset_registry.register(dataset, owner_user_id=owner_user_id)
+    result = dataset.to_dict()
+    result["manifest"] = dataset.manifest.model_dump()
+
+    # Remap axis keys for frontend compatibility
+    # SherpaDataset.to_dict() uses spectral_axis/sample_axis but the
+    # frontend expects x_axis/y_axis (legacy NDDataset convention).
+    if "spectral_axis" in result:
+        result["x_axis"] = result.pop("spectral_axis")
+    if "sample_axis" in result:
+        result["y_axis"] = result.pop("sample_axis")
+
+    # Enrich with spectral detection
+    try:
+        technique = detect_spectral_technique(dataset)
+        data_quantity = detect_data_quantity(dataset)
+    except Exception:
+        technique = None
+        data_quantity = None
+    is_spectra = technique is not None
+
+    metadata = result.setdefault("metadata", {})
+    metadata["data_type"] = "spectra" if is_spectra else "generic"
+    metadata["is_spectra"] = is_spectra
+    metadata["spectral_technique"] = technique
+    metadata["data_quantity"] = data_quantity
+
+    # Convenience copies of axis info into metadata (frontend compat)
+    if result.get("x_axis"):
+        x_ax = result["x_axis"]
+        x_units = x_ax.get("units") or ""
+        if x_units == "dimensionless":
+            x_ax["units"] = ""
+            x_units = ""
+        metadata["wavenumbers"] = x_ax.get("data", [])
+        metadata["x_title"] = x_ax.get("title") or "Feature"
+        metadata["x_units"] = x_units
+
+    if result.get("y_axis"):
+        y_ax = result["y_axis"]
+        y_units = y_ax.get("units") or ""
+        if y_units == "dimensionless":
+            y_ax["units"] = ""
+            y_units = ""
+        metadata["y_title"] = y_ax.get("title") or "Sample"
+        metadata["y_units"] = y_units
+        if y_ax.get("labels"):
+            formatted = [_format_sample_label(v) for v in y_ax["labels"]]
+            metadata["sample_labels"] = formatted
+            metadata["labels"] = formatted
+
+    # Data units
+    if dataset.units and str(dataset.units) != "dimensionless":
+        metadata["value_units"] = str(dataset.units)
+    semantic_units = dataset.get_extra("scp.value_units_label")
+    if semantic_units:
+        metadata["value_units_label"] = str(semantic_units)
+        metadata.setdefault("value_units", str(semantic_units))
+
+    # Rich provenance from SherpaDataset.provenance
+    history = dataset.provenance.to_list()
+    if history:
+        metadata["processing_history"] = history
+        metadata["provenance"] = {
+            "operations": [step.get("op_id", "unknown") for step in history],
+            "last_modified": history[-1].get("timestamp") if history else None,
+        }
+
+    # Quality metrics summary
+    if dataset.quality.evaluations:
+        latest = dataset.quality.latest
+        metadata["quality_summary"] = {
+            "n_evaluations": len(dataset.quality.evaluations),
+            "latest_model_type": latest.model_type if latest else None,
+            "latest_r2": latest.r2 if latest else None,
+            "latest_rmse": latest.rmse if latest else None,
+        }
+
+    # Path sanitization
+    if sanitize_paths:
+        PATH_FIELDS = {"original_file_path", "original_source", "background_file", "original_filename"}
+        for key in PATH_FIELDS:
+            if key in metadata and isinstance(metadata[key], str):
+                metadata[key] = os.path.basename(metadata[key])
+
+    # Title fallback
+    if not result.get("title"):
+        result["title"] = "Spectra" if is_spectra else "Data"
+
+    # Final JSON-safety pass
+    result["metadata"] = _json_safe(metadata)
+
+    return result
+
+
 def serialize_for_api(
     dataset,
     sanitize_paths: bool = False,
+    owner_user_id: int | None = None,
 ) -> Dict[str, Any]:
     """
     Serialize dataset to API-compatible JSON format.
@@ -228,11 +331,8 @@ def serialize_for_api(
     This is the SINGLE SOURCE OF TRUTH for serialization.
     Called only at API boundary, not inside nodes.
 
-    All DAG nodes now emit AnalysisDataset. Any stray NDDataset is converted
-    via from_nddataset() as a safety net (and logged as a warning).
-
     Args:
-        dataset: AnalysisDataset (or NDDataset as safety fallback) to serialize
+        dataset: SherpaDataset (primary) or NDDataset (legacy)
         sanitize_paths: If True, strip file paths to basenames
 
     Returns:
@@ -242,110 +342,23 @@ def serialize_for_api(
 
     _logger = logging.getLogger(__name__)
 
-    # Safety net: convert any stray NDDataset to AnalysisDataset
+    # Safety net: convert stray NDDataset
     if HAS_SCP and isinstance(dataset, NDDataset):
         _logger.warning(
-            "NDDataset reached serialize_for_api — converting to AnalysisDataset. "
-            "Nodes should emit AnalysisDataset directly."
+            "NDDataset reached serialize_for_api — converting to SherpaDataset."
         )
-        from spectra_sherpa.app.lib.scp_compat import from_nddataset
+        from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
 
         dataset = from_nddataset(dataset)
 
-    if not isinstance(dataset, AnalysisDataset):
-        # Non-dataset fallback (shouldn't happen in normal flow)
-        return {
-            "type": "NDDataset",
-            "shape": [],
-            "data": [],
-            "metadata": {"error": f"Unexpected type: {type(dataset).__name__}"},
-        }
+    # Primary path: SherpaDataset
+    if isinstance(dataset, SherpaDataset):
+        return _serialize_sherpa_dataset(dataset, sanitize_paths, owner_user_id=owner_user_id)
 
-    # Base serialization from AnalysisDataset
-    result = dataset.to_dict()
-
-    # --- Enrich with spectral detection ---
-    try:
-        technique = detect_spectral_technique(dataset)
-        data_quantity = detect_data_quantity(dataset)
-    except Exception:
-        technique = None
-        data_quantity = None
-    is_spectra = technique is not None
-    result["metadata"]["data_type"] = "spectra" if is_spectra else "generic"
-    result["metadata"]["is_spectra"] = is_spectra
-    result["metadata"]["spectral_technique"] = technique
-    result["metadata"]["data_quantity"] = data_quantity
-
-    # --- Convenience copies of axis info into metadata ---
-    if result.get("x_axis"):
-        x_ax = result["x_axis"]
-        x_units = x_ax.get("units") or ""
-        if x_units == "dimensionless":
-            x_ax["units"] = ""
-            x_units = ""
-        result["metadata"]["wavenumbers"] = x_ax.get("data", [])
-        result["metadata"]["x_title"] = x_ax.get("title") or "Feature"
-        result["metadata"]["x_units"] = x_units
-
-    if result.get("y_axis"):
-        y_ax = result["y_axis"]
-        y_units = y_ax.get("units") or ""
-        if y_units == "dimensionless":
-            y_ax["units"] = ""
-            y_units = ""
-        result["metadata"]["y_title"] = y_ax.get("title") or "Sample"
-        result["metadata"]["y_units"] = y_units
-        # Format labels for frontend (DataTableModal expects sample_labels)
-        if y_ax.get("labels"):
-            formatted = [_format_sample_label(v) for v in y_ax["labels"]]
-            result["metadata"]["sample_labels"] = formatted
-            result["metadata"]["labels"] = formatted
-
-    # --- Data units ---
-    if dataset.units and str(dataset.units) != "dimensionless":
-        result["metadata"]["value_units"] = str(dataset.units)
-    semantic_units = dataset.meta.get("value_units_label")
-    if semantic_units:
-        result["metadata"]["value_units_label"] = str(semantic_units)
-        result["metadata"].setdefault("value_units", str(semantic_units))
-
-    # --- Rich provenance ---
-    history = result["metadata"].get("processing_history", [])
-    rich_provenance = dataset.meta.get("provenance")
-    if isinstance(rich_provenance, dict):
-        rich_provenance = dict(rich_provenance)
-
-    if history:
-        if rich_provenance is None:
-            rich_provenance = {
-                "operations": [step.get("operation", "unknown") for step in history],
-                "last_modified": history[-1].get("timestamp") if history else None,
-            }
-        elif isinstance(rich_provenance, dict):
-            rich_provenance.setdefault(
-                "operations",
-                [step.get("operation", "unknown") for step in history],
-            )
-            rich_provenance.setdefault(
-                "last_modified",
-                history[-1].get("timestamp") if history else None,
-            )
-    if rich_provenance is not None:
-        result["metadata"]["provenance"] = rich_provenance
-
-    # --- Path sanitization ---
-    if sanitize_paths:
-        PATH_FIELDS = {"original_file_path", "original_source", "background_file", "original_filename"}
-        for key in PATH_FIELDS:
-            if key in result["metadata"] and isinstance(result["metadata"][key], str):
-                result["metadata"][key] = os.path.basename(result["metadata"][key])
-
-    # --- Title fallback ---
-    if not result.get("title"):
-        result["title"] = "Spectra" if is_spectra else "Data"
-
-    # Final JSON-safety pass
-    result["metadata"] = _json_safe(result["metadata"])
-
-    return result
+    # Non-dataset fallback (shouldn't happen in normal flow)
+    return {
+        "type": "NDDataset",
+        "shape": [],
+        "data": [],
+        "metadata": {"error": f"Unexpected type: {type(dataset).__name__}"},
+    }

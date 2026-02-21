@@ -140,111 +140,24 @@ __all__ = [
     "get_scp_datadirs",
     "resolve_scp_path",
     "download_testdata",
-    "from_nddataset",
-    "to_nddataset",
 ]
 
 
 # ---------------------------------------------------------------------------
-# NDDataset ↔ AnalysisDataset adapters
+# NDDataset ↔ SherpaDataset adapters live in adapters/scp_adapter.py
+# Legacy re-exports for backward compatibility.
 # ---------------------------------------------------------------------------
 
 
-def from_nddataset(ds: "NDDataset") -> "AnalysisDataset":  # type: ignore[name-defined]  # noqa: F821
-    """Lossless conversion from SCP NDDataset to AnalysisDataset.
+def from_nddataset(ds: "NDDataset") -> "SherpaDataset":  # type: ignore[name-defined]  # noqa: F821
+    """Convert NDDataset to SherpaDataset.  Delegates to adapters.scp_adapter."""
+    from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset as _from_nddataset
 
-    Safe to call regardless of HAS_SCP — if you have an NDDataset in hand
-    SCP must already be installed.
-    """
-    import numpy as np
-
-    from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo
-
-    x_axis = None
-    try:
-        xc = ds.x
-        if xc is not None:
-            x_axis = AxisInfo(
-                values=np.asarray(xc.data),
-                units=str(xc.units) if hasattr(xc, "units") and xc.units else None,
-                title=str(xc.title) if hasattr(xc, "title") and xc.title else None,
-                labels=(list(xc.labels) if hasattr(xc, "labels") and xc.labels is not None else None),
-            )
-    except (KeyError, AttributeError):
-        pass
-
-    y_axis = None
-    try:
-        yc = ds.y
-        if yc is not None:
-            y_axis = AxisInfo(
-                values=np.asarray(yc.data),
-                units=str(yc.units) if hasattr(yc, "units") and yc.units else None,
-                title=str(yc.title) if hasattr(yc, "title") and yc.title else None,
-                labels=(list(yc.labels) if hasattr(yc, "labels") and yc.labels is not None else None),
-            )
-    except (KeyError, AttributeError):
-        pass
-
-    meta = dict(ds.meta) if hasattr(ds, "meta") and ds.meta else {}
-    provenance = meta.pop("processing_history", [])
-
-    return AnalysisDataset(
-        X=np.asarray(ds.data),
-        x_axis=x_axis,
-        y_axis=y_axis,
-        meta=meta,
-        provenance=provenance,
-        backend="scp",
-        title=str(ds.title) if hasattr(ds, "title") and ds.title else None,
-        units=str(ds.units) if hasattr(ds, "units") and ds.units else None,
-    )
+    return _from_nddataset(ds)
 
 
-def to_nddataset(ads: "AnalysisDataset") -> "NDDataset":  # type: ignore[name-defined]  # noqa: F821
-    """Convert AnalysisDataset back to NDDataset.
+def to_nddataset(ds: "SherpaDataset") -> "NDDataset":  # type: ignore[name-defined]  # noqa: F821
+    """Convert SherpaDataset to NDDataset.  Delegates to adapters.scp_adapter."""
+    from spectra_sherpa.app.lib.adapters.scp_adapter import to_nddataset as _to_nddataset
 
-    Raises:
-        ImportError: If SpectroChemPy is not installed.
-    """
-    require_scp("to_nddataset()")
-
-    ds = scp.NDDataset(ads.X)
-
-    if ads.x_axis and ads.x_axis.values is not None:
-        ds.x = Coord(ads.x_axis.values, title=ads.x_axis.title or "")
-        if ads.x_axis.units:
-            try:
-                ds.x.units = ads.x_axis.units
-            except Exception:
-                pass
-        if ads.x_axis.labels is not None:
-            try:
-                ds.x.labels = ads.x_axis.labels
-            except Exception:
-                pass
-    if ads.y_axis and ads.y_axis.values is not None:
-        ds.y = Coord(ads.y_axis.values, title=ads.y_axis.title or "")
-        if ads.y_axis.units:
-            try:
-                ds.y.units = ads.y_axis.units
-            except Exception:
-                pass
-        if ads.y_axis.labels is not None:
-            try:
-                ds.y.labels = ads.y_axis.labels
-            except Exception:
-                pass
-
-    ds.meta = dict(ads.meta)
-    ds.meta["processing_history"] = list(ads.provenance)
-
-    if ads.title:
-        ds.title = ads.title
-    if ads.units:
-        try:
-            ds.units = ads.units
-        except Exception:
-            ds.meta["value_units_label"] = ads.units
-
-    return ds
+    return _to_nddataset(ds)

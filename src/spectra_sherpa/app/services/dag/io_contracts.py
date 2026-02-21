@@ -1,9 +1,8 @@
-"""
-Shared IO contract helpers for DAG nodes.
+"""Shared IO contract helpers for DAG nodes.
 
 Phase 1 objective:
 - Standardize X/y input binding and legacy port fallback.
-- Standardize conversion to AnalysisDataset / numpy arrays.
+- Standardize conversion to SherpaDataset / numpy arrays.
 - Standardize output dataset wrapping with metadata preservation.
 
 These helpers are intentionally lightweight so imperative nodes can opt in
@@ -17,15 +16,15 @@ from typing import Any
 
 import numpy as np
 
-from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
-from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset, from_nddataset
+from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset
+from spectra_sherpa.app.lib.sherpa_dataset import EvaluationResult, Provenance, SherpaDataset
 
-from .meta_helpers import copy_processing_history, safe_get_coord
+from .meta_helpers import safe_get_coord
 
 
 def _is_dataset_like(value: Any) -> bool:
-    """Return True for AnalysisDataset (and NDDataset when SCP is available)."""
-    if isinstance(value, AnalysisDataset):
+    """Return True for dataset containers (SherpaDataset or NDDataset)."""
+    if isinstance(value, SherpaDataset):
         return True
     if HAS_SCP and isinstance(value, NDDataset):
         return True
@@ -39,26 +38,28 @@ def resolve_legacy_input(value: Any, kwargs: dict[str, Any], key: str) -> Any:
     return value
 
 
-def coerce_dataset(
+def coerce_to_sherpa(
     value: Any,
     *,
     input_name: str = "input",
     allow_array: bool = False,
     dataset_error_message: str | None = None,
-) -> AnalysisDataset:
+) -> SherpaDataset:
     """
-    Coerce a value to AnalysisDataset.
+    Coerce a value to SherpaDataset.
 
     Args:
         value: Input value.
         input_name: Logical input name for error messages.
-        allow_array: If True, wraps array-like input into AnalysisDataset.
+        allow_array: If True, wraps array-like input into SherpaDataset.
         dataset_error_message: Optional custom error message.
     """
-    if isinstance(value, AnalysisDataset):
+    if isinstance(value, SherpaDataset):
         return value
 
     if HAS_SCP and isinstance(value, NDDataset):
+        from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
+
         return from_nddataset(value)
 
     if allow_array:
@@ -70,9 +71,9 @@ def coerce_dataset(
             raise ValueError(err)
         if arr.ndim == 1:
             arr = arr.reshape(-1, 1)
-        return AnalysisDataset(X=arr, backend="numpy")
+        return SherpaDataset(X=arr, backend="numpy")
 
-    err = dataset_error_message or (f"{input_name} must be an NDDataset or AnalysisDataset object")
+    err = dataset_error_message or (f"{input_name} must be an NDDataset or SherpaDataset object")
     raise ValueError(err)
 
 
@@ -81,14 +82,14 @@ def bind_X(
     kwargs: dict[str, Any],
     *,
     missing_message: str = "Missing required input: X",
-    dataset_error_message: str = "X must be an NDDataset or AnalysisDataset object",
+    dataset_error_message: str = "X must be an NDDataset or SherpaDataset object",
     allow_array: bool = False,
-) -> AnalysisDataset:
+) -> SherpaDataset:
     """Bind and normalize the X input (with legacy input_0 fallback)."""
     X = resolve_legacy_input(X, kwargs, "input_0")
     if X is None:
         raise ValueError(missing_message)
-    return coerce_dataset(
+    return coerce_to_sherpa(
         X,
         input_name="X",
         allow_array=allow_array,
@@ -107,7 +108,7 @@ def _has_values(value: Any) -> bool:
         return False
 
 
-def extract_target_like(dataset: AnalysisDataset) -> Any | None:
+def extract_target_like(dataset: Any) -> Any | None:
     """
     Extract target/label vector from a dataset.
 
@@ -119,6 +120,16 @@ def extract_target_like(dataset: AnalysisDataset) -> Any | None:
     target = getattr(dataset, "target", None)
     if _has_values(target):
         return target
+
+    if isinstance(dataset, SherpaDataset):
+        sample_axis = dataset.sample_axis
+        if sample_axis is None:
+            return None
+        if _has_values(sample_axis.labels):
+            return sample_axis.labels
+        if _has_values(sample_axis.values):
+            return sample_axis.values
+        return None
 
     y_coord = safe_get_coord(dataset, "y")
     if y_coord is None:
@@ -139,7 +150,7 @@ def bind_y(
     y: Any,
     kwargs: dict[str, Any],
     *,
-    X: AnalysisDataset | None = None,
+    X: SherpaDataset | None = None,
     required: bool = False,
     infer_from_X: bool = True,
     dataset_as_data: bool = False,
@@ -169,7 +180,7 @@ def bind_y(
         return None
 
     if _is_dataset_like(y):
-        y_dataset = coerce_dataset(y, input_name="y", allow_array=False)
+        y_dataset = coerce_to_sherpa(y, input_name="y", allow_array=False)
         if dataset_as_data:
             return y_dataset.data
         inferred = extract_target_like(y_dataset)
@@ -187,7 +198,7 @@ def to_numpy_2d(
     dtype: Any = np.float64,
 ) -> np.ndarray:
     """Convert input to a 2D numpy array (1D inputs are reshaped to column vectors)."""
-    raw = value.data if isinstance(value, AnalysisDataset) else value
+    raw = value.data if isinstance(value, SherpaDataset) else value
     arr = np.asarray(raw, dtype=dtype)
 
     if arr.ndim == 0:
@@ -207,7 +218,7 @@ def to_numpy_1d(
     dtype: Any | None = None,
 ) -> np.ndarray:
     """Convert input to a flattened 1D numpy array."""
-    raw = value.data if isinstance(value, AnalysisDataset) else value
+    raw = value.data if isinstance(value, SherpaDataset) else value
     arr = np.asarray(raw, dtype=dtype) if dtype is not None else np.asarray(raw)
 
     if arr.ndim == 0:
@@ -227,34 +238,55 @@ def build_dataset_like(
     title: str | None = None,
     backend: str | None = None,
     copy_history: bool = True,
-) -> AnalysisDataset:
+) -> SherpaDataset:
     """
-    Wrap numeric output as AnalysisDataset while preserving source metadata.
+    Wrap numeric output as SherpaDataset while preserving source metadata.
     """
-    src = coerce_dataset(source, input_name="source", allow_array=True)
-    meta = copy.deepcopy(src.meta) if isinstance(src.meta, dict) else {}
-    if not copy_history:
-        meta.pop("processing_history", None)
+    src = coerce_to_sherpa(source, input_name="source", allow_array=True)
+    arr = np.asarray(data, dtype=np.float64)
+    if arr.ndim == 0:
+        raise ValueError("data must be 1D or 2D array-like, got scalar")
+    if arr.ndim == 1:
+        arr = arr.reshape(-1, 1)
+    if arr.ndim != 2:
+        raise ValueError(f"data must be 1D or 2D array-like, got {arr.ndim}D")
 
-    result = AnalysisDataset(
-        X=np.asarray(data, dtype=np.float64),
-        target=copy.deepcopy(getattr(src, "target", None)),
-        meta=meta,
+    spectral_axis = src.spectral_axis.copy() if src.spectral_axis is not None else None
+    sample_axis = src.sample_axis.copy() if src.sample_axis is not None else None
+    target = copy.deepcopy(src.target) if src.target is not None else None
+
+    # If shape changed, keep only compatible metadata.
+    if spectral_axis is not None and spectral_axis.length > 0 and spectral_axis.length != arr.shape[1]:
+        spectral_axis = None
+    if sample_axis is not None and sample_axis.length > 0 and sample_axis.length != arr.shape[0]:
+        sample_axis = None
+    if target is not None and np.asarray(target).shape[0] != arr.shape[0]:
+        target = None
+
+    result = SherpaDataset(
+        X=arr,
+        spectral_axis=spectral_axis,
+        sample_axis=sample_axis,
+        target=target,
+        target_context=src.target_context.model_copy(deep=True),
+        domain=src.domain.model_copy(deep=True),
+        provenance=(src.provenance.copy() if copy_history else Provenance()),
+        quality=src.quality.model_copy(deep=True),
         backend=backend or src.backend,
+        title=src.title if title is None else title,
+        units=src.units if units is None else units,
+        extra=copy.deepcopy(src.extra),
     )
 
-    x_coord = safe_get_coord(src, "x")
-    if x_coord is not None:
-        result.x = x_coord.copy()
-
-    y_coord = safe_get_coord(src, "y")
-    if y_coord is not None:
-        result.y = y_coord.copy()
-
-    result.title = src.title if title is None else title
-    result.units = src.units if units is None else units
-
-    if copy_history:
-        copy_processing_history(src, result)
-
     return result
+
+
+def attach_evaluation(
+    dataset: SherpaDataset,
+    evaluation: EvaluationResult,
+) -> None:
+    """Attach an EvaluationResult to a dataset's quality metrics.
+
+    Mutates the dataset in place.
+    """
+    dataset.quality.add_evaluation(evaluation)

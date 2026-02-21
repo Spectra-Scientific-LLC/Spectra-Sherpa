@@ -5,7 +5,6 @@ import httpx
 
 from spectra_sherpa.app.core.config import app_config
 from spectra_sherpa.app.core.security import is_egress_enabled
-from spectra_sherpa.app.services.dag.meta_helpers import safe_get_coord
 from spectra_sherpa.app.services.dag.node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
 
 logger = logging.getLogger(__name__)
@@ -175,7 +174,7 @@ class CloudComputeNode(Node):
             input_metadata["y_units"] = str(input_data.units)
 
         # Try to get x-axis info from coords
-        x_coord = safe_get_coord(input_data, "x")
+        x_coord = input_data.spectral_axis
         if x_coord is not None and hasattr(x_coord, "title"):
             input_metadata["x_title"] = x_coord.title
             if hasattr(x_coord, "units"):

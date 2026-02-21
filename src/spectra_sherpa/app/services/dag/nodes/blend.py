@@ -5,7 +5,7 @@ These nodes combine multiple species with concentration profiles to generate
 synthetic mixture spectra for training and validation purposes.
 
 Ground Truth Metadata:
-    When blending, the output AnalysisDataset includes complete ground truth in meta["spectra"]:
+    When blending, the output dataset includes complete ground truth in meta["spectra"]:
     - concentration_matrix: C matrix (n_timepoints x n_species)
     - pure_spectra_matrix: S matrix (n_wavenumbers x n_species)
     - species: List of species information
@@ -22,7 +22,7 @@ from datetime import datetime
 import numpy as np
 
 logger = logging.getLogger(__name__)
-from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo
+from spectra_sherpa.app.lib.sherpa_dataset import AxisInfo, SherpaDataset, SpectralAxis, SampleAxis
 from spectra_sherpa.app.models.spectra_meta import (
     ConcentrationProfile,
     ConcentrationUnit,
@@ -33,9 +33,9 @@ from spectra_sherpa.app.models.spectra_meta import (
     SpeciesInfo,
     SpectraMeta,
 )
-from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, safe_get_coord
+from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
 
-from ..io_contracts import build_dataset_like, coerce_dataset, to_numpy_2d
+from ..io_contracts import build_dataset_like, coerce_to_sherpa, to_numpy_2d
 from ..node_base import Node, NodeMetadata, NodeParameter, register_node
 
 
@@ -145,15 +145,15 @@ class BlendNode(Node):
         output_type="NDDataset",
     )
 
-    async def execute(self, *input_data: AnalysisDataset) -> AnalysisDataset:
+    async def execute(self, *input_data: Any) -> Any:
         """
         Execute blending of multiple spectra.
 
         Args:
-            *input_data: Variable number of AnalysisDataset inputs (one per species)
+            *input_data: Variable number of dataset inputs (one per species)
 
         Returns:
-            AnalysisDataset containing the blended mixture spectra
+            Dataset containing the blended mixture spectra
         """
         n_timepoints = int(self.parameters.get("n_timepoints", 100))
         model_type = self.parameters.get("model_type", "linear")
@@ -164,12 +164,12 @@ class BlendNode(Node):
         if len(input_data) == 0:
             raise ValueError("At least one input spectrum is required")
 
-        # Normalize all inputs to AnalysisDataset and collect units.
+        # Normalize all inputs and collect units.
         spectra = [
-            coerce_dataset(
+            coerce_to_sherpa(
                 inp,
                 input_name=f"input_data[{i}]",
-                dataset_error_message="Input must be NDDataset or AnalysisDataset",
+                dataset_error_message="Input must be dataset object",
             )
             for i, inp in enumerate(input_data)
         ]
@@ -194,7 +194,7 @@ class BlendNode(Node):
         # Get wavenumber axis from first spectrum
         # Assume all spectra are aligned to the same wavenumber grid
         first_spectrum = spectra[0]
-        first_x_coord = safe_get_coord(first_spectrum, "x")
+        first_x_coord = first_spectrum.spectral_axis
         first_matrix = to_numpy_2d(first_spectrum, name="input_data[0]")
         wavenumbers = first_x_coord.data if first_x_coord is not None else np.arange(first_matrix.shape[-1])
 
@@ -348,7 +348,7 @@ class BlendNode(Node):
             },
         )
 
-        # Store in AnalysisDataset meta
+        # Store in dataset meta
         dataset.meta["spectra"] = meta.model_dump(exclude_none=True)
 
         # Record processing step
@@ -404,20 +404,20 @@ class SpeciesSelectorNode(Node):
         output_type="NDDataset",
     )
 
-    async def execute(self, input_data: AnalysisDataset) -> AnalysisDataset:
+    async def execute(self, input_data: Any) -> Any:
         """
         Pass through the spectrum with species metadata.
 
         Args:
-            input_data: Input AnalysisDataset
+            input_data: Input dataset
 
         Returns:
-            AnalysisDataset with species metadata attached
+            Dataset with species metadata attached
         """
-        input_ds = coerce_dataset(
+        input_ds = coerce_to_sherpa(
             input_data,
             input_name="input_data",
-            dataset_error_message="Input must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="Input must be an dataset object object",
         )
 
         species_name = self.parameters.get("species_name", "Species")
@@ -457,7 +457,7 @@ class SpeciesSelectorNode(Node):
                 ),
             )
 
-        # Store in AnalysisDataset meta
+        # Store in dataset meta
         result.meta["spectra"] = meta.model_dump(exclude_none=True)
 
         # Also keep legacy fields for backwards compatibility
@@ -504,24 +504,24 @@ class MergeSpectraNode(Node):
         output_type="NDDataset",
     )
 
-    async def execute(self, *input_data: AnalysisDataset) -> AnalysisDataset:
+    async def execute(self, *input_data: Any) -> Any:
         """
         Merge multiple spectra into a single dataset.
 
         Args:
-            *input_data: Variable number of AnalysisDataset inputs
+            *input_data: Variable number of dataset inputs
 
         Returns:
-            AnalysisDataset containing all spectra stacked
+            Dataset containing all spectra stacked
         """
         if len(input_data) == 0:
             raise ValueError("At least one input spectrum is required")
 
         datasets = [
-            coerce_dataset(
+            coerce_to_sherpa(
                 inp,
                 input_name=f"input_data[{idx}]",
-                dataset_error_message="Input must be NDDataset or AnalysisDataset",
+                dataset_error_message="Input must be dataset object",
             )
             for idx, inp in enumerate(input_data)
         ]
@@ -534,7 +534,7 @@ class MergeSpectraNode(Node):
             if hasattr(inp, "units") and inp.units:
                 input_units.append(str(inp.units))
 
-            inp_x_coord = safe_get_coord(inp, "x")
+            inp_x_coord = inp.spectral_axis
             inp_matrix = to_numpy_2d(inp, name="input_data")
             for row in inp_matrix:
                 spectra.append(row)

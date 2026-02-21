@@ -2603,7 +2603,7 @@ const openInNewTab = () => {
       inputData = {
         shape: Array.isArray(data) ? [data.length, Array.isArray(data[0]) ? data[0].length : 1] : null,
         source: `${firstInput.nodeLabel} (${firstInput.nodeType})`,
-        dataType: Array.isArray(data) ? 'NDDataset' : typeof data,
+        dataType: Array.isArray(data) ? 'dataset' : typeof data,
         data: data, // Include actual data for preview
       };
     }

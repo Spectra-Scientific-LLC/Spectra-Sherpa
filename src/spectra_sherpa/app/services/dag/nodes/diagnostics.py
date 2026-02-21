@@ -13,7 +13,7 @@ from typing import Any
 import numpy as np
 
 logger = logging.getLogger(__name__)
-from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
+from spectra_sherpa.app.lib.sherpa_dataset import EvaluationResult, SherpaDataset
 
 from ..io_contracts import resolve_legacy_input, to_numpy_1d, to_numpy_2d
 from ..node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
@@ -21,7 +21,7 @@ from ..node_base import Node, NodeMetadata, NodeParameter, PortMetadata, registe
 
 def _unwrap_data(value: Any) -> Any:
     """Return raw numeric data for dataset-like inputs, otherwise passthrough."""
-    if isinstance(value, AnalysisDataset):
+    if isinstance(value, SherpaDataset):
         return value.data
     # Avoid ndarray.data memoryview by checking ndarray first.
     if not isinstance(value, np.ndarray) and hasattr(value, "data"):
@@ -204,6 +204,24 @@ class OutlierDetectionNode(Node):
 
         n_outliers = np.sum(combined_outliers)
 
+        import uuid
+
+        evaluation = EvaluationResult(
+            evaluation_id=str(uuid.uuid4()),
+            model_type="PCA",
+            outlier_indices=np.where(combined_outliers)[0].tolist(),
+            outlier_percentage=float(100 * n_outliers / n_observations),
+            hotelling_t2=T2.tolist(),
+            q_residuals=Q.tolist(),
+            t2_limit=T2_limit,
+            q_limit=Q_limit,
+        )
+
+        # Attach evaluation to source dataset if available
+        input_ds = internal.get("input_data_ds")
+        if input_ds is not None and isinstance(input_ds, SherpaDataset):
+            input_ds.quality.add_evaluation(evaluation)
+
         result = {
             "model": model,  # Pass through original model
             "flags": combined_outliers.tolist(),
@@ -216,6 +234,7 @@ class OutlierDetectionNode(Node):
             "n_outliers": int(n_outliers),
             "confidence_level": confidence_level,
             "data": T2.tolist(),  # For visualization
+            "evaluation": evaluation,
             "metadata": {
                 "type": "OutlierDetection",
                 "output_type": "diagnostics",
@@ -409,6 +428,21 @@ class CrossValidationNode(Node):
             )
 
             logger.debug(f"[Cross-Validation] RMSECV: {rmse:.4f}, Q²: {Q2:.4f}, R²: {r2:.4f}")
+
+        # Build scoped EvaluationResult
+        import uuid
+
+        eval_kwargs: dict[str, Any] = {
+            "evaluation_id": str(uuid.uuid4()),
+        }
+        if is_classification:
+            eval_kwargs["accuracy"] = result["accuracy"]
+            eval_kwargs["confusion_matrix"] = result["confusion_matrix"]
+        else:
+            eval_kwargs["r2"] = result["R2"]
+            eval_kwargs["rmse"] = result["RMSE"]
+            eval_kwargs["mae"] = result["MAE"]
+        result["evaluation"] = EvaluationResult(**eval_kwargs)
 
         # Add visualization data
         result["data"] = [[y_true[i], y_pred[i]] for i in range(len(y_true))]

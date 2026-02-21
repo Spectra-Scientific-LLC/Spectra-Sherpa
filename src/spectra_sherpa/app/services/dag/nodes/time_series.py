@@ -13,10 +13,10 @@ from typing import Any
 import numpy as np
 
 logger = logging.getLogger(__name__)
-from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
 
-from ..io_contracts import build_dataset_like, coerce_dataset, to_numpy_2d
+from ..io_contracts import build_dataset_like, coerce_to_sherpa, to_numpy_2d
 from ..node_base import Node, NodeMetadata, NodeParameter, register_node
 
 
@@ -74,21 +74,21 @@ class MovingWindowNode(Node):
         output_type="NDDataset",
     )
 
-    async def execute(self, input_data: AnalysisDataset) -> Any:
+    async def execute(self, input_data: Any) -> Any:
         """
         Execute moving window segmentation.
 
         Args:
-            input_data: AnalysisDataset containing time series spectral data
+            input_data: Any containing time series spectral data
 
         Returns:
-            AnalysisDataset with windowed data
+            Dataset with windowed data
         """
         window_size = self.parameters.get("window_size", 10)
         step_size = self.parameters.get("step_size", 1)
         aggregation = self.parameters.get("aggregation", "none")
 
-        input_ds = coerce_dataset(input_data, input_name="input_data")
+        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
         data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
         n_samples, n_features = data.shape
         input_shape = input_ds.shape
@@ -200,21 +200,21 @@ class TrendRemovalNode(Node):
         output_type="NDDataset",
     )
 
-    async def execute(self, input_data: AnalysisDataset) -> Any:
+    async def execute(self, input_data: Any) -> Any:
         """
         Execute trend removal.
 
         Args:
-            input_data: AnalysisDataset containing time series spectral data
+            input_data: Any containing time series spectral data
 
         Returns:
-            AnalysisDataset with detrended data
+            Dataset with detrended data
         """
         method = self.parameters.get("method", "linear")
         poly_order = self.parameters.get("poly_order", 2)
         window_size = self.parameters.get("window_size", 5)
 
-        input_ds = coerce_dataset(input_data, input_name="input_data")
+        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
         data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
         n_samples, n_features = data.shape
         input_shape = input_ds.shape

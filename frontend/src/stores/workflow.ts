@@ -25,7 +25,7 @@ export interface WorkflowEdge {
   // Validation fields
   isValid?: boolean;  // Whether this connection is type-compatible
   validationError?: string | null;  // Error message if invalid
-  dataType?: string | null;  // Data type flowing through edge (e.g., "NDDataset", "PCA")
+  dataType?: string | null;  // Data type flowing through edge (e.g., "dataset", "PCA")
 }
 
 // Input port definition for multi-input nodes (mirrors backend InputPort)
@@ -42,15 +42,15 @@ export interface InputPort {
 // Kept for backward compatibility only - will be removed in future version
 export const MULTI_INPUT_NODES: Record<string, InputPort[]> = {
   PLS: [
-    { name: "X", label: "Spectra (X)", dataType: "NDDataset", required: true, description: "Spectral data matrix" },
+    { name: "X", label: "Spectra (X)", dataType: "dataset", required: true, description: "Spectral data matrix" },
     { name: "y", label: "Concentrations (y)", dataType: "array", required: true, description: "Target values" },
   ],
   PCR: [
-    { name: "X", label: "Spectra (X)", dataType: "NDDataset", required: true, description: "Spectral data matrix" },
+    { name: "X", label: "Spectra (X)", dataType: "dataset", required: true, description: "Spectral data matrix" },
     { name: "y", label: "Targets (y)", dataType: "array", required: true, description: "Target values" },
   ],
   SVR: [
-    { name: "X", label: "Spectra (X)", dataType: "NDDataset", required: true, description: "Spectral data matrix" },
+    { name: "X", label: "Spectra (X)", dataType: "dataset", required: true, description: "Spectral data matrix" },
     { name: "y", label: "Targets (y)", dataType: "array", required: true, description: "Target values" },
   ],
   LINEAR_REGRESSION: [
@@ -58,35 +58,35 @@ export const MULTI_INPUT_NODES: Record<string, InputPort[]> = {
     { name: "y", label: "Targets (y)", dataType: "array", required: true, description: "Target values" },
   ],
   PLS_DA: [
-    { name: "X", label: "Spectra (X)", dataType: "NDDataset", required: true, description: "Spectral data matrix" },
+    { name: "X", label: "Spectra (X)", dataType: "dataset", required: true, description: "Spectral data matrix" },
     { name: "y", label: "Class Labels (y)", dataType: "array", required: false, description: "Class labels for each sample" },
   ],
   KNN: [
-    { name: "X", label: "Features (X)", dataType: "NDDataset", required: true, description: "Feature matrix (spectral data or scores)" },
+    { name: "X", label: "Features (X)", dataType: "dataset", required: true, description: "Feature matrix (spectral data or scores)" },
     { name: "y", label: "Class Labels (y)", dataType: "array", required: false, description: "Class labels for each sample" },
   ],
   SIMCA: [
-    { name: "X", label: "Features (X)", dataType: "NDDataset", required: true, description: "Feature matrix (spectral data or scores)" },
+    { name: "X", label: "Features (X)", dataType: "dataset", required: true, description: "Feature matrix (spectral data or scores)" },
     { name: "y", label: "Class Labels (y)", dataType: "array", required: false, description: "Class labels for each sample" },
   ],
   TRAIN_TEST_SPLIT: [
-    { name: "X", label: "Input Data", dataType: "NDDataset", required: true, description: "Data to split" },
+    { name: "X", label: "Input Data", dataType: "dataset", required: true, description: "Data to split" },
     { name: "y", label: "Target Values (optional)", dataType: "array", required: false, description: "Target values for stratification" },
   ],
   PLS_PREDICT: [
-    { name: "X_new", label: "New Spectra", dataType: "NDDataset", required: true, description: "New spectral data to predict" },
+    { name: "X_new", label: "New Spectra", dataType: "dataset", required: true, description: "New spectral data to predict" },
     { name: "model", label: "PLS Model", dataType: "model", required: true, description: "Trained PLS model" },
   ],
   PCA_TRANSFORM: [
-    { name: "X_new", label: "New Spectra", dataType: "NDDataset", required: true, description: "New data to transform" },
+    { name: "X_new", label: "New Spectra", dataType: "dataset", required: true, description: "New data to transform" },
     { name: "model", label: "PCA Model", dataType: "model", required: true, description: "Trained PCA model" },
   ],
   PLSDA_PREDICT: [
-    { name: "X_new", label: "New Spectra", dataType: "NDDataset", required: true, description: "New spectral data to classify" },
+    { name: "X_new", label: "New Spectra", dataType: "dataset", required: true, description: "New spectral data to classify" },
     { name: "model", label: "PLS-DA Model", dataType: "model", required: true, description: "Trained PLS-DA model" },
   ],
   KNN_PREDICT: [
-    { name: "X_new", label: "New Features", dataType: "NDDataset", required: true, description: "New feature data to classify" },
+    { name: "X_new", label: "New Features", dataType: "dataset", required: true, description: "New feature data to classify" },
     { name: "model", label: "KNN Model", dataType: "model", required: true, description: "Trained KNN model" },
   ],
 };
@@ -1166,7 +1166,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
             if (primaryResult?.shape && Array.isArray(primaryResult.shape)) {
               outputShape = primaryResult.shape;
             }
-            // Handle NDDataset with n_samples and n_features
+            // Handle dataset (SherpaDataset/NDDataset) with n_samples and n_features
             if (primaryResult?.n_samples !== undefined && primaryResult?.n_features !== undefined) {
               outputShape = [primaryResult.n_samples, primaryResult.n_features];
             }
@@ -1278,7 +1278,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
             if (primaryResult?.shape && Array.isArray(primaryResult.shape)) {
               outputShape = primaryResult.shape;
             }
-            // Handle NDDataset with n_samples and n_features
+            // Handle dataset (SherpaDataset/NDDataset) with n_samples and n_features
             if (primaryResult?.n_samples !== undefined && primaryResult?.n_features !== undefined) {
               outputShape = [primaryResult.n_samples, primaryResult.n_features];
             }
@@ -1899,7 +1899,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
       // Derive category from type_ref to validate against legacy input_types
       const outputCategory = getCategoryFromTypeRef(outputPort.type_ref);
       const categoryToClassNames: Record<string, string[]> = {
-        'dataset': ['NDDataset', 'array'],
+        'dataset': ['NDDataset', 'SherpaDataset', 'array'],
         'target': ['array', 'list', 'any'],
         'model': ['PCAModel', 'PLSModel', 'PLSDAModel', 'HCAResult', 'any'],
         'config': ['dict', 'config', 'any'],

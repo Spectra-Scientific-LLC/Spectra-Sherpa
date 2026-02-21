@@ -10,12 +10,11 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.lib.scp_compat import NDDataset
-from spectra_sherpa.app.services.dag.io_contracts import coerce_dataset
-from spectra_sherpa.app.services.dag.meta_helpers import safe_get_coord
+from spectra_sherpa.app.services.dag.io_contracts import coerce_to_sherpa
 
-from ..node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
+from ..node_base import Node, NodeMetadata, NodeParameter, NodePolicy, PortMetadata, register_node
 
 
 @register_node
@@ -76,7 +75,7 @@ class PlotNode(Node):
         Generate plot data from input.
 
         Args:
-            input_data: AnalysisDataset or dict with spectral/model data
+            input_data: SherpaDataset or dict with spectral/model data
 
         Returns:
             Dict with plot configuration and data
@@ -85,12 +84,12 @@ class PlotNode(Node):
         x_axis = self.parameters.get("x_axis", 0)
         y_axis = self.parameters.get("y_axis", 1)
 
-        # Coerce NDDataset → AnalysisDataset so all dataset paths work
+        # Coerce NDDataset → SherpaDataset so all dataset paths work
         if isinstance(input_data, NDDataset):
-            input_data = coerce_dataset(input_data)
+            input_data = coerce_to_sherpa(input_data)
 
-        # Handle NDDataset / AnalysisDataset input
-        if isinstance(input_data, AnalysisDataset):
+        # Handle NDDataset / SherpaDataset input
+        if isinstance(input_data, SherpaDataset):
             return self._plot_spectra(input_data)
 
         # Handle dict input (e.g., from PCA node)
@@ -111,12 +110,12 @@ class PlotNode(Node):
         }
         return {"visualization": result}
 
-    def _plot_spectra(self, dataset: AnalysisDataset) -> Dict[str, Any]:
+    def _plot_spectra(self, dataset: Any) -> Dict[str, Any]:
         """Generate spectra plot data, preserving axis titles from dataset."""
         traces = []
 
         # Get x-axis data and title from dataset
-        x_coord = safe_get_coord(dataset, "x")
+        x_coord = dataset.spectral_axis
         if x_coord is not None:
             x_data = x_coord.data.tolist()
             x_title = x_coord.title if hasattr(x_coord, "title") and x_coord.title else "Index"
@@ -181,8 +180,8 @@ class PlotNode(Node):
         if scores is None:
             return {"plot_type": "scores", "data": [], "layout": {}}
 
-        # Convert to numpy if NDDataset/AnalysisDataset
-        if isinstance(scores, AnalysisDataset):
+        # Convert to numpy if NDDataset/SherpaDataset
+        if isinstance(scores, SherpaDataset):
             scores_array = np.array(scores.data)
         else:
             scores_array = np.array(scores)
@@ -223,7 +222,7 @@ class PlotNode(Node):
         if scores is None:
             return {"visualization": {"plot_type": "biplot", "data": [], "layout": {}}}
 
-        if isinstance(scores, AnalysisDataset):
+        if isinstance(scores, SherpaDataset):
             scores_array = np.array(scores.data)
         else:
             scores_array = np.array(scores)
@@ -252,7 +251,7 @@ class PlotNode(Node):
         ]
 
         if loadings is not None:
-            if isinstance(loadings, AnalysisDataset):
+            if isinstance(loadings, SherpaDataset):
                 loadings_array = np.array(loadings.data)
             else:
                 loadings_array = np.array(loadings)
@@ -397,6 +396,11 @@ class ExportNode(Node):
                 description="Status and path of exported file",
             ),
         ],
+        policy=NodePolicy(
+            safe_for_auto_apply=False,
+            requires_human_review=True,
+            data_egress_risk="full_data",
+        ),
     )
 
     async def execute(self, input_data: Any) -> Dict[str, Any]:
@@ -415,11 +419,11 @@ class ExportNode(Node):
         # For now, just return metadata about what would be exported
         # Actual file writing would happen here in production
 
-        # Coerce NDDataset → AnalysisDataset so all dataset paths work
+        # Coerce NDDataset → SherpaDataset so all dataset paths work
         if isinstance(input_data, NDDataset):
-            input_data = coerce_dataset(input_data)
+            input_data = coerce_to_sherpa(input_data)
 
-        if isinstance(input_data, AnalysisDataset):
+        if isinstance(input_data, SherpaDataset):
             shape = input_data.shape
             n_points = np.prod(shape)
         elif isinstance(input_data, dict):
@@ -503,7 +507,7 @@ class StatsSummaryNode(Node):
         Compute adaptive statistics based on input type.
 
         Args:
-            input_data: AnalysisDataset, PCA/MCR dict, or array data
+            input_data: SherpaDataset, PCA/MCR dict, or array data
 
         Returns:
             Dict with comprehensive statistics and visualization data
@@ -517,18 +521,18 @@ class StatsSummaryNode(Node):
             elif "data" in input_data:
                 return await self._stats_array(input_data["data"], input_data.get("metadata"))
 
-        # Coerce NDDataset → AnalysisDataset so all dataset paths work
+        # Coerce NDDataset → SherpaDataset so all dataset paths work
         if isinstance(input_data, NDDataset):
-            input_data = coerce_dataset(input_data)
+            input_data = coerce_to_sherpa(input_data)
 
-        if isinstance(input_data, AnalysisDataset):
+        if isinstance(input_data, SherpaDataset):
             return await self._stats_dataset(input_data)
 
         # Fallback to array statistics
         return await self._stats_array(np.array(input_data), None)
 
-    async def _stats_dataset(self, dataset: AnalysisDataset) -> Dict[str, Any]:
-        """Compute statistics for AnalysisDataset (raw spectra)."""
+    async def _stats_dataset(self, dataset: Any) -> Dict[str, Any]:
+        """Compute statistics for SherpaDataset (raw spectra)."""
         data = np.array(dataset.data)
         if data.ndim == 1:
             data = data.reshape(1, -1)
@@ -570,7 +574,7 @@ class StatsSummaryNode(Node):
         feature_cv = feature_stds / (feature_means + 1e-10)  # Coefficient of variation
 
         # Get wavenumber axis if available
-        x_coord = safe_get_coord(dataset, "x")
+        x_coord = dataset.spectral_axis
         if x_coord is not None:
             wavenumbers = np.array(x_coord.data).tolist()
         else:
@@ -881,7 +885,7 @@ class ContourPlotNode(Node):
         Generate contour/heatmap plot data from input.
 
         Args:
-            input_data: AnalysisDataset with 2D spectral data (samples × wavenumbers)
+            input_data: SherpaDataset with 2D spectral data (samples × wavenumbers)
 
         Returns:
             Dict with Plotly-compatible contour/heatmap configuration
@@ -891,12 +895,12 @@ class ContourPlotNode(Node):
         reverse_x = self.parameters.get("reverse_x", True)
         transpose = self.parameters.get("transpose", False)
 
-        # Coerce NDDataset → AnalysisDataset so all dataset paths work
+        # Coerce NDDataset → SherpaDataset so all dataset paths work
         if isinstance(input_data, NDDataset):
-            input_data = coerce_dataset(input_data)
+            input_data = coerce_to_sherpa(input_data)
 
-        # Handle NDDataset / AnalysisDataset input
-        if isinstance(input_data, AnalysisDataset):
+        # Handle NDDataset / SherpaDataset input
+        if isinstance(input_data, SherpaDataset):
             return self._create_contour(input_data, colorscale, plot_type, reverse_x, transpose)
 
         # Handle dict with data field
@@ -919,9 +923,9 @@ class ContourPlotNode(Node):
         return {"visualization": result}
 
     def _create_contour(
-        self, dataset: AnalysisDataset, colorscale: str, plot_type: str, reverse_x: bool, transpose: bool
+        self, dataset: Any, colorscale: str, plot_type: str, reverse_x: bool, transpose: bool
     ) -> Dict[str, Any]:
-        """Generate contour/heatmap plot from AnalysisDataset."""
+        """Generate contour/heatmap plot from SherpaDataset."""
 
         # Get spectral data as 2D array
         data = np.array(dataset.data)
@@ -929,7 +933,7 @@ class ContourPlotNode(Node):
             data = data.reshape(1, -1)
 
         # Get axes - preserve titles from source data
-        x_coord = safe_get_coord(dataset, "x")
+        x_coord = dataset.spectral_axis
         if x_coord is not None:
             x_data = np.array(x_coord.data).tolist()
             x_title = str(x_coord.title) if x_coord.title else "Feature"
@@ -939,7 +943,7 @@ class ContourPlotNode(Node):
             x_title = "Feature"
             x_units = ""
 
-        y_coord = safe_get_coord(dataset, "y")
+        y_coord = dataset.sample_axis
         if y_coord is not None:
             y_data = np.array(y_coord.data).tolist()
             y_title = str(y_coord.title) if y_coord.title else "Sample"
@@ -1119,7 +1123,7 @@ class DataTableNode(Node):
         Convert input data to table format.
 
         Args:
-            input_data: Data to display in table (AnalysisDataset, dict, or array)
+            input_data: Data to display in table (SherpaDataset, dict, or array)
 
         Returns:
             Dict with table data (columns, rows) and metadata
@@ -1128,12 +1132,12 @@ class DataTableNode(Node):
         transpose = self.parameters.get("transpose", False)
         show_index = self.parameters.get("show_index", True)
 
-        # Coerce NDDataset → AnalysisDataset so all dataset paths work
+        # Coerce NDDataset → SherpaDataset so all dataset paths work
         if isinstance(input_data, NDDataset):
-            input_data = coerce_dataset(input_data)
+            input_data = coerce_to_sherpa(input_data)
 
         # Convert input to table format
-        if isinstance(input_data, AnalysisDataset):
+        if isinstance(input_data, SherpaDataset):
             table_data = self._table_from_dataset(input_data, max_rows, transpose, show_index)
         elif isinstance(input_data, dict):
             table_data = self._table_from_dict(input_data, max_rows, transpose, show_index)
@@ -1149,9 +1153,9 @@ class DataTableNode(Node):
         return {"visualization": table_data}
 
     def _table_from_dataset(
-        self, dataset: AnalysisDataset, max_rows: int, transpose: bool, show_index: bool
+        self, dataset: Any, max_rows: int, transpose: bool, show_index: bool
     ) -> Dict[str, Any]:
-        """Convert AnalysisDataset to table format."""
+        """Convert SherpaDataset to table format."""
         data = np.array(dataset.data)
 
         # Handle 1D data
@@ -1173,7 +1177,7 @@ class DataTableNode(Node):
             n_rows, n_cols = n_cols, n_rows
 
         # Build column headers
-        x_coord = safe_get_coord(dataset, "x")
+        x_coord = dataset.spectral_axis
         if x_coord is not None and not transpose:
             # Use wavenumbers/x-axis as column headers
             x_vals = np.array(x_coord.data)

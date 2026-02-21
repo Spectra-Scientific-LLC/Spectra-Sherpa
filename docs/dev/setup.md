@@ -64,7 +64,7 @@ make test       # or: poetry run pytest tests/ -v --no-cov
 
 To run a specific test file:
 ```bash
-poetry run pytest tests/test_analysis_dataset.py -v --no-cov
+poetry run pytest tests/test_sherpa_dataset.py -v --no-cov
 ```
 
 ## Linting

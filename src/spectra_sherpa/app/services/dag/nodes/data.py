@@ -15,8 +15,15 @@ from typing import Any, Optional
 
 import numpy as np
 
-from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo, from_sklearn_bunch
+from spectra_sherpa.app.lib.adapters.sklearn_adapter import from_sklearn as from_sklearn_bunch
 from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG
+from spectra_sherpa.app.lib.sherpa_dataset import (
+    AxisInfo,
+    DomainContext,
+    SampleAxis,
+    SherpaDataset,
+    SpectralAxis,
+)
 from spectra_sherpa.app.lib.scp_compat import (
     HAS_SCP,
     NDDataset,
@@ -44,7 +51,7 @@ from ..io_contracts import (
     bind_X,
     bind_y,
     build_dataset_like,
-    coerce_dataset,
+    coerce_to_sherpa,
     to_numpy_1d,
     to_numpy_2d,
 )
@@ -97,18 +104,18 @@ def is_index_column(data_column: np.ndarray) -> bool:
         return False
 
 
-def remove_index_columns(dataset: NDDataset | AnalysisDataset) -> NDDataset | AnalysisDataset:
+def remove_index_columns(dataset: NDDataset | SherpaDataset) -> NDDataset | SherpaDataset:
     """
     Remove index columns from dataset if detected.
 
     Detects and removes columns that appear to be row indices
     (monotonic integer sequences with step=1).
 
-    Handles both NDDataset (from raw SCP loading) and AnalysisDataset,
+    Handles both NDDataset (from raw SCP loading) and SherpaDataset,
     preserving the input type in the return value.
 
     Args:
-        dataset: Input dataset (NDDataset or AnalysisDataset)
+        dataset: Input dataset (NDDataset or SherpaDataset)
 
     Returns:
         Dataset of the same type with index columns removed (if any were found)
@@ -131,23 +138,23 @@ def remove_index_columns(dataset: NDDataset | AnalysisDataset) -> NDDataset | An
             cleaned_data = data[:, 1:]
 
             # Create new dataset without the index column
-            if isinstance(dataset, AnalysisDataset):
+            if isinstance(dataset, SherpaDataset):
                 cleaned_dataset = build_dataset_like(cleaned_data, dataset)
-                # Trim x-axis if it matched original column count
+                # Trim spectral axis if it matched original column count
                 if (
-                    cleaned_dataset.x_axis
-                    and cleaned_dataset.x_axis.values is not None
-                    and len(cleaned_dataset.x_axis.values) == n_cols
+                    cleaned_dataset.spectral_axis
+                    and cleaned_dataset.spectral_axis.values is not None
+                    and len(cleaned_dataset.spectral_axis.values) == n_cols
                 ):
-                    cleaned_dataset.x_axis = AxisInfo(
-                        values=cleaned_dataset.x_axis.values[1:],
+                    cleaned_dataset.spectral_axis = SpectralAxis(
+                        values=cleaned_dataset.spectral_axis.values[1:],
                         labels=(
-                            cleaned_dataset.x_axis.labels[1:]
-                            if cleaned_dataset.x_axis.labels and len(cleaned_dataset.x_axis.labels) == n_cols
-                            else cleaned_dataset.x_axis.labels
+                            cleaned_dataset.spectral_axis.labels[1:]
+                            if cleaned_dataset.spectral_axis.labels and len(cleaned_dataset.spectral_axis.labels) == n_cols
+                            else cleaned_dataset.spectral_axis.labels
                         ),
-                        units=cleaned_dataset.x_axis.units,
-                        title=cleaned_dataset.x_axis.title,
+                        units=cleaned_dataset.spectral_axis.units,
+                        title=cleaned_dataset.spectral_axis.title,
                     )
             elif HAS_SCP and isinstance(dataset, NDDataset):
                 cleaned_dataset = scp.NDDataset(cleaned_data)
@@ -185,7 +192,7 @@ def slice_axis_for_indices(coord: Any, indices: np.ndarray) -> Any | None:
     """
     Slice sample-axis metadata for integer index selection.
 
-    Supports both AnalysisDataset AxisInfo and SCP Coord-like objects.
+    Supports both SherpaDataset AxisInfo and SCP Coord-like objects.
     """
     if coord is None:
         return None
@@ -223,9 +230,9 @@ def extract_dataset_from_result(result: Any, file_path: str) -> NDDataset:
     Strategy: Select the 2D dataset with the largest total size (rows * cols),
     which is typically the main spectral matrix D = C * S^T.
 
-    This is an SCP-internal utility called before the NDDataset-to-AnalysisDataset
+    This is an SCP-internal utility called before the NDDataset-to-SherpaDataset
     conversion step.  Callers are responsible for calling ``from_nddataset()``
-    on the returned value when an AnalysisDataset is needed downstream.
+    on the returned value when a SherpaDataset is needed downstream.
 
     Args:
         result: The result from SpectroChemPy read operation
@@ -336,7 +343,7 @@ def _normalize_scp_read_output(result: Any) -> NDDataset | None:
 def _try_load_scp_file(path: Path) -> NDDataset | None:
     """Load one SCP file with extension-aware reader selection.
 
-    SCP-internal: returns a raw NDDataset before AnalysisDataset conversion.
+    SCP-internal: returns a raw NDDataset before SherpaDataset conversion.
     For CSV files, index columns are stripped via ``remove_index_columns()``.
 
     Returns:
@@ -379,7 +386,7 @@ def _try_load_first_file(folder: Path) -> NDDataset | None:
     """Find the first readable file in a dataset folder (recursive).
 
     SCP-internal: delegates to ``_try_load_scp_file()`` and returns a raw
-    NDDataset before AnalysisDataset conversion.
+    NDDataset before SherpaDataset conversion.
 
     Returns:
         An NDDataset from the first successfully loaded file, or None.
@@ -653,7 +660,7 @@ class DataSourceNode(Node):
         Execute data loading.
 
         Returns:
-            dict with "default" (AnalysisDataset) and "target" (optional labels)
+            dict with "default" (SherpaDataset) and "target" (optional labels)
         """
         source = self.parameters.get("source", "spectrochempy")
         experiment_id = self.parameters.get("experiment_id")
@@ -707,8 +714,8 @@ class DataSourceNode(Node):
                 f"library_id={library_id}, file_path={file_path!r}"
             )
 
-        # ----- Normalize to AnalysisDataset -----
-        # Convert NDDataset to AnalysisDataset immediately so all downstream
+        # ----- Normalize to SherpaDataset -----
+        # Convert NDDataset to SherpaDataset immediately so all downstream
         # code has a single type to work with.  NDDataset meta/provenance is
         # preserved losslessly by from_nddataset().
         if isinstance(dataset, NDDataset):
@@ -743,20 +750,28 @@ class DataSourceNode(Node):
                 target = self._eigenvector_properties
             else:
                 target = None
-            # Convert NDDataset → AnalysisDataset (lossless)
+            # Convert NDDataset → SherpaDataset (lossless)
             dataset = from_nddataset(dataset)
         else:
-            # Non-NDDataset path (no SCP, or already AnalysisDataset)
+            # Non-NDDataset path (no SCP, or already SherpaDataset)
             target = None
             if source == "sklearn" and hasattr(self, "_sklearn_bunch"):
                 dataset = from_sklearn_bunch(self._sklearn_bunch, name=sklearn_dataset)
                 target = self._sklearn_bunch.target.tolist()
             elif source == "eigenvector" and hasattr(self, "_eigenvector_properties"):
                 target = self._eigenvector_properties
-            dataset = coerce_dataset(dataset, input_name="dataset", allow_array=True)
+            dataset = coerce_to_sherpa(dataset, input_name="dataset", allow_array=True)
             dataset = self._apply_axis_config(dataset)
 
-        # ----- Unified provenance (always AnalysisDataset from here) -----
+        # Enrich asserted domain + promoted metadata after all conversions.
+        dataset = self._apply_domain_context_hints(
+            dataset,
+            source=source,
+            sklearn_dataset=sklearn_dataset,
+            eigenvector_dataset=self.parameters.get("eigenvector_dataset"),
+        )
+
+        # ----- Unified provenance (always SherpaDataset from here) -----
         add_processing_step(
             dataset,
             "data.source",
@@ -777,11 +792,91 @@ class DataSourceNode(Node):
             "target": target,
         }
 
+    def _apply_domain_context_hints(
+        self,
+        dataset: SherpaDataset,
+        *,
+        source: str,
+        sklearn_dataset: str,
+        eigenvector_dataset: str | None,
+    ) -> SherpaDataset:
+        """Apply authoritative source hints and promote metadata into domain context."""
+        domain = dataset.domain.model_copy(deep=True)
+
+        # Source-level asserted domain (authoritative).
+        if source == "eigenvector":
+            catalog = DATASET_CATALOG.get(eigenvector_dataset or "", {})
+            technique = catalog.get("technique")
+            if technique:
+                domain.technique = str(technique)
+            x_units = catalog.get("x_units")
+            if x_units and not domain.expected_units:
+                domain.expected_units = str(x_units)
+        elif source == "sklearn":
+            domain.technique = "generic"
+            if sklearn_dataset:
+                domain.sample_type = sklearn_dataset
+
+        # Promote extracted instrument/sample metadata (currently in extra/meta).
+        extra = dataset.extra if isinstance(dataset.extra, dict) else {}
+        instrument_metadata = extra.get("scp.instrument_metadata") or extra.get("instrument_metadata")
+        sample_info = extra.get("scp.sample_info") or extra.get("sample_info")
+
+        if isinstance(instrument_metadata, dict):
+            instrument = self._format_instrument_name(instrument_metadata)
+            if instrument and not domain.instrument:
+                domain.instrument = instrument
+
+        if isinstance(sample_info, dict):
+            raw_mode = (
+                sample_info.get("sampling_technique")
+                or sample_info.get("measurement_mode")
+                or sample_info.get("accessory")
+            )
+            mode = self._normalize_measurement_mode(raw_mode)
+            if mode and not domain.measurement_mode:
+                domain.measurement_mode = mode
+
+        dataset.domain = domain
+        return dataset
+
+    @staticmethod
+    def _format_instrument_name(instrument_metadata: dict[str, Any]) -> str | None:
+        """Build a compact instrument name from normalized metadata fields."""
+        manufacturer = instrument_metadata.get("manufacturer")
+        model = instrument_metadata.get("model")
+        raw = instrument_metadata.get("manufacturer_model_raw")
+
+        parts = [str(p).strip() for p in (manufacturer, model) if p]
+        if parts:
+            return " ".join(parts)
+        if raw:
+            return str(raw).strip()
+        return None
+
+    @staticmethod
+    def _normalize_measurement_mode(raw_mode: Any) -> str | None:
+        """Normalize extracted sampling mode into DomainContext values."""
+        if raw_mode is None:
+            return None
+        value = str(raw_mode).strip()
+        if not value:
+            return None
+        lowered = value.lower()
+
+        if "atr" in lowered:
+            return "ATR"
+        if "trans" in lowered:
+            return "transmission"
+        if "refl" in lowered or "drift" in lowered or "diffuse" in lowered:
+            return "reflectance"
+        return value
+
     def _extract_target_labels(self, dataset: NDDataset) -> Any:
         """
         Extract target labels from an NDDataset if present.
 
-        Called **before** the NDDataset-to-AnalysisDataset conversion so that
+        Called **before** the NDDataset-to-SherpaDataset conversion so that
         SCP Coord label access is still available.  Prefers y-axis labels
         over y-axis numeric data.
         """
@@ -803,10 +898,10 @@ class DataSourceNode(Node):
         Apply axis configuration: transpose and custom axis titles.
 
         Preserves original axis titles from source data unless explicitly overridden.
-        Works with both NDDataset and AnalysisDataset.
+        Works with both NDDataset and SherpaDataset.
 
         Args:
-            dataset: Input dataset (NDDataset or AnalysisDataset)
+            dataset: Input dataset (NDDataset or SherpaDataset)
 
         Returns:
             Configured dataset with correct axis orientation and titles
@@ -816,28 +911,36 @@ class DataSourceNode(Node):
         sample_axis_override = self.parameters.get("sample_axis_title", "").strip()
         spectral_axis_override = self.parameters.get("spectral_axis_title", "").strip()
 
-        is_ads = isinstance(dataset, AnalysisDataset)
+        is_sherpa = isinstance(dataset, SherpaDataset)
 
         # Transpose if requested (swap rows and columns)
         if transpose_on_load:
-            if is_ads:
-                dataset = AnalysisDataset(
+            if is_sherpa:
+                dataset = SherpaDataset(
                     X=dataset.X.T,
-                    x_axis=dataset.y_axis,
-                    y_axis=dataset.x_axis,
-                    meta=dict(dataset.meta),
-                    provenance=list(dataset.provenance),
+                    spectral_axis=dataset.sample_axis.copy() if dataset.sample_axis is not None else None,
+                    sample_axis=dataset.spectral_axis.copy() if dataset.spectral_axis is not None else None,
+                    target=None,  # row count changes on transpose; drop target unless explicitly re-bound
+                    target_context=dataset.target_context.model_copy(deep=True),
+                    domain=dataset.domain.model_copy(deep=True),
+                    provenance=dataset.provenance.copy(),
+                    quality=dataset.quality.model_copy(deep=True),
                     backend=dataset.backend,
                     title=dataset.title,
                     units=dataset.units,
+                    extra=dict(dataset.extra),
                 )
             else:
                 dataset = dataset.T
             logger.debug(f"[DATA] Transposed data to {dataset.shape[0]} samples × {dataset.shape[1]} features")
 
         if dataset.ndim >= 2:
-            current_y = safe_get_coord(dataset, "y")
-            current_x = safe_get_coord(dataset, "x")
+            if is_sherpa:
+                current_y = dataset.sample_axis
+                current_x = dataset.spectral_axis
+            else:
+                current_y = safe_get_coord(dataset, "y")
+                current_x = safe_get_coord(dataset, "x")
 
             # Determine y-axis (sample) title
             if sample_axis_override:
@@ -855,43 +958,22 @@ class DataSourceNode(Node):
             else:
                 x_title = "Feature"
 
-            if is_ads:
-                # AnalysisDataset: set AxisInfo directly
+            if is_sherpa:
                 if current_y is not None:
                     if current_y.title != y_title:
-                        dataset.y_axis = AxisInfo(
-                            values=(
-                                current_y.values
-                                if hasattr(current_y, "values")
-                                else current_y.data if hasattr(current_y, "data") else None
-                            ),
-                            labels=current_y.labels if hasattr(current_y, "labels") else None,
-                            units=current_y.units if hasattr(current_y, "units") else None,
-                            title=y_title,
-                        )
+                        new_y = current_y.copy()
+                        new_y.title = y_title
+                        dataset.sample_axis = new_y
                 else:
-                    dataset.y_axis = AxisInfo(
-                        values=np.arange(dataset.shape[0]),
-                        title=y_title,
-                    )
+                    dataset.sample_axis = SampleAxis(values=np.arange(dataset.shape[0], dtype=float), title=y_title)
 
                 if current_x is not None:
                     if current_x.title != x_title:
-                        dataset.x_axis = AxisInfo(
-                            values=(
-                                current_x.values
-                                if hasattr(current_x, "values")
-                                else current_x.data if hasattr(current_x, "data") else None
-                            ),
-                            labels=current_x.labels if hasattr(current_x, "labels") else None,
-                            units=current_x.units if hasattr(current_x, "units") else None,
-                            title=x_title,
-                        )
+                        new_x = current_x.copy()
+                        new_x.title = x_title
+                        dataset.spectral_axis = new_x
                 else:
-                    dataset.x_axis = AxisInfo(
-                        values=np.arange(dataset.shape[1]),
-                        title=x_title,
-                    )
+                    dataset.spectral_axis = SpectralAxis(values=np.arange(dataset.shape[1], dtype=float), title=x_title)
             else:
                 # NDDataset: use SCP Coord + set_coordset
                 if current_y is not None:
@@ -915,7 +997,10 @@ class DataSourceNode(Node):
 
         elif dataset.ndim == 1:
             # For 1D data, only x-axis
-            aac_1d_x_coord = safe_get_coord(dataset, "x")
+            if is_sherpa:
+                aac_1d_x_coord = dataset.spectral_axis
+            else:
+                aac_1d_x_coord = safe_get_coord(dataset, "x")
             if spectral_axis_override:
                 x_title = spectral_axis_override
             elif aac_1d_x_coord is not None and hasattr(aac_1d_x_coord, "title") and aac_1d_x_coord.title:
@@ -923,22 +1008,14 @@ class DataSourceNode(Node):
             else:
                 x_title = "Feature"
 
-            if is_ads:
+            if is_sherpa:
                 if aac_1d_x_coord is not None:
                     if aac_1d_x_coord.title != x_title:
-                        dataset.x_axis = AxisInfo(
-                            values=(
-                                aac_1d_x_coord.values
-                                if hasattr(aac_1d_x_coord, "values")
-                                else aac_1d_x_coord.data if hasattr(aac_1d_x_coord, "data") else None
-                            ),
-                            title=x_title,
-                        )
+                        new_x = aac_1d_x_coord.copy()
+                        new_x.title = x_title
+                        dataset.spectral_axis = new_x
                 else:
-                    dataset.x_axis = AxisInfo(
-                        values=np.arange(dataset.shape[0]),
-                        title=x_title,
-                    )
+                    dataset.spectral_axis = SpectralAxis(values=np.arange(dataset.shape[0], dtype=float), title=x_title)
             else:
                 if aac_1d_x_coord is not None:
                     if aac_1d_x_coord.title != x_title:
@@ -1074,7 +1151,7 @@ class DataSourceNode(Node):
             )
             return dataset
 
-        # No-SCP path: return AnalysisDataset with proper axes
+        # No-SCP path: return SherpaDataset with proper axes
         x_title = catalog.get("x_title", "Channel")
         x_units = catalog.get("x_units")
         x_values = (
@@ -1083,10 +1160,14 @@ class DataSourceNode(Node):
             else np.arange(spectra.shape[1])
         )
 
-        dataset = AnalysisDataset(
+        dataset = SherpaDataset(
             X=spectra,
-            x_axis=AxisInfo(values=x_values, title=x_title, units=x_units),
-            y_axis=AxisInfo(values=np.arange(spectra.shape[0]), title="Sample"),
+            spectral_axis=SpectralAxis(values=x_values, title=x_title, units=x_units),
+            sample_axis=SampleAxis(values=np.arange(spectra.shape[0]), title="Sample"),
+            domain=DomainContext(
+                technique=catalog.get("technique"),
+                expected_units=catalog.get("x_units"),
+            ),
             backend="numpy",
             title=catalog.get("label", dataset_name),
         )
@@ -1802,10 +1883,15 @@ class DataSourceNode(Node):
             spectra[i] += base + noise
 
         if not HAS_SCP:
-            return AnalysisDataset(
+            return SherpaDataset(
                 X=spectra,
-                x_axis=AxisInfo(values=wavenumbers, title="Wavenumber", units="cm^-1"),
-                y_axis=AxisInfo(values=np.arange(n_samples), title="Sample"),
+                spectral_axis=SpectralAxis(values=wavenumbers, title="Wavenumber", units="cm^-1"),
+                sample_axis=SampleAxis(values=np.arange(n_samples), title="Sample"),
+                domain=DomainContext(
+                    technique="IR",
+                    data_quantity="Absorbance",
+                    expected_units="cm^-1",
+                ),
                 backend="numpy",
                 title="Synthetic Spectra",
                 units="absorbance",
@@ -1959,7 +2045,7 @@ class FileLoadNode(Node):
                     },
                     node_id=self.node_id,
                 )
-                # Convert to AnalysisDataset for uniform DAG contract
+                # Convert to SherpaDataset for uniform DAG contract
                 return from_nddataset(dataset)
         except Exception as e:
             raise ValueError(f"Error loading file: {e}")
@@ -2141,7 +2227,7 @@ class MyDatasetNode(Node):
                 f"[MY_DATASET] Loaded {len(s_names)} spectral + " f"{len(all_pnames)} property files from '{exp_name}'"
             )
 
-        # Convert to AnalysisDataset for uniform DAG contract
+        # Convert to SherpaDataset for uniform DAG contract
         spectra_out = from_nddataset(spectra) if isinstance(spectra, NDDataset) else spectra
         target_out = from_nddataset(target) if isinstance(target, NDDataset) else target
         return {"default": spectra_out, "target": target_out}
@@ -2151,7 +2237,7 @@ class MyDatasetNode(Node):
         """Return number of x-axis points (0 if no x-axis).
 
         Operates on raw NDDataset instances loaded by ``_load_file()``
-        before the AnalysisDataset conversion step.
+        before the SherpaDataset conversion step.
         """
         coord = safe_get_coord(ds, "x")
         return len(np.array(coord.data)) if coord is not None else 0
@@ -2473,7 +2559,7 @@ class NISTLibraryNode(Node):
                     },
                     node_id=self.node_id,
                 )
-                # Convert to AnalysisDataset for uniform DAG contract
+                # Convert to SherpaDataset for uniform DAG contract
                 return from_nddataset(dataset)
         except Exception as e:
             raise ValueError(f"Error loading NIST library entry: {e}")
@@ -2572,9 +2658,9 @@ class SyntheticCurveNode(Node):
         else:
             curve = np.ones(n_points) * max_conc
 
-        dataset = AnalysisDataset(
+        dataset = SherpaDataset(
             X=curve.reshape(1, -1),
-            x_axis=AxisInfo(values=t * n_points, title="Time", units="s"),
+            spectral_axis=SpectralAxis(values=t * n_points, title="Time", units="s"),
             backend="numpy",
             title=f"Concentration ({curve_type})",
             units="mol/L",
@@ -2998,7 +3084,7 @@ class LoadGroupNode(Node):
             },
             node_id=self.node_id,
         )
-        # Convert to AnalysisDataset for uniform DAG contract
+        # Convert to SherpaDataset for uniform DAG contract
         return from_nddataset(concatenated)
 
     def _load_single_file(self, file_path: Path) -> NDDataset:
@@ -3252,7 +3338,7 @@ class TrainTestSplitNode(Node):
             X,
             kwargs,
             missing_message="Missing required input: X (dataset)",
-            dataset_error_message="X must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="X must be an NDDataset or SherpaDataset object",
             allow_array=True,
         )
         y_value = bind_y(
@@ -3314,10 +3400,10 @@ class TrainTestSplitNode(Node):
         X_test = build_dataset_like(X_test_array, X_ds)
 
         # Slice sample-axis metadata to match train/test rows.
-        tts_y_coord = safe_get_coord(X_ds, "y")
+        tts_y_coord = X_ds.sample_axis
         if tts_y_coord is not None and len(tts_y_coord) > 1:
-            X_train.y = slice_axis_for_indices(tts_y_coord, train_idx)
-            X_test.y = slice_axis_for_indices(tts_y_coord, test_idx)
+            X_train.sample_axis = slice_axis_for_indices(tts_y_coord, train_idx)
+            X_test.sample_axis = slice_axis_for_indices(tts_y_coord, test_idx)
 
         # Keep dataset.target aligned after row splitting.
         target = getattr(X_ds, "target", None)

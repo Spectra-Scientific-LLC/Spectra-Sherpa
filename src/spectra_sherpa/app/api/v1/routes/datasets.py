@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -13,6 +13,18 @@ from spectra_sherpa.app.models.experiment_file import ExperimentFile
 from spectra_sherpa.app.models.nist_library import NistLibrary
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.services.experiments import experiment_dir
+from spectra_sherpa.app.services.dataset_registry import dataset_registry
+
+
+def _resolve_handle_or_raise(dataset_id: str, current_user: User):
+    """Resolve a dataset handle with ownership checks."""
+    user_id = current_user.id if current_user is not None else None
+    try:
+        return dataset_registry.get(dataset_id, user_id=user_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail="Dataset is not accessible for this user") from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Dataset handle not found: {dataset_id}") from exc
 
 
 class ExperimentDataset(BaseModel):
@@ -151,3 +163,83 @@ async def download_dataset(
 
     # 4. Stream File
     return FileResponse(path=file_path, filename=file_path.name, media_type="application/octet-stream")
+
+
+@router.get("/{dataset_id}/manifest")
+async def dataset_manifest(
+    dataset_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    ds = _resolve_handle_or_raise(dataset_id, current_user)
+    return ds.manifest.model_dump()
+
+
+@router.get("/{dataset_id}/preview")
+async def dataset_preview(
+    dataset_id: str,
+    n_rows: int = Query(5, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+):
+    from spectra_sherpa.app.lib.dataset_summarizer import DatasetSummarizer
+
+    ds = _resolve_handle_or_raise(dataset_id, current_user)
+    resource = DatasetSummarizer().to_mcp_resource(ds)
+    preview = resource.get("preview", {})
+    preview["n_rows"] = min(n_rows, ds.shape[0])
+    preview["data"] = ds.X[: preview["n_rows"]].tolist()
+    return preview
+
+
+@router.get("/{dataset_id}/provenance")
+async def dataset_provenance(
+    dataset_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    ds = _resolve_handle_or_raise(dataset_id, current_user)
+    return ds.provenance.to_list()
+
+
+@router.get("/{dataset_id}/quality")
+async def dataset_quality(
+    dataset_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    ds = _resolve_handle_or_raise(dataset_id, current_user)
+    return ds.quality.model_dump(exclude_none=True)
+
+
+@router.get("/{dataset_id}/summary")
+async def dataset_summary(
+    dataset_id: str,
+    tier: int = Query(1, ge=0, le=3),
+    current_user: User = Depends(get_current_user),
+):
+    from spectra_sherpa.app.lib.dataset_summarizer import DatasetSummarizer
+
+    ds = _resolve_handle_or_raise(dataset_id, current_user)
+    summarizer = DatasetSummarizer()
+    return {
+        "dataset_id": ds.dataset_id,
+        "summary": summarizer.summarize(ds, tier=tier),
+        "structured": summarizer.to_structured(ds, tier=tier),
+    }
+
+
+class BranchRequest(BaseModel):
+    label: str
+
+
+@router.post("/{dataset_id}/branch")
+async def dataset_branch(
+    dataset_id: str,
+    payload: BranchRequest,
+    current_user: User = Depends(get_current_user),
+):
+    user_id = current_user.id if current_user is not None else None
+    try:
+        branched = dataset_registry.branch(dataset_id, label=payload.label, user_id=user_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail="Dataset is not accessible for this user") from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Dataset handle not found: {dataset_id}") from exc
+    return branched.manifest.model_dump()

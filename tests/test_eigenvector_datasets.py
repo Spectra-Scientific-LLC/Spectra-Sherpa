@@ -26,7 +26,7 @@ import pytest
 from sklearn.decomposition import PCA as SklearnPCA
 from sklearn.preprocessing import StandardScaler
 
-from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.lib.eigenvector import (
     DATASET_CATALOG,
     EIGENVECTOR_DATA_DIR,
@@ -524,8 +524,9 @@ class TestDataSourceNodeEigenvector:
         node = make_node({"source": "eigenvector", "eigenvector_dataset": "diesel_nir"})
         result = await node.execute()
         dataset = result["default"]
-        assert isinstance(dataset, AnalysisDataset)
+        assert isinstance(dataset, SherpaDataset)
         assert dataset.shape == (784, 401)
+        assert dataset.domain.technique == "NIR"
 
     @pytest.mark.asyncio
     async def test_eigenvector_diesel_properties_on_target(self, make_node):
@@ -544,23 +545,24 @@ class TestDataSourceNodeEigenvector:
         node = make_node({"source": "eigenvector", "eigenvector_dataset": "corn_m5"})
         result = await node.execute()
         dataset = result["default"]
-        assert isinstance(dataset, AnalysisDataset)
+        assert isinstance(dataset, SherpaDataset)
         assert dataset.shape == (80, 700)
+        assert dataset.domain.technique == "NIR"
         assert len(result["target"]["columns"]) == 4
 
     @pytest.mark.skipif(not HAS_SCP, reason="SpectroChemPy not installed")
     @pytest.mark.asyncio
     async def test_eigenvector_scp_nddataset(self, make_node):
-        """With SCP, eigenvector should return AnalysisDataset with wavelength axis."""
+        """With SCP, eigenvector should return SherpaDataset with wavelength axis."""
         node = make_node({"source": "eigenvector", "eigenvector_dataset": "diesel_nir"})
         result = await node.execute()
         dataset = result["default"]
-        assert isinstance(dataset, AnalysisDataset)
+        assert isinstance(dataset, SherpaDataset)
         assert dataset.shape == (784, 401)
         # Check wavelength axis
-        x_coord = dataset.x
-        assert x_coord is not None
-        x_data = np.array(x_coord.data).flatten()
+        spectral = dataset.spectral_axis
+        assert spectral is not None
+        x_data = np.array(spectral.values).flatten()
         assert x_data[0] == pytest.approx(750.0)
         assert x_data[-1] == pytest.approx(1550.0)
 
@@ -571,11 +573,10 @@ class TestDataSourceNodeEigenvector:
         node = make_node({"source": "eigenvector", "eigenvector_dataset": "diesel_nir"})
         result = await node.execute()
         dataset = result["default"]
-        history = dataset.meta.get("processing_history", [])
-        assert len(history) >= 1
-        source_step = history[0]
-        assert source_step["parameters"]["source"] == "eigenvector"
-        assert source_step["parameters"]["eigenvector_dataset"] == "diesel_nir"
+        assert len(dataset.provenance) >= 1
+        source_step = dataset.provenance[0]
+        assert source_step.parameters["source"] == "eigenvector"
+        assert source_step.parameters["eigenvector_dataset"] == "diesel_nir"
 
 
 # ---------------------------------------------------------------------------

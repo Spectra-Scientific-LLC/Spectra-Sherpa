@@ -2,7 +2,7 @@
 Tests for the no-SCP DAG execution path.
 
 Verifies that portable nodes work correctly when SpectroChemPy is absent,
-using AnalysisDataset as the runtime container.
+using SherpaDataset as the runtime container.
 
 Run with:
     PYTHONPATH=src/spectra_sherpa python -m pytest tests/test_no_scp_dag.py -v --no-cov
@@ -13,7 +13,14 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo, from_sklearn_bunch
+from spectra_sherpa.app.lib.sherpa_dataset import (
+    SherpaDataset,
+    SpectralAxis,
+    SampleAxis,
+    AxisInfo,
+)
+# sklearn adapter now lives in its own module and returns SherpaDataset
+from spectra_sherpa.app.lib.adapters.sklearn_adapter import from_sklearn_bunch
 from spectra_sherpa.app.services.dag.node_base import NodeResult, node_registry
 
 # ---------------------------------------------------------------------------
@@ -39,24 +46,24 @@ def no_scp(monkeypatch):
 
 @pytest.fixture
 def iris_dataset():
-    """Create an AnalysisDataset with iris-like data (10 samples, 4 features)."""
+    """Create a SherpaDataset with iris-like data (10 samples, 4 features)."""
     rng = np.random.default_rng(42)
     X = rng.standard_normal((10, 4))
-    x_axis = AxisInfo(
+    spectral_axis = SpectralAxis(
         values=np.arange(4, dtype=float),
         labels=["sepal_length", "sepal_width", "petal_length", "petal_width"],
         title="features",
     )
-    y_axis = AxisInfo(
+    sample_axis = SampleAxis(
         values=np.arange(10, dtype=float),
         title="samples",
     )
-    return AnalysisDataset(
+    return SherpaDataset(
         X=X,
-        x_axis=x_axis,
-        y_axis=y_axis,
+        spectral_axis=spectral_axis,
+        sample_axis=sample_axis,
         target=np.array([0, 0, 0, 1, 1, 1, 2, 2, 2, 0]),
-        meta={"dataset_name": "test_iris"},
+        extra={"dataset_name": "test_iris"},
         backend="numpy",
         title="Test Iris",
     )
@@ -73,33 +80,33 @@ async def test_requires_scp_gate_raises_import_error(no_scp):
     node = node_registry.create_node("baseline.rubberband", "test_rb", {})
 
     # Provide a dummy input so we get past parameter validation
-    dummy = AnalysisDataset(X=np.ones((5, 10)))
+    dummy = SherpaDataset(X=np.ones((5, 10)))
 
     with pytest.raises(ImportError, match="requires SpectroChemPy"):
         await node.run(default=dummy)
 
 
 # ---------------------------------------------------------------------------
-# 2. SNV node on AnalysisDataset
+# 2. SNV node on SherpaDataset
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_snv_node_on_analysis_dataset(iris_dataset):
-    """SNV normalization should work on AnalysisDataset and preserve shape and axes."""
+async def test_snv_node_on_sherpa_dataset(iris_dataset):
+    """SNV normalization should work on SherpaDataset and preserve shape and axes."""
     node = node_registry.create_node("normalize.snv", "test_snv", {})
     result = await node.run(default=iris_dataset)
 
     assert isinstance(result, NodeResult)
     output = result.outputs.get("default")
     assert output is not None, "SNV node should produce a 'default' output"
-    assert isinstance(output, AnalysisDataset)
+    assert isinstance(output, SherpaDataset)
     assert output.shape == iris_dataset.shape, "Output shape should match input"
 
-    # x_axis should be preserved
-    assert output.x_axis is not None, "x_axis should be preserved"
-    np.testing.assert_array_equal(output.x_axis.values, iris_dataset.x_axis.values)
-    assert output.x_axis.labels == iris_dataset.x_axis.labels
+    # spectral_axis should be preserved
+    assert output.spectral_axis is not None, "spectral_axis should be preserved"
+    np.testing.assert_array_equal(output.spectral_axis.values, iris_dataset.spectral_axis.values)
+    assert output.spectral_axis.labels == iris_dataset.spectral_axis.labels
 
     # Verify SNV property: each row should have zero mean and unit std
     for i in range(output.shape[0]):
@@ -113,25 +120,25 @@ async def test_snv_node_on_analysis_dataset(iris_dataset):
 
 
 # ---------------------------------------------------------------------------
-# 3. Scale node on AnalysisDataset
+# 3. Scale node on SherpaDataset
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_scale_node_on_analysis_dataset(iris_dataset):
-    """Scale normalization should work on AnalysisDataset with 'max' method."""
+async def test_scale_node_on_sherpa_dataset(iris_dataset):
+    """Scale normalization should work on SherpaDataset with 'max' method."""
     node = node_registry.create_node("normalize.scale", "test_scale", {"method": "max"})
     result = await node.run(default=iris_dataset)
 
     assert isinstance(result, NodeResult)
     output = result.outputs.get("default")
     assert output is not None, "Scale node should produce a 'default' output"
-    assert isinstance(output, AnalysisDataset)
+    assert isinstance(output, SherpaDataset)
     assert output.shape == iris_dataset.shape
 
-    # x_axis should be preserved
-    assert output.x_axis is not None
-    np.testing.assert_array_equal(output.x_axis.values, iris_dataset.x_axis.values)
+    # spectral_axis should be preserved
+    assert output.spectral_axis is not None
+    np.testing.assert_array_equal(output.spectral_axis.values, iris_dataset.spectral_axis.values)
 
     # Each row's max absolute value should be 1.0 (max normalization)
     for i in range(output.shape[0]):
@@ -146,7 +153,7 @@ async def test_scale_node_minmax_method(iris_dataset):
     result = await node.run(default=iris_dataset)
 
     output = result.outputs.get("default")
-    assert isinstance(output, AnalysisDataset)
+    assert isinstance(output, SherpaDataset)
 
     for i in range(output.shape[0]):
         row = output.X[i]
@@ -166,7 +173,7 @@ async def test_clip_floor_execution(iris_dataset):
     result = await node.run(default=iris_dataset)
 
     output = result.outputs.get("default")
-    assert isinstance(output, AnalysisDataset)
+    assert isinstance(output, SherpaDataset)
     assert output.shape == iris_dataset.shape
     assert np.all(output.X >= 0.0), "All values should be >= floor"
     # Verify values above floor are unchanged
@@ -181,7 +188,7 @@ async def test_center_mean_execution(iris_dataset):
     result = await node.run(default=iris_dataset)
 
     output = result.outputs.get("default")
-    assert isinstance(output, AnalysisDataset)
+    assert isinstance(output, SherpaDataset)
     assert output.shape == iris_dataset.shape
     col_means = np.mean(output.X, axis=0)
     np.testing.assert_array_almost_equal(col_means, 0.0, decimal=10)
@@ -194,7 +201,7 @@ async def test_autoscaling_execution(iris_dataset):
     result = await node.run(default=iris_dataset)
 
     output = result.outputs.get("default")
-    assert isinstance(output, AnalysisDataset)
+    assert isinstance(output, SherpaDataset)
     assert output.shape == iris_dataset.shape
     col_means = np.mean(output.X, axis=0)
     col_stds = np.std(output.X, axis=0)
@@ -209,7 +216,7 @@ async def test_pareto_scaling_execution(iris_dataset):
     result = await node.run(default=iris_dataset)
 
     output = result.outputs.get("default")
-    assert isinstance(output, AnalysisDataset)
+    assert isinstance(output, SherpaDataset)
     assert output.shape == iris_dataset.shape
     # Verify manually: centered data / sqrt(std)
     data = iris_dataset.X.astype(np.float64)
@@ -222,13 +229,13 @@ async def test_pareto_scaling_execution(iris_dataset):
 
 
 # ---------------------------------------------------------------------------
-# 4. KMeans node on AnalysisDataset
+# 4. KMeans node on SherpaDataset
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_kmeans_node_on_analysis_dataset(iris_dataset):
-    """KMeans clustering should work on AnalysisDataset and return expected keys."""
+async def test_kmeans_node_on_sherpa_dataset(iris_dataset):
+    """KMeans clustering should work on SherpaDataset and return expected keys."""
     node = node_registry.create_node(
         "model.kmeans",
         "test_kmeans",
@@ -284,7 +291,7 @@ async def test_data_source_sklearn_no_scp(no_scp):
     outputs = result.outputs
     dataset = outputs.get("default")
     assert dataset is not None, "DataSource should produce a 'default' output"
-    assert isinstance(dataset, AnalysisDataset), f"Expected AnalysisDataset, got {type(dataset).__name__}"
+    assert isinstance(dataset, SherpaDataset), f"Expected SherpaDataset, got {type(dataset).__name__}"
     assert dataset.shape == (150, 4), f"Iris shape should be (150, 4), got {dataset.shape}"
 
     target = outputs.get("target")
@@ -294,32 +301,32 @@ async def test_data_source_sklearn_no_scp(no_scp):
 
 
 # ---------------------------------------------------------------------------
-# 6. Serialization test (AnalysisDataset.to_dict)
+# 6. Serialization test (SherpaDataset.to_dict)
 # ---------------------------------------------------------------------------
 
 
-def test_analysis_dataset_to_dict(iris_dataset):
-    """AnalysisDataset.to_dict() should emit the wire-format contract."""
+def test_sherpa_dataset_to_dict(iris_dataset):
+    """SherpaDataset.to_dict() should emit the wire-format contract."""
     d = iris_dataset.to_dict()
 
-    assert d["type"] == "NDDataset", "Wire format must have type='NDDataset'"
+    assert d["type"] == "SherpaDataset", "Wire format must have type='SherpaDataset'"
     assert d["n_samples"] == 10
     assert d["n_features"] == 4
     assert d["shape"] == [10, 4]
     assert d["title"] == "Test Iris"
     assert d["backend"] == "numpy"
 
-    # x_axis must use 'data' key (not 'values') per wire-format contract
-    assert "x_axis" in d
-    assert "data" in d["x_axis"], "x_axis must use 'data' key for frontend compat"
-    assert d["x_axis"]["data"] is not None
-    assert len(d["x_axis"]["data"]) == 4
-    assert d["x_axis"]["labels"] == ["sepal_length", "sepal_width", "petal_length", "petal_width"]
-    assert d["x_axis"]["title"] == "features"
+    # spectral_axis must use 'data' key (not 'values') per wire-format contract
+    assert "spectral_axis" in d
+    assert "data" in d["spectral_axis"], "spectral_axis must use 'data' key for frontend compat"
+    assert d["spectral_axis"]["data"] is not None
+    assert len(d["spectral_axis"]["data"]) == 4
+    assert d["spectral_axis"]["labels"] == ["sepal_length", "sepal_width", "petal_length", "petal_width"]
+    assert d["spectral_axis"]["title"] == "features"
 
-    # y_axis
-    assert "y_axis" in d
-    assert len(d["y_axis"]["data"]) == 10
+    # sample_axis
+    assert "sample_axis" in d
+    assert len(d["sample_axis"]["data"]) == 10
 
     # target
     assert "target" in d
@@ -336,18 +343,18 @@ def test_analysis_dataset_to_dict(iris_dataset):
 
 
 # ---------------------------------------------------------------------------
-# 7. serialize_for_api with AnalysisDataset
+# 7. serialize_for_api with SherpaDataset
 # ---------------------------------------------------------------------------
 
 
-def test_serialize_for_api_with_analysis_dataset(iris_dataset):
-    """serialize_for_api should build on AnalysisDataset.to_dict() with enrichment."""
+def test_serialize_for_api_with_sherpa_dataset(iris_dataset):
+    """serialize_for_api should build on SherpaDataset.to_dict() with enrichment."""
     from spectra_sherpa.app.services.dag.serialize import serialize_for_api
 
     serialized = serialize_for_api(iris_dataset)
 
     # Core fields from to_dict() must be present
-    assert serialized["type"] == "NDDataset"
+    assert serialized["type"] == "SherpaDataset"
     assert serialized["n_samples"] == 10
     assert serialized["n_features"] == 4
     assert serialized["shape"] == [10, 4]
@@ -358,25 +365,25 @@ def test_serialize_for_api_with_analysis_dataset(iris_dataset):
 
 
 # ---------------------------------------------------------------------------
-# 8. serialize_result with AnalysisDataset
+# 8. serialize_result with SherpaDataset
 # ---------------------------------------------------------------------------
 
 
-def test_serialize_result_with_analysis_dataset(iris_dataset):
-    """serialize_result should serialize AnalysisDataset to dict with type='NDDataset'."""
+def test_serialize_result_with_sherpa_dataset(iris_dataset):
+    """serialize_result should serialize SherpaDataset to dict with type='SherpaDataset'."""
     from spectra_sherpa.app.api.v1.routes.workflows import serialize_result
 
     result = serialize_result(iris_dataset)
     assert isinstance(result, dict)
-    assert result["type"] == "NDDataset"
+    assert result["type"] == "SherpaDataset"
     assert result["n_samples"] == 10
     assert result["n_features"] == 4
     assert "x_axis" in result
     assert "data" in result["x_axis"]
 
 
-def test_serialize_result_with_nested_analysis_dataset(iris_dataset):
-    """serialize_result should handle dicts containing AnalysisDataset values."""
+def test_serialize_result_with_nested_sherpa_dataset(iris_dataset):
+    """serialize_result should handle dicts containing SherpaDataset values."""
     from spectra_sherpa.app.api.v1.routes.workflows import serialize_result
 
     multi_output = {
@@ -386,7 +393,7 @@ def test_serialize_result_with_nested_analysis_dataset(iris_dataset):
     }
     result = serialize_result(multi_output)
     assert isinstance(result, dict)
-    assert result["default"]["type"] == "NDDataset"
+    assert result["default"]["type"] == "SherpaDataset"
     assert result["labels"] == [0, 1, 2]
     assert result["score"] == 0.95
 
@@ -396,8 +403,8 @@ def test_serialize_result_with_nested_analysis_dataset(iris_dataset):
 # ---------------------------------------------------------------------------
 
 
-def test_is_dataset_with_analysis_dataset(iris_dataset):
-    """_is_dataset should return True for AnalysisDataset."""
+def test_is_dataset_with_sherpa_dataset(iris_dataset):
+    """_is_dataset should return True for SherpaDataset."""
     from spectra_sherpa.app.services.dag.executor import _is_dataset
 
     assert _is_dataset(iris_dataset) is True
@@ -431,28 +438,28 @@ def test_is_dataset_with_numpy_array():
 
 @pytest.mark.asyncio
 async def test_provenance_recorded_after_snv(iris_dataset):
-    """Running SNV on AnalysisDataset should record provenance in the output."""
+    """Running SNV on SherpaDataset should record provenance in the output."""
     node = node_registry.create_node("normalize.snv", "test_snv_prov", {})
     result = await node.run(default=iris_dataset)
 
     output = result.outputs["default"]
-    assert isinstance(output, AnalysisDataset)
+    assert isinstance(output, SherpaDataset)
 
-    # Provenance list should contain at least the SNV step
+    # Provenance should contain at least the SNV step
     assert len(output.provenance) > 0, "Provenance should not be empty after SNV"
 
-    # Find the SNV step
-    snv_steps = [step for step in output.provenance if step.get("operation") == "normalize.snv"]
+    # Find the SNV step — ProvenanceEntry uses .op_id, not dict .get("operation")
+    snv_steps = [entry for entry in output.provenance if entry.op_id == "normalize.snv"]
     assert len(snv_steps) == 1, "Should have exactly one SNV provenance entry"
 
     snv_step = snv_steps[0]
-    assert snv_step["node_id"] == "test_snv_prov"
-    assert "timestamp" in snv_step
+    assert snv_step.node_id == "test_snv_prov"
+    assert snv_step.timestamp  # non-empty string
 
 
 @pytest.mark.asyncio
 async def test_provenance_chain_snv_then_scale(iris_dataset):
-    """Chaining SNV -> Scale should produce two entries in processing_history."""
+    """Chaining SNV -> Scale should produce two entries in provenance."""
     snv_node = node_registry.create_node("normalize.snv", "chain_snv", {})
     snv_result = await snv_node.run(default=iris_dataset)
     snv_output = snv_result.outputs["default"]
@@ -461,15 +468,13 @@ async def test_provenance_chain_snv_then_scale(iris_dataset):
     scale_result = await scale_node.run(default=snv_output)
     scale_output = scale_result.outputs["default"]
 
-    assert isinstance(scale_output, AnalysisDataset)
+    assert isinstance(scale_output, SherpaDataset)
 
-    # meta["processing_history"] is the authoritative provenance chain
-    # (copy_processing_history copies from source.meta, add_processing_step appends)
-    meta_history = scale_output.meta.get("processing_history", [])
-    operations = [step.get("operation") for step in meta_history]
-    assert "normalize.snv" in operations, "SNV step should be in processing_history"
-    assert "normalize.scale" in operations, "Scale step should be in processing_history"
-    assert len(meta_history) >= 2, "Should have at least 2 history entries"
+    # Provenance is the single source of truth on SherpaDataset
+    operations = [entry.op_id for entry in scale_output.provenance]
+    assert "normalize.snv" in operations, "SNV step should be in provenance"
+    assert "normalize.scale" in operations, "Scale step should be in provenance"
+    assert len(scale_output.provenance) >= 2, "Should have at least 2 provenance entries"
 
 
 # ---------------------------------------------------------------------------
@@ -487,7 +492,7 @@ def test_node_result_wrap_dict():
 
 def test_node_result_wrap_non_dict():
     """NodeResult.wrap should wrap non-dict as {"default": raw}."""
-    ds = AnalysisDataset(X=np.ones((2, 3)))
+    ds = SherpaDataset(X=np.ones((2, 3)))
     wrapped = NodeResult.wrap(ds)
     assert wrapped.outputs == {"default": ds}
 
@@ -499,25 +504,25 @@ def test_node_result_wrap_passthrough():
 
 
 # ---------------------------------------------------------------------------
-# Bonus: AnalysisDataset round-trip serialization
+# Bonus: SherpaDataset round-trip serialization
 # ---------------------------------------------------------------------------
 
 
-def test_analysis_dataset_round_trip(iris_dataset):
-    """AnalysisDataset should survive a to_dict -> from_dict round trip."""
+def test_sherpa_dataset_round_trip(iris_dataset):
+    """SherpaDataset should survive a to_dict -> from_dict round trip."""
     d = iris_dataset.to_dict()
-    restored = AnalysisDataset.from_dict(d)
+    restored = SherpaDataset.from_dict(d)
 
     assert restored.shape == iris_dataset.shape
     np.testing.assert_allclose(restored.X, iris_dataset.X)
     assert restored.backend == iris_dataset.backend
     assert restored.title == iris_dataset.title
 
-    # x_axis round trip
-    assert restored.x_axis is not None
-    np.testing.assert_array_equal(restored.x_axis.values, iris_dataset.x_axis.values)
-    assert restored.x_axis.labels == iris_dataset.x_axis.labels
-    assert restored.x_axis.title == iris_dataset.x_axis.title
+    # spectral_axis round trip
+    assert restored.spectral_axis is not None
+    np.testing.assert_array_equal(restored.spectral_axis.values, iris_dataset.spectral_axis.values)
+    assert restored.spectral_axis.labels == iris_dataset.spectral_axis.labels
+    assert restored.spectral_axis.title == iris_dataset.spectral_axis.title
 
     # target round trip
     assert restored.target is not None
@@ -536,102 +541,100 @@ def test_from_sklearn_bunch():
     bunch = load_iris()
     ds = from_sklearn_bunch(bunch, name="iris")
 
-    assert isinstance(ds, AnalysisDataset)
+    assert isinstance(ds, SherpaDataset)
     assert ds.shape == (150, 4)
     assert ds.backend == "sklearn"
-    assert ds.x_axis is not None
-    assert ds.x_axis.labels is not None
-    assert len(ds.x_axis.labels) == 4
+    assert ds.spectral_axis is not None
+    assert ds.spectral_axis.labels is not None
+    assert len(ds.spectral_axis.labels) == 4
     assert ds.target is not None
     assert len(ds.target) == 150
-    assert ds.meta.get("dataset_name") == "iris"
+    assert ds.get_extra("sklearn.dataset_name") == "iris"
 
 
 # ---------------------------------------------------------------------------
-# SG-family nodes: scipy fallback on AnalysisDataset
+# SG-family nodes: scipy fallback on SherpaDataset
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture
 def spectral_dataset():
-    """AnalysisDataset with enough features for SG window operations."""
+    """SherpaDataset with enough features for SG window operations."""
     np.random.seed(42)
     X = np.random.randn(10, 100)  # 10 samples, 100 features (spectral-like)
-    return AnalysisDataset(
+    return SherpaDataset(
         X=X,
-        x_axis=AxisInfo(values=np.linspace(400, 4000, 100), title="Wavenumber", units="cm^-1"),
+        spectral_axis=SpectralAxis(values=np.linspace(400, 4000, 100), title="Wavenumber", units="cm^-1"),
         backend="numpy",
     )
 
 
 @pytest.mark.asyncio
-async def test_savgol_smooth_on_analysis_dataset(spectral_dataset):
-    """SG smooth should work via scipy fallback on AnalysisDataset."""
+async def test_savgol_smooth_on_sherpa_dataset(spectral_dataset):
+    """SG smooth should work via scipy fallback on SherpaDataset."""
     node = node_registry.create_node("smooth.savitzky_golay", "sg_smooth", {"size": 11, "order": 2})
     result = await node.run(default=spectral_dataset)
     output = result.outputs["default"]
-    assert isinstance(output, AnalysisDataset)
+    assert isinstance(output, SherpaDataset)
     assert output.shape == spectral_dataset.shape
     # Data should be different (smoothed)
     assert not np.array_equal(output.X, spectral_dataset.X)
 
 
 @pytest.mark.asyncio
-async def test_first_derivative_on_analysis_dataset(spectral_dataset):
-    """1st derivative should work via scipy fallback on AnalysisDataset."""
+async def test_first_derivative_on_sherpa_dataset(spectral_dataset):
+    """1st derivative should work via scipy fallback on SherpaDataset."""
     node = node_registry.create_node("derivative.first", "deriv1", {"size": 11, "order": 2})
     result = await node.run(default=spectral_dataset)
     output = result.outputs["default"]
-    assert isinstance(output, AnalysisDataset)
+    assert isinstance(output, SherpaDataset)
     assert output.shape == spectral_dataset.shape
 
 
 @pytest.mark.asyncio
-async def test_second_derivative_on_analysis_dataset(spectral_dataset):
-    """2nd derivative should work via scipy fallback on AnalysisDataset."""
+async def test_second_derivative_on_sherpa_dataset(spectral_dataset):
+    """2nd derivative should work via scipy fallback on SherpaDataset."""
     node = node_registry.create_node("derivative.second", "deriv2", {"size": 11, "order": 3})
     result = await node.run(default=spectral_dataset)
     output = result.outputs["default"]
-    assert isinstance(output, AnalysisDataset)
+    assert isinstance(output, SherpaDataset)
     assert output.shape == spectral_dataset.shape
 
 
 @pytest.mark.asyncio
-async def test_sg_derivative_on_analysis_dataset(spectral_dataset):
-    """Generic SG derivative should work via scipy fallback on AnalysisDataset."""
+async def test_sg_derivative_on_sherpa_dataset(spectral_dataset):
+    """Generic SG derivative should work via scipy fallback on SherpaDataset."""
     node = node_registry.create_node("preprocess.sg_derivative", "sg_deriv", {"size": 11, "order": 2, "deriv": "1"})
     result = await node.run(default=spectral_dataset)
     output = result.outputs["default"]
-    assert isinstance(output, AnalysisDataset)
+    assert isinstance(output, SherpaDataset)
     assert output.shape == spectral_dataset.shape
 
 
 # ---------------------------------------------------------------------------
-# Provenance: copy_processing_history syncs with AnalysisDataset.provenance
+# Provenance: copy_processing_history syncs with SherpaDataset.provenance
 # ---------------------------------------------------------------------------
 
 
 def test_copy_processing_history_syncs_provenance():
-    """copy_processing_history must update both meta and provenance on AnalysisDataset."""
+    """copy_processing_history must update provenance on SherpaDataset."""
     from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
 
-    source = AnalysisDataset(X=np.ones((3, 5)))
+    source = SherpaDataset(X=np.ones((3, 5)))
     add_processing_step(source, "normalize.snv", {}, node_id="n1")
     add_processing_step(source, "normalize.scale", {"method": "max"}, node_id="n2")
 
-    target = AnalysisDataset(X=np.ones((3, 5)))
+    target = SherpaDataset(X=np.ones((3, 5)))
     # target starts with 0 history entries
     assert len(target.provenance) == 0
 
     copy_processing_history(source, target)
 
-    # Both meta and provenance should have the same 2 steps
-    assert len(target.meta["processing_history"]) == 2
+    # SherpaDataset provenance is a Provenance object (single source of truth)
     assert len(target.provenance) == 2
-    assert target.meta["processing_history"] is target.provenance
 
-    # Verify operations
-    ops = [s["operation"] for s in target.provenance]
+    # Verify operations via ProvenanceEntry.op_id
+    ops = [entry.op_id for entry in target.provenance]
     assert ops == ["normalize.snv", "normalize.scale"]
 
 
@@ -639,8 +642,8 @@ def test_provenance_chain_survives_to_dict():
     """After SNV->Scale chain, to_dict() should serialize ALL provenance steps."""
     from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
 
-    # Simulate: source dataset → copy history → add step → serialize
-    ds = AnalysisDataset(X=np.ones((3, 5)))
+    # Simulate: source dataset -> copy history -> add step -> serialize
+    ds = SherpaDataset(X=np.ones((3, 5)))
     add_processing_step(ds, "data.source", {"source": "sklearn"}, node_id="src")
 
     # Create result from copy (simulating what a node does)
@@ -651,7 +654,7 @@ def test_provenance_chain_survives_to_dict():
     # Serialize
     d = result.to_dict()
     history = d["metadata"]["processing_history"]
-    operations = [step["operation"] for step in history]
+    operations = [step["op_id"] for step in history]
     assert "data.source" in operations
     assert "normalize.snv" in operations
     assert len(history) == 2
@@ -813,22 +816,22 @@ class TestGeneratePythonNoScp:
 
 
 # ---------------------------------------------------------------------------
-# 14. ClipRangeNode execute() on AnalysisDataset
+# 14. ClipRangeNode execute() on SherpaDataset
 # ---------------------------------------------------------------------------
 
 
-class TestClipRangeAnalysisDataset:
-    """Test ClipRangeNode execute() with AnalysisDataset (value-based clipping)."""
+class TestClipRangeSherpaDataset:
+    """Test ClipRangeNode execute() with SherpaDataset (value-based clipping)."""
 
     @pytest.mark.asyncio
     async def test_clip_by_wavenumber_values(self):
-        """ClipRange should select columns where x_axis values are within [min, max]."""
+        """ClipRange should select columns where spectral_axis values are within [min, max]."""
         # Simulate spectral data: 5 samples, 100 features at wavenumbers 400-4000
         wavenumbers = np.linspace(400, 4000, 100)
         X = np.random.default_rng(42).standard_normal((5, 100))
-        ds = AnalysisDataset(
+        ds = SherpaDataset(
             X=X,
-            x_axis=AxisInfo(values=wavenumbers, units="cm-1", title="wavenumber"),
+            spectral_axis=SpectralAxis(values=wavenumbers, units="cm-1", title="wavenumber"),
         )
 
         node = node_registry.create_node(
@@ -837,13 +840,13 @@ class TestClipRangeAnalysisDataset:
         result = await node.run(default=ds)
         output = result.outputs["default"]
 
-        assert isinstance(output, AnalysisDataset)
+        assert isinstance(output, SherpaDataset)
         # Only columns with wavenumber in [1000, 2000] should survive
         expected_mask = (wavenumbers >= 1000) & (wavenumbers <= 2000)
         expected_cols = expected_mask.sum()
         assert output.shape == (5, expected_cols), f"Expected (5, {expected_cols}), got {output.shape}"
-        # x_axis values should be the clipped subset
-        np.testing.assert_array_almost_equal(output.x_axis.values, wavenumbers[expected_mask])
+        # spectral_axis values should be the clipped subset
+        np.testing.assert_array_almost_equal(output.spectral_axis.values, wavenumbers[expected_mask])
         # Data should match the correct columns from the original
         np.testing.assert_array_almost_equal(output.X, X[:, expected_mask])
 
@@ -852,9 +855,9 @@ class TestClipRangeAnalysisDataset:
         """ClipRange with only min_wavenumber should keep all columns >= min."""
         wavenumbers = np.linspace(400, 4000, 50)
         X = np.ones((3, 50))
-        ds = AnalysisDataset(
+        ds = SherpaDataset(
             X=X,
-            x_axis=AxisInfo(values=wavenumbers, units="cm-1"),
+            spectral_axis=SpectralAxis(values=wavenumbers, units="cm-1"),
         )
         node = node_registry.create_node(
             "preprocess.clip_range", "test_clip_min", {"min_wavenumber": 2000, "max_wavenumber": 4000}
@@ -864,13 +867,13 @@ class TestClipRangeAnalysisDataset:
 
         expected_mask = (wavenumbers >= 2000) & (wavenumbers <= 4000)
         assert output.shape[1] == expected_mask.sum()
-        assert output.x_axis.values[0] >= 2000
+        assert output.spectral_axis.values[0] >= 2000
 
     @pytest.mark.asyncio
     async def test_clip_no_xaxis_falls_back_to_integer_slicing(self):
-        """Without x_axis, ClipRange should fall back to integer column slicing."""
+        """Without spectral_axis, ClipRange should fall back to integer column slicing."""
         X = np.ones((3, 100))
-        ds = AnalysisDataset(X=X)
+        ds = SherpaDataset(X=X)
         node = node_registry.create_node(
             "preprocess.clip_range", "test_clip_nox", {"min_wavenumber": 10, "max_wavenumber": 50}
         )
@@ -883,18 +886,18 @@ class TestClipRangeAnalysisDataset:
     async def test_clip_preserves_provenance(self):
         """ClipRange should record processing history."""
         wavenumbers = np.linspace(400, 4000, 100)
-        ds = AnalysisDataset(
+        ds = SherpaDataset(
             X=np.ones((3, 100)),
-            x_axis=AxisInfo(values=wavenumbers),
+            spectral_axis=SpectralAxis(values=wavenumbers),
         )
         node = node_registry.create_node(
             "preprocess.clip_range", "test_clip_prov", {"min_wavenumber": 1000, "max_wavenumber": 3000}
         )
         result = await node.run(default=ds)
         output = result.outputs["default"]
-        history = output.meta.get("processing_history", [])
+        history = output.provenance.to_list()
         assert len(history) >= 1
-        assert history[-1]["operation"] == "preprocess.clip_range"
+        assert history[-1]["op_id"] == "preprocess.clip_range"
         assert history[-1]["parameters"]["min_wavenumber"] == 1000
         assert history[-1]["parameters"]["max_wavenumber"] == 3000
 
@@ -902,9 +905,9 @@ class TestClipRangeAnalysisDataset:
     async def test_clip_swaps_reversed_bounds(self):
         """ClipRange should swap min/max if min > max."""
         wavenumbers = np.linspace(400, 4000, 100)
-        ds = AnalysisDataset(
+        ds = SherpaDataset(
             X=np.ones((3, 100)),
-            x_axis=AxisInfo(values=wavenumbers),
+            spectral_axis=SpectralAxis(values=wavenumbers),
         )
         node = node_registry.create_node(
             "preprocess.clip_range", "test_clip_swap", {"min_wavenumber": 3000, "max_wavenumber": 1000}
@@ -922,15 +925,15 @@ class TestClipRangeAnalysisDataset:
 
 
 class TestClassificationIsinstanceGuards:
-    """Verify PLSDA and SIMCA nodes accept AnalysisDataset (not just NDDataset)."""
+    """Verify PLSDA and SIMCA nodes accept SherpaDataset."""
 
-    def test_plsda_accepts_analysis_dataset_type(self):
-        """PLSDANode isinstance check should accept AnalysisDataset."""
-        ds = AnalysisDataset(X=np.ones((10, 5)))
+    def test_plsda_accepts_sherpa_dataset_type(self):
+        """PLSDANode isinstance check should accept SherpaDataset."""
+        ds = SherpaDataset(X=np.ones((10, 5)))
         # Check passes without raising
-        assert isinstance(ds, AnalysisDataset)
+        assert isinstance(ds, SherpaDataset)
 
-    def test_simca_accepts_analysis_dataset_type(self):
-        """SIMCANode isinstance check should accept AnalysisDataset."""
-        ds = AnalysisDataset(X=np.ones((10, 5)))
-        assert isinstance(ds, AnalysisDataset)
+    def test_simca_accepts_sherpa_dataset_type(self):
+        """SIMCANode isinstance check should accept SherpaDataset."""
+        ds = SherpaDataset(X=np.ones((10, 5)))
+        assert isinstance(ds, SherpaDataset)

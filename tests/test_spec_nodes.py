@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, SpectralAxis, SampleAxis
 from spectra_sherpa.app.services.dag.export_helpers import (
     extract_data_lines,
     format_kwargs,
@@ -171,10 +171,10 @@ class TestTransformSpecNode:
 
     @pytest.fixture
     def sample_ds(self):
-        return AnalysisDataset(
+        return SherpaDataset(
             X=np.array([[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]]),
-            x_axis=AxisInfo(values=np.array([100.0, 200.0, 300.0])),
-            y_axis=AxisInfo(labels=["sample_A", "sample_B"]),
+            spectral_axis=SpectralAxis(values=np.array([100.0, 200.0, 300.0])),
+            sample_axis=SampleAxis(labels=["sample_A", "sample_B"]),
             title="test spectra",
             units="absorbance",
         )
@@ -184,7 +184,7 @@ class TestTransformSpecNode:
         node = DoubleNode("dbl_1")
         result = await node.execute(sample_ds)
 
-        assert isinstance(result, AnalysisDataset)
+        assert isinstance(result, SherpaDataset)
         np.testing.assert_array_equal(result.X, sample_ds.X * 2)
         assert result.shape == sample_ds.shape
 
@@ -203,7 +203,7 @@ class TestTransformSpecNode:
         history = get_processing_history(result)
         assert len(history) >= 1
         last = history[-1]
-        assert last["operation"] == "test.clip_floor_spec"
+        assert last["op_id"] == "test.clip_floor_spec"
         assert last["parameters"]["floor"] == 0.0
         assert last["node_id"] == "clip_1"
 
@@ -228,9 +228,9 @@ class TestTransformSpecNode:
         result = await node.execute(sample_ds)
 
         # x-axis values preserved
-        np.testing.assert_array_equal(result.x_axis.values, sample_ds.x_axis.values)
+        np.testing.assert_array_equal(result.spectral_axis.values, sample_ds.spectral_axis.values)
         # y-axis labels preserved
-        assert result.y_axis.labels == sample_ds.y_axis.labels
+        assert result.sample_axis.labels == sample_ds.sample_axis.labels
 
     @pytest.mark.asyncio
     async def test_title_preserved(self, sample_ds):
@@ -310,7 +310,7 @@ class TestTransformSpecNode:
 
         assert isinstance(result, NodeResult)
         assert "mean_after" in result.diagnostics
-        assert isinstance(result.outputs["default"], AnalysisDataset)
+        assert isinstance(result.outputs["default"], SherpaDataset)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -326,7 +326,7 @@ class TestEstimatorSpecNode:
         rng = np.random.RandomState(42)
         X = rng.randn(30, 5)
         y = X @ np.array([1.0, 2.0, 0.5, -1.0, 0.3]) + 0.1 * rng.randn(30)
-        X_ds = AnalysisDataset(X=X)
+        X_ds = SherpaDataset(X=X)
         return X_ds, y
 
     @pytest.mark.asyncio
@@ -512,7 +512,7 @@ class TestEstimatorSpecNode:
                 param_map={"n_clusters": "n_clusters"},
             )
 
-        X_ds = AnalysisDataset(X=np.random.RandomState(0).randn(20, 4))
+        X_ds = SherpaDataset(X=np.random.RandomState(0).randn(20, 4))
         node = KMeansNode("km_1", {"n_clusters": 3})
         result = await node.execute(X=X_ds)
 
@@ -800,7 +800,7 @@ class TestTransformAutoExport:
     async def test_numpy_expr_node_still_executes(self):
         """Having numpy_expr doesn't break execute()."""
         node = ClipFloorAutoExportNode("ae_5", {"floor": 0.0})
-        ds = AnalysisDataset(X=np.array([[1.0, -2.0, 3.0]]))
+        ds = SherpaDataset(X=np.array([[1.0, -2.0, 3.0]]))
         result = await node.execute(ds)
         np.testing.assert_array_equal(result.X, np.array([[1.0, 0.0, 3.0]]))
 
@@ -1027,8 +1027,8 @@ class TestRegistryIntegration:
     @pytest.mark.asyncio
     async def test_create_and_execute_via_registry(self):
         node = node_registry.create_node("test._registered_double", "reg_1")
-        ds = AnalysisDataset(X=np.array([[1.0, 2.0]]))
+        ds = SherpaDataset(X=np.array([[1.0, 2.0]]))
         result = await node.execute(ds)
 
-        assert isinstance(result, AnalysisDataset)
+        assert isinstance(result, SherpaDataset)
         np.testing.assert_array_equal(result.X, np.array([[2.0, 4.0]]))

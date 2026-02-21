@@ -22,7 +22,7 @@ from spectra_sherpa.app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset
 
 from .graph_utils import Edge as _Edge
@@ -34,8 +34,8 @@ HAS_NDDATASET = HAS_SCP
 
 
 def _is_dataset(obj: Any) -> bool:
-    """Check if obj is a dataset (AnalysisDataset; also catches stray NDDataset)."""
-    if isinstance(obj, AnalysisDataset):
+    """Check if obj is a dataset (SherpaDataset primary; also catches legacy types)."""
+    if isinstance(obj, SherpaDataset):
         return True
     if HAS_SCP and isinstance(obj, NDDataset):
         return True
@@ -168,7 +168,7 @@ def _validate_port_type(
 
         if expected_type == "dataset":
             msg += (
-                "Upstream node should return AnalysisDataset or NDDataset with coordinates attached, "
+                "Upstream node should return SherpaDataset with coordinates attached, "
                 "not raw arrays. This ensures X-axis (wavenumbers) stays coupled with data."
             )
 
@@ -587,18 +587,17 @@ class DAGExecutor:
 
     @staticmethod
     def _sanitize_for_pool(value: Any) -> Any:
-        """Safety net: convert any stray NDDataset to AnalysisDataset.
+        """Safety net: convert any stray NDDataset to SherpaDataset.
 
-        Data source nodes now always emit AnalysisDataset, so this should
+        Data source nodes now always emit SherpaDataset, so this should
         be a no-op.  Kept as a defensive guard in case an NDDataset leaks
         through (e.g. from a third-party node).
         """
         if HAS_SCP and isinstance(value, NDDataset):
             logger.warning(
-                "NDDataset reached pool boundary — converting to AnalysisDataset. "
-                "Data source nodes should emit AnalysisDataset directly."
+                "NDDataset reached pool boundary — converting to SherpaDataset."
             )
-            from spectra_sherpa.app.lib.scp_compat import from_nddataset
+            from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
 
             return from_nddataset(value)
         return value
@@ -618,7 +617,7 @@ class DAGExecutor:
         if self._should_offload(node):
             loop = asyncio.get_running_loop()
             try:
-                # Sanitise inputs: convert NDDataset → AnalysisDataset so
+                # Sanitise inputs: convert NDDataset → SherpaDataset so
                 # only numpy arrays cross the process boundary.
                 safe_pos = tuple(self._sanitize_for_pool(v) for v in positional_inputs) if not named_inputs else ()
                 safe_named = {k: self._sanitize_for_pool(v) for k, v in named_inputs.items()} if named_inputs else {}
@@ -661,7 +660,7 @@ class DAGExecutor:
                     raise
 
         # In-process path (data nodes, pool unavailable, or fallback).
-        # NOTE: We do NOT sanitize (NDDataset→AnalysisDataset) here because
+        # NOTE: We do NOT sanitize (NDDataset→SherpaDataset) here because
         # some nodes pass inputs directly to SpectroChemPy functions that
         # require NDDataset.  JSON-safety is ensured at the API boundary
         # by serialize_result() and _json_safe() in to_dict().

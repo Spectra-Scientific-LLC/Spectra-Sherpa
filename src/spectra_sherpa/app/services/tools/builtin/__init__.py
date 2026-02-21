@@ -8,6 +8,7 @@ with the global ``tool_registry``.
 from __future__ import annotations
 
 from spectra_sherpa.app.services.tools.builtin import (
+    datasets,  # noqa: F401
     spectral,  # noqa: F401
     workflow,  # noqa: F401
 )

@@ -479,6 +479,39 @@
                 </div>
               </div>
 
+              <!-- Quality Summary -->
+              <div v-if="qualitySummary" class="inspector-section">
+                <button
+                  type="button"
+                  class="inspector-toggle"
+                  @click="toggleOutputSubsection('quality')"
+                >
+                  <span class="inspector-toggle-title">
+                    <i class="pi pi-check-circle" />
+                    Quality
+                  </span>
+                  <i :class="outputSubsections.quality ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                </button>
+                <div v-if="outputSubsections.quality" class="inspector-grid">
+                  <div v-if="qualitySummary.latest_model_type" class="inspector-item">
+                    <span class="insp-label">Model</span>
+                    <span class="insp-value">{{ qualitySummary.latest_model_type }}</span>
+                  </div>
+                  <div v-if="qualitySummary.latest_r2 != null" class="inspector-item">
+                    <span class="insp-label">R&sup2;</span>
+                    <span class="insp-value">{{ Number(qualitySummary.latest_r2).toFixed(4) }}</span>
+                  </div>
+                  <div v-if="qualitySummary.latest_rmse != null" class="inspector-item">
+                    <span class="insp-label">RMSE</span>
+                    <span class="insp-value">{{ Number(qualitySummary.latest_rmse).toFixed(4) }}</span>
+                  </div>
+                  <div v-if="qualitySummary.n_evaluations" class="inspector-item">
+                    <span class="insp-label">Evaluations</span>
+                    <span class="insp-value">{{ qualitySummary.n_evaluations }}</span>
+                  </div>
+                </div>
+              </div>
+
               <!-- Secondary Port Outputs -->
               <div v-if="portSummaries.length > 0" class="inspector-section">
                 <button
@@ -1207,6 +1240,7 @@ const outputSubsections = ref({
   metadata: false,
   processing: false,
   provenance: false,
+  quality: false,
   ports: false,
 });
 
@@ -1482,7 +1516,7 @@ const outputData = computed(() => {
   return {
     rows,
     cols,
-    type: metadata.type || metadata.output_type || "NDDataset",
+    type: metadata.type || metadata.output_type || "dataset",
     range: min !== Infinity ? [min, max] : null,
   };
 });
@@ -1494,7 +1528,7 @@ const outputMetadata = computed(() => {
   // Keys shown in dedicated sections (coordinates, processing, provenance)
   const structuredKeys = [
     "data", "wavenumbers", "x_axis", "sample_labels", "labels",
-    "processing_history", "provenance",
+    "processing_history", "provenance", "quality_summary",
     "x_title", "x_units", "y_title", "y_units",
     "data_type", "is_spectra", "spectral_technique", "data_quantity",
     "value_units", "value_units_label",
@@ -1574,6 +1608,10 @@ const datasetInfo = computed(() => {
   }
   if (portValue?.title) info.title = portValue.title;
 
+  // Domain context (from SherpaDataset)
+  if (metadata.domain_technique) info.domainTechnique = metadata.domain_technique;
+  if (metadata.domain_data_quantity) info.domainDataQuantity = metadata.domain_data_quantity;
+
   return Object.keys(info).length > 0 ? info : null;
 });
 
@@ -1602,6 +1640,12 @@ const processingHistory = computed(() => {
 const provenanceInfo = computed(() => {
   const prov = nodeOutput.value?.metadata?.provenance;
   return prov && typeof prov === "object" ? prov : null;
+});
+
+/** Quality summary from metadata (populated by SherpaDataset serializer). */
+const qualitySummary = computed(() => {
+  const qs = nodeOutput.value?.metadata?.quality_summary;
+  return qs && typeof qs === "object" ? qs as Record<string, unknown> : null;
 });
 
 /** Summaries of secondary output ports (e.g. loadings, X_loadings, target). */
@@ -3964,7 +4008,7 @@ const toggleSection = (section: "input" | "settings" | "output" | "plots" | "log
 };
 
 const toggleOutputSubsection = (
-  section: "coordinates" | "metadata" | "processing" | "provenance" | "ports",
+  section: "coordinates" | "metadata" | "processing" | "provenance" | "quality" | "ports",
 ) => {
   outputSubsections.value[section] = !outputSubsections.value[section];
 };

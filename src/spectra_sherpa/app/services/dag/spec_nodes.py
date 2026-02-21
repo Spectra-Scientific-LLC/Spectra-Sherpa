@@ -31,7 +31,7 @@ from .io_contracts import (
     bind_X,
     bind_y,
     build_dataset_like,
-    coerce_dataset,
+    coerce_to_sherpa,
     to_numpy_1d,
     to_numpy_2d,
 )
@@ -132,7 +132,7 @@ class TransformSpecNode(Node):
         if input_data is None and "input_0" in kwargs:
             input_data = kwargs.pop("input_0")
 
-        input_ds = coerce_dataset(input_data, input_name="input_data")
+        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
         data = to_numpy_2d(input_ds, name="input_data", dtype=self.spec.input_dtype)
 
         # Build kwargs from resolved parameters + param_map

@@ -7,6 +7,7 @@ These nodes implement various modeling techniques like PCA, PLS, MCR-ALS.
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any, Optional
 
 import numpy as np
@@ -15,14 +16,21 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 from sklearn.svm import SVR
 
-from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset, AxisInfo
+from spectra_sherpa.app.lib.sherpa_dataset import (
+    AxisInfo,
+    EvaluationResult,
+    SampleAxis,
+    SherpaDataset,
+    SpectralAxis,
+)
 from spectra_sherpa.app.lib.scp_compat import from_nddataset, scp, to_nddataset
-from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history, safe_get_coord
+from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
 
 from ..io_contracts import (
+    attach_evaluation,
     bind_X,
     bind_y,
-    coerce_dataset,
+    coerce_to_sherpa,
     resolve_legacy_input,
     to_numpy_1d,
     to_numpy_2d,
@@ -31,6 +39,7 @@ from ..node_base import (
     Node,
     NodeMetadata,
     NodeParameter,
+    NodePolicy,
     NodeResult,
     PortMetadata,
     register_node,
@@ -104,9 +113,9 @@ def _create_spectral_dataset(
     units: Optional[str] = None,
     title: Optional[str] = None,
     meta: Optional[dict] = None,
-) -> AnalysisDataset:
+) -> SherpaDataset:
     """
-    Create an AnalysisDataset with proper coordinate preservation.
+    Create a SherpaDataset with proper coordinate preservation.
 
     This ensures that spectral data always carries its coordinate system,
     enabling "smart array" behavior where slicing data also slices coordinates.
@@ -120,24 +129,48 @@ def _create_spectral_dataset(
         meta: Metadata dictionary to attach
 
     Returns:
-        AnalysisDataset with coordinates properly attached
+        SherpaDataset with coordinates properly attached
     """
-    x_axis = _make_safe_coord(x_coord) if x_coord is not None else None
-    y_axis = _make_safe_coord(y_coord) if y_coord is not None else None
+    x_axis_info = _make_safe_coord(x_coord) if x_coord is not None else None
+    y_axis_info = _make_safe_coord(y_coord) if y_coord is not None else None
 
-    return AnalysisDataset(
+    spectral_axis = None
+    if x_axis_info is not None:
+        if isinstance(x_axis_info, SpectralAxis):
+            spectral_axis = x_axis_info
+        else:
+            spectral_axis = SpectralAxis(
+                values=x_axis_info.values,
+                labels=x_axis_info.labels,
+                units=x_axis_info.units,
+                title=x_axis_info.title,
+            )
+
+    sample_axis = None
+    if y_axis_info is not None:
+        if isinstance(y_axis_info, SampleAxis):
+            sample_axis = y_axis_info
+        else:
+            sample_axis = SampleAxis(
+                values=y_axis_info.values,
+                labels=y_axis_info.labels,
+                units=y_axis_info.units,
+                title=y_axis_info.title,
+            )
+
+    return SherpaDataset(
         X=data,
-        x_axis=x_axis,
-        y_axis=y_axis,
+        spectral_axis=spectral_axis,
+        sample_axis=sample_axis,
         units=units,
         title=title,
-        meta=meta.copy() if meta is not None else None,
+        extra=meta.copy() if meta is not None else None,
     )
 
 
 def _unwrap_data(value: Any) -> Any:
     """Safely unwrap dataset-like .data while avoiding ndarray memoryview traps."""
-    if isinstance(value, AnalysisDataset):
+    if isinstance(value, SherpaDataset):
         return value.data
     if hasattr(value, "data") and not isinstance(value, np.ndarray):
         return value.data
@@ -293,6 +326,11 @@ class PCANode(Node):
             "q_critical_95",
         ],
         requires_scp=True,
+        policy=NodePolicy(
+            safe_for_auto_apply=False,
+            requires_human_review=True,
+            data_egress_risk="none",
+        ),
     )
 
     async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
@@ -300,7 +338,7 @@ class PCANode(Node):
         Execute PCA on input dataset.
 
         Args:
-            input_data: AnalysisDataset containing spectral data
+            input_data: Dataset containing spectral data
 
         Returns:
             PCA model object with scores, loadings, and explained variance
@@ -310,7 +348,7 @@ class PCANode(Node):
             input_data,
             kwargs,
             missing_message="Missing required input: input_data (spectra)",
-            dataset_error_message="input_data must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="input_data must be an dataset object",
             allow_array=False,
         )
         input_ndd = to_nddataset(input_ds)
@@ -442,7 +480,7 @@ class PCANode(Node):
 
         # Extract label_categories for categorical coloring
         label_categories = None
-        _y_coord = safe_get_coord(input_ds, "y")
+        _y_coord = input_ds.sample_axis
         if _y_coord is not None:
             try:
 
@@ -501,6 +539,9 @@ class PCANode(Node):
             node_id=self.node_id,
         )
 
+        t2_p95 = float(np.percentile(t2_stats, 95)) if t2_stats is not None else None
+        spe_p95 = float(np.percentile(spe_stats, 95)) if spe_stats is not None else None
+
         # Store only scientific metadata that coordinates can't carry.
         # serialize_for_api() extracts wavenumbers, sample_labels, x_title, etc.
         # from NDDataset coordinates automatically at the API boundary.
@@ -513,17 +554,30 @@ class PCANode(Node):
                 "n_components": actual_n_components,
                 "t2": t2_stats.tolist() if t2_stats is not None else [],
                 "spe": spe_stats.tolist() if spe_stats is not None else [],
-                "t2_p95": float(np.percentile(t2_stats, 95)) if t2_stats is not None else None,
-                "spe_p95": float(np.percentile(spe_stats, 95)) if spe_stats is not None else None,
+                "t2_p95": t2_p95,
+                "spe_p95": spe_p95,
                 "t2_mean": float(np.mean(t2_stats)) if t2_stats is not None else None,
                 "spe_mean": float(np.mean(spe_stats)) if spe_stats is not None else None,
                 "label_categories": label_categories,
             }
         )
 
-        # Convert NDDataset outputs to AnalysisDataset for DAG uniformity
+        # Convert NDDataset outputs to SherpaDataset for DAG uniformity
         scores_dataset = from_nddataset(scores_dataset)
         loadings_dataset = from_nddataset(loadings_dataset)
+
+        attach_evaluation(
+            scores_dataset,
+            EvaluationResult(
+                evaluation_id=str(uuid.uuid4()),
+                model_type="PCA",
+                n_components=actual_n_components,
+                hotelling_t2=t2_stats.tolist() if t2_stats is not None else None,
+                q_residuals=spe_stats.tolist() if spe_stats is not None else None,
+                t2_limit=t2_p95,
+                q_limit=spe_p95,
+            ),
+        )
 
         logger.debug(
             "[PCA Node] Requested n_components=%s, fitted with %s components", n_components_parsed, actual_n_components
@@ -542,8 +596,8 @@ class PCANode(Node):
             "n_components_95pct": n_components_95pct,
             "hotelling_t2": t2_stats.tolist() if t2_stats is not None else [],
             "q_residuals": spe_stats.tolist() if spe_stats is not None else [],
-            "t2_critical_95": float(np.percentile(t2_stats, 95)) if t2_stats is not None else None,
-            "q_critical_95": float(np.percentile(spe_stats, 95)) if spe_stats is not None else None,
+            "t2_critical_95": t2_p95,
+            "q_critical_95": spe_p95,
         }
 
         return NodeResult(
@@ -662,7 +716,7 @@ class PLSNode(Node):
         Execute PLS regression.
 
         Args:
-            X: AnalysisDataset containing spectral data (predictors)
+            X: Dataset containing spectral data (predictors)
             y: Target values (concentrations)
 
         Returns:
@@ -672,7 +726,7 @@ class PLSNode(Node):
             X,
             kwargs,
             missing_message="Missing required input: X (spectra)",
-            dataset_error_message="X must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="X must be an dataset object",
             allow_array=False,
         )
         y_value = bind_y(
@@ -716,13 +770,35 @@ class PLSNode(Node):
         Y_loadings_data = np.array(pls.y_loadings_) if hasattr(pls, "y_loadings_") else None
         coef_data = np.array(pls.coef_) if hasattr(pls, "coef_") else None
 
+        # SCP 0.8.x does not always populate x_scores_ attributes; fall back to transform().
+        if X_scores_data is None and hasattr(pls, "transform"):
+            try:
+                transformed = pls.transform(X_ndd)
+                raw = transformed.data if hasattr(transformed, "data") else transformed
+                X_scores_data = np.atleast_2d(np.asarray(raw, dtype=np.float64))
+            except Exception:
+                logger.debug("[PLS Node] Could not derive x_scores from transform()", exc_info=True)
+
+        # In-sample calibration quality metrics for Phase 2 quality wiring.
+        pls_r2 = None
+        pls_rmse = None
+        try:
+            y_pred = to_numpy_1d(pls.predict(X_ndd), name="y_pred", expected_length=len(y_array), dtype=np.float64)
+            residual = y_array - y_pred
+            ss_res = float(np.sum(residual**2))
+            ss_tot = float(np.sum((y_array - np.mean(y_array)) ** 2))
+            pls_r2 = (1.0 - (ss_res / ss_tot)) if ss_tot > 0 else None
+            pls_rmse = float(np.sqrt(np.mean(residual**2)))
+        except Exception:
+            logger.debug("[PLS Node] Could not compute calibration R2/RMSE from predictions", exc_info=True)
+
         logger.debug("[PLS Node] PLS model fitted successfully")
         logger.debug("  - X_scores shape: %s", X_scores_data.shape if X_scores_data is not None else "N/A")
         logger.debug("  - Coefficients shape: %s", coef_data.shape if coef_data is not None else "N/A")
 
         # Extract label_categories for categorical coloring
         label_categories = None
-        _y_coord = safe_get_coord(X_ds, "y")
+        _y_coord = X_ds.sample_axis
         if _y_coord is not None:
             try:
                 if hasattr(_y_coord, "labels") and _y_coord.labels is not None:
@@ -738,7 +814,7 @@ class PLSNode(Node):
                 label_categories = None
 
         # Get input x_coord for loadings NDDataset
-        _x_coord = safe_get_coord(X_ds, "x")
+        _x_coord = X_ds.spectral_axis
 
         # Build LV labels with physical quantity context for scientific traceability
         x_data_quantity = None
@@ -846,7 +922,19 @@ class PLSNode(Node):
                     "n_components": n_components,
                     "pc_labels": lv_labels,  # LV labels (no EVR for PLS, so store explicitly)
                     "label_categories": label_categories,
+                    "r2": pls_r2,
+                    "rmse": pls_rmse,
                 }
+            )
+            attach_evaluation(
+                X_scores_dataset,
+                EvaluationResult(
+                    evaluation_id=str(uuid.uuid4()),
+                    model_type="PLS",
+                    n_components=n_components,
+                    r2=pls_r2,
+                    rmse=pls_rmse,
+                ),
             )
 
         # NDDataset-only return: one serialization boundary at API layer
@@ -944,7 +1032,7 @@ class PCRNode(Node):
         Execute PCR regression.
 
         Args:
-            X: AnalysisDataset containing spectral data (predictors)
+            X: Dataset containing spectral data (predictors)
             y: Target values (concentrations)
 
         Returns:
@@ -960,7 +1048,7 @@ class PCRNode(Node):
             X,
             kwargs,
             missing_message="Missing required input: X (spectra)",
-            dataset_error_message="X must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="X must be an dataset object",
             allow_array=True,
         )
         y_value = bind_y(
@@ -1011,7 +1099,7 @@ class PCRNode(Node):
 
         # Extract label_categories for categorical coloring
         label_categories = None
-        _y_coord = safe_get_coord(X_ds, "y")
+        _y_coord = X_ds.sample_axis
         if _y_coord is not None:
             try:
                 if hasattr(_y_coord, "labels") and _y_coord.labels is not None:
@@ -1027,7 +1115,7 @@ class PCRNode(Node):
                 label_categories = None
 
         # Get input coordinates for NDDataset creation
-        _x_coord = safe_get_coord(X_ds, "x")
+        _x_coord = X_ds.spectral_axis
 
         # Build PC labels with explained variance ratio
         evr = pca.explained_variance_ratio_
@@ -1084,6 +1172,16 @@ class PCRNode(Node):
                 "y_pred": y_pred.tolist(),
             }
         )
+        attach_evaluation(
+            scores_dataset,
+            EvaluationResult(
+                evaluation_id=str(uuid.uuid4()),
+                model_type="PCR",
+                n_components=n_components,
+                r2=float(r2),
+                rmse=rmse,
+            ),
+        )
 
         logger.debug("[PCR Node] Scores shape: %s, Loadings shape: %s", scores_dataset.shape, loadings_dataset.shape)
 
@@ -1106,10 +1204,12 @@ def _svr_post_fit(model, X_data, y_array, X_ds, params, node_id):
     label_categories = None
     n_observations = X_data.shape[0]
 
-    if X_ds.y is not None:
-        if hasattr(X_ds.y, "labels") and X_ds.y.labels is not None:
+    sample_coord = X_ds.sample_axis
+
+    if sample_coord is not None:
+        if hasattr(sample_coord, "labels") and sample_coord.labels is not None:
             try:
-                labels = X_ds.y.labels
+                labels = sample_coord.labels
                 raw = labels.tolist() if hasattr(labels, "tolist") else list(labels)
                 sample_labels = [str(l) for l in raw]
                 label_categories = sorted(set(sample_labels))
@@ -1117,9 +1217,9 @@ def _svr_post_fit(model, X_data, y_array, X_ds, params, node_id):
                 sample_labels = None
                 label_categories = None
 
-        if sample_labels is None and hasattr(X_ds.y, "data") and X_ds.y.data is not None:
+        if sample_labels is None and hasattr(sample_coord, "data") and sample_coord.data is not None:
             try:
-                y_data = X_ds.y.data
+                y_data = sample_coord.data
                 raw = y_data.tolist() if hasattr(y_data, "tolist") else list(y_data)
                 sample_labels = [str(l) for l in raw]
                 unique_values = sorted(set(sample_labels))
@@ -1491,7 +1591,7 @@ class MCRNode(Node):
         Execute MCR-ALS decomposition on input dataset.
 
         Args:
-            input_data: AnalysisDataset containing spectral mixture data (D matrix)
+            input_data: Dataset containing spectral mixture data (D matrix)
                        Shape should be (n_samples, n_wavenumbers)
 
         Returns:
@@ -1506,7 +1606,7 @@ class MCRNode(Node):
             input_data,
             kwargs,
             missing_message="Missing required input: input_data (spectral mixtures)",
-            dataset_error_message="input_data must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="input_data must be an dataset object",
             allow_array=False,
         )
         input_ndd = to_nddataset(input_ds)
@@ -1548,8 +1648,8 @@ class MCRNode(Node):
         St_data = _to_numpy_2d_any(mcr.St, name="mcr.St", dtype=np.float64)
 
         # Get input coordinates for NDDataset creation
-        _x_coord = safe_get_coord(input_ds, "x")
-        _y_coord = safe_get_coord(input_ds, "y")
+        _x_coord = input_ds.spectral_axis
+        _y_coord = input_ds.sample_axis
 
         # Extract label_categories for categorical coloring
         label_categories = None
@@ -1733,7 +1833,7 @@ class EFANode(Node):
         Execute EFA on input dataset.
 
         Args:
-            input_data: AnalysisDataset containing evolving spectral data
+            input_data: Dataset containing evolving spectral data
 
         Returns:
             Dict containing forward and backward eigenvalues
@@ -1743,7 +1843,7 @@ class EFANode(Node):
             input_data,
             kwargs,
             missing_message="Missing required input: input_data (evolving spectra)",
-            dataset_error_message="input_data must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="input_data must be an dataset object",
             allow_array=False,
         )
         input_ndd = to_nddataset(input_ds)
@@ -1759,7 +1859,7 @@ class EFANode(Node):
         backward_ev = _to_numpy_2d_any(efa.b_ev, name="efa.b_ev") if hasattr(efa, "b_ev") else None
 
         # Get input y_coord for sample labels
-        _y_coord = safe_get_coord(input_ds, "y")
+        _y_coord = input_ds.sample_axis
 
         # =====================================================================
         # Create proper NDDataset objects for eigenvalues with coordinate coupling
@@ -1927,11 +2027,11 @@ class HCANode(Node):
         from sklearn.decomposition import PCA as SkPCA
 
         input_data = resolve_legacy_input(input_data, kwargs, "default")
-        input_ds = coerce_dataset(
+        input_ds = coerce_to_sherpa(
             input_data,
             input_name="input_data",
             allow_array=True,
-            dataset_error_message=("input_data must be an NDDataset, AnalysisDataset, or array-like object"),
+            dataset_error_message=("input_data must be an dataset or array-like object"),
         )
         X_data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
 
@@ -1976,7 +2076,7 @@ class HCANode(Node):
         label_categories = sorted(list(set(sample_labels)))
 
         source_labels = None
-        _y_coord = safe_get_coord(input_ds, "y")
+        _y_coord = input_ds.sample_axis
         if _y_coord is not None:
             if hasattr(_y_coord, "labels") and _y_coord.labels is not None:
                 labels_data = _y_coord.labels
@@ -2230,11 +2330,11 @@ class KMeansNode(Node):
         from sklearn.decomposition import PCA as SkPCA
 
         input_data = resolve_legacy_input(input_data, kwargs, "default")
-        input_ds = coerce_dataset(
+        input_ds = coerce_to_sherpa(
             input_data,
             input_name="input_data",
             allow_array=True,
-            dataset_error_message=("input_data must be an NDDataset, AnalysisDataset, or array-like object"),
+            dataset_error_message=("input_data must be an dataset or array-like object"),
         )
         X_data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
 
@@ -2272,7 +2372,7 @@ class KMeansNode(Node):
         label_categories = sorted(list(set(sample_labels)))
 
         source_labels = None
-        _y_coord = safe_get_coord(input_ds, "y")
+        _y_coord = input_ds.sample_axis
         if _y_coord is not None:
             if hasattr(_y_coord, "labels") and _y_coord.labels is not None:
                 labels_data = _y_coord.labels
@@ -2383,11 +2483,11 @@ class DBSCANNode(Node):
         from sklearn.decomposition import PCA as SkPCA
 
         input_data = resolve_legacy_input(input_data, kwargs, "default")
-        input_ds = coerce_dataset(
+        input_ds = coerce_to_sherpa(
             input_data,
             input_name="input_data",
             allow_array=True,
-            dataset_error_message=("input_data must be an NDDataset, AnalysisDataset, or array-like object"),
+            dataset_error_message=("input_data must be an dataset or array-like object"),
         )
         X_data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
 
@@ -2420,7 +2520,7 @@ class DBSCANNode(Node):
         n_clusters = len([label for label in label_categories if label != "-1"])
 
         source_labels = None
-        _y_coord = safe_get_coord(input_ds, "y")
+        _y_coord = input_ds.sample_axis
         if _y_coord is not None:
             if hasattr(_y_coord, "labels") and _y_coord.labels is not None:
                 labels_data = _y_coord.labels
@@ -2554,7 +2654,7 @@ class PeakFindingNode(Node):
         Execute peak finding on spectral data.
 
         Args:
-            input_data: AnalysisDataset containing spectral data
+            input_data: Dataset containing spectral data
 
         Returns:
             Dict containing peak positions, heights, widths, and areas
@@ -2566,7 +2666,7 @@ class PeakFindingNode(Node):
             input_data,
             kwargs,
             missing_message="Missing required input: input_data (spectrum)",
-            dataset_error_message="input_data must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="input_data must be an dataset object",
             allow_array=False,
         )
 
@@ -2604,7 +2704,7 @@ class PeakFindingNode(Node):
         peak_indices, peak_properties = scipy_find_peaks(spectrum, **peak_kwargs)
 
         # Get wavenumber/ppm positions if available
-        _x_coord = safe_get_coord(input_ds, "x")
+        _x_coord = input_ds.spectral_axis
         if _x_coord is not None:
             x_axis = _to_numpy_1d_any(_x_coord, name="x_axis", dtype=np.float64)
             peak_positions = x_axis[peak_indices].tolist()
@@ -2772,7 +2872,7 @@ class SIMPLISMANode(Node):
         Execute SIMPLISMA decomposition on input dataset.
 
         Args:
-            input_data: AnalysisDataset containing spectral mixture data
+            input_data: Dataset containing spectral mixture data
                        Shape should be (n_samples, n_wavenumbers)
 
         Returns:
@@ -2786,7 +2886,7 @@ class SIMPLISMANode(Node):
             input_data,
             kwargs,
             missing_message="Missing required input: input_data (spectral mixtures)",
-            dataset_error_message="input_data must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="input_data must be an dataset object",
             allow_array=False,
         )
         input_ndd = to_nddataset(input_ds)
@@ -2822,13 +2922,13 @@ class SIMPLISMANode(Node):
 
         # Get wavenumber axis from input if available
         wavenumbers = None
-        _x_coord = safe_get_coord(input_ds, "x")
+        _x_coord = input_ds.spectral_axis
         if _x_coord is not None:
             wavenumbers = _to_numpy_1d_any(_x_coord, name="wavenumbers", dtype=np.float64).tolist()
 
         # Get time axis from input if available
         times = None
-        _y_coord = safe_get_coord(input_ds, "y")
+        _y_coord = input_ds.sample_axis
         if _y_coord is not None:
             times = _to_numpy_1d_any(_y_coord, name="times", dtype=np.float64).tolist()
         else:
@@ -3037,7 +3137,7 @@ class NMFNode(Node):
         Execute NMF decomposition on input dataset.
 
         Args:
-            input_data: AnalysisDataset containing non-negative spectral data
+            input_data: Dataset containing non-negative spectral data
                        Shape should be (n_samples, n_wavenumbers)
 
         Returns:
@@ -3051,7 +3151,7 @@ class NMFNode(Node):
             input_data,
             kwargs,
             missing_message="Missing required input: input_data (non-negative spectra)",
-            dataset_error_message="input_data must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="input_data must be an dataset object",
             allow_array=False,
         )
 
@@ -3092,8 +3192,8 @@ class NMFNode(Node):
         H_data = nmf.components_
 
         # Get input coordinates for NDDataset creation
-        _x_coord = safe_get_coord(input_ds, "x")
-        _y_coord = safe_get_coord(input_ds, "y")
+        _x_coord = input_ds.spectral_axis
+        _y_coord = input_ds.sample_axis
 
         # Get reconstruction error if available
         reconstruction_err = None
@@ -3300,7 +3400,7 @@ class FastICANode(Node):
         Execute FastICA decomposition on input dataset.
 
         Args:
-            input_data: AnalysisDataset containing spectral mixture data
+            input_data: Dataset containing spectral mixture data
                        Shape should be (n_samples, n_wavenumbers)
 
         Returns:
@@ -3314,7 +3414,7 @@ class FastICANode(Node):
             input_data,
             kwargs,
             missing_message="Missing required input: input_data (spectral mixtures)",
-            dataset_error_message="input_data must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="input_data must be an dataset object",
             allow_array=False,
         )
 
@@ -3359,8 +3459,8 @@ class FastICANode(Node):
         A_data = ica.mixing_ if hasattr(ica, "mixing_") else None
 
         # Get input coordinates for NDDataset creation
-        _x_coord = safe_get_coord(input_ds, "x")
-        _y_coord = safe_get_coord(input_ds, "y")
+        _x_coord = input_ds.spectral_axis
+        _y_coord = input_ds.sample_axis
 
         logger.debug("[FastICA Node] Decomposition completed successfully")
         logger.debug("  - S (sources) shape: %s", S_data.shape)
@@ -3547,7 +3647,7 @@ class PLSPredictNode(Node):
         Apply PLS model to new data.
 
         Args:
-            X_new: New spectral data (AnalysisDataset)
+            X_new: New spectral data (dataset)
             model: Trained PLS model dict from PLS node
 
         Returns:
@@ -3562,7 +3662,7 @@ class PLSPredictNode(Node):
             X_new,
             kwargs,
             missing_message="Missing required input: X_new (new spectra)",
-            dataset_error_message="X_new must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="X_new must be an dataset object",
             allow_array=True,
         )
 
@@ -3637,7 +3737,7 @@ class PCATransformNode(Node):
         Transform new data using PCA model.
 
         Args:
-            X_new: New spectral data (AnalysisDataset)
+            X_new: New spectral data (dataset)
             model: Trained PCA model dict from PCA node
 
         Returns:
@@ -3661,7 +3761,7 @@ class PCATransformNode(Node):
             X_new,
             kwargs,
             missing_message="Missing required input: X_new (new spectra)",
-            dataset_error_message="X_new must be an NDDataset or AnalysisDataset object",
+            dataset_error_message="X_new must be an dataset object",
             allow_array=True,
         )
         X_array = to_numpy_2d(X_new_ds, name="X_new", dtype=np.float64)

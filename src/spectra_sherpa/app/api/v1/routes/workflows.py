@@ -22,7 +22,7 @@ from spectra_sherpa.app.services.dag.serialize import serialize_for_api
 
 logger = logging.getLogger(__name__)
 
-from spectra_sherpa.app.lib.analysis_dataset import AnalysisDataset
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset
 
 HAS_NDDATASET = HAS_SCP
@@ -45,18 +45,18 @@ def _is_model_object(obj: Any) -> bool:
     return False
 
 
-def serialize_result(obj: Any) -> Any:
+def serialize_result(obj: Any, *, owner_user_id: int | None = None) -> Any:
     """
     Convert workflow results to JSON-serializable format.
 
     Note: Full data is sent without truncation. The frontend handles display limits
     separately (e.g., DataTableModal has a row limit dropdown).
 
-    ARCHITECTURE: AnalysisDataset is the SINGLE canonical data type. Serialization
+    ARCHITECTURE: SherpaDataset is the SINGLE canonical data type. Serialization
     happens at API boundary only via serialize_for_api().
 
     Serialization priority:
-    1. AnalysisDataset → serialize_for_api() (primary path for all spectral data)
+    1. SherpaDataset → serialize_for_api() (primary path for all spectral data)
     2. Model objects → placeholder dict
     3. numpy arrays → .tolist()
     4. dict → recursive serialization (handles multi-output node results)
@@ -64,13 +64,13 @@ def serialize_result(obj: Any) -> Any:
     6. numpy scalars → Python native
     7. Everything else → pass through
     """
-    # 1a. AnalysisDataset — primary path for no-SCP spectral data
-    if isinstance(obj, AnalysisDataset):
-        return serialize_for_api(obj, sanitize_paths=settings.sanitize_paths)
+    # 1a. SherpaDataset — primary path for no-SCP spectral data
+    if isinstance(obj, SherpaDataset):
+        return serialize_for_api(obj, sanitize_paths=settings.sanitize_paths, owner_user_id=owner_user_id)
 
     # 1b. NDDataset — primary path for SCP spectral data
     if HAS_NDDATASET and isinstance(obj, NDDataset):
-        return serialize_for_api(obj, sanitize_paths=settings.sanitize_paths)
+        return serialize_for_api(obj, sanitize_paths=settings.sanitize_paths, owner_user_id=owner_user_id)
 
     # 2. Non-serializable model objects (sklearn, spectrochempy)
     if _is_model_object(obj):
@@ -93,8 +93,8 @@ def serialize_result(obj: Any) -> Any:
             # Check dataset types before _is_model_object because NDDataset is a spectrochempy
             # object that may have .transform/.fit attributes, which would incorrectly
             # trigger the model placeholder path.
-            if isinstance(v, AnalysisDataset) or (HAS_NDDATASET and isinstance(v, NDDataset)):
-                result_dict[k] = serialize_for_api(v, sanitize_paths=settings.sanitize_paths)
+            if isinstance(v, SherpaDataset) or (HAS_NDDATASET and isinstance(v, NDDataset)):
+                result_dict[k] = serialize_for_api(v, sanitize_paths=settings.sanitize_paths, owner_user_id=owner_user_id)
                 continue
             # Model objects in dicts get placeholder treatment
             if _is_model_object(v):
@@ -104,22 +104,22 @@ def serialize_result(obj: Any) -> Any:
             if k == "models" and isinstance(v, dict):
                 serialized_models = {}
                 for model_key, model_val in v.items():
-                    if isinstance(model_val, AnalysisDataset) or (HAS_NDDATASET and isinstance(model_val, NDDataset)):
+                    if isinstance(model_val, SherpaDataset) or (HAS_NDDATASET and isinstance(model_val, NDDataset)):
                         serialized_models[model_key] = serialize_for_api(
-                            model_val, sanitize_paths=settings.sanitize_paths
+                            model_val, sanitize_paths=settings.sanitize_paths, owner_user_id=owner_user_id
                         )
                     elif _is_model_object(model_val):
                         serialized_models[model_key] = {"__model_placeholder__": type(model_val).__name__}
                     else:
-                        serialized_models[model_key] = serialize_result(model_val)
+                        serialized_models[model_key] = serialize_result(model_val, owner_user_id=owner_user_id)
                 result_dict[k] = serialized_models
                 continue
-            result_dict[k] = serialize_result(v)
+            result_dict[k] = serialize_result(v, owner_user_id=owner_user_id)
         return result_dict
 
     # 6. Lists — recursive serialization
     if isinstance(obj, list):
-        return [serialize_result(item) for item in obj]
+        return [serialize_result(item, owner_user_id=owner_user_id) for item in obj]
 
     # 7. numpy scalar types
     if isinstance(obj, (np.integer, np.floating)):
@@ -361,7 +361,7 @@ async def execute_trial(
         target_result = results.get(payload.target_node_id)
 
         # Serialize the result
-        serialized_result = serialize_result(target_result) if target_result else None
+        serialized_result = serialize_result(target_result, owner_user_id=user_id) if target_result else None
 
         return TrialExecuteResponse(
             target_node_id=payload.target_node_id,
@@ -1129,7 +1129,7 @@ async def execute_workflow(
         for node_id, node_result in results.items():
             result_type = type(node_result).__name__
             try:
-                serialized_results[node_id] = serialize_result(node_result)
+                serialized_results[node_id] = serialize_result(node_result, owner_user_id=user_id)
                 # Log summary of serialized result
                 sr = serialized_results[node_id]
                 if isinstance(sr, dict):
@@ -1167,7 +1167,7 @@ async def execute_workflow(
             workflow_id=workflow_id,
             status=final_status,
             results=serialized_results,
-            diagnostics=serialize_result(getattr(executor, "diagnostics", {})),
+            diagnostics=serialize_result(getattr(executor, "diagnostics", {}), owner_user_id=user_id),
             node_statuses=node_statuses,
             executed_at=datetime.utcnow(),
             error=error_msg,
@@ -1184,7 +1184,7 @@ async def execute_workflow(
         for node_id, node_result in raw_results.items():
             result_type = type(node_result).__name__
             try:
-                partial_results[node_id] = serialize_result(node_result)
+                partial_results[node_id] = serialize_result(node_result, owner_user_id=user_id)
             except Exception as ser_err:
                 partial_serialization_errors.append(f"Node {node_id}: {ser_err}")
                 partial_results[node_id] = {
@@ -1202,7 +1202,10 @@ async def execute_workflow(
             workflow_id=workflow_id,
             status=response_status,
             results=partial_results,
-            diagnostics=serialize_result(getattr(executor, "diagnostics", {}) if executor else {}),
+            diagnostics=serialize_result(
+                getattr(executor, "diagnostics", {}) if executor else {},
+                owner_user_id=user_id,
+            ),
             node_statuses=executor.get_status()["node_statuses"] if executor else {},
             executed_at=datetime.utcnow(),
             error=error_msg,

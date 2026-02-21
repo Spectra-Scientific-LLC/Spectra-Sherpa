@@ -24,7 +24,7 @@ Your browser opens to `http://localhost:8000`. No login required.
 pip install spectra-sherpa[scp]
 ```
 
-This enables native AnalysisDataset operations, SCP file format readers (JCAMP-DX, SPC, SPA, OPUS), and SpectroChemPy preprocessing methods.
+This enables SpectroChemPy-powered preprocessing methods, SCP file format readers (JCAMP-DX, SPC, SPA, OPUS), and coordinate-aware algorithms (ALS baseline, MSC, PCA, etc.).
 
 ## Features
 

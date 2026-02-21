@@ -96,6 +96,11 @@ class WorkflowContextNode(BaseModel):
     node_type: str
     label: str | None = None
     parameters: dict[str, Any] = Field(default_factory=dict)
+    # Tier 1+: dataset domain context
+    domain_technique: str | None = None
+    domain_data_quantity: str | None = None
+    processing_stage: str | None = None
+    processing_effects: list[str] | None = None
     # Tier 2+: result summaries
     result_shape: list[int] | None = None
     result_statistics: dict[str, float] | None = None  # mean, std, min, max

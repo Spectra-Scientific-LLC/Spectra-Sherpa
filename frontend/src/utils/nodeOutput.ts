@@ -22,8 +22,8 @@ const isRecord = (value: unknown): value is UnknownRecord => {
   return !!value && typeof value === "object" && !Array.isArray(value);
 };
 
-const isNDDatasetPayload = (value: unknown): value is UnknownRecord => {
-  return isRecord(value) && value.type === "NDDataset";
+const isDatasetPayload = (value: unknown): value is UnknownRecord => {
+  return isRecord(value) && (value.type === "NDDataset" || value.type === "SherpaDataset");
 };
 
 const isModelPlaceholder = (value: unknown): value is UnknownRecord => {
@@ -31,7 +31,7 @@ const isModelPlaceholder = (value: unknown): value is UnknownRecord => {
 };
 
 const normalizePortOutput = (value: unknown): PortOutput => {
-  if (isNDDatasetPayload(value)) {
+  if (isDatasetPayload(value)) {
     return {
       data: Array.isArray(value.data) ? value.data : [],
       metadata: isRecord(value.metadata) ? value.metadata : {},
@@ -116,7 +116,7 @@ export const buildNodeOutput = (
   outputPorts?: NodePortMetadata[]
 ): NodeOutput => {
   if (
-    isNDDatasetPayload(result) ||
+    isDatasetPayload(result) ||
     Array.isArray(result) ||
     isModelPlaceholder(result) ||
     typeof result !== "object" ||

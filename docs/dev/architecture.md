@@ -39,7 +39,7 @@ SpectraSherpa supports multiple deployment modes (`local`, `hybrid`, `enterprise
 src/spectra_sherpa/
 ├── app/
 │   ├── core/           # Configuration, Security, Mode Policy
-│   ├── lib/            # Core libraries (AnalysisDataset, scp_compat)
+│   ├── lib/            # Core libraries (SherpaDataset, scp_compat, adapters)
 │   ├── models/         # Pydantic models & SQLAlchemy tables
 │   ├── schemas/        # API request/response schemas
 │   ├── services/       # Business logic (DAG, Metadata, LLM)
@@ -70,17 +70,18 @@ SpectraSherpa is fundamentally a Directed Acyclic Graph (DAG) engine.
 
 The DAG engine uses two data container types depending on the runtime environment:
 
-**AnalysisDataset** (`spectra_sherpa.app.lib.analysis_dataset`) — The canonical DAG runtime container. All portable nodes produce and consume this type. Fields:
-- `X`: 2D numpy array (n_samples, n_features)
-- `x_axis` / `y_axis`: `AxisInfo` (values, labels, units, title)
+**SherpaDataset** (`spectra_sherpa.app.lib.sherpa_dataset`) — The canonical DAG runtime container. Pydantic-backed, AI-native, with typed fields and zero external dependencies. Key components:
+- `X`: 2D numpy array (n_samples, n_features) with shape invariants enforced at construction
+- `spectral_axis` / `sample_axis`: Typed axis metadata (`SpectralAxis`, `SampleAxis`)
 - `target`: Optional target values for supervised learning
-- `meta`: Arbitrary metadata dict (includes `processing_history`)
-- `provenance`: Processing history list (synced with `meta["processing_history"]`)
+- `domain`: `DomainContext` — technique, sample type, measurement mode (asserted + inferred)
+- `provenance`: Append-only `Provenance` log with `state_effects` per entry
+- `quality`: `QualityMetrics` with scoped `EvaluationResult` entries
 - `backend`: Origin tag (`"numpy"`, `"scp"`, `"sklearn"`)
 
-AnalysisDataset provides NDDataset-compatible properties (`.data`, `.x`, `.y`, `.shape`, `.ndim`, `.copy()`) so node code works with either type. The `to_dict()` method emits `type: "NDDataset"` wire format for frontend backward compatibility.
+Edge adapters in `app/lib/adapters/` handle all external format conversions (numpy, sklearn, SpectroChemPy).
 
-**NDDataset** (SpectroChemPy) — Used by 11 SCP-only nodes that require SpectroChemPy's coordinate-aware algorithms (ALS baseline, MSC, PCA, PLS, MCR, EFA, SIMPLISMA, etc.). Round-trip adapters in `scp_compat.py` convert between the two types.
+**NDDataset** (SpectroChemPy) — Used by 11 SCP-only nodes that require SpectroChemPy's coordinate-aware algorithms (ALS baseline, MSC, PCA, PLS, MCR, EFA, SIMPLISMA, etc.). Round-trip adapters (`from_nddataset`, `to_nddataset`) in `adapters/scp_adapter.py` convert at SCP boundaries.
 
 ### 4. SpectroChemPy Optional Dependency
 
@@ -89,7 +90,7 @@ SpectroChemPy is an optional dependency (`pip install spectra-sherpa[scp]`). The
 - `require_scp()` guard function
 - Stub `NDDataset`/`Coord` classes when SCP is absent (safe for `isinstance()`)
 
-Each node declares `requires_scp=True` in its `NodeMetadata` if it needs SCP. Without SCP, ~38 nodes run on pure numpy/scipy/sklearn via AnalysisDataset. With SCP, 11 additional nodes are unlocked.
+Each node declares `requires_scp=True` in its `NodeMetadata` if it needs SCP. Without SCP, ~38 nodes run on pure numpy/scipy/sklearn via SherpaDataset. With SCP, 11 additional nodes are unlocked.
 
 ### 5. Type System
 

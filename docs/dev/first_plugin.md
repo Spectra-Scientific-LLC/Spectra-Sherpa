@@ -172,7 +172,7 @@ class SNRNode(Node):
                 description="Number of points from the start of the spectrum to use as noise estimate",
             ),
         ],
-        input_types=["AnalysisDataset"],
+        input_types=["NDDataset"],
         output_type="dict",
         output_ports=[
             PortMetadata(
