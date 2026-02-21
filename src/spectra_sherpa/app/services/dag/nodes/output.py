@@ -1152,9 +1152,7 @@ class DataTableNode(Node):
 
         return {"visualization": table_data}
 
-    def _table_from_dataset(
-        self, dataset: Any, max_rows: int, transpose: bool, show_index: bool
-    ) -> Dict[str, Any]:
+    def _table_from_dataset(self, dataset: Any, max_rows: int, transpose: bool, show_index: bool) -> Dict[str, Any]:
         """Convert SherpaDataset to table format."""
         data = np.array(dataset.data)
 

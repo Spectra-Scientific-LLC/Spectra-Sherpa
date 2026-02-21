@@ -94,7 +94,9 @@ def serialize_result(obj: Any, *, owner_user_id: int | None = None) -> Any:
             # object that may have .transform/.fit attributes, which would incorrectly
             # trigger the model placeholder path.
             if isinstance(v, SherpaDataset) or (HAS_NDDATASET and isinstance(v, NDDataset)):
-                result_dict[k] = serialize_for_api(v, sanitize_paths=settings.sanitize_paths, owner_user_id=owner_user_id)
+                result_dict[k] = serialize_for_api(
+                    v, sanitize_paths=settings.sanitize_paths, owner_user_id=owner_user_id
+                )
                 continue
             # Model objects in dicts get placeholder treatment
             if _is_model_object(v):

@@ -34,13 +34,16 @@ class TestWriteDataStory:
         )
         dataset_id = dataset_registry.register(ds)
 
-        with patch(
-            "spectra_sherpa.app.services.llm.LLMService._single_turn",
-            new_callable=AsyncMock,
-            return_value="NIR data story...",
-        ) as mock_turn, patch(
-            "spectra_sherpa.app.services.llm.LLMService.__init__",
-            return_value=None,
+        with (
+            patch(
+                "spectra_sherpa.app.services.llm.LLMService._single_turn",
+                new_callable=AsyncMock,
+                return_value="NIR data story...",
+            ) as mock_turn,
+            patch(
+                "spectra_sherpa.app.services.llm.LLMService.__init__",
+                return_value=None,
+            ),
         ):
             from spectra_sherpa.app.services.llm import LLMService
 

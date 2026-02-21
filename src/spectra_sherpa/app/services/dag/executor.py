@@ -594,9 +594,7 @@ class DAGExecutor:
         through (e.g. from a third-party node).
         """
         if HAS_SCP and isinstance(value, NDDataset):
-            logger.warning(
-                "NDDataset reached pool boundary — converting to SherpaDataset."
-            )
+            logger.warning("NDDataset reached pool boundary — converting to SherpaDataset.")
             from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
 
             return from_nddataset(value)

@@ -150,7 +150,8 @@ def remove_index_columns(dataset: NDDataset | SherpaDataset) -> NDDataset | Sher
                         values=cleaned_dataset.spectral_axis.values[1:],
                         labels=(
                             cleaned_dataset.spectral_axis.labels[1:]
-                            if cleaned_dataset.spectral_axis.labels and len(cleaned_dataset.spectral_axis.labels) == n_cols
+                            if cleaned_dataset.spectral_axis.labels
+                            and len(cleaned_dataset.spectral_axis.labels) == n_cols
                             else cleaned_dataset.spectral_axis.labels
                         ),
                         units=cleaned_dataset.spectral_axis.units,

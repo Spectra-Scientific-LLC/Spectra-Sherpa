@@ -162,8 +162,7 @@ class DatasetSummarizer:
         if domain.inferred and not domain.technique:
             inf = domain.inferred
             lines.append(
-                f"Inferred technique: {inf.technique} "
-                f"(confidence={inf.confidence:.0%}, source={inf.source})"
+                f"Inferred technique: {inf.technique} " f"(confidence={inf.confidence:.0%}, source={inf.source})"
             )
 
         return "\n".join(lines)

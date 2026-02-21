@@ -344,9 +344,7 @@ def serialize_for_api(
 
     # Safety net: convert stray NDDataset
     if HAS_SCP and isinstance(dataset, NDDataset):
-        _logger.warning(
-            "NDDataset reached serialize_for_api — converting to SherpaDataset."
-        )
+        _logger.warning("NDDataset reached serialize_for_api — converting to SherpaDataset.")
         from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
 
         dataset = from_nddataset(dataset)

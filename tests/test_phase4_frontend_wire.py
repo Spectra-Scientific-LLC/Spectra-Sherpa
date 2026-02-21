@@ -29,9 +29,7 @@ class TestAxisKeyRemapping:
         """SherpaDataset with spectral_axis serializes as x_axis."""
         ds = SherpaDataset(
             X=np.zeros((3, 100)),
-            spectral_axis=SpectralAxis(
-                values=np.linspace(400, 4000, 100), units="cm-1"
-            ),
+            spectral_axis=SpectralAxis(values=np.linspace(400, 4000, 100), units="cm-1"),
         )
         result = serialize_for_api(ds)
         assert "x_axis" in result
@@ -53,9 +51,7 @@ class TestAxisKeyRemapping:
         """Both spectral and sample axes are remapped."""
         ds = SherpaDataset(
             X=np.zeros((3, 50)),
-            spectral_axis=SpectralAxis(
-                values=np.linspace(400, 4000, 50), units="cm-1"
-            ),
+            spectral_axis=SpectralAxis(values=np.linspace(400, 4000, 50), units="cm-1"),
             sample_axis=SampleAxis(labels=["S1", "S2", "S3"]),
         )
         result = serialize_for_api(ds)
@@ -100,9 +96,7 @@ class TestMetadataEnrichment:
         """x_units is populated from spectral axis units."""
         ds = SherpaDataset(
             X=np.zeros((3, 50)),
-            spectral_axis=SpectralAxis(
-                values=np.linspace(400, 4000, 50), units="cm-1"
-            ),
+            spectral_axis=SpectralAxis(values=np.linspace(400, 4000, 50), units="cm-1"),
         )
         result = serialize_for_api(ds)
         assert result["metadata"]["x_units"] == "cm-1"
@@ -147,9 +141,7 @@ class TestQualitySummary:
     def test_quality_summary_with_evaluation(self):
         """quality_summary present in metadata when evaluations exist."""
         ds = SherpaDataset(X=np.zeros((5, 10)))
-        ev = EvaluationResult(
-            evaluation_id="ev1", model_type="PLS", r2=0.95, rmse=0.12
-        )
+        ev = EvaluationResult(evaluation_id="ev1", model_type="PLS", r2=0.95, rmse=0.12)
         ds.quality.add_evaluation(ev)
         result = serialize_for_api(ds)
         qs = result["metadata"]["quality_summary"]
@@ -169,9 +161,7 @@ class TestDomainInMetadata:
         """IR technique detected from spectral axis range."""
         ds = SherpaDataset(
             X=np.zeros((3, 100)),
-            spectral_axis=SpectralAxis(
-                values=np.linspace(400, 4000, 100), units="cm-1"
-            ),
+            spectral_axis=SpectralAxis(values=np.linspace(400, 4000, 100), units="cm-1"),
             domain=DomainContext(technique="IR"),
         )
         result = serialize_for_api(ds)
@@ -182,9 +172,7 @@ class TestDomainInMetadata:
         """data_type is 'spectra' for spectral data."""
         ds = SherpaDataset(
             X=np.zeros((3, 100)),
-            spectral_axis=SpectralAxis(
-                values=np.linspace(400, 4000, 100), units="cm-1"
-            ),
+            spectral_axis=SpectralAxis(values=np.linspace(400, 4000, 100), units="cm-1"),
             domain=DomainContext(technique="IR"),
         )
         result = serialize_for_api(ds)

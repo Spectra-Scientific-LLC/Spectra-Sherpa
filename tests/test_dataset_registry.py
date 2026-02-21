@@ -36,4 +36,3 @@ def test_branch_creates_new_handle():
     assert child.dataset_id != parent_id
     assert child.branch_info is not None
     assert child.branch_info.parent_dataset_id == parent_id
-

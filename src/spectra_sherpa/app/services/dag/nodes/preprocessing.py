@@ -349,8 +349,11 @@ class SmoothSavitzkyGolayNode(Node):
         )
         result = build_dataset_like(smoothed, input_ds)
         add_processing_step(
-            result, "smooth.savitzky_golay", {"size": size, "order": order},
-            node_id=self.node_id, state_effects=[EFFECT_SMOOTHED],
+            result,
+            "smooth.savitzky_golay",
+            {"size": size, "order": order},
+            node_id=self.node_id,
+            state_effects=[EFFECT_SMOOTHED],
         )
 
         return result
@@ -439,7 +442,10 @@ class NormalizeSNVNode(Node):
             units="dimensionless",
         )
         add_processing_step(
-            result, "normalize.snv", {}, node_id=self.node_id,
+            result,
+            "normalize.snv",
+            {},
+            node_id=self.node_id,
             state_effects=[EFFECT_NORMALIZED, EFFECT_SCATTER_CORRECTED],
         )
 
@@ -543,7 +549,10 @@ class NormalizeScaleNode(Node):
 
         result = build_dataset_like(data, input_ds, units="normalized")
         add_processing_step(
-            result, "normalize.scale", {"method": method}, node_id=self.node_id,
+            result,
+            "normalize.scale",
+            {"method": method},
+            node_id=self.node_id,
             state_effects=[EFFECT_SCALED],
         )
 
@@ -595,7 +604,10 @@ class NormalizeMSCNode(Node):
         result = from_nddataset(ndd)
         copy_processing_history(input_ds, result)
         add_processing_step(
-            result, "normalize.msc", {"reference": reference}, node_id=self.node_id,
+            result,
+            "normalize.msc",
+            {"reference": reference},
+            node_id=self.node_id,
             state_effects=[EFFECT_SCATTER_CORRECTED],
         )
 
@@ -699,8 +711,11 @@ class DerivativeFirstNode(Node):
             pass  # leave units unchanged if assignment fails
 
         add_processing_step(
-            result, "derivative.first", {"size": size, "order": order},
-            node_id=self.node_id, state_effects=[EFFECT_DERIVATIVE],
+            result,
+            "derivative.first",
+            {"size": size, "order": order},
+            node_id=self.node_id,
+            state_effects=[EFFECT_DERIVATIVE],
         )
 
         return result
@@ -803,8 +818,11 @@ class DerivativeSecondNode(Node):
             pass  # leave units unchanged if assignment fails
 
         add_processing_step(
-            result, "derivative.second", {"size": size, "order": order},
-            node_id=self.node_id, state_effects=[EFFECT_DERIVATIVE],
+            result,
+            "derivative.second",
+            {"size": size, "order": order},
+            node_id=self.node_id,
+            state_effects=[EFFECT_DERIVATIVE],
         )
 
         return result
@@ -903,7 +921,9 @@ class CosmicRayRemovalNode(Node):
 
         result = build_dataset_like(data, input_ds)
         add_processing_step(
-            result, "preprocess.cosmic_ray", {"window": window, "zscore": zscore},
+            result,
+            "preprocess.cosmic_ray",
+            {"window": window, "zscore": zscore},
             node_id=self.node_id,
         )
 
@@ -1039,7 +1059,7 @@ class ClipRangeNode(Node):
         x_vals = None
         if hasattr(ds, "x") and ds.x is not None:
             x_vals = ds.x.data
-            
+
         if x_vals is None:
             lo = int(min_wn) if min_wn is not None else 0
             hi = int(max_wn) if max_wn is not None else ds.shape[1]
@@ -1234,8 +1254,11 @@ class ScaleMaxNode(Node):
 
         result = build_dataset_like(data, input_ds, units="normalized")
         add_processing_step(
-            result, "preprocess.scale_max", {"target_max": target_max},
-            node_id=self.node_id, state_effects=[EFFECT_SCALED],
+            result,
+            "preprocess.scale_max",
+            {"target_max": target_max},
+            node_id=self.node_id,
+            state_effects=[EFFECT_SCALED],
         )
 
         return result

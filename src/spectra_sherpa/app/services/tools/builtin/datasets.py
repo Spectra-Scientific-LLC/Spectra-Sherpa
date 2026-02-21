@@ -15,8 +15,7 @@ from spectra_sherpa.app.services.tools.schemas import ToolCategory
 
 @register_tool(
     "describe_dataset",
-    "Generate a structured summary of a dataset including domain, "
-    "processing state, and quality metrics.",
+    "Generate a structured summary of a dataset including domain, " "processing state, and quality metrics.",
     category=ToolCategory.data,
     requires_user=True,
     parameters={
@@ -28,10 +27,7 @@ from spectra_sherpa.app.services.tools.schemas import ToolCategory
             },
             "tier": {
                 "type": "integer",
-                "description": (
-                    "Detail tier: 0=shape+domain, 1=+state+axes, "
-                    "2=+provenance, 3=+quality+statistics"
-                ),
+                "description": ("Detail tier: 0=shape+domain, 1=+state+axes, " "2=+provenance, 3=+quality+statistics"),
             },
         },
         "required": ["dataset_id"],

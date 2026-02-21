@@ -472,9 +472,7 @@ def detect_spectral_technique(dataset: Any) -> Optional[str]:
     return _technique_from_range(axis_type, x_min, x_max, units_str)
 
 
-def _technique_from_range(
-    axis_type: str, x_min: float, x_max: float, units_str: str
-) -> Optional[str]:
+def _technique_from_range(axis_type: str, x_min: float, x_max: float, units_str: str) -> Optional[str]:
     """Map axis type + range to spectral technique."""
     if axis_type == "wavenumber":
         if x_min >= 100 and x_max <= 4000:

@@ -19,6 +19,7 @@ from spectra_sherpa.app.lib.sherpa_dataset import (
     SampleAxis,
     AxisInfo,
 )
+
 # sklearn adapter now lives in its own module and returns SherpaDataset
 from spectra_sherpa.app.lib.adapters.sklearn_adapter import from_sklearn_bunch
 from spectra_sherpa.app.services.dag.node_base import NodeResult, node_registry
