@@ -23,15 +23,9 @@ from spectra_sherpa.app.services.dataset_registry import dataset_registry
 
 class TestWriteDataStory:
     @pytest.mark.asyncio
-    async def test_with_dataset_id_uses_summarizer(self):
-        """write_data_story uses handle-based dataset lookup and summarizer text."""
-        ds = SherpaDataset(
-            X=np.ones((5, 100)),
-            spectral_axis=SpectralAxis(values=np.linspace(400, 4000, 100), units="cm-1"),
-            domain=DomainContext(technique="NIR"),
-            title="Corn NIR",
-        )
-        dataset_id = dataset_registry.register(ds)
+    async def test_with_dataset_info_uses_summarizer(self):
+        """write_data_story uses JSON dict context."""
+        dataset_info = {"name": "Corn NIR", "technique": "NIR"}
 
         with (
             patch(
@@ -48,25 +42,12 @@ class TestWriteDataStory:
 
             svc = LLMService.__new__(LLMService)
             svc.user = None
-            result = await svc.write_data_story(dataset_id=dataset_id, tier=2)
+            result = await svc.write_data_story(dataset_info=dataset_info)
 
             assert result == "NIR data story..."
             call_args = mock_turn.call_args[0][0]
             assert "Corn NIR" in call_args
-            assert "Technique: NIR" in call_args
-
-    @pytest.mark.asyncio
-    async def test_unknown_dataset_id_raises(self):
-        with patch(
-            "spectra_sherpa.app.services.llm.LLMService.__init__",
-            return_value=None,
-        ):
-            from spectra_sherpa.app.services.llm import LLMService
-
-            svc = LLMService.__new__(LLMService)
-            svc.user = None
-            with pytest.raises(ValueError, match="Unknown dataset_id"):
-                await svc.write_data_story(dataset_id="missing")
+            assert "NIR" in call_args
 
 
 # ---------------------------------------------------------------------------
