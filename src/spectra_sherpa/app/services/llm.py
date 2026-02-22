@@ -318,23 +318,10 @@ class LLMService:
 
     async def write_data_story(
         self,
-        dataset_id: str,
-        tier: int = 2,
+        dataset_info: dict[str, Any],
     ) -> str:
-        """Generate a narrative 'data story' for a dataset handle."""
-        from spectra_sherpa.app.lib.dataset_summarizer import DatasetSummarizer
-        from spectra_sherpa.app.services.dataset_registry import dataset_registry
-
-        user_id = self.user.id if self.user is not None else None
-        try:
-            dataset = dataset_registry.get(dataset_id, user_id=user_id)
-        except KeyError as exc:
-            raise ValueError(f"Unknown dataset_id: {dataset_id}") from exc
-        except PermissionError as exc:
-            raise ValueError("Dataset is not accessible for this user") from exc
-
-        tier = max(0, min(3, int(tier)))
-        context = DatasetSummarizer().summarize(dataset, tier=tier, max_tokens=1500)
+        """Generate a narrative 'data story' for a reference dataset."""
+        context = json.dumps(dataset_info, indent=2, default=str)
 
         prompt = (
             "Write a concise, informative narrative about the following spectroscopy dataset. "
@@ -343,14 +330,14 @@ class LLMService:
             "Write 2-3 paragraphs in a professional scientific tone.\n\n"
             "Dataset info:\n" + context
         )
-        return await self._single_turn(prompt)
+        return await self._single_turn(prompt, bypass_egress=True)
 
-    async def _single_turn(self, prompt: str) -> str:
+    async def _single_turn(self, prompt: str, bypass_egress: bool = False) -> str:
         """Single-turn LLM request (used for utility functions)"""
         # Egress check for external LLM providers.
         # User-initiated BYOK chat bypasses the global egress flag.
         config = await self._get_llm_config()
-        if not self._is_local_provider(config["provider"]):
+        if not bypass_egress and not self._is_local_provider(config["provider"]):
             if not await check_egress_permission(
                 self.user,
                 "allow_llm_context",

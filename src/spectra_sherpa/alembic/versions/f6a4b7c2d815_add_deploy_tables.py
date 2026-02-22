@@ -64,6 +64,7 @@ def upgrade() -> None:
             sa.Column("folder_path", sa.String(1000), nullable=False),
             sa.Column("file_pattern", sa.String(255), nullable=False, server_default="*"),
             sa.Column("poll_interval_sec", sa.Integer(), nullable=False, server_default="60"),
+            sa.Column("settle_time_seconds", sa.Integer(), nullable=False, server_default="2"),
             sa.Column("is_enabled", sa.Boolean(), nullable=False, server_default="0"),
             sa.Column("processed_files", sa.JSON(), nullable=True),
             sa.Column("last_poll_at", sa.DateTime(timezone=True), nullable=True),
