@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - run: pip install "mkdocs<2" mkdocs-material mkdocs-jupyter
+      - run: pip install "mkdocs<2" "mkdocs-material<9.7" mkdocs-jupyter
 
       - run: mkdocs build --strict
 
