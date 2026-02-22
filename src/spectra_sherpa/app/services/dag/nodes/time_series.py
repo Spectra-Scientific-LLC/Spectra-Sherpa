@@ -13,7 +13,6 @@ from typing import Any
 import numpy as np
 
 logger = logging.getLogger(__name__)
-from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
 
 from ..io_contracts import build_dataset_like, coerce_to_sherpa, to_numpy_2d

@@ -1,7 +1,8 @@
-import pytest
 import numpy as np
+import pytest
 import spectrochempy as scp
-from spectra_sherpa.app.services.dag.nodes.modeling_legacy import PLSNode, MCRNode, PCRNode
+
+from spectra_sherpa.app.services.dag.nodes.modeling_legacy import MCRNode, PCRNode, PLSNode
 
 
 @pytest.mark.asyncio

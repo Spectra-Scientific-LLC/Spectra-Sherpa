@@ -12,8 +12,8 @@ from typing import Any
 
 import numpy as np
 
-from spectra_sherpa.app.lib.sherpa_dataset import AxisInfo, SherpaDataset, SpectralAxis, SampleAxis
 from spectra_sherpa.app.lib.scp_compat import scp
+from spectra_sherpa.app.lib.sherpa_dataset import AxisInfo
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
 
 from ..io_contracts import (

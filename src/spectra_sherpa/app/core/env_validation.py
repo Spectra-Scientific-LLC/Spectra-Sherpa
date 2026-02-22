@@ -122,7 +122,7 @@ def validate_llm_env() -> List[Tuple[str, str]]:
         if value:
             # Validate key format (basic check)
             if len(value) < 10:
-                results.append((provider, f"⚠️  Set but looks invalid (too short)"))
+                results.append((provider, "⚠️  Set but looks invalid (too short)"))
             else:
                 results.append((provider, "✓ Configured"))
         else:

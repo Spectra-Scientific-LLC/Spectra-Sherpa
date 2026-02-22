@@ -100,8 +100,8 @@ def test_library_usage_example():
 
     # Example: user writes a custom script using SpectraSherpa
     try:
-        from spectra_sherpa.app.services.dag import DAGExecutor, WorkflowNode, WorkflowEdge
-        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset  # noqa: F401
+        from spectra_sherpa.app.services.dag import DAGExecutor, WorkflowEdge, WorkflowNode  # noqa: F401
 
         # Create a simple workflow programmatically
         executor = DAGExecutor()
@@ -152,8 +152,9 @@ def test_no_stale_imports_in_init():
 
     Regression test for Issue #3: cloud.py deletion.
     """
-    import spectra_sherpa.app.services.dag.nodes as nodes_pkg
     import inspect
+
+    import spectra_sherpa.app.services.dag.nodes as nodes_pkg
 
     # Read the source of __init__.py
     init_source = inspect.getsource(nodes_pkg)

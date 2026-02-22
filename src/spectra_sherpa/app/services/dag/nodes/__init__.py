@@ -10,12 +10,12 @@ from . import (
     classification,
     custom,  # Atomic blending & synthetic data nodes
     data,
+    deploy_nodes,
     diagnostics,
     modeling,
     output,
     preprocessing,
     time_series,
-    deploy_nodes,
 )
 
 __all__ = [

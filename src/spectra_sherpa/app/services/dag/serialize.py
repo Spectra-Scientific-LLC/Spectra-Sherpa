@@ -19,8 +19,8 @@ from typing import Any, Dict
 
 import numpy as np
 
-from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
 HAS_NDDATASET = HAS_SCP
 

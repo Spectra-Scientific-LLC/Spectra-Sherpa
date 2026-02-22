@@ -11,7 +11,6 @@ import pytest
 
 from spectra_sherpa.app.lib.sherpa_dataset import (
     EFFECT_BASELINE_CORRECTED,
-    EFFECT_DERIVATIVE,
     EFFECT_MEAN_CENTERED,
     EFFECT_NORMALIZED,
     EFFECT_SCALED,

@@ -15,7 +15,7 @@ This module provides a hierarchy of axis types:
 from __future__ import annotations
 
 import copy
-from typing import Any, Annotated
+from typing import Annotated, Any
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator

@@ -7,8 +7,6 @@ numpy mode.
 
 from __future__ import annotations
 
-import pytest
-
 from spectra_sherpa.app.services.dag.nodes.deploy_nodes import DeployInputNode
 from spectra_sherpa.app.services.dag.nodes.preprocessing import ClipRangeNode
 

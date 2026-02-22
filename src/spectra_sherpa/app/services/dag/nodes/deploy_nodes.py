@@ -12,9 +12,10 @@ import logging
 from typing import Any
 
 import numpy as np
+
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-from spectra_sherpa.app.services.dag.node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
 from spectra_sherpa.app.services.dag.io_contracts import coerce_to_sherpa
+from spectra_sherpa.app.services.dag.node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
 
 logger = logging.getLogger(__name__)
 

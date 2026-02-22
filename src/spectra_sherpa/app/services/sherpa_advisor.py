@@ -99,7 +99,9 @@ class SherpaAdvisor:
         """
         logger.debug(f"SherpaAdvisor.chat called with message: {message[:50]}... (stub mode)")
         return {
-            "response": "Sherpa AI chat is not available in OSS mode. Activate hybrid mode to use AI-powered assistance.",
+            "response": (
+                "Sherpa AI chat is not available in OSS mode. " "Activate hybrid mode to use AI-powered assistance."
+            ),
             "available": False,
             "suggestions": [],
         }

@@ -22,8 +22,8 @@ from spectra_sherpa.app.services.dag.serialize import serialize_for_api
 
 logger = logging.getLogger(__name__)
 
-from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
 HAS_NDDATASET = HAS_SCP
 
@@ -363,7 +363,7 @@ async def execute_trial(
         target_result = results.get(payload.target_node_id)
 
         # Serialize the result
-        serialized_result = serialize_result(target_result, owner_user_id=user_id) if target_result else None
+        serialized_result = serialize_result(target_result, owner_user_id=current_user.id) if target_result else None
 
         return TrialExecuteResponse(
             target_node_id=payload.target_node_id,

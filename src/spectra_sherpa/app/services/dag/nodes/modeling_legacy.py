@@ -16,14 +16,6 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 from sklearn.svm import SVR
 
-from spectra_sherpa.app.lib.sherpa_dataset import (
-    AxisInfo,
-    EvaluationResult,
-    SampleAxis,
-    SherpaDataset,
-    SpectralAxis,
-)
-from spectra_sherpa.app.lib.scp_compat import from_nddataset, scp, to_nddataset
 from spectra_sherpa.app.lib.adapters.scp_extractors import (
     EFAExtract,
     MCRExtract,
@@ -31,6 +23,11 @@ from spectra_sherpa.app.lib.adapters.scp_extractors import (
     PLSExtract,
     SIMPLISMAExtract,
     _unwrap_to_numpy,
+)
+from spectra_sherpa.app.lib.scp_compat import from_nddataset, scp, to_nddataset
+from spectra_sherpa.app.lib.sherpa_dataset import (
+    EvaluationResult,
+    SherpaDataset,
 )
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
 
@@ -58,7 +55,11 @@ from ..spec_nodes import EstimatorSpec, EstimatorSpecNode
 # These replace the local private implementations
 from .modeling.core_utils import (
     create_spectral_dataset as _create_spectral_dataset,
+)
+from .modeling.core_utils import (
     is_sequential_numeric as _is_sequential_numeric,
+)
+from .modeling.core_utils import (
     make_safe_coord as _make_safe_coord,
 )
 

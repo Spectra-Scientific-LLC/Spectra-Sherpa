@@ -5,9 +5,7 @@ Tests Issue #2: Headless CLI command must NOT launch browser.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from spectra_sherpa.cli import main
 

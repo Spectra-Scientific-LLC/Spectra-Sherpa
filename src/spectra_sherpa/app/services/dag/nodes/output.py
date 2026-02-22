@@ -10,8 +10,8 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.lib.scp_compat import NDDataset
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.services.dag.io_contracts import coerce_to_sherpa
 
 from ..node_base import Node, NodeMetadata, NodeParameter, NodePolicy, PortMetadata, register_node
@@ -29,11 +29,11 @@ def get_axis_display_info(axis: Any) -> dict[str, Any]:
         - default_title: Default title if axis.title is None
     """
     from spectra_sherpa.app.lib.axes import (
-        SpectralAxis,
-        TimeAxis,
+        FrequencyAxis,
         MZAxis,
         PotentialAxis,
-        FrequencyAxis,
+        SpectralAxis,
+        TimeAxis,
     )
 
     if axis is None:

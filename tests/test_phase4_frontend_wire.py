@@ -7,14 +7,13 @@ including axis key remapping, metadata enrichment, and quality summary.
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from spectra_sherpa.app.lib.sherpa_dataset import (
     DomainContext,
     EvaluationResult,
+    SampleAxis,
     SherpaDataset,
     SpectralAxis,
-    SampleAxis,
 )
 from spectra_sherpa.app.services.dag.serialize import serialize_for_api
 

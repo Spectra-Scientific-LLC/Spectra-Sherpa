@@ -18,11 +18,12 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from typing import Any
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
-from spectra_sherpa.app.lib.sherpa_dataset import AxisInfo, SherpaDataset, SpectralAxis, SampleAxis
+from spectra_sherpa.app.lib.sherpa_dataset import AxisInfo
 from spectra_sherpa.app.models.spectra_meta import (
     ConcentrationProfile,
     ConcentrationUnit,

@@ -18,7 +18,6 @@ import pytest
 
 from spectra_sherpa.app.lib.sherpa_dataset import (
     DatasetManifest,
-    DomainContext,
     EvaluationResult,
     QualityMetrics,
     SherpaDataset,

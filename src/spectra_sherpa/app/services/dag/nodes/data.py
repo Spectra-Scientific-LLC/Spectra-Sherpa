@@ -17,13 +17,6 @@ import numpy as np
 
 from spectra_sherpa.app.lib.adapters.sklearn_adapter import from_sklearn as from_sklearn_bunch
 from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG
-from spectra_sherpa.app.lib.sherpa_dataset import (
-    AxisInfo,
-    DomainContext,
-    SampleAxis,
-    SherpaDataset,
-    SpectralAxis,
-)
 from spectra_sherpa.app.lib.scp_compat import (
     HAS_SCP,
     NDDataset,
@@ -32,6 +25,13 @@ from spectra_sherpa.app.lib.scp_compat import (
     require_scp,
     resolve_scp_path,
     scp,
+)
+from spectra_sherpa.app.lib.sherpa_dataset import (
+    AxisInfo,
+    DomainContext,
+    SampleAxis,
+    SherpaDataset,
+    SpectralAxis,
 )
 from spectra_sherpa.app.models.spectra_meta import (
     AcquisitionParams,

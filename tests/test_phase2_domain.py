@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from spectra_sherpa.app.lib.sherpa_dataset import (
     DomainContext,
     EvaluationResult,
     InferredDomain,
-    QualityMetrics,
     SherpaDataset,
     SpectralAxis,
 )

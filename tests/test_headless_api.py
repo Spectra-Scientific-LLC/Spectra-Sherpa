@@ -7,9 +7,8 @@ from __future__ import annotations
 
 import copy
 from concurrent.futures import ProcessPoolExecutor
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
-import numpy as np
 import pytest
 
 # Import node modules to trigger @register_node decorators
@@ -220,13 +219,13 @@ def test_executor_getstate_setstate():
 @pytest.fixture
 def test_client():
     from fastapi.testclient import TestClient
+
     from spectra_sherpa.app.api.headless_app import app
 
     return TestClient(app)
 
 
 def test_predict_with_array_payload(test_client):
-    from unittest.mock import patch
     import spectra_sherpa.app.api.headless_app as headless_app
 
     executor = DAGExecutor(process_pool=None)

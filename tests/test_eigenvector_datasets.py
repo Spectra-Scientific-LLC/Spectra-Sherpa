@@ -26,7 +26,6 @@ import pytest
 from sklearn.decomposition import PCA as SklearnPCA
 from sklearn.preprocessing import StandardScaler
 
-from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.lib.eigenvector import (
     DATASET_CATALOG,
     EIGENVECTOR_DATA_DIR,
@@ -38,6 +37,7 @@ from spectra_sherpa.app.lib.eigenvector import (
     parse_eigenvector_mat,
 )
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset, scp
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
 # ---------------------------------------------------------------------------
 # Paths (test fixtures — duplicated from bundled data for test isolation)

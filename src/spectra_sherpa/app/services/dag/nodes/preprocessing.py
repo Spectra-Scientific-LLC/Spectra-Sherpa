@@ -16,6 +16,15 @@ from typing import Any, Dict
 
 import numpy as np
 
+from spectra_sherpa.app.lib.adapters.scp_adapter import scp_roundtrip
+from spectra_sherpa.app.lib.preprocessing import (
+    baseline_penalized_ls,
+    gaussian_smooth,
+    norris_williams,
+    remove_cosmic_rays,
+    whittaker_smooth,
+)
+from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset, scp
 from spectra_sherpa.app.lib.sherpa_dataset import (
     EFFECT_BASELINE_CORRECTED,
     EFFECT_DERIVATIVE,
@@ -25,15 +34,6 @@ from spectra_sherpa.app.lib.sherpa_dataset import (
     EFFECT_SMOOTHED,
     SherpaDataset,
 )
-from spectra_sherpa.app.lib.preprocessing import (
-    baseline_penalized_ls,
-    gaussian_smooth,
-    norris_williams,
-    remove_cosmic_rays,
-    whittaker_smooth,
-)
-from spectra_sherpa.app.lib.adapters.scp_adapter import scp_roundtrip
-from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset, from_nddataset, scp, to_nddataset
 
 from ..export_helpers import (
     extract_data_lines,

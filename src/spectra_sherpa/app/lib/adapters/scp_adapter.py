@@ -14,6 +14,7 @@ from typing import Any
 
 import numpy as np
 
+from spectra_sherpa.app.lib.scp_compat import Coord, require_scp, scp
 from spectra_sherpa.app.lib.sherpa_dataset import (
     DomainContext,
     InferredDomain,
@@ -22,7 +23,6 @@ from spectra_sherpa.app.lib.sherpa_dataset import (
     SherpaDataset,
     SpectralAxis,
 )
-from spectra_sherpa.app.lib.scp_compat import Coord, require_scp, scp
 
 logger = logging.getLogger(__name__)
 

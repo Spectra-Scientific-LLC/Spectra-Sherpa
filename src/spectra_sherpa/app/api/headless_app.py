@@ -12,14 +12,12 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import PlainTextResponse, Response
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.db.session import async_session
-from spectra_sherpa.app.services.batch_predict import build_executor_from_workflow, load_workflow_with_graph
+from spectra_sherpa.app.services.batch_predict import build_executor_from_workflow
 from spectra_sherpa.app.services.dag.io_contracts import coerce_to_sherpa
 
 logger = logging.getLogger(__name__)
@@ -46,8 +44,9 @@ async def lifespan(app: FastAPI):
     # Let's read the workflow manually to bypass user check if it's strictly a "deployed" model.
     # Actually, we can just use the standard session to load the workflow directly.
     import sqlalchemy as sa
-    from spectra_sherpa.app.models.workflow import Workflow
     from sqlalchemy.orm import selectinload
+
+    from spectra_sherpa.app.models.workflow import Workflow
 
     async with async_session() as session:
         query = (
@@ -111,7 +110,7 @@ async def predict(request: Request) -> Response:
     executor = copy.deepcopy(_executor)
 
     # Find the deploy entry nodes
-    entry_nodes = executor.find_entry_nodes()
+    _entry_nodes = executor.find_entry_nodes()  # noqa: F841
     deploy_input_nodes = [n for n in executor.nodes.values() if n.metadata.node_type == "deploy.input"]
 
     if not deploy_input_nodes:

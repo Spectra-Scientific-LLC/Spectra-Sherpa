@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from spectra_sherpa.app.core.config import AppConfig, DemoContract, app_config
+from spectra_sherpa.app.core.config import DemoContract, app_config
 from spectra_sherpa.app.core.demo_limits import (
     check_demo_execution,
     check_demo_sherpa,

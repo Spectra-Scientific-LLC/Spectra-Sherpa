@@ -8,7 +8,7 @@ import pytest
 scp = pytest.importorskip("spectrochempy")
 from spectrochempy import NDDataset
 
-from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, SpectralAxis, SampleAxis
+from spectra_sherpa.app.lib.sherpa_dataset import SampleAxis, SherpaDataset, SpectralAxis
 from spectra_sherpa.app.services.dag import node_registry
 
 

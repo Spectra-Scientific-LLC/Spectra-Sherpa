@@ -21,12 +21,10 @@ import uuid
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from types import MappingProxyType
-from typing import Any
-
-from typing import Annotated
+from typing import Annotated, Any
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic import GetCoreSchemaHandler as _GetCoreSchemaHandler
 from pydantic import GetJsonSchemaHandler as _GetJsonSchemaHandler
 from pydantic.json_schema import JsonSchemaValue as _JsonSchemaValue
@@ -36,12 +34,12 @@ from pydantic_core import core_schema as _cs
 from spectra_sherpa.app.lib.axes import (
     AxisInfo,
     FeatureAxis,
-    SpectralAxis,
-    TimeAxis,
+    FrequencyAxis,
     MZAxis,
     PotentialAxis,
-    FrequencyAxis,
     SampleAxis,
+    SpectralAxis,
+    TimeAxis,
 )
 
 # ---------------------------------------------------------------------------
@@ -540,13 +538,13 @@ def _validate_axis_length(
 
     # Build helpful error message with suggestions
     msg_parts = [
-        f"❌ Axis dimension mismatch:",
+        "❌ Axis dimension mismatch:",
         f"   {axis_name} has {actual} points",
         f"   But data expects {expected} {axis_type}s",
-        f"",
+        "",
         f"Data shape: {data_shape}",
         f"{axis_name} length: {actual}",
-        f"",
+        "",
     ]
 
     # Suggest transpose if dimensions are reversed
@@ -555,10 +553,10 @@ def _validate_axis_length(
         if actual == n_samples and expected == n_features:
             msg_parts.extend(
                 [
-                    f"💡 Suggestion: Your data may be transposed.",
-                    f"   Try: X=X.T (transpose your data matrix)",
+                    "💡 Suggestion: Your data may be transposed.",
+                    "   Try: X=X.T (transpose your data matrix)",
                     f"   This will change shape {data_shape} → ({n_features}, {n_samples})",
-                    f"",
+                    "",
                 ]
             )
 
@@ -566,22 +564,22 @@ def _validate_axis_length(
     if axis_type == "sample" and actual > 50 and expected < actual / 2:
         msg_parts.extend(
             [
-                f"💡 Suggestion: Do you have index/metadata columns in your data?",
-                f"   Remove non-numeric columns before creating dataset",
+                "💡 Suggestion: Do you have index/metadata columns in your data?",
+                "   Remove non-numeric columns before creating dataset",
                 f"   Expected {expected} samples but axis has {actual} entries",
-                f"",
+                "",
             ]
         )
 
     # General debugging hints
     msg_parts.extend(
         [
-            f"📘 Debug checklist:",
-            f"   1. Check data.shape matches (n_samples, n_features)",
-            f"   2. Verify axis.length == appropriate dimension",
-            f"   3. For chromatography: data.shape = (n_samples, n_timepoints)",
-            f"   4. For spectroscopy: data.shape = (n_samples, n_wavenumbers)",
-            f"   5. For mass spec: data.shape = (n_samples, n_mz_points)",
+            "📘 Debug checklist:",
+            "   1. Check data.shape matches (n_samples, n_features)",
+            "   2. Verify axis.length == appropriate dimension",
+            "   3. For chromatography: data.shape = (n_samples, n_timepoints)",
+            "   4. For spectroscopy: data.shape = (n_samples, n_wavenumbers)",
+            "   5. For mass spec: data.shape = (n_samples, n_mz_points)",
         ]
     )
 
@@ -696,11 +694,11 @@ class SherpaDataset:
             t = np.asarray(target)
             if t.shape[0] != n_samples:
                 msg_parts = [
-                    f"❌ Target length mismatch:",
+                    "❌ Target length mismatch:",
                     f"   target has {t.shape[0]} values",
                     f"   But data has {n_samples} samples",
-                    f"",
-                    f"💡 Each sample needs exactly one target value.",
+                    "",
+                    "💡 Each sample needs exactly one target value.",
                     f"   Ensure len(target) == n_samples ({n_samples})",
                 ]
                 raise ValueError("\n".join(msg_parts))
@@ -755,11 +753,11 @@ class SherpaDataset:
             t = np.asarray(value)
             if t.shape[0] != self._X.shape[0]:
                 msg_parts = [
-                    f"❌ Target length mismatch:",
+                    "❌ Target length mismatch:",
                     f"   target has {t.shape[0]} values",
                     f"   But data has {self._X.shape[0]} samples",
-                    f"",
-                    f"💡 Each sample needs exactly one target value.",
+                    "",
+                    "💡 Each sample needs exactly one target value.",
                     f"   Ensure len(target) == n_samples ({self._X.shape[0]})",
                 ]
                 raise ValueError("\n".join(msg_parts))
@@ -880,21 +878,21 @@ class SherpaDataset:
             )
         if value.classes is not None and len(value.classes) != self._X.shape[0]:
             msg_parts = [
-                f"❌ Classes length mismatch:",
+                "❌ Classes length mismatch:",
                 f"   sample_axis.classes has {len(value.classes)} entries",
                 f"   But data has {self._X.shape[0]} samples",
-                f"",
-                f"💡 Each sample must have exactly one class label.",
+                "",
+                "💡 Each sample must have exactly one class label.",
                 f"   Ensure len(classes) == n_samples ({self._X.shape[0]})",
             ]
             raise ValueError("\n".join(msg_parts))
         if value.include_mask is not None and len(value.include_mask) != self._X.shape[0]:
             msg_parts = [
-                f"❌ Include mask length mismatch:",
+                "❌ Include mask length mismatch:",
                 f"   sample_axis.include_mask has {len(value.include_mask)} entries",
                 f"   But data has {self._X.shape[0]} samples",
-                f"",
-                f"💡 Each sample must have exactly one boolean flag.",
+                "",
+                "💡 Each sample must have exactly one boolean flag.",
                 f"   Ensure len(include_mask) == n_samples ({self._X.shape[0]})",
             ]
             raise ValueError("\n".join(msg_parts))

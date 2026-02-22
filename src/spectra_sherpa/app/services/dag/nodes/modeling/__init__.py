@@ -14,12 +14,6 @@ This package contains:
 - `is_sequential_numeric()` - Detect sequential vs categorical data
 """
 
-from .core_utils import (
-    create_spectral_dataset,
-    is_sequential_numeric,
-    make_safe_coord,
-)
-
 # Import all nodes from legacy modeling file for backward compatibility
 # This ensures existing imports like "from .modeling import PCANode" still work
 from ..modeling_legacy import (
@@ -39,6 +33,11 @@ from ..modeling_legacy import (
     PLSPredictNode,
     SIMPLISMANode,
     SVRNode,
+)
+from .core_utils import (
+    create_spectral_dataset,
+    is_sequential_numeric,
+    make_safe_coord,
 )
 
 __all__ = [

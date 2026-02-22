@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import os
 from typing import Any
+
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -116,7 +117,10 @@ class SpectraSherpaService:
         logger.warning("Hybrid mode activation attempted in OSS mode (not supported)")
         return {
             "success": False,
-            "error": "Hybrid mode is not available in the OSS version. Please use spectra-server for hybrid/enterprise features.",
+            "error": (
+                "Hybrid mode is not available in the OSS version. "
+                "Please use spectra-server for hybrid/enterprise features."
+            ),
         }
 
     async def deactivate_hybrid_mode(self) -> dict[str, Any]:

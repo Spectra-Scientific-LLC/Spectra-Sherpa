@@ -22,8 +22,8 @@ from spectra_sherpa.app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
 from .graph_utils import Edge as _Edge
 from .graph_utils import build_dependency_map, topological_sort
