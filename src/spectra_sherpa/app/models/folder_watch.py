@@ -35,6 +35,7 @@ class FolderWatch(Base):
     folder_path: Mapped[str] = mapped_column(String(1000), nullable=False)
     file_pattern: Mapped[str] = mapped_column(String(255), nullable=False, server_default="*")
     poll_interval_sec: Mapped[int] = mapped_column(Integer, nullable=False, server_default="60")
+    settle_time_seconds: Mapped[int] = mapped_column(Integer, nullable=False, server_default="2")
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0")
     processed_files: Mapped[dict | None] = mapped_column(JSON)
     last_poll_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

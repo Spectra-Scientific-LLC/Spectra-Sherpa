@@ -1570,6 +1570,10 @@ const NODE_ICONS: Record<string, string> = {
   'PLOT': '📈',
   'CONTOUR_PLOT': '🗺️',
   'EXPORT': '💾',
+
+  // Deploy
+  'deploy.input': '📥',
+  'deploy.output': '📤',
 };
 
 const NODE_LABELS: Record<string, string> = {
@@ -1613,6 +1617,10 @@ const NODE_LABELS: Record<string, string> = {
   'PLOT': 'Scatter Plot',
   'CONTOUR_PLOT': 'Contour Plot',
   'EXPORT': 'Export',
+
+  // Deploy
+  'deploy.input': 'Deploy Input',
+  'deploy.output': 'Deploy Output',
 };
 
 // Local params copy for editing

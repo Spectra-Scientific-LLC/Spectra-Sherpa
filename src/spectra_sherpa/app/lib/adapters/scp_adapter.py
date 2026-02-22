@@ -7,6 +7,9 @@ Imports from scp_compat — no direct ``import spectrochempy`` here.
 
 from __future__ import annotations
 
+import copy
+import logging
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -14,11 +17,14 @@ import numpy as np
 from spectra_sherpa.app.lib.sherpa_dataset import (
     DomainContext,
     InferredDomain,
+    Provenance,
     SampleAxis,
     SherpaDataset,
     SpectralAxis,
 )
 from spectra_sherpa.app.lib.scp_compat import Coord, require_scp, scp
+
+logger = logging.getLogger(__name__)
 
 
 def from_nddataset(ds: Any) -> SherpaDataset:
@@ -39,8 +45,6 @@ def from_nddataset(ds: Any) -> SherpaDataset:
     extra = {}
     for k, v in meta.items():
         extra[f"scp.{k}"] = v
-
-    from spectra_sherpa.app.lib.sherpa_dataset import Provenance
 
     provenance = Provenance.from_list(provenance_raw) if provenance_raw else Provenance()
 
@@ -111,6 +115,121 @@ def to_nddataset(sherpa_ds: SherpaDataset) -> Any:
             ds.meta["value_units_label"] = sherpa_ds.units
 
     return ds
+
+
+# ── Envelope: round-trip with metadata preservation ───────────────
+
+
+def scp_roundtrip(
+    ds: SherpaDataset,
+    fn: Callable[[Any], Any],
+    *,
+    op_id: str,
+    parameters: dict[str, Any] | None = None,
+    state_effects: list[str] | None = None,
+    node_id: str | None = None,
+) -> SherpaDataset:
+    """Execute an SCP operation while preserving all SherpaDataset context.
+
+    Handles the full round-trip: SherpaDataset → NDDataset → SCP op → SherpaDataset,
+    automatically restoring fields that NDDataset cannot carry (target, quality,
+    sample_axis extras, provenance, domain, extra metadata, dataset_id).
+
+    Safe because all SCP preprocessing operations are row-preserving — they never
+    reorder, filter, or change the number of samples.
+
+    Args:
+        ds: Input SherpaDataset.
+        fn: Callable that receives an NDDataset and either mutates it in-place
+            (returning None) or returns a new NDDataset.
+        op_id: Provenance operation identifier (e.g., "baseline.rubberband").
+        parameters: Operation parameters to record in provenance.
+        state_effects: Effect tags (e.g., ["baseline_corrected"]).
+        node_id: DAG node ID for provenance tracing.
+
+    Returns:
+        New SherpaDataset with SCP-transformed data and all metadata preserved.
+
+    Example::
+
+        result = scp_roundtrip(
+            input_ds,
+            lambda ndd: ndd.basc(method="rubberband"),
+            op_id="baseline.rubberband",
+            parameters={"method": "rubberband"},
+            state_effects=["baseline_corrected"],
+            node_id=self.node_id,
+        )
+    """
+    require_scp("scp_roundtrip()")
+
+    # ── 1. Snapshot fields NDDataset cannot carry ──────────────────
+    input_shape = tuple(ds.shape)
+    provenance = ds.provenance.copy()
+    target = ds.target.copy() if ds.target is not None else None
+    target_context = ds.target_context.model_copy(deep=True)
+    quality = ds.quality.model_copy(deep=True)
+    domain = ds.domain.model_copy(deep=True)
+    extra = copy.deepcopy(ds.extra)
+    sample_axis_snapshot = ds.sample_axis  # .copy() already happens in the property getter
+    backend = ds.backend
+    title_snapshot = ds.title
+    units_snapshot = ds.units
+
+    # ── 2. Convert → call SCP → convert back ──────────────────────
+    ndd = to_nddataset(ds)
+    result_ndd = fn(ndd)
+
+    # In-place SCP methods (e.g. .basc(), .msc()) return None
+    if result_ndd is None:
+        result_ndd = ndd
+
+    result = from_nddataset(result_ndd)
+
+    # ── 3. Restore everything from snapshot ────────────────────────
+    result.provenance = provenance
+    if target is not None:
+        result.target = target
+    result.target_context = target_context
+    result.quality = quality
+    result.domain = domain
+    result._extra.update(extra)
+    if backend != "scp":
+        result.backend = backend
+    if title_snapshot is not None:
+        result.title = title_snapshot
+    if units_snapshot is not None:
+        result.units = units_snapshot
+
+    # Restore sample_axis extras that NDDataset cannot carry
+    if sample_axis_snapshot is not None:
+        current_sample = result.sample_axis
+        if current_sample is not None:
+            # Merge extras from snapshot into the axis that from_nddataset produced
+            if sample_axis_snapshot.classes is not None:
+                current_sample.classes = sample_axis_snapshot.classes.copy()
+            if sample_axis_snapshot.include_mask is not None:
+                current_sample.include_mask = sample_axis_snapshot.include_mask.copy()
+            if sample_axis_snapshot.exclusion_reasons is not None:
+                current_sample.exclusion_reasons = list(sample_axis_snapshot.exclusion_reasons)
+            if sample_axis_snapshot.sample_table is not None:
+                current_sample.sample_table = copy.deepcopy(sample_axis_snapshot.sample_table)
+            result.sample_axis = current_sample
+        else:
+            # from_nddataset didn't produce a sample_axis — restore the whole thing
+            result.sample_axis = sample_axis_snapshot
+
+    # ── 4. Record the new processing step ──────────────────────────
+    result.provenance.append(
+        op_id=op_id,
+        parameters=parameters or {},
+        node_id=node_id,
+        input_shape=input_shape,
+        output_shape=tuple(result.shape),
+        state_effects=state_effects or [],
+    )
+
+    return result
 
 
 # ── Internal Helpers ──────────────────────────────────────────────

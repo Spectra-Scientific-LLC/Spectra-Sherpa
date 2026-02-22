@@ -16,6 +16,7 @@ from . import (
     output,
     preprocessing,
     time_series,
+    deploy_nodes,
 )
 
 __all__ = [
@@ -29,4 +30,5 @@ __all__ = [
     "diagnostics",
     "time_series",
     "custom",
+    "deploy_nodes",
 ]

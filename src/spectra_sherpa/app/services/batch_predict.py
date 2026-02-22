@@ -23,8 +23,6 @@ from spectra_sherpa.app.models.workflow import Workflow
 
 logger = logging.getLogger(__name__)
 
-# Files modified within this window are skipped (instrument may still be writing).
-FILE_STABILITY_SECONDS = 5
 
 
 def validate_folder_path(folder_path: str) -> Path:
@@ -56,6 +54,7 @@ def discover_files(
     file_pattern: str = "*",
     *,
     exclude_names: set[str] | None = None,
+    settle_time_seconds: int = 2,
 ) -> list[Path]:
     """
     Discover spectral files matching a glob pattern in a server folder.
@@ -99,7 +98,7 @@ def discover_files(
             continue
         # File stability check
         try:
-            if (now - f.stat().st_mtime) < FILE_STABILITY_SECONDS:
+            if (now - f.stat().st_mtime) < settle_time_seconds:
                 continue
         except OSError:
             continue

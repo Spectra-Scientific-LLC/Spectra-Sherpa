@@ -267,6 +267,9 @@ const NODE_ICONS: Record<string, string> = {
   'output.contour': '🗺️',
   'output.data_table': '📋',
   'output.export': '💾',
+  // Deploy
+  'deploy.input': '📥',
+  'deploy.output': '📤',
 };
 
 // Category to color class mapping
@@ -278,6 +281,7 @@ const CATEGORY_COLOR: Record<string, string> = {
   analysis: 'node-analyze',
   classification: 'node-classify',
   output: 'node-visualize',
+  deploy: 'node-export',
 };
 
 // Category display names
@@ -289,6 +293,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   analysis: 'Analysis',
   classification: 'Classification',
   output: 'Output',
+  deploy: 'Deployment',
 };
 
 // Convert backend metadata to NodeConfig

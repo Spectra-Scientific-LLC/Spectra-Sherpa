@@ -251,21 +251,30 @@ def build_dataset_like(
     if arr.ndim != 2:
         raise ValueError(f"data must be 1D or 2D array-like, got {arr.ndim}D")
 
-    spectral_axis = src.spectral_axis.copy() if src.spectral_axis is not None else None
-    sample_axis = src.sample_axis.copy() if src.sample_axis is not None else None
+    # Use generic accessors to preserve ANY axis type (SpectralAxis, TimeAxis, MZAxis, etc.)
+    # This enables new axis types (TimeAxis, MZAxis, PotentialAxis) to propagate through workflows
+    feature_axis = src.get_feature_axis()  # Any FeatureAxis subclass
+    obs_axis = src.get_observation_axis()  # Any axis type (SampleAxis, TimeAxis, etc.)
+
     target = copy.deepcopy(src.target) if src.target is not None else None
 
-    # If shape changed, keep only compatible metadata.
-    if spectral_axis is not None and spectral_axis.length > 0 and spectral_axis.length != arr.shape[1]:
-        spectral_axis = None
-    if sample_axis is not None and sample_axis.length > 0 and sample_axis.length != arr.shape[0]:
-        sample_axis = None
+    # If shape changed, keep only compatible metadata
+    if feature_axis is not None and feature_axis.length > 0 and feature_axis.length != arr.shape[1]:
+        feature_axis = None
+    if obs_axis is not None and obs_axis.length > 0 and obs_axis.length != arr.shape[0]:
+        obs_axis = None
     if target is not None and np.asarray(target).shape[0] != arr.shape[0]:
         target = None
 
+    # Determine sample_axis for backward compatibility
+    # Only set if obs_axis is actually a SampleAxis
+    from spectra_sherpa.app.lib.axes import SampleAxis
+    sample_axis = obs_axis if isinstance(obs_axis, SampleAxis) else None
+
+    # Create dataset using feature_axis (supports all FeatureAxis types)
     result = SherpaDataset(
         X=arr,
-        spectral_axis=spectral_axis,
+        feature_axis=feature_axis,
         sample_axis=sample_axis,
         target=target,
         target_context=src.target_context.model_copy(deep=True),
@@ -277,6 +286,13 @@ def build_dataset_like(
         units=src.units if units is None else units,
         extra=copy.deepcopy(src.extra),
     )
+
+    # If observation axis is NOT a SampleAxis (e.g., TimeAxis for time-resolved data),
+    # manually set it in the _axes dict since __init__ only accepts sample_axis parameter
+    if obs_axis is not None and not isinstance(obs_axis, SampleAxis):
+        obs_copy = obs_axis.copy()
+        obs_copy.bind_expected_length(arr.shape[0])
+        result._axes[result._SAMPLE_DIM] = obs_copy
 
     return result
 

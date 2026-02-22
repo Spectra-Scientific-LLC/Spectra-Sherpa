@@ -36,7 +36,8 @@
       "uri": "spectrasherpa://types/SpectralDataset/1.0",
       "category": "dataset",
       "parent": "Array2D",
-      "description": "Multi-sample spectral matrix (n_samples x n_features) with coupled coordinates"
+      "description": "Multi-sample spectral matrix (n_samples × n_wavelengths) with coupled coordinates",
+      "expected_axes": ["SampleAxis", "SpectralAxis"]
     },
     "ScoreMatrix": {
       "uri": "spectrasherpa://types/ScoreMatrix/1.0",
@@ -60,7 +61,28 @@
       "uri": "spectrasherpa://types/TimeSeries/1.0",
       "category": "dataset",
       "parent": "Array2D",
-      "description": "Time-resolved spectral data (n_timepoints x n_features)"
+      "description": "Time-resolved spectral data (n_timepoints × n_features)"
+    },
+    "Chromatogram": {
+      "uri": "spectrasherpa://types/Chromatogram/1.0",
+      "category": "dataset",
+      "parent": "Array2D",
+      "description": "Chromatographic data (n_samples × n_timepoints) for HPLC, GC, IC, CE",
+      "expected_axes": ["SampleAxis", "TimeAxis"]
+    },
+    "MassSpectrum": {
+      "uri": "spectrasherpa://types/MassSpectrum/1.0",
+      "category": "dataset",
+      "parent": "Array2D",
+      "description": "Mass spectrometry data (n_samples × n_mz) for LC-MS, GC-MS, MALDI-TOF",
+      "expected_axes": ["SampleAxis", "MZAxis"]
+    },
+    "Voltammogram": {
+      "uri": "spectrasherpa://types/Voltammogram/1.0",
+      "category": "dataset",
+      "parent": "Array2D",
+      "description": "Electrochemical data (n_samples × n_potentials) for CV, DPV, SWV",
+      "expected_axes": ["SampleAxis", "PotentialAxis"]
     },
     "FittedModel": {
       "uri": "spectrasherpa://types/FittedModel/1.0",

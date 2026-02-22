@@ -1,0 +1,136 @@
+{
+  "version": "1.0",
+  "description": "Registry of axis types for AI introspection and metadata discovery",
+  "axis_types": {
+    "AxisInfo": {
+      "category": "base",
+      "supported_units": [],
+      "methods": ["length", "copy", "bind_expected_length"],
+      "properties": ["data", "shape"],
+      "description": "Base class for all axes with values, labels, units, and title",
+      "examples": ["Generic axis without specialized behavior"]
+    },
+    "FeatureAxis": {
+      "category": "base",
+      "parent": "AxisInfo",
+      "supported_units": [],
+      "methods": ["axis_type", "range", "select_region"],
+      "properties": ["data", "shape", "range"],
+      "description": "Base class for all feature-type axes (spectral, time, m/z, potential, etc.)",
+      "examples": ["Parent class for domain-specific feature axes"]
+    },
+    "SpectralAxis": {
+      "category": "feature",
+      "parent": "FeatureAxis",
+      "domain": "spectroscopy",
+      "supported_units": ["cm-1", "cm⁻¹", "nm", "µm"],
+      "axis_types": ["wavenumber", "wavelength_nm", "wavelength_um"],
+      "methods": ["axis_type", "range", "select_region", "copy"],
+      "properties": ["data", "shape", "range"],
+      "description": "Wavelength/wavenumber axis for spectroscopy (IR, NIR, Raman, UV-Vis)",
+      "examples": [
+        "IR wavenumbers 400-4000 cm⁻¹",
+        "UV-Vis wavelengths 200-800 nm",
+        "NIR wavelengths 0.8-2.5 µm"
+      ]
+    },
+    "TimeAxis": {
+      "category": "feature",
+      "parent": "FeatureAxis",
+      "domain": "chromatography",
+      "supported_units": ["min", "s", "ms", "hr"],
+      "axis_types": ["time_minutes", "time_seconds", "time_milliseconds", "time_hours"],
+      "methods": ["axis_type", "range", "select_region", "copy"],
+      "properties": ["data", "shape", "range"],
+      "description": "Time axis for chromatography and kinetics (HPLC, GC, IC, CE, reaction monitoring)",
+      "examples": [
+        "HPLC retention time 0-30 min",
+        "GC retention time 0-60 min",
+        "Reaction kinetics 0-3600 s"
+      ]
+    },
+    "MZAxis": {
+      "category": "feature",
+      "parent": "FeatureAxis",
+      "domain": "mass_spectrometry",
+      "supported_units": ["m/z", "Da", "amu"],
+      "axis_types": ["mass_to_charge"],
+      "methods": ["axis_type", "range", "select_region", "copy"],
+      "properties": ["data", "shape", "range"],
+      "description": "Mass-to-charge ratio for mass spectrometry (LC-MS, GC-MS, MALDI-TOF, ICP-MS)",
+      "examples": [
+        "LC-MS 50-2000 m/z",
+        "GC-MS 35-500 m/z",
+        "MALDI-TOF 500-50000 Da"
+      ]
+    },
+    "PotentialAxis": {
+      "category": "feature",
+      "parent": "FeatureAxis",
+      "domain": "electrochemistry",
+      "supported_units": ["V", "mV"],
+      "axis_types": ["voltage_volts", "voltage_millivolts"],
+      "methods": ["axis_type", "range", "select_region", "copy"],
+      "properties": ["data", "shape", "range"],
+      "description": "Voltage/potential axis for electrochemistry (CV, DPV, SWV, LSV, CA)",
+      "examples": [
+        "Cyclic voltammetry -2.5 to 2.5 V",
+        "Differential pulse voltammetry -1.5 to 1.5 V",
+        "Linear sweep voltammetry 0 to 2 V"
+      ]
+    },
+    "FrequencyAxis": {
+      "category": "feature",
+      "parent": "FeatureAxis",
+      "domain": "nmr_spectroscopy",
+      "supported_units": ["Hz", "MHz", "GHz", "ppm"],
+      "axis_types": ["frequency_hz", "frequency_mhz", "frequency_ghz", "chemical_shift"],
+      "methods": ["axis_type", "range", "select_region", "copy"],
+      "properties": ["data", "shape", "range"],
+      "description": "Frequency axis for NMR and dielectric spectroscopy",
+      "examples": [
+        "1H-NMR chemical shift 0-15 ppm",
+        "13C-NMR chemical shift 0-220 ppm",
+        "Dielectric spectroscopy 1 Hz - 10 MHz"
+      ]
+    },
+    "SampleAxis": {
+      "category": "sample",
+      "parent": "AxisInfo",
+      "supported_units": [],
+      "methods": ["exclude", "include", "get_column", "set_column", "copy"],
+      "properties": ["data", "shape", "n_included", "classes", "include_mask", "exclusion_reasons", "sample_table"],
+      "description": "Sample/observation axis with per-sample metadata (classes, exclusion tracking, tabular data)",
+      "examples": [
+        "Sample axis with class labels for classification",
+        "Sample axis with exclusion mask for outlier removal",
+        "Sample axis with tabular metadata (concentration, batch ID, etc.)"
+      ]
+    }
+  },
+  "common_operations": {
+    "select_region": {
+      "description": "Select subset of axis values within a range",
+      "parameters": {
+        "start": "Start of range (inclusive)",
+        "end": "End of range (inclusive)"
+      },
+      "returns": "Boolean mask array",
+      "available_on": ["FeatureAxis", "SpectralAxis", "TimeAxis", "MZAxis", "PotentialAxis", "FrequencyAxis"]
+    },
+    "bind_expected_length": {
+      "description": "Attach runtime length constraint for validation",
+      "parameters": {
+        "expected": "Expected length"
+      },
+      "returns": "None (modifies axis in-place)",
+      "available_on": ["AxisInfo", "FeatureAxis", "SpectralAxis", "TimeAxis", "MZAxis", "PotentialAxis", "FrequencyAxis", "SampleAxis"]
+    },
+    "copy": {
+      "description": "Create deep copy of axis",
+      "parameters": {},
+      "returns": "New axis instance with copied data",
+      "available_on": ["AxisInfo", "FeatureAxis", "SpectralAxis", "TimeAxis", "MZAxis", "PotentialAxis", "FrequencyAxis", "SampleAxis"]
+    }
+  }
+}

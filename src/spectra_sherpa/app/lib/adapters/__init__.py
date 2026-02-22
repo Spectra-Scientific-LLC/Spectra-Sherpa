@@ -15,4 +15,5 @@ __all__ = [
 ]
 
 # SCP adapters are imported lazily to avoid hard dependency:
-#   from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset, to_nddataset
+#   from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset, to_nddataset, scp_roundtrip
+#   from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract, PLSExtract, MCRExtract, EFAExtract, SIMPLISMAExtract

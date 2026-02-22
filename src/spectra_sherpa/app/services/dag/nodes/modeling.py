@@ -24,6 +24,14 @@ from spectra_sherpa.app.lib.sherpa_dataset import (
     SpectralAxis,
 )
 from spectra_sherpa.app.lib.scp_compat import from_nddataset, scp, to_nddataset
+from spectra_sherpa.app.lib.adapters.scp_extractors import (
+    EFAExtract,
+    MCRExtract,
+    PCAExtract,
+    PLSExtract,
+    SIMPLISMAExtract,
+    _unwrap_to_numpy,
+)
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
 
 from ..io_contracts import (
@@ -402,31 +410,19 @@ class PCANode(Node):
         pca = scp.PCA(n_components=n_components_parsed, standardized=standardized, scaled=scaled)
         pca.fit(input_ndd)
 
-        # Use SpectroChemPy's native NDDataset outputs — they carry proper
-        # coordinates from the input dataset (wavenumbers, sample labels, etc.)
+        # Extract results using typed extractor — all defensive unwrapping
+        # and normalization logic lives in PCAExtract.from_scp()
+        extracted = PCAExtract.from_scp(pca, input_ndd)
+
+        # Use SpectroChemPy's native NDDataset outputs for coordinate preservation
         scores_dataset = pca.transform()
         loadings_dataset = pca.components
 
-        # Extract numeric scores array for T²/SPE computation
-        scores_data = _to_numpy_2d_any(scores_dataset, name="scores_dataset", dtype=np.float64)
+        scores_data = extracted.scores
+        actual_n_components = extracted.n_components
+        evr_ratio = extracted.explained_variance_ratio
+        eigenvalues = extracted.explained_variance
 
-        actual_n_components = scores_data.shape[1]
-
-        # Get explained variance ratio - extract data from NDDataset if needed
-        evr_raw = pca.explained_variance_ratio
-        if evr_raw is not None:
-            # SpectroChemPy returns NDDataset, extract the underlying data
-            evr = _to_numpy_1d_any(evr_raw, name="explained_variance_ratio", dtype=np.float64)
-        else:
-            evr = np.zeros(actual_n_components)
-
-        # Ensure evr has at least actual_n_components elements (pad with zeros if needed)
-        if len(evr) < actual_n_components:
-            evr = np.pad(evr, (0, actual_n_components - len(evr)), mode="constant", constant_values=0)
-
-        # Normalize EVR to ratio form (0-1) for consistent handling
-        max_evr = evr.max() if len(evr) > 0 else 0
-        evr_ratio = evr / 100.0 if max_evr > 1 else evr
         pc_labels = [f"PC{i+1} ({evr_ratio[i] * 100:.1f}%)" for i in range(actual_n_components)]
 
         # Ensure PCA outputs expose explicit PC coordinate labels for frontend display.
@@ -450,13 +446,8 @@ class PCANode(Node):
             # Hotelling T2 = sum(scores^2 / eigenvalues)
             # CRITICAL: Use PCA eigenvalues (explained_variance), NOT score variances
             # Reference: Nomikos & MacGregor (1995), Technometrics
-            eigenvalues_raw = pca.explained_variance
-            if eigenvalues_raw is not None:
-                eigenvalues = _to_numpy_1d_any(eigenvalues_raw, name="explained_variance", dtype=np.float64)
-            else:
-                eigenvalues = np.var(scores_matrix, axis=0)
-            eigenvalues = np.maximum(eigenvalues[:actual_n_components], 1e-12)
-            t2_stats = np.sum((scores_matrix**2) / eigenvalues, axis=1)
+            eigenvalues_safe = np.maximum(eigenvalues, 1e-12)
+            t2_stats = np.sum((scores_matrix**2) / eigenvalues_safe, axis=1)
 
             # SPE (Squared Prediction Error) from reconstruction residuals
             reconstructed = None
@@ -763,21 +754,15 @@ class PLSNode(Node):
         pls = scp.PLSRegression(n_components=n_components, scale=scale)
         pls.fit(X_ndd, y_dataset)
 
-        # Extract results - SpectroChemPy PLSRegression follows sklearn API
-        X_scores_data = np.array(pls.x_scores_) if hasattr(pls, "x_scores_") else None
-        Y_scores_data = np.array(pls.y_scores_) if hasattr(pls, "y_scores_") else None
-        X_loadings_data = np.array(pls.x_loadings_) if hasattr(pls, "x_loadings_") else None
-        Y_loadings_data = np.array(pls.y_loadings_) if hasattr(pls, "y_loadings_") else None
-        coef_data = np.array(pls.coef_) if hasattr(pls, "coef_") else None
+        # Extract results using typed extractor — all defensive unwrapping
+        # and version-specific fallback logic lives in PLSExtract.from_scp()
+        extracted = PLSExtract.from_scp(pls, X_ndd)
 
-        # SCP 0.8.x does not always populate x_scores_ attributes; fall back to transform().
-        if X_scores_data is None and hasattr(pls, "transform"):
-            try:
-                transformed = pls.transform(X_ndd)
-                raw = transformed.data if hasattr(transformed, "data") else transformed
-                X_scores_data = np.atleast_2d(np.asarray(raw, dtype=np.float64))
-            except Exception:
-                logger.debug("[PLS Node] Could not derive x_scores from transform()", exc_info=True)
+        X_scores_data = extracted.x_scores
+        Y_scores_data = extracted.y_scores
+        X_loadings_data = extracted.x_loadings
+        Y_loadings_data = extracted.y_loadings
+        coef_data = extracted.coef
 
         # In-sample calibration quality metrics for Phase 2 quality wiring.
         pls_r2 = None
@@ -1643,13 +1628,15 @@ class MCRNode(Node):
         mcr = scp.MCRALS(max_iter=max_iter, tol=tol)
         mcr.fit(input_ndd, C0)
 
-        # Extract results
-        C_data = _to_numpy_2d_any(mcr.C, name="mcr.C", dtype=np.float64)
-        St_data = _to_numpy_2d_any(mcr.St, name="mcr.St", dtype=np.float64)
+        # Extract results using typed extractor
+        extracted = MCRExtract.from_scp(mcr)
+        C_data = extracted.C
+        St_data = extracted.St
 
         # Get input coordinates for NDDataset creation
-        _x_coord = input_ds.spectral_axis
-        _y_coord = input_ds.sample_axis
+        # Use generic accessors to support all axis types (TimeAxis, SampleAxis, etc.)
+        _x_coord = input_ds.get_feature_axis()
+        _y_coord = input_ds.get_observation_axis()
 
         # Extract label_categories for categorical coloring
         label_categories = None
@@ -1854,9 +1841,10 @@ class EFANode(Node):
         efa = scp.EFA(n_components=n_components)
         efa.fit(input_ndd)
 
-        # Extract forward and backward results
-        forward_ev = _to_numpy_2d_any(efa.f_ev, name="efa.f_ev") if hasattr(efa, "f_ev") else None
-        backward_ev = _to_numpy_2d_any(efa.b_ev, name="efa.b_ev") if hasattr(efa, "b_ev") else None
+        # Extract results using typed extractor
+        extracted = EFAExtract.from_scp(efa)
+        forward_ev = extracted.forward_ev
+        backward_ev = extracted.backward_ev
 
         # Get input y_coord for sample labels
         _y_coord = input_ds.sample_axis
@@ -2916,22 +2904,30 @@ class SIMPLISMANode(Node):
         simplisma = scp.SIMPLISMA(n_components=n_components, tol=tol, noise=noise)
         simplisma.fit(input_ndd)
 
-        # Extract results
-        C_data = _to_numpy_2d_any(simplisma.C, name="simplisma.C", dtype=np.float64)
-        St_data = _to_numpy_2d_any(simplisma.St, name="simplisma.St", dtype=np.float64)
+        # Extract results using typed extractor
+        extracted = SIMPLISMAExtract.from_scp(simplisma)
+        C_data = extracted.C
+        St_data = extracted.St
+        purities = extracted.purities
 
         # Get wavenumber axis from input if available
         wavenumbers = None
         _x_coord = input_ds.spectral_axis
         if _x_coord is not None:
-            wavenumbers = _to_numpy_1d_any(_x_coord, name="wavenumbers", dtype=np.float64).tolist()
+            try:
+                wavenumbers = _unwrap_to_numpy(_x_coord, name="wavenumbers").astype(np.float64).tolist()
+            except Exception:
+                pass
 
         # Get time axis from input if available
         times = None
         _y_coord = input_ds.sample_axis
         if _y_coord is not None:
-            times = _to_numpy_1d_any(_y_coord, name="times", dtype=np.float64).tolist()
-        else:
+            try:
+                times = _unwrap_to_numpy(_y_coord, name="times").astype(np.float64).tolist()
+            except Exception:
+                pass
+        if times is None:
             # Use sample indices as time points
             times = list(range(n_samples))
 
@@ -2992,16 +2988,14 @@ class SIMPLISMANode(Node):
         if sample_labels is None:
             sample_labels = [f"Sample {i+1}" for i in range(n_samples)]
 
-        # Get purity values if available
-        purities = None
-        if hasattr(simplisma, "purities"):
-            purities = np.array(simplisma.purities).tolist()
+        # Purity values extracted by SIMPLISMAExtract
+        purity_list = purities.tolist() if purities is not None else []
 
         return {
             "model": simplisma,
             "concentrations": C_data.tolist(),
             "spectra": St_data.tolist(),
-            "purity_values": purities if purities is not None else [],
+            "purity_values": purity_list,
             "C": C_data.tolist(),  # Concentration profiles (n_samples, n_components)
             "St": St_data.tolist(),  # Pure spectra (n_components, n_features)
             "n_components": n_components,
@@ -3192,8 +3186,9 @@ class NMFNode(Node):
         H_data = nmf.components_
 
         # Get input coordinates for NDDataset creation
-        _x_coord = input_ds.spectral_axis
-        _y_coord = input_ds.sample_axis
+        # Use generic accessors to support all axis types (TimeAxis, SampleAxis, etc.)
+        _x_coord = input_ds.get_feature_axis()
+        _y_coord = input_ds.get_observation_axis()
 
         # Get reconstruction error if available
         reconstruction_err = None
@@ -3459,8 +3454,9 @@ class FastICANode(Node):
         A_data = ica.mixing_ if hasattr(ica, "mixing_") else None
 
         # Get input coordinates for NDDataset creation
-        _x_coord = input_ds.spectral_axis
-        _y_coord = input_ds.sample_axis
+        # Use generic accessors to support all axis types (TimeAxis, SampleAxis, etc.)
+        _x_coord = input_ds.get_feature_axis()
+        _y_coord = input_ds.get_observation_axis()
 
         logger.debug("[FastICA Node] Decomposition completed successfully")
         logger.debug("  - S (sources) shape: %s", S_data.shape)

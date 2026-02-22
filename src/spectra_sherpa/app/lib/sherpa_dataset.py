@@ -32,6 +32,18 @@ from pydantic import GetJsonSchemaHandler as _GetJsonSchemaHandler
 from pydantic.json_schema import JsonSchemaValue as _JsonSchemaValue
 from pydantic_core import core_schema as _cs
 
+# Import axis classes from dedicated module
+from spectra_sherpa.app.lib.axes import (
+    AxisInfo,
+    FeatureAxis,
+    SpectralAxis,
+    TimeAxis,
+    MZAxis,
+    PotentialAxis,
+    FrequencyAxis,
+    SampleAxis,
+)
+
 # ---------------------------------------------------------------------------
 # Pydantic-compatible numpy array type for JSON schema generation
 # ---------------------------------------------------------------------------
@@ -119,204 +131,13 @@ def _json_safe(obj: Any) -> Any:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Axis Types
+# Axis Types - Now imported from axes.py module
 # ═══════════════════════════════════════════════════════════════════════════
 
-
-class AxisInfo(BaseModel):
-    """Base axis metadata (Pydantic-validated)."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True, validate_assignment=True)
-
-    values: NpArray | None = None
-    labels: list[str] | None = None
-    units: str | None = None
-    title: str | None = None
-    _expected_length: int | None = PrivateAttr(default=None)
-
-    @property
-    def data(self) -> np.ndarray | None:
-        """Alias for values — Coord compatibility."""
-        return self.values
-
-    @property
-    def length(self) -> int:
-        if self.values is not None:
-            return len(self.values)
-        if self.labels is not None:
-            return len(self.labels)
-        return 0
-
-    @property
-    def shape(self) -> tuple:
-        return self.values.shape if self.values is not None else ()
-
-    def __len__(self) -> int:
-        return self.length
-
-    def copy(self) -> AxisInfo:
-        cp = AxisInfo(
-            values=self.values.copy() if self.values is not None else None,
-            labels=list(self.labels) if self.labels is not None else None,
-            units=self.units,
-            title=self.title,
-        )
-        if self._expected_length is not None:
-            cp.bind_expected_length(self._expected_length)
-        return cp
-
-    def bind_expected_length(self, expected: int) -> None:
-        """Attach axis length constraint used for runtime assignment checks."""
-        self._expected_length = int(expected)
-        # Re-run validation now so existing inconsistent axes fail fast.
-        self._validate_axis_lengths()
-
-    @model_validator(mode="after")
-    def _validate_axis_lengths(self) -> AxisInfo:
-        value_len = len(self.values) if self.values is not None else None
-        label_len = len(self.labels) if self.labels is not None else None
-        if value_len is not None and label_len is not None and value_len != label_len:
-            raise ValueError(f"Axis values length ({value_len}) != labels length ({label_len})")
-        if self._expected_length is not None:
-            if value_len is not None and value_len != self._expected_length:
-                raise ValueError(f"Axis values length ({value_len}) != expected length ({self._expected_length})")
-            if label_len is not None and label_len != self._expected_length:
-                raise ValueError(f"Axis labels length ({label_len}) != expected length ({self._expected_length})")
-        return self
-
-
-# Wavenumber / wavelength unit sets for axis_type detection
-_WAVENUMBER_UNITS = frozenset({"cm-1", "cm⁻¹", "1/cm", "cm^-1"})
-_WAVELENGTH_NM_UNITS = frozenset({"nm", "nanometer", "nanometers"})
-_WAVELENGTH_UM_UNITS = frozenset({"um", "µm", "\u03bcm", "micron", "microns", "micrometer", "micrometers"})
-
-
-class SpectralAxis(AxisInfo):
-    """Feature/spectral axis with domain awareness."""
-
-    @property
-    def axis_type(self) -> str | None:
-        """Detect: 'wavenumber', 'wavelength_nm', 'wavelength_um', or None."""
-        if self.units is None:
-            return None
-        u = self.units.lower().strip()
-        if u in _WAVENUMBER_UNITS:
-            return "wavenumber"
-        if u in _WAVELENGTH_NM_UNITS:
-            return "wavelength_nm"
-        if u in _WAVELENGTH_UM_UNITS:
-            return "wavelength_um"
-        return None
-
-    @property
-    def range(self) -> tuple[float, float] | None:
-        """(min, max) of axis values."""
-        if self.values is None or len(self.values) == 0:
-            return None
-        return (float(np.min(self.values)), float(np.max(self.values)))
-
-    def select_region(self, start: float, end: float) -> np.ndarray:
-        """Boolean mask for values within [start, end] (inclusive, order-independent)."""
-        if self.values is None:
-            raise ValueError("Cannot select region on axis with no values")
-        lo, hi = min(start, end), max(start, end)
-        return (self.values >= lo) & (self.values <= hi)
-
-    def copy(self) -> SpectralAxis:
-        cp = SpectralAxis(
-            values=self.values.copy() if self.values is not None else None,
-            labels=list(self.labels) if self.labels is not None else None,
-            units=self.units,
-            title=self.title,
-        )
-        if self._expected_length is not None:
-            cp.bind_expected_length(self._expected_length)
-        return cp
-
-
-class SampleAxis(AxisInfo):
-    """Sample axis with per-sample metadata."""
-
-    classes: NpArray | None = None
-    include_mask: NpArray | None = None
-    exclusion_reasons: list[str | None] | None = None
-    sample_table: dict[str, list[Any]] | None = None
-
-    @model_validator(mode="after")
-    def _validate_sample_fields(self) -> SampleAxis:
-        # Prefer bound expected length when attached to a dataset.
-        n = self._expected_length if self._expected_length is not None else self.length
-        if self.classes is not None and n > 0 and len(self.classes) != n:
-            raise ValueError(f"classes length ({len(self.classes)}) != expected length ({n})")
-        if self.include_mask is not None and n > 0 and len(self.include_mask) != n:
-            raise ValueError(f"include_mask length ({len(self.include_mask)}) != expected length ({n})")
-        if self.exclusion_reasons is not None and n > 0 and len(self.exclusion_reasons) != n:
-            raise ValueError(f"exclusion_reasons length ({len(self.exclusion_reasons)}) != expected length ({n})")
-        if self.sample_table is not None and n > 0:
-            for key, values in self.sample_table.items():
-                if len(values) != n:
-                    raise ValueError(f"sample_table[{key!r}] length ({len(values)}) != expected length ({n})")
-        return self
-
-    @property
-    def n_included(self) -> int:
-        if self.include_mask is None:
-            return self.length
-        return int(np.sum(self.include_mask))
-
-    def exclude(self, indices: list[int], reason: str = "") -> None:
-        """Mark samples as excluded (soft delete)."""
-        n = self.length
-        if n == 0:
-            raise ValueError("Cannot exclude from empty axis")
-        if self.include_mask is None:
-            self.include_mask = np.ones(n, dtype=bool)
-        if self.exclusion_reasons is None:
-            self.exclusion_reasons = [None] * n
-        for i in indices:
-            if i < 0 or i >= n:
-                raise IndexError(f"Sample index {i} out of range [0, {n})")
-            self.include_mask[i] = False
-            self.exclusion_reasons[i] = reason
-
-    def include(self, indices: list[int]) -> None:
-        """Mark samples as included."""
-        if self.include_mask is None:
-            return
-        n = self.length
-        for i in indices:
-            if i < 0 or i >= n:
-                raise IndexError(f"Sample index {i} out of range [0, {n})")
-            self.include_mask[i] = True
-            if self.exclusion_reasons:
-                self.exclusion_reasons[i] = None
-
-    def get_column(self, name: str) -> list[Any] | None:
-        if self.sample_table is None:
-            return None
-        return self.sample_table.get(name)
-
-    def set_column(self, name: str, values: list[Any]) -> None:
-        if self.length > 0 and len(values) != self.length:
-            raise ValueError(f"Column '{name}' length ({len(values)}) != sample axis length ({self.length})")
-        if self.sample_table is None:
-            self.sample_table = {}
-        self.sample_table[name] = values
-
-    def copy(self) -> SampleAxis:
-        cp = SampleAxis(
-            values=self.values.copy() if self.values is not None else None,
-            labels=list(self.labels) if self.labels is not None else None,
-            units=self.units,
-            title=self.title,
-            classes=self.classes.copy() if self.classes is not None else None,
-            include_mask=self.include_mask.copy() if self.include_mask is not None else None,
-            exclusion_reasons=list(self.exclusion_reasons) if self.exclusion_reasons else None,
-            sample_table=copy.deepcopy(self.sample_table) if self.sample_table else None,
-        )
-        if self._expected_length is not None:
-            cp.bind_expected_length(self._expected_length)
-        return cp
+# All axis classes (AxisInfo, FeatureAxis, SpectralAxis, TimeAxis, MZAxis,
+# PotentialAxis, FrequencyAxis, SampleAxis) are now defined in axes.py and
+# imported above. This maintains backward compatibility while enabling
+# extensibility to chromatography, mass spectrometry, electrochemistry, etc.
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -636,6 +457,26 @@ class QualityMetrics(BaseModel):
     def add_evaluation(self, result: EvaluationResult) -> None:
         self.evaluations.append(result)
 
+    def get_evaluation(self, evaluation_id: str) -> EvaluationResult | None:
+        """Get evaluation result by evaluation_id.
+
+        Args:
+            evaluation_id: The evaluation identifier to search for (e.g., "pca_scores", "cross_validation")
+
+        Returns:
+            The first matching EvaluationResult, or None if not found
+
+        Example:
+            >>> pca_eval = dataset.quality.get_evaluation("pca_scores")
+            >>> if pca_eval:
+            >>>     print(f"R2: {pca_eval.r2}")
+            >>>     print(f"Components: {pca_eval.n_components}")
+        """
+        for result in self.evaluations:
+            if result.evaluation_id == evaluation_id:
+                return result
+        return None
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Branch Info
@@ -693,6 +534,7 @@ class SherpaDataset:
         X: Any,
         *,
         spectral_axis: SpectralAxis | None = None,
+        feature_axis: FeatureAxis | None = None,
         sample_axis: SampleAxis | None = None,
         target: np.ndarray | list | None = None,
         target_context: TargetContext | None = None,
@@ -712,12 +554,18 @@ class SherpaDataset:
         # Validate and store axes in dict for n-dimensional extensibility
         self._axes: dict[int, AxisInfo] = {}
 
-        if spectral_axis is not None:
-            if spectral_axis.length > 0 and spectral_axis.length != n_features:
-                raise ValueError(f"spectral_axis length ({spectral_axis.length}) != n_features ({n_features})")
-            spectral_copy = spectral_axis.copy()
-            spectral_copy.bind_expected_length(n_features)
-            self._axes[self._SPECTRAL_DIM] = spectral_copy
+        # Handle feature axis (spectral_axis for backward compat, feature_axis for new workflows)
+        if spectral_axis is not None and feature_axis is not None:
+            raise ValueError("Cannot specify both spectral_axis and feature_axis. Use feature_axis for new code.")
+
+        axis_to_use = feature_axis if feature_axis is not None else spectral_axis
+
+        if axis_to_use is not None:
+            if axis_to_use.length > 0 and axis_to_use.length != n_features:
+                raise ValueError(f"feature axis length ({axis_to_use.length}) != n_features ({n_features})")
+            axis_copy = axis_to_use.copy()
+            axis_copy.bind_expected_length(n_features)
+            self._axes[self._SPECTRAL_DIM] = axis_copy
 
         if sample_axis is not None:
             if sample_axis.length > 0 and sample_axis.length != n_samples:
@@ -812,6 +660,39 @@ class SherpaDataset:
         self._axes[self._SPECTRAL_DIM] = copied
 
     @property
+    def feature_axis(self) -> FeatureAxis | None:
+        """Generic feature axis accessor (spectral, time, m/z, potential, etc.).
+
+        Returns the appropriate FeatureAxis subclass based on what's stored:
+        - SpectralAxis for spectroscopy (wavelength, wavenumber)
+        - TimeAxis for chromatography (retention time, elution time)
+        - MZAxis for mass spectrometry (m/z)
+        - PotentialAxis for electrochemistry (voltage)
+        - FrequencyAxis for NMR, dielectric spectroscopy
+
+        For backward compatibility, spectral_axis property is still available.
+        """
+        ax = self._axes.get(self._SPECTRAL_DIM)
+        if ax is None:
+            return None
+        # Return copy of the appropriate FeatureAxis subclass
+        if isinstance(ax, (SpectralAxis, TimeAxis, MZAxis, PotentialAxis, FrequencyAxis)):
+            return ax.copy()
+        # Fallback for generic FeatureAxis or AxisInfo
+        if isinstance(ax, FeatureAxis):
+            return ax.copy()
+        return None
+
+    @feature_axis.setter
+    def feature_axis(self, value: FeatureAxis) -> None:
+        """Set the feature axis (accepts any FeatureAxis subclass)."""
+        if value.length > 0 and value.length != self._X.shape[1]:
+            raise ValueError(f"feature_axis length ({value.length}) != n_features ({self._X.shape[1]})")
+        copied = value.copy()
+        copied.bind_expected_length(self._X.shape[1])
+        self._axes[self._SPECTRAL_DIM] = copied
+
+    @property
     def sample_axis(self) -> SampleAxis | None:
         ax = self._axes.get(self._SAMPLE_DIM)
         return ax.copy() if isinstance(ax, SampleAxis) else None
@@ -831,8 +712,65 @@ class SherpaDataset:
         self._axes[self._SAMPLE_DIM] = copied
 
     def axis(self, dim: int) -> AxisInfo | None:
-        """Access axis by dimension index — for n-dimensional extensibility."""
+        """Access axis by dimension index — for n-dimensional extensibility.
+
+        This is the generic axis accessor that returns any axis type.
+        Use this for multi-dimensional data like time-resolved spectroscopy.
+
+        Args:
+            dim: Dimension index (0 for first dim, -1 for last dim, etc.)
+
+        Returns:
+            Copy of the axis at the specified dimension, or None if not set.
+
+        Examples:
+            >>> # Time-resolved spectroscopy
+            >>> time_axis = dataset.axis(0)  # Returns TimeAxis
+            >>> spec_axis = dataset.axis(-1)  # Returns SpectralAxis
+        """
         ax = self._axes.get(dim)
+        return ax.copy() if ax is not None else None
+
+    def get_feature_axis(self) -> FeatureAxis | None:
+        """Get the feature axis from the last dimension (generic accessor).
+
+        Returns any FeatureAxis subclass (SpectralAxis, TimeAxis, MZAxis, etc.)
+        This is more permissive than spectral_axis or feature_axis properties.
+
+        Useful for code that works with any feature type (preprocessing, plotting).
+
+        Returns:
+            Copy of the feature axis, or None if not a FeatureAxis.
+
+        Examples:
+            >>> # Works for spectroscopy
+            >>> axis = dataset.get_feature_axis()  # Returns SpectralAxis
+            >>> # Also works for chromatography
+            >>> axis = dataset.get_feature_axis()  # Returns TimeAxis
+        """
+        ax = self._axes.get(self._SPECTRAL_DIM)
+        if ax is not None and isinstance(ax, FeatureAxis):
+            return ax.copy()
+        return None
+
+    def get_observation_axis(self) -> AxisInfo | None:
+        """Get the observation/sample/time axis from the first dimension (generic accessor).
+
+        Returns any axis type (SampleAxis, TimeAxis, BatchAxis, etc.)
+        This is more permissive than sample_axis property.
+
+        Useful for time-resolved spectroscopy where dimension 0 is time, not samples.
+
+        Returns:
+            Copy of the axis at dimension 0, or None if not set.
+
+        Examples:
+            >>> # Regular sample-based data
+            >>> axis = dataset.get_observation_axis()  # Returns SampleAxis
+            >>> # Time-resolved spectroscopy (MCR-ALS)
+            >>> axis = dataset.get_observation_axis()  # Returns TimeAxis
+        """
+        ax = self._axes.get(self._SAMPLE_DIM)
         return ax.copy() if ax is not None else None
 
     # ── Domain, Provenance, Quality, State ─────────────────────────

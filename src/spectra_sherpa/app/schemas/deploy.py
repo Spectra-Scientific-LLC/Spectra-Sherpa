@@ -77,6 +77,7 @@ class FolderWatchCreate(BaseModel):
     folder_path: str = Field(..., min_length=1, description="Server folder to monitor")
     file_pattern: str = Field("*", description="Glob pattern for file matching")
     poll_interval_sec: int = Field(60, ge=10, le=86400, description="Polling interval in seconds")
+    settle_time_seconds: int = Field(2, ge=0, le=3600, description="Time to wait for file writing to finish before processing")
 
 
 class FolderWatchUpdate(BaseModel):
@@ -86,6 +87,7 @@ class FolderWatchUpdate(BaseModel):
     folder_path: str | None = Field(None, min_length=1)
     file_pattern: str | None = None
     poll_interval_sec: int | None = Field(None, ge=10, le=86400)
+    settle_time_seconds: int | None = Field(None, ge=0, le=3600)
     is_enabled: bool | None = None
 
 
@@ -101,6 +103,7 @@ class FolderWatchOut(BaseModel):
     folder_path: str
     file_pattern: str
     poll_interval_sec: int
+    settle_time_seconds: int
     is_enabled: bool
     processed_files: dict[str, str] | None
     last_poll_at: datetime | None

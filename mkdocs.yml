@@ -34,6 +34,12 @@ nav:
       - 08. PCA: user/examples/08_pca.md
       - 09. MCR-ALS: user/examples/09_mcr_als.md
       - 10. PLS: user/examples/10_pls_regression.md
+      - 11. Chromatography (HPLC): user/examples/11_chromatography.md
+      - 12. Mass Spectrometry (LC-MS): user/examples/12_mass_spectrometry.md
+      - 13. Electrochemistry (CV): user/examples/13_electrochemistry.md
+  - API Reference:
+      - SherpaDataset: user/api/sherpa_dataset.md
+      - Axis Types: user/api/axes.md
   - Reference:
       - Node Library: user/reference/nodes.md
 theme:

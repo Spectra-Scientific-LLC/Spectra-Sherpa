@@ -32,6 +32,7 @@ from spectra_sherpa.app.lib.preprocessing import (
     remove_cosmic_rays,
     whittaker_smooth,
 )
+from spectra_sherpa.app.lib.adapters.scp_adapter import scp_roundtrip
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset, from_nddataset, scp, to_nddataset
 
 from ..export_helpers import (
@@ -234,10 +235,7 @@ class BaselineRubberbandNode(Node):
         input_ds = coerce_to_sherpa(input_data, input_name="input_data")
         ranges_str = self.parameters.get("ranges", "").strip()
 
-        # Convert to NDDataset for SCP .basc() method
-        ndd = to_nddataset(input_ds)
-
-        kwargs: Dict[str, Any] = {"method": "rubberband"}
+        basc_kwargs: Dict[str, Any] = {"method": "rubberband"}
         if ranges_str:
             parsed = []
             for part in ranges_str.split(","):
@@ -246,22 +244,16 @@ class BaselineRubberbandNode(Node):
                     lo, hi = part.split(":", 1)
                     parsed.append((float(lo.strip()), float(hi.strip())))
             if parsed:
-                kwargs["ranges"] = parsed
+                basc_kwargs["ranges"] = parsed
 
-        ndd.basc(**kwargs)
-
-        # Convert back to SherpaDataset
-        result = from_nddataset(ndd)
-        copy_processing_history(input_ds, result)
-        add_processing_step(
-            result,
-            "baseline.rubberband",
-            {"method": "rubberband", "ranges": ranges_str or None},
+        return scp_roundtrip(
+            input_ds,
+            lambda ndd: ndd.basc(**basc_kwargs),
+            op_id="baseline.rubberband",
+            parameters={"method": "rubberband", "ranges": ranges_str or None},
             state_effects=[EFFECT_BASELINE_CORRECTED],
             node_id=self.node_id,
         )
-
-        return result
 
 
 @register_node
@@ -595,23 +587,19 @@ class NormalizeMSCNode(Node):
         input_ds = coerce_to_sherpa(input_data, input_name="input_data")
         reference = self.parameters.get("reference", "mean")
 
-        # Convert to NDDataset for SCP .msc() method
-        ndd = to_nddataset(input_ds)
-        ndd.msc(reference=reference)
-        ndd.units = "dimensionless"
+        def _msc(ndd):
+            ndd.msc(reference=reference)
+            ndd.units = "dimensionless"
+            # return None — in-place mutation; scp_roundtrip handles this
 
-        # Convert back to SherpaDataset
-        result = from_nddataset(ndd)
-        copy_processing_history(input_ds, result)
-        add_processing_step(
-            result,
-            "normalize.msc",
-            {"reference": reference},
-            node_id=self.node_id,
+        return scp_roundtrip(
+            input_ds,
+            _msc,
+            op_id="normalize.msc",
+            parameters={"reference": reference},
             state_effects=[EFFECT_SCATTER_CORRECTED],
+            node_id=self.node_id,
         )
-
-        return result
 
 
 @register_node

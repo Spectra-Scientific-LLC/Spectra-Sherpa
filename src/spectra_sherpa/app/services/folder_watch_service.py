@@ -129,6 +129,7 @@ class FolderWatchService:
                         watch.folder_path,
                         watch.file_pattern,
                         exclude_names=set(processed.keys()),
+                        settle_time_seconds=watch.settle_time_seconds,
                     )
                 except ValueError as exc:
                     watch.last_error = str(exc)

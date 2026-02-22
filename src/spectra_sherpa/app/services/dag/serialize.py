@@ -342,12 +342,12 @@ def serialize_for_api(
 
     _logger = logging.getLogger(__name__)
 
-    # Safety net: convert stray NDDataset
+    # Guard: reject stray NDDataset — nodes must emit SherpaDataset
     if HAS_SCP and isinstance(dataset, NDDataset):
-        _logger.warning("NDDataset reached serialize_for_api — converting to SherpaDataset.")
-        from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
-
-        dataset = from_nddataset(dataset)
+        raise TypeError(
+            "NDDataset reached serialize_for_api — node must emit SherpaDataset. "
+            "Use scp_roundtrip() or from_nddataset() in the node's execute() method."
+        )
 
     # Primary path: SherpaDataset
     if isinstance(dataset, SherpaDataset):

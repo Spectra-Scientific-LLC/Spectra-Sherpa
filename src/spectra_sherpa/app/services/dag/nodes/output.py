@@ -17,6 +17,80 @@ from spectra_sherpa.app.services.dag.io_contracts import coerce_to_sherpa
 from ..node_base import Node, NodeMetadata, NodeParameter, NodePolicy, PortMetadata, register_node
 
 
+def get_axis_display_info(axis: Any) -> dict[str, Any]:
+    """
+    Get display information for any axis type.
+
+    Returns dict with:
+        - title: Human-readable axis title
+        - units: Unit string (empty if dimensionless)
+        - label: Formatted label with units
+        - should_reverse: Whether axis should be reversed (e.g., wavenumber)
+        - default_title: Default title if axis.title is None
+    """
+    from spectra_sherpa.app.lib.axes import (
+        SpectralAxis,
+        TimeAxis,
+        MZAxis,
+        PotentialAxis,
+        FrequencyAxis,
+    )
+
+    if axis is None:
+        return {
+            "title": "Index",
+            "units": "",
+            "label": "Index",
+            "should_reverse": False,
+            "default_title": "Index",
+        }
+
+    # Get units (handle None and "dimensionless")
+    units_str = ""
+    if hasattr(axis, "units") and axis.units:
+        units_str = str(axis.units)
+        if units_str == "dimensionless":
+            units_str = ""
+
+    # Determine title and default based on axis type
+    if isinstance(axis, SpectralAxis):
+        default_title = "Wavenumber" if "cm" in units_str else "Wavelength"
+        should_reverse = "cm" in units_str  # Reverse wavenumber axes
+    elif isinstance(axis, TimeAxis):
+        default_title = "Time"
+        should_reverse = False
+    elif isinstance(axis, MZAxis):
+        default_title = "m/z"
+        should_reverse = False
+    elif isinstance(axis, PotentialAxis):
+        default_title = "Potential"
+        should_reverse = False
+    elif isinstance(axis, FrequencyAxis):
+        default_title = "Frequency" if "Hz" in units_str else "Chemical Shift"
+        should_reverse = False
+    else:
+        # Generic FeatureAxis or SampleAxis
+        default_title = str(axis.title) if hasattr(axis, "title") and axis.title else "Feature"
+        should_reverse = False
+
+    # Use axis title if available, otherwise use default
+    title = str(axis.title) if hasattr(axis, "title") and axis.title else default_title
+
+    # Build formatted label
+    if units_str:
+        label = f"{title} ({units_str})"
+    else:
+        label = title
+
+    return {
+        "title": title,
+        "units": units_str,
+        "label": label,
+        "should_reverse": should_reverse,
+        "default_title": default_title,
+    }
+
+
 @register_node
 class PlotNode(Node):
     """
@@ -114,22 +188,18 @@ class PlotNode(Node):
         """Generate spectra plot data, preserving axis titles from dataset."""
         traces = []
 
-        # Get x-axis data and title from dataset
-        x_coord = dataset.spectral_axis
+        # Get x-axis data and display info from dataset (use generic accessor)
+        x_coord = dataset.get_feature_axis()
         if x_coord is not None:
             x_data = x_coord.data.tolist()
-            x_title = x_coord.title if hasattr(x_coord, "title") and x_coord.title else "Index"
-            x_units = str(x_coord.units) if hasattr(x_coord, "units") and x_coord.units else ""
+            x_info = get_axis_display_info(x_coord)
+            x_label = x_info["label"]
+            should_reverse_x = x_info["should_reverse"]
         else:
             x_data = list(range(dataset.shape[-1]))
-            x_title = "Index"
-            x_units = ""
-
-        # Format x-axis label with units if available
-        if x_units and x_units != "dimensionless":
-            x_label = f"{x_title} ({x_units})"
-        else:
-            x_label = x_title
+            x_info = get_axis_display_info(None)
+            x_label = x_info["label"]
+            should_reverse_x = False
 
         # Get y-axis title from dataset (data values title/units)
         if hasattr(dataset, "units") and dataset.units:
@@ -139,10 +209,9 @@ class PlotNode(Node):
         else:
             y_label = "Value"
 
-        # Determine if x-axis should be reversed (only for wavenumber-like axes)
-        is_wavenumber = any(term in x_title.lower() for term in ["wavenumber", "cm-1", "cm⁻¹"])
+        # Configure x-axis with automatic reversal for appropriate axis types
         x_axis_config = {"title": x_label}
-        if is_wavenumber:
+        if should_reverse_x:
             x_axis_config["autorange"] = "reversed"
 
         # Get spectral data
@@ -573,12 +642,12 @@ class StatsSummaryNode(Node):
         feature_stds = np.std(data, axis=0)
         feature_cv = feature_stds / (feature_means + 1e-10)  # Coefficient of variation
 
-        # Get wavenumber axis if available
-        x_coord = dataset.spectral_axis
+        # Get feature axis if available (wavenumber, time, m/z, etc.)
+        x_coord = dataset.get_feature_axis()
         if x_coord is not None:
-            wavenumbers = np.array(x_coord.data).tolist()
+            feature_values = np.array(x_coord.data).tolist()
         else:
-            wavenumbers = list(range(n_features))
+            feature_values = list(range(n_features))
 
         # Build histogram data for distribution visualization
         hist, bin_edges = np.histogram(data.flatten(), bins=50)
@@ -590,7 +659,7 @@ class StatsSummaryNode(Node):
                 "detailed": {
                     "by_sample": sample_stats,
                     "by_feature": {
-                        "wavenumbers": wavenumbers,
+                        "feature_values": feature_values,
                         "means": feature_means.tolist(),
                         "stds": feature_stds.tolist(),
                         "cv": feature_cv.tolist(),
@@ -602,7 +671,7 @@ class StatsSummaryNode(Node):
                         "bin_edges": bin_edges.tolist(),
                     },
                     "feature_variation": {
-                        "x": wavenumbers,
+                        "x": feature_values,
                         "y": feature_stds.tolist(),
                         "type": "bar",
                     },
@@ -932,24 +1001,30 @@ class ContourPlotNode(Node):
         if data.ndim == 1:
             data = data.reshape(1, -1)
 
-        # Get axes - preserve titles from source data
-        x_coord = dataset.spectral_axis
+        # Get axes - preserve titles from source data (use generic accessors)
+        x_coord = dataset.get_feature_axis()
         if x_coord is not None:
             x_data = np.array(x_coord.data).tolist()
-            x_title = str(x_coord.title) if x_coord.title else "Feature"
-            x_units = str(x_coord.units) if x_coord.units and str(x_coord.units) != "dimensionless" else ""
+            x_info = get_axis_display_info(x_coord)
+            x_title = x_info["title"]
+            x_units = x_info["units"]
+            auto_reverse_x = x_info["should_reverse"]
         else:
             x_data = list(range(data.shape[1]))
-            x_title = "Feature"
-            x_units = ""
+            x_info = get_axis_display_info(None)
+            x_title = x_info["title"]
+            x_units = x_info["units"]
+            auto_reverse_x = False
 
-        y_coord = dataset.sample_axis
+        y_coord = dataset.get_observation_axis()
         if y_coord is not None:
             y_data = np.array(y_coord.data).tolist()
-            y_title = str(y_coord.title) if y_coord.title else "Sample"
-            y_units = str(y_coord.units) if y_coord.units and str(y_coord.units) != "dimensionless" else ""
+            y_info = get_axis_display_info(y_coord)
+            y_title = y_info["title"]
+            y_units = y_info["units"]
         else:
             y_data = list(range(data.shape[0]))
+            y_info = get_axis_display_info(None)
             y_title = "Sample"
             y_units = ""
 
@@ -959,10 +1034,11 @@ class ContourPlotNode(Node):
             x_data, y_data = y_data, x_data
             x_title, y_title = y_title, x_title
             x_units, y_units = y_units, x_units
+            # Swap auto-reverse logic when transposing
+            auto_reverse_x = False  # After transpose, y becomes x, reset auto-reverse
 
-        # Auto-detect wavenumber axes and enable reverse_x if appropriate
-        is_wavenumber = any(term in x_title.lower() for term in ["wavenumber", "cm-1", "cm⁻¹"])
-        should_reverse = reverse_x or is_wavenumber  # User override OR auto-detect
+        # Auto-detect axis-specific display preferences (user override OR auto-detect)
+        should_reverse = reverse_x or auto_reverse_x
 
         plot_data = self._create_contour_from_arrays(
             data,
@@ -1175,9 +1251,9 @@ class DataTableNode(Node):
             n_rows, n_cols = n_cols, n_rows
 
         # Build column headers
-        x_coord = dataset.spectral_axis
+        x_coord = dataset.get_feature_axis()
         if x_coord is not None and not transpose:
-            # Use wavenumbers/x-axis as column headers
+            # Use feature axis values (wavenumber/time/m/z/etc.) as column headers
             x_vals = np.array(x_coord.data)
             if len(x_vals) == n_cols:
                 columns = [f"{float(x):.2f}" for x in x_vals[:n_cols]]

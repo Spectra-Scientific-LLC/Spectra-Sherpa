@@ -587,17 +587,16 @@ class DAGExecutor:
 
     @staticmethod
     def _sanitize_for_pool(value: Any) -> Any:
-        """Safety net: convert any stray NDDataset to SherpaDataset.
+        """Guard: reject any stray NDDataset at the pool boundary.
 
-        Data source nodes now always emit SherpaDataset, so this should
-        be a no-op.  Kept as a defensive guard in case an NDDataset leaks
-        through (e.g. from a third-party node).
+        All nodes must emit SherpaDataset.  Use ``scp_roundtrip()`` or
+        ``from_nddataset()`` inside the node's ``execute()`` method.
         """
         if HAS_SCP and isinstance(value, NDDataset):
-            logger.warning("NDDataset reached pool boundary — converting to SherpaDataset.")
-            from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
-
-            return from_nddataset(value)
+            raise TypeError(
+                "NDDataset reached pool boundary — node must emit SherpaDataset. "
+                "Use scp_roundtrip() or from_nddataset() in the node's execute() method."
+            )
         return value
 
     async def _run_one_node(

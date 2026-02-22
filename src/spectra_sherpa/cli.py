@@ -177,6 +177,13 @@ def main(argv: list[str] | None = None) -> None:
         version=f"%(prog)s {__version__}",
     )
 
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+    serve_parser = subparsers.add_parser("serve-model", help="Run a headless prediction server for a deployed workflow")
+    serve_parser.add_argument("workflow_id", type=int, help="ID of the workflow to serve")
+    serve_parser.add_argument("--host", default="0.0.0.0", help="Bind address for the headless server (default: 0.0.0.0)")
+    serve_parser.add_argument("--port", type=int, default=8001, help="Port number for the headless server (default: 8001)")
+
+
     args = parser.parse_args(argv)
 
     # Load .env before setting defaults, so .env values take precedence
@@ -220,6 +227,18 @@ def main(argv: list[str] | None = None) -> None:
     print("  Press Ctrl+C to stop.\n")
 
     import uvicorn
+
+    if getattr(args, "command", None) == "serve-model":
+        os.environ["HEADLESS_WORKFLOW_ID"] = str(args.workflow_id)
+        print(f"Starting SpectraSherpa Headless Prediction Server on {args.host}:{args.port}")
+        uvicorn.run(
+            "spectra_sherpa.app.api.headless_app:app",
+            host=args.host,
+            port=args.port,
+            workers=1,
+            log_level="info",
+        )
+        return
 
     uvicorn.run(
         "spectra_sherpa.app.main:app",

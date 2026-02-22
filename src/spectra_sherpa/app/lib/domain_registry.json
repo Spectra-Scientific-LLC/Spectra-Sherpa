@@ -1,0 +1,263 @@
+{
+  "version": "1.0",
+  "description": "Registry of analytical chemistry techniques and inference rules for domain detection",
+  "categories": {
+    "spectroscopy": {
+      "description": "Techniques based on interaction of matter with electromagnetic radiation",
+      "techniques": [
+        "IR",
+        "NIR",
+        "MIR",
+        "Raman",
+        "UV-Vis",
+        "Fluorescence",
+        "NMR",
+        "XRF",
+        "XRD"
+      ],
+      "inference_rules": [
+        {
+          "technique": "IR",
+          "axis_type": "wavenumber",
+          "range": [350, 4500],
+          "units": ["cm-1", "cm⁻¹", "1/cm"],
+          "confidence": 0.85,
+          "reasoning": "Mid-IR wavenumber range (350-4500 cm⁻¹) for functional group identification"
+        },
+        {
+          "technique": "NIR",
+          "axis_type": "wavenumber",
+          "range": [4000, 14000],
+          "units": ["cm-1", "cm⁻¹", "1/cm"],
+          "confidence": 0.85,
+          "reasoning": "Near-IR wavenumber range (4000-14000 cm⁻¹) for overtone and combination bands"
+        },
+        {
+          "technique": "MIR",
+          "axis_type": "wavelength_um",
+          "range": [2.5, 25],
+          "units": ["um", "µm", "micrometer"],
+          "confidence": 0.8,
+          "reasoning": "Mid-IR wavelength range (2.5-25 µm)"
+        },
+        {
+          "technique": "UV-Vis",
+          "axis_type": "wavelength_nm",
+          "range": [180, 800],
+          "units": ["nm", "nanometer"],
+          "confidence": 0.85,
+          "reasoning": "UV-Visible wavelength range (180-800 nm) for electronic transitions"
+        },
+        {
+          "technique": "Fluorescence",
+          "axis_type": "wavelength_nm",
+          "range": [300, 900],
+          "units": ["nm", "nanometer"],
+          "confidence": 0.75,
+          "reasoning": "Fluorescence emission wavelength range (300-900 nm)"
+        },
+        {
+          "technique": "Raman",
+          "axis_type": "wavenumber",
+          "range": [50, 4000],
+          "units": ["cm-1", "cm⁻¹", "1/cm"],
+          "confidence": 0.8,
+          "reasoning": "Raman shift range (50-4000 cm⁻¹) for vibrational spectroscopy"
+        }
+      ]
+    },
+    "chromatography": {
+      "description": "Separation techniques based on differential distribution between phases",
+      "techniques": [
+        "HPLC",
+        "GC",
+        "IC",
+        "CE",
+        "SFC",
+        "TLC",
+        "UPLC",
+        "GPC",
+        "SEC"
+      ],
+      "inference_rules": [
+        {
+          "technique": "HPLC",
+          "axis_type": "time_minutes",
+          "range": [0, 60],
+          "units": ["min", "minute"],
+          "confidence": 0.75,
+          "reasoning": "Typical HPLC retention time range (0-60 min)"
+        },
+        {
+          "technique": "GC",
+          "axis_type": "time_minutes",
+          "range": [0, 120],
+          "units": ["min", "minute"],
+          "confidence": 0.7,
+          "reasoning": "Typical GC retention time range (0-120 min, often longer than HPLC)"
+        },
+        {
+          "technique": "UPLC",
+          "axis_type": "time_minutes",
+          "range": [0, 20],
+          "units": ["min", "minute"],
+          "confidence": 0.7,
+          "reasoning": "Typical UPLC retention time range (0-20 min, faster than HPLC)"
+        },
+        {
+          "technique": "CE",
+          "axis_type": "time_minutes",
+          "range": [0, 30],
+          "units": ["min", "minute"],
+          "confidence": 0.65,
+          "reasoning": "Typical capillary electrophoresis time range (0-30 min)"
+        }
+      ]
+    },
+    "mass_spectrometry": {
+      "description": "Techniques measuring mass-to-charge ratio of ions",
+      "techniques": [
+        "LC-MS",
+        "GC-MS",
+        "MALDI-TOF",
+        "ESI-MS",
+        "ICP-MS",
+        "TOF-MS",
+        "Q-TOF",
+        "Orbitrap"
+      ],
+      "inference_rules": [
+        {
+          "technique": "LC-MS",
+          "axis_type": "mass_to_charge",
+          "range": [50, 2000],
+          "units": ["m/z", "mz", "Da"],
+          "confidence": 0.8,
+          "reasoning": "Typical LC-MS m/z range (50-2000) for small molecules and peptides"
+        },
+        {
+          "technique": "GC-MS",
+          "axis_type": "mass_to_charge",
+          "range": [35, 500],
+          "units": ["m/z", "mz", "Da"],
+          "confidence": 0.8,
+          "reasoning": "Typical GC-MS m/z range (35-500) for volatile compounds"
+        },
+        {
+          "technique": "MALDI-TOF",
+          "axis_type": "mass_to_charge",
+          "range": [500, 50000],
+          "units": ["m/z", "mz", "Da"],
+          "confidence": 0.85,
+          "reasoning": "MALDI-TOF m/z range (500-50000) for proteins and large biomolecules"
+        },
+        {
+          "technique": "ICP-MS",
+          "axis_type": "mass_to_charge",
+          "range": [6, 260],
+          "units": ["m/z", "mz", "amu"],
+          "confidence": 0.85,
+          "reasoning": "ICP-MS m/z range (6-260) for elemental analysis"
+        }
+      ]
+    },
+    "electrochemistry": {
+      "description": "Techniques based on electrochemical reactions and measurements",
+      "techniques": [
+        "CV",
+        "DPV",
+        "SWV",
+        "LSV",
+        "CA",
+        "EIS",
+        "Amperometry",
+        "Potentiometry"
+      ],
+      "inference_rules": [
+        {
+          "technique": "CV",
+          "axis_type": "voltage_volts",
+          "range": [-2.5, 2.5],
+          "units": ["V", "volt"],
+          "confidence": 0.75,
+          "reasoning": "Typical cyclic voltammetry potential range (-2.5 to 2.5 V)"
+        },
+        {
+          "technique": "DPV",
+          "axis_type": "voltage_volts",
+          "range": [-2.0, 2.0],
+          "units": ["V", "volt"],
+          "confidence": 0.7,
+          "reasoning": "Typical differential pulse voltammetry potential range"
+        },
+        {
+          "technique": "LSV",
+          "axis_type": "voltage_volts",
+          "range": [-2.0, 2.0],
+          "units": ["V", "volt"],
+          "confidence": 0.7,
+          "reasoning": "Typical linear sweep voltammetry potential range"
+        }
+      ]
+    },
+    "nmr_spectroscopy": {
+      "description": "Nuclear magnetic resonance techniques",
+      "techniques": [
+        "1H-NMR",
+        "13C-NMR",
+        "31P-NMR",
+        "19F-NMR",
+        "2D-NMR",
+        "COSY",
+        "HSQC",
+        "HMBC"
+      ],
+      "inference_rules": [
+        {
+          "technique": "1H-NMR",
+          "axis_type": "chemical_shift",
+          "range": [-5, 15],
+          "units": ["ppm"],
+          "confidence": 0.85,
+          "reasoning": "Typical proton NMR chemical shift range (-5 to 15 ppm)"
+        },
+        {
+          "technique": "13C-NMR",
+          "axis_type": "chemical_shift",
+          "range": [-20, 220],
+          "units": ["ppm"],
+          "confidence": 0.85,
+          "reasoning": "Typical carbon-13 NMR chemical shift range (-20 to 220 ppm)"
+        }
+      ]
+    },
+    "thermal_analysis": {
+      "description": "Techniques measuring material properties as function of temperature",
+      "techniques": [
+        "TGA",
+        "DSC",
+        "DTA",
+        "TMA",
+        "DMA"
+      ],
+      "inference_rules": [
+        {
+          "technique": "TGA",
+          "axis_type": "temperature",
+          "range": [20, 1000],
+          "units": ["°C", "C", "celsius"],
+          "confidence": 0.8,
+          "reasoning": "Typical TGA temperature range (20-1000°C)"
+        },
+        {
+          "technique": "DSC",
+          "axis_type": "temperature",
+          "range": [-180, 750],
+          "units": ["°C", "C", "celsius"],
+          "confidence": 0.8,
+          "reasoning": "Typical DSC temperature range (-180 to 750°C)"
+        }
+      ]
+    }
+  }
+}
