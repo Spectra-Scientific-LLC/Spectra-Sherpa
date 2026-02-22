@@ -520,6 +520,7 @@ class LLMService:
         except Exception as e:
             # Log error for debugging but return False gracefully
             import logging
+
             logger = logging.getLogger(__name__)
             logger.debug(f"Failed to check full_dag_context feature: {e}")
             return False

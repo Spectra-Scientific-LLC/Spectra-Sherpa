@@ -35,10 +35,7 @@ def test_deploy_input_node_numpy_export():
 
 def test_clip_range_node_scp_export():
     """Test ClipRangeNode doesn't use _Result when use_scp=True."""
-    node = ClipRangeNode(
-        node_id="clip_1",
-        parameters={"min_wavenumber": 400, "max_wavenumber": 4000}
-    )
+    node = ClipRangeNode(node_id="clip_1", parameters={"min_wavenumber": 400, "max_wavenumber": 4000})
     lines = node.generate_python(inputs={"input_0": "data_in"}, indent="    ", use_scp=True)
 
     code = "\n".join(lines)
@@ -51,10 +48,7 @@ def test_clip_range_node_scp_export():
 
 def test_clip_range_node_numpy_export_with_axis():
     """Test ClipRangeNode exports _Result with axis handling when use_scp=False."""
-    node = ClipRangeNode(
-        node_id="clip_1",
-        parameters={"min_wavenumber": 400, "max_wavenumber": 4000}
-    )
+    node = ClipRangeNode(node_id="clip_1", parameters={"min_wavenumber": 400, "max_wavenumber": 4000})
     lines = node.generate_python(inputs={"input_0": "data_in"}, indent="    ", use_scp=False)
 
     code = "\n".join(lines)
@@ -68,10 +62,7 @@ def test_clip_range_node_numpy_export_with_axis():
 
 def test_clip_range_node_numpy_export_fallback():
     """Test ClipRangeNode fallback case exports _Result when use_scp=False."""
-    node = ClipRangeNode(
-        node_id="clip_1",
-        parameters={"min_wavenumber": 0, "max_wavenumber": 100}
-    )
+    node = ClipRangeNode(node_id="clip_1", parameters={"min_wavenumber": 0, "max_wavenumber": 100})
     lines = node.generate_python(inputs={"input_0": "data_in"}, indent="    ", use_scp=False)
 
     code = "\n".join(lines)

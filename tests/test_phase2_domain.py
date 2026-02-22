@@ -22,7 +22,6 @@ from spectra_sherpa.app.services.dag.meta_helpers import (
 )
 from spectra_sherpa.app.services.dag.nodes.data import DataSourceNode
 
-
 # ---------------------------------------------------------------------------
 # Slice 1: Detection functions with SherpaDataset
 # ---------------------------------------------------------------------------

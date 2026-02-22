@@ -40,14 +40,11 @@ class DemoLimitTracker:
                 with open(self.state_path, "r") as f:
                     data = json.load(f)
                 # Clean expired sessions (older than session_expiry_hours)
-                cutoff = datetime.now() - timedelta(
-                    hours=app_config.demo_contract.session_expiry_hours
-                )
+                cutoff = datetime.now() - timedelta(hours=app_config.demo_contract.session_expiry_hours)
                 cleaned = {
                     uid: counters
                     for uid, counters in data.items()
-                    if datetime.fromisoformat(counters.get("last_activity", "1970-01-01"))
-                    > cutoff
+                    if datetime.fromisoformat(counters.get("last_activity", "1970-01-01")) > cutoff
                 }
                 return cleaned
             except (json.JSONDecodeError, OSError):

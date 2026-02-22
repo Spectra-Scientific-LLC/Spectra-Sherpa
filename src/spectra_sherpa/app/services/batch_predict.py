@@ -24,7 +24,6 @@ from spectra_sherpa.app.models.workflow import Workflow
 logger = logging.getLogger(__name__)
 
 
-
 def validate_folder_path(folder_path: str) -> Path:
     """Resolve and validate a user-supplied folder path.
 

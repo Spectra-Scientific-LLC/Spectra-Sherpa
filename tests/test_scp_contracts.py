@@ -93,17 +93,15 @@ class TestPCAContracts:
     def test_pca_transform_returns_nddataset(self, scp, fitted_pca):
         pca, input_ndd = fitted_pca
         result = pca.transform()
-        assert isinstance(result, scp.NDDataset), (
-            f"PCA.transform() must return NDDataset, got {type(result).__name__}"
-        )
+        assert isinstance(result, scp.NDDataset), f"PCA.transform() must return NDDataset, got {type(result).__name__}"
         assert result.shape[0] == input_ndd.shape[0], "PCA.transform() must preserve row count"
 
     def test_pca_components_is_nddataset(self, scp, fitted_pca):
         pca, _ = fitted_pca
         components = pca.components
-        assert isinstance(components, scp.NDDataset), (
-            f"PCA.components must be NDDataset, got {type(components).__name__}"
-        )
+        assert isinstance(
+            components, scp.NDDataset
+        ), f"PCA.components must be NDDataset, got {type(components).__name__}"
 
     def test_pca_evr_is_extractable(self, fitted_pca):
         pca, _ = fitted_pca
@@ -143,14 +141,14 @@ class TestPCAContracts:
 
         # Verify our extractor normalizes it correctly
         from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
+
         extracted = PCAExtract.from_scp(pca, sample_ndd)
         assert extracted.explained_variance_ratio.max() <= 1.0, (
             "PCAExtract.from_scp() failed to normalize EVR to 0-1 ratio. "
             f"Got max={extracted.explained_variance_ratio.max():.2f}"
         )
         assert extracted.explained_variance_ratio.min() >= 0.0, (
-            f"PCAExtract EVR must be non-negative. "
-            f"Got min={extracted.explained_variance_ratio.min():.2f}"
+            f"PCAExtract EVR must be non-negative. " f"Got min={extracted.explained_variance_ratio.min():.2f}"
         )
 
 
@@ -263,9 +261,7 @@ class TestNDDatasetContracts:
     def test_nddataset_data_is_numpy(self, scp):
         arr = np.ones((3, 5))
         ndd = scp.NDDataset(arr)
-        assert isinstance(ndd.data, np.ndarray), (
-            f"NDDataset.data must be numpy array, got {type(ndd.data).__name__}"
-        )
+        assert isinstance(ndd.data, np.ndarray), f"NDDataset.data must be numpy array, got {type(ndd.data).__name__}"
 
     def test_nddataset_shape_and_ndim(self, scp):
         ndd = scp.NDDataset(np.ones((4, 6)))

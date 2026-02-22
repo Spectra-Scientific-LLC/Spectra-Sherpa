@@ -40,9 +40,9 @@ async def lifespan(app: FastAPI):
 
     workflow_id = int(workflow_id_str)
     # Note: Headless server runs with arbitrary permissions for the specified workflow for now.
-    # In a full production env, you'd specify a token or valid user. 
-    # For this implementation, we just get the first user or mock one if needed, 
-    # but luckily `load_workflow_with_graph` requires a user_id. 
+    # In a full production env, you'd specify a token or valid user.
+    # For this implementation, we just get the first user or mock one if needed,
+    # but luckily `load_workflow_with_graph` requires a user_id.
     # Let's read the workflow manually to bypass user check if it's strictly a "deployed" model.
     # Actually, we can just use the standard session to load the workflow directly.
     import sqlalchemy as sa
@@ -50,9 +50,13 @@ async def lifespan(app: FastAPI):
     from sqlalchemy.orm import selectinload
 
     async with async_session() as session:
-        query = sa.select(Workflow).where(Workflow.id == workflow_id).options(
-            selectinload(Workflow.nodes),
-            selectinload(Workflow.edges),
+        query = (
+            sa.select(Workflow)
+            .where(Workflow.id == workflow_id)
+            .options(
+                selectinload(Workflow.nodes),
+                selectinload(Workflow.edges),
+            )
         )
         result = await session.execute(query)
         workflow = result.scalar_one_or_none()
@@ -87,7 +91,7 @@ async def health_check():
 async def predict(request: Request) -> Response:
     """
     Run a prediction.
-    
+
     The request body must be JSON, where keys correspond to the `stream_name`
     of the `deploy.input` nodes in the workflow.
     """
@@ -103,6 +107,7 @@ async def predict(request: Request) -> Response:
 
     # Clone the executor so concurrent requests don't mix state if we enable multithreading later
     import copy
+
     executor = copy.deepcopy(_executor)
 
     # Find the deploy entry nodes

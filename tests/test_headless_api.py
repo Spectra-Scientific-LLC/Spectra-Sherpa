@@ -221,13 +221,14 @@ def test_executor_getstate_setstate():
 def test_client():
     from fastapi.testclient import TestClient
     from spectra_sherpa.app.api.headless_app import app
+
     return TestClient(app)
 
 
 def test_predict_with_array_payload(test_client):
     from unittest.mock import patch
     import spectra_sherpa.app.api.headless_app as headless_app
-    
+
     executor = DAGExecutor(process_pool=None)
     executor.add_node(
         WorkflowNode(
@@ -249,18 +250,16 @@ def test_predict_with_array_payload(test_client):
             to_node="deploy_out",
         )
     )
-    
+
     with patch.object(headless_app, "_executor", executor):
         # Valid JSON payload containing lists of floats (array coercion)
-        payload = {
-            "sample": [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
-        }
-        
+        payload = {"sample": [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]}
+
         response = test_client.post("/predict", json=payload)
-        
+
         # Must be 200 OK, not 400 Bad Request
         assert response.status_code == 200, response.text
-        
+
         # Verify JSON response contains the array data via the mock executor pass-through
         data = response.json()
         assert data == payload["sample"]

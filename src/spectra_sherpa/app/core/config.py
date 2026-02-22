@@ -215,44 +215,39 @@ class DemoContract(BaseModel):
 
     disabled_capabilities: list[str] = Field(
         default_factory=lambda: ["data_upload", "project_import", "llm_config", "api_key_management"],
-        description="Capabilities disabled in demo mode"
+        description="Capabilities disabled in demo mode",
     )
-    max_executions_per_session: int = Field(
-        default=25,
-        description="Maximum workflow executions per demo session"
-    )
-    max_sherpa_interactions: int = Field(
-        default=20,
-        description="Maximum Sherpa AI interactions per demo session"
-    )
-    session_expiry_hours: int = Field(
-        default=24,
-        description="Demo session expiry time in hours"
-    )
+    max_executions_per_session: int = Field(default=25, description="Maximum workflow executions per demo session")
+    max_sherpa_interactions: int = Field(default=20, description="Maximum Sherpa AI interactions per demo session")
+    session_expiry_hours: int = Field(default=24, description="Demo session expiry time in hours")
     featured_datasets: list[str] = Field(
         default_factory=lambda: ["diesel_nir", "corn_m5", "nir_shootout_cal1", "nir_shootout_test1", "metal_etch_oes"],
-        description="Featured datasets shown in demo mode"
+        description="Featured datasets shown in demo mode",
     )
     featured_templates: list[str] = Field(
         default_factory=lambda: [
-            "pca", "pls_regression", "project1", "ir_opus_analysis",
-            "preprocessing", "peak_detection", "exploratory_analysis",
-            "classification", "anomaly_detection", "compare_models",
-            "calibration_transfer", "data_fusion"
+            "pca",
+            "pls_regression",
+            "project1",
+            "ir_opus_analysis",
+            "preprocessing",
+            "peak_detection",
+            "exploratory_analysis",
+            "classification",
+            "anomaly_detection",
+            "compare_models",
+            "calibration_transfer",
+            "data_fusion",
         ],
-        description="Featured workflow templates in demo mode"
+        description="Featured workflow templates in demo mode",
     )
     available_plans: list[str] = Field(
-        default_factory=list,
-        description="Available subscription plans (for upgrade UI)"
+        default_factory=list, description="Available subscription plans (for upgrade UI)"
     )
-    upgrade_url: str = Field(
-        default="",
-        description="URL to redirect for plan upgrades"
-    )
+    upgrade_url: str = Field(default="", description="URL to redirect for plan upgrades")
     upgrade_message: str = Field(
         default="Upgrade to unlock unlimited executions and full features",
-        description="Message shown when demo limits are reached"
+        description="Message shown when demo limits are reached",
     )
 
 
@@ -284,16 +279,13 @@ class AppConfig(BaseModel):
         default_factory=DemoContract, description="Demo mode configuration - used by spectra-server"
     )
     rate_limit_executions: Optional[int] = Field(
-        default=None,
-        description="Max executions per hour per user (enterprise/hybrid mode) - used by spectra-server"
+        default=None, description="Max executions per hour per user (enterprise/hybrid mode) - used by spectra-server"
     )
     session_expiry_hours: Optional[int] = Field(
-        default=None,
-        description="Session expiry in hours (enterprise/hybrid mode) - used by spectra-server"
+        default=None, description="Session expiry in hours (enterprise/hybrid mode) - used by spectra-server"
     )
     spectrasherpa_log_url: Optional[str] = Field(
-        default=None,
-        description="Remote audit log URL for hybrid/enterprise mode - used by spectra-server"
+        default=None, description="Remote audit log URL for hybrid/enterprise mode - used by spectra-server"
     )
 
     # LLM configurations
@@ -318,8 +310,7 @@ class AppConfig(BaseModel):
         raw_mode = os.getenv("APP_MODE", "local").strip().lower()
         if raw_mode == "demo":
             warnings.warn(
-                "APP_MODE=demo is deprecated. Use APP_MODE=enterprise with "
-                "SITE_PROFILE=demo instead.",
+                "APP_MODE=demo is deprecated. Use APP_MODE=enterprise with " "SITE_PROFILE=demo instead.",
                 DeprecationWarning,
                 stacklevel=2,
             )
@@ -430,6 +421,7 @@ class AppConfig(BaseModel):
 
         # Registration requires the full auth module + mode policy
         from spectra_sherpa.app.core.mode_policy import allows_registration
+
         registration_enabled = allows_registration()
 
         # Enterprise password gating — only in enterprise mode with password set
@@ -442,10 +434,9 @@ class AppConfig(BaseModel):
         sherpa_advisor = False
         try:
             from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
+
             advisor = get_sherpa_advisor()
-            sherpa_advisor = bool(
-                getattr(advisor, "_subscription_features", {}).get("sherpa_sync", False)
-            )
+            sherpa_advisor = bool(getattr(advisor, "_subscription_features", {}).get("sherpa_sync", False))
         except Exception:
             pass
 

@@ -66,6 +66,7 @@ class PCAExtract:
         explained_variance: Eigenvalues (n_components,)
         n_components: Actual number of fitted components
     """
+
     scores: np.ndarray  # 2D float64
     loadings: np.ndarray  # 2D float64
     explained_variance_ratio: np.ndarray  # 1D float64, 0-1 ratio
@@ -123,10 +124,7 @@ class PCAExtract:
 
         # Pad if needed (edge case: SCP returns fewer EVR values than components)
         if len(evr) < n_components:
-            logger.warning(
-                "[PCAExtract] EVR length %d < n_components %d, padding with zeros",
-                len(evr), n_components
-            )
+            logger.warning("[PCAExtract] EVR length %d < n_components %d, padding with zeros", len(evr), n_components)
             evr = np.pad(evr, (0, n_components - len(evr)), mode="constant", constant_values=0)
 
         # Extract eigenvalues (explained_variance)
@@ -141,8 +139,7 @@ class PCAExtract:
         # Ensure eigenvalues match n_components
         if len(eigenvalues) < n_components:
             eigenvalues = np.pad(
-                eigenvalues, (0, n_components - len(eigenvalues)),
-                mode="constant", constant_values=1e-12
+                eigenvalues, (0, n_components - len(eigenvalues)), mode="constant", constant_values=1e-12
             )
 
         return cls(
@@ -166,6 +163,7 @@ class PLSExtract:
         coef: Regression coefficients
         n_components: Number of components
     """
+
     x_scores: np.ndarray | None  # 2D float64
     y_scores: np.ndarray | None  # 2D float64
     x_loadings: np.ndarray | None  # 2D float64
@@ -259,6 +257,7 @@ class MCRExtract:
         St: Pure component spectra (n_components, n_features)
         n_components: Number of components
     """
+
     C: np.ndarray  # 2D float64
     St: np.ndarray  # 2D float64
     n_components: int
@@ -304,6 +303,7 @@ class EFAExtract:
         backward_ev: Backward eigenvalues (n_samples, n_components)
         n_components: Number of components
     """
+
     forward_ev: np.ndarray | None  # 2D float64
     backward_ev: np.ndarray | None  # 2D float64
     n_components: int
@@ -355,6 +355,7 @@ class SIMPLISMAExtract:
         purities: Purity values for each component (if available)
         n_components: Number of components
     """
+
     C: np.ndarray  # 2D float64
     St: np.ndarray  # 2D float64
     purities: np.ndarray | None  # 1D float64

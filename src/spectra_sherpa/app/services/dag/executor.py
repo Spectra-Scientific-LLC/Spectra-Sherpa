@@ -364,7 +364,7 @@ class DAGExecutor:
         """
         state = self.__dict__.copy()
         # Exclude the unpicklable process pool (contains thread locks, file descriptors)
-        state['_process_pool'] = None
+        state["_process_pool"] = None
         return state
 
     def __setstate__(self, state: Dict[str, Any]) -> None:

@@ -27,20 +27,15 @@ class SpectraSherpaConfig(BaseModel):
     """Configuration for SpectraSherpa cloud service."""
 
     enabled: bool = Field(default=False, description="Whether cloud integration is enabled")
-    api_base_url: str = Field(
-        default=SPECTRASHERPA_API_BASE,
-        description="Base URL for SpectraSherpa cloud API"
-    )
+    api_base_url: str = Field(default=SPECTRASHERPA_API_BASE, description="Base URL for SpectraSherpa cloud API")
     api_key: str | None = Field(default=None, description="API key for cloud service")
     deployment_id: str | None = Field(default=None, description="Deployment/tenant ID")
     sync_enabled: bool = Field(default=False, description="Enable workflow sync")
-    managed_llm_keys_enabled: bool = Field(
-        default=False,
-        description="Use cloud-managed LLM API keys"
-    )
+    managed_llm_keys_enabled: bool = Field(default=False, description="Use cloud-managed LLM API keys")
 
     class Config:
         """Pydantic config."""
+
         frozen = False  # Allow updates from spectra-server
 
 
@@ -164,6 +159,7 @@ class SpectraSherpaService:
             In OSS mode, always returns failure.
         """
         from types import SimpleNamespace
+
         return SimpleNamespace(
             success=False,
             error="Not configured in OSS mode",

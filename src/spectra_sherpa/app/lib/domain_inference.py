@@ -96,10 +96,7 @@ class DomainRegistry:
                     rule_min, rule_max = rule_range
 
                     # Check if there's significant overlap
-                    overlap = (
-                        max(0, min(axis_max, rule_max) - max(axis_min, rule_min))
-                        / (rule_max - rule_min)
-                    )
+                    overlap = max(0, min(axis_max, rule_max) - max(axis_min, rule_min)) / (rule_max - rule_min)
 
                     # Require at least 20% overlap
                     if overlap < 0.2:

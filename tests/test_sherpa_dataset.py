@@ -1592,9 +1592,7 @@ class TestSCPRoundtrip:
         prov = Provenance()
         prov.append("data.source", {"file": "test.csv"})
         quality = QualityMetrics(snr=42.0)
-        quality.add_evaluation(
-            EvaluationResult(evaluation_id="eval-1", model_type="PCA", n_components=3)
-        )
+        quality.add_evaluation(EvaluationResult(evaluation_id="eval-1", model_type="PCA", n_components=3))
         domain = DomainContext(technique="IR", sample_type="liquid")
         target_ctx = TargetContext(target_type="continuous", target_name="moisture")
 
@@ -1664,9 +1662,7 @@ class TestSCPRoundtrip:
         ds = self._make_rich_dataset()
         original_len = len(ds.provenance)
 
-        result = self._roundtrip_with_mock(
-            ds, op_id="test.op", parameters={"key": "val"}
-        )
+        result = self._roundtrip_with_mock(ds, op_id="test.op", parameters={"key": "val"})
 
         # Original provenance carried forward + 1 new step
         assert len(result.provenance) == original_len + 1

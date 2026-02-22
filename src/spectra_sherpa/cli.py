@@ -180,9 +180,12 @@ def main(argv: list[str] | None = None) -> None:
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
     serve_parser = subparsers.add_parser("serve-model", help="Run a headless prediction server for a deployed workflow")
     serve_parser.add_argument("workflow_id", type=int, help="ID of the workflow to serve")
-    serve_parser.add_argument("--host", default="0.0.0.0", help="Bind address for the headless server (default: 0.0.0.0)")
-    serve_parser.add_argument("--port", type=int, default=8001, help="Port number for the headless server (default: 8001)")
-
+    serve_parser.add_argument(
+        "--host", default="0.0.0.0", help="Bind address for the headless server (default: 0.0.0.0)"
+    )
+    serve_parser.add_argument(
+        "--port", type=int, default=8001, help="Port number for the headless server (default: 8001)"
+    )
 
     args = parser.parse_args(argv)
 

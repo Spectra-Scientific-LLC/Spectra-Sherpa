@@ -25,7 +25,6 @@ from spectra_sherpa.app.lib.sherpa_dataset import (
     SpectralAxis,
 )
 
-
 # ═══════════════════════════════════════════════════════════════════════════
 # Group 1: Mutable defaults on Pydantic models
 # ═══════════════════════════════════════════════════════════════════════════

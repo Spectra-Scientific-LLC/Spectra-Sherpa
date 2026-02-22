@@ -36,9 +36,7 @@ def validate_headless_env() -> List[str]:
         try:
             int(workflow_id)
         except ValueError:
-            errors.append(
-                f"HEADLESS_WORKFLOW_ID must be a valid integer, got: {workflow_id}"
-            )
+            errors.append(f"HEADLESS_WORKFLOW_ID must be a valid integer, got: {workflow_id}")
 
     return errors
 
@@ -57,13 +55,9 @@ def validate_encryption_env() -> List[str]:
     if master_key is not None:
         # Key is set - validate it
         if len(master_key) < 32:
-            errors.append(
-                "MASTER_ENCRYPTION_KEY must be at least 32 characters for security"
-            )
+            errors.append("MASTER_ENCRYPTION_KEY must be at least 32 characters for security")
         elif len(master_key) < 64:
-            warnings_list.append(
-                "MASTER_ENCRYPTION_KEY should be at least 64 characters for optimal security"
-            )
+            warnings_list.append("MASTER_ENCRYPTION_KEY should be at least 64 characters for optimal security")
 
     for warning_msg in warnings_list:
         warnings.warn(warning_msg, EnvValidationWarning)
@@ -88,9 +82,7 @@ def validate_scp_env() -> List[str]:
 
         path = Path(scp_datadir)
         if not path.exists():
-            warnings_list.append(
-                f"SCP_DATADIR is set but directory doesn't exist: {scp_datadir}"
-            )
+            warnings_list.append(f"SCP_DATADIR is set but directory doesn't exist: {scp_datadir}")
         elif not path.is_dir():
             errors.append(f"SCP_DATADIR must be a directory, got: {scp_datadir}")
 
@@ -201,6 +193,5 @@ def validate_and_raise_on_errors():
 
     if errors:
         raise RuntimeError(
-            f"Environment variable validation failed with {len(errors)} error(s). "
-            "See logs above for details."
+            f"Environment variable validation failed with {len(errors)} error(s). " "See logs above for details."
         )

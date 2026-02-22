@@ -23,10 +23,10 @@ logger = logging.getLogger(__name__)
 class DeployInputNode(Node):
     """
     Entry point for prediction pipelines.
-    
+
     During 'Bench' interactive mode, this node acts as a dummy pass-through or returns
     an empty dataset to allow pipeline validation.
-    
+
     During 'Deploy' (Headless) mode, the execution engine intercepts this node
     and injects the payload data matching the stream_name.
     """
@@ -84,7 +84,9 @@ class DeployInputNode(Node):
             f"{indent}# For local testing, supply dummy data:",
         ]
         if use_scp:
-            lines.append(f"{indent}results['{self.node_id}'] = scp.NDDataset(np.zeros((1, 1)))  # Replace with actual data")
+            lines.append(
+                f"{indent}results['{self.node_id}'] = scp.NDDataset(np.zeros((1, 1)))  # Replace with actual data"
+            )
         else:
             lines.append(f"{indent}results['{self.node_id}'] = _Result(np.zeros((1, 1)))  # Replace with actual data")
         return lines
@@ -94,7 +96,7 @@ class DeployInputNode(Node):
 class DeployOutputNode(Node):
     """
     Exit point for prediction pipelines.
-    
+
     Collects final pipeline outputs and formats them. The headless API
     will read the result of this node to return the HTTP response.
     """
@@ -154,8 +156,8 @@ class DeployOutputNode(Node):
         """
         fmt = self.parameters.get("output_format", "json")
         separator = self.parameters.get("key_value_separator", "=")
-        eom = self.parameters.get("end_of_message_tag", "\\n").encode().decode('unicode_escape')
-        
+        eom = self.parameters.get("end_of_message_tag", "\\n").encode().decode("unicode_escape")
+
         # If the payload is a dataset, try to extract its .data array
         raw_data = payload
         if isinstance(payload, SherpaDataset):
@@ -166,13 +168,14 @@ class DeployOutputNode(Node):
             raw_data = payload.tolist()
 
         formatted_result = None
-        
+
         if fmt == "json":
             # Just pass the raw serializable structure, FastAPI will jsonify it
             formatted_result = raw_data
         elif fmt == "csv":
             import csv
             import io
+
             output = io.StringIO()
             writer = csv.writer(output)
             if isinstance(raw_data, list) and len(raw_data) > 0:
@@ -190,11 +193,7 @@ class DeployOutputNode(Node):
             else:
                 formatted_result = f"Result{separator}{str(raw_data)}{eom}"
 
-        return {
-            "format": fmt,
-            "content": formatted_result,
-            "raw_payload": raw_data
-        }
+        return {"format": fmt, "content": formatted_result, "raw_payload": raw_data}
 
     def supports_python_export(self) -> bool:
         return True

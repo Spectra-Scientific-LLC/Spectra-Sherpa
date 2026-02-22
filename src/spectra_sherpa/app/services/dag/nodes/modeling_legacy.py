@@ -1482,12 +1482,7 @@ class MCRNode(Node):
         solver_s = "nnls" if non_negative_St else "lstsq"
 
         # Create and fit MCR-ALS model
-        mcr = scp.MCRALS(
-            max_iter=max_iter,
-            tol=tol,
-            solverConc=solver_c,
-            solverSpec=solver_s
-        )
+        mcr = scp.MCRALS(max_iter=max_iter, tol=tol, solverConc=solver_c, solverSpec=solver_s)
         mcr.fit(input_ndd, C0)
 
         # Extract results using typed extractor

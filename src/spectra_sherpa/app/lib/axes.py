@@ -24,7 +24,6 @@ from pydantic import GetJsonSchemaHandler as _GetJsonSchemaHandler
 from pydantic.json_schema import JsonSchemaValue as _JsonSchemaValue
 from pydantic_core import core_schema as _cs
 
-
 # ═══════════════════════════════════════════════════════════════════════════
 # Pydantic-compatible numpy array type
 # ═══════════════════════════════════════════════════════════════════════════
@@ -81,21 +80,11 @@ class AxisInfo(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, validate_assignment=True)
 
     values: NpArray | None = Field(
-        None,
-        description="Axis coordinate values (e.g., wavelengths, retention times, m/z values)"
+        None, description="Axis coordinate values (e.g., wavelengths, retention times, m/z values)"
     )
-    labels: list[str] | None = Field(
-        None,
-        description="Optional text labels for axis points"
-    )
-    units: str | None = Field(
-        None,
-        description="Physical units (e.g., 'cm-1', 'nm', 'min', 'm/z', 'V')"
-    )
-    title: str | None = Field(
-        None,
-        description="Human-readable axis title"
-    )
+    labels: list[str] | None = Field(None, description="Optional text labels for axis points")
+    units: str | None = Field(None, description="Physical units (e.g., 'cm-1', 'nm', 'min', 'm/z', 'V')")
+    title: str | None = Field(None, description="Human-readable axis title")
     _expected_length: int | None = PrivateAttr(default=None)
 
     @property
@@ -495,21 +484,15 @@ class FrequencyAxis(FeatureAxis):
 class SampleAxis(AxisInfo):
     """Sample axis with per-sample metadata."""
 
-    classes: NpArray | None = Field(
-        None,
-        description="Class assignments for each sample (classification tasks)"
-    )
+    classes: NpArray | None = Field(None, description="Class assignments for each sample (classification tasks)")
     include_mask: NpArray | None = Field(
-        None,
-        description="Boolean mask indicating which samples are included (soft delete)"
+        None, description="Boolean mask indicating which samples are included (soft delete)"
     )
     exclusion_reasons: list[str | None] | None = Field(
-        None,
-        description="Reason for exclusion for each excluded sample"
+        None, description="Reason for exclusion for each excluded sample"
     )
     sample_table: dict[str, list[Any]] | None = Field(
-        None,
-        description="Tabular metadata (arbitrary columns) for samples"
+        None, description="Tabular metadata (arbitrary columns) for samples"
     )
 
     @model_validator(mode="after")

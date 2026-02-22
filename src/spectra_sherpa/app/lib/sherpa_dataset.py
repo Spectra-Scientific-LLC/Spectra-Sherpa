@@ -553,31 +553,37 @@ def _validate_axis_length(
     if axis_type == "feature" and len(data_shape) >= 2:
         n_samples, n_features = data_shape[0], data_shape[1]
         if actual == n_samples and expected == n_features:
-            msg_parts.extend([
-                f"💡 Suggestion: Your data may be transposed.",
-                f"   Try: X=X.T (transpose your data matrix)",
-                f"   This will change shape {data_shape} → ({n_features}, {n_samples})",
-                f"",
-            ])
+            msg_parts.extend(
+                [
+                    f"💡 Suggestion: Your data may be transposed.",
+                    f"   Try: X=X.T (transpose your data matrix)",
+                    f"   This will change shape {data_shape} → ({n_features}, {n_samples})",
+                    f"",
+                ]
+            )
 
     # Suggest removing index columns for sample axis
     if axis_type == "sample" and actual > 50 and expected < actual / 2:
-        msg_parts.extend([
-            f"💡 Suggestion: Do you have index/metadata columns in your data?",
-            f"   Remove non-numeric columns before creating dataset",
-            f"   Expected {expected} samples but axis has {actual} entries",
-            f"",
-        ])
+        msg_parts.extend(
+            [
+                f"💡 Suggestion: Do you have index/metadata columns in your data?",
+                f"   Remove non-numeric columns before creating dataset",
+                f"   Expected {expected} samples but axis has {actual} entries",
+                f"",
+            ]
+        )
 
     # General debugging hints
-    msg_parts.extend([
-        f"📘 Debug checklist:",
-        f"   1. Check data.shape matches (n_samples, n_features)",
-        f"   2. Verify axis.length == appropriate dimension",
-        f"   3. For chromatography: data.shape = (n_samples, n_timepoints)",
-        f"   4. For spectroscopy: data.shape = (n_samples, n_wavenumbers)",
-        f"   5. For mass spec: data.shape = (n_samples, n_mz_points)",
-    ])
+    msg_parts.extend(
+        [
+            f"📘 Debug checklist:",
+            f"   1. Check data.shape matches (n_samples, n_features)",
+            f"   2. Verify axis.length == appropriate dimension",
+            f"   3. For chromatography: data.shape = (n_samples, n_timepoints)",
+            f"   4. For spectroscopy: data.shape = (n_samples, n_wavenumbers)",
+            f"   5. For mass spec: data.shape = (n_samples, n_mz_points)",
+        ]
+    )
 
     raise ValueError("\n".join(msg_parts))
 
@@ -629,11 +635,12 @@ class SherpaDataset:
         if spectral_axis is not None and feature_axis is not None:
             # Both specified - use feature_axis and warn
             import warnings
+
             warnings.warn(
                 "Both spectral_axis and feature_axis specified. Using feature_axis. "
                 "spectral_axis is deprecated - use feature_axis for all axis types.",
                 DeprecationWarning,
-                stacklevel=2
+                stacklevel=2,
             )
             axis_to_use = feature_axis
         else:
@@ -641,10 +648,11 @@ class SherpaDataset:
             if spectral_axis is not None:
                 # Warn when using deprecated spectral_axis parameter
                 import warnings
+
                 warnings.warn(
                     "spectral_axis parameter is deprecated. Use feature_axis instead for multi-domain support.",
                     DeprecationWarning,
-                    stacklevel=2
+                    stacklevel=2,
                 )
 
         if axis_to_use is not None:
@@ -654,7 +662,7 @@ class SherpaDataset:
                     actual=axis_to_use.length,
                     axis_type="feature",
                     data_shape=(n_samples, n_features),
-                    axis_name="feature_axis"
+                    axis_name="feature_axis",
                 )
             axis_copy = axis_to_use.copy()
             axis_copy.bind_expected_length(n_features)
@@ -667,7 +675,7 @@ class SherpaDataset:
                     actual=sample_axis.length,
                     axis_type="sample",
                     data_shape=(n_samples, n_features),
-                    axis_name="sample_axis"
+                    axis_name="sample_axis",
                 )
             if sample_axis.classes is not None and len(sample_axis.classes) != n_samples:
                 raise ValueError(
@@ -693,7 +701,7 @@ class SherpaDataset:
                     f"   But data has {n_samples} samples",
                     f"",
                     f"💡 Each sample needs exactly one target value.",
-                    f"   Ensure len(target) == n_samples ({n_samples})"
+                    f"   Ensure len(target) == n_samples ({n_samples})",
                 ]
                 raise ValueError("\n".join(msg_parts))
             self._target: np.ndarray | None = t
@@ -752,7 +760,7 @@ class SherpaDataset:
                     f"   But data has {self._X.shape[0]} samples",
                     f"",
                     f"💡 Each sample needs exactly one target value.",
-                    f"   Ensure len(target) == n_samples ({self._X.shape[0]})"
+                    f"   Ensure len(target) == n_samples ({self._X.shape[0]})",
                 ]
                 raise ValueError("\n".join(msg_parts))
             self._target = t
@@ -792,12 +800,13 @@ class SherpaDataset:
             >>> axis = dataset.feature_axis  # Works with all axis types
         """
         import warnings
+
         warnings.warn(
             "spectral_axis is deprecated. Use feature_axis instead for multi-domain support. "
             "feature_axis works with TimeAxis (chromatography), MZAxis (mass spec), "
             "PotentialAxis (electrochemistry), and SpectralAxis (spectroscopy).",
             DeprecationWarning,
-            stacklevel=2
+            stacklevel=2,
         )
         ax = self._axes.get(self._SPECTRAL_DIM)
         return ax.copy() if isinstance(ax, SpectralAxis) else None
@@ -848,7 +857,7 @@ class SherpaDataset:
                 actual=value.length,
                 axis_type="feature",
                 data_shape=self._X.shape,
-                axis_name="feature_axis"
+                axis_name="feature_axis",
             )
         copied = value.copy()
         copied.bind_expected_length(self._X.shape[1])
@@ -867,7 +876,7 @@ class SherpaDataset:
                 actual=value.length,
                 axis_type="sample",
                 data_shape=self._X.shape,
-                axis_name="sample_axis"
+                axis_name="sample_axis",
             )
         if value.classes is not None and len(value.classes) != self._X.shape[0]:
             msg_parts = [
@@ -876,7 +885,7 @@ class SherpaDataset:
                 f"   But data has {self._X.shape[0]} samples",
                 f"",
                 f"💡 Each sample must have exactly one class label.",
-                f"   Ensure len(classes) == n_samples ({self._X.shape[0]})"
+                f"   Ensure len(classes) == n_samples ({self._X.shape[0]})",
             ]
             raise ValueError("\n".join(msg_parts))
         if value.include_mask is not None and len(value.include_mask) != self._X.shape[0]:
@@ -886,7 +895,7 @@ class SherpaDataset:
                 f"   But data has {self._X.shape[0]} samples",
                 f"",
                 f"💡 Each sample must have exactly one boolean flag.",
-                f"   Ensure len(include_mask) == n_samples ({self._X.shape[0]})"
+                f"   Ensure len(include_mask) == n_samples ({self._X.shape[0]})",
             ]
             raise ValueError("\n".join(msg_parts))
         copied = value.copy()

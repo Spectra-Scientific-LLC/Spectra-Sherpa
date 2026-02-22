@@ -332,7 +332,10 @@ class TestPoisonPillTransactionLoop:
 
         source = inspect.getsource(run_batch_prediction)
         # Ensure we have a try block specifically for the commit
-        assert "try:\n            await session.commit()" in source or "try:\n                await session.commit()" in source
+        assert (
+            "try:\n            await session.commit()" in source
+            or "try:\n                await session.commit()" in source
+        )
         assert "await session.rollback()" in source
 
     def test_folder_watch_catches_commit_errors(self):

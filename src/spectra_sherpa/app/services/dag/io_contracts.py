@@ -269,6 +269,7 @@ def build_dataset_like(
     # Determine sample_axis for backward compatibility
     # Only set if obs_axis is actually a SampleAxis
     from spectra_sherpa.app.lib.axes import SampleAxis
+
     sample_axis = obs_axis if isinstance(obs_axis, SampleAxis) else None
 
     # Create dataset using feature_axis (supports all FeatureAxis types)

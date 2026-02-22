@@ -648,4 +648,4 @@ async def execute(self, **kwargs) -> NodeResult:
 - [Node Development Guide](node_development.md) - Detailed guide on node architecture
 - [Testing Guide](testing.md) - Best practices for testing nodes
 - [Contributing Guide](../CONTRIBUTING.md) - General contribution guidelines
-- [Type System](type_system.md) - Understanding port types and type registry
+- Type System - Understanding port types and type registry *(docs coming soon)*

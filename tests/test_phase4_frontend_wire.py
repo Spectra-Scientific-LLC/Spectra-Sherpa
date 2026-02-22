@@ -18,7 +18,6 @@ from spectra_sherpa.app.lib.sherpa_dataset import (
 )
 from spectra_sherpa.app.services.dag.serialize import serialize_for_api
 
-
 # ---------------------------------------------------------------------------
 # Axis key remapping
 # ---------------------------------------------------------------------------
