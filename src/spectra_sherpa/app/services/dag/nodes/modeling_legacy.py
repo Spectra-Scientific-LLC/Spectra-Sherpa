@@ -54,128 +54,18 @@ from ..node_base import (
 )
 from ..spec_nodes import EstimatorSpec, EstimatorSpecNode
 
+# Import public utilities from core_utils module
+# These replace the local private implementations
+from .modeling.core_utils import (
+    create_spectral_dataset as _create_spectral_dataset,
+    is_sequential_numeric as _is_sequential_numeric,
+    make_safe_coord as _make_safe_coord,
+)
+
 logger = logging.getLogger(__name__)
 
 
-def _make_safe_coord(values: Any, title: Optional[str] = None) -> Any:
-    """
-    Build axis metadata safely for numeric and categorical values.
-
-    Returns an AxisInfo (pure-Python) so that downstream nodes work without
-    SpectroChemPy.  Accepts AxisInfo, Coord-like objects, numeric arrays,
-    and string/categorical arrays.
-    """
-    if values is None:
-        return None
-
-    # Already an AxisInfo — copy and optionally set title
-    if isinstance(values, AxisInfo):
-        coord = values.copy()
-        if title and not coord.title:
-            coord.title = title
-        return coord
-
-    # Coord-like object (NDDataset coordinate) — convert to AxisInfo
-    if hasattr(values, "data") and hasattr(values, "copy"):
-        labels = None
-        raw_labels = getattr(values, "labels", None)
-        if raw_labels is not None:
-            try:
-                if hasattr(raw_labels, "tolist"):
-                    flat = raw_labels.tolist()
-                else:
-                    flat = list(raw_labels)
-                if isinstance(flat, list):
-                    labels = [str(v) for v in flat]
-                else:
-                    labels = [str(flat)]
-            except Exception:
-                labels = None
-        return AxisInfo(
-            values=np.asarray(values.data) if values.data is not None else None,
-            units=str(values.units) if hasattr(values, "units") and values.units else None,
-            title=title or (str(values.title) if hasattr(values, "title") and values.title else None),
-            labels=labels,
-        )
-
-    # Try numeric array
-    arr = np.asarray(values)
-    if arr.ndim == 0:
-        arr = arr.reshape(1)
-    if np.issubdtype(arr.dtype, np.number):
-        return AxisInfo(values=arr, title=title)
-
-    # String / categorical — store as labels with numeric index
-    labels_str = [str(v) for v in arr.reshape(-1).tolist()]
-    return AxisInfo(
-        values=np.arange(len(labels_str), dtype=float),
-        labels=labels_str,
-        title=title,
-    )
-
-
-def _create_spectral_dataset(
-    data: np.ndarray,
-    x_coord: Optional[Any] = None,
-    y_coord: Optional[Any] = None,
-    units: Optional[str] = None,
-    title: Optional[str] = None,
-    meta: Optional[dict] = None,
-) -> SherpaDataset:
-    """
-    Create a SherpaDataset with proper coordinate preservation.
-
-    This ensures that spectral data always carries its coordinate system,
-    enabling "smart array" behavior where slicing data also slices coordinates.
-
-    Args:
-        data: The spectral data array (1D or 2D)
-        x_coord: X-axis coordinate — AxisInfo, Coord, or array-like
-        y_coord: Y-axis coordinate — AxisInfo, Coord, or array-like
-        units: Data-value units (e.g., "absorbance", "score")
-        title: Dataset title
-        meta: Metadata dictionary to attach
-
-    Returns:
-        SherpaDataset with coordinates properly attached
-    """
-    x_axis_info = _make_safe_coord(x_coord) if x_coord is not None else None
-    y_axis_info = _make_safe_coord(y_coord) if y_coord is not None else None
-
-    spectral_axis = None
-    if x_axis_info is not None:
-        if isinstance(x_axis_info, SpectralAxis):
-            spectral_axis = x_axis_info
-        else:
-            spectral_axis = SpectralAxis(
-                values=x_axis_info.values,
-                labels=x_axis_info.labels,
-                units=x_axis_info.units,
-                title=x_axis_info.title,
-            )
-
-    sample_axis = None
-    if y_axis_info is not None:
-        if isinstance(y_axis_info, SampleAxis):
-            sample_axis = y_axis_info
-        else:
-            sample_axis = SampleAxis(
-                values=y_axis_info.values,
-                labels=y_axis_info.labels,
-                units=y_axis_info.units,
-                title=y_axis_info.title,
-            )
-
-    return SherpaDataset(
-        X=data,
-        spectral_axis=spectral_axis,
-        sample_axis=sample_axis,
-        units=units,
-        title=title,
-        extra=meta.copy() if meta is not None else None,
-    )
-
-
+# Helper functions for data unwrapping (kept here, not public API)
 def _unwrap_data(value: Any) -> Any:
     """Safely unwrap dataset-like .data while avoiding ndarray memoryview traps."""
     if isinstance(value, SherpaDataset):
@@ -193,46 +83,6 @@ def _to_numpy_2d_any(value: Any, *, name: str, dtype: Any = np.float64) -> np.nd
 def _to_numpy_1d_any(value: Any, *, name: str, dtype: Any = np.float64) -> np.ndarray:
     """Convert dataset-like values to a strict 1D numpy array."""
     return to_numpy_1d(_unwrap_data(value), name=name, dtype=dtype)
-
-
-def _is_sequential_numeric(values: list) -> bool:
-    """
-    Check if numeric values are sequential (e.g., time series, temperature series).
-    Sequential data should NOT be treated as categorical.
-
-    Args:
-        values: List of numeric values (already converted to hashable types)
-
-    Returns:
-        True if values appear to be a sequential series, False otherwise
-    """
-    try:
-        # Convert to numeric array
-        numeric_values = []
-        for v in values:
-            if isinstance(v, (int, float, np.integer, np.floating)):
-                numeric_values.append(float(v))
-            else:
-                # If any value is not numeric, not sequential
-                return False
-
-        if len(numeric_values) < 3:
-            # Need at least 3 values to detect sequence
-            return False
-
-        # Check if values form an arithmetic sequence (constant difference)
-        diffs = np.diff(sorted(set(numeric_values)))
-
-        # If all differences are the same (within tolerance), it's sequential
-        if len(diffs) > 0:
-            mean_diff = np.mean(diffs)
-            # Allow 1% tolerance for floating point errors
-            tolerance = max(abs(mean_diff) * 0.01, 1e-10)
-            return bool(np.all(np.abs(diffs - mean_diff) < tolerance))
-
-        return False
-    except (TypeError, ValueError):
-        return False
 
 
 @register_node
@@ -355,9 +205,9 @@ class PCANode(Node):
         input_ds = bind_X(
             input_data,
             kwargs,
-            missing_message="Missing required input: input_data (spectra)",
-            dataset_error_message="input_data must be an dataset object",
-            allow_array=False,
+            missing_message="Missing required input: input_data (X)",
+            dataset_error_message="input_data must be an dataset or array-like object",
+            allow_array=True,
         )
         input_ndd = to_nddataset(input_ds)
 
@@ -717,8 +567,8 @@ class PLSNode(Node):
             X,
             kwargs,
             missing_message="Missing required input: X (spectra)",
-            dataset_error_message="X must be an dataset object",
-            allow_array=False,
+            dataset_error_message="X must be an dataset or array-like object",
+            allow_array=True,
         )
         y_value = bind_y(
             y,
@@ -1064,7 +914,7 @@ class PCRNode(Node):
         logger.debug("  - X shape: %s", X_data.shape)
         logger.debug("  - y shape: %s", y_array.shape)
 
-        scaler = StandardScaler(with_mean=True, with_std=scale)
+        scaler = StandardScaler(with_mean=scale, with_std=scale)
         pca = SkPCA(n_components=n_components)
         regressor = LinearRegression()
         model = Pipeline(
@@ -1600,6 +1450,8 @@ class MCRNode(Node):
         n_components = self.parameters.get("n_components", 3)
         max_iter = self.parameters.get("max_iter", 50)
         tol = self.parameters.get("tol", 0.1)
+        non_negative_C = self.parameters.get("non_negative_C", True)
+        non_negative_St = self.parameters.get("non_negative_St", True)
 
         # Validate input shape
         if len(input_ds.shape) != 2:
@@ -1620,12 +1472,22 @@ class MCRNode(Node):
 
         # Initial C estimate from first n_components of U*S
         C0_data = U[:, :n_components] @ np.diag(S[:n_components])
-        # Make non-negative (shift and scale)
-        C0_data = np.abs(C0_data)
+        # If non-negative, shift/scale to avoid negative initial guesses
+        if non_negative_C:
+            C0_data = np.abs(C0_data)
         C0 = scp.NDDataset(C0_data)
 
+        # Determine appropriate solvers based on constraints
+        solver_c = "nnls" if non_negative_C else "lstsq"
+        solver_s = "nnls" if non_negative_St else "lstsq"
+
         # Create and fit MCR-ALS model
-        mcr = scp.MCRALS(max_iter=max_iter, tol=tol)
+        mcr = scp.MCRALS(
+            max_iter=max_iter,
+            tol=tol,
+            solverConc=solver_c,
+            solverSpec=solver_s
+        )
         mcr.fit(input_ndd, C0)
 
         # Extract results using typed extractor

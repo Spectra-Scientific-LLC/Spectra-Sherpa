@@ -24,7 +24,7 @@ from ..io_contracts import (
     to_numpy_2d,
 )
 from ..node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
-from .modeling import _create_spectral_dataset
+from .modeling import create_spectral_dataset
 from .visualization import generate_confusion_matrix_heatmap
 
 logger = logging.getLogger(__name__)
@@ -466,7 +466,7 @@ class PLSDANode(Node):
         # =====================================================================
 
         # Scores NDDataset: shape (n_samples, n_components)
-        scores_dataset = _create_spectral_dataset(
+        scores_dataset = create_spectral_dataset(
             data=X_scores,
             x_coord=_make_labeled_coord(lv_labels, title="Latent Variable"),
             y_coord=_y_coord,  # Preserve sample labels from input
@@ -475,7 +475,7 @@ class PLSDANode(Node):
         )
 
         # Loadings NDDataset: shape (n_components, n_features)
-        loadings_dataset = _create_spectral_dataset(
+        loadings_dataset = create_spectral_dataset(
             data=X_loadings,
             x_coord=_x_coord,  # Preserve wavenumber/feature axis from input
             y_coord=_make_labeled_coord(lv_labels, title="Latent Variable"),
@@ -1298,7 +1298,7 @@ class KNNNode(Node):
 
         # KNN doesn't have scores/loadings — use viz_data (PCA-reduced or original features)
         # as the primary output for the "default" port
-        scores_dataset = _create_spectral_dataset(
+        scores_dataset = create_spectral_dataset(
             data=viz_data,
             x_coord=_make_labeled_coord(viz_labels, title="Feature"),
             y_coord=_y_coord,  # Preserve sample labels from input
@@ -1814,7 +1814,7 @@ class SIMCANode(Node):
         pc_labels = [f"PC{i+1} (Class {first_class})" for i in range(n_components)]
 
         # Scores NDDataset: shape (n_samples, n_components) — projected into first class PC space
-        scores_dataset = _create_spectral_dataset(
+        scores_dataset = create_spectral_dataset(
             data=viz_scores_data,
             x_coord=_make_labeled_coord(pc_labels, title="Principal Component"),
             y_coord=_y_coord,  # Preserve sample labels from input

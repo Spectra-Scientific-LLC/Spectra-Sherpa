@@ -919,7 +919,7 @@ class DataSourceNode(Node):
             if is_sherpa:
                 dataset = SherpaDataset(
                     X=dataset.X.T,
-                    spectral_axis=dataset.sample_axis.copy() if dataset.sample_axis is not None else None,
+                    feature_axis=dataset.sample_axis.copy() if dataset.sample_axis is not None else None,
                     sample_axis=dataset.spectral_axis.copy() if dataset.spectral_axis is not None else None,
                     target=None,  # row count changes on transpose; drop target unless explicitly re-bound
                     target_context=dataset.target_context.model_copy(deep=True),
@@ -1163,7 +1163,7 @@ class DataSourceNode(Node):
 
         dataset = SherpaDataset(
             X=spectra,
-            spectral_axis=SpectralAxis(values=x_values, title=x_title, units=x_units),
+            feature_axis=SpectralAxis(values=x_values, title=x_title, units=x_units),
             sample_axis=SampleAxis(values=np.arange(spectra.shape[0]), title="Sample"),
             domain=DomainContext(
                 technique=catalog.get("technique"),
@@ -1886,7 +1886,7 @@ class DataSourceNode(Node):
         if not HAS_SCP:
             return SherpaDataset(
                 X=spectra,
-                spectral_axis=SpectralAxis(values=wavenumbers, title="Wavenumber", units="cm^-1"),
+                feature_axis=SpectralAxis(values=wavenumbers, title="Wavenumber", units="cm^-1"),
                 sample_axis=SampleAxis(values=np.arange(n_samples), title="Sample"),
                 domain=DomainContext(
                     technique="IR",
@@ -2661,7 +2661,7 @@ class SyntheticCurveNode(Node):
 
         dataset = SherpaDataset(
             X=curve.reshape(1, -1),
-            spectral_axis=SpectralAxis(values=t * n_points, title="Time", units="s"),
+            feature_axis=SpectralAxis(values=t * n_points, title="Time", units="s"),
             backend="numpy",
             title=f"Concentration ({curve_type})",
             units="mol/L",

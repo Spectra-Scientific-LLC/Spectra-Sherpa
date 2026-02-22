@@ -205,6 +205,57 @@ class LLMConfig(BaseModel):
         return self.api_key is not None and len(self.api_key) > 0
 
 
+class DemoContract(BaseModel):
+    """Configuration for demo site profile (used by spectra-server).
+
+    Defines quotas, featured content, and restrictions for demo mode.
+    In OSS mode, these are unused (site_profile=None). In demo mode,
+    spectra-server injects appropriate values for the demo deployment.
+    """
+
+    disabled_capabilities: list[str] = Field(
+        default_factory=lambda: ["data_upload", "project_import", "llm_config", "api_key_management"],
+        description="Capabilities disabled in demo mode"
+    )
+    max_executions_per_session: int = Field(
+        default=25,
+        description="Maximum workflow executions per demo session"
+    )
+    max_sherpa_interactions: int = Field(
+        default=20,
+        description="Maximum Sherpa AI interactions per demo session"
+    )
+    session_expiry_hours: int = Field(
+        default=24,
+        description="Demo session expiry time in hours"
+    )
+    featured_datasets: list[str] = Field(
+        default_factory=lambda: ["diesel_nir", "corn_m5", "nir_shootout_cal1", "nir_shootout_test1", "metal_etch_oes"],
+        description="Featured datasets shown in demo mode"
+    )
+    featured_templates: list[str] = Field(
+        default_factory=lambda: [
+            "pca", "pls_regression", "project1", "ir_opus_analysis",
+            "preprocessing", "peak_detection", "exploratory_analysis",
+            "classification", "anomaly_detection", "compare_models",
+            "calibration_transfer", "data_fusion"
+        ],
+        description="Featured workflow templates in demo mode"
+    )
+    available_plans: list[str] = Field(
+        default_factory=list,
+        description="Available subscription plans (for upgrade UI)"
+    )
+    upgrade_url: str = Field(
+        default="",
+        description="URL to redirect for plan upgrades"
+    )
+    upgrade_message: str = Field(
+        default="Upgrade to unlock unlimited executions and full features",
+        description="Message shown when demo limits are reached"
+    )
+
+
 class ExecutionConfig(BaseModel):
     """Execution and compute settings"""
 
@@ -213,57 +264,36 @@ class ExecutionConfig(BaseModel):
     auto_offload_threshold: int = 10000  # Dataset size threshold for GPU offload
 
 
-class DemoContract(BaseModel):
-    """Configuration for the demo experience profile."""
-
-    featured_datasets: list[str] = [
-        "diesel_nir",
-        "corn_m5",
-        "nir_shootout_cal1",
-        "nir_shootout_test1",
-        "metal_etch_oes",
-    ]
-    featured_templates: list[str] = [
-        "pca",
-        "project1",
-        "pls_regression",
-        "ir_opus_analysis",
-        "preprocessing",
-    ]
-
-    max_executions_per_session: int = 25
-    max_sherpa_interactions: int = 20
-
-    disabled_capabilities: list[str] = [
-        "data_upload",
-        "project_import",
-        "llm_config",
-        "api_key_management",
-    ]
-
-    upgrade_url: str = os.getenv("UPGRADE_URL", "")
-    upgrade_message: str = os.getenv("UPGRADE_MESSAGE", "")
-    available_plans: list[str] = []
-
-
 class AppConfig(BaseModel):
-    """Main application configuration for multi-mode operation"""
+    """Main application configuration for local, hybrid, and enterprise modes."""
 
     mode: Literal["local", "hybrid", "enterprise"] = Field(
-        default="local", description="Application mode: local, hybrid, or enterprise (cloud/SaaS)."
+        default="local", description="Application mode: local, hybrid, or enterprise"
     )
     egress_enabled: bool = Field(
         default=False, description="Enable network egress (external API calls). Defaults to False in local mode."
     )
     api_base_url: str = Field(default="http://localhost:8000", description="Backend API base URL")
-    cloud_compute_url: Optional[str] = Field(
-        default=os.getenv("CLOUD_COMPUTE_URL"), description="URL for offloading compute in hybrid mode"
+
+    # Integration fields for spectra-server (enterprise/hybrid/demo)
+    # These are None in OSS mode but can be injected by spectra-server
+    site_profile: Optional[str] = Field(
+        default=None, description="Site profile (e.g., 'demo', 'internal') - used by spectra-server"
     )
-    cloud_api_key: Optional[str] = Field(
-        default=os.getenv("CLOUD_API_KEY"), description="API Key for the remote cloud instance"
+    demo_contract: DemoContract = Field(
+        default_factory=DemoContract, description="Demo mode configuration - used by spectra-server"
+    )
+    rate_limit_executions: Optional[int] = Field(
+        default=None,
+        description="Max executions per hour per user (enterprise/hybrid mode) - used by spectra-server"
+    )
+    session_expiry_hours: Optional[int] = Field(
+        default=None,
+        description="Session expiry in hours (enterprise/hybrid mode) - used by spectra-server"
     )
     spectrasherpa_log_url: Optional[str] = Field(
-        default=os.getenv("SPECTRASHERPA_LOG_URL"), description="URL for remote audit logging (Hybrid mode)"
+        default=None,
+        description="Remote audit log URL for hybrid/enterprise mode - used by spectra-server"
     )
 
     # LLM configurations
@@ -272,19 +302,34 @@ class AppConfig(BaseModel):
     # Execution settings
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
 
-    # Rate limiting (hybrid + enterprise modes)
-    rate_limit_executions: Optional[int] = None
-    session_expiry_hours: Optional[int] = None
-
-    # Marketing / UI label (independent of runtime mode)
-    site_profile: Optional[Literal["demo", "production", "internal"]] = None
-
-    # Demo experience contract (active when site_profile == "demo")
-    demo_contract: DemoContract = Field(default_factory=DemoContract)
-
     @classmethod
     def from_env(cls) -> "AppConfig":
-        """Load configuration from environment variables using registry defaults"""
+        """Load configuration from environment variables using registry defaults.
+
+        Reads APP_MODE to determine operational mode (local, hybrid, enterprise).
+        APP_MODE=demo is accepted as a deprecated alias for enterprise.
+        """
+        import logging
+        import warnings
+
+        logger = logging.getLogger(__name__)
+
+        # Determine app mode from environment
+        raw_mode = os.getenv("APP_MODE", "local").strip().lower()
+        if raw_mode == "demo":
+            warnings.warn(
+                "APP_MODE=demo is deprecated. Use APP_MODE=enterprise with "
+                "SITE_PROFILE=demo instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            raw_mode = "enterprise"
+        if raw_mode not in ("local", "hybrid", "enterprise"):
+            logger.warning("Unknown APP_MODE=%r — falling back to 'local'", raw_mode)
+            raw_mode = "local"
+
+        mode = raw_mode
+
         # Import registry to get provider metadata
         try:
             from spectra_sherpa.app.core.llm_registry import PROVIDERS
@@ -325,67 +370,43 @@ class AppConfig(BaseModel):
                 base_url=provider_meta.get("base_url"),
             )
 
-        # Determine egress enabled default based on mode
-        # Local mode: egress disabled by default (privacy-first)
-        # Hybrid/Enterprise: egress enabled by default (cloud features require it)
-        import logging
+        # Egress: disabled by default in local (privacy-first), enabled in hybrid/enterprise
+        egress_enabled = _get_bool("EGRESS_ENABLED", mode != "local")
 
-        _logger = logging.getLogger(__name__)
+        # Enterprise/hybrid integration fields
+        site_profile = os.getenv("SITE_PROFILE", "").strip() or None
+        rate_limit_raw = _get_int("RATE_LIMIT_EXECUTIONS", 0) if mode != "local" else 0
+        rate_limit_executions = rate_limit_raw if rate_limit_raw else None
+        session_expiry_raw = _get_int("SESSION_EXPIRY_HOURS", 0) if mode != "local" else 0
+        session_expiry_hours = session_expiry_raw if session_expiry_raw else None
 
-        raw_mode = os.getenv("APP_MODE", "local")
-        if raw_mode == "demo":
-            _logger.warning(
-                "APP_MODE=demo is no longer valid. Use APP_MODE=enterprise " "with SITE_PROFILE=demo instead."
-            )
-            app_mode = "enterprise"  # graceful fallback for one release cycle
-        else:
-            app_mode = raw_mode
-
-        egress_default = app_mode != "local"
-        egress_enabled = _get_bool("EGRESS_ENABLED", egress_default)
-
-        # Resolve site profile (defaults to "production" for enterprise mode).
-        # Demo profile must be explicitly opted-in via SITE_PROFILE=demo.
-        site_profile_raw = os.getenv("SITE_PROFILE")
-        if site_profile_raw and site_profile_raw in ("demo", "production", "internal"):
-            site_profile = site_profile_raw
-        elif app_mode == "enterprise":
-            site_profile = "production"
-        else:
-            site_profile = None
-
-        # Build demo contract from env overrides
-        demo_contract = DemoContract(
-            max_executions_per_session=_get_int("DEMO_MAX_EXECUTIONS", 25),
-            max_sherpa_interactions=_get_int("DEMO_MAX_SHERPA_INTERACTIONS", 20),
-            upgrade_url=os.getenv("UPGRADE_URL", ""),
-        )
+        # Demo contract overrides (only when SITE_PROFILE=demo)
+        demo_contract_kwargs: dict = {}
+        if site_profile == "demo":
+            demo_max_exec = os.getenv("DEMO_MAX_EXECUTIONS")
+            if demo_max_exec:
+                demo_contract_kwargs["max_executions_per_session"] = int(demo_max_exec)
+            demo_max_sherpa = os.getenv("DEMO_MAX_SHERPA_INTERACTIONS")
+            if demo_max_sherpa:
+                demo_contract_kwargs["max_sherpa_interactions"] = int(demo_max_sherpa)
+            upgrade_url = os.getenv("UPGRADE_URL")
+            if upgrade_url:
+                demo_contract_kwargs["upgrade_url"] = upgrade_url
 
         return cls(
-            mode=app_mode,
+            mode=mode,
             egress_enabled=egress_enabled,
             api_base_url=os.getenv("API_BASE_URL", "http://localhost:8000"),
+            site_profile=site_profile,
+            rate_limit_executions=rate_limit_executions,
+            session_expiry_hours=session_expiry_hours,
+            demo_contract=DemoContract(**demo_contract_kwargs),
             llms=llm_configs,
             execution=ExecutionConfig(
-                mode=os.getenv("EXECUTION_MODE", "local"),
+                mode="hybrid" if mode != "local" else "local",
                 gradient_api_key=os.getenv("GRADIENT_API_KEY"),
                 auto_offload_threshold=int(os.getenv("AUTO_OFFLOAD_THRESHOLD", "10000")),
             ),
-            # Enterprise mode: default to 100 executions/hour and 24-hour sessions
-            # unless explicitly overridden.  In other modes these stay None
-            # (disabled) unless the operator sets the env var.
-            rate_limit_executions=(
-                _get_int("RATE_LIMIT_EXECUTIONS", 100)
-                if (os.getenv("RATE_LIMIT_EXECUTIONS") or app_mode == "enterprise")
-                else None
-            ),
-            session_expiry_hours=(
-                _get_int("SESSION_EXPIRY_HOURS", 24)
-                if (os.getenv("SESSION_EXPIRY_HOURS") or app_mode == "enterprise")
-                else None
-            ),
-            site_profile=site_profile,
-            demo_contract=demo_contract,
         )
 
     @classmethod
@@ -407,77 +428,73 @@ class AppConfig(BaseModel):
         """Return client-safe configuration (no secrets)"""
         has_llm = len(self.get_configured_llms()) > 0
 
-        # Pull subscription-derived feature flags from the advisor cache.
-        # These are populated during hybrid activation / startup.
-        sub_features: dict = {}
-        sub_plan: str = "none"
+        # Registration requires the full auth module + mode policy
+        from spectra_sherpa.app.core.mode_policy import allows_registration
+        registration_enabled = allows_registration()
+
+        # Enterprise password gating — only in enterprise mode with password set
+        registration_requires_code = False
+        if self.mode == "enterprise":
+            enterprise_pw = os.getenv("ENTERPRISE_PASSWORD", "").strip()
+            registration_requires_code = bool(enterprise_pw)
+
+        # Sherpa Advisor: subscription-driven (not key-presence)
+        sherpa_advisor = False
         try:
             from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
-
             advisor = get_sherpa_advisor()
-            sub_features = advisor._subscription_features or {}
-            sub_plan = advisor._subscription_plan
+            sherpa_advisor = bool(
+                getattr(advisor, "_subscription_features", {}).get("sherpa_sync", False)
+            )
         except Exception:
             pass
 
-        # Registration requires the full auth module (spectra-server) + mode policy.
-        try:
-            from spectrasherpa_server.routes import auth as _auth_mod  # noqa: F401
+        # Limits: only present when rate_limit_executions or session_expiry_hours are set
+        if self.rate_limit_executions or self.session_expiry_hours:
+            limits: dict | None = {"maxFileSizeMB": settings.max_file_size_mb}
+            if self.rate_limit_executions:
+                limits["maxExecutions"] = self.rate_limit_executions
+            if self.session_expiry_hours:
+                limits["sessionExpiryHours"] = self.session_expiry_hours
+        else:
+            limits = None
 
-            _has_register = hasattr(_auth_mod, "router")
-        except ImportError:
-            _has_register = False
-        from spectra_sherpa.app.core.mode_policy import allows_registration
-
-        registration_enabled = _has_register and allows_registration()
-
-        # Registration gating: only relevant in enterprise mode where
-        # spectra-server actually enforces the password check.
-        registration_requires_code = self.mode == "enterprise" and bool(os.getenv("ENTERPRISE_PASSWORD", "").strip())
-
-        return {
+        result = {
             "mode": self.mode,
             "egressEnabled": self.egress_enabled,
             "apiBaseUrl": self.api_base_url,
-            "siteProfile": self.site_profile,
             "registrationEnabled": registration_enabled,
             "registrationRequiresCode": registration_requires_code,
+            "siteProfile": self.site_profile,
             "features": {
-                "apiTokenSettings": self.mode in ["local", "hybrid"],
-                "cloudOffload": self.execution.mode == "hybrid",
+                "apiTokenSettings": self.mode in ("local", "hybrid"),
+                "cloudOffload": self.execution.gradient_api_key is not None,
                 "chatAssistant": has_llm,
                 "nistDownloads": self.egress_enabled,
-                "sherpaAdvisor": bool(sub_features.get("sherpa_sync", False)),
-                "pluginSystem": True,  # Always available (local discovery)
-                # Subscription-gated Sherpa capabilities
-                "sherpaPeakId": sub_features.get("identify_peaks", False),
-                "sherpaCodeGen": sub_features.get("generate_code", False),
-                "sherpaWriteReport": sub_features.get("write_report", False),
-                "sherpaAgenticTools": sub_features.get("agentic_tools", False),
-                "sherpaFullContext": sub_features.get("full_dag_context", False),
+                "sherpaAdvisor": sherpa_advisor,
+                "pluginSystem": True,
             },
-            "subscription": (
-                {
-                    "plan": sub_plan,
-                }
-                if sub_features
-                else None
-            ),
             "llms": {
                 name: {"provider": llm.provider, "model": llm.model, "enabled": llm.is_configured}
                 for name, llm in self.llms.items()
             },
-            "limits": (
-                {
-                    "maxExecutions": self.rate_limit_executions,
-                    "maxFileSizeMB": settings.max_file_size_mb,
-                    "sessionExpiryHours": self.session_expiry_hours,
-                }
-                if self.mode == "enterprise"
-                else None
-            ),
-            "demo": self.demo_contract.model_dump() if self.site_profile == "demo" else None,
+            "limits": limits,
         }
+
+        # Add demo contract info if in demo profile
+        if self.site_profile == "demo":
+            result["demo"] = {
+                "maxExecutionsPerSession": self.demo_contract.max_executions_per_session,
+                "maxSherpaInteractions": self.demo_contract.max_sherpa_interactions,
+                "sessionExpiryHours": self.demo_contract.session_expiry_hours,
+                "featuredDatasets": self.demo_contract.featured_datasets,
+                "availablePlans": self.demo_contract.available_plans,
+                "upgradeUrl": self.demo_contract.upgrade_url,
+            }
+        else:
+            result["demo"] = None
+
+        return result
 
 
 # Global app config instance

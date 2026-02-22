@@ -356,6 +356,28 @@ class DAGExecutor:
         # Track which nodes are "dirty" (need re-execution)
         self._dirty_nodes: Set[str] = set()
 
+    def __getstate__(self) -> Dict[str, Any]:
+        """Exclude unpicklable ProcessPoolExecutor from serialization.
+
+        Used by copy.deepcopy() in the headless prediction API to clone
+        executors for concurrent request isolation.
+        """
+        state = self.__dict__.copy()
+        # Exclude the unpicklable process pool (contains thread locks, file descriptors)
+        state['_process_pool'] = None
+        return state
+
+    def __setstate__(self, state: Dict[str, Any]) -> None:
+        """Restore executor state, reconnecting to global process pool.
+
+        The process pool is restored from the global _default_process_pool
+        set at app startup, ensuring all cloned executors share the same
+        worker pool.
+        """
+        self.__dict__.update(state)
+        # Restore reference to global process pool
+        self._process_pool = _default_process_pool
+
     def _compute_param_hash(self, node_id: str) -> str:
         """
         Compute a deterministic hash of node parameters.

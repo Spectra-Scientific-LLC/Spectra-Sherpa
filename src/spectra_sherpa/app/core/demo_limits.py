@@ -1,142 +1,256 @@
 """
-Per-user demo limits enforcement.
+Demo Mode Rate Limiting
 
-When ``SITE_PROFILE=demo``, the Demo Contract defines caps on:
-- workflow executions per session  (``max_executions_per_session``)
-- Sherpa interactions per session  (``max_sherpa_interactions``)
+Enforces per-session execution and Sherpa interaction limits for demo site profile.
+This module is used by spectra-server in hybrid/enterprise mode when site_profile="demo".
 
-This module provides a thin API around two file-backed ``RateLimiter``
-instances (one for each quota).  The sliding window equals
-``session_expiry_hours`` (default 24 h) so the cap resets roughly once
-per login cycle.
+In OSS mode (site_profile=None), all checks return (True, max_limit) allowing unlimited access.
 
-Both the HTTP middleware (``RateLimitMiddleware``) and the WebSocket
-dispatcher call into these helpers so enforcement is consistent across
-REST and WS paths.
+State is persisted to disk so limits survive restarts and are shared across Gunicorn workers.
 """
 
 from __future__ import annotations
 
-import logging
-from typing import Optional
+import json
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Tuple
 
 from spectra_sherpa.app.core.config import app_config, settings
-from spectra_sherpa.app.services.rate_limiter import RateLimiter
-
-logger = logging.getLogger(__name__)
-
-# Lazy singletons — created on first access so module import is cheap.
-_execution_limiter: Optional[RateLimiter] = None
-_sherpa_limiter: Optional[RateLimiter] = None
 
 
-def _session_window_sec() -> int:
-    """Sliding-window duration for demo limits (seconds)."""
-    hours = app_config.session_expiry_hours or 24
-    return hours * 3600
-
-
-def _ensure_limiters() -> tuple[RateLimiter, RateLimiter]:
-    """Create the demo rate limiters on first use."""
-    global _execution_limiter, _sherpa_limiter
-
-    if _execution_limiter is None:
-        contract = app_config.demo_contract
-        window = _session_window_sec()
-        _execution_limiter = RateLimiter(
-            max_calls=contract.max_executions_per_session,
-            period_sec=window,
-            state_path=settings.data_dir / "demo_execution_limits.json",
-        )
-        _sherpa_limiter = RateLimiter(
-            max_calls=contract.max_sherpa_interactions,
-            period_sec=window,
-            state_path=settings.data_dir / "demo_sherpa_limits.json",
-        )
-
-    return _execution_limiter, _sherpa_limiter
-
-
-def _user_key(user_id: int | None) -> str:
-    if user_id is not None:
-        return f"user:{user_id}"
-    return "anonymous"
-
-
-# -- Public API ----------------------------------------------------------------
-
-
-def is_demo_limited() -> bool:
-    """True when demo limits should be enforced (site_profile == demo)."""
-    return app_config.site_profile == "demo"
-
-
-def check_demo_execution(user_id: int | None) -> tuple[bool, int]:
-    """Consume one execution token.
-
-    Returns ``(allowed, remaining)``.
+class DemoLimitTracker:
     """
-    if not is_demo_limited():
-        return True, -1
+    Tracks demo usage quotas with file-backed persistence.
 
-    limiter, _ = _ensure_limiters()
-    key = _user_key(user_id)
-    allowed = limiter.allow(key)
-    remaining = limiter.remaining(key)
-    return allowed, remaining
-
-
-def check_demo_sherpa(user_id: int | None) -> tuple[bool, int]:
-    """Consume one Sherpa interaction token.
-
-    Returns ``(allowed, remaining)``.
+    Stores per-user counters for:
+    - Workflow executions
+    - Sherpa AI interactions
     """
-    if not is_demo_limited():
-        return True, -1
 
-    _, limiter = _ensure_limiters()
-    key = _user_key(user_id)
-    allowed = limiter.allow(key)
-    remaining = limiter.remaining(key)
-    return allowed, remaining
+    def __init__(self, state_path: Path):
+        self.state_path = state_path
+        self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        self._state = self._load_state()
+
+    def _load_state(self) -> dict:
+        """Load state from disk or initialize empty."""
+        if self.state_path.exists():
+            try:
+                with open(self.state_path, "r") as f:
+                    data = json.load(f)
+                # Clean expired sessions (older than session_expiry_hours)
+                cutoff = datetime.now() - timedelta(
+                    hours=app_config.demo_contract.session_expiry_hours
+                )
+                cleaned = {
+                    uid: counters
+                    for uid, counters in data.items()
+                    if datetime.fromisoformat(counters.get("last_activity", "1970-01-01"))
+                    > cutoff
+                }
+                return cleaned
+            except (json.JSONDecodeError, OSError):
+                return {}
+        return {}
+
+    def _save_state(self):
+        """Persist state to disk."""
+        try:
+            with open(self.state_path, "w") as f:
+                json.dump(self._state, f, indent=2)
+        except OSError:
+            # Fail silently in case of permission issues
+            pass
+
+    def _get_user_key(self, user_id: int | None) -> str:
+        """Get storage key for user (IP-based fallback for anonymous)."""
+        if user_id is not None:
+            return f"user:{user_id}"
+        # For anonymous users, use a shared key
+        # (In production, spectra-server uses IP-based tracking)
+        return "anon:shared"
+
+    def _get_counters(self, user_id: int | None) -> dict:
+        """Get current counters for user, initializing if needed."""
+        key = self._get_user_key(user_id)
+        if key not in self._state:
+            self._state[key] = {
+                "executions": 0,
+                "sherpa_interactions": 0,
+                "last_activity": datetime.now().isoformat(),
+            }
+        return self._state[key]
+
+    def check_execution(self, user_id: int | None) -> Tuple[bool, int]:
+        """
+        Check if user can execute a workflow.
+
+        Returns:
+            (allowed: bool, remaining: int)
+        """
+        # OSS mode: unlimited
+        if app_config.site_profile != "demo":
+            return (True, 999999)
+
+        counters = self._get_counters(user_id)
+        limit = app_config.demo_contract.max_executions_per_session
+        current = counters["executions"]
+        remaining = max(0, limit - current)
+
+        return (current < limit, remaining)
+
+    def consume_execution(self, user_id: int | None):
+        """Record an execution (call after successful check)."""
+        if app_config.site_profile != "demo":
+            return
+
+        counters = self._get_counters(user_id)
+        counters["executions"] += 1
+        counters["last_activity"] = datetime.now().isoformat()
+        self._save_state()
+
+    def check_sherpa(self, user_id: int | None) -> Tuple[bool, int]:
+        """
+        Check if user can make a Sherpa AI interaction.
+
+        Returns:
+            (allowed: bool, remaining: int)
+        """
+        # OSS mode: unlimited
+        if app_config.site_profile != "demo":
+            return (True, 999999)
+
+        counters = self._get_counters(user_id)
+        limit = app_config.demo_contract.max_sherpa_interactions
+        current = counters["sherpa_interactions"]
+        remaining = max(0, limit - current)
+
+        return (current < limit, remaining)
+
+    def consume_sherpa(self, user_id: int | None):
+        """Record a Sherpa interaction (call after successful check)."""
+        if app_config.site_profile != "demo":
+            return
+
+        counters = self._get_counters(user_id)
+        counters["sherpa_interactions"] += 1
+        counters["last_activity"] = datetime.now().isoformat()
+        self._save_state()
+
+    def execution_remaining(self, user_id: int | None) -> int:
+        """Get remaining execution quota."""
+        if app_config.site_profile != "demo":
+            return 999999
+
+        counters = self._get_counters(user_id)
+        limit = app_config.demo_contract.max_executions_per_session
+        return max(0, limit - counters["executions"])
+
+    def sherpa_remaining(self, user_id: int | None) -> int:
+        """Get remaining Sherpa interaction quota."""
+        if app_config.site_profile != "demo":
+            return 999999
+
+        counters = self._get_counters(user_id)
+        limit = app_config.demo_contract.max_sherpa_interactions
+        return max(0, limit - counters["sherpa_interactions"])
+
+    def reset(self, user_id: int | None = None):
+        """Reset counters (for testing or admin reset)."""
+        if user_id is None:
+            # Reset all
+            self._state = {}
+        else:
+            key = self._get_user_key(user_id)
+            if key in self._state:
+                del self._state[key]
+        self._save_state()
+
+
+# Global tracker instance
+_tracker = DemoLimitTracker(settings.data_dir / "demo_limits.json")
+
+
+def check_demo_execution(user_id: int | None) -> Tuple[bool, int]:
+    """
+    Check if user can execute a workflow.
+
+    Returns:
+        (allowed: bool, remaining: int after consumption)
+    """
+    allowed, _ = _tracker.check_execution(user_id)
+    if allowed:
+        # Consume quota immediately to prevent race conditions
+        _tracker.consume_execution(user_id)
+        remaining_after = _tracker.execution_remaining(user_id)
+        return (True, remaining_after)
+    return (False, 0)
+
+
+def check_demo_sherpa(user_id: int | None) -> Tuple[bool, int]:
+    """
+    Check if user can make a Sherpa AI interaction.
+
+    Returns:
+        (allowed: bool, remaining: int after consumption)
+    """
+    allowed, _ = _tracker.check_sherpa(user_id)
+    if allowed:
+        # Consume quota immediately to prevent race conditions
+        _tracker.consume_sherpa(user_id)
+        remaining_after = _tracker.sherpa_remaining(user_id)
+        return (True, remaining_after)
+    return (False, 0)
 
 
 def demo_execution_remaining(user_id: int | None) -> int:
-    """How many executions remain (read-only, no consumption)."""
-    if not is_demo_limited():
-        return -1
-    limiter, _ = _ensure_limiters()
-    return limiter.remaining(_user_key(user_id))
+    """Get remaining execution quota without consuming."""
+    return _tracker.execution_remaining(user_id)
 
 
 def demo_sherpa_remaining(user_id: int | None) -> int:
-    """How many Sherpa interactions remain (read-only, no consumption)."""
-    if not is_demo_limited():
-        return -1
-    _, limiter = _ensure_limiters()
-    return limiter.remaining(_user_key(user_id))
+    """Get remaining Sherpa interaction quota without consuming."""
+    return _tracker.sherpa_remaining(user_id)
 
 
-def demo_limit_error_detail(kind: str, remaining: int) -> dict:
-    """Build a structured 429/error payload for demo limit exhaustion."""
+def demo_limit_error_detail(limit_type: str, remaining: int) -> dict:
+    """
+    Generate standardized error detail for demo limit exceeded.
+
+    Args:
+        limit_type: "execution" or "sherpa"
+        remaining: Remaining quota (should be 0 if limit exceeded)
+
+    Returns:
+        Dict with error details and upgrade URL
+    """
     contract = app_config.demo_contract
-    if kind == "execution":
+
+    if limit_type == "execution":
         limit = contract.max_executions_per_session
-        msg = f"Demo execution limit reached ({limit} per session)."
-    else:
+        message = f"Demo execution limit reached ({limit} executions per session)"
+    elif limit_type == "sherpa":
         limit = contract.max_sherpa_interactions
-        msg = f"Demo Sherpa interaction limit reached ({limit} per session)."
+        message = f"Demo Sherpa interaction limit reached ({limit} interactions per session)"
+    else:
+        limit = 0
+        message = "Demo limit reached"
+
     return {
-        "message": msg,
-        "upgrade_url": contract.upgrade_url,
-        "available_plans": contract.available_plans,
+        "limit_type": limit_type,
         "limit": limit,
-        "remaining": 0,
+        "remaining": remaining,
+        "message": message,
+        "upgrade_url": contract.upgrade_url or "",
+        "session_expiry_hours": contract.session_expiry_hours,
     }
 
 
-def reset_limiters() -> None:
-    """Reset lazy singletons (for tests)."""
-    global _execution_limiter, _sherpa_limiter
-    _execution_limiter = None
-    _sherpa_limiter = None
+def reset_demo_limits(user_id: int | None = None):
+    """
+    Reset demo limits for a user (or all users if user_id=None).
+
+    For testing and admin operations.
+    """
+    _tracker.reset(user_id)

@@ -986,17 +986,25 @@ class ClipRangeNode(Node):
             if max_wn is not None:
                 lines.append(f"{indent}    _mask &= _x_vals <= {max_wn}")
             lines.append(f"{indent}    _new_data = np.array({inp}.data)[:, _mask]")
-            lines.append(
-                f"{indent}    results['{self.node_id}'] = _Result("
-                f"_new_data, x=type('Ax', (), {{'data': _x_vals[_mask]}}))"
-            )
+            if use_scp:
+                lines.append(f"{indent}    results['{self.node_id}'] = scp.NDDataset(_new_data)")
+                lines.append(f"{indent}    if hasattr({inp}, 'x') and {inp}.x is not None:")
+                lines.append(f"{indent}        results['{self.node_id}'].x = {inp}.x[_mask]")
+            else:
+                lines.append(
+                    f"{indent}    results['{self.node_id}'] = _Result("
+                    f"_new_data, x=type('Ax', (), {{'data': _x_vals[_mask]}}))"
+                )
             lines.append(f"{indent}else:")
             # No axis info — integer column slicing fallback
             lo = int(min_wn) if min_wn is not None else 0
             hi = int(max_wn) if max_wn is not None else None
             hi_str = str(hi) if hi is not None else ""
             lines.append(f"{indent}    _new_data = np.array({inp}.data)[:, {lo}:{hi_str}]")
-            lines.append(f"{indent}    results['{self.node_id}'] = _Result(_new_data)")
+            if use_scp:
+                lines.append(f"{indent}    results['{self.node_id}'] = scp.NDDataset(_new_data)")
+            else:
+                lines.append(f"{indent}    results['{self.node_id}'] = _Result(_new_data)")
         return lines
 
     async def execute(self, input_data: Any) -> Any:

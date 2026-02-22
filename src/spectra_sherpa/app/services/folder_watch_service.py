@@ -253,6 +253,22 @@ class FolderWatchService:
                     # Mark file as processed (keyed by full path for uniqueness)
                     processed[str(file_path)] = datetime.now(timezone.utc).isoformat()
 
+                    # Commit after each file to prevent transaction bloat and enable
+                    # incremental progress (parity with batch_predict.py behavior).
+                    # Wrap in try/except so a single poison-pill file (e.g. name
+                    # exceeds DB column limit) cannot kill the entire watch loop.
+                    try:
+                        await session.commit()
+                    except Exception as commit_exc:
+                        logger.error(
+                            "Watch '%s': DB commit failed for %s: %s — rolling back",
+                            watch.name,
+                            file_path.name,
+                            commit_exc,
+                        )
+                        await session.rollback()
+                        error_count += 1
+
                 # Update run aggregates
                 run.status = "completed" if error_count == 0 else "partial"
                 run.results_summary = {
@@ -279,8 +295,13 @@ class FolderWatchService:
 
             except Exception as exc:
                 logger.exception("Watch '%s': unhandled error", watch.name)
+                # Roll back the failed transaction before attempting error recovery
                 try:
-                    # Try to record the error on the watch
+                    await session.rollback()
+                except Exception:
+                    pass
+                try:
+                    # Try to record the error on the watch in a fresh session
                     async with async_session() as err_session:
                         w = await err_session.get(FolderWatch, watch.id)
                         if w:

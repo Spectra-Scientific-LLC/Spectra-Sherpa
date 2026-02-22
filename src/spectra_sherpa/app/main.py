@@ -37,7 +37,6 @@ from spectra_sherpa.app.core.startup import (
     ensure_spectrochempy_data,
     ensure_spectrochempy_testdata,
     ensure_workflow_templates,
-    link_hybrid_identity,
     reconcile_stale_jobs,
     validate_concurrency_settings,
     validate_security_settings,
@@ -203,8 +202,6 @@ def _make_lifespan(
                 await ensure_default_user()
                 logger.info("  → ensure_egress_defaults")
                 await ensure_egress_defaults()
-                logger.info("  → link_hybrid_identity")
-                await link_hybrid_identity()
                 logger.info("  → reconcile_stale_jobs")
                 await reconcile_stale_jobs()
                 logger.info("  → ensure_spectrochempy_data")
@@ -315,16 +312,6 @@ def _make_lifespan(
         from spectra_sherpa.app.services.network_health import stop_network_health_service
 
         await stop_network_health_service()
-
-        # Close SpectraSherpa service
-        from spectra_sherpa.app.services.spectrasherpa import close_spectrasherpa_service
-
-        await close_spectrasherpa_service()
-
-        # Close Sherpa advisor
-        from spectra_sherpa.app.services.sherpa_advisor import close_sherpa_advisor
-
-        await close_sherpa_advisor()
 
     return lifespan
 

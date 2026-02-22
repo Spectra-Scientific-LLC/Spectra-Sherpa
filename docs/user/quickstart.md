@@ -149,11 +149,9 @@ Configure your preferred LLM provider in **Settings > API Keys**. Any OpenAI-com
 
 ---
 
-## 7. Sherpa AI Advisor (Subscription)
+## 7. Enterprise Features
 
-The Sherpa AI Advisor provides domain-expert guidance for spectroscopy workflows. It is available as a subscription service at [spectrascientific.ai](https://spectrascientific.ai).
-
-To connect, go to **Settings > Integrations** and enter your API key. Your spectral data stays local — only workflow metadata is sent when you use advisor features.
+Enterprise features including advanced analytics and commercial support are available via licensing. Contact Spectra Scientific LLC for more information.
 
 ---
 

@@ -341,7 +341,7 @@ class EstimatorSpecNode(Node):
             from sklearn.preprocessing import StandardScaler
 
             do_scale = params.get(self.spec.scale_param, True)
-            scaler = StandardScaler(with_mean=True, with_std=bool(do_scale))
+            scaler = StandardScaler(with_mean=bool(do_scale), with_std=bool(do_scale))
             model = Pipeline([("scaler", scaler), ("estimator", estimator)])
         else:
             model = estimator
@@ -456,7 +456,7 @@ class EstimatorSpecNode(Node):
             do_scale = params.get(self.spec.scale_param, True)
             lines.append(f"{indent}from sklearn.pipeline import Pipeline")
             lines.append(f"{indent}from sklearn.preprocessing import StandardScaler")
-            lines.append(f"{indent}_scaler = StandardScaler(" f"with_mean=True, with_std={format_value(do_scale)})")
+            lines.append(f"{indent}_scaler = StandardScaler(" f"with_mean={format_value(do_scale)}, with_std={format_value(do_scale)})")
             lines.append(f"{indent}_est = {cls_name}({kwargs_str})")
             lines.append(f"{indent}model = Pipeline(" f"[('scaler', _scaler), ('estimator', _est)])")
         else:

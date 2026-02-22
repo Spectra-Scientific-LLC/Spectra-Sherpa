@@ -205,6 +205,9 @@ def main(argv: list[str] | None = None) -> None:
     os.environ.setdefault("OPENBLAS_NUM_THREADS", "4")
     os.environ.setdefault("MKL_NUM_THREADS", "4")
 
+    # Check for headless mode BEFORE browser launch to avoid unnecessary GUI on servers
+    is_headless = getattr(args, "command", None) == "serve-model"
+
     # Optional startup behavior: clear any process listening on the requested
     # port before starting uvicorn (configured via .env).
     if _env_bool("KILL_PORT_ON_START", False):
@@ -216,21 +219,25 @@ def main(argv: list[str] | None = None) -> None:
                 "Continuing startup. If the port is still occupied, " "uvicorn may fail to bind.",
             )
 
-    # Auto-open browser
-    url = f"http://{args.host}:{args.port}"
-    if not args.no_browser:
-        t = threading.Thread(target=_open_browser, args=(url,), daemon=True)
-        t.start()
-
-    print(f"Starting SpectraSherpa v{__version__}")
-    print(f"  -> {url}")
-    print("  Press Ctrl+C to stop.\n")
+    # Auto-open browser only for normal mode (not headless)
+    if not is_headless:
+        url = f"http://{args.host}:{args.port}"
+        if not args.no_browser:
+            t = threading.Thread(target=_open_browser, args=(url,), daemon=True)
+            t.start()
+        print(f"Starting SpectraSherpa v{__version__}")
+        print(f"  -> {url}")
+        print("  Press Ctrl+C to stop.\n")
+    else:
+        print(f"Starting SpectraSherpa Headless Prediction Server v{__version__}")
+        print(f"  Workflow ID: {args.workflow_id}")
+        print(f"  Listening on: http://{args.host}:{args.port}")
+        print("  Press Ctrl+C to stop.\n")
 
     import uvicorn
 
-    if getattr(args, "command", None) == "serve-model":
+    if is_headless:
         os.environ["HEADLESS_WORKFLOW_ID"] = str(args.workflow_id)
-        print(f"Starting SpectraSherpa Headless Prediction Server on {args.host}:{args.port}")
         uvicorn.run(
             "spectra_sherpa.app.api.headless_app:app",
             host=args.host,

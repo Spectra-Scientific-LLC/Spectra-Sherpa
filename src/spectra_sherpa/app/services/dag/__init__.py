@@ -21,7 +21,6 @@ from .node_base import (
 from .nodes import (  # noqa: F401
     blend,
     classification,
-    cloud,
     data,
     diagnostics,
     modeling,

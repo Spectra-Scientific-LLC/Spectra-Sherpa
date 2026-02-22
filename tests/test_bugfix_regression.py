@@ -34,7 +34,7 @@ class TestValidateFolderPath:
         """In local mode, any accessible path is allowed."""
         from spectra_sherpa.app.services.batch_predict import validate_folder_path
 
-        with patch("spectra_sherpa.app.core.mode_policy.is_local", return_value=True):
+        with patch("spectra_sherpa.app.core.mode_policy.is_enterprise", return_value=False):
             result = validate_folder_path(str(tmp_path))
             assert result == tmp_path.resolve()
 
@@ -49,7 +49,7 @@ class TestValidateFolderPath:
         data_dir.mkdir()
 
         with (
-            patch("spectra_sherpa.app.core.mode_policy.is_local", return_value=False),
+            patch("spectra_sherpa.app.core.mode_policy.is_enterprise", return_value=True),
             patch("spectra_sherpa.app.core.config.settings") as mock_settings,
         ):
             mock_settings.data_dir = data_dir
@@ -65,7 +65,7 @@ class TestValidateFolderPath:
         sub.mkdir(parents=True)
 
         with (
-            patch("spectra_sherpa.app.core.mode_policy.is_local", return_value=False),
+            patch("spectra_sherpa.app.core.mode_policy.is_enterprise", return_value=True),
             patch("spectra_sherpa.app.core.config.settings") as mock_settings,
         ):
             mock_settings.data_dir = data_dir
@@ -82,7 +82,7 @@ class TestValidateFolderPath:
         traversal_path = str(data_dir / ".." / ".." / "etc")
 
         with (
-            patch("spectra_sherpa.app.core.mode_policy.is_local", return_value=False),
+            patch("spectra_sherpa.app.core.mode_policy.is_enterprise", return_value=True),
             patch("spectra_sherpa.app.core.config.settings") as mock_settings,
         ):
             mock_settings.data_dir = data_dir
@@ -314,3 +314,33 @@ class TestFolderWatchDedupe:
         assert (
             "processed[file_path.name]" not in source
         ), "Processed files dict must NOT use file_path.name as key (collision risk)"
+
+
+# ---------------------------------------------------------------------------
+# 7. Poison Pill DB Transaction Loop Prevention
+# ---------------------------------------------------------------------------
+
+
+class TestPoisonPillTransactionLoop:
+    """batch_predict and folder_watch_service must catch session.commit() errors per-file."""
+
+    def test_batch_predict_catches_commit_errors(self):
+        """run_batch_prediction wraps session.commit() in try/except inside the loop."""
+        import inspect
+
+        from spectra_sherpa.app.services.batch_predict import run_batch_prediction
+
+        source = inspect.getsource(run_batch_prediction)
+        # Ensure we have a try block specifically for the commit
+        assert "try:\n            await session.commit()" in source or "try:\n                await session.commit()" in source
+        assert "await session.rollback()" in source
+
+    def test_folder_watch_catches_commit_errors(self):
+        """_process_watch wraps session.commit() in try/except inside the file loop."""
+        import inspect
+
+        from spectra_sherpa.app.services.folder_watch_service import FolderWatchService
+
+        source = inspect.getsource(FolderWatchService._process_watch)
+        assert "try:\n                        await session.commit()" in source
+        assert "await session.rollback()" in source

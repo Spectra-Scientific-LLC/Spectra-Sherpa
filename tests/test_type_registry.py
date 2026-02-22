@@ -65,7 +65,7 @@ class TestParseTypeRef:
 
 class TestRegistryLoading:
     def test_loads_all_types(self, registry: TypeRegistry):
-        assert len(registry) == 19
+        assert len(registry) == 22
 
     def test_is_loaded_flag(self, registry: TypeRegistry):
         assert registry.is_loaded is True
@@ -305,7 +305,7 @@ class TestApiJson:
 
     def test_all_types_included(self, registry: TypeRegistry):
         data = registry.to_api_json()
-        assert len(data["types"]) == 19
+        assert len(data["types"]) == 22
 
     def test_type_entry_shape(self, registry: TypeRegistry):
         data = registry.to_api_json()

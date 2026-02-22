@@ -75,9 +75,9 @@ class TestDemoContractConfig:
 
         result = app_config.to_client_safe()
         assert result["demo"] is not None
-        assert "featured_datasets" in result["demo"]
-        assert "disabled_capabilities" in result["demo"]
-        assert "upgrade_url" in result["demo"]
+        assert "featuredDatasets" in result["demo"]
+        assert "maxExecutionsPerSession" in result["demo"]
+        assert "upgradeUrl" in result["demo"]
 
     def test_demo_contract_absent_when_not_demo(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(

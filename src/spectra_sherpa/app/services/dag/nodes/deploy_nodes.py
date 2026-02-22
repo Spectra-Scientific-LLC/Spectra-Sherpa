@@ -82,8 +82,11 @@ class DeployInputNode(Node):
             f"{indent}# --- {self.node_id} (Deploy Input) ---",
             f"{indent}# The prediction server injects the '{stream_name}' payload here.",
             f"{indent}# For local testing, supply dummy data:",
-            f"{indent}results['{self.node_id}'] = _Result(np.zeros((1, 1)))  # Replace with actual data",
         ]
+        if use_scp:
+            lines.append(f"{indent}results['{self.node_id}'] = scp.NDDataset(np.zeros((1, 1)))  # Replace with actual data")
+        else:
+            lines.append(f"{indent}results['{self.node_id}'] = _Result(np.zeros((1, 1)))  # Replace with actual data")
         return lines
 
 

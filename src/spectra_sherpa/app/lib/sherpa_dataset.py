@@ -512,6 +512,77 @@ class DatasetManifest(BaseModel):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Helper Functions
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _validate_axis_length(
+    expected: int,
+    actual: int,
+    axis_type: str,
+    data_shape: tuple[int, ...],
+    axis_name: str = "axis",
+) -> None:
+    """Validate axis length with helpful error messages and fix suggestions.
+
+    Args:
+        expected: Expected axis length (from data dimension)
+        actual: Actual axis length (from axis object)
+        axis_type: Type of axis for context ("feature", "sample", etc.)
+        data_shape: Full data shape for transpose suggestions
+        axis_name: Name of the axis parameter (for error message)
+
+    Raises:
+        ValueError: If lengths don't match, with context-aware suggestions
+    """
+    if actual == expected:
+        return  # Lengths match, all good
+
+    # Build helpful error message with suggestions
+    msg_parts = [
+        f"❌ Axis dimension mismatch:",
+        f"   {axis_name} has {actual} points",
+        f"   But data expects {expected} {axis_type}s",
+        f"",
+        f"Data shape: {data_shape}",
+        f"{axis_name} length: {actual}",
+        f"",
+    ]
+
+    # Suggest transpose if dimensions are reversed
+    if axis_type == "feature" and len(data_shape) >= 2:
+        n_samples, n_features = data_shape[0], data_shape[1]
+        if actual == n_samples and expected == n_features:
+            msg_parts.extend([
+                f"💡 Suggestion: Your data may be transposed.",
+                f"   Try: X=X.T (transpose your data matrix)",
+                f"   This will change shape {data_shape} → ({n_features}, {n_samples})",
+                f"",
+            ])
+
+    # Suggest removing index columns for sample axis
+    if axis_type == "sample" and actual > 50 and expected < actual / 2:
+        msg_parts.extend([
+            f"💡 Suggestion: Do you have index/metadata columns in your data?",
+            f"   Remove non-numeric columns before creating dataset",
+            f"   Expected {expected} samples but axis has {actual} entries",
+            f"",
+        ])
+
+    # General debugging hints
+    msg_parts.extend([
+        f"📘 Debug checklist:",
+        f"   1. Check data.shape matches (n_samples, n_features)",
+        f"   2. Verify axis.length == appropriate dimension",
+        f"   3. For chromatography: data.shape = (n_samples, n_timepoints)",
+        f"   4. For spectroscopy: data.shape = (n_samples, n_wavenumbers)",
+        f"   5. For mass spec: data.shape = (n_samples, n_mz_points)",
+    ])
+
+    raise ValueError("\n".join(msg_parts))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # SherpaDataset
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -556,25 +627,57 @@ class SherpaDataset:
 
         # Handle feature axis (spectral_axis for backward compat, feature_axis for new workflows)
         if spectral_axis is not None and feature_axis is not None:
-            raise ValueError("Cannot specify both spectral_axis and feature_axis. Use feature_axis for new code.")
-
-        axis_to_use = feature_axis if feature_axis is not None else spectral_axis
+            # Both specified - use feature_axis and warn
+            import warnings
+            warnings.warn(
+                "Both spectral_axis and feature_axis specified. Using feature_axis. "
+                "spectral_axis is deprecated - use feature_axis for all axis types.",
+                DeprecationWarning,
+                stacklevel=2
+            )
+            axis_to_use = feature_axis
+        else:
+            axis_to_use = feature_axis if feature_axis is not None else spectral_axis
+            if spectral_axis is not None:
+                # Warn when using deprecated spectral_axis parameter
+                import warnings
+                warnings.warn(
+                    "spectral_axis parameter is deprecated. Use feature_axis instead for multi-domain support.",
+                    DeprecationWarning,
+                    stacklevel=2
+                )
 
         if axis_to_use is not None:
             if axis_to_use.length > 0 and axis_to_use.length != n_features:
-                raise ValueError(f"feature axis length ({axis_to_use.length}) != n_features ({n_features})")
+                _validate_axis_length(
+                    expected=n_features,
+                    actual=axis_to_use.length,
+                    axis_type="feature",
+                    data_shape=(n_samples, n_features),
+                    axis_name="feature_axis"
+                )
             axis_copy = axis_to_use.copy()
             axis_copy.bind_expected_length(n_features)
             self._axes[self._SPECTRAL_DIM] = axis_copy
 
         if sample_axis is not None:
             if sample_axis.length > 0 and sample_axis.length != n_samples:
-                raise ValueError(f"sample_axis length ({sample_axis.length}) != n_samples ({n_samples})")
+                _validate_axis_length(
+                    expected=n_samples,
+                    actual=sample_axis.length,
+                    axis_type="sample",
+                    data_shape=(n_samples, n_features),
+                    axis_name="sample_axis"
+                )
             if sample_axis.classes is not None and len(sample_axis.classes) != n_samples:
-                raise ValueError(f"sample_axis.classes length ({len(sample_axis.classes)}) != n_samples ({n_samples})")
+                raise ValueError(
+                    f"sample_axis.classes length ({len(sample_axis.classes)}) != n_samples ({n_samples}). "
+                    f"classes must have one entry per sample."
+                )
             if sample_axis.include_mask is not None and len(sample_axis.include_mask) != n_samples:
                 raise ValueError(
-                    f"sample_axis.include_mask length ({len(sample_axis.include_mask)}) != n_samples ({n_samples})"
+                    f"sample_axis.include_mask length ({len(sample_axis.include_mask)}) != n_samples ({n_samples}). "
+                    f"include_mask must have one boolean per sample."
                 )
             sample_copy = sample_axis.copy()
             sample_copy.bind_expected_length(n_samples)
@@ -584,7 +687,15 @@ class SherpaDataset:
         if target is not None:
             t = np.asarray(target)
             if t.shape[0] != n_samples:
-                raise ValueError(f"target length ({t.shape[0]}) != n_samples ({n_samples})")
+                msg_parts = [
+                    f"❌ Target length mismatch:",
+                    f"   target has {t.shape[0]} values",
+                    f"   But data has {n_samples} samples",
+                    f"",
+                    f"💡 Each sample needs exactly one target value.",
+                    f"   Ensure len(target) == n_samples ({n_samples})"
+                ]
+                raise ValueError("\n".join(msg_parts))
             self._target: np.ndarray | None = t
         else:
             self._target = None
@@ -635,7 +746,15 @@ class SherpaDataset:
         if value is not None:
             t = np.asarray(value)
             if t.shape[0] != self._X.shape[0]:
-                raise ValueError(f"target length ({t.shape[0]}) != n_samples ({self._X.shape[0]})")
+                msg_parts = [
+                    f"❌ Target length mismatch:",
+                    f"   target has {t.shape[0]} values",
+                    f"   But data has {self._X.shape[0]} samples",
+                    f"",
+                    f"💡 Each sample needs exactly one target value.",
+                    f"   Ensure len(target) == n_samples ({self._X.shape[0]})"
+                ]
+                raise ValueError("\n".join(msg_parts))
             self._target = t
         else:
             self._target = None
@@ -648,16 +767,43 @@ class SherpaDataset:
 
     @property
     def spectral_axis(self) -> SpectralAxis | None:
+        """Legacy accessor for spectral axis (DEPRECATED).
+
+        **DEPRECATED**: Use `feature_axis` instead for multi-domain support.
+
+        `feature_axis` supports:
+        - TimeAxis for chromatography (HPLC, GC, IC, CE)
+        - MZAxis for mass spectrometry (LC-MS, GC-MS, MALDI-TOF)
+        - PotentialAxis for electrochemistry (CV, DPV, SWV)
+        - FrequencyAxis for NMR spectroscopy
+        - SpectralAxis for spectroscopy (IR, NIR, Raman, UV-Vis)
+
+        This property is read-only and returns SpectralAxis only.
+        Use `feature_axis` for setting axes or working with other axis types.
+
+        Returns:
+            SpectralAxis if a SpectralAxis is stored, None otherwise.
+
+        Example:
+            >>> # OLD (deprecated):
+            >>> axis = dataset.spectral_axis
+            >>>
+            >>> # NEW (recommended):
+            >>> axis = dataset.feature_axis  # Works with all axis types
+        """
+        import warnings
+        warnings.warn(
+            "spectral_axis is deprecated. Use feature_axis instead for multi-domain support. "
+            "feature_axis works with TimeAxis (chromatography), MZAxis (mass spec), "
+            "PotentialAxis (electrochemistry), and SpectralAxis (spectroscopy).",
+            DeprecationWarning,
+            stacklevel=2
+        )
         ax = self._axes.get(self._SPECTRAL_DIM)
         return ax.copy() if isinstance(ax, SpectralAxis) else None
 
-    @spectral_axis.setter
-    def spectral_axis(self, value: SpectralAxis) -> None:
-        if value.length > 0 and value.length != self._X.shape[1]:
-            raise ValueError(f"spectral_axis length ({value.length}) != n_features ({self._X.shape[1]})")
-        copied = value.copy()
-        copied.bind_expected_length(self._X.shape[1])
-        self._axes[self._SPECTRAL_DIM] = copied
+    # NOTE: spectral_axis setter is REMOVED - use feature_axis instead
+    # This prevents the dual-API confusion and validation path duplication
 
     @property
     def feature_axis(self) -> FeatureAxis | None:
@@ -670,7 +816,17 @@ class SherpaDataset:
         - PotentialAxis for electrochemistry (voltage)
         - FrequencyAxis for NMR, dielectric spectroscopy
 
-        For backward compatibility, spectral_axis property is still available.
+        This is the recommended way to access and set feature axes.
+
+        Example:
+            >>> # Get feature axis (any type)
+            >>> axis = dataset.feature_axis
+            >>> if isinstance(axis, TimeAxis):
+            >>>     print("Chromatography data")
+            >>>
+            >>> # Set feature axis (any FeatureAxis subclass)
+            >>> from spectra_sherpa.app.lib.axes import TimeAxis
+            >>> dataset.feature_axis = TimeAxis(values=times, units="min")
         """
         ax = self._axes.get(self._SPECTRAL_DIM)
         if ax is None:
@@ -687,7 +843,13 @@ class SherpaDataset:
     def feature_axis(self, value: FeatureAxis) -> None:
         """Set the feature axis (accepts any FeatureAxis subclass)."""
         if value.length > 0 and value.length != self._X.shape[1]:
-            raise ValueError(f"feature_axis length ({value.length}) != n_features ({self._X.shape[1]})")
+            _validate_axis_length(
+                expected=self._X.shape[1],
+                actual=value.length,
+                axis_type="feature",
+                data_shape=self._X.shape,
+                axis_name="feature_axis"
+            )
         copied = value.copy()
         copied.bind_expected_length(self._X.shape[1])
         self._axes[self._SPECTRAL_DIM] = copied
@@ -700,13 +862,33 @@ class SherpaDataset:
     @sample_axis.setter
     def sample_axis(self, value: SampleAxis) -> None:
         if value.length > 0 and value.length != self._X.shape[0]:
-            raise ValueError(f"sample_axis length ({value.length}) != n_samples ({self._X.shape[0]})")
-        if value.classes is not None and len(value.classes) != self._X.shape[0]:
-            raise ValueError(f"sample_axis.classes length ({len(value.classes)}) != n_samples ({self._X.shape[0]})")
-        if value.include_mask is not None and len(value.include_mask) != self._X.shape[0]:
-            raise ValueError(
-                f"sample_axis.include_mask length ({len(value.include_mask)}) != n_samples ({self._X.shape[0]})"
+            _validate_axis_length(
+                expected=self._X.shape[0],
+                actual=value.length,
+                axis_type="sample",
+                data_shape=self._X.shape,
+                axis_name="sample_axis"
             )
+        if value.classes is not None and len(value.classes) != self._X.shape[0]:
+            msg_parts = [
+                f"❌ Classes length mismatch:",
+                f"   sample_axis.classes has {len(value.classes)} entries",
+                f"   But data has {self._X.shape[0]} samples",
+                f"",
+                f"💡 Each sample must have exactly one class label.",
+                f"   Ensure len(classes) == n_samples ({self._X.shape[0]})"
+            ]
+            raise ValueError("\n".join(msg_parts))
+        if value.include_mask is not None and len(value.include_mask) != self._X.shape[0]:
+            msg_parts = [
+                f"❌ Include mask length mismatch:",
+                f"   sample_axis.include_mask has {len(value.include_mask)} entries",
+                f"   But data has {self._X.shape[0]} samples",
+                f"",
+                f"💡 Each sample must have exactly one boolean flag.",
+                f"   Ensure len(include_mask) == n_samples ({self._X.shape[0]})"
+            ]
+            raise ValueError("\n".join(msg_parts))
         copied = value.copy()
         copied.bind_expected_length(self._X.shape[0])
         self._axes[self._SAMPLE_DIM] = copied

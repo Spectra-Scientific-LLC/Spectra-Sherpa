@@ -34,11 +34,9 @@ This enables SpectroChemPy-powered preprocessing methods, SCP file format reader
 - **Project Management** — Organize experiments, workflows, and scripts with versioned snapshots
 - **Experiment Tracking** — DOE support with 96-well plate layouts, samples, mixtures, and factor definitions
 - **LLM Chat** — Bring-your-own-key AI assistant for spectral analysis and workflow questions
-- **Sherpa AI Advisor** — Cloud-powered domain-expert guidance with peak identification, code generation, report writing, and agentic tool use (available via [subscription](https://spectrascientific.ai))
 - **Plugin System** — Extend the node library and tool registry via Python entry points or drop-in modules
 - **Deploy** — Batch prediction, folder watching, execution run tracking
-- **Demo Mode** — Public-facing demo profile with configurable usage limits and upgrade prompts
-- **Data Privacy Controls** — Per-user fine-grained egress permissions for LLM context, cloud sync, and exports
+- **Data Privacy Controls** — Fine-grained egress permissions for LLM context and exports
 
 ## Installation
 
@@ -134,4 +132,4 @@ SpectraSherpa is built for IP-sensitive environments.
 
 SpectraSherpa is licensed under the AGPL-3.0. See [LICENSE](./LICENSE) for details.
 
-Commercial licenses for OEM integration and cloud hosting are available from Spectra Scientific LLC.
+Enterprise features and commercial licensing are available from Spectra Scientific LLC.

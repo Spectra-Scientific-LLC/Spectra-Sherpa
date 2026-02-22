@@ -8,7 +8,6 @@ This package contains all available node types organized by category.
 from . import (
     blend,
     classification,
-    cloud,
     custom,  # Atomic blending & synthetic data nodes
     data,
     diagnostics,
@@ -26,7 +25,6 @@ __all__ = [
     "preprocessing",
     "blend",
     "classification",
-    "cloud",
     "diagnostics",
     "time_series",
     "custom",

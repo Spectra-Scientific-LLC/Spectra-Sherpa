@@ -28,18 +28,18 @@ logger = logging.getLogger(__name__)
 def validate_folder_path(folder_path: str) -> Path:
     """Resolve and validate a user-supplied folder path.
 
-    In multi-user modes (hybrid/demo), the resolved path must be under
+    In enterprise/SaaS mode, the resolved path must be under
     ``settings.data_dir`` to prevent arbitrary filesystem traversal.
-    In local mode, any accessible path is allowed (single-user desktop).
+    In local and hybrid modes, any accessible path is allowed (desktop app).
 
     Returns the resolved Path on success; raises ValueError otherwise.
     """
     from spectra_sherpa.app.core.config import settings
-    from spectra_sherpa.app.core.mode_policy import is_local
+    from spectra_sherpa.app.core.mode_policy import is_enterprise
 
     resolved = Path(folder_path).expanduser().resolve()
 
-    if not is_local():
+    if is_enterprise():
         allowed_root = Path(settings.data_dir).resolve()
         try:
             resolved.relative_to(allowed_root)
@@ -259,8 +259,20 @@ async def run_batch_prediction(
             error_count += 1
             logger.warning("Batch predict failed for %s: %s", file_path.name, exc)
 
-        # Commit each prediction and update progress
-        await session.commit()
+        # Commit each prediction and update progress.
+        # Wrap in try/except so a single poison-pill file (e.g. name exceeds
+        # DB column limit, unique constraint violation) cannot kill the entire
+        # batch loop.  Roll back the failed transaction, log it, and continue.
+        try:
+            await session.commit()
+        except Exception as commit_exc:
+            logger.error(
+                "Batch predict DB commit failed for %s: %s — rolling back and continuing",
+                file_path.name,
+                commit_exc,
+            )
+            await session.rollback()
+            error_count += 1
 
         progress = int(((idx + 1) / total) * 100)
         await job_manager.update_progress(

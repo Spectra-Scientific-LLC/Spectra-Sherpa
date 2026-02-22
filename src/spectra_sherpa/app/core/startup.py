@@ -203,83 +203,17 @@ async def ensure_default_user() -> None:
         logger.warning("Skipping default user creation; database not initialized.")
 
 
-async def link_hybrid_identity() -> None:
-    """Validate deployment key and cache subscription info in hybrid mode.
-
-    Calls ``POST /keys/deployment/validate`` on the spectrasherpa-server
-    using the configured ``SPECTRASHERPA_API_KEY`` (which is now a deployment
-    key).  On success the subscription features are cached on the Sherpa
-    advisor for feature-flag derivation.
-
-    Gracefully degrades: if the server is unreachable the local app
-    continues without subscription features.
-    """
-    if app_config.mode != "hybrid":
-        return
-
-    from spectra_sherpa.app.services.spectrasherpa import get_spectrasherpa_service
-
-    service = get_spectrasherpa_service()
-    if not service.is_configured:
-        logger.info("Hybrid mode: no SPECTRASHERPA_API_KEY configured, skipping deployment validation")
-        return
-
-    # Verify server connectivity via health check first
-    is_healthy, health_msg = await service.health_check()
-    if not is_healthy:
-        logger.info(
-            "Hybrid mode: cloud server not reachable (%s) — running without subscription features",
-            health_msg,
-        )
-        return
-
-    # Validate deployment key and get subscription info
-    try:
-        result = await service.validate_deployment_key()
-    except Exception as exc:
-        logger.info("Deployment key validation skipped: %s — Sherpa sync still works", exc)
-        return
-
-    if not result.success:
-        logger.info(
-            "Deployment key validation failed: %s — running without subscription features",
-            result.error,
-        )
-        return
-
-    # Cache subscription features on the advisor for feature flag derivation
-    try:
-        from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
-
-        advisor = get_sherpa_advisor()
-        advisor._subscription_features = result.entitlements
-        advisor._subscription_plan = result.plan
-        logger.info(
-            "Hybrid mode: deployment key validated (plan=%s, label=%s)",
-            result.plan,
-            result.label,
-        )
-    except Exception as exc:
-        logger.warning("Could not cache subscription features: %s", exc)
+# Cloud activation removed - local-only mode
 
 
 async def ensure_egress_defaults() -> None:
     """
     Ensure all users have default egress settings.
 
-    This backfills UserEgressDefaults for existing users so hybrid/enterprise
-    permissions work consistently after upgrades.
-
-    In hybrid/enterprise mode, new users get cloud sync enabled by default
-    so Sherpa Advisor works out-of-the-box. In local mode, everything is
-    disabled by default (privacy-first). Existing explicit preferences are
-    never overridden.
+    Local mode: everything disabled by default (privacy-first).
+    Existing explicit preferences are never overridden.
     """
     try:
-        from spectra_sherpa.app.core.config import app_config
-
-        is_connected = app_config.mode in ("hybrid", "enterprise")
-
         async with async_session() as session:
             result = await session.execute(
                 select(User).outerjoin(UserEgressDefaults).where(UserEgressDefaults.user_id.is_(None))
@@ -292,10 +226,8 @@ async def ensure_egress_defaults() -> None:
                 session.add(
                     UserEgressDefaults(
                         user_id=user.id,
-                        allow_spectrasherpa_sync=is_connected,
-                        allow_llm_context=is_connected,
-                        allow_export=False,
-                        allow_nist_queries=False,
+                        allow_export=False,  # Local file export disabled by default
+                        allow_nist_queries=False,  # NIST queries disabled by default
                     )
                 )
             await session.commit()

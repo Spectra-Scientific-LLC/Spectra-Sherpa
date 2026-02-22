@@ -1,556 +1,133 @@
 """
-Sherpa Advisor Service — local→cloud client for AI-guided workflow advice.
+Sherpa AI Advisor Service Stub
 
-This service manages the bidirectional communication between the local
-SpectraSherpa app and the cloud spectrasherpa-server Sherpa brain.
+This module provides a minimal stub implementation for the Sherpa AI Advisor service.
+In OSS mode, Sherpa AI features are disabled. In hybrid/enterprise mode, this module
+can be replaced by spectra-server with a full implementation that connects to the
+SpectraSherpa cloud AI service.
 
-Responsibilities:
-- Send workflow context to the cloud Sherpa (respecting the user's EgressTier)
-- Receive and cache SherpaRecommendations
-- Track suggestion lifecycle (pending → accepted/rejected/expired)
-- Gracefully degrade when cloud is unreachable (no-op, not crash)
-
-All outgoing data is filtered by the user's EgressTier *before* leaving
-this module — the cloud never sees more than the user allowed.
+The stub ensures that WebSocket handlers and LLM context checks don't crash when
+the full Sherpa AI service is unavailable.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-from collections.abc import AsyncIterator
 from typing import Any
-
-import httpx
-
-from spectra_sherpa.app.core.config import app_config, settings
-
-
-class SubscriptionRequiredError(Exception):
-    """Raised when the server returns 403 for a missing entitlement."""
-
-    def __init__(self, detail: str = ""):
-        self.detail = detail
-        super().__init__(detail)
-
-
-from spectra_sherpa.app.schemas.sherpa import (
-    EgressTier,
-    ExplorationResult,
-    SherpaRecommendation,
-    SuggestionStatus,
-    UserDecision,
-    WorkflowContextNode,
-    WorkflowStateSync,
-)
 
 logger = logging.getLogger(__name__)
 
 
-# ── Configuration ────────────────────────────────────────────────────
-
-SHERPA_TIMEOUT = 15.0  # seconds — slightly longer than standard for LLM calls
-
-
-def _sherpa_base_url() -> str:
-    """Resolve the Sherpa endpoint from the SpectraSherpa config."""
-    from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
-
-    base = spectrasherpa_config.api_base_url.rstrip("/")
-    if not base.endswith("/api/v1"):
-        base = f"{base}/api/v1"
-    return base
-
-
-def _sherpa_api_key() -> str | None:
-    from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
-
-    return spectrasherpa_config.api_key
-
-
-# ── Tier-aware filtering ─────────────────────────────────────────────
-
-
-def filter_workflow_for_tier(
-    sync: WorkflowStateSync,
-    tier: EgressTier,
-) -> WorkflowStateSync:
+class SherpaAdvisor:
     """
-    Strip fields from *sync* that exceed the requested *tier*.
+    Stub implementation of Sherpa AI Advisor.
 
-    This is the privacy gate — nothing above the tier leaves the machine.
-    """
-    if tier == EgressTier.FULL:
-        return sync  # everything allowed
-
-    # Start from a copy so we don't mutate the original
-    filtered_nodes: list[WorkflowContextNode] = []
-    for node in sync.nodes:
-        if tier == EgressTier.STRUCTURE:
-            # Strip all result data — keep only type, label, parameters
-            filtered_nodes.append(
-                WorkflowContextNode(
-                    node_id=node.node_id,
-                    node_type=node.node_type,
-                    label=node.label,
-                    parameters=node.parameters,
-                )
-            )
-        elif tier == EgressTier.SUMMARIES:
-            # Keep summaries but strip raw data references
-            filtered_nodes.append(
-                WorkflowContextNode(
-                    node_id=node.node_id,
-                    node_type=node.node_type,
-                    label=node.label,
-                    parameters=node.parameters,
-                    result_shape=node.result_shape,
-                    result_statistics=node.result_statistics,
-                    explained_variance=node.explained_variance,
-                )
-            )
-
-    return WorkflowStateSync(
-        workflow_id=sync.workflow_id,
-        workflow_name=sync.workflow_name,
-        tier=tier,
-        nodes=filtered_nodes,
-        edges=sync.edges,
-        raw_data=None if tier != EgressTier.FULL else sync.raw_data,
-        spectral_technique=sync.spectral_technique,
-        n_samples=sync.n_samples,
-        n_features=sync.n_features,
-        timestamp=sync.timestamp,
-    )
-
-
-# ── Service ──────────────────────────────────────────────────────────
-
-
-class SherpaAdvisorService:
-    """
-    Client that talks to the cloud Sherpa brain on behalf of the local app.
-
-    Usage::
-
-        advisor = get_sherpa_advisor()
-
-        # 1. Sync current workflow state
-        recs = await advisor.sync_workflow(workflow_sync, tier=EgressTier.SUMMARIES)
-
-        # 2. User accepts a suggestion
-        await advisor.send_decision(UserDecision(...))
-
-        # 3. Request autonomous exploration (opt-in)
-        result = await advisor.request_exploration(workflow_id=42)
+    In OSS mode, all features return False/disabled state.
+    spectra-server can inject a full implementation that connects to cloud AI services.
     """
 
-    def __init__(self) -> None:
-        self._client: httpx.AsyncClient | None = None
-        # Local cache of pending recommendations (keyed by suggestion_id)
-        self._recommendations: dict[str, SherpaRecommendation] = {}
-        # Subscription state from server (populated during hybrid activation)
-        self._subscription_features: dict[str, Any] | None = None
-        self._subscription_plan: str = "none"
+    def __init__(self):
+        """Initialize stub advisor (OSS mode - features disabled)."""
+        self._features = set()
+        logger.debug("SherpaAdvisor initialized in stub mode (OSS)")
 
-    # ── lifecycle ──────────────────────────────────────────────────
+    def has_feature(self, feature: str) -> bool:
+        """
+        Check if a feature is available.
 
-    @property
+        Args:
+            feature: Feature name (e.g., "full_dag_context", "code_generation")
+
+        Returns:
+            False in OSS mode (stub), True if feature is available in hybrid/enterprise
+        """
+        return feature in self._features
+
+    def enable_feature(self, feature: str):
+        """Enable a feature (for testing or hybrid mode injection)."""
+        self._features.add(feature)
+        logger.debug(f"SherpaAdvisor: enabled feature '{feature}'")
+
+    def disable_feature(self, feature: str):
+        """Disable a feature."""
+        self._features.discard(feature)
+
+    async def suggest_workflow(self, context: dict[str, Any]) -> dict[str, Any]:
+        """
+        Suggest a workflow based on context (OSS stub returns empty).
+
+        In hybrid/enterprise mode, this would query the cloud AI service.
+        """
+        logger.debug("SherpaAdvisor.suggest_workflow called (stub mode - no suggestions)")
+        return {
+            "suggestions": [],
+            "reasoning": "Sherpa AI is not available in OSS mode",
+            "available": False,
+        }
+
+    async def analyze_results(self, results: dict[str, Any]) -> dict[str, Any]:
+        """
+        Analyze execution results (OSS stub returns empty).
+
+        In hybrid/enterprise mode, this would query the cloud AI service for insights.
+        """
+        logger.debug("SherpaAdvisor.analyze_results called (stub mode - no analysis)")
+        return {
+            "insights": [],
+            "recommendations": [],
+            "available": False,
+        }
+
+    async def chat(self, message: str, history: list[dict], context: dict[str, Any]) -> dict[str, Any]:
+        """
+        Process a chat message (OSS stub returns unavailable message).
+
+        In hybrid/enterprise mode, this would send the chat to the cloud AI service.
+        """
+        logger.debug(f"SherpaAdvisor.chat called with message: {message[:50]}... (stub mode)")
+        return {
+            "response": "Sherpa AI chat is not available in OSS mode. Activate hybrid mode to use AI-powered assistance.",
+            "available": False,
+            "suggestions": [],
+        }
+
     def is_available(self) -> bool:
-        """True when the cloud Sherpa is configured and egress is on."""
-        from spectra_sherpa.app.core.security import is_egress_enabled
-
-        return app_config.mode != "local" and _sherpa_api_key() is not None and is_egress_enabled()
-
-    async def _get_client(self) -> httpx.AsyncClient:
-        if self._client is None or self._client.is_closed:
-            api_key = _sherpa_api_key() or ""
-            self._client = httpx.AsyncClient(
-                base_url=_sherpa_base_url(),
-                timeout=SHERPA_TIMEOUT,
-                headers={
-                    "X-API-Key": api_key,
-                    "X-Deployment-Key": api_key,
-                    "User-Agent": f"SpectraSherpaLite/{settings.app_version}",
-                    "X-Client-Mode": app_config.mode,
-                },
-            )
-        return self._client
-
-    async def close(self) -> None:
-        if self._client and not self._client.is_closed:
-            await self._client.aclose()
-            self._client = None
-
-    def has_feature(self, capability: str) -> bool:
-        """Check if the cached subscription includes a capability."""
-        if self._subscription_features is None:
-            return False
-        return bool(self._subscription_features.get(capability, False))
-
-    async def fetch_subscription(self) -> dict:
-        """Fetch subscription features from the server and cache them.
-
-        Calls ``GET /config/subscription`` with the deployment key.
-        Returns the features dict (also cached on ``_subscription_features``).
-        """
-        if not self.is_available:
-            return {}
-        try:
-            client = await self._get_client()
-            response = await client.get("/config/subscription")
-            response.raise_for_status()
-            data = response.json()
-            self._subscription_features = data.get("features", {})
-            sub = data.get("subscription", {})
-            self._subscription_plan = sub.get("plan", "none")
-            return self._subscription_features
-        except Exception:
-            logger.warning("Failed to fetch subscription features")
-            return {}
-
-    # ── core operations ───────────────────────────────────────────
-
-    async def sync_workflow(
-        self,
-        sync: WorkflowStateSync,
-        tier: EgressTier = EgressTier.STRUCTURE,
-    ) -> list[SherpaRecommendation]:
-        """
-        Send the current workflow state to the cloud Sherpa.
-
-        Returns a list of recommendations (may be empty if Sherpa has no
-        suggestions or if the service is unreachable).
-        """
-        if not self.is_available:
-            return []
-
-        filtered = filter_workflow_for_tier(sync, tier)
-
-        try:
-            client = await self._get_client()
-            response = await client.post(
-                "/sherpa/sync",
-                json=filtered.model_dump(mode="json"),
-            )
-            response.raise_for_status()
-            data = response.json()
-
-            recommendations = [SherpaRecommendation(**rec) for rec in data.get("recommendations", [])]
-
-            # Cache locally
-            for rec in recommendations:
-                self._recommendations[rec.suggestion_id] = rec
-
-            # Expire any previous recommendations for this workflow
-            self._expire_old(sync.workflow_id, keep=recommendations)
-
-            return recommendations
-
-        except httpx.ConnectError:
-            logger.warning("Sherpa cloud unreachable — continuing in local mode")
-            return []
-        except httpx.TimeoutException:
-            logger.warning("Sherpa cloud timed out — continuing in local mode")
-            return []
-        except httpx.HTTPStatusError as exc:
-            logger.warning("Sherpa sync failed: HTTP %s", exc.response.status_code)
-            return []
-        except Exception:
-            logger.exception("Unexpected error during Sherpa sync")
-            return []
-
-    async def send_decision(self, decision: UserDecision) -> bool:
-        """
-        Notify the cloud Sherpa that the user accepted or rejected a suggestion.
-
-        Returns True if the decision was delivered.
-        """
-        if not self.is_available:
-            return False
-
-        # Update local cache
-        rec = self._recommendations.get(decision.suggestion_id)
-        if rec:
-            rec.status = SuggestionStatus.ACCEPTED if decision.accepted else SuggestionStatus.REJECTED
-
-        try:
-            client = await self._get_client()
-            response = await client.post(
-                "/sherpa/decide",
-                json=decision.model_dump(mode="json"),
-            )
-            response.raise_for_status()
-            return True
-        except Exception:
-            logger.warning("Failed to send decision to Sherpa cloud")
-            return False
-
-    async def request_exploration(
-        self,
-        workflow_id: int,
-        tier: EgressTier = EgressTier.SUMMARIES,
-    ) -> ExplorationResult | None:
-        """
-        Ask Sherpa to autonomously explore parameter space for a workflow.
-
-        This is an opt-in feature: the user must explicitly request it.
-        Returns the exploration result or None if unavailable.
-        """
-        if not self.is_available:
-            return None
-
-        try:
-            client = await self._get_client()
-            response = await client.post(
-                "/sherpa/explore",
-                json={"workflow_id": workflow_id, "tier": tier.value},
-            )
-            response.raise_for_status()
-            return ExplorationResult(**response.json())
-        except Exception:
-            logger.warning("Sherpa exploration request failed")
-            return None
-
-    async def chat_followup(
-        self,
-        message: str,
-        workflow_id: int | None = None,
-        history: list[dict[str, str]] | None = None,
-        workflow_context: dict[str, Any] | None = None,
-    ) -> AsyncIterator[str]:
-        """Stream a follow-up answer from the cloud Sherpa.
-
-        Sends ``POST /sherpa/chat`` with the question, workflow id,
-        recent conversation history, and optional workflow context so the
-        server-side engine has the full graph for follow-up analysis.
-
-        Gracefully yields a single fallback message when the cloud is
-        unreachable or the endpoint does not exist yet (404).
-        """
-        if not self.is_available:
-            yield "Sherpa Advisor is not currently available."
-            return
-
-        try:
-            client = await self._get_client()
-            body: dict[str, Any] = {
-                "message": message,
-                "workflow_id": workflow_id,
-                "history": history or [],
-            }
-            if workflow_context:
-                body["workflow_context"] = workflow_context
-            async with client.stream("POST", "/sherpa/chat", json=body) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if line.strip():
-                        yield line
-        except httpx.ConnectError:
-            logger.warning("Sherpa cloud unreachable for chat")
-            yield (
-                "The Sherpa cloud service is currently unreachable."
-                " Your workflow recommendations are based on the last successful sync."
-            )
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == 404:
-                yield "Sherpa follow-up chat is not yet available on the cloud service. This feature is coming soon."
-            else:
-                logger.warning("Sherpa chat failed: HTTP %s", exc.response.status_code)
-                yield f"Sherpa chat encountered an error (HTTP {exc.response.status_code})."
-        except Exception:
-            logger.exception("Unexpected error during Sherpa chat")
-            yield "An unexpected error occurred. Please try again."
-
-    # ── subscription-gated proxy methods ─────────────────────────
-
-    async def identify_peaks(
-        self,
-        wavenumbers: list[float],
-        absorbance: list[float],
-    ) -> dict:
-        """Proxy to POST /sherpa/identify-peaks."""
-        if not self.is_available:
-            return {"error": "Sherpa advisor not available"}
-        try:
-            client = await self._get_client()
-            response = await client.post(
-                "/sherpa/identify-peaks",
-                json={"wavenumbers": wavenumbers, "absorbance": absorbance},
-            )
-            if response.status_code == 403:
-                raise SubscriptionRequiredError(response.json().get("detail", ""))
-            response.raise_for_status()
-            return response.json()
-        except SubscriptionRequiredError:
-            raise
-        except Exception:
-            logger.warning("identify_peaks proxy failed")
-            return {"error": "Peak identification failed"}
-
-    async def generate_code(
-        self,
-        task_description: str,
-        context: dict[str, Any] | None = None,
-    ) -> dict:
-        """Proxy to POST /sherpa/generate-code."""
-        if not self.is_available:
-            return {"error": "Sherpa advisor not available"}
-        try:
-            client = await self._get_client()
-            body: dict[str, Any] = {"task_description": task_description}
-            if context:
-                body["context"] = context
-            response = await client.post("/sherpa/generate-code", json=body)
-            if response.status_code == 403:
-                raise SubscriptionRequiredError(response.json().get("detail", ""))
-            response.raise_for_status()
-            return response.json()
-        except SubscriptionRequiredError:
-            raise
-        except Exception:
-            logger.warning("generate_code proxy failed")
-            return {"error": "Code generation failed"}
-
-    async def write_report(self, experiment: dict[str, Any]) -> dict:
-        """Proxy to POST /sherpa/write-report."""
-        if not self.is_available:
-            return {"error": "Sherpa advisor not available"}
-        try:
-            client = await self._get_client()
-            response = await client.post(
-                "/sherpa/write-report",
-                json={"experiment": experiment},
-            )
-            if response.status_code == 403:
-                raise SubscriptionRequiredError(response.json().get("detail", ""))
-            response.raise_for_status()
-            return response.json()
-        except SubscriptionRequiredError:
-            raise
-        except Exception:
-            logger.warning("write_report proxy failed")
-            return {"error": "Report generation failed"}
-
-    async def chat_with_tools(
-        self,
-        message: str,
-        history: list[dict[str, str]] | None = None,
-        workflow_context: dict[str, Any] | None = None,
-    ) -> AsyncIterator[dict]:
-        """Stream SSE events from POST /sherpa/chat-with-tools."""
-        if not self.is_available:
-            yield {"type": "error", "content": "Sherpa advisor not available"}
-            return
-        try:
-            client = await self._get_client()
-            body: dict[str, Any] = {
-                "message": message,
-                "history": history or [],
-            }
-            if workflow_context:
-                body["workflow_context"] = workflow_context
-            async with client.stream(
-                "POST",
-                "/sherpa/chat-with-tools",
-                json=body,
-            ) as response:
-                if response.status_code == 403:
-                    raise SubscriptionRequiredError("Plan does not include agentic tools")
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    line = line.strip()
-                    if not line or not line.startswith("data:"):
-                        continue
-                    try:
-                        yield json.loads(line[5:].strip())
-                    except json.JSONDecodeError:
-                        continue
-        except SubscriptionRequiredError:
-            raise
-        except Exception:
-            logger.warning("chat_with_tools proxy failed")
-            yield {"type": "error", "content": "Chat with tools failed"}
-
-    async def list_tools(self) -> list[dict]:
-        """Proxy to GET /sherpa/tools."""
-        if not self.is_available:
-            return []
-        try:
-            client = await self._get_client()
-            response = await client.get("/sherpa/tools")
-            if response.status_code == 403:
-                raise SubscriptionRequiredError(response.json().get("detail", ""))
-            response.raise_for_status()
-            return response.json().get("tools", [])
-        except SubscriptionRequiredError:
-            raise
-        except Exception:
-            logger.warning("list_tools proxy failed")
-            return []
-
-    # ── health ─────────────────────────────────────────────────────
-
-    async def health_check(self) -> tuple[bool, str]:
-        """Check if the Sherpa endpoint is reachable."""
-        if not self.is_available:
-            return False, "Sherpa advisor not configured or egress disabled"
-
-        try:
-            client = await self._get_client()
-            response = await client.get("/sherpa/health")
-            if response.status_code == 200:
-                return True, "Sherpa advisor is healthy"
-            return False, f"Sherpa returned status {response.status_code}"
-        except httpx.ConnectError:
-            return False, "Cannot connect to Sherpa cloud"
-        except httpx.TimeoutException:
-            return False, "Sherpa cloud timed out"
-        except Exception as exc:
-            return False, f"Health check failed: {exc}"
-
-    # ── local cache helpers ───────────────────────────────────────
-
-    def get_pending(self, workflow_id: int | None = None) -> list[SherpaRecommendation]:
-        """Return all pending recommendations, optionally filtered by workflow."""
-        return [
-            rec
-            for rec in self._recommendations.values()
-            if rec.status == SuggestionStatus.PENDING and (workflow_id is None or rec.workflow_id == workflow_id)
-        ]
-
-    def _expire_old(
-        self,
-        workflow_id: int,
-        keep: list[SherpaRecommendation],
-    ) -> None:
-        """Mark previous pending recommendations as expired when new ones arrive."""
-        keep_ids = {r.suggestion_id for r in keep}
-        for rec in self._recommendations.values():
-            if (
-                rec.workflow_id == workflow_id
-                and rec.status == SuggestionStatus.PENDING
-                and rec.suggestion_id not in keep_ids
-            ):
-                rec.status = SuggestionStatus.EXPIRED
+        """Check if Sherpa AI service is available."""
+        return False  # Always False in OSS stub mode
 
 
-# ── Singleton ────────────────────────────────────────────────────────
-
-_advisor_instance: SherpaAdvisorService | None = None
-
-
-def get_sherpa_advisor() -> SherpaAdvisorService:
-    """Get the singleton Sherpa advisor instance."""
-    global _advisor_instance
-    if _advisor_instance is None:
-        _advisor_instance = SherpaAdvisorService()
-    return _advisor_instance
+# Global singleton instance
+_advisor: SherpaAdvisor | None = None
 
 
-async def close_sherpa_advisor() -> None:
-    """Close the singleton advisor (call on app shutdown)."""
-    global _advisor_instance
-    if _advisor_instance:
-        await _advisor_instance.close()
-        _advisor_instance = None
+def get_sherpa_advisor() -> SherpaAdvisor:
+    """
+    Get the global Sherpa AI Advisor instance.
+
+    Returns:
+        SherpaAdvisor stub in OSS mode, or full implementation if injected by spectra-server
+    """
+    global _advisor
+    if _advisor is None:
+        _advisor = SherpaAdvisor()
+    return _advisor
+
+
+def set_sherpa_advisor(advisor: SherpaAdvisor):
+    """
+    Inject a custom Sherpa AI Advisor implementation.
+
+    Used by spectra-server to replace the OSS stub with a full cloud-connected implementation.
+
+    Args:
+        advisor: Custom SherpaAdvisor instance
+    """
+    global _advisor
+    _advisor = advisor
+    logger.info("SherpaAdvisor: custom implementation injected")
+
+
+def reset_sherpa_advisor():
+    """Reset to OSS stub mode (for testing)."""
+    global _advisor
+    _advisor = None

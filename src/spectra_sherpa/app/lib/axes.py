@@ -148,6 +148,46 @@ class AxisInfo(BaseModel):
                 raise ValueError(f"Axis labels length ({label_len}) != expected length ({self._expected_length})")
         return self
 
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Convenience Methods (reduce boilerplate in node code)
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def is_empty(self) -> bool:
+        """True if axis has no values and no labels.
+
+        Example:
+            >>> axis = AxisInfo()
+            >>> axis.is_empty()  # True
+            >>> axis = AxisInfo(values=np.array([1, 2, 3]))
+            >>> axis.is_empty()  # False
+        """
+        return self.values is None and self.labels is None
+
+    def n_points(self) -> int:
+        """Number of axis points (0 if empty).
+
+        This is a convenience alias for `length` property, but as a method
+        it's more discoverable and matches common usage patterns.
+
+        Example:
+            >>> axis = AxisInfo(values=np.linspace(400, 4000, 1000))
+            >>> axis.n_points()  # 1000
+            >>> empty_axis = AxisInfo()
+            >>> empty_axis.n_points()  # 0
+        """
+        return self.length
+
+    def has_units(self) -> bool:
+        """True if units are defined and non-empty.
+
+        Example:
+            >>> axis = AxisInfo(values=np.array([1, 2, 3]), units="cm-1")
+            >>> axis.has_units()  # True
+            >>> axis = AxisInfo(values=np.array([1, 2, 3]))
+            >>> axis.has_units()  # False
+        """
+        return self.units is not None and self.units != ""
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Feature Axis Base Class (for all feature-type axes)
@@ -181,6 +221,61 @@ class FeatureAxis(AxisInfo):
             raise ValueError("Cannot select region on axis with no values")
         lo, hi = min(start, end), max(start, end)
         return (self.values >= lo) & (self.values <= hi)
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Additional Convenience Methods for FeatureAxis
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def is_monotonic(self, increasing: bool = True) -> bool:
+        """Check if axis values are monotonically increasing or decreasing.
+
+        Args:
+            increasing: If True, check for monotonic increase. If False, check for decrease.
+
+        Returns:
+            True if values are monotonic in the specified direction, False otherwise.
+
+        Example:
+            >>> axis = FeatureAxis(values=np.array([1, 2, 3, 4, 5]))
+            >>> axis.is_monotonic(increasing=True)  # True
+            >>> axis.is_monotonic(increasing=False)  # False
+            >>> axis = FeatureAxis(values=np.array([5, 4, 3, 2, 1]))
+            >>> axis.is_monotonic(increasing=False)  # True
+        """
+        if self.values is None or len(self.values) < 2:
+            return True  # Empty or single-value axis is trivially monotonic
+
+        diffs = np.diff(self.values)
+        if increasing:
+            return bool(np.all(diffs > 0))
+        else:
+            return bool(np.all(diffs < 0))
+
+    def get_region_indices(self, start: float, end: float) -> np.ndarray:
+        """Get indices (not boolean mask) for values in region [start, end].
+
+        This is a convenience wrapper around select_region() that returns indices
+        instead of a boolean mask, reducing boilerplate like `np.where(mask)[0]`.
+
+        Args:
+            start: Start of region (inclusive)
+            end: End of region (inclusive)
+
+        Returns:
+            Array of integer indices where values fall within [start, end]
+
+        Example:
+            >>> axis = FeatureAxis(values=np.linspace(400, 4000, 1000))
+            >>> indices = axis.get_region_indices(2800, 3000)  # C-H stretch region
+            >>> len(indices)  # ~56 indices in that range
+            >>> # OLD WAY (boilerplate):
+            >>> mask = axis.select_region(2800, 3000)
+            >>> indices = np.where(mask)[0]
+            >>> # NEW WAY (one line):
+            >>> indices = axis.get_region_indices(2800, 3000)
+        """
+        mask = self.select_region(start, end)
+        return np.where(mask)[0]
 
 
 # ═══════════════════════════════════════════════════════════════════════════

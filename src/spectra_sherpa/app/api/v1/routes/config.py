@@ -175,10 +175,11 @@ async def get_demo_analytics(
 
     # Count active demo sessions from the file-backed rate limiter state
     active_sessions = 0
-    state_path = settings.data_dir / "demo_execution_limits.json"
+    state_path = settings.data_dir / "demo_limits.json"
     if state_path.exists():
         try:
             state = json.loads(state_path.read_text())
+            # Count user sessions (keys like "user:123" or "anon:shared")
             active_sessions = len(state)
         except (json.JSONDecodeError, IOError):
             pass
@@ -627,21 +628,12 @@ async def activate_hybrid(request: ActivateHybridRequest, http_request: Request)
     spectrasherpa_config.api_key = request.api_key
 
     # ── 8. Reset SpectraSherpaService singleton ──
-    from spectra_sherpa.app.services.spectrasherpa import reset_spectrasherpa_service
+    # Cloud services removed (local-only mode)
 
-    await reset_spectrasherpa_service()
-
-    # ── 9. Run hybrid startup tasks ──
-    from spectra_sherpa.app.core.startup import ensure_egress_defaults, link_hybrid_identity
+    # ── 9. Ensure default user egress settings ──
+    from spectra_sherpa.app.core.startup import ensure_egress_defaults
 
     await ensure_egress_defaults()
-
-    # Note: ensure_egress_defaults() creates default egress records for users
-    # who don't have one yet (with cloud sync enabled by default in hybrid mode).
-    # We intentionally do NOT force-enable cloud sync for users who have
-    # explicitly opted out — their privacy preference is respected.
-
-    await link_hybrid_identity()
 
     # ── 10. Start network health monitoring ──
     from spectra_sherpa.app.services.network_health import start_network_health_service
@@ -708,9 +700,7 @@ async def deactivate_hybrid(http_request: Request):
     spectrasherpa_config.api_base_url = SPECTRASHERPA_API_BASE
 
     # ── 4. Reset service singleton ──
-    from spectra_sherpa.app.services.spectrasherpa import reset_spectrasherpa_service
-
-    await reset_spectrasherpa_service()
+    # Cloud services removed (local-only mode)
 
     # ── 5. Stop network health monitoring ──
     from spectra_sherpa.app.services.network_health import stop_network_health_service

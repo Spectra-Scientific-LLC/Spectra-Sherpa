@@ -34,7 +34,6 @@ def _setup_registries():
     # Import all node modules to trigger @register_node decorators
     import spectra_sherpa.app.services.dag.nodes.blend  # noqa: F401
     import spectra_sherpa.app.services.dag.nodes.classification  # noqa: F401
-    import spectra_sherpa.app.services.dag.nodes.cloud  # noqa: F401
     import spectra_sherpa.app.services.dag.nodes.custom  # noqa: F401
     import spectra_sherpa.app.services.dag.nodes.data  # noqa: F401
     import spectra_sherpa.app.services.dag.nodes.diagnostics  # noqa: F401

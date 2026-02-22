@@ -107,8 +107,8 @@ async def predict(request: Request) -> Response:
 
     # Find the deploy entry nodes
     entry_nodes = executor.find_entry_nodes()
-    deploy_input_nodes = [n for n in executor.graph.nodes.values() if n.node_type == "deploy.input"]
-    
+    deploy_input_nodes = [n for n in executor.nodes.values() if n.metadata.node_type == "deploy.input"]
+
     if not deploy_input_nodes:
         raise HTTPException(status_code=500, detail="Workflow does not contain any deploy.input nodes")
 
@@ -117,11 +117,11 @@ async def predict(request: Request) -> Response:
         stream_name = node.parameters.get("stream_name", "sample")
         if stream_name not in payload:
             raise HTTPException(status_code=400, detail=f"Missing required stream: {stream_name}")
-        
-        # Convert raw JSON to SherpaDataset
+
+        # Convert raw JSON to SherpaDataset (allow arrays for headless predictions)
         data = payload[stream_name]
         try:
-            dataset = coerce_to_sherpa(data)
+            dataset = coerce_to_sherpa(data, allow_array=True)
             executor.inject_result(node.node_id, dataset)
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Error parsing data for stream '{stream_name}': {e}")
@@ -133,26 +133,40 @@ async def predict(request: Request) -> Response:
         logger.exception("Graph execution failed")
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
 
-    # Extract results from deploy.output node
-    deploy_output_nodes = [n for n in executor.graph.nodes.values() if n.node_type == "deploy.output"]
+    # Extract results from deploy.output node(s)
+    deploy_output_nodes = [n for n in executor.nodes.values() if n.metadata.node_type == "deploy.output"]
     if not deploy_output_nodes:
         # Fallback to returning all exit node results if no specific deploy.output exists
         exit_nodes = executor.find_exit_nodes()
         out = {k: str(results[k]) for k in exit_nodes if k in results}
         return Response(content=json.dumps(out), media_type="application/json")
 
-    # Take the first deploy.output node result
-    out_node_id = deploy_output_nodes[0].node_id
-    if out_node_id not in results:
-        raise HTTPException(status_code=500, detail="Deploy output node did not produce a result")
+    # Aggregate ALL deploy.output nodes (multiple outputs for advanced workflows)
+    if len(deploy_output_nodes) == 1:
+        # Single output: return formatted result directly
+        out_node_id = deploy_output_nodes[0].node_id
+        if out_node_id not in results:
+            raise HTTPException(status_code=500, detail="Deploy output node did not produce a result")
 
-    fmt_result = results[out_node_id]  # Expected to be a dict from DeployOutputNode.execute()
-    fmt_type = fmt_result.get("format", "json")
-    content = fmt_result.get("content", "")
+        fmt_result = results[out_node_id]  # Expected to be a dict from DeployOutputNode.execute()
+        fmt_type = fmt_result.get("format", "json")
+        content = fmt_result.get("content", "")
 
-    if fmt_type == "json":
-        return Response(content=json.dumps(content), media_type="application/json")
-    elif fmt_type == "csv":
-        return PlainTextResponse(content=content, media_type="text/csv")
+        if fmt_type == "json":
+            return Response(content=json.dumps(content), media_type="application/json")
+        elif fmt_type == "csv":
+            return PlainTextResponse(content=content, media_type="text/csv")
+        else:
+            return PlainTextResponse(content=content, media_type="text/plain")
     else:
-        return PlainTextResponse(content=content, media_type="text/plain")
+        # Multiple outputs: return dict keyed by node ID
+        outputs = {}
+        for node in deploy_output_nodes:
+            out_node_id = node.node_id
+            if out_node_id in results:
+                fmt_result = results[out_node_id]
+                outputs[out_node_id] = {
+                    "format": fmt_result.get("format", "json"),
+                    "content": fmt_result.get("content", ""),
+                }
+        return Response(content=json.dumps(outputs), media_type="application/json")
