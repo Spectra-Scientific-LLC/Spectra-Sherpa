@@ -12,6 +12,7 @@ the full cloud service is unavailable.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 from pydantic import BaseModel, Field
 
@@ -43,8 +44,12 @@ class SpectraSherpaConfig(BaseModel):
         frozen = False  # Allow updates from spectra-server
 
 
-# Global config instance
-spectrasherpa_config = SpectraSherpaConfig()
+# Global config instance — initialized from env so hybrid mode persists across restarts
+spectrasherpa_config = SpectraSherpaConfig(
+    api_base_url=os.getenv("SPECTRASHERPA_API_URL", SPECTRASHERPA_API_BASE),
+    api_key=os.getenv("SPECTRASHERPA_API_KEY") or None,
+    enabled=bool(os.getenv("SPECTRASHERPA_API_KEY")),
+)
 
 
 class SpectraSherpaService:
@@ -144,6 +149,29 @@ class SpectraSherpaService:
             "available": False,
             "message": "SpectraSherpa cloud service is not available in OSS mode",
         }
+
+    @property
+    def is_configured(self) -> bool:
+        """Whether the service has credentials configured."""
+        return bool(self.config.api_key)
+
+    async def validate_deployment_key(self) -> Any:
+        """
+        Validate the deployment key against the cloud service.
+
+        Returns:
+            A result object with .success, .error, .label, .plan, .plan_status, .entitlements.
+            In OSS mode, always returns failure.
+        """
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            success=False,
+            error="Not configured in OSS mode",
+            label=None,
+            plan=None,
+            plan_status=None,
+            entitlements={},
+        )
 
     def is_available(self) -> bool:
         """Check if cloud service is available."""

@@ -43,14 +43,15 @@ export interface AppLimits {
 }
 
 export interface DemoContract {
-  featured_datasets: string[]
-  featured_templates: string[]
-  max_executions_per_session: number
-  max_sherpa_interactions: number
-  disabled_capabilities: string[]
-  upgrade_url: string
-  upgrade_message: string
-  available_plans: string[]
+  featuredDatasets: string[]
+  featuredTemplates: string[]
+  maxExecutionsPerSession: number
+  maxSherpaInteractions: number
+  sessionExpiryHours?: number
+  disabledCapabilities: string[]
+  upgradeUrl: string
+  upgradeMessage: string
+  availablePlans: string[]
 }
 
 export interface DemoQuota {

@@ -270,7 +270,7 @@ const allTemplates = [...featured, ...examples, ...basics];
 
 const demoPicks = computed(() => {
   if (!isDemoMode.value || !demoContract.value) return [];
-  const ids = new Set(demoContract.value.featured_templates);
+  const ids = new Set(demoContract.value.featuredTemplates);
   return allTemplates.filter((t) => ids.has(t.id));
 });
 </script>

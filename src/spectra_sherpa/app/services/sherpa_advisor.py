@@ -18,6 +18,19 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+class SubscriptionRequiredError(Exception):
+    """Raised when a feature requires a subscription that the user does not have.
+
+    In OSS mode, this is a stub that is never raised. In hybrid/enterprise mode,
+    spectra-server raises this when a user invokes a paid Sherpa feature without
+    the required subscription plan.
+    """
+
+    def __init__(self, detail: str = "Subscription required"):
+        self.detail = detail
+        super().__init__(detail)
+
+
 class SherpaAdvisor:
     """
     Stub implementation of Sherpa AI Advisor.

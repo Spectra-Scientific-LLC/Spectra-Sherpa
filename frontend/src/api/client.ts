@@ -117,7 +117,7 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     // Demo mode: 429 (execution limit) — update banner quota counter.
-    // No modal is shown; the top-of-page DemoBanner is the sole upgrade prompt.
+    // Demo mode: rate-limit response — update quota counter for DemoUpgradeModal.
     if (isDemoUpgradeError(error) && error.response?.status === 429) {
       import("@/composables/useDemoMode").then(({ useDemoMode }) => {
         const { updateFromRateLimit } = useDemoMode();
