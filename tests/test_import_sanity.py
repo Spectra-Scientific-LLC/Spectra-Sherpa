@@ -76,16 +76,19 @@ def test_cloud_module_not_imported():
 
 def test_no_circular_import_on_fresh_import():
     """Test that importing nodes from a clean slate works (no circular deps)."""
-    # Remove all spectra_sherpa modules from sys.modules
-    to_remove = [key for key in sys.modules if key.startswith("spectra_sherpa")]
-    for key in to_remove:
+    saved = {k: v for k, v in sys.modules.items() if k.startswith("spectra_sherpa")}
+    for key in list(saved):
         del sys.modules[key]
 
-    # Now try to import nodes (fresh import, no cache)
     try:
         import spectra_sherpa.app.services.dag.nodes  # noqa: F401
     except ImportError as e:
         pytest.fail(f"Circular import or missing module detected: {e}")
+    finally:
+        # Restore original modules to prevent poisoning subsequent tests
+        for k in [k for k in sys.modules if k.startswith("spectra_sherpa")]:
+            del sys.modules[k]
+        sys.modules.update(saved)
 
 
 def test_library_usage_example():
@@ -93,17 +96,14 @@ def test_library_usage_example():
 
     This is the user scenario that was failing before Issue #3 fix.
     """
-    # Remove all spectra_sherpa modules from sys.modules (clean slate)
-    to_remove = [key for key in sys.modules if key.startswith("spectra_sherpa")]
-    for key in to_remove:
+    saved = {k: v for k, v in sys.modules.items() if k.startswith("spectra_sherpa")}
+    for key in list(saved):
         del sys.modules[key]
 
-    # Example: user writes a custom script using SpectraSherpa
     try:
         from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset  # noqa: F401
         from spectra_sherpa.app.services.dag import DAGExecutor, WorkflowEdge, WorkflowNode  # noqa: F401
 
-        # Create a simple workflow programmatically
         executor = DAGExecutor()
         executor.add_node(
             WorkflowNode(
@@ -112,29 +112,32 @@ def test_library_usage_example():
                 parameters={"source": "sklearn", "dataset_name": "iris"},
             )
         )
-
-        # If we got here, library usage works
         assert True
 
     except ImportError as e:
         pytest.fail(f"Library usage failed due to import error: {e}")
+    finally:
+        for k in [k for k in sys.modules if k.startswith("spectra_sherpa")]:
+            del sys.modules[k]
+        sys.modules.update(saved)
 
 
 def test_executor_importable_standalone():
     """Test that DAGExecutor can be imported without importing all nodes."""
-    # Remove all spectra_sherpa modules
-    to_remove = [key for key in sys.modules if key.startswith("spectra_sherpa")]
-    for key in to_remove:
+    saved = {k: v for k, v in sys.modules.items() if k.startswith("spectra_sherpa")}
+    for key in list(saved):
         del sys.modules[key]
 
-    # Import just the executor (should work without triggering full node imports)
     try:
         from spectra_sherpa.app.services.dag.executor import DAGExecutor
 
-        # Verify it imported
         assert DAGExecutor is not None
     except ImportError as e:
         pytest.fail(f"Failed to import DAGExecutor standalone: {e}")
+    finally:
+        for k in [k for k in sys.modules if k.startswith("spectra_sherpa")]:
+            del sys.modules[k]
+        sys.modules.update(saved)
 
 
 def test_all_registered_nodes_have_modules():
@@ -211,16 +214,17 @@ def test_import_speed_reasonable():
     """
     import time
 
-    # Remove all spectra_sherpa modules
-    to_remove = [key for key in sys.modules if key.startswith("spectra_sherpa")]
-    for key in to_remove:
+    saved = {k: v for k, v in sys.modules.items() if k.startswith("spectra_sherpa")}
+    for key in list(saved):
         del sys.modules[key]
 
-    # Time the import
-    start = time.time()
-    import spectra_sherpa.app.services.dag.nodes  # noqa: F401
+    try:
+        start = time.time()
+        import spectra_sherpa.app.services.dag.nodes  # noqa: F401
 
-    elapsed = time.time() - start
-
-    # Should be fast (< 5 seconds even on slow systems)
-    assert elapsed < 5.0, f"Import took {elapsed:.2f}s (too slow, possible circular imports)"
+        elapsed = time.time() - start
+        assert elapsed < 5.0, f"Import took {elapsed:.2f}s (too slow, possible circular imports)"
+    finally:
+        for k in [k for k in sys.modules if k.startswith("spectra_sherpa")]:
+            del sys.modules[k]
+        sys.modules.update(saved)

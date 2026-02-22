@@ -123,20 +123,17 @@ class TestSanitizeForPool:
         assert DAGExecutor._sanitize_for_pool(42) == 42
         assert DAGExecutor._sanitize_for_pool("hello") == "hello"
 
-    def test_nddataset_converted(self):
-        """If SCP is installed, NDDataset is converted to SherpaDataset."""
+    def test_nddataset_rejected(self):
+        """If SCP is installed, NDDataset is rejected at pool boundary."""
         from spectra_sherpa.app.lib.scp_compat import HAS_SCP
 
         if not HAS_SCP:
             pytest.skip("SpectroChemPy not installed")
         import spectrochempy as scp
 
-        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-
         nds = scp.NDDataset(np.random.default_rng(0).normal(size=(5, 10)))
-        result = DAGExecutor._sanitize_for_pool(nds)
-        assert isinstance(result, SherpaDataset)
-        np.testing.assert_array_equal(result.X, np.asarray(nds.data))
+        with pytest.raises(TypeError, match="NDDataset reached pool boundary"):
+            DAGExecutor._sanitize_for_pool(nds)
 
 
 class TestDefaultPool:

@@ -142,7 +142,7 @@ class DeployOutputNode(Node):
         output_ports=[
             PortMetadata(
                 name="default",
-                type_ref="any",
+                type_ref="spectrasherpa://types/Scalar/1.0",
                 required=True,
                 label="Formatted Result",
                 description="The formatted response data",

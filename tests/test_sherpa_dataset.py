@@ -592,7 +592,7 @@ class TestSherpaDatasetConstruction:
 
 class TestShapeInvariants:
     def test_spectral_axis_mismatch_raises(self):
-        with pytest.raises(ValueError, match="spectral_axis length"):
+        with pytest.raises(ValueError, match="feature_axis length"):
             SherpaDataset(
                 X=np.zeros((3, 5)),
                 spectral_axis=SpectralAxis(values=np.arange(10)),  # 10 != 5
@@ -606,7 +606,7 @@ class TestShapeInvariants:
             )
 
     def test_target_mismatch_raises(self):
-        with pytest.raises(ValueError, match="target length"):
+        with pytest.raises(ValueError, match="Target length"):
             SherpaDataset(
                 X=np.zeros((3, 5)),
                 target=np.array([0, 1]),  # 2 != 3
@@ -632,10 +632,10 @@ class TestShapeInvariants:
                 ),
             )
 
-    def test_spectral_axis_setter_validates(self):
+    def test_feature_axis_setter_validates(self):
         ds = SherpaDataset(X=np.zeros((3, 5)))
-        with pytest.raises(ValueError, match="spectral_axis length"):
-            ds.spectral_axis = SpectralAxis(values=np.arange(10))
+        with pytest.raises(ValueError, match="feature_axis length"):
+            ds.feature_axis = SpectralAxis(values=np.arange(10))
 
     def test_sample_axis_setter_validates(self):
         ds = SherpaDataset(X=np.zeros((3, 5)))
@@ -644,7 +644,7 @@ class TestShapeInvariants:
 
     def test_target_setter_validates(self):
         ds = SherpaDataset(X=np.zeros((3, 5)))
-        with pytest.raises(ValueError, match="target length"):
+        with pytest.raises(ValueError, match="Target length"):
             ds.target = np.array([0, 1])
 
     def test_post_init_sample_axis_assignment_validates(self):

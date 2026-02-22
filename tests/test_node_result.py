@@ -12,8 +12,6 @@ Run:
 
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 
 from spectra_sherpa.app.services.dag.node_base import Node, NodeMetadata, NodeResult, NodeStatus
@@ -100,23 +98,26 @@ class _ErrorNode(Node):
 
 
 class TestNodeRun:
-    def test_run_wraps_dict(self):
+    @pytest.mark.asyncio
+    async def test_run_wraps_dict(self):
         node = _SimpleNode("n1")
-        result = asyncio.get_event_loop().run_until_complete(node.run())
+        result = await node.run()
         assert isinstance(result, NodeResult)
         assert result.outputs == {"default": "output_value"}
         assert node.status == NodeStatus.COMPLETED
 
-    def test_run_returns_diagnostics(self):
+    @pytest.mark.asyncio
+    async def test_run_returns_diagnostics(self):
         node = _DiagnosticNode("n2")
-        result = asyncio.get_event_loop().run_until_complete(node.run())
+        result = await node.run()
         assert isinstance(result, NodeResult)
         assert result.diagnostics == {"metric_a": 0.95, "metric_b": 42}
         assert node.status == NodeStatus.COMPLETED
 
-    def test_run_error_sets_status(self):
+    @pytest.mark.asyncio
+    async def test_run_error_sets_status(self):
         node = _ErrorNode("n3")
         with pytest.raises(ValueError, match="intentional error"):
-            asyncio.get_event_loop().run_until_complete(node.run())
+            await node.run()
         assert node.status == NodeStatus.ERROR
         assert node.error_message == "intentional error"
