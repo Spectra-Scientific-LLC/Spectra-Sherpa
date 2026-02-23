@@ -44,9 +44,11 @@ export const useLlmStore = defineStore("llm", () => {
   const lastError = ref<string | null>(null);
   const reconnectAttempts = ref(0);
   const currentConfig = ref<LlmConfig | null>(null);
+  const configStatus = ref<"unknown" | "configured" | "unavailable">("unknown");
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let allowReconnect = true;
   let pendingConnect: Promise<void> | null = null;
+  let configPollTimer: ReturnType<typeof setInterval> | null = null;
 
   const clearReconnect = () => {
     if (reconnectTimer !== null) {
@@ -286,8 +288,10 @@ export const useLlmStore = defineStore("llm", () => {
     const newConfig = await fetchConfig();
     if (!newConfig) {
       console.warn('[LLM] Failed to fetch config');
+      configStatus.value = "unavailable";
       return;
     }
+    configStatus.value = "configured";
 
     const oldConfig = currentConfig.value;
     const isInitialLoad = !oldConfig;
@@ -334,6 +338,23 @@ export const useLlmStore = defineStore("llm", () => {
     currentConfig.value = newConfig;
   };
 
+  const startConfigPolling = (intervalMs = 60_000) => {
+    checkConfigChange();
+    if (configPollTimer !== null) return;
+    configPollTimer = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        checkConfigChange();
+      }
+    }, intervalMs);
+  };
+
+  const stopConfigPolling = () => {
+    if (configPollTimer !== null) {
+      clearInterval(configPollTimer);
+      configPollTimer = null;
+    }
+  };
+
   return {
     messages,
     conversations,
@@ -341,6 +362,7 @@ export const useLlmStore = defineStore("llm", () => {
     loading,
     streaming,
     currentConfig,
+    configStatus,
     wsRef,
     connect,
     disconnect,
@@ -351,6 +373,8 @@ export const useLlmStore = defineStore("llm", () => {
     startNewConversation,
     fetchConfig,
     checkConfigChange,
+    startConfigPolling,
+    stopConfigPolling,
     connectionStatus,
     lastError,
   };

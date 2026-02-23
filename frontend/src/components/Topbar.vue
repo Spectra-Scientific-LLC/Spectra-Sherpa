@@ -160,7 +160,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import Button from "primevue/button";
 import Dropdown from "primevue/dropdown";
 import Menu from "primevue/menu";
@@ -203,7 +203,7 @@ const llmStore = useLlmStore();
 const authStore = useAuthStore();
 const router = useRouter();
 const { backendConnected } = useBackendStatus();
-const { appMode } = useAppConfig();
+const { appMode, hasLLMConfigured } = useAppConfig();
 const fileInput = ref<HTMLInputElement | null>(null);
 const notificationDrawerVisible = ref(false);
 
@@ -282,14 +282,27 @@ const workflowStatus = computed(() => {
 });
 
 const llmStatus = computed(() => {
-  switch (llmStore.connectionStatus) {
-    case 'connected':
-      return { class: 'status-green', tooltip: 'LLM: Connected' };
-    case 'connecting':
-      return { class: 'status-yellow status-pulse', tooltip: 'LLM: Connecting...' };
-    default:
-      return { class: 'status-red', tooltip: 'LLM: Disconnected' };
+  if (llmStore.connectionStatus === 'connected') {
+    return { class: 'status-green', tooltip: 'LLM: Connected' };
   }
+  if (llmStore.connectionStatus === 'connecting') {
+    return { class: 'status-yellow status-pulse', tooltip: 'LLM: Connecting...' };
+  }
+  if (llmStore.configStatus === 'configured' || hasLLMConfigured.value) {
+    return { class: 'status-blue', tooltip: 'LLM: Ready' };
+  }
+  if (llmStore.configStatus === 'unknown') {
+    return { class: 'status-yellow', tooltip: 'LLM: Checking...' };
+  }
+  return { class: 'status-red', tooltip: 'LLM: Not Configured' };
+});
+
+onMounted(() => {
+  llmStore.startConfigPolling();
+});
+
+onUnmounted(() => {
+  llmStore.stopConfigPolling();
 });
 
 const computeStatus = computed(() => {

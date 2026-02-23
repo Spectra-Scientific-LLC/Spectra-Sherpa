@@ -145,10 +145,13 @@ class NetworkHealthService:
 
         try:
             self._state.spectrasherpa_status = ConnectionStatus.CHECKING
-            is_healthy, message = await spectrasherpa.health_check()
+            result = await spectrasherpa.health_check()
 
             end_time = datetime.now(timezone.utc)
             latency_ms = (end_time - start_time).total_seconds() * 1000
+
+            is_healthy = result.get("available", False)
+            message = result.get("message", "")
 
             if is_healthy:
                 return HealthCheckResult(status=ConnectionStatus.CONNECTED, message=message, latency_ms=latency_ms)
