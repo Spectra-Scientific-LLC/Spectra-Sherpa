@@ -49,8 +49,7 @@ def _assert_expected_source_table() -> None:
         missing = sorted(expected - actual)
         extra = sorted(actual - expected)
         raise RuntimeError(
-            "Unexpected custom_algo schema; aborting fail-fast migration. "
-            f"missing={missing}, extra={extra}"
+            "Unexpected custom_algo schema; aborting fail-fast migration. " f"missing={missing}, extra={extra}"
         )
 
 

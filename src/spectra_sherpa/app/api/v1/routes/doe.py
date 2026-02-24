@@ -865,7 +865,7 @@ async def export_doe_xml(
             ET.SubElement(a_elem, "batch").text = str(acq.batch)
 
     # Pretty print
-    xml_str = minidom.parseString(ET.tostring(root)).toprettyxml(indent="  ")
+    xml_str = minidom.parseString(ET.tostring(root)).toprettyxml(indent="  ")  # nosec B318 — self-generated XML
 
     from fastapi.responses import Response
 

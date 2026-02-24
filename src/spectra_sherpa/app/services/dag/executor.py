@@ -480,7 +480,7 @@ class DAGExecutor:
         try:
             # Sort keys for deterministic output
             param_str = json.dumps(node.parameters, sort_keys=True, default=str)
-            return hashlib.md5(param_str.encode()).hexdigest()
+            return hashlib.md5(param_str.encode(), usedforsecurity=False).hexdigest()
         except Exception:
             # If params can't be serialized, always consider dirty
             return ""
