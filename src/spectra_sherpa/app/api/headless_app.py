@@ -203,7 +203,9 @@ async def predict(request: Request) -> Response:
 
         if fmt_type == "json":
             return Response(
-                content=json.dumps(content), media_type="application/json", headers=provenance_headers,
+                content=json.dumps(content),
+                media_type="application/json",
+                headers=provenance_headers,
             )
         elif fmt_type == "csv":
             return PlainTextResponse(content=content, media_type="text/csv", headers=provenance_headers)

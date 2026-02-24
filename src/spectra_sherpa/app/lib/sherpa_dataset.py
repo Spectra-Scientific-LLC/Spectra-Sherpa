@@ -773,11 +773,7 @@ class SherpaDataset:
     @property
     def inner_axes(self) -> dict[int, AxisInfo]:
         """Axes for inner dimensions (not sample or feature)."""
-        return {
-            d: a.copy()
-            for d, a in self._axes.items()
-            if d not in (self._SAMPLE_DIM, self._SPECTRAL_DIM)
-        }
+        return {d: a.copy() for d, a in self._axes.items() if d not in (self._SAMPLE_DIM, self._SPECTRAL_DIM)}
 
     def dim_role(self, dim: int) -> str:
         """Return the semantic role of a dimension: 'sample', 'feature', or 'inner'."""
@@ -1105,10 +1101,7 @@ class SherpaDataset:
         for dim, ax in self._axes.items():
             axes_copy[dim] = ax.copy()
 
-        inner = {
-            d: a for d, a in axes_copy.items()
-            if d not in (self._SPECTRAL_DIM, self._SAMPLE_DIM)
-        } or None
+        inner = {d: a for d, a in axes_copy.items() if d not in (self._SPECTRAL_DIM, self._SAMPLE_DIM)} or None
 
         # Determine which FeatureAxis subtype the spectral dim holds
         spectral_dim_ax = axes_copy.get(self._SPECTRAL_DIM)
@@ -1239,8 +1232,11 @@ class SherpaDataset:
                     except (IndexError, TypeError):
                         pass
                 return self._sliced_copy(
-                    new_X, feature_axis=new_feature, sample_axis=new_sample,
-                    target=new_target, inner_axes=new_inner or None,
+                    new_X,
+                    feature_axis=new_feature,
+                    sample_axis=new_sample,
+                    target=new_target,
+                    inner_axes=new_inner or None,
                 )
 
         # Fallback — slice X and try to slice sample axis

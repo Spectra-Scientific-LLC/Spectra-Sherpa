@@ -427,19 +427,25 @@ class DAGExecutor:
                 result["model_id"] = artifact_uid
 
                 # Record for DB creation by the caller
-                self.saved_artifacts.append({
-                    "artifact_uid": artifact_uid,
-                    "node_id": metadata.get("node_id", node_id),
-                    "model_type": metadata.get("model_type", "unknown"),
-                    "n_features": metadata.get("n_features", 0),
-                    "n_components": metadata.get("n_components"),
-                    "classes_json": json.dumps(metadata["classes"]) if "classes" in metadata else None,
-                    "feature_axis_json": json.dumps(metadata["feature_axis"]) if "feature_axis" in metadata else None,
-                    "metrics_json": json.dumps(metadata["metrics"]) if "metrics" in metadata else None,
-                    "preprocessing_summary": json.dumps(metadata["preprocessing_chain"]) if "preprocessing_chain" in metadata else None,  # noqa: E501
-                    "integrity_hash": integrity_hash,
-                    "artifact_dir": str(store._artifact_dir(artifact_uid)),
-                })
+                self.saved_artifacts.append(
+                    {
+                        "artifact_uid": artifact_uid,
+                        "node_id": metadata.get("node_id", node_id),
+                        "model_type": metadata.get("model_type", "unknown"),
+                        "n_features": metadata.get("n_features", 0),
+                        "n_components": metadata.get("n_components"),
+                        "classes_json": json.dumps(metadata["classes"]) if "classes" in metadata else None,
+                        "feature_axis_json": (
+                            json.dumps(metadata["feature_axis"]) if "feature_axis" in metadata else None
+                        ),
+                        "metrics_json": json.dumps(metadata["metrics"]) if "metrics" in metadata else None,
+                        "preprocessing_summary": (
+                            json.dumps(metadata["preprocessing_chain"]) if "preprocessing_chain" in metadata else None
+                        ),  # noqa: E501
+                        "integrity_hash": integrity_hash,
+                        "artifact_dir": str(store._artifact_dir(artifact_uid)),
+                    }
+                )
 
                 logger.info(
                     "Saved model artifact %s (type=%s) from node %s",

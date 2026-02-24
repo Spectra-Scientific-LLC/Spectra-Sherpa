@@ -42,9 +42,7 @@ def get_model_store() -> ModelStore:
     Raises RuntimeError if :func:`init_model_store` has not been called.
     """
     if _store is None:
-        raise RuntimeError(
-            "ModelStore not initialized — call init_model_store(base_dir) at startup"
-        )
+        raise RuntimeError("ModelStore not initialized — call init_model_store(base_dir) at startup")
     return _store
 
 
@@ -127,9 +125,7 @@ class ModelStore:
         """Load manifest.json only (cheap metadata inspection)."""
         manifest_path = self._artifact_dir(artifact_uid) / "manifest.json"
         if not manifest_path.exists():
-            raise FileNotFoundError(
-                f"Model artifact not found: {artifact_uid}"
-            )
+            raise FileNotFoundError(f"Model artifact not found: {artifact_uid}")
         with open(manifest_path) as f:
             return json.load(f)
 
@@ -137,15 +133,11 @@ class ModelStore:
         """Load arrays.npz → dict of numpy arrays."""
         npz_path = self._artifact_dir(artifact_uid) / "arrays.npz"
         if not npz_path.exists():
-            raise FileNotFoundError(
-                f"Model arrays not found: {artifact_uid}"
-            )
+            raise FileNotFoundError(f"Model arrays not found: {artifact_uid}")
         with np.load(str(npz_path), allow_pickle=False) as npz:
             return dict(npz)
 
-    def load(
-        self, artifact_uid: str
-    ) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
+    def load(self, artifact_uid: str) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
         """Load both manifest and arrays."""
         manifest = self.load_manifest(artifact_uid)
         arrays = self.load_arrays(artifact_uid)
@@ -178,11 +170,7 @@ class ModelStore:
         """List all artifact_uids on disk."""
         if not self.models_dir.exists():
             return []
-        return [
-            d.name
-            for d in self.models_dir.iterdir()
-            if d.is_dir() and (d / "manifest.json").exists()
-        ]
+        return [d.name for d in self.models_dir.iterdir() if d.is_dir() and (d / "manifest.json").exists()]
 
     # ── Helpers ──────────────────────────────────────────────────────
 
@@ -190,9 +178,7 @@ class ModelStore:
         """Resolve artifact directory with path traversal protection."""
         resolved = (self.models_dir / artifact_uid).resolve()
         if not resolved.is_relative_to(self.models_dir.resolve()):
-            raise ValueError(
-                f"Invalid artifact_uid: path traversal detected ({artifact_uid!r})"
-            )
+            raise ValueError(f"Invalid artifact_uid: path traversal detected ({artifact_uid!r})")
         return resolved
 
 

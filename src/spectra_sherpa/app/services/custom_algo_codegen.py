@@ -43,9 +43,7 @@ def validate_slug(slug: str) -> str:
     """
     slug = slug.strip().lower()
     if not _SLUG_PATTERN.match(slug):
-        raise ValueError(
-            f"Invalid slug {slug!r}: must match [a-z][a-z0-9_]{{0,63}}"
-        )
+        raise ValueError(f"Invalid slug {slug!r}: must match [a-z][a-z0-9_]{{0,63}}")
     return slug
 
 

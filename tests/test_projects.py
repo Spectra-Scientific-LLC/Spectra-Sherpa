@@ -769,9 +769,7 @@ class TestExportImport:
             assert resp.status_code == 413
             assert "Total model data too large" in resp.json()["detail"]
 
-            after_count = await test_session.scalar(
-                select(func.count(Project.id)).where(Project.name == rollback_name)
-            )
+            after_count = await test_session.scalar(select(func.count(Project.id)).where(Project.name == rollback_name))
             assert (before_count or 0) == (after_count or 0) == 0
         finally:
             object.__setattr__(settings, "max_file_size_mb", original_max_size)

@@ -290,5 +290,3 @@ class SIMPLISMANode(Node):
                 "label_categories": label_categories,  # List of unique categories (None if no categorical labels)
             },
         }
-
-

@@ -576,5 +576,3 @@ class LinearRegressionNode(EstimatorSpecNode):
         post_fit_fn=_lr_post_fit,
         estimator_import="from sklearn.linear_model import LinearRegression",
     )
-
-

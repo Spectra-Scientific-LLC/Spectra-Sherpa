@@ -51,8 +51,6 @@ def _check_custom_code_allowed() -> None:
         )
 
 
-
-
 # ── List ────────────────────────────────────────────────────────────
 
 
@@ -66,9 +64,7 @@ async def list_custom_algos(
     await require_project(project_id, current_user.id, session)
 
     result = await session.execute(
-        select(CustomAlgo)
-        .where(CustomAlgo.project_id == project_id)
-        .order_by(CustomAlgo.name)
+        select(CustomAlgo).where(CustomAlgo.project_id == project_id).order_by(CustomAlgo.name)
     )
     return [CustomAlgoDetail.model_validate(a) for a in result.scalars().all()]
 
@@ -89,9 +85,7 @@ async def list_custom_algo_nodes(
     from spectra_sherpa.app.services.dag.node_base import node_registry
 
     result = await session.execute(
-        select(CustomAlgo)
-        .where(CustomAlgo.project_id == project_id)
-        .order_by(CustomAlgo.name)
+        select(CustomAlgo).where(CustomAlgo.project_id == project_id).order_by(CustomAlgo.name)
     )
     algos = result.scalars().all()
 
@@ -169,9 +163,7 @@ async def create_custom_algo(
     node_type = make_node_type(project_id, slug)
 
     # Check uniqueness
-    existing = await session.execute(
-        select(CustomAlgo).where(CustomAlgo.node_type == node_type)
-    )
+    existing = await session.execute(select(CustomAlgo).where(CustomAlgo.node_type == node_type))
     if existing.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=409,
@@ -210,7 +202,9 @@ async def create_custom_algo(
 
     logger.info(
         "Created custom algo '%s' (%s) in project %s",
-        algo.name, algo.node_type, project_id,
+        algo.name,
+        algo.node_type,
+        project_id,
     )
     return CustomAlgoDetail.model_validate(algo)
 
@@ -311,6 +305,8 @@ async def delete_custom_algo(
 
     logger.info(
         "Deleted custom algo '%s' (%s) from project %s",
-        algo.name, algo.node_type, project_id,
+        algo.name,
+        algo.node_type,
+        project_id,
     )
     return Response(status_code=204)

@@ -241,9 +241,7 @@ async def require_project(
     """Load a project owned by *user_id*, or raise 404."""
     from spectra_sherpa.app.models.project import Project
 
-    result = await session.execute(
-        select(Project).where(Project.id == project_id, Project.user_id == user_id)
-    )
+    result = await session.execute(select(Project).where(Project.id == project_id, Project.user_id == user_id))
     project = result.scalar_one_or_none()
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")

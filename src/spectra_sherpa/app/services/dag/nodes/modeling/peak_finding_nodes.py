@@ -255,5 +255,3 @@ class PeakFindingNode(Node):
         logger.debug("[Peak Finding] Found %s peaks", len(peak_indices))
 
         return result
-
-

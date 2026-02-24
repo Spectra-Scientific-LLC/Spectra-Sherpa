@@ -189,5 +189,3 @@ class EFANode(Node):
             "backward_eigenvalues": backward_ev_dataset,  # NDDataset: backward eigenvalues
             "model": efa,  # Model port
         }
-
-

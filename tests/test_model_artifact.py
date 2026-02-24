@@ -191,12 +191,28 @@ class TestModelArtifactModel:
         from spectra_sherpa.app.models.model_artifact import ModelArtifact
 
         expected_columns = {
-            "id", "artifact_uid", "user_id", "project_id", "workflow_id",
-            "workflow_version_id", "node_id", "model_type", "name", "description",
-            "artifact_dir", "integrity_hash", "n_features", "n_components",
-            "classes_json", "feature_axis_json", "metrics_json",
-            "training_data_hash", "preprocessing_summary",
-            "is_active", "created_at", "updated_at",
+            "id",
+            "artifact_uid",
+            "user_id",
+            "project_id",
+            "workflow_id",
+            "workflow_version_id",
+            "node_id",
+            "model_type",
+            "name",
+            "description",
+            "artifact_dir",
+            "integrity_hash",
+            "n_features",
+            "n_components",
+            "classes_json",
+            "feature_axis_json",
+            "metrics_json",
+            "training_data_hash",
+            "preprocessing_summary",
+            "is_active",
+            "created_at",
+            "updated_at",
         }
         actual_columns = {c.name for c in ModelArtifact.__table__.columns}
         assert expected_columns == actual_columns
@@ -246,12 +262,8 @@ class TestPCAExtractArtifact:
         assert restored.n_components == pca_extract.n_components
         np.testing.assert_array_equal(restored.loadings, pca_extract.loadings)
         np.testing.assert_array_equal(restored.mean, pca_extract.mean)
-        np.testing.assert_array_equal(
-            restored.explained_variance_ratio, pca_extract.explained_variance_ratio
-        )
-        np.testing.assert_array_equal(
-            restored.explained_variance, pca_extract.explained_variance
-        )
+        np.testing.assert_array_equal(restored.explained_variance_ratio, pca_extract.explained_variance_ratio)
+        np.testing.assert_array_equal(restored.explained_variance, pca_extract.explained_variance)
         np.testing.assert_array_equal(restored.scores, pca_extract.scores)
 
     def test_roundtrip_without_mean(self):
@@ -344,9 +356,7 @@ class TestPCAExtractArtifact:
         # Transform should give identical results
         rng = np.random.default_rng(77)
         X = rng.standard_normal((3, 50))
-        np.testing.assert_allclose(
-            restored.transform(X), pca_extract.transform(X), atol=1e-12
-        )
+        np.testing.assert_allclose(restored.transform(X), pca_extract.transform(X), atol=1e-12)
 
 
 class TestPLSExtractArtifact:
@@ -395,8 +405,12 @@ class TestPLSExtractArtifact:
         from spectra_sherpa.app.lib.adapters.scp_extractors import PLSExtract
 
         extract = PLSExtract(
-            x_scores=None, y_scores=None, x_loadings=None,
-            y_loadings=None, coef=None, n_components=2,
+            x_scores=None,
+            y_scores=None,
+            x_loadings=None,
+            y_loadings=None,
+            coef=None,
+            n_components=2,
         )
         with pytest.raises(ValueError, match="coef is None"):
             extract.predict(np.ones((3, 10)))
@@ -421,8 +435,10 @@ class TestPLSExtractArtifact:
         y_mean = y_train.mean(axis=0)
 
         extract = PLSExtract(
-            x_scores=None, y_scores=None,
-            x_loadings=None, y_loadings=None,
+            x_scores=None,
+            y_scores=None,
+            x_loadings=None,
+            y_loadings=None,
             coef=coef,
             n_components=3,
             x_mean=x_mean,
@@ -696,10 +712,8 @@ class TestKNNExtractArtifact:
         # Test point closer to class A (origin)
         X_test = np.array([[0.1, 0]], dtype=np.float64)
 
-        uniform = KNNExtract(X_train=X_train, y_train_encoded=y_encoded,
-                             classes=classes, k=3, weights="uniform")
-        distance = KNNExtract(X_train=X_train, y_train_encoded=y_encoded,
-                              classes=classes, k=3, weights="distance")
+        uniform = KNNExtract(X_train=X_train, y_train_encoded=y_encoded, classes=classes, k=3, weights="uniform")
+        distance = KNNExtract(X_train=X_train, y_train_encoded=y_encoded, classes=classes, k=3, weights="distance")
 
         labels_u, _ = uniform.predict(X_test)
         labels_d, _ = distance.predict(X_test)
@@ -755,15 +769,9 @@ class TestSIMCAExtractArtifact:
         assert restored.Q_limits == {"red": 2.0, "blue": 2.0}
 
         for label in ["red", "blue"]:
-            np.testing.assert_array_equal(
-                restored.class_loadings[label], simca_extract.class_loadings[label]
-            )
-            np.testing.assert_array_equal(
-                restored.class_eigenvalues[label], simca_extract.class_eigenvalues[label]
-            )
-            np.testing.assert_array_equal(
-                restored.class_means[label], simca_extract.class_means[label]
-            )
+            np.testing.assert_array_equal(restored.class_loadings[label], simca_extract.class_loadings[label])
+            np.testing.assert_array_equal(restored.class_eigenvalues[label], simca_extract.class_eigenvalues[label])
+            np.testing.assert_array_equal(restored.class_means[label], simca_extract.class_means[label])
 
     def test_predict_returns_labels_and_probabilities(self, simca_extract):
         rng = np.random.default_rng(99)
@@ -914,8 +922,10 @@ class TestLoadApplyModelNode:
         rng = np.random.default_rng(42)
         n_features, n_targets = 50, 1
         extract = PLSExtract(
-            x_scores=None, y_scores=None,
-            x_loadings=None, y_loadings=None,
+            x_scores=None,
+            y_scores=None,
+            x_loadings=None,
+            y_loadings=None,
             coef=rng.standard_normal((n_features, n_targets)),
             n_components=3,
             x_mean=rng.standard_normal(n_features),
@@ -1157,6 +1167,7 @@ class TestLoadApplyModelNode:
         manifest["n_features"] = 50
         # Re-save with n_features set
         import json
+
         manifest_path = store.models_dir / uid / "manifest.json"
         with open(manifest_path, "w") as f:
             json.dump(manifest, f, indent=2)

@@ -82,9 +82,17 @@ class TestMakeNodeType:
 class _FakeAlgo:
     """Minimal duck-type for CustomAlgo used by codegen functions."""
 
-    def __init__(self, *, project_id=1, slug="test_algo", name="Test Algo",
-                 description="A test", code="result = data", mode="simple",
-                 icon="\U0001f9ea"):
+    def __init__(
+        self,
+        *,
+        project_id=1,
+        slug="test_algo",
+        name="Test Algo",
+        description="A test",
+        code="result = data",
+        mode="simple",
+        icon="\U0001f9ea",
+    ):
         self.project_id = project_id
         self.slug = slug
         self.name = name
@@ -275,7 +283,6 @@ class TestNodeRegistryLifecycle:
 # ── Ownership validation ────────────────────────────────────────────
 
 
-
 class TestCustomCodePolicy:
     def test_mode_policy_allows_when_enabled_and_not_demo(self, monkeypatch):
         from spectra_sherpa.app.core.config import app_config
@@ -363,6 +370,3 @@ class TestUalgoNodeValidation:
         )
         assert ualgo_types == ["ualgo.3.my_algo"]
         assert resolved_project_id == 3
-
-
-

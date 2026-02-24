@@ -351,12 +351,42 @@ def _infer_domain_from_nddataset(ds: Any, spectral_axis: SpectralAxis | None) ->
 
 
 # Unit sets for axis type inference (matching axes.py conventions)
-_TIME_UNITS = frozenset({"min", "minute", "minutes", "s", "sec", "second", "seconds",
-                         "ms", "millisecond", "milliseconds", "h", "hour", "hours"})
+_TIME_UNITS = frozenset(
+    {
+        "min",
+        "minute",
+        "minutes",
+        "s",
+        "sec",
+        "second",
+        "seconds",
+        "ms",
+        "millisecond",
+        "milliseconds",
+        "h",
+        "hour",
+        "hours",
+    }
+)
 _MZ_UNITS = frozenset({"m/z", "mz", "da", "dalton", "amu"})
-_SPATIAL_UNITS = frozenset({"um", "µm", "\u03bcm", "micron", "microns", "micrometer",
-                            "mm", "millimeter", "millimeters", "cm", "centimeter",
-                            "px", "pixel", "pixels"})
+_SPATIAL_UNITS = frozenset(
+    {
+        "um",
+        "µm",
+        "\u03bcm",
+        "micron",
+        "microns",
+        "micrometer",
+        "mm",
+        "millimeter",
+        "millimeters",
+        "cm",
+        "centimeter",
+        "px",
+        "pixel",
+        "pixels",
+    }
+)
 
 
 def _extract_inner_axes(ds: Any, ndim: int, *, dim_names: list[str] | None) -> dict[int, AxisInfo]:

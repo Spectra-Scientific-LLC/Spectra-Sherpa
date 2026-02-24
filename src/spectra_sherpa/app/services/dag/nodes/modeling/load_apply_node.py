@@ -132,9 +132,7 @@ class LoadApplyModelNode(Node):
 
         # --- Reject diagnostic-only models ---
         if model_type in _DIAGNOSTIC_TYPES:
-            raise ValueError(
-                f"{model_type.upper()} is diagnostic only — it cannot be applied to new data"
-            )
+            raise ValueError(f"{model_type.upper()} is diagnostic only — it cannot be applied to new data")
 
         # --- Get extract class ---
         extract_cls = EXTRACT_REGISTRY.get(model_type)
@@ -157,10 +155,7 @@ class LoadApplyModelNode(Node):
         # --- Validate feature count ---
         n_features = manifest.get("n_features")
         if n_features is not None and X_data.shape[1] != n_features:
-            raise ValueError(
-                f"Feature count mismatch: model expects {n_features} features, "
-                f"got {X_data.shape[1]}"
-            )
+            raise ValueError(f"Feature count mismatch: model expects {n_features} features, " f"got {X_data.shape[1]}")
 
         # --- Reconstruct extract and apply ---
         extract = extract_cls.from_artifact(manifest, arrays)

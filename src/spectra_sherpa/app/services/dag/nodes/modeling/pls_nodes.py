@@ -372,8 +372,6 @@ class PLSNode(Node):
         }
 
 
-
-
 @register_node
 class PLSPredictNode(Node):
     """
@@ -462,5 +460,3 @@ class PLSPredictNode(Node):
 
         except Exception as e:
             raise RuntimeError(f"PLS prediction failed: {str(e)}") from e
-
-

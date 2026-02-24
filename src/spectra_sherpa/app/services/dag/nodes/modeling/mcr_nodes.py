@@ -339,5 +339,3 @@ class MCRNode(Node):
             "residuals": residuals_dataset,  # NDDataset: residuals
             "model": mcr,  # Model port
         }
-
-

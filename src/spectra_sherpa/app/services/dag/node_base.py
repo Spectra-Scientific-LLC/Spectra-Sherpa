@@ -94,7 +94,6 @@ class PortMetadata:
             self.label = self.name
 
 
-
 @dataclass
 class NodePolicy:
     """Per-node safety and automation metadata.

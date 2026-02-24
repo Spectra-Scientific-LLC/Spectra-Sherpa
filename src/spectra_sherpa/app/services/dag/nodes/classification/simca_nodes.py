@@ -32,7 +32,6 @@ from .core_utils import (
 logger = logging.getLogger(__name__)
 
 
-
 @register_node
 class SIMCANode(Node):
     """
@@ -403,8 +402,6 @@ class SIMCANode(Node):
             "model": serializable_models,  # Model port: class models dict for SIMCA Predict
             "plots": plots,  # Pre-built Plotly traces (legitimate visualization output)
         }
-
-
 
 
 @register_node

@@ -645,5 +645,3 @@ class DBSCANNode(Node):
                 "source_labels": source_labels,
             },
         }
-
-

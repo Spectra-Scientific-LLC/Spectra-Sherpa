@@ -30,7 +30,6 @@ from .core_utils import (
 logger = logging.getLogger(__name__)
 
 
-
 @register_node
 class KNNNode(Node):
     """
@@ -488,8 +487,6 @@ class KNNNode(Node):
         }
 
 
-
-
 @register_node
 class KNNPredictNode(Node):
     """
@@ -588,5 +585,3 @@ class KNNPredictNode(Node):
             "y_pred": y_pred.tolist(),
             "y_prob": y_prob.tolist(),
         }
-
-

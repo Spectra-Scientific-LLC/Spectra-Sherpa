@@ -33,7 +33,9 @@ router = APIRouter(prefix="/workflows/{workflow_id}/runs")
 async def _get_workflow_for_user(workflow_id: int, user_id: int, session: AsyncSession) -> Workflow:
     """Load workflow with ownership check."""
     return await require_workflow(
-        workflow_id, user_id, session,
+        workflow_id,
+        user_id,
+        session,
         options=[selectinload(Workflow.nodes), selectinload(Workflow.versions)],
     )
 

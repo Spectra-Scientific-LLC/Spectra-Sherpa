@@ -34,7 +34,6 @@ from .core_utils import (
 logger = logging.getLogger(__name__)
 
 
-
 @register_node
 class PLSDANode(Node):
     """
@@ -907,8 +906,6 @@ class PLSDANode(Node):
         }
 
 
-
-
 @register_node
 class PLSDAPredictNode(Node):
     """
@@ -1034,5 +1031,3 @@ class PLSDAPredictNode(Node):
             "y_pred": y_pred.tolist(),
             "y_prob": Y_pred_prob.tolist(),
         }
-
-

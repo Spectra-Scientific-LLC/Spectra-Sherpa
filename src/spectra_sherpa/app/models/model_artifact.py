@@ -39,12 +39,8 @@ class ModelArtifact(Base):
     __tablename__ = "model_artifact"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    artifact_uid: Mapped[str] = mapped_column(
-        String(36), unique=True, nullable=False, index=True
-    )
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
-    )
+    artifact_uid: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
     project_id: Mapped[int | None] = mapped_column(
         ForeignKey("project.id", ondelete="SET NULL"), nullable=True, index=True
     )
@@ -77,12 +73,8 @@ class ModelArtifact(Base):
     preprocessing_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Lifecycle
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, server_default=sa.true(), nullable=False
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), index=True
-    )
+    is_active: Mapped[bool] = mapped_column(Boolean, server_default=sa.true(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -94,7 +86,4 @@ class ModelArtifact(Base):
     workflow_version: Mapped[WorkflowVersion | None] = relationship("WorkflowVersion")
 
     def __repr__(self) -> str:
-        return (
-            f"<ModelArtifact(uid={self.artifact_uid!r}, "
-            f"type={self.model_type!r}, name={self.name!r})>"
-        )
+        return f"<ModelArtifact(uid={self.artifact_uid!r}, " f"type={self.model_type!r}, name={self.name!r})>"

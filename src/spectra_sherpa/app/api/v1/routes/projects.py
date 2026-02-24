@@ -276,8 +276,8 @@ async def delete_project(
         wf.project_id = None
 
     for ma in (
-        await session.execute(select(ModelArtifact).where(ModelArtifact.project_id == project_id))
-    ).scalars().all():
+        (await session.execute(select(ModelArtifact).where(ModelArtifact.project_id == project_id))).scalars().all()
+    ):
         ma.project_id = None
 
     await session.delete(project)

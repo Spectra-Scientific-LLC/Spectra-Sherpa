@@ -974,10 +974,10 @@ class SIMCAExtract:
 
                 # T² statistic
                 safe_ev = np.maximum(eigenvalues, 1e-12)
-                t2 = float(np.sum((scores ** 2) / safe_ev))
+                t2 = float(np.sum((scores**2) / safe_ev))
 
                 # Q statistic (SPE)
-                q = float(np.sum(residual ** 2))
+                q = float(np.sum(residual**2))
 
                 # Combined normalized distance
                 combined = t2 / max(T2_lim, 1e-12) + q / max(Q_lim, 1e-12)
