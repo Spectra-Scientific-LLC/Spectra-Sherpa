@@ -19,16 +19,18 @@ from __future__ import annotations
 
 import io
 import json
+import uuid
 import zipfile
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from spectra_sherpa.app.api.deps import get_current_user, get_session
-from spectra_sherpa.app.main import app
+from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
+from spectra_sherpa.app.models.project import Project
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
 
@@ -43,43 +45,6 @@ async def user2(test_session: AsyncSession) -> User:
     await test_session.commit()
     await test_session.refresh(user)
     return user
-
-
-@pytest.fixture
-async def auth_client(test_session: AsyncSession, test_user: User) -> AsyncClient:
-    """HTTP client authenticated as test_user."""
-
-    async def override_get_session():
-        yield test_session
-
-    async def override_get_current_user():
-        return test_user
-
-    app.dependency_overrides[get_session] = override_get_session
-    app.dependency_overrides[get_current_user] = override_get_current_user
-
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        yield ac
-
-    app.dependency_overrides.clear()
-
-
-@pytest.fixture
-def swap_user(test_session: AsyncSession):
-    """Context helper to temporarily swap the authenticated user for ownership tests."""
-
-    class _Swapper:
-        def __call__(self, user: User):
-            async def override_get_session():
-                yield test_session
-
-            async def override_get_current_user():
-                return user
-
-            app.dependency_overrides[get_session] = override_get_session
-            app.dependency_overrides[get_current_user] = override_get_current_user
-
-    return _Swapper()
 
 
 @pytest.fixture
@@ -719,6 +684,97 @@ class TestExportImport:
             files={"file": ("bad.spectrapy", buf, "application/zip")},
         )
         assert resp.status_code == 400
+
+    @pytest.mark.anyio
+    async def test_import_rejects_oversized_archive_before_zip_parse(
+        self,
+        auth_client: AsyncClient,
+    ):
+        original_max_size = settings.max_file_size_mb
+        object.__setattr__(settings, "max_file_size_mb", 1)
+        try:
+            oversized_payload = io.BytesIO(b"x" * ((1024 * 1024) + 1))
+
+            resp = await auth_client.post(
+                "/api/v1/projects/import",
+                files={"file": ("too-large.spectrapy", oversized_payload, "application/zip")},
+            )
+            assert resp.status_code == 413
+            assert "Archive too large" in resp.json()["detail"]
+        finally:
+            object.__setattr__(settings, "max_file_size_mb", original_max_size)
+
+    @pytest.mark.anyio
+    async def test_import_fail_fast_total_model_budget_is_atomic(
+        self,
+        auth_client: AsyncClient,
+        test_session: AsyncSession,
+    ):
+        import numpy as np
+
+        original_max_size = settings.max_file_size_mb
+        object.__setattr__(settings, "max_file_size_mb", 1)
+
+        try:
+            # 6 models * ~0.9 MB arrays > 5 MB total budget, with each member < 1 MB.
+            # Uses a repeating 1KB random-ish block to keep compression ratio below 200:1.
+            block = np.random.default_rng(0).integers(0, 256, size=1024, dtype=np.uint8)
+            arr = np.tile(block, (900_000 // block.size) + 1)[:900_000]
+            arrays_buf = io.BytesIO()
+            np.savez(arrays_buf, arr=arr)
+            arrays_payload = arrays_buf.getvalue()
+
+            models = []
+            for i in range(6):
+                models.append(
+                    {
+                        "artifact_uid": str(uuid.uuid4()),
+                        "node_id": f"node_{i}",
+                        "model_type": "pca",
+                        "name": f"Model {i}",
+                    }
+                )
+
+            rollback_name = f"Should Roll Back {uuid.uuid4()}"
+            snapshot = {
+                "name": rollback_name,
+                "description": "Validation should fail before commit",
+                "metadata": {},
+                "technique": "IR",
+                "sample_type": "powder",
+                "experiments": [],
+                "workflows": [],
+                "scripts": [],
+                "models": models,
+                "children": [],
+            }
+
+            payload = io.BytesIO()
+            with zipfile.ZipFile(payload, "w", zipfile.ZIP_DEFLATED) as zf:
+                zf.writestr("project.json", json.dumps(snapshot))
+                for model in models:
+                    uid = model["artifact_uid"]
+                    zf.writestr(f"models/{uid}/manifest.json", json.dumps({"model_type": "pca"}))
+                    zf.writestr(f"models/{uid}/arrays.npz", arrays_payload)
+            payload.seek(0)
+
+            before_count = await test_session.scalar(
+                select(func.count(Project.id)).where(Project.name == rollback_name)
+            )
+
+            resp = await auth_client.post(
+                "/api/v1/projects/import",
+                files={"file": ("too-many-models.spectrapy", payload, "application/zip")},
+            )
+            assert resp.status_code == 413
+            assert "Total model data too large" in resp.json()["detail"]
+
+            after_count = await test_session.scalar(
+                select(func.count(Project.id)).where(Project.name == rollback_name)
+            )
+            assert (before_count or 0) == (after_count or 0) == 0
+        finally:
+            object.__setattr__(settings, "max_file_size_mb", original_max_size)
 
     @pytest.mark.anyio
     async def test_export_roundtrip(self, auth_client: AsyncClient):

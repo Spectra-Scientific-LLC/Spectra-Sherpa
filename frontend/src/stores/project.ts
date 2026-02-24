@@ -52,6 +52,7 @@ export const useProjectStore = defineStore("project", () => {
       experiment_count: p.experiment_count,
       workflow_count: p.workflow_count,
       script_count: p.script_count,
+      model_count: p.model_count,
       children_count: p.children_count,
     }))
   );

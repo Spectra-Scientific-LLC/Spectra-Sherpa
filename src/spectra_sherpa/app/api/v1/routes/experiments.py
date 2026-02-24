@@ -45,6 +45,14 @@ from spectra_sherpa.app.services.version_storage import ContentAddressableStorag
 router = APIRouter(prefix="/experiments")
 
 
+async def _require_experiment(session: AsyncSession, experiment_id: int, user_id: int):
+    """Load experiment via service layer with ownership check."""
+    experiment = await get_experiment(session, experiment_id)
+    if experiment is None or experiment.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+    return experiment
+
+
 @router.get("", response_model=list[ExperimentSummary])
 async def list_experiments_endpoint(
     limit: int = Query(50, ge=1, le=200),
@@ -109,12 +117,7 @@ async def get_experiment_endpoint(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> ExperimentDetail:
-    experiment = await get_experiment(session, experiment_id)
-    if experiment is None:
-        raise HTTPException(status_code=404, detail="Experiment not found")
-    # Ownership check: user can only access their own experiments
-    if experiment.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Experiment not found")
+    experiment = await _require_experiment(session, experiment_id, current_user.id)
     metadata_path = resolve_data_path(experiment.metadata_path)
     metadata = read_metadata(metadata_path)
     return ExperimentDetail(**ExperimentSummary.model_validate(experiment).model_dump(), metadata=metadata)
@@ -127,12 +130,7 @@ async def update_experiment_endpoint(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> ExperimentDetail:
-    experiment = await get_experiment(session, experiment_id)
-    if experiment is None:
-        raise HTTPException(status_code=404, detail="Experiment not found")
-    # Ownership check
-    if experiment.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Experiment not found")
+    experiment = await _require_experiment(session, experiment_id, current_user.id)
     updated = await update_experiment(
         session,
         experiment=experiment,
@@ -152,12 +150,7 @@ async def delete_experiment_endpoint(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    experiment = await get_experiment(session, experiment_id)
-    if experiment is None:
-        raise HTTPException(status_code=404, detail="Experiment not found")
-    # Ownership check
-    if experiment.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Experiment not found")
+    experiment = await _require_experiment(session, experiment_id, current_user.id)
     await delete_experiment(session, experiment)
     if purge_files:
         delete_experiment_files(experiment_id)
@@ -177,12 +170,7 @@ async def upload_experiment_file(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> ExperimentFileOut:
-    experiment = await get_experiment(session, experiment_id)
-    if experiment is None:
-        raise HTTPException(status_code=404, detail="Experiment not found")
-    # Ownership check
-    if experiment.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Experiment not found")
+    await _require_experiment(session, experiment_id, current_user.id)
     if stage not in ALLOWED_STAGES:
         raise HTTPException(status_code=400, detail="Invalid stage")
 
@@ -230,11 +218,7 @@ async def import_reference_datasets_endpoint(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> ReferenceDatasetImportResponse:
-    experiment = await get_experiment(session, experiment_id)
-    if experiment is None:
-        raise HTTPException(status_code=404, detail="Experiment not found")
-    if experiment.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Experiment not found")
+    await _require_experiment(session, experiment_id, current_user.id)
 
     all_files: list[ExperimentFile] = []
     exp_dir = experiment_dir(experiment_id)
@@ -283,12 +267,7 @@ async def list_experiment_files_endpoint(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> list[ExperimentFileOut]:
-    experiment = await get_experiment(session, experiment_id)
-    if experiment is None:
-        raise HTTPException(status_code=404, detail="Experiment not found")
-    # Ownership check
-    if experiment.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Experiment not found")
+    await _require_experiment(session, experiment_id, current_user.id)
     if stage and stage not in ALLOWED_STAGES:
         raise HTTPException(status_code=400, detail="Invalid stage")
 
@@ -303,10 +282,8 @@ async def delete_experiment_file_endpoint(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    # First verify experiment ownership
-    experiment = await get_experiment(session, experiment_id)
-    if experiment is None or experiment.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Experiment not found")
+    # Verify experiment ownership
+    await _require_experiment(session, experiment_id, current_user.id)
 
     experiment_file = await get_experiment_file(session, experiment_id, file_id)
     if experiment_file is None:
@@ -326,12 +303,7 @@ async def list_versions_endpoint(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> list[VersionInfo]:
-    experiment = await get_experiment(session, experiment_id)
-    if experiment is None:
-        raise HTTPException(status_code=404, detail="Experiment not found")
-    # Ownership check
-    if experiment.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Experiment not found")
+    await _require_experiment(session, experiment_id, current_user.id)
 
     result = await session.execute(
         select(ExpVersion).where(ExpVersion.experiment_id == experiment_id).order_by(ExpVersion.created_at.desc())
@@ -367,12 +339,7 @@ async def create_version_endpoint(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> VersionInfo:
-    experiment = await get_experiment(session, experiment_id)
-    if experiment is None:
-        raise HTTPException(status_code=404, detail="Experiment not found")
-    # Ownership check
-    if experiment.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Experiment not found")
+    await _require_experiment(session, experiment_id, current_user.id)
 
     if payload.file_ids and payload.stages:
         raise HTTPException(status_code=400, detail="Provide file_ids or stages, not both")
@@ -465,12 +432,7 @@ async def restore_version_endpoint(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    experiment = await get_experiment(session, experiment_id)
-    if experiment is None:
-        raise HTTPException(status_code=404, detail="Experiment not found")
-    # Ownership check
-    if experiment.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Experiment not found")
+    await _require_experiment(session, experiment_id, current_user.id)
 
     version = await get_version_by_name(session, experiment_id, version_name)
     if version is None:

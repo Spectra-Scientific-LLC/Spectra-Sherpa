@@ -26,12 +26,10 @@ import zipfile
 from unittest.mock import patch
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from spectra_sherpa.app.api.deps import get_current_user, get_session
-from spectra_sherpa.app.main import app
 from spectra_sherpa.app.models.project_script import ProjectScript
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
@@ -47,43 +45,6 @@ async def user2(test_session: AsyncSession) -> User:
     await test_session.commit()
     await test_session.refresh(user)
     return user
-
-
-@pytest.fixture
-async def auth_client(test_session: AsyncSession, test_user: User) -> AsyncClient:
-    """HTTP client authenticated as test_user."""
-
-    async def override_get_session():
-        yield test_session
-
-    async def override_get_current_user():
-        return test_user
-
-    app.dependency_overrides[get_session] = override_get_session
-    app.dependency_overrides[get_current_user] = override_get_current_user
-
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        yield ac
-
-    app.dependency_overrides.clear()
-
-
-@pytest.fixture
-def swap_user(test_session: AsyncSession):
-    """Swap the authenticated user for ownership tests."""
-
-    class _Swapper:
-        def __call__(self, user: User):
-            async def override_get_session():
-                yield test_session
-
-            async def override_get_current_user():
-                return user
-
-            app.dependency_overrides[get_session] = override_get_session
-            app.dependency_overrides[get_current_user] = override_get_current_user
-
-    return _Swapper()
 
 
 @pytest.fixture

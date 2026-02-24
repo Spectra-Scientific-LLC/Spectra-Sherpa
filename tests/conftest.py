@@ -48,7 +48,9 @@ logging.getLogger("spectrochempy").propagate = False
 # Also silence the root logger for good measure during tests
 logging.getLogger().setLevel(logging.CRITICAL)
 
-from spectra_sherpa.app.api.deps import get_session
+from starlette.testclient import TestClient
+
+from spectra_sherpa.app.api.deps import get_current_user, get_session
 from spectra_sherpa.app.db.base import Base
 from spectra_sherpa.app.main import app
 from spectra_sherpa.app.models.user import User
@@ -106,6 +108,53 @@ async def client(test_session: AsyncSession) -> AsyncGenerator[AsyncClient, None
         yield ac
 
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def auth_client(test_session: AsyncSession, test_user: User) -> AsyncGenerator[AsyncClient, None]:
+    """HTTP client authenticated as test_user."""
+
+    async def override_get_session():
+        yield test_session
+
+    async def override_get_current_user():
+        return test_user
+
+    app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_current_user] = override_get_current_user
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        yield ac
+
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def swap_user(test_session: AsyncSession):
+    """Context helper to temporarily swap the authenticated user for ownership tests."""
+
+    class _Swapper:
+        def __call__(self, user: User):
+            async def override_get_session():
+                yield test_session
+
+            async def override_get_current_user():
+                return user
+
+            app.dependency_overrides[get_session] = override_get_session
+            app.dependency_overrides[get_current_user] = override_get_current_user
+
+    return _Swapper()
+
+
+@pytest.fixture
+def ws_client():
+    """Synchronous TestClient for WebSocket testing."""
+    tc = TestClient(app)
+    try:
+        yield tc
+    finally:
+        tc.close()
 
 
 @pytest.fixture(autouse=True)

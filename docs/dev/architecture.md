@@ -19,8 +19,12 @@ SpectraSherpa follows a "Clean Architecture" pattern with a strict separation be
 │                 │              │ DataSource        │  │
 │                 │ topological  │ Preprocessing     │  │
 │                 │ sort         │ Modeling          │  │
-│                 ▼              │ Visualization     │  │
-│              Results           └──────────────────┘  │
+│                 ▼              │ Classification    │  │
+│              Results           │ Visualization     │  │
+│                │               └──────────────────┘  │
+│                ▼                                      │
+│          ModelStore (disk)                            │
+│          manifest.json + arrays.npz                  │
 │                                                      │
 │  Auth (mode-dependent):                              │
 │    local → no auth │ hybrid → JWT+API │ enterprise   │
@@ -39,13 +43,25 @@ SpectraSherpa supports multiple deployment modes (`local`, `hybrid`, `enterprise
 src/spectra_sherpa/
 ├── app/
 │   ├── core/           # Configuration, Security, Mode Policy
-│   ├── lib/            # Core libraries (SherpaDataset, scp_compat, adapters)
-│   ├── models/         # Pydantic models & SQLAlchemy tables
-│   ├── schemas/        # API request/response schemas
-│   ├── services/       # Business logic (DAG, Metadata, LLM)
-│   │   ├── dag/        # Workflow engine & Node definitions
-│   │   └── llm/        # AI Service integration
-│   └── api/            # FastAPI Routers
+│   ├── lib/            # Core libraries (SherpaDataset, adapters)
+│   │   ├── adapters/   # Format converters (SCP, sklearn, numpy)
+│   │   └── sherpa_dataset.py  # Canonical data container
+│   ├── models/         # SQLAlchemy ORM models
+│   ├── schemas/        # Pydantic request/response schemas
+│   ├── services/       # Business logic
+│   │   ├── dag/        # Workflow engine & node definitions
+│   │   │   ├── nodes/
+│   │   │   │   ├── modeling/        # PCA, PLS, MCR, EFA, etc.
+│   │   │   │   ├── classification/  # PLSDA, KNN, SIMCA
+│   │   │   │   ├── preprocessing.py
+│   │   │   │   ├── data.py
+│   │   │   │   └── ...
+│   │   │   ├── executor.py    # DAG execution engine
+│   │   │   └── node_base.py   # Node, NodeMetadata, registry
+│   │   ├── model_store.py     # Model artifact persistence
+│   │   └── llm/               # AI service integration
+│   ├── types/          # Type registry (registry.json + schemas)
+│   └── api/            # FastAPI routers
 └── static/             # Compiled Vue frontend
 ```
 
@@ -71,8 +87,8 @@ SpectraSherpa is fundamentally a Directed Acyclic Graph (DAG) engine.
 The DAG engine uses two data container types depending on the runtime environment:
 
 **SherpaDataset** (`spectra_sherpa.app.lib.sherpa_dataset`) — The canonical DAG runtime container. Pydantic-backed, AI-native, with typed fields and zero external dependencies. Key components:
-- `X`: 2D numpy array (n_samples, n_features) with shape invariants enforced at construction
-- `spectral_axis` / `sample_axis`: Typed axis metadata (`SpectralAxis`, `SampleAxis`)
+- `X`: nD numpy array (dim 0 = samples, dim -1 = features; inner dimensions for hyperspectral/time-resolved data) with shape invariants enforced at construction
+- `feature_axis` / `sample_axis`: Typed axis metadata (`SpectralAxis`, `SampleAxis`, `TimeAxis`, `MZAxis`, etc.)
 - `target`: Optional target values for supervised learning
 - `domain`: `DomainContext` — technique, sample type, measurement mode (asserted + inferred)
 - `provenance`: Append-only `Provenance` log with `state_effects` per entry
@@ -81,16 +97,18 @@ The DAG engine uses two data container types depending on the runtime environmen
 
 Edge adapters in `app/lib/adapters/` handle all external format conversions (numpy, sklearn, SpectroChemPy).
 
-**NDDataset** (SpectroChemPy) — Used by 11 SCP-only nodes that require SpectroChemPy's coordinate-aware algorithms (ALS baseline, MSC, PCA, PLS, MCR, EFA, SIMPLISMA, etc.). Round-trip adapters (`from_nddataset`, `to_nddataset`) in `adapters/scp_adapter.py` convert at SCP boundaries.
+**NDDataset** (SpectroChemPy) — Used by SCP-only nodes that require SpectroChemPy's coordinate-aware algorithms (rubberband baseline, PCA, PLS, MCR, EFA, SIMPLISMA, etc.). Round-trip adapters (`from_nddataset`, `to_nddataset`) in `adapters/scp_adapter.py` convert at SCP boundaries.
 
 ### 4. SpectroChemPy Optional Dependency
 
-SpectroChemPy is an optional dependency (`pip install spectra-sherpa[scp]`). The `scp_compat.py` module provides:
+[SpectroChemPy](https://www.spectrochempy.fr/) is an optional dependency (`pip install spectra-sherpa[scp]`) developed by A. Travert & C. Fernandez at LCS (ENSICAEN/CNRS), licensed under [CeCILL-B](https://cecill.info/licences/Licence_CeCILL-B_V1-en.html). It is kept as an opt-in extra because CeCILL-B is incompatible with AGPL-3.0.
+
+The `scp_compat.py` module provides:
 - `HAS_SCP` boolean flag
 - `require_scp()` guard function
 - Stub `NDDataset`/`Coord` classes when SCP is absent (safe for `isinstance()`)
 
-Each node declares `requires_scp=True` in its `NodeMetadata` if it needs SCP. Without SCP, ~38 nodes run on pure numpy/scipy/sklearn via SherpaDataset. With SCP, 11 additional nodes are unlocked.
+Each node declares `requires_scp=True` in its `NodeMetadata` if it needs SCP. Nodes that use SCP also declare `help_url` linking to the relevant SpectroChemPy API documentation. Without SCP, ~40 nodes run on pure numpy/scipy/sklearn via SherpaDataset. With SCP, 12 additional nodes are unlocked.
 
 ### 5. Type System
 
@@ -121,14 +139,74 @@ The `useJobStore` Pinia store manages WebSocket state on the frontend.
 
 ### 8. Database Models
 
-SQLAlchemy models with SQLite backend:
-- **Project**: Self-referencing FK (folders), linked workflows + experiments
-- **ProjectVersion**: Snapshot JSON with version numbering
-- **ProjectScript**: Generated or manual Python scripts linked to projects
-- **Workflow**: Node/edge graph JSON with technique/sample_type
-- **Experiment**: Execution records with parameters and results
-- **ExecutionRun**: Run history with diagnostics and labels
-- **FolderWatch**: Automated polling configuration
-- **BatchPrediction**: Per-file prediction results
+SQLAlchemy models with SQLite (local) or PostgreSQL (enterprise) backend:
 
-17 linear Alembic migrations manage schema evolution.
+```
+User
+├── Project                      # Container for related work
+│   ├── Experiment               # Raw spectral data collection
+│   │   └── ExperimentFile       # Individual data files (.csv, .jdx, .spc, ...)
+│   │       └── ExpVersion       # File version snapshots
+│   ├── Workflow                 # DAG-based analysis pipeline
+│   │   ├── WorkflowNode         # Computation units in the graph
+│   │   ├── WorkflowEdge         # Connections between nodes
+│   │   ├── WorkflowVersion      # Immutable snapshots on each save
+│   │   └── ExecutionRun         # Saved workflow execution results
+│   │       └── BatchPrediction  # Per-file results (batch/deploy)
+│   ├── ModelArtifact            # Trained model (PCA, PLS, MCR, ...)
+│   │   ├── manifest.json        # Metadata + metrics (on disk)
+│   │   └── arrays.npz           # Numpy arrays (on disk)
+│   ├── ProjectScript            # Python exports
+│   └── ProjectVersion           # Immutable project snapshots
+├── WorkflowFolder               # UI organization
+└── FolderWatch                  # Automated file polling
+```
+
+**Key relationships:**
+
+| Entity | Belongs To | Cascade |
+|--------|-----------|---------|
+| Experiment | Project (optional) | SET NULL on project delete |
+| Workflow | User + Project (optional) | CASCADE on user delete |
+| WorkflowVersion | Workflow | CASCADE |
+| ExecutionRun | Workflow + WorkflowVersion | CASCADE / SET NULL |
+| BatchPrediction | ExecutionRun | CASCADE |
+| ModelArtifact | User + Project (optional) + Workflow (optional) | CASCADE on user, SET NULL on project/workflow |
+| ProjectScript | Project | CASCADE |
+| ProjectVersion | Project | CASCADE |
+
+**Cross-entity references:**
+
+- `ExecutionRun.model_ids` — JSON array of `artifact_uid` strings (models produced or used)
+- `BatchPrediction.model_id` — String `artifact_uid` (primary model for this prediction)
+- `ProjectScript.source_workflow_id` — Tracks auto-generated scripts from workflows
+
+Alembic migrations manage schema evolution. See `alembic/versions/` for the full migration history.
+
+### 9. Model Artifact System
+
+Training nodes (PCA, PLS, MCR, PLSDA, KNN, SIMCA, etc.) emit a `_model_artifact` key in their results. The executor intercepts this and persists the model:
+
+```
+Training Node ──► _model_artifact ──► Executor._process_model_artifact()
+                                           │
+                                           ▼
+                                      ModelStore.save()
+                                           │
+                                    ┌──────┴──────┐
+                                    │             │
+                              manifest.json   arrays.npz
+                              (metadata)      (numpy data)
+                                    │
+                                    ▼
+                              ModelArtifact DB record
+                              (artifact_uid, metrics, provenance)
+```
+
+**Extract classes** in `lib/adapters/scp_extractors.py` normalize version-specific SpectroChemPy model outputs:
+- `PCAExtract`, `PLSExtract`, `MCRExtract`, `EFAExtract`, `SIMPLISMAExtract`
+- `PLSDAExtract`, `KNNExtract`, `SIMCAExtract`
+
+Each implements `from_scp()` (extract from SCP model), `to_artifact()` (serialize), `from_artifact()` (deserialize), and `predict()`/`transform()` (inference).
+
+The **Load & Apply Model** node (`model.load_apply`) loads any saved artifact and dispatches to the correct Extract class for inference on new data.

@@ -546,12 +546,12 @@ async def activate_hybrid(request: ActivateHybridRequest, http_request: Request)
 
     Security: blocked in enterprise mode; restricted to loopback in local/hybrid.
     """
-    from spectra_sherpa.app.core.mode_policy import is_enterprise
-    from spectra_sherpa.app.core.security import _is_loopback, get_client_host
+    from spectra_sherpa.app.core.mode_policy import is_enterprise, is_loopback
+    from spectra_sherpa.app.core.security import get_client_host
 
     if is_enterprise():
         raise HTTPException(status_code=403, detail="Mode switching is disabled in enterprise mode.")
-    if not _is_loopback(get_client_host(http_request)):
+    if not is_loopback(get_client_host(http_request)):
         raise HTTPException(status_code=403, detail="Mode switching is only available from localhost.")
 
     import secrets
@@ -627,8 +627,8 @@ async def activate_hybrid(request: ActivateHybridRequest, http_request: Request)
     spectrasherpa_config.api_base_url = base_url
     spectrasherpa_config.api_key = request.api_key
 
-    # ── 8. Reset SpectraSherpaService singleton ──
-    # Cloud services removed (local-only mode)
+    # ── 8. Service lifecycle ──
+    # No singleton reset required; network health and config state are updated below.
 
     # ── 9. Ensure default user egress settings ──
     from spectra_sherpa.app.core.startup import ensure_egress_defaults
@@ -659,12 +659,12 @@ async def deactivate_hybrid(http_request: Request):
 
     Security: blocked in enterprise mode; restricted to loopback in local/hybrid.
     """
-    from spectra_sherpa.app.core.mode_policy import is_enterprise
-    from spectra_sherpa.app.core.security import _is_loopback, get_client_host
+    from spectra_sherpa.app.core.mode_policy import is_enterprise, is_loopback
+    from spectra_sherpa.app.core.security import get_client_host
 
     if is_enterprise():
         raise HTTPException(status_code=403, detail="Mode switching is disabled in enterprise mode.")
-    if not _is_loopback(get_client_host(http_request)):
+    if not is_loopback(get_client_host(http_request)):
         raise HTTPException(status_code=403, detail="Mode switching is only available from localhost.")
 
     from dotenv import set_key as dotenv_set_key
@@ -699,8 +699,8 @@ async def deactivate_hybrid(http_request: Request):
     spectrasherpa_config.api_key = None
     spectrasherpa_config.api_base_url = SPECTRASHERPA_API_BASE
 
-    # ── 4. Reset service singleton ──
-    # Cloud services removed (local-only mode)
+    # ── 4. Service lifecycle ──
+    # No singleton reset required; network health and config state are updated below.
 
     # ── 5. Stop network health monitoring ──
     from spectra_sherpa.app.services.network_health import stop_network_health_service

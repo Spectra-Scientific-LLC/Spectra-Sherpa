@@ -12,6 +12,12 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
 from spectra_sherpa.app.core.config import app_config, settings
+from spectra_sherpa.app.core.mode_policy import (
+    api_key_always_valid,
+    export_always_allowed,
+    requires_http_auth,
+    system_api_key_always_accepted,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -193,8 +199,6 @@ async def is_valid_api_key(api_key: Optional[str]) -> bool:
     user API keys before route-level dependencies run.
     """
     # Local mode: always valid (no auth required)
-    from spectra_sherpa.app.core.mode_policy import api_key_always_valid
-
     if api_key_always_valid():
         return True
 
@@ -244,21 +248,8 @@ async def is_valid_api_key(api_key: Optional[str]) -> bool:
     return False
 
 
-def _is_loopback(host: str | None) -> bool:
-    """Check if a client address is a loopback address.
-
-    Returns ``False`` for ``None`` (fail closed — unknown client is not
-    considered loopback).
-    """
-    if not host:
-        return False
-    return host in ("127.0.0.1", "::1") or host.startswith("::ffff:127.")
-
-
 def is_system_api_key_auth_enabled() -> bool:
     """Return whether APP_API_KEY is accepted for request authentication."""
-    from spectra_sherpa.app.core.mode_policy import system_api_key_always_accepted
-
     if system_api_key_always_accepted():
         return True
     return os.getenv("ALLOW_SYSTEM_API_KEY_AUTH", "").strip().lower() in {
@@ -373,8 +364,6 @@ async def api_key_middleware(request: Request, call_next) -> Response:
         return await call_next(request)
 
     # Mode-based auth bypass: local always passes, hybrid loopback passes.
-    from spectra_sherpa.app.core.mode_policy import requires_http_auth
-
     if not requires_http_auth(get_client_host(request)):
         return await call_next(request)
 
@@ -558,8 +547,6 @@ async def check_export_allowed(
     In multi-user modes (hybrid, enterprise), the admin can restrict exports
     via the user's ``allow_export`` egress default.
     """
-    from spectra_sherpa.app.core.mode_policy import export_always_allowed
-
     if export_always_allowed():
         return True
 

@@ -24,19 +24,68 @@ Your browser opens to `http://localhost:8000`. No login required.
 pip install spectra-sherpa[scp]
 ```
 
-This enables SpectroChemPy-powered preprocessing methods, SCP file format readers (JCAMP-DX, SPC, SPA, OPUS), and coordinate-aware algorithms (ALS baseline, MSC, PCA, etc.).
+This enables SpectroChemPy-powered algorithms (PCA, PLS, MCR-ALS, EFA, SIMPLISMA), SCP file format readers (JCAMP-DX, SPC, SPA, OPUS), and coordinate-aware preprocessing (rubberband baseline, etc.).
 
 ## Features
 
 - **Workflow Builder** — Visually design reproducible analysis pipelines (DAGs) with 100+ nodes for preprocessing, modeling, classification, diagnostics, and DOE
+- **Model Artifacts** — Train, persist, and reload models (PCA, PLS, MCR, PLSDA, KNN, SIMCA) with a generic Load & Apply node
 - **Type System** — URI-based port typing with registry-driven connection validation
 - **Python & Notebook Export** — Generate standalone `.py` scripts or Jupyter notebooks from any workflow
-- **Project Management** — Organize experiments, workflows, and scripts with versioned snapshots
+- **Project Management** — Organize experiments, workflows, scripts, and models with versioned snapshots
 - **Experiment Tracking** — DOE support with 96-well plate layouts, samples, mixtures, and factor definitions
+- **Deploy** — Batch prediction, folder watching, execution run tracking with model provenance
 - **LLM Chat** — Bring-your-own-key AI assistant for spectral analysis and workflow questions
 - **Plugin System** — Extend the node library and tool registry via Python entry points or drop-in modules
-- **Deploy** — Batch prediction, folder watching, execution run tracking
 - **Data Privacy Controls** — Fine-grained egress permissions for LLM context and exports
+
+## Core Concepts
+
+### Projects, Workflows, and Models
+
+SpectraSherpa organizes work into **Projects** — containers that group related experiments, workflows, scripts, and trained models:
+
+```
+Project
+├── Experiments        — Raw spectral data files with version history
+│   └── Files          — .csv, .jdx, .spc, .spa, .spg, .opus, .mat, ...
+├── Workflows          — DAG-based analysis pipelines
+│   ├── Nodes + Edges  — Processing graph definition
+│   ├── Versions       — Immutable snapshots on each save
+│   └── Execution Runs — Saved results with diagnostics
+│       └── Batch Predictions — Per-file results for deploy
+├── Scripts            — Python exports (auto-generated or manual)
+└── Models             — Trained model artifacts (PCA, PLS, MCR, ...)
+    ├── manifest.json  — Metadata, metrics, feature axis
+    └── arrays.npz     — Numpy arrays (loadings, scores, etc.)
+```
+
+- **Experiments** hold your raw spectral data. Upload files or import SpectroChemPy example datasets.
+- **Workflows** define processing pipelines as directed acyclic graphs. Each workflow tracks its version history and execution runs.
+- **Models** are trained model artifacts produced by modeling nodes (PCA, PLS, MCR, etc.). They persist to disk and can be reloaded in new workflows via the **Load & Apply Model** node.
+- **Scripts** are Python exports generated from workflows for standalone reproducibility.
+
+### Workflow Execution
+
+Workflows execute as a topological sort of nodes. Data flows through typed ports:
+
+```
+Data Source → Preprocessing → Modeling → Diagnostics
+                                ↓
+                          Model Artifact (saved)
+                                ↓
+                    Load & Apply Model (new data)
+```
+
+Training nodes emit model artifacts that are automatically persisted. The **Load & Apply Model** node loads any saved model and applies `transform()` (decomposition) or `predict()` (classification) to new data.
+
+### Deployment Modes
+
+| Mode | Auth | Use Case |
+|------|------|----------|
+| `local` | None (single-user) | Desktop analysis, privacy-first |
+| `hybrid` | JWT + API key | Local processing, optional cloud offload |
+| `enterprise` | Full multi-user auth | Shared lab environments |
 
 ## Installation
 
@@ -62,7 +111,7 @@ Extras are opt-in packages that enable additional capabilities. You can add them
 
 | Extra | Install | Description |
 |-------|---------|-------------|
-| `scp` | `pip install spectra-sherpa[scp]` | SpectroChemPy support (CeCILL-B, opt-in) |
+| `scp` | `pip install spectra-sherpa[scp]` | [SpectroChemPy](https://www.spectrochempy.fr/) algorithms and file readers (see [Third-Party Notices](#third-party-notices)) |
 
 ## Development Setup
 
@@ -105,11 +154,43 @@ Full documentation is available at [docs.spectrascientific.ai](https://docs.spec
 - [Installation](docs/user/installation.md)
 - [Quickstart](docs/user/quickstart.md)
 - [Configuration](docs/user/configuration.md)
+- [Architecture](docs/dev/architecture.md)
 - [Node Reference](docs/user/reference/nodes.md)
 
-## Acknowledgments
+## Third-Party Notices
 
-SpectraSherpa builds on [scikit-learn](https://scikit-learn.org/) and [NumPy](https://numpy.org/) for core data analysis. It optionally supports [SpectroChemPy](https://www.spectrochempy.fr/) (by CEA/CNRS/INRIA, licensed under [CeCILL-B](https://cecill.info/licences/Licence_CeCILL-B_V1-en.html)) for advanced spectral file formats and preprocessing.
+### SpectroChemPy
+
+SpectraSherpa optionally integrates with [SpectroChemPy](https://www.spectrochempy.fr/), a Python library for advanced spectroscopic data analysis developed by **Arnaud Travert and Christian Fernandez** at the [Laboratoire Catalyse et Spectrochimie (LCS)](https://www.lcs.ensicaen.fr/), ENSICAEN / Universit&eacute; de Caen / CNRS.
+
+SpectroChemPy is licensed under the [CeCILL-B](https://cecill.info/licences/Licence_CeCILL-B_V1-en.html) free software license, which is compatible with BSD-style licenses. Because CeCILL-B is not compatible with AGPL-3.0, SpectroChemPy is distributed as an **opt-in extra** (`pip install spectra-sherpa[scp]`) and is never bundled into the core package.
+
+When installed, SpectroChemPy powers the following SpectraSherpa nodes:
+
+| Node | Algorithm | SpectroChemPy Docs |
+|------|-----------|-------------------|
+| PCA | Principal Component Analysis | [spectrochempy.PCA](https://www.spectrochempy.fr/reference/generated/spectrochempy.PCA.html) |
+| PLS | Partial Least Squares Regression | [spectrochempy.PLSRegression](https://www.spectrochempy.fr/reference/generated/spectrochempy.PLSRegression.html) |
+| MCR-ALS | Multivariate Curve Resolution | [spectrochempy.MCRALS](https://www.spectrochempy.fr/reference/generated/spectrochempy.MCRALS.html) |
+| EFA | Evolving Factor Analysis | [spectrochempy.EFA](https://www.spectrochempy.fr/reference/generated/spectrochempy.EFA.html) |
+| SIMPLISMA | Pure variable resolution | [spectrochempy.SIMPLISMA](https://www.spectrochempy.fr/reference/generated/spectrochempy.SIMPLISMA.html) |
+| PLS-DA | Discriminant Analysis (via PLS) | [spectrochempy.PLSRegression](https://www.spectrochempy.fr/reference/generated/spectrochempy.PLSRegression.html) |
+| SIMCA | Class-specific PCA models | [spectrochempy.PCA](https://www.spectrochempy.fr/reference/generated/spectrochempy.PCA.html) |
+| Baseline (Rubberband) | Convex hull baseline | [spectrochempy.basc](https://www.spectrochempy.fr/reference/generated/spectrochempy.basc.html) |
+| OSC Filter | Orthogonal Signal Correction | [spectrochempy.PLSRegression](https://www.spectrochempy.fr/reference/generated/spectrochempy.PLSRegression.html) |
+| File Readers | JCAMP-DX, SPC, SPA, OPUS | [spectrochempy.NDDataset](https://www.spectrochempy.fr/reference/generated/spectrochempy.NDDataset.html) |
+
+All other nodes (40+ preprocessing, clustering, regression, diagnostics, and visualization nodes) run on **NumPy, SciPy, and scikit-learn** with no SpectroChemPy dependency.
+
+### Other Dependencies
+
+SpectraSherpa also builds on these open-source projects:
+
+- [scikit-learn](https://scikit-learn.org/) — Machine learning (BSD-3-Clause)
+- [NumPy](https://numpy.org/) / [SciPy](https://scipy.org/) — Numerical computing (BSD-3-Clause)
+- [FastAPI](https://fastapi.tiangolo.com/) — Web framework (MIT)
+- [SQLAlchemy](https://www.sqlalchemy.org/) — Database ORM (MIT)
+- [Plotly](https://plotly.com/python/) — Visualization (MIT)
 
 ## Contributing
 

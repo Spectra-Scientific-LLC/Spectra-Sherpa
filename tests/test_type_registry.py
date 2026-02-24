@@ -15,6 +15,7 @@ Run:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,10 @@ import pytest
 from spectra_sherpa.app.types.registry import TypeRegistry, parse_type_ref
 
 TYPES_DIR = Path(__file__).resolve().parent.parent / "src" / "spectra_sherpa" / "app" / "types"
+
+# Read expected count from registry.json so the test stays in sync automatically.
+_REGISTRY_JSON = TYPES_DIR / "registry.json"
+_EXPECTED_TYPE_COUNT = len(json.loads(_REGISTRY_JSON.read_text())["types"])
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────
@@ -65,7 +70,7 @@ class TestParseTypeRef:
 
 class TestRegistryLoading:
     def test_loads_all_types(self, registry: TypeRegistry):
-        assert len(registry) == 22
+        assert len(registry) == _EXPECTED_TYPE_COUNT
 
     def test_is_loaded_flag(self, registry: TypeRegistry):
         assert registry.is_loaded is True
@@ -305,7 +310,7 @@ class TestApiJson:
 
     def test_all_types_included(self, registry: TypeRegistry):
         data = registry.to_api_json()
-        assert len(data["types"]) == 22
+        assert len(data["types"]) == _EXPECTED_TYPE_COUNT
 
     def test_type_entry_shape(self, registry: TypeRegistry):
         data = registry.to_api_json()

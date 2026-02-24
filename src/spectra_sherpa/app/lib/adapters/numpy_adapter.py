@@ -51,17 +51,22 @@ def from_numpy(
     if wavenumbers is not None and wavelengths is not None:
         raise ValueError("Provide wavenumbers or wavelengths, not both")
 
-    X = np.atleast_2d(np.asarray(X, dtype=np.float64))
+    arr = np.asarray(X, dtype=np.float64)
+    if arr.ndim == 0:
+        raise ValueError("X must be at least 1-dimensional")
+    if arr.ndim == 1:
+        arr = arr.reshape(1, -1)
+    X = arr
 
-    spectral_axis = None
+    feature_axis = None
     if wavenumbers is not None:
-        spectral_axis = SpectralAxis(
+        feature_axis = SpectralAxis(
             values=np.asarray(wavenumbers, dtype=np.float64),
             units=spectral_units or "cm-1",
             title="wavenumber",
         )
     elif wavelengths is not None:
-        spectral_axis = SpectralAxis(
+        feature_axis = SpectralAxis(
             values=np.asarray(wavelengths, dtype=np.float64),
             units=spectral_units or "nm",
             title="wavelength",
@@ -88,7 +93,7 @@ def from_numpy(
 
     return SherpaDataset(
         X=X,
-        spectral_axis=spectral_axis,
+        feature_axis=feature_axis,
         sample_axis=sample_axis,
         target=target,
         target_context=target_context,
@@ -108,7 +113,7 @@ def to_numpy(ds: SherpaDataset) -> dict[str, Any]:
     """
     result: dict[str, Any] = {"X": ds.X.copy()}
 
-    sa = ds.spectral_axis
+    sa = ds.feature_axis
     if sa and sa.values is not None:
         axis_type = sa.axis_type
         if axis_type == "wavenumber":

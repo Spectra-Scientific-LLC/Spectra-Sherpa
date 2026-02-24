@@ -3,7 +3,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 import spectra_sherpa.app.main as app_main
@@ -34,15 +33,6 @@ def _reset_global_state():
     yield
     app_config.mode = original_mode
     ws_manager._channels.clear()
-
-
-@pytest.fixture
-def ws_client():
-    client = TestClient(app_main.app)
-    try:
-        yield client
-    finally:
-        client.close()
 
 
 def _policy_violation_on_receive(ws) -> None:

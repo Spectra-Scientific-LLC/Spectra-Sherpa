@@ -140,22 +140,22 @@ def remove_index_columns(dataset: NDDataset | SherpaDataset) -> NDDataset | Sher
             # Create new dataset without the index column
             if isinstance(dataset, SherpaDataset):
                 cleaned_dataset = build_dataset_like(cleaned_data, dataset)
-                # Trim spectral axis if it matched original column count
+                # Trim feature axis if it matched original column count
                 if (
-                    cleaned_dataset.spectral_axis
-                    and cleaned_dataset.spectral_axis.values is not None
-                    and len(cleaned_dataset.spectral_axis.values) == n_cols
+                    cleaned_dataset.feature_axis
+                    and cleaned_dataset.feature_axis.values is not None
+                    and len(cleaned_dataset.feature_axis.values) == n_cols
                 ):
-                    cleaned_dataset.spectral_axis = SpectralAxis(
-                        values=cleaned_dataset.spectral_axis.values[1:],
+                    cleaned_dataset.feature_axis = SpectralAxis(
+                        values=cleaned_dataset.feature_axis.values[1:],
                         labels=(
-                            cleaned_dataset.spectral_axis.labels[1:]
-                            if cleaned_dataset.spectral_axis.labels
-                            and len(cleaned_dataset.spectral_axis.labels) == n_cols
-                            else cleaned_dataset.spectral_axis.labels
+                            cleaned_dataset.feature_axis.labels[1:]
+                            if cleaned_dataset.feature_axis.labels
+                            and len(cleaned_dataset.feature_axis.labels) == n_cols
+                            else cleaned_dataset.feature_axis.labels
                         ),
-                        units=cleaned_dataset.spectral_axis.units,
-                        title=cleaned_dataset.spectral_axis.title,
+                        units=cleaned_dataset.feature_axis.units,
+                        title=cleaned_dataset.feature_axis.title,
                     )
             elif HAS_SCP and isinstance(dataset, NDDataset):
                 cleaned_dataset = scp.NDDataset(cleaned_data)
@@ -818,10 +818,10 @@ class DataSourceNode(Node):
             if sklearn_dataset:
                 domain.sample_type = sklearn_dataset
 
-        # Promote extracted instrument/sample metadata (currently in extra/meta).
-        extra = dataset.extra if isinstance(dataset.extra, dict) else {}
-        instrument_metadata = extra.get("scp.instrument_metadata") or extra.get("instrument_metadata")
-        sample_info = extra.get("scp.sample_info") or extra.get("sample_info")
+        # Promote extracted instrument/sample metadata from the metadata dict.
+        meta = dataset.meta if isinstance(dataset.meta, dict) else {}
+        instrument_metadata = meta.get("scp.instrument_metadata") or meta.get("instrument_metadata")
+        sample_info = meta.get("scp.sample_info") or meta.get("sample_info")
 
         if isinstance(instrument_metadata, dict):
             instrument = self._format_instrument_name(instrument_metadata)
@@ -918,9 +918,9 @@ class DataSourceNode(Node):
         if transpose_on_load:
             if is_sherpa:
                 dataset = SherpaDataset(
-                    X=dataset.X.T,
+                    X=dataset.data.T,
                     feature_axis=dataset.sample_axis.copy() if dataset.sample_axis is not None else None,
-                    sample_axis=dataset.spectral_axis.copy() if dataset.spectral_axis is not None else None,
+                    sample_axis=dataset.feature_axis.copy() if dataset.feature_axis is not None else None,
                     target=None,  # row count changes on transpose; drop target unless explicitly re-bound
                     target_context=dataset.target_context.model_copy(deep=True),
                     domain=dataset.domain.model_copy(deep=True),
@@ -929,7 +929,7 @@ class DataSourceNode(Node):
                     backend=dataset.backend,
                     title=dataset.title,
                     units=dataset.units,
-                    extra=dict(dataset.extra),
+                    extra=dict(dataset.meta),
                 )
             else:
                 dataset = dataset.T
@@ -938,7 +938,7 @@ class DataSourceNode(Node):
         if dataset.ndim >= 2:
             if is_sherpa:
                 current_y = dataset.sample_axis
-                current_x = dataset.spectral_axis
+                current_x = dataset.feature_axis
             else:
                 current_y = safe_get_coord(dataset, "y")
                 current_x = safe_get_coord(dataset, "x")
@@ -972,9 +972,9 @@ class DataSourceNode(Node):
                     if current_x.title != x_title:
                         new_x = current_x.copy()
                         new_x.title = x_title
-                        dataset.spectral_axis = new_x
+                        dataset.feature_axis = new_x
                 else:
-                    dataset.spectral_axis = SpectralAxis(values=np.arange(dataset.shape[1], dtype=float), title=x_title)
+                    dataset.feature_axis = SpectralAxis(values=np.arange(dataset.shape[1], dtype=float), title=x_title)
             else:
                 # NDDataset: use SCP Coord + set_coordset
                 if current_y is not None:
@@ -999,7 +999,7 @@ class DataSourceNode(Node):
         elif dataset.ndim == 1:
             # For 1D data, only x-axis
             if is_sherpa:
-                aac_1d_x_coord = dataset.spectral_axis
+                aac_1d_x_coord = dataset.feature_axis
             else:
                 aac_1d_x_coord = safe_get_coord(dataset, "x")
             if spectral_axis_override:
@@ -1014,9 +1014,9 @@ class DataSourceNode(Node):
                     if aac_1d_x_coord.title != x_title:
                         new_x = aac_1d_x_coord.copy()
                         new_x.title = x_title
-                        dataset.spectral_axis = new_x
+                        dataset.feature_axis = new_x
                 else:
-                    dataset.spectral_axis = SpectralAxis(values=np.arange(dataset.shape[0], dtype=float), title=x_title)
+                    dataset.feature_axis = SpectralAxis(values=np.arange(dataset.shape[0], dtype=float), title=x_title)
             else:
                 if aac_1d_x_coord is not None:
                     if aac_1d_x_coord.title != x_title:
@@ -2481,16 +2481,16 @@ class NISTLibraryNode(Node):
             ),
         ],
         input_types=[],
-        output_type="NDDataset",
-        requires_scp=True,
+        output_type="SherpaDataset",
     )
 
     async def execute(self, *args) -> Any:
-        """Load spectrum from NIST library."""
+        """Load spectrum from NIST library using standalone JCAMP-DX reader."""
         from sqlalchemy import select
 
         from spectra_sherpa.app.core.config import settings
         from spectra_sherpa.app.db.session import async_session
+        from spectra_sherpa.app.lib.jcamp_reader import read_jcamp
         from spectra_sherpa.app.models.nist_library import NistLibrary
 
         library_id = self.parameters.get("library_id")
@@ -2510,58 +2510,65 @@ class NISTLibraryNode(Node):
                 # Build path to library file (file_path already includes "nist_library/" prefix)
                 file_path = settings.data_dir / entry.file_path
 
-                dataset = scp.read_jcamp(str(file_path))
-                dataset.title = entry.compound_name
+                # Parse JCAMP-DX with our standalone reader (no SCP dependency)
+                jcamp = read_jcamp(str(file_path))
 
-                # Parse physical state from JCAMP-DX if available
-                state = PhysicalState.UNKNOWN
-                state_str = getattr(entry, "state", None)
-                if state_str:
-                    state_lower = state_str.lower()
-                    if "gas" in state_lower:
-                        state = PhysicalState.GAS
-                    elif "liquid" in state_lower:
-                        state = PhysicalState.LIQUID
-                    elif "solid" in state_lower:
-                        state = PhysicalState.SOLID
+                # Determine domain from JCAMP data type
+                technique = "IR"
+                data_type_lower = jcamp.data_type.lower()
+                if "raman" in data_type_lower:
+                    technique = "Raman"
+                elif "uv" in data_type_lower or "vis" in data_type_lower:
+                    technique = "UV-Vis"
+                elif "nir" in data_type_lower or "near" in data_type_lower:
+                    technique = "NIR"
 
-                # Create species info from database entry
-                species_info = SpeciesInfo(
-                    name=entry.compound_name,
-                    cas_number=getattr(entry, "cas_number", None),
-                    molecular_formula=getattr(entry, "molecular_formula", None),
-                    molecular_weight=getattr(entry, "molecular_weight", None),
-                    state=state,
-                    nist_id=getattr(entry, "nist_id", None),
-                )
+                # Map JCAMP yunits to data_quantity
+                yunits_lower = jcamp.yunits.lower()
+                if "transmit" in yunits_lower:
+                    data_quantity = "Transmittance"
+                elif "absorb" in yunits_lower:
+                    data_quantity = "Absorbance"
+                else:
+                    data_quantity = jcamp.yunits
 
-                # Attach metadata
-                meta = SpectraMeta(
-                    species=[species_info],
-                    provenance=DataProvenance(
-                        source_type=SourceType.NIST,
-                        nist_id=getattr(entry, "nist_id", None),
-                        original_file_path=str(entry.file_path),
-                        original_file_format="jdx",
-                        created_datetime=datetime.utcnow().isoformat(),
+                # Build SherpaDataset directly
+                dataset = SherpaDataset(
+                    jcamp.y.reshape(1, -1),
+                    feature_axis=SpectralAxis(values=jcamp.x, label=jcamp.xunits),
+                    sample_axis=SampleAxis(labels=[entry.compound_name]),
+                    domain=DomainContext(
+                        technique=technique,
+                        data_quantity=data_quantity,
+                        expected_units=jcamp.xunits,
                     ),
-                    processing_steps=["nist_library_load"],
+                    title=entry.compound_name,
+                    units=data_quantity,
                 )
-                set_spectra_meta(dataset, meta)
 
-                # Record provenance in dataset.meta
+                # Store NIST/JCAMP metadata in extra namespace
+                dataset.set_extra("nist.cas_number", entry.cas_number)
+                dataset.set_extra("nist.compound_name", entry.compound_name)
+                dataset.set_extra("nist.file_path", str(entry.file_path))
+                nist_id = getattr(entry, "nist_id", None)
+                if nist_id:
+                    dataset.set_extra("nist.nist_id", nist_id)
+                mol_formula = getattr(entry, "molecular_formula", None)
+                if mol_formula:
+                    dataset.set_extra("nist.molecular_formula", mol_formula)
+
+                # Record provenance
                 add_processing_step(
                     dataset,
                     "data.nist_library",
                     {
                         "library_id": library_id,
                         "compound_name": entry.compound_name,
-                        "nist_id": getattr(entry, "nist_id", None),
+                        "nist_id": nist_id,
                     },
                     node_id=self.node_id,
                 )
-                # Convert to SherpaDataset for uniform DAG contract
-                return from_nddataset(dataset)
+                return dataset
         except Exception as e:
             raise ValueError(f"Error loading NIST library entry: {e}")
 
@@ -2802,6 +2809,7 @@ class LoadGroupNode(Node):
         input_types=[],  # No inputs - this is a source node
         output_type="NDDataset",
         requires_scp=True,
+        help_url="https://www.spectrochempy.fr/reference/generated/spectrochempy.NDDataset.html",
     )
 
     async def execute(self, *args) -> Any:

@@ -12,8 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from spectra_sherpa.app.api.deps import get_current_user, get_session
-from spectra_sherpa.app.models.project import Project
+from spectra_sherpa.app.api.deps import get_current_user, get_session, require_project
 from spectra_sherpa.app.models.project_script import ProjectScript
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
@@ -34,13 +33,7 @@ router = APIRouter(prefix="/projects/{project_id}/scripts")
 # ── Helpers ──────────────────────────────────────────────────────────
 
 
-async def _get_project_for_user(project_id: int, user_id: int, session: AsyncSession) -> Project:
-    """Load project with ownership check."""
-    result = await session.execute(select(Project).where(Project.id == project_id, Project.user_id == user_id))
-    project = result.scalar_one_or_none()
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return project
+_get_project_for_user = require_project  # use shared helper
 
 
 def _script_to_summary(script: ProjectScript) -> ProjectScriptSummary:

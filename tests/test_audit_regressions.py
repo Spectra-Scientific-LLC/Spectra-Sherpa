@@ -85,15 +85,10 @@ class TestExtraDictIsolation:
     so the caller's dict and the dataset's dict are independent objects.
     """
 
-    def test_extra_and_meta_are_same_object(self):
-        """By design: .extra and .meta are the same mutable dict."""
+    def test_extra_mutation_is_visible_via_get_extra(self):
+        """Internal code can mutate via .extra["key"] = value."""
         ds = SherpaDataset(X=np.zeros((3, 10)))
-        assert ds.extra is ds.meta
-
-    def test_meta_mutation_is_visible_via_get_extra(self):
-        """By design: internal code can mutate via .meta["key"] = value."""
-        ds = SherpaDataset(X=np.zeros((3, 10)))
-        ds.meta["user.key"] = "value"
+        ds.extra["user.key"] = "value"
         assert ds.get_extra("user.key") == "value"
 
     def test_init_deep_copies_extra_dict(self):
@@ -134,10 +129,10 @@ class TestSerializerAxisMutation:
 
         ds = SherpaDataset(
             X=np.zeros((3, 50)),
-            spectral_axis=SpectralAxis(values=np.linspace(400, 4000, 50), units="dimensionless"),
+            feature_axis=SpectralAxis(values=np.linspace(400, 4000, 50), units="dimensionless"),
         )
         shared_dict = ds.to_dict()
-        original_x_units = shared_dict["spectral_axis"]["units"]
+        original_x_units = shared_dict["feature_axis"]["units"]
 
         result = _serialize_sherpa_dataset(ds)
 
@@ -145,7 +140,7 @@ class TestSerializerAxisMutation:
         assert x_units_in_result == "", f"Expected dimensionless → '' in serialized output, got '{x_units_in_result}'"
 
         assert (
-            shared_dict["spectral_axis"]["units"] == original_x_units
+            shared_dict["feature_axis"]["units"] == original_x_units
         ), "Serializer mutated a dict that another consumer could be holding"
 
 

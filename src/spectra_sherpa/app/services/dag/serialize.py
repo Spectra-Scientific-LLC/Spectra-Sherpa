@@ -232,8 +232,8 @@ def _serialize_sherpa_dataset(
     # Remap axis keys for frontend compatibility
     # SherpaDataset.to_dict() uses spectral_axis/sample_axis but the
     # frontend expects x_axis/y_axis (legacy NDDataset convention).
-    if "spectral_axis" in result:
-        result["x_axis"] = result.pop("spectral_axis")
+    if "feature_axis" in result:
+        result["x_axis"] = result.pop("feature_axis")
     if "sample_axis" in result:
         result["y_axis"] = result.pop("sample_axis")
 

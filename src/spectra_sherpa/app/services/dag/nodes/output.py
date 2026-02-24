@@ -188,8 +188,8 @@ class PlotNode(Node):
         """Generate spectra plot data, preserving axis titles from dataset."""
         traces = []
 
-        # Get x-axis data and display info from dataset (use generic accessor)
-        x_coord = dataset.get_feature_axis()
+        # Get x-axis data and display info from dataset (preferred property accessor)
+        x_coord = dataset.feature_axis
         if x_coord is not None:
             x_data = x_coord.data.tolist()
             x_info = get_axis_display_info(x_coord)
@@ -643,7 +643,7 @@ class StatsSummaryNode(Node):
         feature_cv = feature_stds / (feature_means + 1e-10)  # Coefficient of variation
 
         # Get feature axis if available (wavenumber, time, m/z, etc.)
-        x_coord = dataset.get_feature_axis()
+        x_coord = dataset.feature_axis
         if x_coord is not None:
             feature_values = np.array(x_coord.data).tolist()
         else:
@@ -1002,7 +1002,7 @@ class ContourPlotNode(Node):
             data = data.reshape(1, -1)
 
         # Get axes - preserve titles from source data (use generic accessors)
-        x_coord = dataset.get_feature_axis()
+        x_coord = dataset.feature_axis
         if x_coord is not None:
             x_data = np.array(x_coord.data).tolist()
             x_info = get_axis_display_info(x_coord)
@@ -1251,7 +1251,7 @@ class DataTableNode(Node):
             n_rows, n_cols = n_cols, n_rows
 
         # Build column headers
-        x_coord = dataset.get_feature_axis()
+        x_coord = dataset.feature_axis
         if x_coord is not None and not transpose:
             # Use feature axis values (wavenumber/time/m/z/etc.) as column headers
             x_vals = np.array(x_coord.data)

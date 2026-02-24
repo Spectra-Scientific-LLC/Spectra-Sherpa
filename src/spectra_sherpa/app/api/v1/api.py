@@ -11,6 +11,7 @@ from spectra_sherpa.app.api.v1.routes import (
     builder,
     compute,
     config,
+    custom_algos,
     datasets,
     deploy,
     doe,
@@ -23,6 +24,7 @@ from spectra_sherpa.app.api.v1.routes import (
     llm,
     llm_config,
     logs,
+    models,
     predict,
     project_scripts,
     projects,
@@ -112,6 +114,8 @@ def build_api_router(
     router.include_router(deploy.router, tags=["deploy"])
     router.include_router(projects.router, tags=["projects"])
     router.include_router(project_scripts.router, tags=["project-scripts"])
+    router.include_router(custom_algos.router, tags=["custom-algos"])
+    router.include_router(models.router, tags=["models"])
 
     # API key management (BYOK) — available in all modes
     router.include_router(api_keys.router, tags=["api-keys"])

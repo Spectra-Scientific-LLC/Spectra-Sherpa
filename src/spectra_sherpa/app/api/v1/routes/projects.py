@@ -15,14 +15,16 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from spectra_sherpa.app.api.deps import demo_guard, get_current_user, get_session
+from spectra_sherpa.app.api.deps import demo_guard, get_current_user, get_session, require_project
 from spectra_sherpa.app.models.experiment import Experiment
+from spectra_sherpa.app.models.model_artifact import ModelArtifact
 from spectra_sherpa.app.models.project import Project, ProjectVersion
 from spectra_sherpa.app.models.project_script import ProjectScript
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
 from spectra_sherpa.app.schemas.projects import (
     ExperimentBrief,
+    ModelBrief,
     ProjectCreate,
     ProjectDetail,
     ProjectSummary,
@@ -43,14 +45,7 @@ router = APIRouter(prefix="/projects")
 # ── Helpers ──────────────────────────────────────────────────────────
 
 
-async def _get_project_for_user(project_id: int, user_id: int, session: AsyncSession) -> Project:
-    """Load project with ownership check."""
-    query = select(Project).where(Project.id == project_id, Project.user_id == user_id)
-    result = await session.execute(query)
-    project = result.scalar_one_or_none()
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return project
+_get_project_for_user = require_project  # backward-compat alias
 
 
 async def _project_to_summary(project: Project, session: AsyncSession) -> ProjectSummary:
@@ -60,6 +55,11 @@ async def _project_to_summary(project: Project, session: AsyncSession) -> Projec
     child_count = await session.scalar(select(func.count(Project.id)).where(Project.parent_id == project.id))
     script_count = await session.scalar(
         select(func.count(ProjectScript.id)).where(ProjectScript.project_id == project.id)
+    )
+    model_count = await session.scalar(
+        select(func.count(ModelArtifact.id)).where(
+            ModelArtifact.project_id == project.id, ModelArtifact.is_active == True  # noqa: E712
+        )
     )
     ver_count = await session.scalar(
         select(func.count(ProjectVersion.id)).where(ProjectVersion.project_id == project.id)
@@ -74,6 +74,7 @@ async def _project_to_summary(project: Project, session: AsyncSession) -> Projec
         experiment_count=exp_count or 0,
         workflow_count=wf_count or 0,
         script_count=script_count or 0,
+        model_count=model_count or 0,
         children_count=child_count or 0,
         version_count=ver_count or 0,
         created_at=project.created_at,
@@ -129,6 +130,32 @@ async def _project_to_detail(project: Project, session: AsyncSession) -> Project
         for s in script_result.scalars().all()
     ]
 
+    # Models
+    model_result = await session.execute(
+        select(ModelArtifact).where(
+            ModelArtifact.project_id == project.id, ModelArtifact.is_active == True  # noqa: E712
+        )
+    )
+    models = []
+    for m in model_result.scalars().all():
+        metrics = None
+        if m.metrics_json:
+            try:
+                metrics = json.loads(m.metrics_json)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        models.append(
+            ModelBrief(
+                artifact_uid=m.artifact_uid,
+                name=m.name,
+                model_type=m.model_type,
+                n_features=m.n_features,
+                n_components=m.n_components,
+                metrics=metrics,
+                created_at=m.created_at,
+            )
+        )
+
     # Children
     child_result = await session.execute(select(Project).where(Project.parent_id == project.id))
     children = []
@@ -141,6 +168,7 @@ async def _project_to_detail(project: Project, session: AsyncSession) -> Project
         experiments=experiments,
         workflows=workflows,
         scripts=scripts,
+        models=models,
         children=children,
     )
 
@@ -237,7 +265,7 @@ async def delete_project(
     """Delete project (CASCADE children + versions, SET NULL experiments/workflows)."""
     project = await _get_project_for_user(project_id, current_user.id, session)
 
-    # SET NULL on linked experiments and workflows before cascade delete
+    # SET NULL on linked experiments, workflows, and models before cascade delete
     await session.execute(
         select(Experiment).where(Experiment.project_id == project_id).execution_options(synchronize_session="fetch")
     )
@@ -246,6 +274,11 @@ async def delete_project(
 
     for wf in (await session.execute(select(Workflow).where(Workflow.project_id == project_id))).scalars().all():
         wf.project_id = None
+
+    for ma in (
+        await session.execute(select(ModelArtifact).where(ModelArtifact.project_id == project_id))
+    ).scalars().all():
+        ma.project_id = None
 
     await session.delete(project)
     await session.commit()
@@ -352,6 +385,58 @@ async def unlink_workflow(
     return await _project_to_detail(project, session)
 
 
+@router.post("/{project_id}/models/{artifact_uid}", response_model=ProjectDetail)
+async def link_model(
+    project_id: int,
+    artifact_uid: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> ProjectDetail:
+    """Link a model artifact to this project."""
+    project = await _get_project_for_user(project_id, current_user.id, session)
+    result = await session.execute(
+        select(ModelArtifact).where(
+            ModelArtifact.artifact_uid == artifact_uid,
+            ModelArtifact.user_id == current_user.id,
+            ModelArtifact.is_active == True,  # noqa: E712
+        )
+    )
+    model = result.scalar_one_or_none()
+    if model is None:
+        raise HTTPException(status_code=404, detail="Model artifact not found")
+
+    model.project_id = project_id
+    await session.commit()
+    logger.info("Linked model %s to project %s", artifact_uid, project_id)
+    return await _project_to_detail(project, session)
+
+
+@router.delete("/{project_id}/models/{artifact_uid}", response_model=ProjectDetail)
+async def unlink_model(
+    project_id: int,
+    artifact_uid: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> ProjectDetail:
+    """Unlink a model artifact from this project."""
+    project = await _get_project_for_user(project_id, current_user.id, session)
+    result = await session.execute(
+        select(ModelArtifact).where(
+            ModelArtifact.artifact_uid == artifact_uid,
+            ModelArtifact.project_id == project_id,
+            ModelArtifact.user_id == current_user.id,
+        )
+    )
+    model = result.scalar_one_or_none()
+    if model is None:
+        raise HTTPException(status_code=404, detail="Model not linked to this project")
+
+    model.project_id = None
+    await session.commit()
+    logger.info("Unlinked model %s from project %s", artifact_uid, project_id)
+    return await _project_to_detail(project, session)
+
+
 # ── Versioning / Save All ────────────────────────────────────────────
 
 
@@ -434,6 +519,33 @@ async def _build_snapshot(project: Project, session: AsyncSession) -> dict:
             }
         )
 
+    # Models
+    model_result = await session.execute(
+        select(ModelArtifact).where(
+            ModelArtifact.project_id == project.id, ModelArtifact.is_active == True  # noqa: E712
+        )
+    )
+    models_snap = []
+    for m in model_result.scalars().all():
+        metrics = None
+        if m.metrics_json:
+            try:
+                metrics = json.loads(m.metrics_json)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        models_snap.append(
+            {
+                "artifact_uid": m.artifact_uid,
+                "name": m.name,
+                "model_type": m.model_type,
+                "node_id": m.node_id,
+                "n_features": m.n_features,
+                "n_components": m.n_components,
+                "metrics": metrics,
+                "integrity_hash": m.integrity_hash,
+            }
+        )
+
     # Recursive children
     child_result = await session.execute(select(Project).where(Project.parent_id == project.id))
     children_snap = []
@@ -450,6 +562,7 @@ async def _build_snapshot(project: Project, session: AsyncSession) -> dict:
         "experiments": experiments_snap,
         "workflows": workflows_snap,
         "scripts": scripts_snap,
+        "models": models_snap,
         "children": children_snap,
     }
 
@@ -540,7 +653,7 @@ async def export_project(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
-    """Download project as a .spectrapy archive (ZIP with project.json)."""
+    """Download project as a .spectrapy archive (ZIP with project.json + model artifacts)."""
     project = await _get_project_for_user(project_id, current_user.id, session)
 
     if version_id:
@@ -557,6 +670,23 @@ async def export_project(
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("project.json", json.dumps(snapshot, indent=2, default=str))
+
+        # Include model artifact files (manifest.json + arrays.npz)
+        model_uids = [m["artifact_uid"] for m in snapshot.get("models", [])]
+        if model_uids:
+            try:
+                from spectra_sherpa.app.services.model_store import get_model_store
+
+                store = get_model_store()
+                for uid in model_uids:
+                    manifest_path = store._artifact_dir(uid) / "manifest.json"
+                    arrays_path = store._artifact_dir(uid) / "arrays.npz"
+                    if manifest_path.exists():
+                        zf.write(str(manifest_path), f"models/{uid}/manifest.json")
+                    if arrays_path.exists():
+                        zf.write(str(arrays_path), f"models/{uid}/arrays.npz")
+            except RuntimeError:
+                logger.warning("ModelStore not initialized — model files not included in export")
 
     buf.seek(0)
     safe_name = project.name.replace(" ", "_").replace("/", "_")
@@ -576,54 +706,195 @@ async def import_project(
     current_user: User = Depends(get_current_user),
 ) -> ProjectDetail:
     """Import a .spectrapy archive to create a new project."""
-    content = await file.read()
+    from spectra_sherpa.app.core.config import settings
+
+    max_bytes = settings.max_file_size_mb * 1024 * 1024
+    upload_stream = file.file
+    upload_stream.seek(0, io.SEEK_END)
+    upload_size = upload_stream.tell()
+    upload_stream.seek(0)
+
+    # Enforce upload size limit (same as experiment uploads) before reading ZIP content.
+    if upload_size > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Archive too large ({upload_size / (1024*1024):.1f} MB). "
+            f"Maximum is {settings.max_file_size_mb} MB.",
+        )
+
+    project: Project | None = None
+    models_imported = 0
+
     try:
-        with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
+        with zipfile.ZipFile(upload_stream, "r") as zf:
             project_json = json.loads(zf.read("project.json"))
+            zip_names = set(zf.namelist())
+
+            # Restore model artifacts from ZIP (if present)
+            import uuid as _uuid
+
+            max_member_bytes = settings.max_file_size_mb * 1024 * 1024  # per-file limit
+            max_total_model_bytes = max_member_bytes * 5  # total budget across all models
+            max_compression_ratio = 200  # reject members with > 200:1 ratio (zip bomb indicator)
+            total_model_bytes_extracted = 0
+
+            # Pre-scan: validate all model entries and compute total uncompressed size
+            # before extracting anything (fail-fast on budget overflow).
+            model_entries: list[tuple[str, dict, str, str]] = []  # (uid, m_data, manifest_path, arrays_path)
+            for m_data in project_json.get("models", []):
+                uid = m_data.get("artifact_uid")
+                if not uid:
+                    continue
+
+                # Validate artifact_uid is a proper UUID to prevent path traversal
+                try:
+                    _uuid.UUID(uid)
+                except (ValueError, AttributeError):
+                    logger.warning("Invalid artifact_uid '%s' in snapshot — skipping", uid)
+                    continue
+
+                manifest_zip_path = f"models/{uid}/manifest.json"
+                arrays_zip_path = f"models/{uid}/arrays.npz"
+
+                if manifest_zip_path not in zip_names or arrays_zip_path not in zip_names:
+                    logger.warning("Model %s in snapshot but files missing from archive — skipping", uid)
+                    continue
+
+                # Per-member size + compression ratio check
+                skip = False
+                member_sizes = 0
+                for member_path in (manifest_zip_path, arrays_zip_path):
+                    info = zf.getinfo(member_path)
+                    if info.file_size > max_member_bytes:
+                        logger.warning(
+                            "Model file %s too large (%.1f MB) — skipping model %s",
+                            member_path,
+                            info.file_size / (1024 * 1024),
+                            uid,
+                        )
+                        skip = True
+                        break
+                    # Compression ratio guard: compressed_size of 0 means stored uncompressed
+                    if info.compress_size > 0 and info.file_size / info.compress_size > max_compression_ratio:
+                        logger.warning(
+                            "Model file %s has suspicious compression ratio (%.0f:1) — skipping model %s",
+                            member_path,
+                            info.file_size / info.compress_size,
+                            uid,
+                        )
+                        skip = True
+                        break
+                    member_sizes += info.file_size
+                if skip:
+                    continue
+
+                total_model_bytes_extracted += member_sizes
+                model_entries.append((uid, m_data, manifest_zip_path, arrays_zip_path))
+
+            # Total budget check across all models
+            if total_model_bytes_extracted > max_total_model_bytes:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Total model data too large ({total_model_bytes_extracted / (1024*1024):.1f} MB). "
+                    f"Maximum is {max_total_model_bytes / (1024*1024):.0f} MB.",
+                )
+
+            # Create root project from snapshot
+            project = Project(
+                user_id=current_user.id,
+                name=project_json.get("name", "Imported Project"),
+                description=project_json.get("description"),
+                metadata_=project_json.get("metadata", {}),
+                technique=project_json.get("technique"),
+                sample_type=project_json.get("sample_type"),
+            )
+            session.add(project)
+            await session.flush()
+
+            # Recreate scripts from snapshot
+            for s_data in project_json.get("scripts", []):
+                script = ProjectScript(
+                    project_id=project.id,
+                    user_id=current_user.id,
+                    name=s_data.get("name", "Imported Script"),
+                    description=s_data.get("description"),
+                    language=s_data.get("language", "python"),
+                    code=s_data.get("code", ""),
+                    priority=s_data.get("priority", 50.0),
+                )
+                session.add(script)
+
+            # Extract and import validated models
+            for uid, m_data, manifest_zip_path, arrays_zip_path in model_entries:
+                try:
+                    from spectra_sherpa.app.services.model_store import get_model_store
+
+                    store = get_model_store()
+
+                    import numpy as np
+
+                    manifest_bytes = zf.read(manifest_zip_path)
+                    arrays_bytes = zf.read(arrays_zip_path)
+
+                    manifest = json.loads(manifest_bytes)
+
+                    # Load arrays from the npz bytes
+                    arrays_buf = io.BytesIO(arrays_bytes)
+                    with np.load(arrays_buf, allow_pickle=False) as npz:
+                        arrays = dict(npz)
+
+                    # Save via ModelStore (computes new integrity hash)
+                    integrity_hash = store.save(uid, manifest, arrays)
+
+                    # Create DB record
+                    model_row = ModelArtifact(
+                        artifact_uid=uid,
+                        user_id=current_user.id,
+                        project_id=project.id,
+                        node_id=m_data.get("node_id", "imported"),
+                        model_type=m_data.get("model_type", "unknown"),
+                        name=m_data.get("name", f"Imported model {uid[:8]}"),
+                        artifact_dir=str(store._artifact_dir(uid)),
+                        integrity_hash=integrity_hash,
+                        n_features=m_data.get("n_features", 0),
+                        n_components=m_data.get("n_components"),
+                    )
+                    session.add(model_row)
+                    models_imported += 1
+                except RuntimeError:
+                    logger.warning("ModelStore not initialized — cannot import model %s", uid)
+                except Exception as exc:
+                    logger.warning("Failed to import model %s: %s", uid, exc)
+
+            # Save import snapshot as version 1
+            version = ProjectVersion(
+                project_id=project.id,
+                version_number=1,
+                created_by=current_user.id,
+                change_description="Imported from .spectrapy archive",
+                snapshot=project_json,
+                include_raw_data=False,
+            )
+            session.add(version)
+            await session.commit()
+    except HTTPException:
+        await session.rollback()
+        raise
     except (zipfile.BadZipFile, KeyError, json.JSONDecodeError) as exc:
+        await session.rollback()
         raise HTTPException(
             status_code=400,
             detail=f"Invalid .spectrapy archive: {exc}",
         )
+    except Exception:
+        await session.rollback()
+        raise
 
-    # Create root project from snapshot
-    project = Project(
-        user_id=current_user.id,
-        name=project_json.get("name", "Imported Project"),
-        description=project_json.get("description"),
-        metadata_=project_json.get("metadata", {}),
-        technique=project_json.get("technique"),
-        sample_type=project_json.get("sample_type"),
-    )
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
+    if project is None:
+        raise HTTPException(status_code=500, detail="Project import failed")
 
-    # Recreate scripts from snapshot
-    for s_data in project_json.get("scripts", []):
-        script = ProjectScript(
-            project_id=project.id,
-            user_id=current_user.id,
-            name=s_data.get("name", "Imported Script"),
-            description=s_data.get("description"),
-            language=s_data.get("language", "python"),
-            code=s_data.get("code", ""),
-            priority=s_data.get("priority", 50.0),
-        )
-        session.add(script)
-    await session.commit()
-
-    # Save import snapshot as version 1
-    version = ProjectVersion(
-        project_id=project.id,
-        version_number=1,
-        created_by=current_user.id,
-        change_description="Imported from .spectrapy archive",
-        snapshot=project_json,
-        include_raw_data=False,
-    )
-    session.add(version)
-    await session.commit()
+    if models_imported:
+        logger.info("Imported %d model artifact(s) for project '%s'", models_imported, project.name)
 
     logger.info("Imported project '%s' (id=%s)", project.name, project.id)
     return await _project_to_detail(project, session)

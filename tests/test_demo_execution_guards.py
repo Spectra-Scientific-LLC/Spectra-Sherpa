@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
-
 import pytest
 from fastapi.routing import APIRoute
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from spectra_sherpa.app.api.deps import get_current_user, get_session
 from spectra_sherpa.app.core.config import app_config
 from spectra_sherpa.app.main import app
 from spectra_sherpa.app.models.user import User
@@ -33,25 +30,6 @@ def _has_demo_guard(route: APIRoute) -> bool:
         ):
             return True
     return False
-
-
-@pytest.fixture
-async def auth_client(test_session: AsyncSession, test_user: User) -> AsyncGenerator[AsyncClient, None]:
-    """HTTP client authenticated as test_user."""
-
-    async def override_get_session():
-        yield test_session
-
-    async def override_get_current_user():
-        return test_user
-
-    app.dependency_overrides[get_session] = override_get_session
-    app.dependency_overrides[get_current_user] = override_get_current_user
-
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        yield ac
-
-    app.dependency_overrides.clear()
 
 
 @pytest.fixture

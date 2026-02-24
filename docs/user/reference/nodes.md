@@ -2,6 +2,8 @@
 
 This reference lists the available processing nodes in the Workflow Builder, including their parameters and default values.
 
+Nodes marked with **[SCP]** require [SpectroChemPy](https://www.spectrochempy.fr/) (`pip install spectra-sherpa[scp]`). All other nodes run on NumPy/SciPy/scikit-learn.
+
 ## Preprocessing Nodes
 
 ### Baseline Correction
@@ -13,9 +15,10 @@ This reference lists the available processing nodes in the Workflow Builder, inc
     *   `lam` (number, default: `100000`): Smoothness parameter. Larger values = smoother baseline. Range: 1e2 - 1e9.
     *   `p` (number, default: `0.001`): Asymmetry parameter. Smaller values allow the baseline to stay lower (under peaks). Range: 0.0001 - 0.1.
 
-#### Baseline (Rubberband)
+#### Baseline (Rubberband) **[SCP]**
 *   **Node Type**: `baseline.rubberband`
 *   **Description**: Convex hull "rubberband" baseline correction.
+*   **Powered by**: [spectrochempy.basc](https://www.spectrochempy.fr/reference/generated/spectrochempy.basc.html)
 *   **Parameters**:
     *   `ranges` (text): Optional spectral ranges to force baseline points (e.g., `'4000:3800, 1800:1700'`).
 
@@ -101,9 +104,10 @@ This reference lists the available processing nodes in the Workflow Builder, inc
 
 ### Advanced Correction
 
-#### OSC Filter
+#### OSC Filter **[SCP]**
 *   **Node Type**: `preprocess.osc`
 *   **Description**: Orthogonal Signal Correction - remove variation uncorrelated with Y.
+*   **Powered by**: [spectrochempy.PLSRegression](https://www.spectrochempy.fr/reference/generated/spectrochempy.PLSRegression.html)
 *   **Parameters**:
     *   `n_components` (number, default: `1`): Number of orthogonal components.
     *   `tol` (number, default: `1e-6`): Convergence tolerance.
@@ -162,17 +166,19 @@ This reference lists the available processing nodes in the Workflow Builder, inc
 
 ### Decomposition & Analysis
 
-#### PCA
+#### PCA **[SCP]**
 *   **Node Type**: `model.pca`
 *   **Description**: Principal Component Analysis.
+*   **Powered by**: [spectrochempy.PCA](https://www.spectrochempy.fr/reference/generated/spectrochempy.PCA.html)
 *   **Parameters**:
     *   `n_components` (text, default: `5`): Number of components (int), 'mle', or variance ratio (float 0-1).
     *   `standardized` (boolean, default: `False`): Apply standardization.
     *   `scaled` (boolean, default: `False`): Apply scaling.
 
-#### MCR-ALS
+#### MCR-ALS **[SCP]**
 *   **Node Type**: `model.mcr_als`
 *   **Description**: Multivariate Curve Resolution - Alternating Least Squares. Resolves mixtures into pure components.
+*   **Powered by**: [spectrochempy.MCRALS](https://www.spectrochempy.fr/reference/generated/spectrochempy.MCRALS.html)
 *   **Parameters**:
     *   `n_components` (number, default: `3`): Number of pure components.
     *   `max_iter` (number, default: `50`): Maximum iterations.
@@ -180,11 +186,22 @@ This reference lists the available processing nodes in the Workflow Builder, inc
     *   `non_negative_C` (boolean, default: `True`): Enforce non-negative concentrations.
     *   `non_negative_St` (boolean, default: `True`): Enforce non-negative spectra.
 
-#### EFA
+#### EFA **[SCP]**
 *   **Node Type**: `model.efa`
 *   **Description**: Evolving Factor Analysis. Determines chemical rank of evolving systems.
+*   **Powered by**: [spectrochempy.EFA](https://www.spectrochempy.fr/reference/generated/spectrochempy.EFA.html)
 *   **Parameters**:
     *   `n_components` (number, default: `10`): Number of eigenvalues to compute.
+
+#### SIMPLISMA **[SCP]**
+*   **Node Type**: `model.simplisma`
+*   **Description**: Self-modeling mixture analysis using purity maximization. Identifies pure variables in spectral mixtures.
+*   **Powered by**: [spectrochempy.SIMPLISMA](https://www.spectrochempy.fr/reference/generated/spectrochempy.SIMPLISMA.html)
+*   **Parameters**:
+    *   `n_components` (number, default: `3`): Number of pure components to resolve.
+    *   `tol` (number, default: `0.1`): Convergence tolerance.
+    *   `noise` (number, default: `3.0`): Noise level threshold.
+*   **Outputs**: `model`, `concentrations`, `spectra` (pure component spectra), `purity_values`.
 
 #### Peak Finding
 *   **Node Type**: `analysis.peak_finding`
@@ -198,9 +215,10 @@ This reference lists the available processing nodes in the Workflow Builder, inc
 
 ### Regression
 
-#### PLS
+#### PLS **[SCP]**
 *   **Node Type**: `model.pls`
 *   **Description**: Partial Least Squares Regression.
+*   **Powered by**: [spectrochempy.PLSRegression](https://www.spectrochempy.fr/reference/generated/spectrochempy.PLSRegression.html)
 *   **Inputs**: `X` (Spectra), `y` (Concentrations).
 *   **Parameters**:
     *   `n_components` (number, default: `3`): Number of latent variables.
@@ -235,9 +253,10 @@ This reference lists the available processing nodes in the Workflow Builder, inc
 
 ### Classification
 
-#### PLS-DA
+#### PLS-DA **[SCP]**
 *   **Node Type**: `classification.plsda`
 *   **Description**: Partial Least Squares Discriminant Analysis.
+*   **Powered by**: [spectrochempy.PLSRegression](https://www.spectrochempy.fr/reference/generated/spectrochempy.PLSRegression.html)
 *   **Inputs**: `X` (Spectra), `y` (Classes - optional, auto-extracted from X).
 *   **Parameters**:
     *   `n_components` (number, default: `2`): Number of components.
@@ -246,7 +265,7 @@ This reference lists the available processing nodes in the Workflow Builder, inc
 *   **Outputs**: Model dict with train/CV predictions, confusion matrices, and classification report.
 *   **Notes**: If `X` includes class labels in its y-axis, you can omit `y` to auto-extract. For train/test workflows, split data with `data.train_test_split`, train with `X_train` (+ `y_train` if provided), then use `classification.plsda_predict` on `X_test` and feed `y_test` + `y_pred` into `diagnostics.cross_validation` for a confusion matrix.
 
-#### Apply PLS-DA Model
+#### Apply PLS-DA Model **[SCP]**
 *   **Node Type**: `classification.plsda_predict`
 *   **Description**: Apply a trained PLS-DA model to new samples.
 *   **Inputs**: `X_new` (Spectra), `model` (PLS-DA model dict).
@@ -270,9 +289,10 @@ This reference lists the available processing nodes in the Workflow Builder, inc
 *   **Inputs**: `X_new` (Features), `model` (KNN model dict).
 *   **Outputs**: `y_pred` (Predicted classes), `y_prob` (Class probabilities).
 
-#### SIMCA
+#### SIMCA **[SCP]**
 *   **Node Type**: `classification.simca`
 *   **Description**: Soft Independent Modeling of Class Analogy.
+*   **Powered by**: [spectrochempy.PCA](https://www.spectrochempy.fr/reference/generated/spectrochempy.PCA.html) (per-class PCA models)
 *   **Inputs**: `X` (Features), `y` (Classes - optional).
 *   **Parameters**:
     *   `n_components` (number, default: `3`): Number of PCs per class.
@@ -326,6 +346,17 @@ This reference lists the available processing nodes in the Workflow Builder, inc
     *   `cv_folds` (number, default: `5`): Number of folds.
 *   **Outputs**: For classification, accuracy, confusion matrix, and a classification report. For regression, RMSE, MAE, R2, Q2, and residuals.
 
+### Model Persistence
+
+#### Load & Apply Model
+*   **Node Type**: `model.load_apply`
+*   **Description**: Load a saved model artifact and apply it to new data. Supports all model types: PCA, PLS, MCR, SIMPLISMA (transform), PLS-DA, KNN, SIMCA (classify). EFA models cannot be applied (diagnostic only).
+*   **Inputs**: `X_new` (SpectralDataset), `model_ref` (ModelReference — optional, overrides parameter).
+*   **Parameters**:
+    *   `model_id` (model_select): UUID of the saved model artifact.
+*   **Outputs**: `result` (transformed/predicted data), `labels` (class labels, classification only), `model_id` (artifact UID).
+*   **Notes**: The model_ref input port takes priority over the model_id parameter. Use the model selector in the inspector to browse saved models.
+
 ---
 
 ## Data & Output Nodes
@@ -357,9 +388,9 @@ This reference lists the available processing nodes in the Workflow Builder, inc
 *   **Outputs**: `X_train`, `X_test`, `y_train` (if provided), `y_test` (if provided).
 *   **Notes**: The split preserves y-axis labels in `X_train` and `X_test`. For stratified splits and `y_train`/`y_test` outputs, pass a target array into `y`.
 
-#### Load Group
+#### Load Group **[SCP]**
 *   **Node Type**: `data.load_group`
-*   **Description**: Load multiple files from a folder and concatenate them.
+*   **Description**: Load multiple files from a folder and concatenate them. Uses SpectroChemPy file readers.
 *   **Parameters**:
     *   `folder_path` (text): Path to folder.
     *   `pattern` (text, default: `*.spa`): File pattern (glob).
@@ -370,7 +401,7 @@ This reference lists the available processing nodes in the Workflow Builder, inc
 
 #### NIST Library
 *   **Node Type**: `data.nist_library`
-*   **Description**: Loads a spectrum from the internal NIST database.
+*   **Description**: Loads a spectrum from the internal NIST database. Uses a standalone JCAMP-DX reader (no SpectroChemPy dependency).
 *   **Parameters**:
     *   `library_id` (number): Database ID of the entry.
 

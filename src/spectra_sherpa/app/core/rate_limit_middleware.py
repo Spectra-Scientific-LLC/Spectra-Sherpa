@@ -18,6 +18,8 @@ from fastapi import Request, Response, status
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from spectra_sherpa.app.core.config import app_config, settings
+from spectra_sherpa.app.core.demo_limits import check_demo_execution, demo_limit_error_detail
+from spectra_sherpa.app.core.mode_policy import has_rate_limits
 from spectra_sherpa.app.core.security import decode_access_token, get_client_host
 from spectra_sherpa.app.services.rate_limiter import RateLimiter
 
@@ -68,8 +70,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next) -> Response:
         # Only active in multi-user modes (Hybrid and Enterprise)
-        from spectra_sherpa.app.core.mode_policy import has_rate_limits
-
         if not has_rate_limits():
             return await call_next(request)
 
@@ -94,8 +94,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # === DEMO EXECUTION LIMIT (tighter per-session cap) ===
         # Only actual execution endpoints consume demo quota — not workflow
         # creation, version restore, or other management POSTs.
-        from spectra_sherpa.app.core.demo_limits import check_demo_execution, demo_limit_error_detail
-
         if request.method == "POST" and self._is_execution_path(path):
             user_id = self._get_user_id(request)
             allowed, remaining = check_demo_execution(user_id)

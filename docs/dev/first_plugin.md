@@ -66,16 +66,17 @@ class ClipFloorNode(TransformSpecNode):
 
 | Feature | How |
 |---------|-----|
-| `execute()` | Extracts 2D numpy data, calls `transform_fn`, wraps result with metadata |
+| `execute()` | Extracts numpy data from the dataset, calls `transform_fn`, wraps result with metadata |
 | `generate_python()` | Substitutes parameters into `numpy_expr` for Python export |
 | `supports_python_export()` | Returns `True` because `numpy_expr` is set |
 | Processing history | Recorded automatically in `dataset.meta["processing_history"]` |
 
 **Key points:**
 
-- `transform_fn` receives a 2D `np.float64` array and keyword arguments matching parameter names
+- `transform_fn` receives an `np.float64` array (dim 0 = samples, dim -1 = features) and keyword arguments matching parameter names
 - `numpy_expr` is a format string where `{param_name}` is replaced with the resolved value. `_data` refers to the extracted numpy array.
 - `extra_imports` are collected by the export system automatically
+- Prefer `dataset.data`, `dataset.feature_axis`, and `dataset.meta` in plugin code. Compatibility aliases (`dataset.X`, `get_observation_axis()`, etc.) remain available for legacy plugins.
 
 ### When to use `export_lines_fn` instead of `numpy_expr`
 

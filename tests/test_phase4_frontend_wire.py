@@ -23,15 +23,15 @@ from spectra_sherpa.app.services.dag.serialize import serialize_for_api
 
 
 class TestAxisKeyRemapping:
-    def test_spectral_axis_becomes_x_axis(self):
-        """SherpaDataset with spectral_axis serializes as x_axis."""
+    def test_feature_axis_becomes_x_axis(self):
+        """SherpaDataset with feature_axis serializes as x_axis."""
         ds = SherpaDataset(
             X=np.zeros((3, 100)),
-            spectral_axis=SpectralAxis(values=np.linspace(400, 4000, 100), units="cm-1"),
+            feature_axis=SpectralAxis(values=np.linspace(400, 4000, 100), units="cm-1"),
         )
         result = serialize_for_api(ds)
         assert "x_axis" in result
-        assert "spectral_axis" not in result
+        assert "feature_axis" not in result
         assert result["x_axis"]["units"] == "cm-1"
 
     def test_sample_axis_becomes_y_axis(self):
@@ -49,13 +49,13 @@ class TestAxisKeyRemapping:
         """Both spectral and sample axes are remapped."""
         ds = SherpaDataset(
             X=np.zeros((3, 50)),
-            spectral_axis=SpectralAxis(values=np.linspace(400, 4000, 50), units="cm-1"),
+            feature_axis=SpectralAxis(values=np.linspace(400, 4000, 50), units="cm-1"),
             sample_axis=SampleAxis(labels=["S1", "S2", "S3"]),
         )
         result = serialize_for_api(ds)
         assert "x_axis" in result
         assert "y_axis" in result
-        assert "spectral_axis" not in result
+        assert "feature_axis" not in result
         assert "sample_axis" not in result
 
 
@@ -70,7 +70,7 @@ class TestMetadataEnrichment:
         wn = np.linspace(400, 4000, 50)
         ds = SherpaDataset(
             X=np.zeros((3, 50)),
-            spectral_axis=SpectralAxis(values=wn, units="cm-1"),
+            feature_axis=SpectralAxis(values=wn, units="cm-1"),
         )
         result = serialize_for_api(ds)
         metadata = result["metadata"]
@@ -81,7 +81,7 @@ class TestMetadataEnrichment:
         """x_title is populated from spectral axis title."""
         ds = SherpaDataset(
             X=np.zeros((3, 50)),
-            spectral_axis=SpectralAxis(
+            feature_axis=SpectralAxis(
                 values=np.linspace(400, 4000, 50),
                 units="cm-1",
                 title="Wavenumber",
@@ -94,7 +94,7 @@ class TestMetadataEnrichment:
         """x_units is populated from spectral axis units."""
         ds = SherpaDataset(
             X=np.zeros((3, 50)),
-            spectral_axis=SpectralAxis(values=np.linspace(400, 4000, 50), units="cm-1"),
+            feature_axis=SpectralAxis(values=np.linspace(400, 4000, 50), units="cm-1"),
         )
         result = serialize_for_api(ds)
         assert result["metadata"]["x_units"] == "cm-1"
@@ -159,7 +159,7 @@ class TestDomainInMetadata:
         """IR technique detected from spectral axis range."""
         ds = SherpaDataset(
             X=np.zeros((3, 100)),
-            spectral_axis=SpectralAxis(values=np.linspace(400, 4000, 100), units="cm-1"),
+            feature_axis=SpectralAxis(values=np.linspace(400, 4000, 100), units="cm-1"),
             domain=DomainContext(technique="IR"),
         )
         result = serialize_for_api(ds)
@@ -170,7 +170,7 @@ class TestDomainInMetadata:
         """data_type is 'spectra' for spectral data."""
         ds = SherpaDataset(
             X=np.zeros((3, 100)),
-            spectral_axis=SpectralAxis(values=np.linspace(400, 4000, 100), units="cm-1"),
+            feature_axis=SpectralAxis(values=np.linspace(400, 4000, 100), units="cm-1"),
             domain=DomainContext(technique="IR"),
         )
         result = serialize_for_api(ds)

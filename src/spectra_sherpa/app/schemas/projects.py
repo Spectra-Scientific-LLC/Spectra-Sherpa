@@ -38,6 +38,7 @@ class ProjectSummary(BaseModel):
     experiment_count: int = 0
     workflow_count: int = 0
     script_count: int = 0
+    model_count: int = 0
     children_count: int = 0
     version_count: int = 0
     created_at: datetime
@@ -75,11 +76,24 @@ class ScriptBrief(BaseModel):
     code_length: int = 0
 
 
+class ModelBrief(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    artifact_uid: str
+    name: str
+    model_type: str
+    n_features: int
+    n_components: int | None = None
+    metrics: dict[str, Any] | None = None
+    created_at: datetime
+
+
 class ProjectDetail(ProjectSummary):
     metadata: dict[str, Any] = Field(default_factory=dict)
     experiments: list[ExperimentBrief] = Field(default_factory=list)
     workflows: list[WorkflowBrief] = Field(default_factory=list)
     scripts: list[ScriptBrief] = Field(default_factory=list)
+    models: list[ModelBrief] = Field(default_factory=list)
     children: list[ProjectSummary] = Field(default_factory=list)
 
 

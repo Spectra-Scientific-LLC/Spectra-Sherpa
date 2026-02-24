@@ -24,12 +24,21 @@ logger = logging.getLogger(__name__)
 
 # Single global executor loaded at startup
 _executor = None
+_executor_workflow_id: int | None = None
+_executor_workflow_user_id: int | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Load the workflow into memory on startup."""
-    global _executor
+    global _executor, _executor_workflow_id, _executor_workflow_user_id
+
+    # Initialize ModelStore so LoadApplyModelNode can load saved artifacts
+    from spectra_sherpa.app.core.config import settings
+    from spectra_sherpa.app.services.model_store import init_model_store
+
+    init_model_store(settings.data_dir)
+
     workflow_id_str = os.getenv("HEADLESS_WORKFLOW_ID")
     if not workflow_id_str:
         logger.warning("HEADLESS_WORKFLOW_ID not set. API will not function.")
@@ -64,6 +73,8 @@ async def lifespan(app: FastAPI):
 
         logger.info(f"Loading '{workflow.name}' (ID: {workflow_id}) for headless prediction...")
         _executor = build_executor_from_workflow(workflow)
+        _executor_workflow_id = workflow_id
+        _executor_workflow_user_id = workflow.user_id
 
     yield
     # Cleanup on shutdown
@@ -137,13 +148,47 @@ async def predict(request: Request) -> Response:
         logger.exception("Graph execution failed")
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
 
+    # Persist model artifact DB records (prevent orphaned files on disk)
+    saved_artifacts = getattr(executor, "saved_artifacts", [])
+    if saved_artifacts:
+        try:
+            from spectra_sherpa.app.services.model_store import persist_model_artifact_records
+
+            async with async_session() as session:
+                await persist_model_artifact_records(
+                    session,
+                    saved_artifacts,
+                    user_id=_executor_workflow_user_id or 0,
+                    workflow_id=_executor_workflow_id,
+                )
+                await session.commit()
+        except Exception:
+            logger.warning("Failed to persist model artifact DB records", exc_info=True)
+
+    # Collect model_ids for provenance (from saved artifacts and result dicts)
+    model_ids: list[str] = []
+    for art in saved_artifacts:
+        uid = art.get("artifact_uid")
+        if uid and uid not in model_ids:
+            model_ids.append(uid)
+    for node_id, node_result in results.items():
+        if isinstance(node_result, dict) and "model_id" in node_result:
+            mid = node_result["model_id"]
+            if mid and mid not in model_ids:
+                model_ids.append(mid)
+
+    # Build provenance headers (keeps payload clean)
+    provenance_headers: dict[str, str] = {}
+    if model_ids:
+        provenance_headers["X-Model-Ids"] = ",".join(model_ids)
+
     # Extract results from deploy.output node(s)
     deploy_output_nodes = [n for n in executor.nodes.values() if n.metadata.node_type == "deploy.output"]
     if not deploy_output_nodes:
         # Fallback to returning all exit node results if no specific deploy.output exists
         exit_nodes = executor.find_exit_nodes()
         out = {k: str(results[k]) for k in exit_nodes if k in results}
-        return Response(content=json.dumps(out), media_type="application/json")
+        return Response(content=json.dumps(out), media_type="application/json", headers=provenance_headers)
 
     # Aggregate ALL deploy.output nodes (multiple outputs for advanced workflows)
     if len(deploy_output_nodes) == 1:
@@ -157,11 +202,13 @@ async def predict(request: Request) -> Response:
         content = fmt_result.get("content", "")
 
         if fmt_type == "json":
-            return Response(content=json.dumps(content), media_type="application/json")
+            return Response(
+                content=json.dumps(content), media_type="application/json", headers=provenance_headers,
+            )
         elif fmt_type == "csv":
-            return PlainTextResponse(content=content, media_type="text/csv")
+            return PlainTextResponse(content=content, media_type="text/csv", headers=provenance_headers)
         else:
-            return PlainTextResponse(content=content, media_type="text/plain")
+            return PlainTextResponse(content=content, media_type="text/plain", headers=provenance_headers)
     else:
         # Multiple outputs: return dict keyed by node ID
         outputs = {}
@@ -173,4 +220,4 @@ async def predict(request: Request) -> Response:
                     "format": fmt_result.get("format", "json"),
                     "content": fmt_result.get("content", ""),
                 }
-        return Response(content=json.dumps(outputs), media_type="application/json")
+        return Response(content=json.dumps(outputs), media_type="application/json", headers=provenance_headers)

@@ -202,9 +202,11 @@ async def run_batch_prediction(
     total = len(files)
     success_count = 0
     error_count = 0
+    all_model_ids: set[str] = set()
 
     for idx, file_path in enumerate(files):
         start_ms = time.monotonic()
+        executor = None
 
         try:
             dataset = load_single_file(file_path)
@@ -231,6 +233,31 @@ async def run_batch_prediction(
                     except Exception:
                         serialized[node_id] = {"error": "serialization_failed"}
 
+            # Extract model_id from executor's saved_artifacts (authoritative source)
+            # and also from results dict (for LoadApplyModelNode pass-through)
+            file_model_id = None
+            if getattr(executor, "saved_artifacts", None):
+                from spectra_sherpa.app.services.model_store import persist_model_artifact_records
+
+                await persist_model_artifact_records(
+                    session,
+                    executor.saved_artifacts,
+                    user_id=run.user_id,
+                    workflow_id=workflow.id,
+                    project_id=getattr(workflow, "project_id", None),
+                )
+                file_model_id = executor.saved_artifacts[-1]["artifact_uid"]
+                all_model_ids.update(a["artifact_uid"] for a in executor.saved_artifacts)
+
+            # Also check results for model_id from LoadApplyModelNode (uses existing artifact)
+            for node_id, node_result in results.items():
+                if isinstance(node_result, dict) and "model_id" in node_result:
+                    mid = node_result["model_id"]
+                    if mid:
+                        if file_model_id is None:
+                            file_model_id = mid
+                        all_model_ids.add(mid)
+
             elapsed_ms = int((time.monotonic() - start_ms) * 1000)
 
             prediction = BatchPrediction(
@@ -240,11 +267,32 @@ async def run_batch_prediction(
                 status="completed",
                 results=serialized,
                 processing_time_ms=elapsed_ms,
+                model_id=file_model_id,
             )
             session.add(prediction)
             success_count += 1
 
         except Exception as exc:
+            # Roll back any dirty session state before attempting artifact persist
+            await session.rollback()
+
+            # Persist any model artifacts saved to disk before the error
+            # to avoid orphan files with no DB records.
+            if executor is not None and getattr(executor, "saved_artifacts", None):
+                try:
+                    from spectra_sherpa.app.services.model_store import persist_model_artifact_records
+
+                    await persist_model_artifact_records(
+                        session,
+                        executor.saved_artifacts,
+                        user_id=run.user_id,
+                        workflow_id=workflow.id,
+                        project_id=getattr(workflow, "project_id", None),
+                    )
+                    all_model_ids.update(a["artifact_uid"] for a in executor.saved_artifacts)
+                except Exception as art_err:
+                    logger.warning("Could not persist model artifacts from failed file %s: %s", file_path.name, art_err)
+
             elapsed_ms = int((time.monotonic() - start_ms) * 1000)
             prediction = BatchPrediction(
                 run_id=run.id,
@@ -271,7 +319,12 @@ async def run_batch_prediction(
                 commit_exc,
             )
             await session.rollback()
-            error_count += 1
+            # Fix counts: if the prediction succeeded but commit failed,
+            # move it from success to error.  If it already failed, the
+            # error was already counted — don't double-count.
+            if prediction.status == "completed":
+                success_count -= 1
+                error_count += 1
 
         progress = int(((idx + 1) / total) * 100)
         await job_manager.update_progress(
@@ -290,6 +343,8 @@ async def run_batch_prediction(
             "error_count": error_count,
         }
     }
+    if all_model_ids:
+        run.model_ids = sorted(all_model_ids)
     await session.commit()
     logger.info(
         "Batch prediction complete: %d/%d succeeded for run %d",

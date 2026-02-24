@@ -1,0 +1,466 @@
+"""
+PLS regression training and prediction nodes.
+"""
+
+from __future__ import annotations
+
+import logging
+import uuid
+from typing import Any
+
+import numpy as np
+
+from spectra_sherpa.app.lib.sherpa_dataset import (
+    EvaluationResult,
+)
+from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
+
+from ...io_contracts import (
+    attach_evaluation,
+    bind_X,
+    bind_y,
+    resolve_legacy_input,
+    to_numpy_1d,
+)
+from ...node_base import (
+    Node,
+    NodeMetadata,
+    NodeParameter,
+    PortMetadata,
+    register_node,
+)
+from .core_utils import (
+    create_spectral_dataset as _create_spectral_dataset,
+)
+from .core_utils import (
+    is_sequential_numeric as _is_sequential_numeric,
+)
+from .core_utils import (
+    make_safe_coord as _make_safe_coord,
+)
+
+logger = logging.getLogger(__name__)
+
+from spectra_sherpa.app.lib.adapters.scp_extractors import PLSExtract
+from spectra_sherpa.app.lib.scp_compat import scp, to_nddataset
+
+
+@register_node
+class PLSNode(Node):
+    """
+    Partial Least Squares Regression node.
+
+    Performs PLS regression using SpectroChemPy.
+    """
+
+    metadata = NodeMetadata(
+        node_type="model.pls",
+        category="modeling",
+        label="PLS",
+        description="Partial Least Squares regression for calibration",
+        parameters=[
+            NodeParameter(
+                name="n_components",
+                label="Number of Components",
+                param_type="number",
+                default=3,
+                min_value=1,
+                max_value=20,
+                step=1,
+                description="Number of PLS components",
+                required=True,
+                category="basic",
+            ),
+            NodeParameter(
+                name="scale",
+                label="Scale Data",
+                param_type="boolean",
+                default=True,
+                description="Apply mean centering and scaling",
+                required=False,
+                category="basic",
+            ),
+        ],
+        input_types=["NDDataset", "array"],
+        output_type="dict",
+        # Named input ports for multi-input node
+        input_ports=[
+            PortMetadata(
+                name="X",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Spectra (X)",
+                description="Spectral data matrix (n_samples × n_wavenumbers)",
+            ),
+            PortMetadata(
+                name="y",
+                type_ref="spectrasherpa://types/Array1D/1.0",
+                required=True,
+                label="Concentrations (y)",
+                description="Target concentration values",
+            ),
+        ],
+        output_ports=[
+            PortMetadata(
+                name="model",
+                type_ref="spectrasherpa://types/RegressionModel/1.0",
+                required=True,
+                label="PLS Model",
+                description="Trained PLS regression model",
+            ),
+            PortMetadata(
+                name="X_scores",
+                type_ref="spectrasherpa://types/ScoreMatrix/1.0",
+                required=True,
+                label="X Scores",
+                description="Scores for X block as NDDataset (samples × components) with sample labels",
+            ),
+            PortMetadata(
+                name="Y_scores",
+                type_ref="spectrasherpa://types/ScoreMatrix/1.0",
+                required=True,
+                label="Y Scores",
+                description="Scores for Y block as NDDataset (samples × components) with sample labels",
+            ),
+            PortMetadata(
+                name="X_loadings",
+                type_ref="spectrasherpa://types/LoadingMatrix/1.0",
+                required=True,
+                label="X Loadings",
+                description="Loadings for X block as NDDataset (features × components) with wavenumber axis",
+            ),
+            PortMetadata(
+                name="Y_loadings",
+                type_ref="spectrasherpa://types/LoadingMatrix/1.0",
+                required=True,
+                label="Y Loadings",
+                description="Loadings for Y block as NDDataset (targets × components)",
+            ),
+        ],
+        requires_scp=True,
+        help_url="https://www.spectrochempy.fr/reference/generated/spectrochempy.PLSRegression.html",
+    )
+
+    async def execute(self, X: Any = None, y: Any = None, **kwargs) -> Any:
+        """
+        Execute PLS regression.
+
+        Args:
+            X: Dataset containing spectral data (predictors)
+            y: Target values (concentrations)
+
+        Returns:
+            PLS model with regression results
+        """
+        X_ds = bind_X(
+            X,
+            kwargs,
+            missing_message="Missing required input: X (spectra)",
+            dataset_error_message="X must be an dataset or array-like object",
+            allow_array=True,
+        )
+        y_value = bind_y(
+            y,
+            kwargs,
+            X=X_ds,
+            required=True,
+            infer_from_X=False,
+            dataset_as_data=True,
+            missing_message="Missing required input: y (concentrations)",
+        )
+
+        X_ndd = to_nddataset(X_ds)
+        y_array = to_numpy_1d(y_value, name="y", expected_length=X_ds.shape[0], dtype=np.float64)
+        y_dataset = scp.NDDataset(y_array.reshape(-1, 1))
+
+        n_components = self.parameters.get("n_components", 3)
+        scale = self.parameters.get("scale", True)
+
+        # Validate n_components
+        max_components = min(X_ds.shape[0] - 1, X_ds.shape[1])
+        if n_components > max_components:
+            raise ValueError(
+                f"n_components must be <= min(n_samples - 1, n_features). Got {n_components} with max {max_components}."
+            )
+
+        logger.debug("[PLS Node] Executing with:")
+        logger.debug("  - n_components: %s", n_components)
+        logger.debug("  - scale: %s", scale)
+        logger.debug("  - X shape: %s", X_ds.shape)
+        logger.debug("  - y shape: %s", y_dataset.shape)
+
+        # Perform PLS using SpectroChemPy
+        pls = scp.PLSRegression(n_components=n_components, scale=scale)
+        pls.fit(X_ndd, y_dataset)
+
+        # Extract results using typed extractor — all defensive unwrapping
+        # and version-specific fallback logic lives in PLSExtract.from_scp()
+        extracted = PLSExtract.from_scp(pls, X_ndd)
+
+        X_scores_data = extracted.x_scores
+        Y_scores_data = extracted.y_scores
+        X_loadings_data = extracted.x_loadings
+        Y_loadings_data = extracted.y_loadings
+        coef_data = extracted.coef
+
+        # In-sample calibration quality metrics for Phase 2 quality wiring.
+        pls_r2 = None
+        pls_rmse = None
+        try:
+            y_pred = to_numpy_1d(pls.predict(X_ndd), name="y_pred", expected_length=len(y_array), dtype=np.float64)
+            residual = y_array - y_pred
+            ss_res = float(np.sum(residual**2))
+            ss_tot = float(np.sum((y_array - np.mean(y_array)) ** 2))
+            pls_r2 = (1.0 - (ss_res / ss_tot)) if ss_tot > 0 else None
+            pls_rmse = float(np.sqrt(np.mean(residual**2)))
+        except Exception:
+            logger.debug("[PLS Node] Could not compute calibration R2/RMSE from predictions", exc_info=True)
+
+        logger.debug("[PLS Node] PLS model fitted successfully")
+        logger.debug("  - X_scores shape: %s", X_scores_data.shape if X_scores_data is not None else "N/A")
+        logger.debug("  - Coefficients shape: %s", coef_data.shape if coef_data is not None else "N/A")
+
+        # Extract label_categories for categorical coloring
+        label_categories = None
+        _y_coord = X_ds.sample_axis
+        if _y_coord is not None:
+            try:
+                if hasattr(_y_coord, "labels") and _y_coord.labels is not None:
+                    raw = _y_coord.labels.tolist() if hasattr(_y_coord.labels, "tolist") else list(_y_coord.labels)
+                    label_categories = sorted(set(str(l) for l in raw))
+                elif hasattr(_y_coord, "data") and _y_coord.data is not None:
+                    raw = _y_coord.data.tolist() if hasattr(_y_coord.data, "tolist") else list(_y_coord.data)
+                    str_labels = [str(l) for l in raw]
+                    unique = sorted(set(str_labels))
+                    if len(unique) < 20 and not _is_sequential_numeric(raw):
+                        label_categories = unique
+            except Exception:
+                label_categories = None
+
+        # Get input x_coord for loadings NDDataset
+        _x_coord = X_ds.feature_axis
+
+        # Build LV labels with physical quantity context for scientific traceability
+        x_data_quantity = None
+        if hasattr(X_ds, "units") and X_ds.units:
+            x_data_quantity = str(X_ds.units) if str(X_ds.units) != "dimensionless" else None
+        if x_data_quantity is None and hasattr(X_ds, "title") and X_ds.title:
+            x_data_quantity = str(X_ds.title)
+
+        # =====================================================================
+        # Create proper NDDataset objects for scores and loadings with coordinate coupling
+        # This enables "smart array" behavior - slicing data also slices axes
+        # =====================================================================
+
+        # Build LV labels with physical quantity context for scientific traceability
+        # Example: "LV1 [Absorbance]" instead of just "LV1"
+        quantity_suffix = f" [{x_data_quantity}]" if x_data_quantity else ""
+        lv_labels = [f"LV{i+1}{quantity_suffix}" for i in range(n_components)]
+
+        # X_scores: shape (n_samples, n_components)
+        X_scores_dataset = None
+        if X_scores_data is not None:
+            X_scores_dataset = _create_spectral_dataset(
+                data=X_scores_data,
+                x_coord=_make_safe_coord(lv_labels, title="Latent Variable"),
+                y_coord=_y_coord,  # Preserve sample labels from input
+                units="score",
+                title="PLS X Scores",
+            )
+
+        # Y_scores: shape (n_samples, n_components)
+        Y_scores_dataset = None
+        if Y_scores_data is not None:
+            Y_scores_dataset = _create_spectral_dataset(
+                data=Y_scores_data,
+                x_coord=_make_safe_coord(lv_labels, title="Latent Variable"),
+                y_coord=_y_coord,  # Preserve sample labels from input
+                units="score",
+                title="PLS Y Scores",
+            )
+
+        # X_loadings: shape (n_features, n_components) - needs wavenumber axis
+        X_loadings_dataset = None
+        if X_loadings_data is not None:
+            X_loadings_dataset = _create_spectral_dataset(
+                data=(
+                    X_loadings_data.T if X_loadings_data.ndim == 2 else X_loadings_data
+                ),  # Transpose to (n_components, n_features)
+                x_coord=_x_coord,
+                y_coord=_make_safe_coord(lv_labels, title="Latent Variable"),
+                units="loading",
+                title="PLS X Loadings",
+            )
+
+        # Y_loadings: shape (n_targets, n_components)
+        Y_loadings_dataset = None
+        if Y_loadings_data is not None:
+            Y_loadings_dataset = _create_spectral_dataset(
+                data=Y_loadings_data,
+                x_coord=_make_safe_coord(lv_labels, title="Latent Variable"),
+                units="loading",
+                title="PLS Y Loadings",
+            )
+
+        # Add processing history to NDDataset outputs
+        if X_scores_dataset is not None:
+            copy_processing_history(X_ds, X_scores_dataset)
+            add_processing_step(
+                X_scores_dataset,
+                "model.pls.x_scores",
+                {"n_components": n_components},
+                node_id=self.node_id,
+            )
+
+        if Y_scores_dataset is not None:
+            copy_processing_history(X_ds, Y_scores_dataset)
+            add_processing_step(
+                Y_scores_dataset,
+                "model.pls.y_scores",
+                {"n_components": n_components},
+                node_id=self.node_id,
+            )
+
+        if X_loadings_dataset is not None:
+            copy_processing_history(X_ds, X_loadings_dataset)
+            add_processing_step(
+                X_loadings_dataset,
+                "model.pls.x_loadings",
+                {"n_components": n_components},
+                node_id=self.node_id,
+            )
+
+        if Y_loadings_dataset is not None:
+            copy_processing_history(X_ds, Y_loadings_dataset)
+            add_processing_step(
+                Y_loadings_dataset,
+                "model.pls.y_loadings",
+                {"n_components": n_components},
+                node_id=self.node_id,
+            )
+
+        # Store scientific metadata in X_scores NDDataset meta
+        if X_scores_dataset is not None:
+            X_scores_dataset.meta.update(
+                {
+                    "n_components": n_components,
+                    "pc_labels": lv_labels,  # LV labels (no EVR for PLS, so store explicitly)
+                    "label_categories": label_categories,
+                    "r2": pls_r2,
+                    "rmse": pls_rmse,
+                }
+            )
+            attach_evaluation(
+                X_scores_dataset,
+                EvaluationResult(
+                    evaluation_id=str(uuid.uuid4()),
+                    model_type="PLS",
+                    n_components=n_components,
+                    r2=pls_r2,
+                    rmse=pls_rmse,
+                ),
+            )
+
+        # NDDataset-only return: one serialization boundary at API layer
+        return {
+            "default": X_scores_dataset,  # NDDataset: X scores + sample labels (y) + LV coords (x)
+            "X_loadings": X_loadings_dataset,  # NDDataset: loadings + wavenumbers (x) + LV coords (y)
+            "Y_scores": Y_scores_dataset,  # NDDataset: Y scores
+            "Y_loadings": Y_loadings_dataset,  # NDDataset: Y loadings
+            "model": pls,  # Model port for Apply PLS Model
+            "coef": coef_data,
+        }
+
+
+
+
+@register_node
+class PLSPredictNode(Node):
+    """
+    Apply trained PLS model to predict new samples.
+
+    Takes a trained PLS model and new data, returns predictions.
+    Critical for train/test validation and production inference.
+    """
+
+    metadata = NodeMetadata(
+        node_type="model.pls_predict",
+        category="modeling",
+        label="Apply PLS Model",
+        description="Apply trained PLS model to predict concentrations for new spectra",
+        parameters=[],
+        input_ports=[
+            PortMetadata(
+                name="X_new",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="New Spectra",
+                description="Spectral data to predict (preprocessed same as training data)",
+            ),
+            PortMetadata(
+                name="model",
+                type_ref="spectrasherpa://types/RegressionModel/1.0",
+                required=True,
+                label="PLS Model",
+                description="Trained PLS model from PLS training node",
+            ),
+        ],
+        output_ports=[
+            PortMetadata(
+                name="y_pred",
+                type_ref="spectrasherpa://types/Array1D/1.0",
+                required=True,
+                label="Predictions",
+                description="Predicted concentration values",
+            ),
+        ],
+        input_types=["NDDataset", "dict"],
+        output_type="array",
+    )
+
+    async def execute(self, X_new: Any = None, model: Any = None, **kwargs: Any) -> dict[str, Any]:
+        """
+        Apply PLS model to new data.
+
+        Args:
+            X_new: New spectral data (dataset)
+            model: Trained PLS model dict from PLS node
+
+        Returns:
+            dict with 'y_pred' key containing predictions
+        """
+        X_new = resolve_legacy_input(X_new, kwargs, "input_0")
+        model = resolve_legacy_input(model, kwargs, "input_1")
+
+        if X_new is None or model is None:
+            raise ValueError("Both X_new and model inputs are required")
+        X_new_ds = bind_X(
+            X_new,
+            kwargs,
+            missing_message="Missing required input: X_new (new spectra)",
+            dataset_error_message="X_new must be an dataset object",
+            allow_array=True,
+        )
+
+        # Extract model from result dict
+        if isinstance(model, dict):
+            pls_model = model.get("model")
+            if pls_model is None:
+                raise ValueError("Model dict must contain 'model' key with trained PLS object")
+        else:
+            pls_model = model
+
+        # Make predictions - SpectroChemPy PLSRegression can accept NDDataset or array
+        try:
+            X_ndd = to_nddataset(X_new_ds)
+            y_pred = pls_model.predict(X_ndd)
+            y_pred_array = to_numpy_1d(y_pred, name="y_pred", dtype=np.float64)
+
+            logger.debug("[PLS Predict] Generated %s predictions", len(y_pred_array))
+
+            return {"y_pred": y_pred_array}
+
+        except Exception as e:
+            raise RuntimeError(f"PLS prediction failed: {str(e)}") from e
+
+

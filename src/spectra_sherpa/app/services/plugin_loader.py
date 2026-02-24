@@ -41,13 +41,18 @@ from __future__ import annotations
 
 import importlib
 import importlib.metadata
+import importlib.util
 import logging
 import sys
+import threading
 from pathlib import Path
 
 from spectra_sherpa._paths import get_default_data_dir
 
 logger = logging.getLogger(__name__)
+
+# Serialises all plugin (re-)imports so concurrent saves don't race.
+_reload_lock = threading.Lock()
 
 ENTRY_POINT_GROUP = "spectrasherpa.plugins"
 
@@ -151,6 +156,40 @@ def _load_entrypoint_plugins() -> int:
         logger.exception("Error scanning for entry-point plugins")
 
     return loaded
+
+
+def reload_plugin_by_path(file_path: Path) -> bool:
+    """Import (or re-import) a single plugin ``.py`` file by absolute path.
+
+    Uses a deterministic module name derived from the filename to ensure
+    re-import replaces the previous module object.  Thread-safe via
+    ``_reload_lock`` — concurrent saves serialise here.
+
+    Returns True on success, False on failure (logged, never raised).
+    """
+    if not file_path.is_file():
+        logger.error("reload_plugin_by_path: file does not exist: %s", file_path)
+        return False
+
+    module_name = f"_custom_algo_{file_path.stem}"
+
+    with _reload_lock:
+        try:
+            spec = importlib.util.spec_from_file_location(module_name, file_path)
+            if spec is None or spec.loader is None:
+                logger.error("Could not create module spec for %s", file_path)
+                return False
+
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+            logger.info("Loaded plugin file: %s as %s", file_path, module_name)
+            return True
+        except Exception:
+            # Clean up partial module from sys.modules
+            sys.modules.pop(module_name, None)
+            logger.exception("Failed to load plugin file: %s", file_path)
+            return False
 
 
 def discover_plugins() -> int:

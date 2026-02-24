@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from typing import AsyncGenerator, Optional
+from typing import TYPE_CHECKING, AsyncGenerator, Optional
+
+if TYPE_CHECKING:
+    from spectra_sherpa.app.models.experiment import Experiment
+    from spectra_sherpa.app.models.project import Project
+    from spectra_sherpa.app.models.workflow import Workflow
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import APIKeyHeader
@@ -12,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from spectra_sherpa.app import schemas
 from spectra_sherpa.app.core import security
 from spectra_sherpa.app.core.config import app_config, settings
+from spectra_sherpa.app.core.mode_policy import is_hybrid, is_local, is_loopback
 from spectra_sherpa.app.db.session import async_session
 from spectra_sherpa.app.models.user import User
 
@@ -65,8 +71,6 @@ async def _resolve_user(
     Returns the authenticated User or None if credentials are invalid.
     """
     # 0. Local mode: implicit user identity (single-user, no login needed)
-    from spectra_sherpa.app.core.mode_policy import is_local
-
     if is_local():
         return await _get_or_create_local_user(session)
 
@@ -126,10 +130,8 @@ async def _resolve_user(
     # 3. Hybrid fallback: allow implicit local identity only when no
     # credentials were provided AND the client is loopback (defense-in-depth;
     # gateway middleware already enforces this, but we double-check here).
-    from spectra_sherpa.app.core.mode_policy import is_hybrid
-
     if is_hybrid() and not has_credentials:
-        if client_host is not None and not security._is_loopback(client_host):
+        if client_host is not None and not is_loopback(client_host):
             return None
         return await _get_or_create_local_user(session)
 
@@ -199,6 +201,70 @@ def check_demo_capability(capability: str) -> None:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="This feature is not available in demo mode.",
             )
+
+
+# ── Shared entity loading helpers ─────────────────────────────────────
+# Use these in route handlers to replace inline load-or-404 boilerplate.
+
+
+async def require_workflow(
+    workflow_id: int,
+    user_id: int,
+    session: AsyncSession,
+    *,
+    options: list | None = None,
+) -> "Workflow":
+    """Load a workflow owned by *user_id*, or raise 404.
+
+    Parameters
+    ----------
+    options
+        SQLAlchemy loader options (e.g. ``selectinload(Workflow.nodes)``).
+    """
+    from spectra_sherpa.app.models.workflow import Workflow
+
+    query = select(Workflow).where(Workflow.id == workflow_id, Workflow.user_id == user_id)
+    if options:
+        query = query.options(*options)
+    result = await session.execute(query)
+    workflow = result.scalar_one_or_none()
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return workflow
+
+
+async def require_project(
+    project_id: int,
+    user_id: int,
+    session: AsyncSession,
+) -> "Project":
+    """Load a project owned by *user_id*, or raise 404."""
+    from spectra_sherpa.app.models.project import Project
+
+    result = await session.execute(
+        select(Project).where(Project.id == project_id, Project.user_id == user_id)
+    )
+    project = result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return project
+
+
+async def require_experiment(
+    experiment_id: int,
+    user_id: int,
+    session: AsyncSession,
+) -> "Experiment":
+    """Load an experiment owned by *user_id*, or raise 404."""
+    from spectra_sherpa.app.models.experiment import Experiment
+
+    result = await session.execute(
+        select(Experiment).where(Experiment.id == experiment_id, Experiment.user_id == user_id)
+    )
+    experiment = result.scalar_one_or_none()
+    if experiment is None:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+    return experiment
 
 
 async def get_user_from_credentials(

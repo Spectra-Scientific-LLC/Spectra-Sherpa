@@ -4,6 +4,7 @@ from spectra_sherpa.app.models.batch_prediction import BatchPrediction
 from spectra_sherpa.app.models.cal_model import CalModel
 from spectra_sherpa.app.models.calibration import Calibration
 from spectra_sherpa.app.models.calibration_file import CalibrationFile
+from spectra_sherpa.app.models.custom_algo import CustomAlgo
 from spectra_sherpa.app.models.data_egress import DataEgressPermission, UserEgressDefaults
 from spectra_sherpa.app.models.doe_config import DOEConfig
 from spectra_sherpa.app.models.execution_run import ExecutionRun
@@ -16,6 +17,7 @@ from spectra_sherpa.app.models.llm_config import LLMConfig
 from spectra_sherpa.app.models.matched_acquisition import MatchedAcquisition
 from spectra_sherpa.app.models.mixture import Mixture
 from spectra_sherpa.app.models.mixture_component import MixtureComponent
+from spectra_sherpa.app.models.model_artifact import ModelArtifact
 from spectra_sherpa.app.models.nist_library import NistLibrary
 from spectra_sherpa.app.models.plate_well import PlateWell
 from spectra_sherpa.app.models.project import Project, ProjectVersion
@@ -37,6 +39,7 @@ __all__ = [
     "BatchPrediction",
     "CalModel",
     "Calibration",
+    "CustomAlgo",
     "CalibrationFile",
     "DataEgressPermission",
     "DOEConfig",
@@ -49,6 +52,7 @@ __all__ = [
     "LLMConfig",
     "MatchedAcquisition",
     "Mixture",
+    "ModelArtifact",
     "MixtureComponent",
     "NistLibrary",
     "PlateWell",

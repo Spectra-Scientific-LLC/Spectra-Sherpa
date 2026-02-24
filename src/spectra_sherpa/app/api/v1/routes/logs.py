@@ -6,7 +6,8 @@ from fastapi import APIRouter, HTTPException, Request
 
 from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.core.logging import RemoteAuditHandler, log_buffer
-from spectra_sherpa.app.core.security import _is_loopback, get_client_host
+from spectra_sherpa.app.core.mode_policy import is_loopback
+from spectra_sherpa.app.core.security import get_client_host
 from spectra_sherpa.app.schemas.logs import LogResponse
 
 router = APIRouter()
@@ -14,7 +15,7 @@ router = APIRouter()
 
 @router.get("/logs", response_model=LogResponse)
 async def get_logs(request: Request, limit: int = 100) -> LogResponse:
-    if not _is_loopback(get_client_host(request)):
+    if not is_loopback(get_client_host(request)):
         raise HTTPException(status_code=403, detail="Logs only accessible from localhost")
 
     safe_limit = max(1, min(limit, settings.log_buffer_size))
@@ -32,7 +33,7 @@ async def get_log_sync_status(request: Request):
     - offline_count: Number of logs queued for sync
     - mode: Current app mode
     """
-    if not _is_loopback(get_client_host(request)):
+    if not is_loopback(get_client_host(request)):
         raise HTTPException(status_code=403, detail="Status only accessible from localhost")
 
     # Find the remote handler

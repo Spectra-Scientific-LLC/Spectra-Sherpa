@@ -17,7 +17,7 @@ from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
 def _make_dataset(with_target: bool = True) -> SherpaDataset:
     ds = SherpaDataset(
         X=np.arange(12, dtype=float).reshape(3, 4),
-        spectral_axis=SpectralAxis(values=np.array([1000.0, 1100.0, 1200.0, 1300.0]), title="wavenumber"),
+        feature_axis=SpectralAxis(values=np.array([1000.0, 1100.0, 1200.0, 1300.0]), title="wavenumber"),
         sample_axis=SampleAxis(
             values=np.arange(3, dtype=float),
             labels=["A", "B", "C"],
@@ -106,9 +106,9 @@ def test_build_dataset_like_preserves_axes_and_history():
     assert result.get_extra("catalog.dataset_name") == "toy-set"
     assert result.get_extra("catalog.target_names") == ["neg", "pos"]
 
-    assert result.spectral_axis is not None
+    assert result.feature_axis is not None
     assert result.sample_axis is not None
-    np.testing.assert_array_equal(result.spectral_axis.values, src.spectral_axis.values)
+    np.testing.assert_array_equal(result.feature_axis.values, src.feature_axis.values)
     np.testing.assert_array_equal(result.sample_axis.values, src.sample_axis.values)
     assert result.sample_axis.labels == src.sample_axis.labels
     np.testing.assert_array_equal(result.target, src.target)

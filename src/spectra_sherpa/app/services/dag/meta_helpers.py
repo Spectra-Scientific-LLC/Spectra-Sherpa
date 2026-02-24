@@ -209,7 +209,7 @@ def ensure_samples_meta(dataset: Any) -> Dict[str, Any]:
         dataset.meta = {}
 
     if "samples" not in dataset.meta:
-        n_samples = dataset.shape[0] if dataset.ndim == 2 else 1
+        n_samples = dataset.shape[0]
         dataset.meta["samples"] = {
             "include_mask": np.ones(n_samples, dtype=bool),
             "classes": np.array([""] * n_samples, dtype=object),
@@ -400,9 +400,9 @@ def detect_x_axis_type(dataset: Any) -> Optional[str]:
     Returns:
         "wavenumber", "wavelength_nm", "wavelength_um", or None
     """
-    # SherpaDataset: use spectral_axis directly
+    # SherpaDataset: use feature_axis directly
     if isinstance(dataset, SherpaDataset):
-        sa = dataset.spectral_axis
+        sa = dataset.feature_axis
         if sa is None:
             return None
         return sa.axis_type
@@ -439,7 +439,7 @@ def detect_spectral_technique(dataset: Any) -> Optional[str]:
     if isinstance(dataset, SherpaDataset):
         if dataset.domain.technique is not None:
             return dataset.domain.technique
-        sa = dataset.spectral_axis
+        sa = dataset.feature_axis
         if sa is None:
             return None
         if dataset.title and "raman" in dataset.title.lower():
@@ -529,13 +529,13 @@ def get_spectral_info(dataset: Any) -> Dict[str, Any]:
         "data_quantity": detect_data_quantity(dataset),
         "x_axis_type": detect_x_axis_type(dataset),
         "shape": tuple(dataset.shape),
-        "n_samples": dataset.shape[0] if dataset.ndim == 2 else 1,
+        "n_samples": dataset.shape[0],
         "n_features": dataset.shape[-1],
     }
 
-    # SherpaDataset: use spectral_axis directly
+    # SherpaDataset: use feature_axis directly
     if isinstance(dataset, SherpaDataset):
-        sa = dataset.spectral_axis
+        sa = dataset.feature_axis
         if sa is not None and sa.range is not None:
             info["x_range"] = sa.range
             info["x_units"] = sa.units

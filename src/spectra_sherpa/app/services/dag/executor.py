@@ -12,6 +12,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import uuid
 import warnings
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
@@ -280,6 +281,7 @@ def _run_node_in_worker(
     # Import node modules to populate the registry in the worker process.
     # These are guarded at module scope in the main process by conftest /
     # app startup, but spawned workers start fresh.
+    import spectra_sherpa.app.services.dag.nodes.classification  # noqa: F401
     import spectra_sherpa.app.services.dag.nodes.modeling  # noqa: F401
     import spectra_sherpa.app.services.dag.nodes.preprocessing  # noqa: F401
 
@@ -337,13 +339,18 @@ class DAGExecutor:
     Supports caching to avoid re-executing unchanged nodes.
     """
 
-    def __init__(self, process_pool: Optional[ProcessPoolExecutor] = None):
+    def __init__(self, process_pool: Optional[ProcessPoolExecutor] = None, model_store: Any = None):
         """Initialize executor.
 
         Args:
             process_pool: Optional ProcessPoolExecutor for offloading CPU-bound
                 nodes. When provided, nodes (except data-source nodes) run in
                 worker processes, keeping the event loop responsive.
+            model_store: Optional ModelStore for persisting model artifacts.
+                When provided, nodes that emit ``_model_artifact`` in their
+                result dict will have arrays saved to disk automatically.
+                Falls back to the global ``get_model_store()`` singleton if
+                not provided.
         """
         self.nodes: Dict[str, Node] = {}
         self.edges: List[WorkflowEdge] = []
@@ -351,6 +358,9 @@ class DAGExecutor:
         self.diagnostics: Dict[str, Dict[str, Any]] = {}
         self.status: WorkflowStatus = WorkflowStatus.IDLE
         self._process_pool = process_pool if process_pool is not None else _default_process_pool
+        self.model_store = model_store
+        # Artifacts saved during this execution (for DB record creation by callers)
+        self.saved_artifacts: List[Dict[str, Any]] = []
         # Caching: store hash of params when node was last executed
         self._param_hashes: Dict[str, str] = {}
         # Track which nodes are "dirty" (need re-execution)
@@ -377,6 +387,76 @@ class DAGExecutor:
         self.__dict__.update(state)
         # Restore reference to global process pool
         self._process_pool = _default_process_pool
+
+    def _resolve_model_store(self) -> Any:
+        """Return the active ModelStore: explicit > global singleton > None."""
+        if self.model_store is not None:
+            return self.model_store
+        try:
+            from spectra_sherpa.app.services.model_store import get_model_store
+
+            return get_model_store()
+        except RuntimeError:
+            return None
+
+    def _process_model_artifact(self, node_id: str) -> None:
+        """Save model artifact to disk if the node produced one.
+
+        Training nodes include ``_model_artifact`` in their result dict.
+        This method generates a UUID, persists the artifact to disk via
+        the ModelStore (explicit or global singleton), replaces the payload
+        with a ``model_id`` reference, and records the artifact metadata
+        in ``self.saved_artifacts`` for DB row creation by the caller.
+        """
+        result = self.results.get(node_id)
+        if not isinstance(result, dict) or "_model_artifact" not in result:
+            return
+
+        artifact_uid = str(uuid.uuid4())
+        store = self._resolve_model_store()
+        if store is not None:
+            try:
+                artifact = result["_model_artifact"]
+                metadata = artifact.get("metadata", {})
+                arrays = artifact.get("arrays", {})
+                metadata.setdefault("node_id", artifact.get("node_id", node_id))
+                integrity_hash = store.save(artifact_uid, metadata, arrays)
+
+                # Only pop after successful save — avoid losing data on failure
+                result.pop("_model_artifact")
+                result["model_id"] = artifact_uid
+
+                # Record for DB creation by the caller
+                self.saved_artifacts.append({
+                    "artifact_uid": artifact_uid,
+                    "node_id": metadata.get("node_id", node_id),
+                    "model_type": metadata.get("model_type", "unknown"),
+                    "n_features": metadata.get("n_features", 0),
+                    "n_components": metadata.get("n_components"),
+                    "classes_json": json.dumps(metadata["classes"]) if "classes" in metadata else None,
+                    "feature_axis_json": json.dumps(metadata["feature_axis"]) if "feature_axis" in metadata else None,
+                    "metrics_json": json.dumps(metadata["metrics"]) if "metrics" in metadata else None,
+                    "preprocessing_summary": json.dumps(metadata["preprocessing_chain"]) if "preprocessing_chain" in metadata else None,  # noqa: E501
+                    "integrity_hash": integrity_hash,
+                    "artifact_dir": str(store._artifact_dir(artifact_uid)),
+                })
+
+                logger.info(
+                    "Saved model artifact %s (type=%s) from node %s",
+                    artifact_uid,
+                    metadata.get("model_type", "unknown"),
+                    node_id,
+                )
+            except Exception:
+                logger.exception("Failed to save model artifact for node %s", node_id)
+                raise  # Fail-fast: don't let a run appear successful while artifact is lost
+        else:
+            # Fail-fast: a training run that emits an artifact must not succeed
+            # when persistence is unavailable.
+            raise RuntimeError(
+                f"ModelStore not initialized — cannot persist artifact from node {node_id}. "
+                "Ensure init_model_store() is called at startup."
+            )
 
     def _compute_param_hash(self, node_id: str) -> str:
         """
@@ -598,12 +678,15 @@ class DAGExecutor:
         """Whether a node should run in the process pool.
 
         Data-source nodes may open async DB sessions inside execute(),
-        so they stay in-process.  Everything else is CPU-bound and safe
-        to offload.
+        so they stay in-process.  Custom algo nodes set
+        ``offload_to_pool=False`` because process-pool workers only
+        import built-in node modules.
         """
         if self._process_pool is None:
             return False
         if node.metadata and node.metadata.category == "data":
+            return False
+        if node.metadata and node.metadata.policy and not node.metadata.policy.offload_to_pool:
             return False
         return True
 
@@ -866,6 +949,7 @@ class DAGExecutor:
         """
         try:
             self.status = WorkflowStatus.RUNNING
+            self.saved_artifacts = []  # Reset for this execution
 
             # Validate workflow before execution
             validation_errors = self.validate()
@@ -915,6 +999,10 @@ class DAGExecutor:
                 else:
                     self.results[node_id] = result
                     self.diagnostics[node_id] = {}
+
+                # Persist model artifact if present
+                self._process_model_artifact(node_id)
+
                 self._param_hashes[node_id] = self._compute_param_hash(node_id)
                 logger.debug("Completed: %s (status: %s)", node_id, node.status.value)
 
@@ -998,6 +1086,10 @@ class DAGExecutor:
             else:
                 self.results[dep_node_id] = result
                 self.diagnostics[dep_node_id] = {}
+
+            # Persist model artifact if present
+            self._process_model_artifact(dep_node_id)
+
             self._param_hashes[dep_node_id] = self._compute_param_hash(dep_node_id)
             executed_in_this_run.append(dep_node_id)
             logger.debug("Completed: %s (status: %s)", dep_node_id, node.status.value)
@@ -1041,6 +1133,7 @@ class DAGExecutor:
         self.status = WorkflowStatus.IDLE
         self._param_hashes = {}
         self._dirty_nodes = set()
+        self.saved_artifacts = []
 
     def get_status(self) -> Dict[str, Any]:
         """

@@ -24,11 +24,39 @@ from spectra_sherpa.app.lib.sherpa_dataset import (
     SpectralAxis,
 )
 
+from ...io_contracts import to_numpy_1d, to_numpy_2d
+
 __all__ = [
     "make_safe_coord",
     "create_spectral_dataset",
     "is_sequential_numeric",
+    "unwrap_data",
+    "to_numpy_2d_any",
+    "to_numpy_1d_any",
 ]
+
+
+# ── Data conversion helpers ─────────────────────────────────────────
+# Previously duplicated across all split node files.
+
+
+def unwrap_data(value: Any) -> Any:
+    """Safely unwrap dataset-like .data while avoiding ndarray memoryview traps."""
+    if isinstance(value, SherpaDataset):
+        return value.data
+    if hasattr(value, "data") and not isinstance(value, np.ndarray):
+        return value.data
+    return value
+
+
+def to_numpy_2d_any(value: Any, *, name: str, dtype: Any = np.float64) -> np.ndarray:
+    """Convert dataset-like values to a strict 2D numpy array."""
+    return to_numpy_2d(unwrap_data(value), name=name, dtype=dtype)
+
+
+def to_numpy_1d_any(value: Any, *, name: str, dtype: Any = np.float64) -> np.ndarray:
+    """Convert dataset-like values to a strict 1D numpy array."""
+    return to_numpy_1d(unwrap_data(value), name=name, dtype=dtype)
 
 
 def make_safe_coord(values: Any, title: Optional[str] = None) -> Any:
@@ -160,7 +188,7 @@ def create_spectral_dataset(
         y_coord: Y-axis (sample) coordinate — AxisInfo, Coord, or array-like
         units: Data-value units (e.g., "absorbance", "score", "loading")
         title: Dataset title
-        meta: Metadata dictionary to attach to dataset.extra
+        meta: Metadata dictionary to attach to dataset.meta
 
     Returns:
         SherpaDataset with coordinates properly attached
@@ -179,17 +207,17 @@ def create_spectral_dataset(
         ...     title="PCA Scores"
         ... )
         >>> scores_ds.shape  # (20, 3)
-        >>> scores_ds.spectral_axis.labels  # ["PC1", "PC2", "PC3"]
+        >>> scores_ds.feature_axis.labels  # ["PC1", "PC2", "PC3"]
     """
     x_axis_info = make_safe_coord(x_coord) if x_coord is not None else None
     y_axis_info = make_safe_coord(y_coord) if y_coord is not None else None
 
-    spectral_axis = None
+    feature_axis = None
     if x_axis_info is not None:
         if isinstance(x_axis_info, SpectralAxis):
-            spectral_axis = x_axis_info
+            feature_axis = x_axis_info
         else:
-            spectral_axis = SpectralAxis(
+            feature_axis = SpectralAxis(
                 values=x_axis_info.values,
                 labels=x_axis_info.labels,
                 units=x_axis_info.units,
@@ -210,7 +238,7 @@ def create_spectral_dataset(
 
     return SherpaDataset(
         X=data,
-        spectral_axis=spectral_axis,
+        feature_axis=feature_axis,
         sample_axis=sample_axis,
         units=units,
         title=title,

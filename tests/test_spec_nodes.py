@@ -173,7 +173,7 @@ class TestTransformSpecNode:
     def sample_ds(self):
         return SherpaDataset(
             X=np.array([[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]]),
-            spectral_axis=SpectralAxis(values=np.array([100.0, 200.0, 300.0])),
+            feature_axis=SpectralAxis(values=np.array([100.0, 200.0, 300.0])),
             sample_axis=SampleAxis(labels=["sample_A", "sample_B"]),
             title="test spectra",
             units="absorbance",
@@ -228,7 +228,7 @@ class TestTransformSpecNode:
         result = await node.execute(sample_ds)
 
         # x-axis values preserved
-        np.testing.assert_array_equal(result.spectral_axis.values, sample_ds.spectral_axis.values)
+        np.testing.assert_array_equal(result.feature_axis.values, sample_ds.feature_axis.values)
         # y-axis labels preserved
         assert result.sample_axis.labels == sample_ds.sample_axis.labels
 

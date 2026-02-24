@@ -21,6 +21,7 @@ interface SaveRunPayload {
   integrity_hash?: string;
   executed_at: string;
   labels?: string[];
+  model_ids?: string[];
 }
 
 export const useRunsStore = defineStore("runs", () => {

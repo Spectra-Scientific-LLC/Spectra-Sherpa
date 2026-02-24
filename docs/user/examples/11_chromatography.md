@@ -344,8 +344,8 @@ n_wavelengths = 50
 time_values = np.linspace(0, 30, n_timepoints)
 wavelengths = np.linspace(200, 400, n_wavelengths)  # UV range
 
-# For 2D analysis, reshape to (samples, time×wavelength)
-# Or analyze each wavelength separately
+# SherpaDataset supports nD arrays natively — no reshaping required.
+# Shape: (n_samples, n_timepoints, n_wavelengths)
 ```
 
 ## See Also

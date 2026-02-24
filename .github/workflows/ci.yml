@@ -20,13 +20,16 @@ jobs:
           python-version: "3.11"
 
       - name: Install linters
-        run: pip install black ruff
+        run: pip install black ruff mypy
 
       - name: black --check
         run: black --check src/ tests/
 
       - name: ruff check
         run: ruff check src/ tests/
+
+      - name: mypy (core modules)
+        run: mypy src/spectra_sherpa/app/core/ --no-error-summary || true
 
   backend:
     name: Backend Tests

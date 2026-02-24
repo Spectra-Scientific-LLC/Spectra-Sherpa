@@ -8,6 +8,7 @@ Nodes can be connected to form directed acyclic graphs (DAGs).
 from __future__ import annotations
 
 import logging
+import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
@@ -93,9 +94,6 @@ class PortMetadata:
             self.label = self.name
 
 
-# Backwards compatibility alias
-InputPort = PortMetadata
-
 
 @dataclass
 class NodePolicy:
@@ -108,6 +106,7 @@ class NodePolicy:
     safe_for_auto_apply: bool = False
     requires_human_review: bool = True
     data_egress_risk: str = "none"  # "none", "metadata", "full_data"
+    offload_to_pool: bool = True  # False for custom algo nodes (not in worker registry)
 
 
 @dataclass
@@ -133,6 +132,8 @@ class NodeMetadata:
     requires_scp: bool = False
     # Per-node safety and automation policy
     policy: Optional[NodePolicy] = None
+    # Optional URL linking to external documentation (e.g., SpectroChemPy API docs)
+    help_url: Optional[str] = None
 
 
 def _format_value(value: Any) -> str:
@@ -390,12 +391,18 @@ class Node(ABC):
 
 
 class NodeRegistry:
-    """Registry for available node types."""
+    """Registry for available node types.
+
+    Thread-safe via ``threading.RLock``.  RLock (not Lock) is used because
+    ``register()`` can be called from within ``reload_plugin_by_path()``
+    which may already hold a loader-level lock on the same thread.
+    """
 
     def __init__(self):
         self._nodes: Dict[str, Type[Node]] = {}
         self._builtin_types: set[str] = set()
         self._frozen: bool = False
+        self._lock = threading.RLock()
 
     def freeze_builtins(self) -> None:
         """Mark all currently registered nodes as built-in.
@@ -403,9 +410,10 @@ class NodeRegistry:
         Call this once after all built-in nodes have been imported.
         After freezing, plugins cannot overwrite built-in node types.
         """
-        self._builtin_types = set(self._nodes.keys())
-        self._frozen = True
-        logger.info("Node registry frozen: %d built-in types", len(self._builtin_types))
+        with self._lock:
+            self._builtin_types = set(self._nodes.keys())
+            self._frozen = True
+            logger.info("Node registry frozen: %d built-in types", len(self._builtin_types))
 
     def register(self, node_class: Type[Node]) -> None:
         """
@@ -421,24 +429,39 @@ class NodeRegistry:
         Raises:
             ValueError: If trying to overwrite a built-in node type
         """
-        metadata = node_class.get_metadata()
-        node_type = metadata.node_type
+        with self._lock:
+            metadata = node_class.get_metadata()
+            node_type = metadata.node_type
 
-        if node_type in self._nodes:
-            if self._frozen and node_type in self._builtin_types:
-                raise ValueError(
-                    f"Cannot overwrite built-in node type {node_type!r}. "
-                    f"Plugins must use a unique namespaced type "
-                    f"(e.g. 'vendor.my_operation')."
+            if node_type in self._nodes:
+                if self._frozen and node_type in self._builtin_types:
+                    raise ValueError(
+                        f"Cannot overwrite built-in node type {node_type!r}. "
+                        f"Plugins must use a unique namespaced type "
+                        f"(e.g. 'vendor.my_operation')."
+                    )
+                logger.warning(
+                    "Node type %r re-registered (overwriting %s with %s)",
+                    node_type,
+                    self._nodes[node_type].__name__,
+                    node_class.__name__,
                 )
-            logger.warning(
-                "Node type %r re-registered (overwriting %s with %s)",
-                node_type,
-                self._nodes[node_type].__name__,
-                node_class.__name__,
-            )
 
-        self._nodes[node_type] = node_class
+            self._nodes[node_type] = node_class
+
+    def unregister(self, node_type: str) -> bool:
+        """Remove a non-builtin node type from the registry.
+
+        Returns True if the type was found and removed, False if it
+        was not registered.
+
+        Raises:
+            ValueError: If attempting to unregister a built-in node type.
+        """
+        with self._lock:
+            if node_type in self._builtin_types:
+                raise ValueError(f"Cannot unregister built-in node type {node_type!r}")
+            return self._nodes.pop(node_type, None) is not None
 
     def create_node(self, node_type: str, node_id: str, parameters: Optional[Dict[str, Any]] = None) -> Node:
         """
@@ -455,31 +478,36 @@ class NodeRegistry:
         Raises:
             KeyError: If node type is not registered
         """
-        if node_type not in self._nodes:
-            raise KeyError(f"Unknown node type: {node_type}")
+        with self._lock:
+            if node_type not in self._nodes:
+                raise KeyError(f"Unknown node type: {node_type}")
 
-        node_class = self._nodes[node_type]
+            node_class = self._nodes[node_type]
         return node_class(node_id, parameters)
 
     def get_metadata(self, node_type: str) -> NodeMetadata:
         """Get metadata for a node type."""
-        if node_type not in self._nodes:
-            raise KeyError(f"Unknown node type: {node_type}")
-        return self._nodes[node_type].get_metadata()
+        with self._lock:
+            if node_type not in self._nodes:
+                raise KeyError(f"Unknown node type: {node_type}")
+            return self._nodes[node_type].get_metadata()
 
     def get_node_class(self, node_type: str) -> Type[Node]:
         """Get the registered Node class for a node type."""
-        if node_type not in self._nodes:
-            raise KeyError(f"Unknown node type: {node_type}")
-        return self._nodes[node_type]
+        with self._lock:
+            if node_type not in self._nodes:
+                raise KeyError(f"Unknown node type: {node_type}")
+            return self._nodes[node_type]
 
     def list_nodes(self) -> List[NodeMetadata]:
         """List all registered node types."""
-        return [cls.get_metadata() for cls in self._nodes.values()]
+        with self._lock:
+            return [cls.get_metadata() for cls in self._nodes.values()]
 
     def list_by_category(self, category: str) -> List[NodeMetadata]:
         """List nodes in a specific category."""
-        return [metadata for metadata in self.list_nodes() if metadata.category == category]
+        with self._lock:
+            return [metadata for metadata in self.list_nodes() if metadata.category == category]
 
 
 # Global registry instance

@@ -64,6 +64,9 @@
             <span class="stat" title="Scripts">
               <i class="pi pi-code"></i> {{ projectStore.currentProject.script_count }}
             </span>
+            <span class="stat" title="Models">
+              <i class="pi pi-box"></i> {{ projectStore.currentProject.model_count }}
+            </span>
             <span class="stat" title="Versions">
               <i class="pi pi-history"></i> {{ projectStore.currentProject.version_count }}
             </span>
@@ -141,6 +144,9 @@
                 </span>
                 <span class="stat" title="Experiments">
                   <i class="pi pi-chart-bar"></i> {{ project.experiment_count }}
+                </span>
+                <span class="stat" title="Models">
+                  <i class="pi pi-box"></i> {{ project.model_count }}
                 </span>
               </div>
               <div class="card-tags">

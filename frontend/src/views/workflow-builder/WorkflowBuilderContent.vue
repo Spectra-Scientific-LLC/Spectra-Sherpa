@@ -100,7 +100,7 @@
     <!-- Three-column layout: Toolbar | Canvas | Inspector Sidebar -->
     <div class="workflow-workspace" :class="{ 'inspector-open': inspectorOpen }">
       <!-- Left Panel: Node Toolbar -->
-      <WorkflowToolbar @add-node="onAddNode" />
+      <WorkflowToolbar @add-node="onAddNode" @create-custom-algo="onCreateCustomAlgo" />
 
       <!-- Center: Canvas -->
       <div class="canvas-container">
@@ -214,6 +214,13 @@
         />
       </template>
     </Dialog>
+
+    <!-- Custom Algo Editor Modal -->
+    <CustomAlgoEditorModal
+      ref="customAlgoEditorRef"
+      v-model="showCustomAlgoEditor"
+      :project-id="currentProjectId"
+    />
   </section>
 </template>
 
@@ -237,6 +244,9 @@ import WorkflowToolbar from "./WorkflowToolbar.vue";
 import WorkflowCanvas from "./WorkflowCanvas.vue";
 import WorkflowInspector from "./WorkflowInspector.vue";
 import TemplateGallery from "./TemplateGallery.vue";
+import CustomAlgoEditorModal from "./modals/CustomAlgoEditorModal.vue";
+import { useCustomAlgoStore } from "@/stores/customAlgo";
+import { useProjectStore } from "@/stores/project";
 import { buildNodeOutput, type NodeOutput } from "@/utils/nodeOutput";
 import { downloadText } from "@/utils/download";
 import { getErrorMessage } from "@/utils/errors";
@@ -277,6 +287,18 @@ const nextNodeId = ref(2);
 const inspectorOpen = ref(false);
 const autoExecute = ref(false); // Auto-execute workflow when nodes connect or parameters change
 const templateDrawerVisible = ref(false);
+
+// Custom algo editor state
+const customAlgoStore = useCustomAlgoStore();
+const projectStore = useProjectStore();
+const showCustomAlgoEditor = ref(false);
+const customAlgoEditorRef = ref<InstanceType<typeof CustomAlgoEditorModal>>();
+const currentProjectId = computed(() => {
+  if (projectStore.currentProject) {
+    return projectStore.currentProject.id;
+  }
+  return 0;
+});
 
 // Save run state
 const showSaveRunDialog = ref(false);
@@ -453,6 +475,12 @@ onMounted(async () => {
 
   // Autoload most recent workflow
   await autoloadMostRecentWorkflow();
+
+  // Fetch custom algo nodes for current project
+  if (currentProjectId.value) {
+    await customAlgoStore.fetchForProject(currentProjectId.value);
+    await customAlgoStore.fetchNodesForProject(currentProjectId.value);
+  }
 });
 
 // Clean up BroadcastChannel and autosave timer on unmount
@@ -482,7 +510,7 @@ watch(() => workflowStore.nodes.length, (newLength, oldLength) => {
 });
 
 // Autosave watcher - trigger autosave when changes are made
-watch(() => hasChanges.value, (hasChanges) => {
+watch(() => hasChanges.value, (hasChangesVal) => {
   // Clear any existing timer
   if (autosaveTimer.value !== null) {
     clearTimeout(autosaveTimer.value);
@@ -492,14 +520,14 @@ watch(() => hasChanges.value, (hasChanges) => {
   // Only autosave if:
   // 1. There are unsaved changes
   // 2. We have an existing workflow (not a brand new workflow)
-  if (hasChanges && workflowStore.workflowId !== null) {
+  if (hasChangesVal && workflowStore.workflowId !== null) {
     autosaveStatus.value = 'idle';
 
     // Set up debounced autosave
     autosaveTimer.value = window.setTimeout(async () => {
       await triggerAutosave();
     }, AUTOSAVE_DELAY);
-  } else if (!hasChanges) {
+  } else if (!hasChangesVal) {
     // No changes, reset status
     autosaveStatus.value = 'idle';
   }
@@ -767,6 +795,18 @@ function extractMetrics(
   return summary;
 }
 
+function extractModelIds(results: Record<string, unknown>): string[] {
+  const ids = new Set<string>();
+  for (const result of Object.values(results)) {
+    if (!result || typeof result !== "object") continue;
+    const modelId = (result as Record<string, unknown>).model_id;
+    if (typeof modelId === "string" && modelId.trim().length > 0) {
+      ids.add(modelId.trim());
+    }
+  }
+  return [...ids];
+}
+
 const openSaveRunDialog = () => {
   const base = workflowStore.workflowName || "Workflow";
   const count = runsStore.runs.length + 1;
@@ -794,6 +834,7 @@ const handleSaveRun = async () => {
     const hasError = Object.values(nodeStatuses).some((s) => s === "error");
     const allCompleted = Object.values(nodeStatuses).every((s) => s === "completed");
     const status = hasError ? "error" : allCompleted ? "completed" : "partial";
+    const modelIds = extractModelIds(results);
 
     await runsStore.saveRun(workflowStore.workflowId, {
       name: saveRunName.value.trim(),
@@ -804,6 +845,7 @@ const handleSaveRun = async () => {
       node_statuses: nodeStatuses,
       integrity_hash: workflowStore.workflowHash || undefined,
       executed_at: new Date().toISOString(),
+      model_ids: modelIds.length > 0 ? modelIds : undefined,
     });
 
     showSaveRunDialog.value = false;
@@ -1130,6 +1172,30 @@ const buildInitialData = async (): Promise<Record<string, unknown>> => {
 };
 
 // Event handlers
+// Custom algo handlers
+const onCreateCustomAlgo = async () => {
+  if (!currentProjectId.value) {
+    toast.add({
+      severity: "warn",
+      summary: "No Project",
+      detail: "Please open a project first to create custom algorithms.",
+      life: 3000,
+    });
+    return;
+  }
+  // Generate a unique slug
+  const slug = `algo_${Date.now().toString(36)}`;
+  const algo = await customAlgoStore.create(currentProjectId.value, {
+    name: "New Algorithm",
+    slug,
+    code: "result = data  # transform data here",
+    mode: "simple",
+  });
+  if (algo && customAlgoEditorRef.value) {
+    customAlgoEditorRef.value.openForNew(algo);
+  }
+};
+
 const onAddNode = (nodeType: string) => {
   const normalizedType = workflowStore.normalizeNodeType(nodeType);
   const newNode: WorkflowNode = {
@@ -1230,6 +1296,13 @@ const onNodeSelect = (node: WorkflowNode | null) => {
   // Open inspector when a node is selected
   if (node) {
     inspectorOpen.value = true;
+    // Open custom algo editor for ualgo.* nodes
+    if (node.type.startsWith("ualgo.")) {
+      const algo = customAlgoStore.getAlgoByNodeType(node.type);
+      if (algo && customAlgoEditorRef.value) {
+        customAlgoEditorRef.value.openForAlgo(algo);
+      }
+    }
   }
 };
 

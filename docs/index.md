@@ -16,10 +16,12 @@ See the [Quickstart Guide](user/quickstart.md) for a 2-minute walkthrough.
 ## Key Features
 
 *   **Experiment Management**: Organize raw and processed spectra with version control.
+*   **Workflow Builder**: Visually design analysis pipelines (DAGs) for reproducible science (e.g., Preprocess -> PCA -> Export).
+*   **Model Artifacts**: Train, persist, and reload models (PCA, PLS, MCR, PLSDA, KNN, SIMCA) for batch prediction.
+*   **Project Management**: Group experiments, workflows, scripts, and models into versioned projects.
 *   **NIST Library Integration**: Search and download reference spectra directly from NIST WebBook.
 *   **Design of Experiments (DOE)**: Manage 96-well plate configurations and complex mixture designs.
 *   **Synthesis Builder**: Create synthetic spectral datasets by blending pure components with precise concentration profiles.
-*   **Workflow Builder**: Visually design analysis pipelines (DAGs) for reproducible science (e.g., Preprocess -> PCA -> Export).
 
 ## Documentation
 
@@ -28,3 +30,4 @@ See the [Quickstart Guide](user/quickstart.md) for a 2-minute walkthrough.
 *   [**Configuration**](user/configuration.md): Configure SpectraSherpa for your environment.
 *   [**User Guide**](user/experiments.md): Detailed instructions for all modules.
 *   [**Node Reference**](user/reference/nodes.md): Complete catalog of available analysis nodes.
+*   [**Architecture**](dev/architecture.md): System design, entity relationships, and model artifact pipeline.

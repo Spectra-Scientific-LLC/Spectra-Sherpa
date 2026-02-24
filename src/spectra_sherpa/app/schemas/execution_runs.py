@@ -21,6 +21,7 @@ class SaveRunRequest(BaseModel):
     integrity_hash: str | None = Field(None, description="Workflow integrity hash")
     executed_at: str = Field(..., description="ISO timestamp of execution")
     labels: list[str] | None = Field(None, description="Optional labels for tagging")
+    model_ids: list[str] | None = Field(None, description="Model artifact IDs used/produced in this run")
 
 
 class ExecutionRunOut(BaseModel):
@@ -46,6 +47,7 @@ class ExecutionRunOut(BaseModel):
     labels: list[str] | None = None
     source_type: str | None = None
     source_metadata: dict[str, Any] | None = None
+    model_ids: list[str] | None = None
 
 
 class ExecutionRunList(BaseModel):

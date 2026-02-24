@@ -14,52 +14,60 @@ This package contains:
 - `is_sequential_numeric()` - Detect sequential vs categorical data
 """
 
-# Import all nodes from legacy modeling file for backward compatibility
-# This ensures existing imports like "from .modeling import PCANode" still work
-from ..modeling_legacy import (
-    DBSCANNode,
-    EFANode,
-    FastICANode,
-    HCANode,
-    KMeansNode,
-    LinearRegressionNode,
-    MCRNode,
-    NMFNode,
-    PCANode,
-    PCATransformNode,
-    PCRNode,
-    PeakFindingNode,
-    PLSNode,
-    PLSPredictNode,
-    SIMPLISMANode,
-    SVRNode,
+# Import all node modules to trigger @register_node decorators
+from . import (  # noqa: F401
+    clustering_nodes,
+    decomposition_nodes,
+    efa_nodes,
+    load_apply_node,
+    mcr_nodes,
+    pca_nodes,
+    peak_finding_nodes,
+    pls_nodes,
+    regression_nodes,
+    simplisma_nodes,
 )
+from .clustering_nodes import DBSCANNode, HCANode, KMeansNode
+
+# Public utilities
 from .core_utils import (
     create_spectral_dataset,
     is_sequential_numeric,
     make_safe_coord,
 )
+from .decomposition_nodes import FastICANode, NMFNode
+from .efa_nodes import EFANode
+from .load_apply_node import LoadApplyModelNode
+from .mcr_nodes import MCRNode
+
+# Re-export node classes for backward compatibility
+from .pca_nodes import PCANode, PCATransformNode
+from .peak_finding_nodes import PeakFindingNode
+from .pls_nodes import PLSNode, PLSPredictNode
+from .regression_nodes import LinearRegressionNode, PCRNode, SVRNode
+from .simplisma_nodes import SIMPLISMANode
 
 __all__ = [
     # Public utilities
     "make_safe_coord",
     "create_spectral_dataset",
     "is_sequential_numeric",
-    # All node classes (for backward compatibility)
+    # All node classes
     "PCANode",
-    "NMFNode",
-    "FastICANode",
+    "PCATransformNode",
     "PLSNode",
+    "PLSPredictNode",
     "PCRNode",
     "SVRNode",
     "LinearRegressionNode",
+    "MCRNode",
+    "EFANode",
     "HCANode",
     "KMeansNode",
     "DBSCANNode",
-    "MCRNode",
-    "EFANode",
-    "SIMPLISMANode",
     "PeakFindingNode",
-    "PLSPredictNode",
-    "PCATransformNode",
+    "SIMPLISMANode",
+    "NMFNode",
+    "FastICANode",
+    "LoadApplyModelNode",
 ]

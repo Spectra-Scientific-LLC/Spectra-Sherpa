@@ -10,6 +10,17 @@
 - **AI-friendliness**: Structured metadata for LLM exploration and MCP tools
 - **Type safety**: Pydantic validation for all fields
 
+### Preferred Access Pattern
+
+For new code and plugins, use one idiomatic path:
+
+- Data array: `dataset.data`
+- Feature axis: `dataset.feature_axis`
+- Sample axis: `dataset.sample_axis` (for sample-based datasets)
+- Metadata dict: `dataset.meta`
+
+Compatibility accessors (`X`, `get_observation_axis()`, `axis()`, `set_extra()/get_extra()`) are still supported and documented for advanced or legacy workflows.
+
 ## Importing
 
 ```python
@@ -23,15 +34,15 @@ from spectra_sherpa.app.lib.axes import SpectralAxis, TimeAxis, MZAxis, SampleAx
 
 ```python
 SherpaDataset(
-    X: np.ndarray,                  # Data matrix (2D float64)
+    X: np.ndarray,                           # Data matrix (nD float64; dim 0=samples, dim -1=features)
     feature_axis: FeatureAxis = None,        # Spectral, Time, MZ, Potential, etc.
-    spectral_axis: SpectralAxis = None,     # Alias for feature_axis (backward compat)
     sample_axis: SampleAxis = None,          # Sample metadata
+    axes: dict[int, AxisInfo] = None,        # Inner dimension axes (e.g., {1: TimeAxis(...)})
     target: np.ndarray = None,               # Target values for modeling
-    target_context: TargetContext = None,    # Target metadata
-    domain: DomainContext = None,            # Analytical technique info
-    provenance: Provenance = None,           # Processing history
-    quality: QualityMetrics = None,          # Quality assessment
+    target_context: TargetContext = None,     # Target metadata
+    domain: DomainContext = None,             # Analytical technique info
+    provenance: Provenance = None,            # Processing history
+    quality: QualityMetrics = None,           # Quality assessment
     backend: str = "numpy",                  # Origin ("numpy", "scp", "sklearn")
     title: str = None,                       # Dataset title
     units: str = None,                       # Data units
@@ -41,10 +52,10 @@ SherpaDataset(
 
 ### Parameters
 
-- **X**: 2D numpy array (n_samples × n_features) containing measurement data
-- **feature_axis**: Axis for columns (e.g., SpectralAxis, TimeAxis, MZAxis)
-- **spectral_axis**: Backward-compatible alias for feature_axis (spectroscopy workflows)
-- **sample_axis**: Axis for rows with per-sample metadata and class labels
+- **X**: nD numpy array containing measurement data. Dimension 0 is always samples, dimension -1 is always features. For standard spectroscopy this is (n_samples, n_features); for hyperspectral/time-resolved data additional inner dimensions are supported (e.g., n_samples × n_time × n_wavelengths). 1D input is automatically reshaped to (1, n_features).
+- **feature_axis**: Axis for the last dimension (e.g., SpectralAxis, TimeAxis, MZAxis). Must match `X.shape[-1]`.
+- **sample_axis**: Axis for the first dimension with per-sample metadata and class labels. Must match `X.shape[0]`.
+- **axes**: Dictionary mapping dimension indices to `AxisInfo` objects for inner dimensions (dims 1 through n-2). For example, `{1: TimeAxis(...)}` for a 3D time-resolved dataset. Each axis length must match the corresponding `X.shape[dim]`.
 - **target**: 1D array of target values for supervised learning (optional)
 - **backend**: Tag indicating data origin ("numpy", "scp", "sklearn")
 
@@ -80,13 +91,13 @@ print(dataset.backend)  # "numpy"
 
 ### Axis Access
 
-#### `get_feature_axis()` → `FeatureAxis | None`
+#### `feature_axis` → `FeatureAxis | None`
 
 **Generic accessor** that returns the feature axis regardless of type (SpectralAxis, TimeAxis, MZAxis, etc.).
 
 ```python
 # Works with any axis type
-feature_ax = dataset.get_feature_axis()
+feature_ax = dataset.feature_axis
 
 if feature_ax is not None:
     print(f"Axis type: {feature_ax.axis_type}")
@@ -95,19 +106,6 @@ if feature_ax is not None:
 ```
 
 **Use this** when writing domain-agnostic code or when working with multi-domain datasets.
-
-#### `spectral_axis` → `SpectralAxis | None`
-
-**Legacy accessor** for spectroscopy workflows. Returns SpectralAxis if present, None otherwise.
-
-```python
-# Backward compatible for spectroscopy
-spec_ax = dataset.spectral_axis
-if spec_ax is not None:
-    wavenumbers = spec_ax.data
-```
-
-**Note**: For new code, prefer `get_feature_axis()` for flexibility.
 
 #### `get_observation_axis()` → `AxisInfo | None`
 
@@ -144,6 +142,58 @@ if sample_ax is not None:
 # Access by dimension
 feature_ax = dataset.axis(-1)  # Last dimension (columns)
 obs_ax = dataset.axis(0)       # First dimension (rows)
+```
+
+---
+
+### Dimensionality
+
+`SherpaDataset` supports 2D and n-dimensional data with a fixed layout:
+
+| Dimension | Role | Accessor | Example |
+|-----------|------|----------|---------|
+| **dim 0** (first) | Samples / observations | `sample_axis`, `get_observation_axis()` | 20 experiments |
+| **dim 1..n-2** (middle) | Inner dimensions | `axis(dim)`, `inner_axes` | 100 time points |
+| **dim -1** (last) | Features / measurements | `feature_axis` | 1000 wavelengths |
+
+1D input is automatically reshaped to `(1, n_features)`.
+
+#### `ndim`
+Number of dimensions.
+
+```python
+print(dataset.ndim)  # 2 for standard, 3 for time-resolved, etc.
+```
+
+#### `n_samples`
+First dimension size: `X.shape[0]`.
+
+#### `n_features`
+Last dimension size: `X.shape[-1]`.
+
+#### `inner_shape`
+Shape of middle dimensions. Empty tuple `()` for standard 2D data.
+
+```python
+# 3D dataset: (20, 100, 1000)
+print(dataset.inner_shape)  # (100,)
+```
+
+#### `inner_axes` → `dict[int, AxisInfo]`
+Axes for inner dimensions only (excludes sample and feature).
+
+```python
+for dim, ax in dataset.inner_axes.items():
+    print(f"Dim {dim}: {ax.axis_type}, {ax.length} points")
+```
+
+#### `dim_role(dim: int)` → `str`
+Returns the semantic role of a dimension: `"sample"`, `"feature"`, or `"inner"`.
+
+```python
+dataset.dim_role(0)   # "sample"
+dataset.dim_role(1)   # "inner"
+dataset.dim_role(-1)  # "feature"
 ```
 
 ---
@@ -225,13 +275,13 @@ spectral_ax = SpectralAxis(
 # Create dataset
 dataset = SherpaDataset(
     X=data,
-    spectral_axis=spectral_ax,  # or feature_axis=spectral_ax
+    feature_axis=spectral_ax,
     title="IR Spectra",
     units="absorbance"
 )
 
 print(f"Shape: {dataset.shape}")
-print(f"Feature axis type: {dataset.get_feature_axis().axis_type}")
+print(f"Feature axis type: {dataset.feature_axis.axis_type}")
 ```
 
 ### Example 2: HPLC Chromatography
@@ -258,7 +308,7 @@ dataset = SherpaDataset(
     units="mAU"
 )
 
-print(f"Feature axis: {dataset.get_feature_axis().axis_type}")  # "time_minutes"
+print(f"Feature axis: {dataset.feature_axis.axis_type}")  # "time_minutes"
 ```
 
 ### Example 3: Classification Dataset with Sample Metadata
@@ -286,7 +336,7 @@ spectral_ax = SpectralAxis(
 # Create dataset
 dataset = SherpaDataset(
     X=data,
-    spectral_axis=spectral_ax,
+    feature_axis=spectral_ax,
     sample_axis=sample_ax,
     title="Tissue Analysis"
 )
@@ -300,7 +350,7 @@ from spectra_sherpa.app.lib.sherpa_dataset import TargetContext
 
 dataset_with_names = SherpaDataset(
     X=data,
-    spectral_axis=spectral_ax,
+    feature_axis=spectral_ax,
     sample_axis=sample_ax,
     target=class_assignments,
     target_context=TargetContext(
@@ -324,7 +374,7 @@ from spectra_sherpa.app.lib.sherpa_dataset import TargetContext
 
 dataset = SherpaDataset(
     X=spectra,
-    spectral_axis=SpectralAxis(values=np.linspace(400, 4000, 1000), units="cm-1"),
+    feature_axis=SpectralAxis(values=np.linspace(400, 4000, 1000), units="cm-1"),
     target=concentrations,
     target_context=TargetContext(
         target_type="continuous",
@@ -337,12 +387,15 @@ dataset = SherpaDataset(
 print(f"Target: {dataset.target}")  # [0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
 ```
 
-### Example 5: Time-Resolved Spectroscopy (2D)
+### Example 5: Time-Resolved Spectroscopy — Single Experiment (2D)
+
+A single reaction monitored over time. Each row is a time point, not an independent sample.
+The observation axis (dim 0) is repurposed as time — there are no separate "samples".
 
 ```python
 from spectra_sherpa.app.lib.axes import TimeAxis, SpectralAxis
 
-# Time-resolved data: 100 time points × 1000 wavelengths
+# Single experiment: 100 time points × 1000 wavelengths
 reaction_times = np.linspace(0, 3600, 100)  # 0-3600 seconds
 wavenumbers = np.linspace(400, 4000, 1000)
 data = np.random.randn(100, 1000)
@@ -356,7 +409,36 @@ dataset = SherpaDataset(X=data, feature_axis=spectral_ax)
 dataset._axes[dataset._SAMPLE_DIM] = time_ax.copy()
 
 print(f"Observation axis: {dataset.get_observation_axis().axis_type}")  # "time_seconds"
-print(f"Feature axis: {dataset.get_feature_axis().axis_type}")  # "wavenumber"
+print(f"Feature axis: {dataset.feature_axis.axis_type}")  # "wavenumber"
+```
+
+### Example 6: Time-Resolved Spectroscopy — Multiple Experiments (3D)
+
+Multiple experiments, each with time-resolved spectra. This requires a 3D array
+with an inner time dimension between samples and features.
+
+```python
+from spectra_sherpa.app.lib.axes import TimeAxis, SpectralAxis, SampleAxis
+
+# 20 experiments × 100 time points × 1000 wavelengths
+data = np.random.randn(20, 100, 1000)
+
+sample_ax = SampleAxis(labels=[f"run_{i}" for i in range(20)])
+time_ax = TimeAxis(values=np.linspace(0, 3600, 100), units="s", title="Reaction Time")
+spectral_ax = SpectralAxis(values=np.linspace(400, 4000, 1000), units="cm-1")
+
+dataset = SherpaDataset(
+    X=data,
+    feature_axis=spectral_ax,
+    sample_axis=sample_ax,
+    axes={1: time_ax},          # inner dimension
+)
+
+print(f"Shape: {dataset.shape}")            # (20, 100, 1000)
+print(f"Inner shape: {dataset.inner_shape}")  # (100,)
+print(f"Sample axis: {dataset.sample_axis.labels[:3]}")  # ['run_0', 'run_1', 'run_2']
+print(f"Time axis: {dataset.axis(1).axis_type}")          # "time_seconds"
+print(f"Feature axis: {dataset.feature_axis.axis_type}")  # "wavenumber"
 ```
 
 ---
@@ -467,6 +549,181 @@ with open("dataset.json", "w") as f:
 
 ---
 
+## Slicing & Indexing
+
+Slicing a `SherpaDataset` returns a **new** `SherpaDataset` with axes, provenance, domain, and quality preserved. Scalar integer indices are converted to length-1 slices so the result always has the same `ndim` as the original.
+
+### Sample selection (dim 0)
+
+```python
+# Boolean mask
+mask = np.array([True, False, True, ...])
+subset = dataset[mask]              # keeps only True samples
+
+# Single sample (stays nD — dim 0 becomes length 1)
+one = dataset[5]                    # shape: (1, ..., n_features)
+
+# Slice
+first_ten = dataset[0:10]
+every_other = dataset[::2]
+
+# Fancy index
+picked = dataset[[0, 3, 7]]
+```
+
+### Feature selection (dim -1)
+
+For **2D** data, use two-element indexing:
+
+```python
+region = dataset[:, 200:800]        # shape: (n_samples, 600)
+```
+
+For **nD** data, a two-element tuple is treated as `(sample_key, feature_key)` shorthand — inner dimensions pass through unchanged:
+
+```python
+# 3D dataset: (20, 100, 1000)
+region = dataset[:, 200:800]        # shape: (20, 100, 600)
+```
+
+### Full nD indexing
+
+When the tuple length equals `ndim`, every dimension is sliced independently (including inner axes):
+
+```python
+# 3D dataset: (20, 100, 1000) — samples × time × wavelengths
+subset = dataset[0:5, 10:50, 200:800]   # shape: (5, 40, 600)
+```
+
+Inner axes are sliced along with the data:
+
+```python
+# The time axis on the result only contains time points 10–49
+print(subset.axis(1).length)  # 40
+```
+
+---
+
+## Region Selection by Physical Values
+
+One of the main benefits of `SherpaDataset` over plain numpy arrays: you can slice by **physical values** (wavenumbers, seconds, m/z) instead of integer indices.
+
+All `FeatureAxis` subclasses (`SpectralAxis`, `TimeAxis`, `MZAxis`, `PotentialAxis`, `FrequencyAxis`) provide:
+
+- **`select_region(start, end)`** → `np.ndarray[bool]` — boolean mask for values within [start, end] (inclusive, order-independent)
+- **`get_region_indices(start, end)`** → `np.ndarray[int]` — integer indices instead of a mask
+
+These work regardless of sampling resolution, spacing uniformity, or axis ordering.
+
+### Feature axis (dim -1)
+
+```python
+spectral_ax = dataset.feature_axis
+
+# Select the C-H stretch region by wavenumber
+mask = spectral_ax.select_region(2800, 3000)   # boolean mask over wavelengths
+
+# 2D: slice features directly
+ch_region = dataset[:, mask]                    # shape: (n_samples, n_selected)
+
+# 3D: two-element shorthand — inner dims pass through
+ch_region = dataset[:, mask]                    # shape: (n_samples, n_time, n_selected)
+```
+
+### Inner axis (e.g., time at dim 1)
+
+```python
+time_ax = dataset.axis(1)                       # TimeAxis on inner dimension
+
+# Select 10–20 minute window
+time_mask = time_ax.select_region(600, 1200)    # 600–1200 seconds
+```
+
+### Combining both axes
+
+Use full nD indexing (tuple length == `ndim`) to slice by physical range on multiple axes simultaneously:
+
+```python
+# 3D dataset: (20 samples, 100 time points, 1000 wavelengths)
+spectral_ax = dataset.feature_axis
+time_ax = dataset.axis(1)
+
+spectral_mask = spectral_ax.select_region(1000, 2000)  # 1000–2000 cm⁻¹
+time_mask = time_ax.select_region(600, 1200)            # 600–1200 seconds
+
+# Slice both at once — all samples, time window, spectral window
+subset = dataset[:, time_mask, spectral_mask]
+# shape: (20, n_time_selected, n_spectral_selected)
+
+# The axes on the result are trimmed automatically
+print(subset.feature_axis.range)   # (1000.x, 2000.x)
+print(subset.axis(1).range)              # (600.x, 1200.x)
+```
+
+---
+
+## Computing Statistics
+
+`SherpaDataset` stores data as a numpy array accessible via `.data` (or `.X`). Use standard numpy operations for statistics — axis indices follow the same layout as the dataset dimensions.
+
+### 2D data: (n_samples, n_features)
+
+```python
+# Mean spectrum across all samples
+mean_spectrum = dataset.data.mean(axis=0)           # shape: (n_features,)
+
+# Per-sample total intensity
+total_per_sample = dataset.data.sum(axis=-1)        # shape: (n_samples,)
+
+# Standard deviation across samples at each feature
+std_spectrum = dataset.data.std(axis=0)             # shape: (n_features,)
+```
+
+### 3D data: (n_samples, n_time, n_features)
+
+```python
+# Mean spectrum per sample (average over time)
+mean_over_time = dataset.data.mean(axis=1)          # shape: (n_samples, n_features)
+
+# Time profile per sample (average over wavelengths)
+time_profiles = dataset.data.mean(axis=-1)          # shape: (n_samples, n_time)
+
+# Global mean spectrum (average over both samples and time)
+global_mean = dataset.data.mean(axis=(0, 1))        # shape: (n_features,)
+
+# Variance across samples at each (time, wavelength) pair
+sample_var = dataset.data.var(axis=0)               # shape: (n_time, n_features)
+```
+
+### Using axis values as coordinates
+
+Axis metadata provides the physical x-values for plotting and analysis:
+
+```python
+feature_ax = dataset.feature_axis
+
+# Plot mean spectrum with physical x-axis
+import matplotlib.pyplot as plt
+plt.plot(feature_ax.values, dataset.data.mean(axis=0))
+plt.xlabel(f"{feature_ax.title} ({feature_ax.units})")
+plt.ylabel(dataset.units or "Intensity")
+```
+
+### Pandas analogy
+
+| Concept | Pandas | SherpaDataset |
+|---------|--------|---------------|
+| Raw data | `df.values` | `dataset.data` |
+| Column labels | `df.columns` | `dataset.feature_axis.values` |
+| Row labels | `df.index` | `dataset.sample_axis` (or `dataset.get_observation_axis()` for non-sample dim-0 axes) |
+| Extra dimension | `MultiIndex` | `dataset.axis(1)` (inner axes via `axes=` param) |
+| Slice rows | `df.iloc[0:3]` | `dataset[0:3]` |
+| Slice columns | `df.iloc[:, 0:3]` | `dataset[:, 0:3]` |
+| Stats | `df.mean(axis=0)` | `dataset.data.mean(axis=0)` |
+| Physical range | `df.loc[:, 1000:2000]` | `dataset[:, feature_ax.select_region(1000, 2000)]` |
+
+---
+
 ## Common Patterns
 
 ### Checking Axis Types
@@ -474,7 +731,7 @@ with open("dataset.json", "w") as f:
 ```python
 from spectra_sherpa.app.lib.axes import TimeAxis, SpectralAxis, MZAxis
 
-feature_ax = dataset.get_feature_axis()
+feature_ax = dataset.feature_axis
 
 if isinstance(feature_ax, SpectralAxis):
     print("Spectroscopy data")
@@ -482,16 +739,6 @@ elif isinstance(feature_ax, TimeAxis):
     print("Chromatography or kinetics data")
 elif isinstance(feature_ax, MZAxis):
     print("Mass spectrometry data")
-```
-
-### Region Selection
-
-```python
-# Select spectral region
-feature_ax = dataset.get_feature_axis()
-if feature_ax is not None:
-    mask = feature_ax.select_region(2800, 3000)  # C-H stretch region
-    ch_region_data = dataset.data[:, mask]
 ```
 
 ### Excluding Outliers
@@ -512,9 +759,9 @@ if dataset.sample_axis is not None:
 def process_dataset(dataset: SherpaDataset) -> SherpaDataset:
     """Works with any domain (spectroscopy, chromatography, MS, etc.)"""
 
-    # Use generic accessors
-    feature_ax = dataset.get_feature_axis()
-    obs_ax = dataset.get_observation_axis()
+    # Preferred accessors
+    feature_ax = dataset.feature_axis
+    obs_ax = dataset.sample_axis or dataset.get_observation_axis()
 
     if feature_ax is not None:
         print(f"Feature axis: {feature_ax.axis_type}")
@@ -535,27 +782,56 @@ def process_dataset(dataset: SherpaDataset) -> SherpaDataset:
 
 ## Advanced: Multi-Domain Datasets
 
-For hyphenated techniques (e.g., LC-MS: time × m/z):
+### Single-run hyphenated technique (2D)
+
+For a single LC-MS run, time is the observation axis and m/z is the feature axis:
 
 ```python
 from spectra_sherpa.app.lib.axes import TimeAxis, MZAxis
 
-# LC-MS: 50 time points × 1000 m/z values
+# Single LC-MS run: 50 time points × 1000 m/z values
 time_values = np.linspace(0, 30, 50)      # Retention time
 mz_values = np.linspace(50, 500, 1000)    # m/z range
 data = np.random.randn(50, 1000)
 
-# Create axes
 time_ax = TimeAxis(values=time_values, units="min", title="Retention Time")
 mz_ax = MZAxis(values=mz_values, units="m/z", title="m/z")
 
-# Create dataset
 dataset = SherpaDataset(X=data, feature_axis=mz_ax)
 dataset._axes[dataset._SAMPLE_DIM] = time_ax.copy()
 
-# Now we have: TimeAxis (rows) × MZAxis (columns)
+# TimeAxis (rows) × MZAxis (columns)
 print(f"Observation: {dataset.get_observation_axis().axis_type}")  # "time_minutes"
-print(f"Feature: {dataset.get_feature_axis().axis_type}")  # "mass_to_charge"
+print(f"Feature: {dataset.feature_axis.axis_type}")  # "mass_to_charge"
+```
+
+### Multiple-run hyphenated technique (3D)
+
+For multiple LC-MS runs, use a 3D array with time as an inner dimension:
+
+```python
+from spectra_sherpa.app.lib.axes import TimeAxis, MZAxis, SampleAxis
+
+# 10 LC-MS runs × 50 time points × 1000 m/z values
+data = np.random.randn(10, 50, 1000)
+
+sample_ax = SampleAxis(labels=[f"sample_{i}" for i in range(10)])
+time_ax = TimeAxis(values=np.linspace(0, 30, 50), units="min", title="Retention Time")
+mz_ax = MZAxis(values=np.linspace(50, 500, 1000), units="m/z")
+
+dataset = SherpaDataset(
+    X=data,
+    feature_axis=mz_ax,
+    sample_axis=sample_ax,
+    axes={1: time_ax},      # time as inner dimension
+)
+
+# Slice by physical values on both axes
+time_mask = dataset.axis(1).select_region(5, 15)       # 5–15 min retention window
+mz_mask = dataset.feature_axis.select_region(100, 300)  # 100–300 m/z
+
+subset = dataset[:, time_mask, mz_mask]
+print(f"Subset shape: {subset.shape}")  # (10, n_time_selected, n_mz_selected)
 ```
 
 ---

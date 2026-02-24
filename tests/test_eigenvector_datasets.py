@@ -560,7 +560,7 @@ class TestDataSourceNodeEigenvector:
         assert isinstance(dataset, SherpaDataset)
         assert dataset.shape == (784, 401)
         # Check wavelength axis
-        spectral = dataset.spectral_axis
+        spectral = dataset.feature_axis
         assert spectral is not None
         x_data = np.array(spectral.values).flatten()
         assert x_data[0] == pytest.approx(750.0)

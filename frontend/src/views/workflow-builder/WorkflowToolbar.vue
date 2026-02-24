@@ -110,6 +110,33 @@
         </div>
       </div>
 
+      <!-- Custom Algorithms Section -->
+      <div class="section" @mouseenter="!clickCooldown && (activeSection = 'custom_algo')">
+        <div class="section-header" :class="{ active: activeSection === 'custom_algo' }">
+          <span>Custom</span>
+          <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'custom_algo' }"></i>
+        </div>
+        <div class="section-nodes" :class="{ expanded: activeSection === 'custom_algo' }">
+          <div
+            v-for="(config, type) in customAlgoNodes"
+            :key="type"
+            class="node-button node-custom"
+            @click="addNode(type)"
+          >
+            <span class="node-icon">{{ config.icon }}</span>
+            <span class="node-label">{{ config.label }}</span>
+            <i class="pi pi-plus add-icon"></i>
+          </div>
+          <div
+            class="node-button node-custom new-algo-button"
+            @click="emit('create-custom-algo')"
+          >
+            <span class="node-icon">+</span>
+            <span class="node-label">New Custom Algo</span>
+          </div>
+        </div>
+      </div>
+
       <!-- Output Section -->
       <div class="section" @mouseenter="!clickCooldown && (activeSection = 'output')">
         <div class="section-header" :class="{ active: activeSection === 'output' }">
@@ -174,6 +201,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useWorkflowStore } from '@/stores/workflow';
+import { useCustomAlgoStore } from '@/stores/customAlgo';
 import type { NodeTypeMetadata } from '@/types';
 
 interface NodeConfig {
@@ -185,9 +213,12 @@ interface NodeConfig {
 
 const emit = defineEmits<{
   (e: 'add-node', nodeType: string): void;
+  (e: 'create-custom-algo'): void;
+  (e: 'edit-custom-algo', nodeType: string): void;
 }>();
 
 const workflowStore = useWorkflowStore();
+const customAlgoStore = useCustomAlgoStore();
 
 // Active section state - starts with 'data' (Data Sources) open
 const activeSection = ref<string>('data');
@@ -280,6 +311,7 @@ const CATEGORY_COLOR: Record<string, string> = {
   modeling: 'node-model',
   analysis: 'node-analyze',
   classification: 'node-classify',
+  custom_algo: 'node-custom',
   output: 'node-visualize',
   deploy: 'node-export',
 };
@@ -292,6 +324,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   modeling: 'Analysis',
   analysis: 'Analysis',
   classification: 'Classification',
+  custom_algo: 'Custom',
   output: 'Output',
   deploy: 'Deployment',
 };
@@ -465,6 +498,20 @@ const outputNodes = computed(() => {
   return Object.keys(dynamic).length > 0 ? dynamic : OUTPUT_NODES;
 });
 
+// Custom algo nodes from project-scoped store
+const customAlgoNodes = computed(() => {
+  const nodes: Record<string, NodeConfig> = {};
+  for (const meta of customAlgoStore.nodeMetadata) {
+    nodes[meta.node_type] = {
+      label: meta.label,
+      icon: NODE_ICONS[meta.node_type] || '\uD83E\uDDEA',
+      colorClass: 'node-custom',
+      description: meta.description,
+    };
+  }
+  return nodes;
+});
+
 const addNode = (nodeType: string) => {
   emit('add-node', nodeType);
   // Auto-collapse section after selection
@@ -635,6 +682,21 @@ const addNode = (nodeType: string) => {
 
 .node-plugin {
   background: linear-gradient(135deg, #ec4899, #be185d);
+}
+
+.node-custom {
+  background: linear-gradient(135deg, #14b8a6, #0d9488);
+}
+
+.new-algo-button {
+  border: 2px dashed rgba(20, 184, 166, 0.5);
+  background: transparent !important;
+  opacity: 0.8;
+}
+
+.new-algo-button:hover {
+  border-color: #14b8a6;
+  opacity: 1;
 }
 
 .toolbar-help {

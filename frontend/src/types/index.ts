@@ -288,6 +288,7 @@ export interface ExecutionRunSummary {
   labels: string[] | null;
   source_type: string | null;
   source_metadata: Record<string, unknown> | null;
+  model_ids: string[] | null;
 }
 
 export interface ExecutionRunDetail extends ExecutionRunSummary {
@@ -314,6 +315,7 @@ export interface BatchPredictionResult {
   results: Record<string, unknown> | null;
   error_message: string | null;
   processing_time_ms: number | null;
+  model_id: string | null;
   created_at: string;
 }
 
@@ -357,6 +359,7 @@ export interface ProjectSummary {
   experiment_count: number;
   workflow_count: number;
   script_count: number;
+  model_count: number;
   children_count: number;
   version_count: number;
   created_at: string;
@@ -388,6 +391,16 @@ export interface ScriptBrief {
   code_length: number;
 }
 
+export interface ModelBrief {
+  artifact_uid: string;
+  name: string;
+  model_type: string;
+  n_features: number;
+  n_components: number | null;
+  metrics: Record<string, unknown> | null;
+  created_at: string;
+}
+
 export interface ProjectScriptSummary {
   id: number;
   project_id: number;
@@ -410,6 +423,7 @@ export interface ProjectDetail extends ProjectSummary {
   experiments: ExperimentBrief[];
   workflows: WorkflowBrief[];
   scripts: ScriptBrief[];
+  models: ModelBrief[];
   children: ProjectSummary[];
 }
 

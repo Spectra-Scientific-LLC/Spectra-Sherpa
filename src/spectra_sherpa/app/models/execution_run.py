@@ -49,6 +49,7 @@ class ExecutionRun(Base):
         String(50), server_default="manual"
     )  # "manual" | "batch" | "folder_watch"
     source_metadata: Mapped[dict | None] = mapped_column(JSON)
+    model_ids: Mapped[list | None] = mapped_column(JSON)  # list of artifact_uid strings used in this run
 
     # Relationships
     workflow: Mapped[Workflow] = relationship("Workflow", back_populates="runs")

@@ -38,6 +38,7 @@ from spectra_sherpa.app.lib.axes import (
     MZAxis,
     PotentialAxis,
     SampleAxis,
+    SpatialAxis,
     SpectralAxis,
     TimeAxis,
 )
@@ -547,8 +548,8 @@ def _validate_axis_length(
         "",
     ]
 
-    # Suggest transpose if dimensions are reversed
-    if axis_type == "feature" and len(data_shape) >= 2:
+    # Suggest transpose if dimensions are reversed (only for 2D data)
+    if axis_type == "feature" and len(data_shape) == 2:
         n_samples, n_features = data_shape[0], data_shape[1]
         if actual == n_samples and expected == n_features:
             msg_parts.extend(
@@ -608,9 +609,9 @@ class SherpaDataset:
         self,
         X: Any,
         *,
-        spectral_axis: SpectralAxis | None = None,
         feature_axis: FeatureAxis | None = None,
         sample_axis: SampleAxis | None = None,
+        axes: dict[int, AxisInfo] | None = None,
         target: np.ndarray | list | None = None,
         target_context: TargetContext | None = None,
         domain: DomainContext | None = None,
@@ -622,47 +623,29 @@ class SherpaDataset:
         extra: dict[str, Any] | None = None,
         dataset_id: str | None = None,
     ) -> None:
-        # Core data
-        self._X = np.atleast_2d(np.asarray(X, dtype=np.float64))
-        n_samples, n_features = self._X.shape
+        # Core data — accept nD arrays (dim 0 = samples, dim -1 = features)
+        arr = np.asarray(X, dtype=np.float64)
+        if arr.ndim == 0:
+            raise ValueError("X must be at least 1-dimensional, got scalar")
+        if arr.ndim == 1:
+            arr = arr.reshape(1, -1)
+        self._X = arr
+        n_samples = self._X.shape[0]
+        n_features = self._X.shape[-1]
 
         # Validate and store axes in dict for n-dimensional extensibility
         self._axes: dict[int, AxisInfo] = {}
 
-        # Handle feature axis (spectral_axis for backward compat, feature_axis for new workflows)
-        if spectral_axis is not None and feature_axis is not None:
-            # Both specified - use feature_axis and warn
-            import warnings
-
-            warnings.warn(
-                "Both spectral_axis and feature_axis specified. Using feature_axis. "
-                "spectral_axis is deprecated - use feature_axis for all axis types.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            axis_to_use = feature_axis
-        else:
-            axis_to_use = feature_axis if feature_axis is not None else spectral_axis
-            if spectral_axis is not None:
-                # Warn when using deprecated spectral_axis parameter
-                import warnings
-
-                warnings.warn(
-                    "spectral_axis parameter is deprecated. Use feature_axis instead for multi-domain support.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-
-        if axis_to_use is not None:
-            if axis_to_use.length > 0 and axis_to_use.length != n_features:
+        if feature_axis is not None:
+            if feature_axis.length > 0 and feature_axis.length != n_features:
                 _validate_axis_length(
                     expected=n_features,
-                    actual=axis_to_use.length,
+                    actual=feature_axis.length,
                     axis_type="feature",
-                    data_shape=(n_samples, n_features),
+                    data_shape=tuple(self._X.shape),
                     axis_name="feature_axis",
                 )
-            axis_copy = axis_to_use.copy()
+            axis_copy = feature_axis.copy()
             axis_copy.bind_expected_length(n_features)
             self._axes[self._SPECTRAL_DIM] = axis_copy
 
@@ -672,7 +655,7 @@ class SherpaDataset:
                     expected=n_samples,
                     actual=sample_axis.length,
                     axis_type="sample",
-                    data_shape=(n_samples, n_features),
+                    data_shape=tuple(self._X.shape),
                     axis_name="sample_axis",
                 )
             if sample_axis.classes is not None and len(sample_axis.classes) != n_samples:
@@ -688,6 +671,35 @@ class SherpaDataset:
             sample_copy = sample_axis.copy()
             sample_copy.bind_expected_length(n_samples)
             self._axes[self._SAMPLE_DIM] = sample_copy
+
+        # Validate and store inner-dimension axes (dims 1..ndim-2)
+        if axes is not None:
+            ndim = self._X.ndim
+            for dim, axis_info in axes.items():
+                normalized = dim if dim >= 0 else ndim + dim
+                if normalized == 0 or normalized == ndim - 1:
+                    raise ValueError(
+                        f"axes[{dim}] conflicts with sample (dim 0) or feature (dim -1). "
+                        f"Use sample_axis= or feature_axis= instead."
+                    )
+                if normalized < 1 or normalized >= ndim - 1:
+                    raise ValueError(
+                        f"Dimension {dim} (normalized: {normalized}) is out of range "
+                        f"for data with ndim={ndim}. Inner axes must be in "
+                        f"range [1, {ndim - 2}]."
+                    )
+                expected_size = self._X.shape[normalized]
+                if axis_info.length > 0 and axis_info.length != expected_size:
+                    _validate_axis_length(
+                        expected=expected_size,
+                        actual=axis_info.length,
+                        axis_type="inner",
+                        data_shape=tuple(self._X.shape),
+                        axis_name=f"axes[{dim}]",
+                    )
+                ac = axis_info.copy()
+                ac.bind_expected_length(expected_size)
+                self._axes[normalized] = ac
 
         # Validate target
         if target is not None:
@@ -732,7 +744,7 @@ class SherpaDataset:
 
     @property
     def data(self) -> np.ndarray:
-        """Alias for X."""
+        """Alias for X — used by nodes and adapters for array access."""
         return self._X
 
     @property
@@ -742,6 +754,39 @@ class SherpaDataset:
     @property
     def ndim(self) -> int:
         return self._X.ndim
+
+    @property
+    def n_samples(self) -> int:
+        """Number of samples (first dimension)."""
+        return self._X.shape[0]
+
+    @property
+    def n_features(self) -> int:
+        """Number of features (last dimension)."""
+        return self._X.shape[-1]
+
+    @property
+    def inner_shape(self) -> tuple[int, ...]:
+        """Shape of inner dimensions (empty tuple for 2D data)."""
+        return self._X.shape[1:-1]
+
+    @property
+    def inner_axes(self) -> dict[int, AxisInfo]:
+        """Axes for inner dimensions (not sample or feature)."""
+        return {
+            d: a.copy()
+            for d, a in self._axes.items()
+            if d not in (self._SAMPLE_DIM, self._SPECTRAL_DIM)
+        }
+
+    def dim_role(self, dim: int) -> str:
+        """Return the semantic role of a dimension: 'sample', 'feature', or 'inner'."""
+        normalized = dim if dim >= 0 else self._X.ndim + dim
+        if normalized == 0:
+            return "sample"
+        if normalized == self._X.ndim - 1:
+            return "feature"
+        return "inner"
 
     @property
     def target(self) -> np.ndarray | None:
@@ -770,47 +815,6 @@ class SherpaDataset:
         return self._dataset_id
 
     # ── Axis Access ────────────────────────────────────────────────
-
-    @property
-    def spectral_axis(self) -> SpectralAxis | None:
-        """Legacy accessor for spectral axis (DEPRECATED).
-
-        **DEPRECATED**: Use `feature_axis` instead for multi-domain support.
-
-        `feature_axis` supports:
-        - TimeAxis for chromatography (HPLC, GC, IC, CE)
-        - MZAxis for mass spectrometry (LC-MS, GC-MS, MALDI-TOF)
-        - PotentialAxis for electrochemistry (CV, DPV, SWV)
-        - FrequencyAxis for NMR spectroscopy
-        - SpectralAxis for spectroscopy (IR, NIR, Raman, UV-Vis)
-
-        This property is read-only and returns SpectralAxis only.
-        Use `feature_axis` for setting axes or working with other axis types.
-
-        Returns:
-            SpectralAxis if a SpectralAxis is stored, None otherwise.
-
-        Example:
-            >>> # OLD (deprecated):
-            >>> axis = dataset.spectral_axis
-            >>>
-            >>> # NEW (recommended):
-            >>> axis = dataset.feature_axis  # Works with all axis types
-        """
-        import warnings
-
-        warnings.warn(
-            "spectral_axis is deprecated. Use feature_axis instead for multi-domain support. "
-            "feature_axis works with TimeAxis (chromatography), MZAxis (mass spec), "
-            "PotentialAxis (electrochemistry), and SpectralAxis (spectroscopy).",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        ax = self._axes.get(self._SPECTRAL_DIM)
-        return ax.copy() if isinstance(ax, SpectralAxis) else None
-
-    # NOTE: spectral_axis setter is REMOVED - use feature_axis instead
-    # This prevents the dual-API confusion and validation path duplication
 
     @property
     def feature_axis(self) -> FeatureAxis | None:
@@ -849,16 +853,16 @@ class SherpaDataset:
     @feature_axis.setter
     def feature_axis(self, value: FeatureAxis) -> None:
         """Set the feature axis (accepts any FeatureAxis subclass)."""
-        if value.length > 0 and value.length != self._X.shape[1]:
+        if value.length > 0 and value.length != self._X.shape[-1]:
             _validate_axis_length(
-                expected=self._X.shape[1],
+                expected=self._X.shape[-1],
                 actual=value.length,
                 axis_type="feature",
-                data_shape=self._X.shape,
+                data_shape=tuple(self._X.shape),
                 axis_name="feature_axis",
             )
         copied = value.copy()
-        copied.bind_expected_length(self._X.shape[1])
+        copied.bind_expected_length(self._X.shape[-1])
         self._axes[self._SPECTRAL_DIM] = copied
 
     @property
@@ -924,7 +928,7 @@ class SherpaDataset:
         """Get the feature axis from the last dimension (generic accessor).
 
         Returns any FeatureAxis subclass (SpectralAxis, TimeAxis, MZAxis, etc.)
-        This is more permissive than spectral_axis or feature_axis properties.
+        This is more permissive than the feature_axis property.
 
         Useful for code that works with any feature type (preprocessing, plotting).
 
@@ -1010,8 +1014,12 @@ class SherpaDataset:
 
     @property
     def meta(self) -> dict[str, Any]:
-        """Backward-compatible alias for extra — used by modeling nodes to
-        store scientific metadata (pc_labels, n_components, etc.)."""
+        """Dict-style access to extra metadata for internal node use.
+
+        Nodes use ``ds.meta["key"] = value`` to store scientific metadata
+        (pc_labels, calibration_model, etc.) without the namespacing
+        enforcement of ``set_extra()``.
+        """
         return self._extra
 
     def set_extra(self, key: str, value: Any) -> None:
@@ -1097,10 +1105,23 @@ class SherpaDataset:
         for dim, ax in self._axes.items():
             axes_copy[dim] = ax.copy()
 
+        inner = {
+            d: a for d, a in axes_copy.items()
+            if d not in (self._SPECTRAL_DIM, self._SAMPLE_DIM)
+        } or None
+
+        # Determine which FeatureAxis subtype the spectral dim holds
+        spectral_dim_ax = axes_copy.get(self._SPECTRAL_DIM)
+        feature_ax = spectral_dim_ax if isinstance(spectral_dim_ax, FeatureAxis) else None
+
+        dim0_ax = axes_copy.get(self._SAMPLE_DIM)
+        sample_ax = dim0_ax if isinstance(dim0_ax, SampleAxis) else None
+
         ds = SherpaDataset(
             X=self._X.copy(),
-            spectral_axis=axes_copy.get(self._SPECTRAL_DIM),
-            sample_axis=axes_copy.get(self._SAMPLE_DIM),
+            feature_axis=feature_ax,
+            sample_axis=sample_ax,
+            axes=inner,
             target=self._target.copy() if self._target is not None else None,
             target_context=self._target_context.model_copy(),
             domain=self._domain.model_copy(deep=True),
@@ -1111,10 +1132,10 @@ class SherpaDataset:
             units=self.units,
             extra=copy.deepcopy(self._extra),
         )
-        # Copy additional axes beyond sample/spectral
-        for dim, ax in axes_copy.items():
-            if dim not in (self._SPECTRAL_DIM, self._SAMPLE_DIM):
-                ds._axes[dim] = ax
+
+        if dim0_ax is not None and not isinstance(dim0_ax, SampleAxis):
+            ds._axes[self._SAMPLE_DIM] = dim0_ax.copy()
+
         return ds
 
     # ── Slicing ────────────────────────────────────────────────────
@@ -1122,55 +1143,112 @@ class SherpaDataset:
     def __getitem__(self, key: Any) -> SherpaDataset:
         """Slice the dataset. Preserves domain, provenance, quality.
 
-        ds[bool_mask]      — row selection
-        ds[i]              — single row (stays 2D)
-        ds[1:3]            — row slice
-        ds[:, a:b]         — column slice
-        ds[row, col]       — combined
+        For any dimensionality:
+        ds[bool_mask]      — sample selection (dim 0)
+        ds[i]              — single sample (stays nD, dim 0 kept as length 1)
+        ds[1:3]            — sample slice
+        ds[:, a:b]         — feature slice (dim -1); for nD, inner dims pass through
+        ds[row, col]       — combined sample + feature (2D shorthand on nD)
+        ds[s, i1, ..., f]  — full nD indexing (tuple length == ndim)
         """
-        spectral = self.spectral_axis
+        feature = self.get_feature_axis()
         sample = self.sample_axis
 
+        # ── Non-tuple keys: apply to dim 0 (samples) ──
         if isinstance(key, np.ndarray) and key.dtype == bool:
             new_X = self._X[key]
             new_sample = _slice_sample_axis(sample, key) if sample else None
             new_target = self._target[key] if self._target is not None else None
-            return self._sliced_copy(new_X, spectral_axis=spectral, sample_axis=new_sample, target=new_target)
+            return self._sliced_copy(new_X, feature_axis=feature, sample_axis=new_sample, target=new_target)
 
         if isinstance(key, (int, np.integer)):
             new_X = self._X[key : key + 1]
             new_sample = _slice_sample_axis(sample, slice(key, key + 1)) if sample else None
             new_target = self._target[key : key + 1] if self._target is not None else None
-            return self._sliced_copy(new_X, spectral_axis=spectral, sample_axis=new_sample, target=new_target)
+            return self._sliced_copy(new_X, feature_axis=feature, sample_axis=new_sample, target=new_target)
 
         if isinstance(key, slice):
             new_X = self._X[key]
             new_sample = _slice_sample_axis(sample, key) if sample else None
             new_target = self._target[key] if self._target is not None else None
-            return self._sliced_copy(new_X, spectral_axis=spectral, sample_axis=new_sample, target=new_target)
+            return self._sliced_copy(new_X, feature_axis=feature, sample_axis=new_sample, target=new_target)
 
-        if isinstance(key, tuple) and len(key) == 2:
-            row_key, col_key = key
-            # Convert scalar int keys to length-1 slices to preserve dimensions
-            x_row = row_key
-            x_col = col_key
-            if isinstance(row_key, (int, np.integer)):
-                x_row = slice(row_key, row_key + 1)
-            if isinstance(col_key, (int, np.integer)):
-                x_col = slice(col_key, col_key + 1)
-            new_X = self._X[x_row, x_col]
-            new_sample = _slice_sample_axis(sample, row_key) if sample else None
-            new_spectral = _slice_spectral_axis(spectral, col_key) if spectral else None
-            new_target = None
-            if self._target is not None and not isinstance(row_key, type(None)):
-                try:
-                    new_target = np.atleast_1d(self._target[row_key])
-                except (IndexError, TypeError):
-                    new_target = None
-            return self._sliced_copy(new_X, spectral_axis=new_spectral, sample_axis=new_sample, target=new_target)
+        # ── Tuple keys ──
+        if isinstance(key, tuple):
+            if len(key) == 2 and self._X.ndim > 2:
+                # 2D shorthand on nD data: (sample_key, feature_key)
+                # Insert slice(None) for all inner dims
+                row_key, col_key = key
+                x_row = slice(row_key, row_key + 1) if isinstance(row_key, (int, np.integer)) else row_key
+                x_col = slice(col_key, col_key + 1) if isinstance(col_key, (int, np.integer)) else col_key
+                full_key = tuple([x_row] + [slice(None)] * (self._X.ndim - 2) + [x_col])
+                new_X = self._X[full_key]
+                new_sample = _slice_sample_axis(sample, row_key) if sample else None
+                new_feature = _slice_axis(feature, col_key) if feature else None
+                new_target = None
+                if self._target is not None:
+                    try:
+                        new_target = np.atleast_1d(self._target[row_key])
+                    except (IndexError, TypeError):
+                        pass
+                return self._sliced_copy(new_X, feature_axis=new_feature, sample_axis=new_sample, target=new_target)
+
+            if len(key) == 2:
+                # Standard 2D tuple slicing
+                row_key, col_key = key
+                x_row = slice(row_key, row_key + 1) if isinstance(row_key, (int, np.integer)) else row_key
+                x_col = slice(col_key, col_key + 1) if isinstance(col_key, (int, np.integer)) else col_key
+                new_X = self._X[x_row, x_col]
+                new_sample = _slice_sample_axis(sample, row_key) if sample else None
+                new_feature = _slice_axis(feature, col_key) if feature else None
+                new_target = None
+                if self._target is not None and not isinstance(row_key, type(None)):
+                    try:
+                        new_target = np.atleast_1d(self._target[row_key])
+                    except (IndexError, TypeError):
+                        pass
+                return self._sliced_copy(new_X, feature_axis=new_feature, sample_axis=new_sample, target=new_target)
+
+            if len(key) == self._X.ndim:
+                # Full nD indexing: (sample, inner1, ..., innerN, feature)
+                # Preserve dimensions by converting scalar ints to length-1 slices
+                full_key_list = []
+                for i, k in enumerate(key):
+                    if isinstance(k, (int, np.integer)):
+                        full_key_list.append(slice(k, k + 1))
+                    else:
+                        full_key_list.append(k)
+                new_X = self._X[tuple(full_key_list)]
+                row_key = key[0]
+                col_key = key[-1]
+                new_sample = _slice_sample_axis(sample, row_key) if sample else None
+                new_feature = _slice_axis(feature, col_key) if feature else None
+                # Slice inner axes
+                new_inner = {}
+                for dim, ax in self._axes.items():
+                    if dim in (self._SAMPLE_DIM, self._SPECTRAL_DIM):
+                        continue
+                    inner_key = key[dim]
+                    sliced = _slice_axis(ax, inner_key)
+                    if sliced is not None:
+                        new_inner[dim] = sliced
+                new_target = None
+                if self._target is not None:
+                    try:
+                        new_target = np.atleast_1d(self._target[row_key])
+                    except (IndexError, TypeError):
+                        pass
+                return self._sliced_copy(
+                    new_X, feature_axis=new_feature, sample_axis=new_sample,
+                    target=new_target, inner_axes=new_inner or None,
+                )
 
         # Fallback — slice X and try to slice sample axis
-        new_X = np.atleast_2d(self._X[key])
+        new_X = self._X[key]
+        if new_X.ndim == 0:
+            new_X = new_X.reshape(1, 1)
+        elif new_X.ndim == 1:
+            new_X = new_X.reshape(1, -1)
         new_sample = None
         new_target = None
         try:
@@ -1183,20 +1261,25 @@ class SherpaDataset:
                 new_target = self._target[key]
         except Exception:
             pass
-        return self._sliced_copy(new_X, spectral_axis=spectral, sample_axis=new_sample, target=new_target)
+        return self._sliced_copy(new_X, feature_axis=feature, sample_axis=new_sample, target=new_target)
 
     def _sliced_copy(
         self,
         X: np.ndarray,
-        spectral_axis: SpectralAxis | None,
+        feature_axis: FeatureAxis | None,
         sample_axis: SampleAxis | None,
         target: np.ndarray | None,
+        inner_axes: dict[int, AxisInfo] | None = None,
     ) -> SherpaDataset:
         """Create a new SherpaDataset from sliced data, preserving metadata."""
+        # Default: carry forward existing inner axes if not explicitly provided
+        if inner_axes is None:
+            inner_axes = self.inner_axes or None
         return SherpaDataset(
             X=X,
-            spectral_axis=spectral_axis.copy() if spectral_axis else None,
+            feature_axis=feature_axis.copy() if feature_axis else None,
             sample_axis=sample_axis,  # already sliced/copied
+            axes=inner_axes,
             target=target,
             target_context=self._target_context.model_copy(),
             domain=self._domain.model_copy(deep=True),
@@ -1244,14 +1327,23 @@ class SherpaDataset:
     # ── Serialization ──────────────────────────────────────────────
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize to JSON-safe dict. Wire format: type='SherpaDataset', version='1.0'."""
+        """Serialize to JSON-safe dict.
+
+        Wire format version:
+        - ``"1.0"`` for 2D data with no inner axes (backward compatible)
+        - ``"2.0"`` for nD data or data with inner axes
+        """
         safe_data = np.where(np.isfinite(self._X), self._X, None).tolist()
+
+        has_inner = bool(self.inner_axes)
+        version = "2.0" if self._X.ndim > 2 or has_inner else "1.0"
 
         result: dict[str, Any] = {
             "type": "SherpaDataset",
-            "version": "1.0",
+            "version": version,
             "dataset_id": self._dataset_id,
             "shape": list(self.shape),
+            "ndim": self._X.ndim,
             "data": safe_data,
             "n_samples": self.shape[0],
             "n_features": self.shape[-1],
@@ -1260,10 +1352,20 @@ class SherpaDataset:
             "backend": self.backend,
         }
 
-        if self.spectral_axis:
-            result["spectral_axis"] = _serialize_axis(self.spectral_axis)
+        fa = self.get_feature_axis()
+        if fa is not None:
+            result["feature_axis"] = _serialize_axis_typed(fa)
         if self.sample_axis:
             result["sample_axis"] = _serialize_axis(self.sample_axis)
+
+        # Inner axes (v2 only)
+        if has_inner:
+            inner_dict: dict[str, Any] = {}
+            for dim, ax in self._axes.items():
+                if dim not in (self._SAMPLE_DIM, self._SPECTRAL_DIM):
+                    inner_dict[str(dim)] = _serialize_axis_typed(ax)
+            result["inner_axes"] = inner_dict
+
         if self._target is not None:
             result["target"] = self._target.tolist()
 
@@ -1290,14 +1392,31 @@ class SherpaDataset:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> SherpaDataset:
-        """Deserialize from SherpaDataset wire format only."""
+        """Deserialize from SherpaDataset wire format (v1.0 and v2.0)."""
         dtype = d.get("type")
         if dtype != "SherpaDataset":
             raise ValueError(f"Expected type='SherpaDataset', got '{dtype}'")
 
-        spectral_axis = _deserialize_spectral_axis(d.get("spectral_axis")) if d.get("spectral_axis") else None
+        # version = d.get("version", "1.0")
+
+        # Feature axis: prefer v2 "feature_axis" key, fall back to v1 "spectral_axis"
+        feature_axis: FeatureAxis | None = None
+        if d.get("feature_axis"):
+            feature_axis = _deserialize_typed_axis(d["feature_axis"])
+            if not isinstance(feature_axis, FeatureAxis):
+                feature_axis = None  # safety: must be a FeatureAxis subclass
+        elif d.get("spectral_axis"):
+            feature_axis = _deserialize_spectral_axis(d["spectral_axis"])
+
         sample_axis = _deserialize_sample_axis(d.get("sample_axis")) if d.get("sample_axis") else None
         target = np.asarray(d["target"]) if d.get("target") is not None else None
+
+        # Inner axes (v2+)
+        inner_axes: dict[int, AxisInfo] | None = None
+        if d.get("inner_axes"):
+            inner_axes = {}
+            for dim_str, ax_dict in d["inner_axes"].items():
+                inner_axes[int(dim_str)] = _deserialize_typed_axis(ax_dict)
 
         domain = DomainContext.model_validate(d.get("domain", {}))
         target_context = TargetContext.model_validate(d.get("target_context", {}))
@@ -1308,8 +1427,9 @@ class SherpaDataset:
 
         ds = cls(
             X=np.asarray(d["data"]),
-            spectral_axis=spectral_axis,
+            feature_axis=feature_axis,
             sample_axis=sample_axis,
+            axes=inner_axes,
             target=target,
             target_context=target_context,
             domain=domain,
@@ -1335,6 +1455,38 @@ class SherpaDataset:
 # ═══════════════════════════════════════════════════════════════════════════
 # Internal Helpers
 # ═══════════════════════════════════════════════════════════════════════════
+
+
+_AXIS_CLASS_MAP: dict[str, type[AxisInfo]] = {
+    "AxisInfo": AxisInfo,
+    "FeatureAxis": FeatureAxis,
+    "SpectralAxis": SpectralAxis,
+    "TimeAxis": TimeAxis,
+    "MZAxis": MZAxis,
+    "PotentialAxis": PotentialAxis,
+    "FrequencyAxis": FrequencyAxis,
+    "SampleAxis": SampleAxis,
+    "SpatialAxis": SpatialAxis,
+}
+
+
+def _serialize_axis_typed(axis: AxisInfo) -> dict[str, Any]:
+    """Serialize any axis with a type tag for polymorphic deserialization."""
+    result = _serialize_axis(axis)
+    result["axis_class"] = type(axis).__name__
+    return result
+
+
+def _deserialize_typed_axis(d: dict[str, Any]) -> AxisInfo:
+    """Deserialize an axis from a dict with an ``axis_class`` type tag."""
+    class_name = d.get("axis_class", "AxisInfo")
+    cls = _AXIS_CLASS_MAP.get(class_name, AxisInfo)
+    return cls(
+        values=np.asarray(d["data"]) if d.get("data") is not None else None,
+        labels=d.get("labels"),
+        units=d.get("units"),
+        title=d.get("title"),
+    )
 
 
 def _serialize_axis(axis: AxisInfo) -> dict[str, Any]:
@@ -1424,15 +1576,14 @@ def _slice_sample_axis(axis: SampleAxis | None, key: Any) -> SampleAxis | None:
     )
 
 
-def _slice_spectral_axis(axis: SpectralAxis | None, key: Any) -> SpectralAxis | None:
-    """Slice a SpectralAxis along the feature dimension."""
+def _slice_axis(axis: AxisInfo | None, key: Any) -> AxisInfo | None:
+    """Slice any axis along its dimension, preserving the concrete axis type."""
     if axis is None:
         return None
 
     new_values = None
     if axis.values is not None:
         sliced = axis.values[key]
-        # Ensure at least 1-d (scalar indexing produces 0-d)
         new_values = np.atleast_1d(sliced)
 
     new_labels = None
@@ -1444,9 +1595,16 @@ def _slice_spectral_axis(axis: SpectralAxis | None, key: Any) -> SpectralAxis | 
         elif isinstance(key, (int, np.integer)):
             new_labels = [axis.labels[key]]
 
-    return SpectralAxis(
+    # Construct same type as input axis
+    return type(axis)(
         values=new_values,
         labels=new_labels,
         units=axis.units,
         title=axis.title,
     )
+
+
+def _slice_spectral_axis(axis: SpectralAxis | None, key: Any) -> SpectralAxis | None:
+    """Slice a SpectralAxis along the feature dimension (legacy wrapper)."""
+    result = _slice_axis(axis, key)
+    return result if isinstance(result, SpectralAxis) else None

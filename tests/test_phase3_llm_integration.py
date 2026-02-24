@@ -122,7 +122,7 @@ class TestDatasetTools:
 
         ds = SherpaDataset(
             X=np.ones((5, 100)),
-            spectral_axis=SpectralAxis(values=np.linspace(400, 4000, 100), units="cm-1"),
+            feature_axis=SpectralAxis(values=np.linspace(400, 4000, 100), units="cm-1"),
             domain=DomainContext(technique="IR"),
             title="Test Spectra",
         )

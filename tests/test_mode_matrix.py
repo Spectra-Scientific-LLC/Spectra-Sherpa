@@ -279,13 +279,13 @@ class TestAuthMiddleware:
     """Verify auth middleware mode-dependent bypass behavior."""
 
     def test_loopback_detection(self):
-        """_is_loopback correctly identifies loopback addresses."""
-        from spectra_sherpa.app.core.security import _is_loopback
+        """is_loopback correctly identifies loopback addresses."""
+        from spectra_sherpa.app.core.mode_policy import is_loopback
 
-        assert _is_loopback("127.0.0.1") is True
-        assert _is_loopback("::1") is True
-        assert _is_loopback("192.168.1.1") is False
-        assert _is_loopback(None) is False  # fail closed
+        assert is_loopback("127.0.0.1") is True
+        assert is_loopback("::1") is True
+        assert is_loopback("192.168.1.1") is False
+        assert is_loopback(None) is False  # fail closed
 
     @pytest.mark.parametrize(
         "mode,client_host,expected_requires_auth",
@@ -303,10 +303,10 @@ class TestAuthMiddleware:
     )
     def test_ws_auth_requirement_matrix(self, mode: str, client_host: str, expected_requires_auth: bool):
         """WebSocket auth requirement matches mode + client host matrix."""
-        from spectra_sherpa.app.core.security import _is_loopback
+        from spectra_sherpa.app.core.mode_policy import is_loopback
 
         # Replicate the logic from main.py
-        requires_ws_auth = mode == "enterprise" or (mode == "hybrid" and not _is_loopback(client_host))
+        requires_ws_auth = mode == "enterprise" or (mode == "hybrid" and not is_loopback(client_host))
         assert requires_ws_auth is expected_requires_auth
 
 

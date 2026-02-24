@@ -48,7 +48,7 @@ def iris_dataset():
     """Create a SherpaDataset with iris-like data (10 samples, 4 features)."""
     rng = np.random.default_rng(42)
     X = rng.standard_normal((10, 4))
-    spectral_axis = SpectralAxis(
+    feature_axis = SpectralAxis(
         values=np.arange(4, dtype=float),
         labels=["sepal_length", "sepal_width", "petal_length", "petal_width"],
         title="features",
@@ -59,7 +59,7 @@ def iris_dataset():
     )
     return SherpaDataset(
         X=X,
-        spectral_axis=spectral_axis,
+        feature_axis=feature_axis,
         sample_axis=sample_axis,
         target=np.array([0, 0, 0, 1, 1, 1, 2, 2, 2, 0]),
         extra={"dataset_name": "test_iris"},
@@ -102,10 +102,10 @@ async def test_snv_node_on_sherpa_dataset(iris_dataset):
     assert isinstance(output, SherpaDataset)
     assert output.shape == iris_dataset.shape, "Output shape should match input"
 
-    # spectral_axis should be preserved
-    assert output.spectral_axis is not None, "spectral_axis should be preserved"
-    np.testing.assert_array_equal(output.spectral_axis.values, iris_dataset.spectral_axis.values)
-    assert output.spectral_axis.labels == iris_dataset.spectral_axis.labels
+    # feature_axis should be preserved
+    assert output.feature_axis is not None, "feature_axis should be preserved"
+    np.testing.assert_array_equal(output.feature_axis.values, iris_dataset.feature_axis.values)
+    assert output.feature_axis.labels == iris_dataset.feature_axis.labels
 
     # Verify SNV property: each row should have zero mean and unit std
     for i in range(output.shape[0]):
@@ -135,9 +135,9 @@ async def test_scale_node_on_sherpa_dataset(iris_dataset):
     assert isinstance(output, SherpaDataset)
     assert output.shape == iris_dataset.shape
 
-    # spectral_axis should be preserved
-    assert output.spectral_axis is not None
-    np.testing.assert_array_equal(output.spectral_axis.values, iris_dataset.spectral_axis.values)
+    # feature_axis should be preserved
+    assert output.feature_axis is not None
+    np.testing.assert_array_equal(output.feature_axis.values, iris_dataset.feature_axis.values)
 
     # Each row's max absolute value should be 1.0 (max normalization)
     for i in range(output.shape[0]):
@@ -315,13 +315,13 @@ def test_sherpa_dataset_to_dict(iris_dataset):
     assert d["title"] == "Test Iris"
     assert d["backend"] == "numpy"
 
-    # spectral_axis must use 'data' key (not 'values') per wire-format contract
-    assert "spectral_axis" in d
-    assert "data" in d["spectral_axis"], "spectral_axis must use 'data' key for frontend compat"
-    assert d["spectral_axis"]["data"] is not None
-    assert len(d["spectral_axis"]["data"]) == 4
-    assert d["spectral_axis"]["labels"] == ["sepal_length", "sepal_width", "petal_length", "petal_width"]
-    assert d["spectral_axis"]["title"] == "features"
+    # feature_axis must use 'data' key (not 'values') per wire-format contract
+    assert "feature_axis" in d
+    assert "data" in d["feature_axis"], "feature_axis must use 'data' key for frontend compat"
+    assert d["feature_axis"]["data"] is not None
+    assert len(d["feature_axis"]["data"]) == 4
+    assert d["feature_axis"]["labels"] == ["sepal_length", "sepal_width", "petal_length", "petal_width"]
+    assert d["feature_axis"]["title"] == "features"
 
     # sample_axis
     assert "sample_axis" in d
@@ -517,11 +517,11 @@ def test_sherpa_dataset_round_trip(iris_dataset):
     assert restored.backend == iris_dataset.backend
     assert restored.title == iris_dataset.title
 
-    # spectral_axis round trip
-    assert restored.spectral_axis is not None
-    np.testing.assert_array_equal(restored.spectral_axis.values, iris_dataset.spectral_axis.values)
-    assert restored.spectral_axis.labels == iris_dataset.spectral_axis.labels
-    assert restored.spectral_axis.title == iris_dataset.spectral_axis.title
+    # feature_axis round trip
+    assert restored.feature_axis is not None
+    np.testing.assert_array_equal(restored.feature_axis.values, iris_dataset.feature_axis.values)
+    assert restored.feature_axis.labels == iris_dataset.feature_axis.labels
+    assert restored.feature_axis.title == iris_dataset.feature_axis.title
 
     # target round trip
     assert restored.target is not None
@@ -543,9 +543,9 @@ def test_from_sklearn_bunch():
     assert isinstance(ds, SherpaDataset)
     assert ds.shape == (150, 4)
     assert ds.backend == "sklearn"
-    assert ds.spectral_axis is not None
-    assert ds.spectral_axis.labels is not None
-    assert len(ds.spectral_axis.labels) == 4
+    assert ds.feature_axis is not None
+    assert ds.feature_axis.labels is not None
+    assert len(ds.feature_axis.labels) == 4
     assert ds.target is not None
     assert len(ds.target) == 150
     assert ds.get_extra("sklearn.dataset_name") == "iris"
@@ -563,7 +563,7 @@ def spectral_dataset():
     X = np.random.randn(10, 100)  # 10 samples, 100 features (spectral-like)
     return SherpaDataset(
         X=X,
-        spectral_axis=SpectralAxis(values=np.linspace(400, 4000, 100), title="Wavenumber", units="cm^-1"),
+        feature_axis=SpectralAxis(values=np.linspace(400, 4000, 100), title="Wavenumber", units="cm^-1"),
         backend="numpy",
     )
 
@@ -788,7 +788,8 @@ class TestGeneratePythonNoScp:
 
     def test_scp_only_node_emits_import_error(self):
         """SCP-only nodes should emit ImportError when use_scp=False."""
-        node = self._make_node("normalize.msc", {"reference": "mean"})
+        # baseline.rubberband requires SCP (normalize.msc is now pure-numpy)
+        node = self._make_node("baseline.rubberband", {})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "ImportError" in code
@@ -824,13 +825,13 @@ class TestClipRangeSherpaDataset:
 
     @pytest.mark.asyncio
     async def test_clip_by_wavenumber_values(self):
-        """ClipRange should select columns where spectral_axis values are within [min, max]."""
+        """ClipRange should select columns where feature_axis values are within [min, max]."""
         # Simulate spectral data: 5 samples, 100 features at wavenumbers 400-4000
         wavenumbers = np.linspace(400, 4000, 100)
         X = np.random.default_rng(42).standard_normal((5, 100))
         ds = SherpaDataset(
             X=X,
-            spectral_axis=SpectralAxis(values=wavenumbers, units="cm-1", title="wavenumber"),
+            feature_axis=SpectralAxis(values=wavenumbers, units="cm-1", title="wavenumber"),
         )
 
         node = node_registry.create_node(
@@ -844,8 +845,8 @@ class TestClipRangeSherpaDataset:
         expected_mask = (wavenumbers >= 1000) & (wavenumbers <= 2000)
         expected_cols = expected_mask.sum()
         assert output.shape == (5, expected_cols), f"Expected (5, {expected_cols}), got {output.shape}"
-        # spectral_axis values should be the clipped subset
-        np.testing.assert_array_almost_equal(output.spectral_axis.values, wavenumbers[expected_mask])
+        # feature_axis values should be the clipped subset
+        np.testing.assert_array_almost_equal(output.feature_axis.values, wavenumbers[expected_mask])
         # Data should match the correct columns from the original
         np.testing.assert_array_almost_equal(output.X, X[:, expected_mask])
 
@@ -856,7 +857,7 @@ class TestClipRangeSherpaDataset:
         X = np.ones((3, 50))
         ds = SherpaDataset(
             X=X,
-            spectral_axis=SpectralAxis(values=wavenumbers, units="cm-1"),
+            feature_axis=SpectralAxis(values=wavenumbers, units="cm-1"),
         )
         node = node_registry.create_node(
             "preprocess.clip_range", "test_clip_min", {"min_wavenumber": 2000, "max_wavenumber": 4000}
@@ -866,11 +867,11 @@ class TestClipRangeSherpaDataset:
 
         expected_mask = (wavenumbers >= 2000) & (wavenumbers <= 4000)
         assert output.shape[1] == expected_mask.sum()
-        assert output.spectral_axis.values[0] >= 2000
+        assert output.feature_axis.values[0] >= 2000
 
     @pytest.mark.asyncio
     async def test_clip_no_xaxis_falls_back_to_integer_slicing(self):
-        """Without spectral_axis, ClipRange should fall back to integer column slicing."""
+        """Without feature_axis, ClipRange should fall back to integer column slicing."""
         X = np.ones((3, 100))
         ds = SherpaDataset(X=X)
         node = node_registry.create_node(
@@ -887,7 +888,7 @@ class TestClipRangeSherpaDataset:
         wavenumbers = np.linspace(400, 4000, 100)
         ds = SherpaDataset(
             X=np.ones((3, 100)),
-            spectral_axis=SpectralAxis(values=wavenumbers),
+            feature_axis=SpectralAxis(values=wavenumbers),
         )
         node = node_registry.create_node(
             "preprocess.clip_range", "test_clip_prov", {"min_wavenumber": 1000, "max_wavenumber": 3000}
@@ -906,7 +907,7 @@ class TestClipRangeSherpaDataset:
         wavenumbers = np.linspace(400, 4000, 100)
         ds = SherpaDataset(
             X=np.ones((3, 100)),
-            spectral_axis=SpectralAxis(values=wavenumbers),
+            feature_axis=SpectralAxis(values=wavenumbers),
         )
         node = node_registry.create_node(
             "preprocess.clip_range", "test_clip_swap", {"min_wavenumber": 3000, "max_wavenumber": 1000}

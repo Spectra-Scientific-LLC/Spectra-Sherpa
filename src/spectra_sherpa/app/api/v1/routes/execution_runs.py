@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from spectra_sherpa.app.api.deps import get_current_user, get_session
+from spectra_sherpa.app.api.deps import get_current_user, get_session, require_workflow
 from spectra_sherpa.app.models.execution_run import ExecutionRun
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
@@ -32,16 +32,10 @@ router = APIRouter(prefix="/workflows/{workflow_id}/runs")
 
 async def _get_workflow_for_user(workflow_id: int, user_id: int, session: AsyncSession) -> Workflow:
     """Load workflow with ownership check."""
-    query = (
-        select(Workflow)
-        .where(Workflow.id == workflow_id, Workflow.user_id == user_id)
-        .options(selectinload(Workflow.nodes), selectinload(Workflow.versions))
+    return await require_workflow(
+        workflow_id, user_id, session,
+        options=[selectinload(Workflow.nodes), selectinload(Workflow.versions)],
     )
-    result = await session.execute(query)
-    workflow = result.scalar_one_or_none()
-    if workflow is None:
-        raise HTTPException(status_code=404, detail="Workflow not found")
-    return workflow
 
 
 @router.get("", response_model=ExecutionRunList)
@@ -126,6 +120,7 @@ async def create_run(
         executed_at=executed_at,
         notes=payload.notes,
         labels=payload.labels or [],
+        model_ids=payload.model_ids,
     )
     session.add(run)
     await session.commit()

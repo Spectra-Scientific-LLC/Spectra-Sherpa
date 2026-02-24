@@ -35,6 +35,7 @@ class BatchPrediction(Base):
     results: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     error_message: Mapped[str | None] = mapped_column(Text)
     processing_time_ms: Mapped[int | None] = mapped_column(Integer)
+    model_id: Mapped[str | None] = mapped_column(String(64), index=True)  # primary model artifact_uid for this prediction # noqa: E501
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships

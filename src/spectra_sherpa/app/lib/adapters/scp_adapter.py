@@ -16,12 +16,16 @@ import numpy as np
 
 from spectra_sherpa.app.lib.scp_compat import Coord, require_scp, scp
 from spectra_sherpa.app.lib.sherpa_dataset import (
+    AxisInfo,
     DomainContext,
     InferredDomain,
+    MZAxis,
     Provenance,
     SampleAxis,
     SherpaDataset,
+    SpatialAxis,
     SpectralAxis,
+    TimeAxis,
 )
 
 logger = logging.getLogger(__name__)
@@ -30,12 +34,22 @@ logger = logging.getLogger(__name__)
 def from_nddataset(ds: Any) -> SherpaDataset:
     """Lossless conversion from SCP NDDataset to SherpaDataset.
 
+    Supports nD NDDatasets: extracts inner-dimension coordinates from the
+    coordset when ndim > 2.
+
     Safe to call regardless of HAS_SCP — if you have an NDDataset in hand
     SCP must already be installed.
     """
-    spectral_axis = _extract_spectral_axis(ds)
-    sample_axis = _extract_sample_axis(ds)
+    data = np.asarray(ds.data)
+    ndim = data.ndim
+    dim_names = _get_dim_names(ds)
+
+    spectral_axis = _extract_spectral_axis(ds, ndim=ndim, dim_names=dim_names)
+    sample_axis = _extract_sample_axis(ds, dim_names=dim_names)
     domain = _infer_domain_from_nddataset(ds, spectral_axis)
+
+    # Extract inner-dimension axes for 3D+ data
+    inner_axes = _extract_inner_axes(ds, ndim, dim_names=dim_names) if ndim > 2 else None
 
     # Extract provenance from meta
     meta = dict(ds.meta) if hasattr(ds, "meta") and ds.meta else {}
@@ -49,9 +63,10 @@ def from_nddataset(ds: Any) -> SherpaDataset:
     provenance = Provenance.from_list(provenance_raw) if provenance_raw else Provenance()
 
     return SherpaDataset(
-        X=np.asarray(ds.data),
-        spectral_axis=spectral_axis,
+        X=data,
+        feature_axis=spectral_axis,
         sample_axis=sample_axis,
+        axes=inner_axes if inner_axes else None,
         domain=domain,
         provenance=provenance,
         backend="scp",
@@ -64,6 +79,9 @@ def from_nddataset(ds: Any) -> SherpaDataset:
 def to_nddataset(sherpa_ds: SherpaDataset) -> Any:
     """Convert SherpaDataset back to NDDataset.
 
+    Supports nD SherpaDatasets: sets inner-dimension coordinates on the
+    NDDataset coordset when ndim > 2.
+
     Raises:
         ImportError: If SpectroChemPy is not installed.
     """
@@ -71,33 +89,30 @@ def to_nddataset(sherpa_ds: SherpaDataset) -> Any:
 
     ds = scp.NDDataset(sherpa_ds.X)  # type: ignore[union-attr]
 
-    sa = sherpa_ds.spectral_axis
-    if sa and sa.values is not None:
-        ds.x = Coord(sa.values, title=sa.title or "")
-        if sa.units:
-            try:
-                ds.x.units = sa.units
-            except Exception:
-                pass
-        if sa.labels is not None:
-            try:
-                ds.x.labels = sa.labels
-            except Exception:
-                pass
+    ndim = sherpa_ds.ndim
+    dim_names = _get_dim_names(ds)
 
+    # Feature axis -> coord on last data dimension.
+    fa = sherpa_ds.get_feature_axis()
+    if fa and fa.values is not None:
+        feature_coord = _axis_to_coord(fa)
+        _set_coord_for_dim(ds, dim=ndim - 1, coord=feature_coord, dim_names=dim_names)
+
+    # Sample axis -> coord on first data dimension.
     sam = sherpa_ds.sample_axis
     if sam and sam.values is not None:
-        ds.y = Coord(sam.values, title=sam.title or "")
-        if sam.units:
-            try:
-                ds.y.units = sam.units
-            except Exception:
-                pass
-        if sam.labels is not None:
-            try:
-                ds.y.labels = sam.labels
-            except Exception:
-                pass
+        sample_coord = _axis_to_coord(sam)
+        _set_coord_for_dim(ds, dim=0, coord=sample_coord, dim_names=dim_names)
+
+    # Inner axes -> coords on dimensions 1..ndim-2 for nD data.
+    inner_axes = sherpa_ds.inner_axes
+    for dim, ax in sorted(inner_axes.items()):
+        if dim < 1 or dim >= ndim - 1:
+            logger.debug("Skipping inner axis for invalid dim=%d with ndim=%d", dim, ndim)
+            continue
+        if ax.values is not None:
+            coord = _axis_to_coord(ax)
+            _set_coord_for_dim(ds, dim=dim, coord=coord, dim_names=dim_names)
 
     # Pack provenance + extra into meta
     ds.meta = {}
@@ -172,6 +187,7 @@ def scp_roundtrip(
     domain = ds.domain.model_copy(deep=True)
     extra = copy.deepcopy(ds.extra)
     sample_axis_snapshot = ds.sample_axis  # .copy() already happens in the property getter
+    inner_axes_snapshot = ds.inner_axes  # .copy() already happens in the property getter
     backend = ds.backend
     title_snapshot = ds.title
     units_snapshot = ds.units
@@ -180,7 +196,8 @@ def scp_roundtrip(
     ndd = to_nddataset(ds)
     result_ndd = fn(ndd)
 
-    # In-place SCP methods (e.g. .basc(), .msc()) return None
+    # SCP methods may return a new NDDataset or None (in-place mutation).
+    # SCP 0.8.1: basc() returns a new NDDataset; older versions returned None.
     if result_ndd is None:
         result_ndd = ndd
 
@@ -200,6 +217,10 @@ def scp_roundtrip(
         result.title = title_snapshot
     if units_snapshot is not None:
         result.units = units_snapshot
+
+    # Restore inner axes that NDDataset may not carry fully
+    for dim, ax in inner_axes_snapshot.items():
+        result._axes[dim] = ax
 
     # Restore sample_axis extras that NDDataset cannot carry
     if sample_axis_snapshot is not None:
@@ -235,38 +256,32 @@ def scp_roundtrip(
 # ── Internal Helpers ──────────────────────────────────────────────
 
 
-def _extract_spectral_axis(ds: Any) -> SpectralAxis | None:
-    """Extract x coord as SpectralAxis."""
-    try:
-        xc = ds.x
-        if xc is None:
-            return None
-        labels = _extract_labels(xc)
-        return SpectralAxis(
-            values=np.asarray(xc.data) if xc.data is not None else None,
-            units=str(xc.units) if hasattr(xc, "units") and xc.units else None,
-            title=str(xc.title) if hasattr(xc, "title") and xc.title else None,
-            labels=labels,
-        )
-    except (KeyError, AttributeError):
+def _extract_spectral_axis(ds: Any, *, ndim: int, dim_names: list[str] | None) -> SpectralAxis | None:
+    """Extract feature-axis coord (last dimension) as SpectralAxis."""
+    coord = _get_coord_for_dim(ds, dim=ndim - 1, dim_names=dim_names)
+    if coord is None:
         return None
+    labels = _extract_labels(coord)
+    return SpectralAxis(
+        values=np.asarray(coord.data) if coord.data is not None else None,
+        units=str(coord.units) if hasattr(coord, "units") and coord.units else None,
+        title=str(coord.title) if hasattr(coord, "title") and coord.title else None,
+        labels=labels,
+    )
 
 
-def _extract_sample_axis(ds: Any) -> SampleAxis | None:
-    """Extract y coord as SampleAxis."""
-    try:
-        yc = ds.y
-        if yc is None:
-            return None
-        labels = _extract_labels(yc)
-        return SampleAxis(
-            values=np.asarray(yc.data) if yc.data is not None else None,
-            units=str(yc.units) if hasattr(yc, "units") and yc.units else None,
-            title=str(yc.title) if hasattr(yc, "title") and yc.title else None,
-            labels=labels,
-        )
-    except (KeyError, AttributeError):
+def _extract_sample_axis(ds: Any, *, dim_names: list[str] | None) -> SampleAxis | None:
+    """Extract sample-axis coord (first dimension) as SampleAxis."""
+    coord = _get_coord_for_dim(ds, dim=0, dim_names=dim_names)
+    if coord is None:
         return None
+    labels = _extract_labels(coord)
+    return SampleAxis(
+        values=np.asarray(coord.data) if coord.data is not None else None,
+        units=str(coord.units) if hasattr(coord, "units") and coord.units else None,
+        title=str(coord.title) if hasattr(coord, "title") and coord.title else None,
+        labels=labels,
+    )
 
 
 def _extract_labels(coord: Any) -> list[str] | None:
@@ -333,3 +348,122 @@ def _infer_domain_from_nddataset(ds: Any, spectral_axis: SpectralAxis | None) ->
             )
 
     return domain
+
+
+# Unit sets for axis type inference (matching axes.py conventions)
+_TIME_UNITS = frozenset({"min", "minute", "minutes", "s", "sec", "second", "seconds",
+                         "ms", "millisecond", "milliseconds", "h", "hour", "hours"})
+_MZ_UNITS = frozenset({"m/z", "mz", "da", "dalton", "amu"})
+_SPATIAL_UNITS = frozenset({"um", "µm", "\u03bcm", "micron", "microns", "micrometer",
+                            "mm", "millimeter", "millimeters", "cm", "centimeter",
+                            "px", "pixel", "pixels"})
+
+
+def _extract_inner_axes(ds: Any, ndim: int, *, dim_names: list[str] | None) -> dict[int, AxisInfo]:
+    """Extract inner-dimension coordinates for dimensions 1..ndim-2."""
+    inner: dict[int, AxisInfo] = {}
+    for dim in range(1, ndim - 1):
+        coord = _get_coord_for_dim(ds, dim=dim, dim_names=dim_names)
+        if coord is None:
+            continue
+        ax = _coord_to_axis(coord)
+        if ax is not None:
+            inner[dim] = ax
+    return inner
+
+
+def _get_dim_names(ds: Any) -> list[str] | None:
+    """Return SCP dimension names ordered by data axis index (0..ndim-1)."""
+    dims = getattr(ds, "dims", None)
+    if dims is None:
+        return None
+    try:
+        return [str(name) for name in dims]
+    except TypeError:
+        return None
+
+
+def _get_coord_for_dim(ds: Any, *, dim: int, dim_names: list[str] | None) -> Any | None:
+    """Get coordinate object for a given data-axis index."""
+    if dim_names is not None and 0 <= dim < len(dim_names):
+        try:
+            coord = getattr(ds, dim_names[dim])
+            if coord is not None:
+                return coord
+        except (AttributeError, KeyError):
+            pass
+
+    # Compatibility fallback for older/partial dimension metadata.
+    ndim = int(getattr(ds, "ndim", 0) or 0)
+    if dim == 0:
+        fallback_name = "y"
+    elif ndim > 0 and dim == ndim - 1:
+        fallback_name = "x"
+    else:
+        return None
+    try:
+        return getattr(ds, fallback_name)
+    except (AttributeError, KeyError):
+        return None
+
+
+def _axis_to_coord(axis: AxisInfo) -> Any:
+    """Convert a Sherpa axis object to SCP Coord."""
+    coord = Coord(axis.values, title=axis.title or "")
+    if axis.units:
+        try:
+            coord.units = axis.units
+        except Exception:
+            pass
+    if axis.labels is not None:
+        try:
+            coord.labels = axis.labels
+        except Exception:
+            pass
+    return coord
+
+
+def _set_coord_for_dim(ds: Any, *, dim: int, coord: Any, dim_names: list[str] | None) -> None:
+    """Set an SCP coord on a specific data-axis index."""
+    if dim_names is not None and 0 <= dim < len(dim_names):
+        coord_name = dim_names[dim]
+        try:
+            setattr(ds, coord_name, coord)
+            return
+        except Exception:
+            logger.debug("Could not set SCP coord %s for dim %d", coord_name, dim)
+
+    # Compatibility fallback for older/partial dimension metadata.
+    ndim = int(getattr(ds, "ndim", 0) or 0)
+    if dim == 0:
+        fallback_name = "y"
+    elif ndim > 0 and dim == ndim - 1:
+        fallback_name = "x"
+    else:
+        logger.debug("Could not resolve coord name for dim %d", dim)
+        return
+    try:
+        setattr(ds, fallback_name, coord)
+    except Exception:
+        logger.debug("Could not set fallback SCP coord %s for dim %d", fallback_name, dim)
+
+
+def _coord_to_axis(coord: Any) -> AxisInfo | None:
+    """Convert an SCP Coord to the appropriate Sherpa axis type."""
+    values = np.asarray(coord.data) if getattr(coord, "data", None) is not None else None
+    units = str(coord.units) if hasattr(coord, "units") and coord.units else None
+    title = str(coord.title) if hasattr(coord, "title") and coord.title else None
+    labels = _extract_labels(coord)
+
+    # Infer axis type from units
+    if units:
+        u = units.lower().strip()
+        if u in _TIME_UNITS:
+            return TimeAxis(values=values, units=units, title=title, labels=labels)
+        if u in _MZ_UNITS:
+            return MZAxis(values=values, units=units, title=title, labels=labels)
+        if u in _SPATIAL_UNITS:
+            return SpatialAxis(values=values, units=units, title=title, labels=labels)
+
+    # Default: generic AxisInfo for unknown inner dimensions
+    return AxisInfo(values=values, units=units, title=title, labels=labels)

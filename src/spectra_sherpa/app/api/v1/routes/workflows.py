@@ -16,6 +16,7 @@ from sqlalchemy.orm import selectinload
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session
 from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.app.core.mode_policy import allows_custom_code_execution
 from spectra_sherpa.app.core.security import check_export_allowed
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.services.dag.serialize import serialize_for_api
@@ -87,8 +88,8 @@ def serialize_result(obj: Any, *, owner_user_id: int | None = None) -> Any:
     if isinstance(obj, dict):
         result_dict = {}
         for k, v in obj.items():
-            if k == "_internal":
-                continue
+            if k.startswith("_"):
+                continue  # Skip _internal, _model_artifact, and other private keys
             # Dataset MUST be serialized via serialize_for_api, never as a model placeholder.
             # Check dataset types before _is_model_object because NDDataset is a spectrochempy
             # object that may have .transform/.fit attributes, which would incorrectly
@@ -295,6 +296,7 @@ async def list_workflows(
 @router.post("/trial/execute", response_model=TrialExecuteResponse)
 async def execute_trial(
     payload: TrialExecuteRequest,
+    session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> TrialExecuteResponse:
     """
@@ -312,6 +314,20 @@ async def execute_trial(
 
     This is completely independent of any stored workflow state.
     """
+    node_types = [n.node_type for n in payload.nodes]
+    ualgo_types, resolved_project_id = _validate_ualgo_node_types(
+        node_types,
+        project_id=payload.project_id,
+        require_project_id=True,
+    )
+    if ualgo_types:
+        await _validate_ualgo_db_ownership(
+            session=session,
+            user_id=current_user.id,
+            ualgo_types=ualgo_types,
+            project_id=resolved_project_id,
+        )
+
     try:
         # Build a fresh DAG executor for this trial (no caching)
         executor = DAGExecutor()
@@ -381,6 +397,89 @@ async def execute_trial(
         )
 
 
+def _parse_ualgo_project_id(node_type: str) -> int | None:
+    """Extract ``project_id`` from ``ualgo.{project_id}.{slug}`` node type."""
+    if not node_type.startswith("ualgo."):
+        return None
+    parts = node_type.split(".", 2)
+    if len(parts) < 3:
+        raise HTTPException(status_code=400, detail=f"Malformed custom algo node type: {node_type}")
+    try:
+        return int(parts[1])
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Malformed custom algo node type: {node_type}") from exc
+
+
+def _validate_ualgo_node_types(
+    node_types: list[str],
+    *,
+    project_id: int | None,
+    require_project_id: bool,
+) -> tuple[list[str], int | None]:
+    """Validate ualgo node types and resolve effective project_id."""
+    ualgo_types = [nt for nt in node_types if nt.startswith("ualgo.")]
+    if not ualgo_types:
+        return [], project_id
+
+    if not allows_custom_code_execution():
+        raise HTTPException(status_code=403, detail="Custom code execution is disabled by server policy")
+
+    parsed_project_ids = {_parse_ualgo_project_id(nt) for nt in ualgo_types}
+    if len(parsed_project_ids) != 1:
+        raise HTTPException(
+            status_code=403,
+            detail="Custom algo nodes from multiple projects are not allowed in one workflow",
+        )
+
+    resolved_project_id = next(iter(parsed_project_ids))
+    if project_id is None:
+        if require_project_id:
+            raise HTTPException(
+                status_code=400,
+                detail="project_id is required when using custom algo nodes",
+            )
+        return ualgo_types, resolved_project_id
+
+    if project_id != resolved_project_id:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Custom algo {ualgo_types[0]} belongs to a different project",
+        )
+    return ualgo_types, project_id
+
+
+async def _validate_ualgo_db_ownership(
+    *,
+    session: AsyncSession,
+    user_id: int,
+    ualgo_types: list[str],
+    project_id: int | None,
+) -> None:
+    """Verify each ualgo type exists and belongs to the requesting user."""
+    if not ualgo_types:
+        return
+    if project_id is None:
+        raise HTTPException(status_code=400, detail="project_id is required when using custom algo nodes")
+
+    from spectra_sherpa.app.models.custom_algo import CustomAlgo
+
+    result = await session.execute(
+        select(CustomAlgo.node_type).where(
+            CustomAlgo.node_type.in_(ualgo_types),
+            CustomAlgo.user_id == user_id,
+            CustomAlgo.project_id == project_id,
+        )
+    )
+    owned = set(result.scalars().all())
+    for nt in ualgo_types:
+        if nt not in owned:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Custom algo {nt} not found or not owned by you",
+            )
+
+
+
 @router.post("", response_model=WorkflowDetail, status_code=201)
 async def create_workflow(
     payload: WorkflowCreate,
@@ -389,10 +488,24 @@ async def create_workflow(
 ) -> WorkflowDetail:
     """Create a new workflow for the authenticated user."""
     user_id = current_user.id
+    node_types = [n.node_type for n in payload.nodes]
+    ualgo_types, inferred_project_id = _validate_ualgo_node_types(
+        node_types,
+        project_id=None,
+        require_project_id=False,
+    )
+    if ualgo_types:
+        await _validate_ualgo_db_ownership(
+            session=session,
+            user_id=user_id,
+            ualgo_types=ualgo_types,
+            project_id=inferred_project_id,
+        )
 
     # Create workflow
     workflow = Workflow(
         user_id=user_id,
+        project_id=inferred_project_id,
         name=payload.name,
         description=payload.description,
         status=payload.status,
@@ -667,6 +780,23 @@ async def update_workflow(
 
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+
+    if payload.nodes is not None:
+        node_types = [n.node_type for n in payload.nodes]
+        ualgo_types, resolved_project_id = _validate_ualgo_node_types(
+            node_types,
+            project_id=workflow.project_id,
+            require_project_id=False,
+        )
+        if ualgo_types:
+            await _validate_ualgo_db_ownership(
+                session=session,
+                user_id=user_id,
+                ualgo_types=ualgo_types,
+                project_id=resolved_project_id,
+            )
+            if workflow.project_id is None:
+                workflow.project_id = resolved_project_id
 
     # Update workflow fields
     if payload.name is not None:
@@ -1091,6 +1221,26 @@ async def execute_workflow(
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
+    node_types = [n.node_type for n in workflow.nodes]
+    ualgo_types, resolved_project_id = _validate_ualgo_node_types(
+        node_types,
+        project_id=workflow.project_id,
+        require_project_id=False,
+    )
+    if ualgo_types:
+        await _validate_ualgo_db_ownership(
+            session=session,
+            user_id=user_id,
+            ualgo_types=ualgo_types,
+            project_id=resolved_project_id,
+        )
+
+    # Snapshot ORM attributes while session is clean (before execution may
+    # dirty or expire them, making lazy loads fail in the error handler).
+    wf_integrity_hash = workflow.integrity_hash
+    wf_version_id = getattr(workflow, "current_version_id", None)
+    wf_project_id = getattr(workflow, "project_id", None)
+
     executor = None
     try:
         # Build DAG executor
@@ -1149,6 +1299,19 @@ async def execute_workflow(
                     "type": result_type,
                 }
 
+        # Persist model artifacts to DB (if any training nodes ran)
+        if executor and getattr(executor, "saved_artifacts", None):
+            from spectra_sherpa.app.services.model_store import persist_model_artifact_records
+
+            await persist_model_artifact_records(
+                session,
+                executor.saved_artifacts,
+                user_id=user_id,
+                workflow_id=workflow_id,
+                workflow_version_id=wf_version_id,
+                project_id=wf_project_id,
+            )
+
         # Update workflow execution timestamp
         workflow.last_executed_at = datetime.utcnow()
         await session.commit()
@@ -1173,11 +1336,37 @@ async def execute_workflow(
             node_statuses=node_statuses,
             executed_at=datetime.utcnow(),
             error=error_msg,
-            integrity_hash=workflow.integrity_hash,
+            integrity_hash=wf_integrity_hash,
         )
 
     except Exception as e:
         logger.debug("Workflow execution failed for workflow_id=%s", workflow_id, exc_info=True)
+
+        # Persist any model artifacts that were saved to disk before the failure.
+        # Without this, partial executions leave orphan files with no DB records.
+        if executor and getattr(executor, "saved_artifacts", None):
+            try:
+                # Roll back any dirty state from the failed execution before
+                # attempting new DB writes. This is safe even if session is clean.
+                await session.rollback()
+
+                from spectra_sherpa.app.services.model_store import persist_model_artifact_records
+
+                await persist_model_artifact_records(
+                    session,
+                    executor.saved_artifacts,
+                    user_id=user_id,
+                    workflow_id=workflow_id,
+                    workflow_version_id=wf_version_id,
+                    project_id=wf_project_id,
+                )
+                await session.commit()
+            except Exception as art_err:
+                logger.warning("Could not persist model artifacts from partial run: %s", art_err)
+                try:
+                    await session.rollback()
+                except Exception:
+                    pass
 
         # Preserve successfully completed node outputs when later nodes fail.
         partial_results: dict[str, Any] = {}
@@ -1211,7 +1400,7 @@ async def execute_workflow(
             node_statuses=executor.get_status()["node_statuses"] if executor else {},
             executed_at=datetime.utcnow(),
             error=error_msg,
-            integrity_hash=workflow.integrity_hash if workflow else None,
+            integrity_hash=wf_integrity_hash,
         )
 
 
@@ -1226,7 +1415,8 @@ async def get_node_library(
     """
     from spectra_sherpa.app.core.config import settings
 
-    nodes = node_registry.list_nodes()
+    # Exclude custom_algo nodes — those are served via the project-scoped endpoint
+    nodes = [n for n in node_registry.list_nodes() if n.category != "custom_algo"]
 
     node_infos = []
     for node_meta in nodes:
@@ -1287,6 +1477,7 @@ async def get_node_library(
                 input_ports=input_ports,
                 output_ports=output_ports,
                 diagnostics=node_meta.diagnostics,
+                help_url=node_meta.help_url,
             )
         )
 

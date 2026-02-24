@@ -10,11 +10,9 @@ Submodules:
 - preprocessing: Spectral preprocessing (alignment, smoothing, etc.)
 - curves: Catmull-Rom and concentration curve utilities
 - io: File I/O for various spectral formats
-- visualization: Interactive plotting with Plotly
-- compat: Backward compatibility layer (SpectrumRecord ↔ NDDataset)
 """
 
-from . import blending, compat, curves, io, preprocessing, spectral, visualization
+from . import blending, curves, io, preprocessing, spectral
 
 __all__ = [
     "spectral",
@@ -22,6 +20,4 @@ __all__ = [
     "preprocessing",
     "curves",
     "io",
-    "visualization",
-    "compat",
 ]

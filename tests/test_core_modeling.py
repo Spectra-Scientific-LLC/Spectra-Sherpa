@@ -3,7 +3,7 @@ import pytest
 
 scp = pytest.importorskip("spectrochempy")
 
-from spectra_sherpa.app.services.dag.nodes.modeling_legacy import MCRNode, PCRNode, PLSNode
+from spectra_sherpa.app.services.dag.nodes.modeling import MCRNode, PCRNode, PLSNode
 
 
 @pytest.mark.asyncio

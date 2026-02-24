@@ -176,7 +176,7 @@ async def test_pca_node_after_snv_accepts_analysis_dataset_units():
     data = rng.normal(size=(18, 40))
     dataset = SherpaDataset(
         X=data,
-        spectral_axis=SpectralAxis(
+        feature_axis=SpectralAxis(
             values=np.linspace(950.0, 1650.0, 40),
             units="cm^-1",
             title="Wavenumber",

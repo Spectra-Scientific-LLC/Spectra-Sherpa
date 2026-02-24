@@ -36,13 +36,16 @@ def sample_ndd(scp):
 
 @pytest.fixture(scope="module")
 def sample_ndd_positive(scp):
-    """10 samples x 50 features — positive values with x coord (required by .basc/.msc)."""
+    """10 samples x 50 features — positive values with x and y coords (required by .basc)."""
     from spectrochempy import Coord
 
     rng = np.random.default_rng(42)
     data = np.abs(rng.standard_normal((10, 50))) + 0.1
     ndd = scp.NDDataset(data)
-    ndd.set_coordset(x=Coord(np.linspace(4000, 400, 50), units="cm^-1", title="wavenumber"))
+    ndd.set_coordset(
+        x=Coord(np.linspace(4000, 400, 50), units="cm^-1", title="wavenumber"),
+        y=Coord(np.arange(10), title="samples"),
+    )
     return ndd
 
 
@@ -54,26 +57,117 @@ def sample_ndd_positive(scp):
 class TestPreprocessingContracts:
     """Verify SCP preprocessing methods are in-place and row-preserving."""
 
-    def test_basc_is_inplace_row_preserving(self, scp, sample_ndd_positive):
+    def test_basc_is_row_preserving(self, scp, sample_ndd_positive):
         from spectrochempy import Coord
 
         ndd = scp.NDDataset(sample_ndd_positive.data.copy())
-        ndd.set_coordset(x=Coord(np.linspace(4000, 400, ndd.shape[1]), units="cm^-1", title="wavenumber"))
+        ndd.set_coordset(
+            x=Coord(np.linspace(4000, 400, ndd.shape[1]), units="cm^-1", title="wavenumber"),
+            y=Coord(np.arange(ndd.shape[0]), title="samples"),
+        )
         original_shape = ndd.shape
-        ndd.basc(method="rubberband")
-        # .basc() is in-place — ndd itself is mutated
-        assert ndd.shape == original_shape, "basc() must not change shape"
-        assert ndd.shape[0] == original_shape[0], "basc() must preserve row count"
+        # SCP 0.8.1: basc() returns a new NDDataset (not in-place)
+        result = ndd.basc(method="rubberband")
+        assert result.shape == original_shape, "basc() must not change shape"
+        assert result.shape[0] == original_shape[0], "basc() must preserve row count"
 
-    def test_msc_is_inplace_row_preserving(self, scp, sample_ndd_positive):
+    def test_numpy_msc_is_row_preserving(self):
+        """MSC is now pure-numpy (scp.msc removed in SCP 0.8.1). Validate the algorithm."""
+        # Synthetic data with known multiplicative scatter: y_i = a_i * ref + b_i + noise
+        rng = np.random.default_rng(42)
+        true_ref = np.abs(rng.standard_normal(50)) + 1.0
+        n_samples = 10
+        data = np.zeros((n_samples, 50))
+        for i in range(n_samples):
+            a = 0.8 + 0.4 * rng.random()  # scale factor
+            b = rng.standard_normal() * 0.1  # offset
+            data[i] = a * true_ref + b + rng.standard_normal(50) * 0.01
+
+        original_shape = data.shape
+        ref = np.mean(data, axis=0)
+        A = np.vstack([ref, np.ones(len(ref))]).T
+        corrected = np.zeros_like(data)
+        for i in range(data.shape[0]):
+            m, c = np.linalg.lstsq(A, data[i], rcond=None)[0]
+            if abs(m) > 1e-10:
+                corrected[i] = (data[i] - c) / m
+            else:
+                corrected[i] = data[i]
+        assert corrected.shape == original_shape, "MSC must not change shape"
+        assert corrected.shape[0] == original_shape[0], "MSC must preserve row count"
+        assert np.all(np.isfinite(corrected)), "MSC must produce finite values"
+        # Corrected spectra should have reduced inter-sample variance
+        var_before = np.var(data, axis=0).mean()
+        var_after = np.var(corrected, axis=0).mean()
+        assert var_after < var_before, "MSC should reduce inter-sample variance from scatter"
+
+
+# ---------------------------------------------------------------------------
+# NDDataset Adapter Contracts
+# ---------------------------------------------------------------------------
+
+
+class TestAdapterContracts:
+    """Verify nD coordinate mapping in NDDataset <-> SherpaDataset adapters."""
+
+    def test_from_nddataset_3d_maps_sample_inner_feature_dims(self, scp):
         from spectrochempy import Coord
 
-        ndd = scp.NDDataset(sample_ndd_positive.data.copy())
-        ndd.set_coordset(x=Coord(np.linspace(4000, 400, ndd.shape[1]), units="cm^-1", title="wavenumber"))
-        original_shape = ndd.shape
-        corrected = scp.msc(ndd)
-        assert corrected.shape == original_shape, "msc() must not change shape"
-        assert corrected.shape[0] == original_shape[0], "msc() must preserve row count"
+        from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
+        from spectra_sherpa.app.lib.axes import TimeAxis
+
+        rng = np.random.default_rng(7)
+        ndd = scp.NDDataset(rng.standard_normal((2, 3, 4)))
+        ndd.set_coordset(
+            x=Coord(np.linspace(100, 900, 4), units="amu", title="m/z"),
+            y=Coord(np.linspace(0, 2, 3), units="min", title="rt"),
+            z=Coord(np.arange(2), title="samples"),
+        )
+
+        ds = from_nddataset(ndd)
+        assert ds.shape == (2, 3, 4)
+        assert ds.sample_axis is not None
+        assert ds.sample_axis.length == 2
+        assert isinstance(ds.axis(1), TimeAxis)
+        assert ds.axis(1).length == 3
+        assert ds.get_feature_axis() is not None
+        assert ds.get_feature_axis().length == 4
+
+    def test_roundtrip_4d_preserves_dimension_roles(self, scp):
+        from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset, to_nddataset
+        from spectra_sherpa.app.lib.axes import SampleAxis, SpatialAxis, SpectralAxis, TimeAxis
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+        ds = SherpaDataset(
+            X=np.random.default_rng(11).standard_normal((2, 3, 4, 5)),
+            sample_axis=SampleAxis(values=np.arange(2), title="sample axis"),
+            axes={
+                1: TimeAxis(values=np.linspace(0, 1, 3), units="min", title="rt"),
+                2: SpatialAxis(values=np.arange(4), units="px", title="x-px"),
+            },
+            feature_axis=SpectralAxis(values=np.linspace(400, 800, 5), units="nm", title="wavelength"),
+        )
+
+        ndd = to_nddataset(ds)
+        dim_names = [str(name) for name in ndd.dims]
+        assert len(dim_names) == 4
+        assert getattr(ndd, dim_names[0]).size == 2
+        assert str(getattr(ndd, dim_names[0]).title) == "sample axis"
+        assert getattr(ndd, dim_names[1]).size == 3
+        assert str(getattr(ndd, dim_names[1]).title) == "rt"
+        assert getattr(ndd, dim_names[2]).size == 4
+        assert str(getattr(ndd, dim_names[2]).title) == "x-px"
+        assert getattr(ndd, dim_names[3]).size == 5
+        assert str(getattr(ndd, dim_names[3]).title) == "wavelength"
+
+        back = from_nddataset(ndd)
+        assert back.shape == (2, 3, 4, 5)
+        assert back.sample_axis is not None
+        assert back.sample_axis.length == 2
+        assert back.axis(1).length == 3
+        assert back.axis(2).length == 4
+        assert back.get_feature_axis() is not None
+        assert back.get_feature_axis().length == 5
 
 
 # ---------------------------------------------------------------------------

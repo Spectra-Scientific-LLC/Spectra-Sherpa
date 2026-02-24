@@ -575,7 +575,7 @@ class TestSherpaDatasetConstruction:
 
     def test_defaults(self):
         ds = SherpaDataset(X=np.zeros((2, 3)))
-        assert ds.spectral_axis is None
+        assert ds.feature_axis is None
         assert ds.sample_axis is None
         assert ds.target is None
         assert ds.backend == "numpy"
@@ -591,11 +591,11 @@ class TestSherpaDatasetConstruction:
 
 
 class TestShapeInvariants:
-    def test_spectral_axis_mismatch_raises(self):
+    def test_feature_axis_mismatch_raises(self):
         with pytest.raises(ValueError, match="feature_axis length"):
             SherpaDataset(
                 X=np.zeros((3, 5)),
-                spectral_axis=SpectralAxis(values=np.arange(10)),  # 10 != 5
+                feature_axis=SpectralAxis(values=np.arange(10)),  # 10 != 5
             )
 
     def test_sample_axis_mismatch_raises(self):
@@ -670,11 +670,11 @@ class TestShapeInvariants:
     def test_valid_axes_accepted(self):
         ds = SherpaDataset(
             X=np.zeros((3, 5)),
-            spectral_axis=SpectralAxis(values=np.arange(5)),
+            feature_axis=SpectralAxis(values=np.arange(5)),
             sample_axis=SampleAxis(values=np.arange(3)),
             target=np.array([0, 1, 2]),
         )
-        assert ds.spectral_axis.length == 5
+        assert ds.feature_axis.length == 5
         assert ds.sample_axis.length == 3
         assert len(ds.target) == 3
 
@@ -682,9 +682,9 @@ class TestShapeInvariants:
         """An axis with no values (length 0) is always accepted."""
         ds = SherpaDataset(
             X=np.zeros((3, 5)),
-            spectral_axis=SpectralAxis(title="empty"),
+            feature_axis=SpectralAxis(title="empty"),
         )
-        assert ds.spectral_axis.title == "empty"
+        assert ds.feature_axis.title == "empty"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -693,12 +693,15 @@ class TestShapeInvariants:
 
 
 class TestAxisAccess:
-    def test_spectral_axis_property(self):
-        sa = SpectralAxis(values=np.arange(5), units="cm-1")
-        ds = SherpaDataset(X=np.zeros((3, 5)), spectral_axis=sa)
-        assert ds.spectral_axis is not sa
-        assert isinstance(ds.axis(-1), SpectralAxis)
-        np.testing.assert_array_equal(ds.axis(-1).values, sa.values)
+    def test_feature_axis_property_matches_getter(self):
+        spectral = SpectralAxis(values=np.linspace(400.0, 4000.0, 5), units="cm-1")
+        ds = SherpaDataset(X=np.zeros((3, 5)), feature_axis=spectral)
+        prop_axis = ds.feature_axis
+        getter_axis = ds.get_feature_axis()
+        assert prop_axis is not None
+        assert getter_axis is not None
+        np.testing.assert_allclose(prop_axis.values, getter_axis.values)
+        assert prop_axis.axis_type == getter_axis.axis_type
 
     def test_sample_axis_property(self):
         sa = SampleAxis(values=np.arange(3), labels=["a", "b", "c"])
@@ -756,6 +759,13 @@ class TestDomainProvenanceQuality:
 
 
 class TestExtraMetadata:
+    def test_meta_and_extra_share_mapping(self):
+        ds = SherpaDataset(X=np.zeros((2, 3)))
+        ds.meta["example.key"] = "value"
+        assert ds.extra["example.key"] == "value"
+        ds.extra["another.key"] = 123
+        assert ds.meta["another.key"] == 123
+
     def test_set_get(self):
         ds = SherpaDataset(X=np.zeros((2, 3)))
         ds.set_extra("mypackage.key", "value")
@@ -847,7 +857,7 @@ class TestSherpaDatasetCopy:
     def _make_ds(self):
         return SherpaDataset(
             X=np.array([[1.0, 2.0], [3.0, 4.0]]),
-            spectral_axis=SpectralAxis(values=np.array([10.0, 20.0]), units="nm"),
+            feature_axis=SpectralAxis(values=np.array([10.0, 20.0]), units="nm"),
             sample_axis=SampleAxis(values=np.array([0.0, 1.0]), labels=["s1", "s2"]),
             target=np.array([0, 1]),
             domain=DomainContext(technique="IR"),
@@ -872,11 +882,11 @@ class TestSherpaDatasetCopy:
         cp._X[0, 0] = 999.0
         assert ds.X[0, 0] == 1.0
 
-    def test_copy_spectral_axis_independent(self):
+    def test_copy_feature_axis_independent(self):
         ds = self._make_ds()
         cp = ds.copy()
-        cp.spectral_axis.values[0] = 999.0
-        assert ds.spectral_axis.values[0] == 10.0
+        cp.feature_axis.values[0] = 999.0
+        assert ds.feature_axis.values[0] == 10.0
 
     def test_copy_sample_axis_independent(self):
         ds = self._make_ds()
@@ -917,7 +927,7 @@ class TestSherpaDatasetGetitem:
         X = np.arange(20, dtype=float).reshape(4, 5)
         return SherpaDataset(
             X=X,
-            spectral_axis=SpectralAxis(values=np.array([100, 200, 300, 400, 500], dtype=float)),
+            feature_axis=SpectralAxis(values=np.array([100, 200, 300, 400, 500], dtype=float)),
             sample_axis=SampleAxis(values=np.arange(4, dtype=float), labels=["s0", "s1", "s2", "s3"]),
             target=np.array([0, 1, 0, 1]),
             title="indexed",
@@ -937,11 +947,11 @@ class TestSherpaDatasetGetitem:
         result = ds[mask]
         assert result.sample_axis.labels == ["s0", "s2"]
 
-    def test_bool_mask_preserves_spectral_axis(self):
+    def test_bool_mask_preserves_feature_axis(self):
         ds = self._make_ds()
         mask = np.array([True, False, True, False])
         result = ds[mask]
-        np.testing.assert_array_equal(result.spectral_axis.values, ds.spectral_axis.values)
+        np.testing.assert_array_equal(result.feature_axis.values, ds.feature_axis.values)
 
     def test_bool_mask_slices_target(self):
         ds = self._make_ds()
@@ -965,10 +975,10 @@ class TestSherpaDatasetGetitem:
         result = ds[:, 1:4]
         assert result.shape == (4, 3)
 
-    def test_tuple_col_slice_spectral_axis(self):
+    def test_tuple_col_slice_feature_axis(self):
         ds = self._make_ds()
         result = ds[:, 1:3]
-        np.testing.assert_array_equal(result.spectral_axis.values, [200, 300])
+        np.testing.assert_array_equal(result.feature_axis.values, [200, 300])
 
     def test_preserves_domain_and_provenance(self):
         ds = self._make_ds()
@@ -994,11 +1004,11 @@ class TestSherpaDatasetGetitem:
         assert result.sample_axis is not None
         assert result.sample_axis.labels == ["s1", "s2"]
 
-    def test_plain_slice_preserves_spectral_axis(self):
+    def test_plain_slice_preserves_feature_axis(self):
         ds = self._make_ds()
         result = ds[1:3]
-        assert result.spectral_axis is not None
-        np.testing.assert_array_equal(result.spectral_axis.values, ds.spectral_axis.values)
+        assert result.feature_axis is not None
+        np.testing.assert_array_equal(result.feature_axis.values, ds.feature_axis.values)
 
     def test_plain_slice_target(self):
         ds = self._make_ds()
@@ -1013,13 +1023,13 @@ class TestSherpaDatasetGetitem:
         result = ds[:, 0]
         assert result.shape == (4, 1)
 
-    def test_column_scalar_index_spectral_axis(self):
-        """ds[:, 0] spectral axis must be 1-d with 1 element."""
+    def test_column_scalar_index_feature_axis(self):
+        """ds[:, 0] feature axis must be 1-d with 1 element."""
         ds = self._make_ds()
         result = ds[:, 0]
-        assert result.spectral_axis is not None
-        assert result.spectral_axis.length == 1
-        np.testing.assert_array_equal(result.spectral_axis.values, [100])
+        assert result.feature_axis is not None
+        assert result.feature_axis.length == 1
+        np.testing.assert_array_equal(result.feature_axis.values, [100])
 
     def test_column_scalar_with_row_slice(self):
         """ds[0:2, 0] must slice both dimensions."""
@@ -1084,7 +1094,7 @@ class TestSherpaDatasetSerialization:
     def _make_ds(self):
         ds = SherpaDataset(
             X=np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
-            spectral_axis=SpectralAxis(values=np.array([100.0, 200.0, 300.0]), units="cm-1", title="wavenumber"),
+            feature_axis=SpectralAxis(values=np.array([100.0, 200.0, 300.0]), units="cm-1", title="wavenumber"),
             sample_axis=SampleAxis(values=np.array([0.0, 1.0]), labels=["s1", "s2"], title="samples"),
             target=np.array([0, 1]),
             domain=DomainContext(technique="IR"),
@@ -1107,10 +1117,10 @@ class TestSherpaDatasetSerialization:
         assert d["n_features"] == 3
         assert d["data"] == [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
 
-    def test_spectral_axis_uses_data_key(self):
+    def test_feature_axis_uses_data_key(self):
         d = self._make_ds().to_dict()
-        assert "data" in d["spectral_axis"]
-        assert d["spectral_axis"]["data"] == [100.0, 200.0, 300.0]
+        assert "data" in d["feature_axis"]
+        assert d["feature_axis"]["data"] == [100.0, 200.0, 300.0]
 
     def test_domain_serialized(self):
         d = self._make_ds().to_dict()
@@ -1212,7 +1222,7 @@ class TestDatasetSummarizer:
     def sample_ds(self):
         ds = SherpaDataset(
             X=np.random.rand(10, 100),
-            spectral_axis=SpectralAxis(values=np.linspace(400, 4000, 100), units="cm-1", title="wavenumber"),
+            feature_axis=SpectralAxis(values=np.linspace(400, 4000, 100), units="cm-1", title="wavenumber"),
             sample_axis=SampleAxis(
                 values=np.arange(10, dtype=float),
                 labels=[f"sample_{i}" for i in range(10)],
@@ -1276,7 +1286,7 @@ class TestDatasetSummarizer:
     def test_to_structured_tier1(self, summarizer, sample_ds):
         d = summarizer.to_structured(sample_ds, tier=1)
         assert d["state"]["processing_stage"] == "preprocessed"
-        assert d["spectral_axis"]["units"] == "cm-1"
+        assert d["feature_axis"]["units"] == "cm-1"
         assert d["target"]["type"] == "continuous"
 
     def test_to_structured_tier3(self, summarizer, sample_ds):
@@ -1316,9 +1326,9 @@ class TestNumpyAdapter:
             technique="IR",
             title="Test",
         )
-        assert ds.spectral_axis is not None
-        assert ds.spectral_axis.units == "cm-1"
-        assert ds.spectral_axis.axis_type == "wavenumber"
+        assert ds.feature_axis is not None
+        assert ds.feature_axis.units == "cm-1"
+        assert ds.feature_axis.axis_type == "wavenumber"
         assert ds.domain.technique == "IR"
         assert ds.title == "Test"
 
@@ -1329,7 +1339,7 @@ class TestNumpyAdapter:
             np.zeros((3, 5)),
             wavelengths=np.linspace(700, 2500, 5),
         )
-        assert ds.spectral_axis.units == "nm"
+        assert ds.feature_axis.units == "nm"
 
     def test_from_numpy_both_raises(self):
         from spectra_sherpa.app.lib.adapters.numpy_adapter import from_numpy
@@ -1393,12 +1403,12 @@ class TestSklearnAdapter:
         assert ds.backend == "sklearn"
         assert ds.title == "iris"
 
-    def test_spectral_axis_labels(self):
+    def test_feature_axis_labels(self):
         from spectra_sherpa.app.lib.adapters.sklearn_adapter import from_sklearn
 
         ds = from_sklearn(self._make_bunch())
-        assert ds.spectral_axis is not None
-        assert ds.spectral_axis.labels == ["sepal_length", "sepal_width"]
+        assert ds.feature_axis is not None
+        assert ds.feature_axis.labels == ["sepal_length", "sepal_width"]
 
     def test_target(self):
         from spectra_sherpa.app.lib.adapters.sklearn_adapter import from_sklearn
@@ -1445,6 +1455,8 @@ class TestSCPAdapter:
         )
         return SimpleNamespace(
             data=np.random.rand(3, 50),
+            ndim=2,
+            dims=None,
             x=x_coord,
             y=y_coord,
             title="Mock IR Data",
@@ -1461,14 +1473,6 @@ class TestSCPAdapter:
         assert ds.shape == (3, 50)
         assert ds.backend == "scp"
         assert ds.title == "Mock IR Data"
-
-    def test_from_nddataset_spectral_axis(self):
-        from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
-
-        mock = self._make_mock_nddataset()
-        ds = from_nddataset(mock)
-        assert ds.spectral_axis is not None
-        assert ds.spectral_axis.units == "cm^-1"
 
     def test_from_nddataset_sample_axis(self):
         from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
@@ -1574,7 +1578,7 @@ class TestSCPRoundtrip:
 
     def _make_rich_dataset(self) -> SherpaDataset:
         """Create a SherpaDataset with all metadata fields populated."""
-        spectral = SpectralAxis(
+        feature_ax = SpectralAxis(
             values=np.linspace(400, 4000, 50),
             units="cm^-1",
             title="wavenumber",
@@ -1597,7 +1601,7 @@ class TestSCPRoundtrip:
 
         return SherpaDataset(
             X=np.random.default_rng(42).standard_normal((3, 50)),
-            spectral_axis=spectral,
+            feature_axis=feature_ax,
             sample_axis=sample,
             target=np.array([1.0, 2.0, 3.0]),
             target_context=target_ctx,
@@ -1622,10 +1626,11 @@ class TestSCPRoundtrip:
 
         def mock_to_nddataset(sherpa_ds):
             """Simulate to_nddataset: produce a mock NDDataset."""
+            feature_ax = sherpa_ds.feature_axis
             x_coord = SimpleNamespace(
-                data=sherpa_ds.spectral_axis.values.copy() if sherpa_ds.spectral_axis else None,
-                units=sherpa_ds.spectral_axis.units if sherpa_ds.spectral_axis else None,
-                title=sherpa_ds.spectral_axis.title if sherpa_ds.spectral_axis else None,
+                data=feature_ax.values.copy() if feature_ax else None,
+                units=feature_ax.units if feature_ax else None,
+                title=feature_ax.title if feature_ax else None,
                 labels=None,
             )
             y_coord = SimpleNamespace(

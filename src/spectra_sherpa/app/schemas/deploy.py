@@ -54,6 +54,7 @@ class BatchPredictionOut(BaseModel):
     results: dict[str, Any] | None
     error_message: str | None
     processing_time_ms: int | None
+    model_id: str | None = None
     created_at: datetime
 
 

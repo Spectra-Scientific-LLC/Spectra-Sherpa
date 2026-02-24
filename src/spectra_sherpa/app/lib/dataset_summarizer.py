@@ -96,12 +96,12 @@ class DatasetSummarizer:
                 "n_steps": state.n_steps,
             }
             result["units"] = dataset.units
-            if dataset.spectral_axis:
-                result["spectral_axis"] = {
-                    "type": dataset.spectral_axis.axis_type,
-                    "range": dataset.spectral_axis.range,
-                    "units": dataset.spectral_axis.units,
-                    "n_points": dataset.spectral_axis.length,
+            if dataset.feature_axis:
+                result["feature_axis"] = {
+                    "type": dataset.feature_axis.axis_type,
+                    "range": dataset.feature_axis.range,
+                    "units": dataset.feature_axis.units,
+                    "n_points": dataset.feature_axis.length,
                 }
             if dataset.target is not None:
                 tc = dataset.target_context
@@ -179,7 +179,7 @@ class DatasetSummarizer:
         if ds.units:
             lines.append(f"Data units: {ds.units}")
 
-        sa = ds.spectral_axis
+        sa = ds.feature_axis
         if sa:
             axis_desc = f"Spectral axis: {sa.length} points"
             if sa.units:
@@ -305,13 +305,13 @@ class DatasetSummarizer:
             "n_rows": n,
             "data": preview_data,
         }
-        if ds.spectral_axis and ds.spectral_axis.values is not None:
+        if ds.feature_axis and ds.feature_axis.values is not None:
             # First/last few axis values
-            vals = ds.spectral_axis.values
-            result["spectral_axis_preview"] = {
+            vals = ds.feature_axis.values
+            result["feature_axis_preview"] = {
                 "first_5": vals[:5].tolist(),
                 "last_5": vals[-5:].tolist(),
-                "units": ds.spectral_axis.units,
+                "units": ds.feature_axis.units,
             }
         if ds.sample_axis and ds.sample_axis.labels:
             result["sample_labels"] = ds.sample_axis.labels[:n]

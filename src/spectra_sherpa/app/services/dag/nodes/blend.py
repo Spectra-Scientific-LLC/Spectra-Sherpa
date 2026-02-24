@@ -195,7 +195,7 @@ class BlendNode(Node):
         # Get wavenumber axis from first spectrum
         # Assume all spectra are aligned to the same wavenumber grid
         first_spectrum = spectra[0]
-        first_x_coord = first_spectrum.spectral_axis
+        first_x_coord = first_spectrum.feature_axis
         first_matrix = to_numpy_2d(first_spectrum, name="input_data[0]")
         wavenumbers = first_x_coord.data if first_x_coord is not None else np.arange(first_matrix.shape[-1])
 
@@ -535,7 +535,7 @@ class MergeSpectraNode(Node):
             if hasattr(inp, "units") and inp.units:
                 input_units.append(str(inp.units))
 
-            inp_x_coord = inp.spectral_axis
+            inp_x_coord = inp.feature_axis
             inp_matrix = to_numpy_2d(inp, name="input_data")
             for row in inp_matrix:
                 spectra.append(row)

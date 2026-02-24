@@ -9,6 +9,7 @@ This module provides a hierarchy of axis types:
   - MZAxis: Mass-to-charge ratio (mass spectrometry)
   - PotentialAxis: Voltage (electrochemistry)
   - FrequencyAxis: Frequency (NMR, dielectric spectroscopy)
+  - SpatialAxis: Spatial coordinates (imaging, hyperspectral)
 - SampleAxis: Sample/observation axis with metadata
 """
 
@@ -466,6 +467,62 @@ class FrequencyAxis(FeatureAxis):
 
     def copy(self) -> FrequencyAxis:
         cp = FrequencyAxis(
+            values=self.values.copy() if self.values is not None else None,
+            labels=list(self.labels) if self.labels is not None else None,
+            units=self.units,
+            title=self.title,
+        )
+        if self._expected_length is not None:
+            cp.bind_expected_length(self._expected_length)
+        return cp
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Spatial Axis (inner dimensions for imaging data)
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Spatial unit sets
+_SPATIAL_UM_UNITS = frozenset({"um", "µm", "\u03bcm", "micron", "microns", "micrometer"})
+_SPATIAL_MM_UNITS = frozenset({"mm", "millimeter", "millimeters"})
+_SPATIAL_CM_UNITS = frozenset({"cm", "centimeter", "centimeters"})
+_SPATIAL_PIXEL_UNITS = frozenset({"px", "pixel", "pixels"})
+
+
+class SpatialAxis(FeatureAxis):
+    """Spatial coordinate axis for imaging data.
+
+    Used for inner dimensions of hyperspectral images and spatial maps:
+    - X/Y pixel coordinates in imaging spectroscopy
+    - Physical spatial coordinates in microscopy (µm, mm)
+
+    This axis type is intended for inner dimensions (not feature or sample).
+    The feature dimension still uses SpectralAxis, MZAxis, etc.
+
+    Supported units:
+    - Micrometers: um, µm, micron, microns, micrometer
+    - Millimeters: mm, millimeter, millimeters
+    - Centimeters: cm, centimeter, centimeters
+    - Pixels: px, pixel, pixels
+    """
+
+    @property
+    def axis_type(self) -> str | None:
+        """Detect: 'spatial_um', 'spatial_mm', 'spatial_cm', 'spatial_pixel', or None."""
+        if self.units is None:
+            return None
+        u = self.units.lower().strip()
+        if u in _SPATIAL_UM_UNITS:
+            return "spatial_um"
+        if u in _SPATIAL_MM_UNITS:
+            return "spatial_mm"
+        if u in _SPATIAL_CM_UNITS:
+            return "spatial_cm"
+        if u in _SPATIAL_PIXEL_UNITS:
+            return "spatial_pixel"
+        return None
+
+    def copy(self) -> SpatialAxis:
+        cp = SpatialAxis(
             values=self.values.copy() if self.values is not None else None,
             labels=list(self.labels) if self.labels is not None else None,
             units=self.units,

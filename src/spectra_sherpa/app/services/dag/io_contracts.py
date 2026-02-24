@@ -196,8 +196,14 @@ def to_numpy_2d(
     *,
     name: str = "input",
     dtype: Any = np.float64,
+    flatten_nd: bool = False,
 ) -> np.ndarray:
-    """Convert input to a 2D numpy array (1D inputs are reshaped to column vectors)."""
+    """Convert input to a 2D numpy array.
+
+    1D inputs are reshaped to column vectors. If *flatten_nd* is True,
+    arrays with ndim > 2 are flattened by merging inner dimensions into the
+    feature dimension: ``(n_samples, *inner, n_features) -> (n_samples, prod(inner)*n_features)``.
+    """
     raw = value.data if isinstance(value, SherpaDataset) else value
     arr = np.asarray(raw, dtype=dtype)
 
@@ -205,8 +211,11 @@ def to_numpy_2d(
         raise ValueError(f"{name} must be 1D or 2D array-like, got scalar")
     if arr.ndim == 1:
         arr = arr.reshape(-1, 1)
-    if arr.ndim != 2:
-        raise ValueError(f"{name} must be 1D or 2D array-like, got {arr.ndim}D")
+    if arr.ndim > 2:
+        if flatten_nd:
+            arr = arr.reshape(arr.shape[0], -1)
+        else:
+            raise ValueError(f"{name} must be 1D or 2D array-like, got {arr.ndim}D")
     return arr
 
 
@@ -230,6 +239,32 @@ def to_numpy_1d(
     return arr
 
 
+class FlattenedView:
+    """Provides a flat 2D view of nD data with unflatten capability.
+
+    Merges inner dimensions into the feature dimension:
+    ``(n_samples, d1, d2, ..., n_features) -> (n_samples, d1*d2*...*n_features)``
+
+    For 2D data this is a no-op wrapper.
+    """
+
+    def __init__(self, dataset: SherpaDataset) -> None:
+        self.original_shape = dataset.shape
+        self.n_samples = dataset.shape[0]
+        self.is_2d = dataset.ndim == 2
+        self.flat = dataset.data if self.is_2d else dataset.data.reshape(self.n_samples, -1)
+
+    def unflatten(self, result_2d: np.ndarray) -> np.ndarray:
+        """Restore original nD shape from a flattened 2D result."""
+        if self.is_2d:
+            return result_2d
+        total = int(np.prod(self.original_shape[1:]))
+        if result_2d.shape[-1] == total:
+            return result_2d.reshape(result_2d.shape[0], *self.original_shape[1:])
+        # Feature count changed (e.g. region selection) — cannot unflatten
+        return result_2d
+
+
 def build_dataset_like(
     data: Any,
     source: Any,
@@ -238,36 +273,53 @@ def build_dataset_like(
     title: str | None = None,
     backend: str | None = None,
     copy_history: bool = True,
+    restore_shape: tuple[int, ...] | None = None,
 ) -> SherpaDataset:
     """
     Wrap numeric output as SherpaDataset while preserving source metadata.
+
+    If *restore_shape* is provided and *data* is 2D, attempt to reshape back to
+    the original nD shape before constructing the dataset (useful after
+    flattening for 2D-only operations).
     """
     src = coerce_to_sherpa(source, input_name="source", allow_array=True)
     arr = np.asarray(data, dtype=np.float64)
     if arr.ndim == 0:
-        raise ValueError("data must be 1D or 2D array-like, got scalar")
+        raise ValueError("data must be at least 1D array-like, got scalar")
     if arr.ndim == 1:
         arr = arr.reshape(-1, 1)
-    if arr.ndim != 2:
-        raise ValueError(f"data must be 1D or 2D array-like, got {arr.ndim}D")
 
-    # Use generic accessors to preserve ANY axis type (SpectralAxis, TimeAxis, MZAxis, etc.)
-    # This enables new axis types (TimeAxis, MZAxis, PotentialAxis) to propagate through workflows
-    feature_axis = src.get_feature_axis()  # Any FeatureAxis subclass
+    # Attempt to restore nD shape from a flattened 2D result
+    if restore_shape is not None and arr.ndim == 2 and len(restore_shape) > 2:
+        expected_flat = int(np.prod(restore_shape[1:]))
+        if arr.shape[-1] == expected_flat:
+            arr = arr.reshape(arr.shape[0], *restore_shape[1:])
+
+    # Use property accessor for feature axis and generic accessor for dim-0 observation axis.
+    feature_axis = src.feature_axis  # Any FeatureAxis subclass
     obs_axis = src.get_observation_axis()  # Any axis type (SampleAxis, TimeAxis, etc.)
 
     target = copy.deepcopy(src.target) if src.target is not None else None
 
     # If shape changed, keep only compatible metadata
-    if feature_axis is not None and feature_axis.length > 0 and feature_axis.length != arr.shape[1]:
+    if feature_axis is not None and feature_axis.length > 0 and feature_axis.length != arr.shape[-1]:
         feature_axis = None
     if obs_axis is not None and obs_axis.length > 0 and obs_axis.length != arr.shape[0]:
         obs_axis = None
     if target is not None and np.asarray(target).shape[0] != arr.shape[0]:
         target = None
 
+    # Propagate inner axes from source if shapes match
+    inner_axes = None
+    if arr.ndim > 2 and src.ndim > 2:
+        inner_axes = {}
+        for dim, ax in src.inner_axes.items():
+            if dim < arr.ndim - 1 and arr.shape[dim] == ax.length:
+                inner_axes[dim] = ax
+        if not inner_axes:
+            inner_axes = None
+
     # Determine sample_axis for backward compatibility
-    # Only set if obs_axis is actually a SampleAxis
     from spectra_sherpa.app.lib.axes import SampleAxis
 
     sample_axis = obs_axis if isinstance(obs_axis, SampleAxis) else None
@@ -277,6 +329,7 @@ def build_dataset_like(
         X=arr,
         feature_axis=feature_axis,
         sample_axis=sample_axis,
+        axes=inner_axes,
         target=target,
         target_context=src.target_context.model_copy(deep=True),
         domain=src.domain.model_copy(deep=True),
@@ -285,7 +338,7 @@ def build_dataset_like(
         backend=backend or src.backend,
         title=src.title if title is None else title,
         units=src.units if units is None else units,
-        extra=copy.deepcopy(src.extra),
+        extra=copy.deepcopy(src.meta),
     )
 
     # If observation axis is NOT a SampleAxis (e.g., TimeAxis for time-resolved data),

@@ -11,6 +11,9 @@ from spectra_sherpa.app.api.v1.routes import (
     config as config,
 )
 from spectra_sherpa.app.api.v1.routes import (
+    custom_algos as custom_algos,
+)
+from spectra_sherpa.app.api.v1.routes import (
     datasets as datasets,
 )
 from spectra_sherpa.app.api.v1.routes import (
@@ -45,6 +48,12 @@ from spectra_sherpa.app.api.v1.routes import (
 )
 from spectra_sherpa.app.api.v1.routes import (
     logs as logs,
+)
+from spectra_sherpa.app.api.v1.routes import (
+    models as models,
+)
+from spectra_sherpa.app.api.v1.routes import (
+    predict as predict,
 )
 from spectra_sherpa.app.api.v1.routes import (
     project_scripts as project_scripts,

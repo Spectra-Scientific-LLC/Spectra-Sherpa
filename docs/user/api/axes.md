@@ -77,7 +77,7 @@ spectral_ax = SpectralAxis(
 
 # Create dataset
 data = np.random.randn(10, 1000)  # 10 spectra
-dataset = SherpaDataset(X=data, spectral_axis=spectral_ax)
+dataset = SherpaDataset(X=data, feature_axis=spectral_ax)
 
 # Select region (e.g., C-H stretch region 2800-3000 cm⁻¹)
 mask = spectral_ax.select_region(2800, 3000)
@@ -98,7 +98,7 @@ spectral_ax = SpectralAxis(
     title="Wavelength"
 )
 
-dataset = SherpaDataset(X=data, spectral_axis=spectral_ax)
+dataset = SherpaDataset(X=data, feature_axis=spectral_ax)
 print(f"Axis type: {spectral_ax.axis_type}")  # "wavelength_nm"
 ```
 
@@ -364,7 +364,7 @@ spectral_ax = SpectralAxis(values=np.linspace(400, 4000, 1000), units="cm-1")
 
 dataset = SherpaDataset(
     X=data,
-    spectral_axis=spectral_ax,
+    feature_axis=spectral_ax,
     sample_axis=sample_ax
 )
 
@@ -429,18 +429,14 @@ dataset = SherpaDataset(X=data, feature_axis=spec_ax)
 dataset._axes[dataset._SAMPLE_DIM] = time_ax.copy()
 ```
 
-### Backward Compatibility
+### Accessing Feature Axes
 
-For spectroscopy workflows, both old and new APIs work:
+Use the generic `get_feature_axis()` accessor, which works with any axis type:
 
 ```python
-# Old API (still works)
-dataset = SherpaDataset(X=data, spectral_axis=spectral_ax)
-spec_ax = dataset.spectral_axis  # Returns SpectralAxis
-
-# New API (generic)
 dataset = SherpaDataset(X=data, feature_axis=spectral_ax)
 feature_ax = dataset.get_feature_axis()  # Returns SpectralAxis
+print(feature_ax.axis_type)              # "wavenumber"
 ```
 
 ---

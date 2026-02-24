@@ -22,6 +22,7 @@ export interface AppFeatures {
   chatAssistant: boolean
   sherpaAdvisor?: boolean
   pluginSystem?: boolean
+  customCodeExecution?: boolean
   nistDownloads?: boolean
   // Subscription-gated Sherpa capabilities
   sherpaPeakId?: boolean

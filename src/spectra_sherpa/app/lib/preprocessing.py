@@ -707,7 +707,9 @@ def baseline_arpls(
         s = d_neg.std(ddof=1) if d_neg.size > 1 else 1.0
         if s < 1e-12:
             break
-        w_new = 1.0 / (1.0 + np.exp(2.0 * (d - (2.0 * s - m)) / s))
+        exponent = 2.0 * (d - (2.0 * s - m)) / s
+        exponent = np.clip(exponent, -709, 709)  # prevent overflow in exp()
+        w_new = 1.0 / (1.0 + np.exp(exponent))
         if np.linalg.norm(w_new - w) / (np.linalg.norm(w) + 1e-12) < tol:
             return z
         w = w_new
@@ -760,8 +762,9 @@ def baseline_airpls(
         neg_mask = d < 0
         if neg_mask.any() and sum_neg > 1e-12:
             w[neg_mask] = np.exp(iteration * np.abs(d[neg_mask]) / sum_neg)
-        w[0] = np.exp(iteration * d[neg_mask].max() / sum_neg) if neg_mask.any() and sum_neg > 1e-12 else 0
-        w[-1] = w[0]
+            # Boundary points: use the largest absolute negative residual
+            w[0] = np.exp(iteration * np.abs(d[neg_mask]).max() / sum_neg)
+            w[-1] = w[0]
 
     return z
 

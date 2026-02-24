@@ -186,6 +186,12 @@ def _make_lifespan(
             validate_security_settings()  # Fail fast if security config is invalid
             validate_concurrency_settings()  # Fail fast if multi-worker without pub/sub
             ensure_data_dirs()
+
+            # Initialize model artifact storage (safe in every worker — only creates dirs)
+            from spectra_sherpa.app.services.model_store import init_model_store
+
+            init_model_store(settings.data_dir)
+
             logger.info("Phase 1 complete")
 
             # Phase 2: DB-mutating tasks — only the leader worker runs these.
@@ -229,6 +235,45 @@ def _make_lifespan(
             from spectra_sherpa.app.services.plugin_loader import discover_plugins
 
             discover_plugins()
+
+            # Ensure custom algo plugin dir exists and regenerate any
+            # missing plugin files from DB records.
+            try:
+                from spectra_sherpa.app.services.custom_algo_codegen import (
+                    get_plugin_dir,
+                    get_plugin_path,
+                    reload_into_registry,
+                )
+
+                get_plugin_dir()  # ensures directory exists
+                async with async_session() as _ca_session:
+                    from sqlalchemy import select as _sa_select
+
+                    from spectra_sherpa.app.models.custom_algo import CustomAlgo as _CA
+
+                    _result = await _ca_session.execute(_sa_select(_CA))
+                    for algo in _result.scalars().all():
+                        if not get_plugin_path(algo).exists():
+                            logger.info("Regenerating missing plugin: %s", algo.node_type)
+                            try:
+                                reload_into_registry(algo)
+                            except Exception:
+                                logger.exception("Failed to regenerate %s", algo.node_type)
+                        else:
+                            # File exists but may not be loaded (e.g. not in
+                            # standard plugin dirs). Ensure it's registered.
+                            from spectra_sherpa.app.services.dag.node_base import node_registry as _nr
+
+                            try:
+                                _nr.get_metadata(algo.node_type)
+                            except KeyError:
+                                logger.info("Loading unregistered custom algo: %s", algo.node_type)
+                                try:
+                                    reload_into_registry(algo)
+                                except Exception:
+                                    logger.exception("Failed to load %s", algo.node_type)
+            except Exception:
+                logger.exception("Custom algo startup hook failed (non-fatal)")
 
             # Start network health monitoring (HYBRID mode only)
             from spectra_sherpa.app.services.network_health import start_network_health_service

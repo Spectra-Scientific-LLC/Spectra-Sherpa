@@ -29,21 +29,21 @@ class TestDetectXAxisType:
     def test_wavenumber(self):
         ds = SherpaDataset(
             X=np.zeros((3, 100)),
-            spectral_axis=SpectralAxis(values=np.linspace(400, 4000, 100), units="cm-1"),
+            feature_axis=SpectralAxis(values=np.linspace(400, 4000, 100), units="cm-1"),
         )
         assert detect_x_axis_type(ds) == "wavenumber"
 
     def test_wavelength_nm(self):
         ds = SherpaDataset(
             X=np.zeros((3, 100)),
-            spectral_axis=SpectralAxis(values=np.linspace(800, 2500, 100), units="nm"),
+            feature_axis=SpectralAxis(values=np.linspace(800, 2500, 100), units="nm"),
         )
         assert detect_x_axis_type(ds) == "wavelength_nm"
 
     def test_wavelength_um(self):
         ds = SherpaDataset(
             X=np.zeros((3, 50)),
-            spectral_axis=SpectralAxis(values=np.linspace(1, 25, 50), units="μm"),
+            feature_axis=SpectralAxis(values=np.linspace(1, 25, 50), units="μm"),
         )
         assert detect_x_axis_type(ds) == "wavelength_um"
 
@@ -54,7 +54,7 @@ class TestDetectXAxisType:
     def test_axis_no_units_returns_none(self):
         ds = SherpaDataset(
             X=np.zeros((3, 100)),
-            spectral_axis=SpectralAxis(values=np.arange(100)),
+            feature_axis=SpectralAxis(values=np.arange(100)),
         )
         assert detect_x_axis_type(ds) is None
 
@@ -63,35 +63,35 @@ class TestDetectSpectralTechnique:
     def test_ir_from_wavenumber_range(self):
         ds = SherpaDataset(
             X=np.zeros((3, 100)),
-            spectral_axis=SpectralAxis(values=np.linspace(400, 4000, 100), units="cm-1"),
+            feature_axis=SpectralAxis(values=np.linspace(400, 4000, 100), units="cm-1"),
         )
         assert detect_spectral_technique(ds) == "IR"
 
     def test_nir_from_wavenumber_range(self):
         ds = SherpaDataset(
             X=np.zeros((3, 100)),
-            spectral_axis=SpectralAxis(values=np.linspace(4000, 10000, 100), units="cm-1"),
+            feature_axis=SpectralAxis(values=np.linspace(4000, 10000, 100), units="cm-1"),
         )
         assert detect_spectral_technique(ds) == "NIR"
 
     def test_nir_from_wavelength(self):
         ds = SherpaDataset(
             X=np.zeros((3, 100)),
-            spectral_axis=SpectralAxis(values=np.linspace(800, 2500, 100), units="nm"),
+            feature_axis=SpectralAxis(values=np.linspace(800, 2500, 100), units="nm"),
         )
         assert detect_spectral_technique(ds) == "NIR"
 
     def test_uv_vis_from_wavelength(self):
         ds = SherpaDataset(
             X=np.zeros((3, 100)),
-            spectral_axis=SpectralAxis(values=np.linspace(200, 800, 100), units="nm"),
+            feature_axis=SpectralAxis(values=np.linspace(200, 800, 100), units="nm"),
         )
         assert detect_spectral_technique(ds) == "UV-Vis"
 
     def test_authoritative_domain_overrides_inference(self):
         ds = SherpaDataset(
             X=np.zeros((3, 100)),
-            spectral_axis=SpectralAxis(values=np.linspace(400, 4000, 100), units="cm-1"),
+            feature_axis=SpectralAxis(values=np.linspace(400, 4000, 100), units="cm-1"),
             domain=DomainContext(technique="Raman"),
         )
         # Axis says IR, but domain says Raman — domain wins
@@ -100,7 +100,7 @@ class TestDetectSpectralTechnique:
     def test_raman_from_title(self):
         ds = SherpaDataset(
             X=np.zeros((3, 100)),
-            spectral_axis=SpectralAxis(values=np.linspace(200, 3500, 100), units="cm-1"),
+            feature_axis=SpectralAxis(values=np.linspace(200, 3500, 100), units="cm-1"),
             title="Raman Spectra of Polymers",
         )
         assert detect_spectral_technique(ds) == "Raman"
@@ -150,7 +150,7 @@ class TestGetSpectralInfo:
     def test_full_info(self):
         ds = SherpaDataset(
             X=np.zeros((5, 200)),
-            spectral_axis=SpectralAxis(values=np.linspace(400, 4000, 200), units="cm-1"),
+            feature_axis=SpectralAxis(values=np.linspace(400, 4000, 200), units="cm-1"),
             units="absorbance",
         )
         info = get_spectral_info(ds)
@@ -181,7 +181,7 @@ class TestDomainPopulation:
     def test_domain_from_constructor(self):
         ds = SherpaDataset(
             X=np.zeros((10, 401)),
-            spectral_axis=SpectralAxis(values=np.linspace(750, 1550, 401), units="nm"),
+            feature_axis=SpectralAxis(values=np.linspace(750, 1550, 401), units="nm"),
             domain=DomainContext(technique="NIR", expected_units="nm"),
         )
         assert ds.domain.technique == "NIR"

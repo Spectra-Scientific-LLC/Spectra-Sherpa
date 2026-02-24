@@ -1164,6 +1164,7 @@ import { useToast } from "primevue/usetoast";
 import QuickPlotModal from "./modals/QuickPlotModal.vue";
 import DataTableModal from "./modals/DataTableModal.vue";
 import PlotlyChart from "@/components/PlotlyChart.vue";
+import { useProjectStore } from "@/stores/project";
 import { PARAM_NAME_MAP, normalizeNodeType, getLegacyNodeType, useWorkflowStore } from "@/stores/workflow";
 import { createCategoryColorMap } from "@/utils/colors";
 import { getYAxisLabel, getXAxisLabel, isSpectralData as checkIsSpectral } from "@/utils/plotLabels";
@@ -1314,6 +1315,7 @@ const originalParams = ref<Record<string, any>>({});
 
 // Validation errors
 const workflowStore = useWorkflowStore();
+const projectStore = useProjectStore();
 const validationErrors = ref<Array<{ param_name: string; message: string }>>([]);
 
 // Filter out internal "_metadata" errors from display (these occur when library isn't loaded yet)
@@ -4210,6 +4212,14 @@ const handleRunTrial = async () => {
     // Map trial params from frontend names to backend names
     // E.g., "components" -> "n_components" for PCA
     const mappedTrialParams = mapParamsToBackend(nodeData.value.type, localParams.value);
+    let inferredUalgoProjectId: number | null = null;
+    if (typeof nodeData.value.type === "string" && nodeData.value.type.startsWith("ualgo.")) {
+      const pid = Number.parseInt(nodeData.value.type.split(".")[1] || "", 10);
+      if (Number.isFinite(pid)) {
+        inferredUalgoProjectId = pid;
+      }
+    }
+    const trialProjectId = projectStore.currentProject?.id ?? inferredUalgoProjectId;
 
     // Build trial execution request payload
     const trialPayload = {
@@ -4218,6 +4228,7 @@ const handleRunTrial = async () => {
       nodes: trialNodes,
       edges: trialEdges,
       initial_data: Object.keys(initialData).length > 0 ? initialData : null,
+      project_id: trialProjectId,
     };
 
     const targetNodeInList = trialNodes.find((n: any) => n.node_id === String(nodeData.value.id));

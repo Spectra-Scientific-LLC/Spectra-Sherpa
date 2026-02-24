@@ -191,6 +191,14 @@
             </template>
           </Column>
 
+          <Column header="Models" style="min-width: 170px">
+            <template #body="{ data }">
+              <span class="workflow-ref" :title="(data.model_ids || []).join(', ')">
+                {{ formatModelIds(data.model_ids) }}
+              </span>
+            </template>
+          </Column>
+
           <Column field="executed_at" header="Date" sortable style="width: 130px">
             <template #body="{ data }">
               <span class="timestamp">{{ formatRelativeTime(data.executed_at) }}</span>
@@ -224,6 +232,13 @@
                 <Column field="processing_time_ms" header="Time" style="width: 80px">
                   <template #body="{ data: pred }">
                     {{ pred.processing_time_ms ? `${pred.processing_time_ms}ms` : "\u2014" }}
+                  </template>
+                </Column>
+                <Column header="Model" style="min-width: 130px">
+                  <template #body="{ data: pred }">
+                    <span class="workflow-ref" :title="pred.model_id || ''">
+                      {{ shortModelId(pred.model_id) }}
+                    </span>
                   </template>
                 </Column>
                 <Column field="error_message" header="Error" style="min-width: 150px">
@@ -545,6 +560,17 @@ function getBatchFileCount(run: { results_summary: Record<string, Record<string,
     return String(batch.total_files);
   }
   return "\u2014";
+}
+
+function shortModelId(modelId: string | null | undefined): string {
+  if (!modelId) return "\u2014";
+  return modelId.length > 12 ? `${modelId.slice(0, 12)}\u2026` : modelId;
+}
+
+function formatModelIds(modelIds: string[] | null | undefined): string {
+  if (!modelIds || modelIds.length === 0) return "\u2014";
+  if (modelIds.length === 1) return shortModelId(modelIds[0]);
+  return `${modelIds.length} models`;
 }
 
 function statusSeverity(status: string): "success" | "danger" | "warning" | "info" {

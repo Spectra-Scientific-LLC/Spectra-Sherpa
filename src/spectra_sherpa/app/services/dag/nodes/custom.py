@@ -178,7 +178,7 @@ class LinearCalibrationNode(Node):
         absorbance = eval_linear_model(concentrations_array, slope, intercept, s=s_cap)
 
         # Create output dataset (n_wn, n_times) -> (n_times, n_wn)
-        spec_x_coord = spectrum_ds.spectral_axis
+        spec_x_coord = spectrum_ds.feature_axis
         if spec_x_coord is None:
             raise ValueError("Input spectrum must have an x coordinate (wavenumber axis)")
         result = build_dataset_like(
@@ -358,7 +358,7 @@ class SaturationModelNode(Node):
         absorbance[valid] = eval_saturation_model(concentrations_array, s[valid], p[valid], c[valid])
 
         # Create output dataset
-        spec_x_coord = spectrum_ds.spectral_axis
+        spec_x_coord = spectrum_ds.feature_axis
         if spec_x_coord is None:
             raise ValueError("Input spectrum must have an x coordinate (wavenumber axis)")
         result = build_dataset_like(

@@ -228,6 +228,7 @@ class BaselineRubberbandNode(Node):
         input_types=["NDDataset"],
         output_type="NDDataset",
         requires_scp=True,
+        help_url="https://www.spectrochempy.fr/reference/generated/spectrochempy.basc.html",
     )
 
     async def execute(self, input_data) -> SherpaDataset:
@@ -557,9 +558,8 @@ class NormalizeMSCNode(Node):
     Multiplicative Scatter Correction (MSC) node.
 
     Corrects for light scattering effects in spectral data.
+    Pure-numpy implementation — no SCP dependency.
     """
-
-    scp_method = "msc"
 
     metadata = NodeMetadata(
         node_type="normalize.msc",
@@ -579,26 +579,90 @@ class NormalizeMSCNode(Node):
         ],
         input_types=["NDDataset"],
         output_type="NDDataset",
-        requires_scp=True,
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Input spectral dataset",
+            )
+        ],
+        output_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="MSC Spectra",
+                description="MSC-corrected spectral dataset",
+            )
+        ],
     )
 
-    async def execute(self, input_data) -> SherpaDataset:
-        """Execute MSC normalization."""
+    python_extra_imports = ["import numpy as np"]
+
+    def generate_python(self, inputs, indent="    ", use_scp=True):
+        inp = next(iter(inputs.values())) if inputs else "input_data"
+        ref = self.parameters.get("reference", "mean")
+        lines = [
+            f"{indent}# --- MSC ({self.node_id}) ---",
+            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
+        ]
+        if ref == "mean":
+            lines.append(f"{indent}_ref = np.mean(_data, axis=0)")
+        elif ref == "median":
+            lines.append(f"{indent}_ref = np.median(_data, axis=0)")
+        else:
+            lines.append(f"{indent}_ref = _data[0]")
+        lines += [
+            f"{indent}_A = np.vstack([_ref, np.ones(len(_ref))]).T",
+            f"{indent}_corrected = np.zeros_like(_data)",
+            f"{indent}for _i in range(_data.shape[0]):",
+            f"{indent}    _m, _c = np.linalg.lstsq(_A, _data[_i], rcond=None)[0]",
+            f"{indent}    _corrected[_i] = (_data[_i] - _c) / _m if abs(_m) > 1e-10 else _data[_i]",
+        ]
+        lines += _wrap_result_lines(self.node_id, "_corrected", inp, indent, use_scp)
+        return lines
+
+    async def execute(self, input_data) -> NodeResult:
+        """Execute MSC normalization using pure numpy."""
         input_ds = coerce_to_sherpa(input_data, input_name="input_data")
+        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
         reference = self.parameters.get("reference", "mean")
 
-        def _msc(ndd):
-            ndd.msc(reference=reference)
-            ndd.units = "dimensionless"
-            # return None — in-place mutation; scp_roundtrip handles this
+        if reference == "mean":
+            ref_spectrum = np.mean(data, axis=0)
+        elif reference == "median":
+            ref_spectrum = np.median(data, axis=0)
+        else:
+            ref_spectrum = data[0]
 
-        return scp_roundtrip(
+        # Design matrix: [reference | ones] for linear regression
+        A = np.vstack([ref_spectrum, np.ones(data.shape[1])]).T
+
+        corrected = np.zeros_like(data)
+        for i in range(data.shape[0]):
+            m, c = np.linalg.lstsq(A, data[i], rcond=None)[0]
+            if abs(m) > 1e-10:
+                corrected[i] = (data[i] - c) / m
+            else:
+                corrected[i] = data[i]
+
+        result = build_dataset_like(
+            corrected,
             input_ds,
-            _msc,
-            op_id="normalize.msc",
-            parameters={"reference": reference},
-            state_effects=[EFFECT_SCATTER_CORRECTED],
+            units="dimensionless",
+        )
+        add_processing_step(
+            result,
+            "normalize.msc",
+            {"reference": reference},
             node_id=self.node_id,
+            state_effects=[EFFECT_SCATTER_CORRECTED],
+        )
+
+        return NodeResult(
+            outputs={"default": result},
         )
 
 
@@ -689,7 +753,7 @@ class DerivativeFirstNode(Node):
         # Update units — only when meaningful units exist on both axes
         try:
             original_units = str(input_ds.units) if getattr(input_ds, "units", None) else None
-            x_units = input_ds.spectral_axis.units if input_ds.spectral_axis is not None else None
+            x_units = input_ds.feature_axis.units if input_ds.feature_axis is not None else None
 
             if original_units and x_units and original_units != "dimensionless":
                 result.units = f"d({original_units})/d({x_units})"
@@ -796,7 +860,7 @@ class DerivativeSecondNode(Node):
         # Update units — only when meaningful units exist on both axes
         try:
             original_units = str(input_ds.units) if getattr(input_ds, "units", None) else None
-            x_units = input_ds.spectral_axis.units if input_ds.spectral_axis is not None else None
+            x_units = input_ds.feature_axis.units if input_ds.feature_axis is not None else None
 
             if original_units and x_units and original_units != "dimensionless":
                 result.units = f"d²({original_units})/d({x_units})²"
@@ -1035,9 +1099,9 @@ class ClipRangeNode(Node):
     def _clip_by_index(ds: Any, min_wn, max_wn) -> Any:
         """Clip columns by x-axis values (wavenumber range) when available."""
         # SherpaDataset path (canonical)
-        if hasattr(ds, "spectral_axis"):
-            spectral_axis = ds.spectral_axis
-            x_vals = spectral_axis.values if spectral_axis is not None else None
+        if hasattr(ds, "feature_axis"):
+            feature_axis = ds.feature_axis
+            x_vals = feature_axis.values if feature_axis is not None else None
 
             if x_vals is None:
                 lo = int(min_wn) if min_wn is not None else 0
@@ -1428,6 +1492,7 @@ class OSCNode(Node):
             ),
         ],
         requires_scp=True,
+        help_url="https://www.spectrochempy.fr/reference/generated/spectrochempy.PLSRegression.html",
     )
 
     python_extra_imports = [
@@ -1734,7 +1799,7 @@ class SGDerivativeNode(Node):
         # Update units
         if deriv_order > 0:
             original_units = str(input_ds.units) if getattr(input_ds, "units", None) else None
-            x_units = input_ds.spectral_axis.units if input_ds.spectral_axis is not None else None
+            x_units = input_ds.feature_axis.units if input_ds.feature_axis is not None else None
 
             if deriv_order == 1:
                 if original_units and x_units and original_units != "dimensionless":
@@ -1839,14 +1904,14 @@ class EMSCNode(Node):
             lines.append(f"{indent}_ref = np.median(_data, axis=0)")
         else:
             lines.append(f"{indent}_ref = _data[0]")
-        lines.append(f"{indent}_design = [_ref]")
-        if poly > 0:
-            lines += [
-                f"{indent}_x = np.arange(_p)",
-                f"{indent}_xn = (_x - _x.mean()) / _x.std()",
-            ]
-            for deg in range(1, poly + 1):
-                lines.append(f"{indent}_design.append(_xn ** {deg})")
+        # Design matrix: [poly_terms (incl. constant) | reference | constituents]
+        lines += [
+            f"{indent}_x = np.arange(_p, dtype=np.float64)",
+            f"{indent}_xn = (_x - _x.mean()) / _x.std() if _p > 1 else _x",
+            f"{indent}_design = [_xn ** _d for _d in range({poly} + 1)]",
+            f"{indent}_ref_col = len(_design)",
+            f"{indent}_design.append(_ref)",
+        ]
         if const_inp:
             lines += [
                 f"{indent}_const = np.array({const_inp}.data, dtype=np.float64)",
@@ -1856,11 +1921,12 @@ class EMSCNode(Node):
             ]
         lines += [
             f"{indent}_design = np.column_stack(_design)",
+            f"{indent}_bl_cols = [_j for _j in range(_design.shape[1]) if _j != _ref_col]",
             f"{indent}_corrected = np.zeros_like(_data)",
             f"{indent}for _i in range(_n):",
             f"{indent}    _c, _, _, _ = np.linalg.lstsq(_design, _data[_i], rcond=None)",
-            f"{indent}    _bl = _design[:, 1:] @ _c[1:] if _design.shape[1] > 1 else 0",
-            f"{indent}    _corrected[_i] = (_data[_i] - _bl) / _c[0] if abs(_c[0]) > 1e-8 else _data[_i]",
+            f"{indent}    _bl = _design[:, _bl_cols] @ _c[_bl_cols] if _bl_cols else 0",
+            f"{indent}    _corrected[_i] = (_data[_i] - _bl) / _c[_ref_col] if abs(_c[_ref_col]) > 1e-8 else _data[_i]",
         ]
         lines += _wrap_result_lines(self.node_id, "_corrected", inp, indent, use_scp)
         return lines
@@ -1892,13 +1958,16 @@ class EMSCNode(Node):
         else:
             reference = np.mean(data, axis=0)
 
-        # Build design matrix: [reference | poly_terms | constituents]
-        X_design = [reference]
-        if poly_order > 0:
-            x_axis = np.arange(n_features)
-            x_norm = (x_axis - x_axis.mean()) / x_axis.std()
-            for deg in range(1, poly_order + 1):
-                X_design.append(x_norm**deg)
+        # Build design matrix: [poly_terms (incl. constant) | reference | constituents]
+        # Column order: [1, x, x^2, ..., x^d, reference, constituent_1, ...]
+        # The reference coefficient is at index poly_order+1 (last non-constituent).
+        X_design: list[np.ndarray] = []
+        x_axis = np.arange(n_features, dtype=np.float64)
+        x_norm = (x_axis - x_axis.mean()) / x_axis.std() if n_features > 1 else x_axis
+        for deg in range(poly_order + 1):
+            X_design.append(x_norm**deg)
+        ref_col_idx = len(X_design)  # index of the reference column
+        X_design.append(reference)
 
         n_constituents = 0
         if constituents is not None:
@@ -1920,20 +1989,24 @@ class EMSCNode(Node):
         corrected_data = np.zeros_like(data)
         EMSC_COEF_THRESHOLD = 1e-8
 
+        # Mask for non-reference columns (polynomial + constituent terms = baseline)
+        n_cols = X_design.shape[1]
+        baseline_cols = [j for j in range(n_cols) if j != ref_col_idx]
+
         for i in range(n_samples):
             spectrum = data[i]
             coef, _, _, _ = np.linalg.lstsq(X_design, spectrum, rcond=None)
 
-            # Baseline = everything except the reference coefficient
-            if X_design.shape[1] > 1:
-                baseline = X_design[:, 1:] @ coef[1:]
-                if np.abs(coef[0]) > EMSC_COEF_THRESHOLD:
-                    corrected_data[i] = (spectrum - baseline) / coef[0]
+            # Baseline = polynomial + constituent contributions (everything except reference)
+            if baseline_cols:
+                baseline = X_design[:, baseline_cols] @ coef[baseline_cols]
+                if np.abs(coef[ref_col_idx]) > EMSC_COEF_THRESHOLD:
+                    corrected_data[i] = (spectrum - baseline) / coef[ref_col_idx]
                 else:
                     corrected_data[i] = spectrum
             else:
-                if np.abs(coef[0]) > EMSC_COEF_THRESHOLD:
-                    corrected_data[i] = spectrum / coef[0]
+                if np.abs(coef[ref_col_idx]) > EMSC_COEF_THRESHOLD:
+                    corrected_data[i] = spectrum / coef[ref_col_idx]
                 else:
                     corrected_data[i] = spectrum
 
@@ -2033,7 +2106,7 @@ class NorrisWilliamsDerivativeNode(Node):
         derived = norris_williams(data, gap=gap, segment=segment, deriv=deriv_order)
 
         result = build_dataset_like(derived, input_ds)
-        spectral = input_ds.spectral_axis
+        spectral = input_ds.feature_axis
 
         # Update units for derivative
         try:

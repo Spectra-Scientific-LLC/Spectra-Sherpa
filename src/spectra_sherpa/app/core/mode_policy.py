@@ -1,20 +1,26 @@
 """
-Centralized mode policy for local / hybrid / enterprise behavior.
+Shared mode policy for local / hybrid / enterprise runtime behavior.
 
-All runtime decisions that branch on ``app_config.mode`` should be expressed
-as calls into this module.  This keeps the mode semantics in one place so
-that:
-
-- Tests can verify policy without importing every module.
-- Adding a new mode requires changes in **one** file.
-
-Boot-time validation (startup.py, logging.py) may still read ``app_config``
-directly for one-shot checks that don't affect request handling.
+This module captures cross-cutting, request-time policy decisions used in
+multiple places (HTTP auth, WebSocket auth, client config gating). One-shot
+startup validation can still read ``app_config`` directly.
 """
 
 from __future__ import annotations
 
 from spectra_sherpa.app.core.config import app_config
+
+
+def is_loopback(host: str | None) -> bool:
+    """Check if a client address is a loopback address.
+
+    Returns ``False`` for ``None`` (fail closed — unknown client is not
+    considered loopback).
+    """
+    if not host:
+        return False
+    return host in ("127.0.0.1", "::1") or host.startswith("::ffff:127.")
+
 
 # ── Identity shortcuts ───────────────────────────────────────────
 
@@ -32,11 +38,6 @@ def is_hybrid() -> bool:
 def is_enterprise() -> bool:
     """True when running in enterprise / SaaS mode (JWT auth, rate-limits, PostgreSQL required)."""
     return app_config.mode == "enterprise"
-
-
-def is_demo() -> bool:
-    """True when running with demo experience profile."""
-    return app_config.site_profile == "demo"
 
 
 def is_multi_user() -> bool:
@@ -57,9 +58,7 @@ def requires_http_auth(client_host: str | None) -> bool:
     if app_config.mode == "local":
         return False
     if app_config.mode == "hybrid":
-        from spectra_sherpa.app.core.security import _is_loopback
-
-        return not _is_loopback(client_host)
+        return not is_loopback(client_host)
     # enterprise (and any future mode): always require auth
     return True
 
@@ -75,17 +74,30 @@ def requires_ws_auth(client_host: str | None) -> bool:
 def allows_registration() -> bool:
     """Whether user self-registration is open.
 
-    Disabled in local mode (single implicit user).
+    Registration is only surfaced when:
+    - mode is multi-user (hybrid/enterprise), and
+    - server auth routes are available in this distribution.
     """
-    return app_config.mode != "local"
+    if not is_multi_user():
+        return False
+    try:
+        from spectrasherpa_server.routes import auth as _auth_mod  # noqa: F401
+    except ImportError:
+        return False
+    return hasattr(_auth_mod, "router")
 
 
-def allows_admin() -> bool:
-    """Whether admin endpoints are accessible.
+def allows_custom_code_execution() -> bool:
+    """Whether user-authored custom algo code (ualgo.*) is allowed.
 
-    Disabled in local mode (no user management needed).
+    Controlled by ``CUSTOM_CODE_EXECUTION_ENABLED`` and forced off in demo
+    site profile unless explicitly overridden.
     """
-    return app_config.mode != "local"
+    if not app_config.custom_code_execution_enabled:
+        return False
+    if app_config.site_profile == "demo":
+        return False
+    return True
 
 
 # ── API key validation ───────────────────────────────────────────
@@ -120,14 +132,3 @@ def cors_allow_all() -> bool:
 def has_rate_limits() -> bool:
     """True when rate limiting / session expiry enforcement is active."""
     return app_config.mode in ("hybrid", "enterprise")
-
-
-def token_ttl_minutes() -> int:
-    """Default JWT token lifetime in minutes.
-
-    - Local: 8 days (desktop convenience, single-user).
-    - Non-local: 60 minutes (security for multi-user).
-    """
-    if app_config.mode == "local":
-        return 60 * 24 * 8  # 11520
-    return 60

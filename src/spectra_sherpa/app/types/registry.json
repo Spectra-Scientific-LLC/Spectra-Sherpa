@@ -137,6 +137,12 @@
       "category": "config",
       "parent": null,
       "description": "Serialized workflow state snapshot"
+    },
+    "ModelReference": {
+      "uri": "spectrasherpa://types/ModelReference/1.0",
+      "category": "model",
+      "parent": null,
+      "description": "Reference (UUID) to a persisted model artifact"
     }
   }
 }
