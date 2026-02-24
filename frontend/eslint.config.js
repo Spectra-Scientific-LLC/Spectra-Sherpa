@@ -11,18 +11,20 @@ export default [
   {
     files: ["src/**/*.{ts,vue}"],
     rules: {
-      // Phase A: disable rules that would cause mass failures
-      "@typescript-eslint/no-explicit-any": "off",
-      "vue/multi-word-component-names": "off",
+      // Phase B: warn on type-safety issues (fix incrementally, goal: error)
+      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
       // PrimeVue uses camelCase props (optionLabel, scrollHeight, etc.)
       "vue/attribute-hyphenation": "off",
-      // Cosmetic template ordering — not enforced in Phase A
+      // Cosmetic — low value, keep off
+      "vue/multi-word-component-names": "off",
       "vue/attributes-order": "off",
-      // Phase A: unused-vars off — tighten in Phase B after cleanup
-      "@typescript-eslint/no-unused-vars": "off",
-      // Vue prop/template rules — tighten in Phase B
-      "vue/no-required-prop-with-default": "off",
-      "vue/no-template-shadow": "off",
+      // Vue prop/template rules — warn for awareness
+      "vue/no-required-prop-with-default": "warn",
+      "vue/no-template-shadow": "warn",
     },
   },
   { ignores: ["dist/", "node_modules/"] },

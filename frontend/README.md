@@ -28,7 +28,7 @@ Start the backend first: `make dev` from the repo root runs both together.
 ```
 src/
 ├── api/            HTTP client wrappers
-├── components/     Reusable UI components (14 files)
+├── components/     Reusable UI components (20+ files)
 │   ├── data/       Spectra-specific uploaders
 │   └── settings/   API token management
 ├── composables/    Vue composables (shared logic)

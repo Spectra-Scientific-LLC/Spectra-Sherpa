@@ -134,6 +134,9 @@ async def test_lifespan_runs_extra_shutdown_before_core_teardown(monkeypatch: py
         "spectra_sherpa.app.services.plugin_loader.discover_plugins", _sync_event(events, "discover_plugins")
     )
     monkeypatch.setattr(
+        app_main, "_load_custom_algo_plugins_or_raise", _async_event(events, "_load_custom_algo_plugins_or_raise")
+    )
+    monkeypatch.setattr(
         "spectra_sherpa.app.services.network_health.start_network_health_service",
         _async_event(events, "start_network_health_service"),
     )

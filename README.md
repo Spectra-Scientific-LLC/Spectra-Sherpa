@@ -100,7 +100,7 @@ This installs the core platform without optional scientific extras — enough to
 
 ```bash
 git clone https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa.git
-cd spectrasherpa
+cd Spectra-Sherpa
 poetry install --with dev
 spectra-sherpa
 ```
@@ -120,7 +120,7 @@ For full-stack development with all scientific features enabled, install with ex
 ```bash
 # Backend (includes SpectroChemPy + Sherpa AI extras)
 git clone https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa.git
-cd spectrasherpa
+cd Spectra-Sherpa
 poetry install --with dev --extras "scp sherpa"
 
 # Frontend

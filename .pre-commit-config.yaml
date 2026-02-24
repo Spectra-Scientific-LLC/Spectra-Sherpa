@@ -1,0 +1,28 @@
+repos:
+  - repo: https://github.com/psf/black
+    rev: "24.10.0"
+    hooks:
+      - id: black
+        args: [--line-length=120]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: "v0.8.6"
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint
+        entry: npx eslint --max-warnings 300
+        language: system
+        files: ^frontend/src/.*\.(ts|vue)$
+        pass_filenames: false
+
+      - id: prettier
+        name: prettier
+        entry: npx prettier --check
+        language: system
+        files: ^frontend/src/.*\.(ts|vue|css)$
+        pass_filenames: true

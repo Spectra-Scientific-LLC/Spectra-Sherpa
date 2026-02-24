@@ -26,7 +26,7 @@ long-term stewardship. Contributors retain copyright ownership.
 
 ```bash
 git clone https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa.git
-cd spectrasherpa
+cd Spectra-Sherpa
 poetry install --with dev            # core + dev tools (black, ruff, pytest)
 poetry install --with dev -E scp     # optional: SpectroChemPy spectral nodes
 ```
@@ -63,9 +63,6 @@ make test-all      # backend + frontend type-check
 ### Environment
 
 Copy `.env.example` to `.env`. The defaults work for local development with no
-changes needed. See `.env.enterprise.example` for hybrid/enterprise settings.
-
-Copy `.env.example` to `.env`. The defaults work for local development with no
 changes needed.
 
 ## Contribution Workflow
@@ -86,7 +83,7 @@ Before submitting:
 - [ ] Tests pass locally (`make test`)
 - [ ] ESLint passes (`cd frontend && npm run lint`)
 - [ ] If UI changed: `cd frontend && npm run build` and commit updated static assets
-- [ ] If new env var: added to `.env.example` (and `.env.enterprise.example` if enterprise-only)
+- [ ] If new env var: added to `.env.example`
 - [ ] If new DAG node: registered via `@register_node` decorator with `NodeMetadata`
 
 ## New Node Checklist

@@ -10,25 +10,23 @@ Usage:
     python scripts/scaffold_node.py
 
     # Non-interactive mode:
-    python scripts/scaffold_node.py --name MyCustomNode --type transform --category preprocessing
+    python scripts/scaffold_node.py --name MyCustomNode --type chemometrics --category preprocessing
 
 Examples:
-    # Create a preprocessing transform node:
-    python scripts/scaffold_node.py --name MedianFilterNode --type transform --category preprocessing
+    # Create a preprocessing chemometrics node:
+    python scripts/scaffold_node.py --name MedianFilterNode --type chemometrics --category preprocessing
 
     # Create a machine learning estimator node:
     python scripts/scaffold_node.py --name RandomForestNode --type estimator --category modeling
 
-    # Create a custom node with full control:
-    python scripts/scaffold_node.py --name AdvancedPeakFinderNode --type custom --category analysis
+    # Create a raw node with full control:
+    python scripts/scaffold_node.py --name AdvancedPeakFinderNode --type raw --category analysis
 """
 
 import argparse
 import re
-import sys
 from pathlib import Path
-from textwrap import dedent, indent
-
+from textwrap import dedent
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Constants
@@ -44,14 +42,60 @@ VALID_CATEGORIES = [
 ]
 
 VALID_NODE_TYPES = [
-    "transform",    # TransformSpecNode - stateless transform
-    "estimator",    # EstimatorSpecNode - sklearn-style fit/predict
-    "custom",       # Node - full control
+    "chemometrics",  # ChemometricsNode - default OSS path
+    "transform",  # TransformSpecNode - stateless transform
+    "estimator",  # EstimatorSpecNode - sklearn-style fit/predict
+    "raw",  # Node - full control
+    "custom",  # Backward-compatible alias for raw
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Templates
 # ═══════════════════════════════════════════════════════════════════════════
+
+
+def get_chemometrics_node_template(class_name: str, node_type: str, category: str, description: str) -> str:
+    """Generate ChemometricsNode template (default authoring path)."""
+    return dedent(
+        f'''\
+        """
+        {class_name} - {description}
+
+        Auto-generated ChemometricsNode scaffold.
+        """
+
+        import numpy as np
+
+        from spectra_sherpa.sdk import (
+            ChemometricsNode,
+            register_node,
+            param_number,
+        )
+
+
+        @register_node
+        class {class_name}(ChemometricsNode):
+            node_type = "{category}.{_to_snake_case(class_name.replace('Node', ''))}"
+            category = "{category}"
+            label = "{_to_title_case(class_name.replace('Node', ''))}"
+            description = "{description}"
+            parameters = [
+                param_number(
+                    "scale",
+                    default=1.0,
+                    min_value=0.0,
+                    max_value=10.0,
+                    step=0.1,
+                    description="Scale factor applied to each spectrum",
+                )
+            ]
+
+            def process(self, dataset, scale: float = 1.0):
+                data = np.asarray(dataset.data, dtype=np.float64)
+                result = data * scale
+                return result
+        '''
+    )
 
 
 def get_transform_node_template(class_name: str, node_type: str, category: str, description: str) -> str:
@@ -66,7 +110,7 @@ def get_transform_node_template(class_name: str, node_type: str, category: str, 
         import numpy as np
         from spectra_sherpa.app.services.dag.node_base import NodeMetadata, NodeParameter
         from spectra_sherpa.app.services.dag.spec_nodes import TransformSpec, TransformSpecNode
-        from spectra_sherpa.app.services.dag.registry import register_node
+        from spectra_sherpa.sdk import register_node
 
 
         @register_node
@@ -186,7 +230,7 @@ def get_estimator_node_template(class_name: str, node_type: str, category: str, 
         from sklearn.base import BaseEstimator
         from spectra_sherpa.app.services.dag.node_base import NodeMetadata, NodeParameter, PortMetadata
         from spectra_sherpa.app.services.dag.spec_nodes import EstimatorSpec, EstimatorSpecNode
-        from spectra_sherpa.app.services.dag.registry import register_node
+        from spectra_sherpa.sdk import register_node
 
 
         # TODO: Implement your sklearn estimator or use an existing one
@@ -380,8 +424,14 @@ def get_custom_node_template(class_name: str, node_type: str, category: str, des
 
         import numpy as np
         from typing import Any, Dict, Optional
-        from spectra_sherpa.app.services.dag.node_base import Node, NodeMetadata, NodeParameter, PortMetadata, NodeResult
-        from spectra_sherpa.app.services.dag.registry import register_node
+        from spectra_sherpa.app.services.dag.node_base import (
+            Node,
+            NodeMetadata,
+            NodeParameter,
+            PortMetadata,
+            NodeResult,
+        )
+        from spectra_sherpa.sdk import register_node
         from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
 
@@ -517,10 +567,10 @@ def get_custom_node_template(class_name: str, node_type: str, category: str, des
                 input_var = input_vars.get("input_data", "data")
                 output_var = f"{{node_id}}_output"
 
-                code = f'''
-    # {self.metadata.label}
-    {output_var} = {{input_var}} * 2.0  # TODO: Replace with actual logic
-    '''
+                code = f\"\"\"
+    # {{self.metadata.label}}
+    {{output_var}} = {{input_var}} * 2.0  # TODO: Replace with actual logic
+    \"\"\"
                 return code.strip()
 
 
@@ -795,9 +845,11 @@ def interactive_prompt() -> dict:
     print("2. Select node type:")
     for i, t in enumerate(VALID_NODE_TYPES, 1):
         desc = {
-            "transform": "Stateless transform (fastest to implement)",
+            "chemometrics": "Default: dataset-in/dataset-out transform via ChemometricsNode",
+            "transform": "Advanced: TransformSpecNode (declarative transform)",
             "estimator": "sklearn-style fit/predict model",
-            "custom": "Full control (most flexible)",
+            "raw": "Advanced: raw Node with full control",
+            "custom": "Alias for raw",
         }[t]
         print(f"   {i}. {t} - {desc}")
 
@@ -805,7 +857,9 @@ def interactive_prompt() -> dict:
     if type_choice.isdigit():
         node_type = VALID_NODE_TYPES[int(type_choice) - 1]
     else:
-        node_type = type_choice if type_choice in VALID_NODE_TYPES else "transform"
+        node_type = type_choice if type_choice in VALID_NODE_TYPES else "chemometrics"
+    if node_type == "custom":
+        node_type = "raw"
     print(f"   ✓ Using type: {node_type}")
     print()
 
@@ -838,26 +892,31 @@ def interactive_prompt() -> dict:
 
 def generate_scaffold(class_name: str, node_type: str, category: str, description: str, output_dir: Path | None = None):
     """Generate all scaffold files."""
+    node_slug = _to_snake_case(class_name.replace("Node", ""))
 
     # Determine output directory
     if output_dir is None:
         repo_root = Path(__file__).parent.parent
-        output_dir = repo_root / "spectra-sherpa" / "src" / "spectra_sherpa" / "app" / "services" / "dag" / "nodes"
+        output_dir = repo_root / "src" / "spectra_sherpa" / "app" / "services" / "dag" / "nodes"
 
     # Generate node implementation
-    if node_type == "transform":
-        node_code = get_transform_node_template(class_name, node_type, category, description)
+    if node_type == "chemometrics":
+        node_code = get_chemometrics_node_template(class_name, node_slug, category, description)
+    elif node_type == "transform":
+        node_code = get_transform_node_template(class_name, node_slug, category, description)
     elif node_type == "estimator":
-        node_code = get_estimator_node_template(class_name, node_type, category, description)
-    else:  # custom
-        node_code = get_custom_node_template(class_name, node_type, category, description)
+        node_code = get_estimator_node_template(class_name, node_slug, category, description)
+    else:  # raw/custom
+        node_code = get_custom_node_template(class_name, node_slug, category, description)
 
     # Determine file paths
     node_file = output_dir / f"{_to_snake_case(class_name)}.py"
-    test_file = output_dir.parent.parent.parent.parent.parent / "tests" / "nodes" / f"test_{_to_snake_case(class_name)}.py"
-    docs_file = output_dir.parent.parent.parent.parent.parent / "docs" / "nodes" / f"{_to_snake_case(class_name)}.md"
+    repo_root = Path(__file__).parent.parent
+    test_file = repo_root / "tests" / "nodes" / f"test_{_to_snake_case(class_name)}.py"
+    docs_file = repo_root / "docs" / "nodes" / f"{_to_snake_case(class_name)}.md"
 
     # Create directories if needed
+    output_dir.mkdir(parents=True, exist_ok=True)
     test_file.parent.mkdir(parents=True, exist_ok=True)
     docs_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -889,7 +948,7 @@ def generate_scaffold(class_name: str, node_type: str, category: str, descriptio
     print(f"   pytest {test_file}")
     print()
     print("3. Register your node:")
-    print(f"   Add to spectra_sherpa/app/services/dag/nodes/{category}.py:")
+    print(f"   Add to src/spectra_sherpa/app/services/dag/nodes/{category}.py:")
     print(f"   from .{_to_snake_case(class_name)} import {class_name}")
     print()
     print("4. Update documentation:")
@@ -921,7 +980,7 @@ def main():
               python scripts/scaffold_node.py
 
               # Non-interactive mode:
-              python scripts/scaffold_node.py --name MedianFilterNode --type transform --category preprocessing
+              python scripts/scaffold_node.py --name MedianFilterNode --type chemometrics --category preprocessing
 
               # Create an estimator node:
               python scripts/scaffold_node.py --name RandomForestNode --type estimator --category modeling
@@ -939,9 +998,10 @@ def main():
     # Interactive vs non-interactive mode
     if args.name and args.type and args.category:
         # Non-interactive
+        selected_type = "raw" if args.type == "custom" else args.type
         config = {
             "class_name": _validate_class_name(args.name),
-            "node_type": args.type,
+            "node_type": selected_type,
             "category": args.category,
             "description": args.description or "Custom node implementation",
         }

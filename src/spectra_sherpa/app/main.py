@@ -155,6 +155,60 @@ def _normalize_router_mounts(extra_routers: list[RouterMount] | None) -> list[tu
     return normalized
 
 
+async def _load_custom_algo_plugins_or_raise() -> None:
+    """Load/regenerate custom algo plugins and fail-fast on any startup error."""
+    from sqlalchemy import select as _sa_select
+
+    from spectra_sherpa.app.models.custom_algo import CustomAlgo as _CA
+    from spectra_sherpa.app.services.custom_algo_codegen import (
+        get_plugin_dir,
+        get_plugin_path,
+        reload_into_registry,
+    )
+    from spectra_sherpa.app.services.dag.node_base import node_registry as _nr
+
+    errors: list[tuple[str, Exception]] = []
+
+    try:
+        get_plugin_dir()  # ensure directory exists
+    except Exception as exc:
+        logger.exception("Failed to ensure custom algo plugin directory")
+        errors.append(("plugin_dir", exc))
+
+    algos: list[_CA] = []
+    try:
+        async with async_session() as _ca_session:
+            _result = await _ca_session.execute(_sa_select(_CA))
+            algos = list(_result.scalars().all())
+    except Exception as exc:
+        logger.exception("Failed to query custom algos at startup")
+        errors.append(("db_query", exc))
+
+    for algo in algos:
+        node_type = algo.node_type
+        try:
+            plugin_path = get_plugin_path(algo)
+            if not plugin_path.exists():
+                logger.info("Regenerating missing plugin: %s", node_type)
+                reload_into_registry(algo)
+                continue
+            try:
+                _nr.get_metadata(node_type)
+            except KeyError:
+                logger.info("Loading unregistered custom algo: %s", node_type)
+                reload_into_registry(algo)
+        except Exception as exc:
+            logger.exception("Failed loading custom algo %s", node_type)
+            errors.append((node_type, exc))
+
+    if errors:
+        preview_items = errors[:8]
+        preview = "; ".join(f"{node}: {type(err).__name__}: {err}" for node, err in preview_items)
+        if len(errors) > len(preview_items):
+            preview = f"{preview}; ... (+{len(errors) - len(preview_items)} more)"
+        raise RuntimeError(f"Custom algo startup failed for {len(errors)} item(s): {preview}")
+
+
 # ---------------------------------------------------------------------------
 # Lifespan factory
 # ---------------------------------------------------------------------------
@@ -236,44 +290,8 @@ def _make_lifespan(
 
             discover_plugins()
 
-            # Ensure custom algo plugin dir exists and regenerate any
-            # missing plugin files from DB records.
-            try:
-                from spectra_sherpa.app.services.custom_algo_codegen import (
-                    get_plugin_dir,
-                    get_plugin_path,
-                    reload_into_registry,
-                )
-
-                get_plugin_dir()  # ensures directory exists
-                async with async_session() as _ca_session:
-                    from sqlalchemy import select as _sa_select
-
-                    from spectra_sherpa.app.models.custom_algo import CustomAlgo as _CA
-
-                    _result = await _ca_session.execute(_sa_select(_CA))
-                    for algo in _result.scalars().all():
-                        if not get_plugin_path(algo).exists():
-                            logger.info("Regenerating missing plugin: %s", algo.node_type)
-                            try:
-                                reload_into_registry(algo)
-                            except Exception:
-                                logger.exception("Failed to regenerate %s", algo.node_type)
-                        else:
-                            # File exists but may not be loaded (e.g. not in
-                            # standard plugin dirs). Ensure it's registered.
-                            from spectra_sherpa.app.services.dag.node_base import node_registry as _nr
-
-                            try:
-                                _nr.get_metadata(algo.node_type)
-                            except KeyError:
-                                logger.info("Loading unregistered custom algo: %s", algo.node_type)
-                                try:
-                                    reload_into_registry(algo)
-                                except Exception:
-                                    logger.exception("Failed to load %s", algo.node_type)
-            except Exception:
-                logger.exception("Custom algo startup hook failed (non-fatal)")
+            # Ensure custom algo plugins are in sync with DB; fail-fast on any error.
+            await _load_custom_algo_plugins_or_raise()
 
             # Start network health monitoring (HYBRID mode only)
             from spectra_sherpa.app.services.network_health import start_network_health_service

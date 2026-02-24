@@ -71,26 +71,5 @@ spectrasherpa-server/
 # SpectroChemPy runtime data (downloaded at runtime, not part of source)
 .spectrochempy/
 
-# Internal planning / architecture docs (not for public consumption)
-ANALYSIS_REPORT.md
-ARCHITECTURE_REFACTOR_PLAN.md
-BIG_ROLLBACK_PLAN.md
-COMMERCIAL.md
-CURRENT.md
-DONE.md
-FUTURE.md
-NODE_ARCHITECTURE_AUDIT.md
-NODE_STANDARDIZATION_EFFORT.md
-PLS-DA_Implementation_Comparison.md
-
-# Internal API contracts
+# Internal planning docs
 contracts/
-
-# Internal docs directories
-docs/past/
-docs/future/
-docs/current/
-docs/OSS_SCOPE.md
-docs/admin/
-docs/deployment/
-docs/PRD-*.md

@@ -87,6 +87,14 @@ from spectra_sherpa.app.services.dag.node_base import (
     node_registry,
     register_node,
 )
+from spectra_sherpa.sdk_nodes import (
+    ChemometricsNode,
+    ChemometricsParam,
+    param_bool,
+    param_number,
+    param_select,
+    param_text,
+)
 
 __all__ = [
     # Core node system
@@ -98,6 +106,12 @@ __all__ = [
     "PortMetadata",
     "node_registry",
     "register_node",
+    "ChemometricsNode",
+    "ChemometricsParam",
+    "param_number",
+    "param_bool",
+    "param_text",
+    "param_select",
     # Provenance
     "add_processing_step",
     "copy_processing_history",

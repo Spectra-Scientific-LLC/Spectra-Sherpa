@@ -17,5 +17,5 @@
     }
   },
   "include": ["src/**/*.ts", "src/**/*.vue"],
-  "exclude": ["src/views/_legacy_backup/**", "src/test/**", "node_modules"]
+  "exclude": ["src/test/**", "node_modules"]
 }

@@ -10,7 +10,7 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
-    "lint": "eslint src/ --max-warnings 0",
+    "lint": "eslint src/ --max-warnings 300",
     "format": "prettier --write \"src/**/*.{ts,vue,css}\""
   },
   "dependencies": {

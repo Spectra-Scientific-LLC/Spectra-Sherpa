@@ -96,4 +96,4 @@ Copy `.env.example` to `.env` for local configuration. The defaults work with ze
 | `DATABASE_URL` | `sqlite:///./spectra_sherpa.db` | Database connection string |
 | `DEEPSEEK_API_KEY` | (none) | LLM API key (or configure in Settings UI) |
 
-See `.env.enterprise.example` for all hybrid/enterprise settings.
+See `.env.example` for all available settings including hybrid/enterprise options.
