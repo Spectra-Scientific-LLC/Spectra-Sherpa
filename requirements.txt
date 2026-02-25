@@ -6,15 +6,15 @@
 # - For fully reproducible environments, prefer Poetry lockfiles.
 # - Optional cloud/server dependencies are listed at the bottom.
 
-fastapi>=0.111.0,<0.112.0
+fastapi>=0.120.0,<1.0.0
 uvicorn[standard]>=0.30.0,<0.31.0
 sqlalchemy>=2.0.31,<3.0.0
 aiosqlite>=0.20.0,<1.0.0
 alembic>=1.13.2,<2.0.0
 pydantic>=2.7.4,<3.0.0
-python-multipart>=0.0.9,<0.1.0
+python-multipart>=0.0.22,<0.1.0
 python-dotenv>=1.0.1,<2.0.0
-cryptography>=42.0.8,<43.0.0
+cryptography>=46.0.5,<48.0.0
 httpx>=0.27.0,<0.28.0
 werkzeug>=3.0.3,<4.0.0
 
@@ -24,7 +24,7 @@ pandas>=2.2.2,<3.0.0
 scikit-learn>=1.5.0,<2.0.0
 plotly>=5.22.0,<6.0.0
 beautifulsoup4>=4.12.3,<5.0.0
-pypdf>=4.0.0,<5.0.0
+pypdf>=6.6.2,<7.0.0
 pyarrow>=17.0.0,<18.0.0
 
 openai>=1.40.0,<2.0.0
