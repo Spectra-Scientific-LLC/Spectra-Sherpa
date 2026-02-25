@@ -16,11 +16,11 @@ SpectraSherpa brings transparent, reproducible multivariate analysis to spectros
 - **No coding required** — Visual drag-and-drop workflow builder with 100+ nodes. Go from raw spectra to a deployed PLS model without writing Python.
 - **Extensible when you need it** — Export any workflow to standalone Python or Jupyter notebooks. Add custom nodes via plugins or drop-in scripts.
 - **Modern metadata management** — Versioned projects, experiments, workflows, and model artifacts with full provenance tracking and audit trails.
-- **AI-assisted analysis** — Integrated LLM chat with bring-your-own-key (BYOK) support for OpenAI and Anthropic. Agentic AI features in progressive development.
+- **AI-assisted analysis** — Integrated LLM chat with bring-your-own-key (BYOK) support for OpenAI, Anthropic, Google, DeepSeek, and Qwen. Agentic AI features in progressive development.
 
 ## Try It
 
-**Free online demo** — Visit [demo.spectrascientific.ai](https://demo.spectrascientific.ai) to request a free access code and explore SpectraSherpa in your browser.
+**Free online demo** — Email [info@spectrascientific.ai](mailto:info@spectrascientific.ai) to apply for a free access code and explore SpectraSherpa at [demo.spectrascientific.ai](https://demo.spectrascientific.ai) with all AI-enabled features.
 
 **Install locally:**
 
@@ -57,7 +57,7 @@ See the [Applications Guide](docs/user/applications.md) for detailed algorithm-t
 - **Project Management** — Organize experiments, workflows, scripts, and models with versioned snapshots
 - **Experiment Tracking** — DOE support with 96-well plate layouts, samples, mixtures, and factor definitions
 - **Deploy** — Batch prediction, folder watching, and execution run tracking with model provenance
-- **LLM Chat** — BYOK AI assistant (OpenAI, Anthropic) for spectral analysis and workflow guidance
+- **LLM Chat** — BYOK AI assistant (OpenAI, Anthropic, Google, DeepSeek, Qwen) for spectral analysis and workflow guidance
 - **Plugin System** — Extend the node library via Python entry points or drop-in modules
 - **Privacy Controls** — Fine-grained egress permissions for LLM context and data exports
 
