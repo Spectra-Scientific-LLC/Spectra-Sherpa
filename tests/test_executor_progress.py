@@ -53,7 +53,7 @@ class TestStatusCallback:
             WorkflowNode(
                 node_id="src1",
                 node_type="data.source",
-                parameters={"source_type": "sklearn", "dataset_name": "iris"},
+                parameters={"source": "sklearn", "sklearn_dataset": "iris"},
             )
         )
         executor.add_node(WorkflowNode(node_id="snv1", node_type="normalize.snv", parameters={}))
@@ -85,7 +85,7 @@ class TestStatusCallback:
                 node_id="src1",
                 node_type="data.source",
                 # Missing required source_type → will fail at execution
-                parameters={"source_type": "sklearn", "dataset_name": "nonexistent_dataset"},
+                parameters={"source": "sklearn", "sklearn_dataset": "nonexistent_dataset"},
             )
         )
 
@@ -108,7 +108,7 @@ class TestStatusCallback:
             WorkflowNode(
                 node_id="src1",
                 node_type="data.source",
-                parameters={"source_type": "sklearn", "dataset_name": "iris"},
+                parameters={"source": "sklearn", "sklearn_dataset": "iris"},
             )
         )
 
@@ -125,7 +125,7 @@ class TestStatusCallback:
             WorkflowNode(
                 node_id="src1",
                 node_type="data.source",
-                parameters={"source_type": "sklearn", "dataset_name": "iris"},
+                parameters={"source": "sklearn", "sklearn_dataset": "iris"},
             )
         )
 
@@ -141,7 +141,7 @@ class TestStatusCallback:
             WorkflowNode(
                 node_id="src1",
                 node_type="data.source",
-                parameters={"source_type": "sklearn", "dataset_name": "iris"},
+                parameters={"source": "sklearn", "sklearn_dataset": "iris"},
             )
         )
         executor.add_node(WorkflowNode(node_id="snv1", node_type="normalize.snv", parameters={}))

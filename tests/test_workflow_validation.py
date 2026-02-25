@@ -89,7 +89,7 @@ class TestStructuralValidation:
             WorkflowNode(
                 node_id="src1",
                 node_type="data.source",
-                parameters={"source_type": "sklearn", "dataset_name": "iris"},
+                parameters={"source": "sklearn", "sklearn_dataset": "iris"},
             ),
         )
         result = executor.validate_full()
@@ -141,7 +141,7 @@ class TestParameterValidation:
             WorkflowNode(
                 node_id="src1",
                 node_type="data.source",
-                parameters={"source_type": "sklearn", "dataset_name": "iris"},
+                parameters={"source": "sklearn", "sklearn_dataset": "iris"},
             ),
             WorkflowNode(
                 node_id="test_node",
@@ -178,7 +178,7 @@ class TestParameterValidation:
             WorkflowNode(
                 node_id="src1",
                 node_type="data.source",
-                parameters={"source_type": "sklearn", "dataset_name": "iris"},
+                parameters={"source": "sklearn", "sklearn_dataset": "iris"},
             ),
             WorkflowNode(
                 node_id="test_node",
@@ -210,7 +210,7 @@ class TestParameterValidation:
             WorkflowNode(
                 node_id="src1",
                 node_type="data.source",
-                parameters={"source_type": "sklearn", "dataset_name": "iris"},
+                parameters={"source": "sklearn", "sklearn_dataset": "iris"},
             ),
             WorkflowNode(
                 node_id="test_node",
@@ -249,7 +249,7 @@ class TestPortTypeValidation:
             WorkflowNode(
                 node_id="src1",
                 node_type="data.source",
-                parameters={"source_type": "sklearn", "dataset_name": "iris"},
+                parameters={"source": "sklearn", "sklearn_dataset": "iris"},
             ),
             WorkflowNode(node_id="snv1", node_type="normalize.snv", parameters={}),
             WorkflowEdge(from_node="src1", to_node="snv1"),
@@ -272,7 +272,7 @@ class TestPortTypeValidation:
             WorkflowNode(
                 node_id="src1",
                 node_type="data.source",
-                parameters={"source_type": "sklearn", "dataset_name": "iris"},
+                parameters={"source": "sklearn", "sklearn_dataset": "iris"},
             ),
             WorkflowNode(node_id="snv1", node_type="normalize.snv", parameters={}),
             WorkflowEdge(from_node="src1", to_node="snv1"),
