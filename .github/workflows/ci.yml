@@ -46,7 +46,7 @@ jobs:
         run: pip install poetry
 
       - name: Install dependencies
-        run: poetry install --with dev --extras "sherpa parquet"
+        run: poetry install --with dev --extras sherpa
 
       - name: No bare app.* imports
         run: |
@@ -91,7 +91,7 @@ jobs:
         run: pip install poetry
 
       - name: Install base dependencies
-        run: poetry install --with dev --extras "sherpa parquet"
+        run: poetry install --with dev --extras sherpa
 
       - name: Prepare writable runtime dirs
         run: mkdir -p "$SCP_CONFIG_HOME" "$SCP_PROJECTS_HOME" "$MPLCONFIGDIR"
@@ -190,7 +190,7 @@ jobs:
       - name: pip-audit (dependency CVEs)
         run: |
           pip install poetry poetry-plugin-export
-          poetry export -f requirements.txt --without-hashes --extras sherpa --extras parquet --extras cloud -o /tmp/requirements.txt
+          poetry export -f requirements.txt --without-hashes --extras sherpa --extras cloud -o /tmp/requirements.txt
           pip-audit -r /tmp/requirements.txt
 
   docs:

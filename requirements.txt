@@ -35,9 +35,6 @@ bcrypt>=4.0.1,<4.1
 # openai>=1.40.0,<2.0.0
 # anthropic>=0.39.0,<1.0.0
 
-# Optional: Parquet support (install with: pip install spectra-sherpa[parquet])
-# pyarrow>=18.0.0
-
 # Optional: server deployment extras (install with: pip install spectra-sherpa[cloud])
 # asyncpg>=0.29.0,<0.30.0
 # gunicorn>=22.0.0,<23.0.0
