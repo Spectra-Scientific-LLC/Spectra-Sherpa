@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator, Optional, Union
 
-from openai import AsyncOpenAI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,7 +19,15 @@ from spectra_sherpa.app.models.llm_config import LLMConfig
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.services.encryption import decrypt_value
 
-# Anthropic import - will be available when installed
+# Optional LLM SDK imports — available when extras are installed
+try:
+    from openai import AsyncOpenAI
+
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+    AsyncOpenAI = None  # type: ignore
+
 try:
     from anthropic import AsyncAnthropic
 
@@ -428,10 +435,12 @@ class LLMService:
 
         if provider_meta["client_type"] == "anthropic":
             if not ANTHROPIC_AVAILABLE:
-                raise ImportError("Anthropic SDK not installed. Install with: pip install anthropic")
+                raise ImportError("Anthropic SDK not installed. Install with: pip install spectra-sherpa[sherpa]")
             return AsyncAnthropic(api_key=api_key)
         else:
             # OpenAI-compatible providers
+            if not OPENAI_AVAILABLE:
+                raise ImportError("OpenAI SDK not installed. Install with: pip install spectra-sherpa[sherpa]")
             return AsyncOpenAI(api_key=api_key, base_url=config["base_url"])
 
     async def _resolve_api_key(self, provider: str) -> str:
