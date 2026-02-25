@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -31,28 +33,122 @@ DEFAULT_SECRET_KEY = "your-super-secret-key-change-in-production"
 DEFAULT_API_KEY = "default-local-key"
 
 
-def validate_concurrency_settings() -> None:
-    """
-    Validate concurrency-related settings and warn about multi-worker deployments.
+# ---------------------------------------------------------------------------
+# Unified config validation
+# ---------------------------------------------------------------------------
 
-    Checks:
-    - File locking availability (fcntl on Unix)
-    - Rate limiter persistence path
-    - Logs info about database-backed job management
-    """
-    import os
 
-    # Check if we're likely in a multi-worker environment
-    # (Gunicorn sets GUNICORN_ARBITER, Uvicorn doesn't have a reliable env var)
-    _is_gunicorn = "GUNICORN_ARBITER" in os.environ or "gunicorn" in os.environ.get("SERVER_SOFTWARE", "")
+@dataclass
+class ConfigIssue:
+    """A single configuration validation issue."""
 
-    # Check for fcntl (file locking) availability
-    try:
-        import fcntl  # noqa: F401 — imported to test availability, not used directly
+    level: str  # "error" or "warning"
+    category: str  # "security", "database", "mode", "llm", "cors", "concurrency"
+    message: str
 
-        has_fcntl = True
-    except ImportError:
-        has_fcntl = False
+
+@dataclass
+class ConfigValidationResult:
+    """Structured result from unified configuration validation."""
+
+    issues: list[ConfigIssue] = field(default_factory=list)
+
+    @property
+    def has_errors(self) -> bool:
+        return any(i.level == "error" for i in self.issues)
+
+    @property
+    def errors(self) -> list[ConfigIssue]:
+        return [i for i in self.issues if i.level == "error"]
+
+    @property
+    def warnings(self) -> list[ConfigIssue]:
+        return [i for i in self.issues if i.level == "warning"]
+
+
+def _validate_security() -> list[ConfigIssue]:
+    """Check security-critical settings (refactored from validate_security_settings)."""
+    issues: list[ConfigIssue] = []
+
+    if app_config.mode == "local":
+        if settings.secret_key == DEFAULT_SECRET_KEY:
+            issues.append(
+                ConfigIssue(
+                    "warning",
+                    "security",
+                    "Using default SECRET_KEY in local mode. "
+                    "This is acceptable for development but not recommended.",
+                )
+            )
+        return issues
+
+    # Non-local modes: strict security validation
+    if settings.secret_key == DEFAULT_SECRET_KEY:
+        issues.append(
+            ConfigIssue(
+                "error",
+                "security",
+                f"Cannot start in '{app_config.mode}' mode with default SECRET_KEY. "
+                f"Set a secure SECRET_KEY environment variable.",
+            )
+        )
+
+    system_key_auth_enabled = os.getenv("ALLOW_SYSTEM_API_KEY_AUTH", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    if settings.api_key == DEFAULT_API_KEY and system_key_auth_enabled:
+        issues.append(
+            ConfigIssue(
+                "warning",
+                "security",
+                "APP_API_KEY is set to the default value while ALLOW_SYSTEM_API_KEY_AUTH "
+                "is enabled. Set a strong random APP_API_KEY.",
+            )
+        )
+
+    if os.getenv("TRUST_PROXY", "").strip().lower() in {"1", "true", "yes"}:
+        trusted_proxy_cidrs = os.getenv("TRUSTED_PROXY_CIDRS", "").strip()
+        if not trusted_proxy_cidrs:
+            issues.append(
+                ConfigIssue(
+                    "warning",
+                    "security",
+                    "TRUST_PROXY is enabled but TRUSTED_PROXY_CIDRS is not set. "
+                    "Only loopback proxy peers are trusted by default.",
+                )
+            )
+
+    if not os.getenv("MASTER_ENCRYPTION_KEY") and app_config.mode != "local":
+        issues.append(
+            ConfigIssue(
+                "warning",
+                "security",
+                "MASTER_ENCRYPTION_KEY not set — auto-generating. Stored API keys "
+                "will be lost on container restart. Set this env var explicitly.",
+            )
+        )
+
+    if app_config.mode == "hybrid":
+        bind_host = os.getenv("HOST", "127.0.0.1")
+        loopback = {"127.0.0.1", "::1", "localhost"}
+        if bind_host not in loopback:
+            issues.append(
+                ConfigIssue(
+                    "warning",
+                    "security",
+                    f"Hybrid mode is bound to '{bind_host}'. Non-loopback clients "
+                    "must authenticate with a valid JWT or API key.",
+                )
+            )
+
+    return issues
+
+
+def _validate_concurrency() -> list[ConfigIssue]:
+    """Check concurrency-related settings (refactored from validate_concurrency_settings)."""
+    issues: list[ConfigIssue] = []
 
     if app_config.mode in ("hybrid", "enterprise"):
         web_concurrency = os.getenv("WEB_CONCURRENCY", "").strip()
@@ -62,13 +158,125 @@ def validate_concurrency_settings() -> None:
             except ValueError:
                 workers = 1
             if workers > 1:
-                logger.critical(
-                    "WEB_CONCURRENCY=%s is not supported with in-memory WebSocket "
-                    "channels — realtime events will be silently dropped across workers.\n"
-                    "Set WEB_CONCURRENCY=1 (sufficient for <20 concurrent users).",
-                    workers,
+                issues.append(
+                    ConfigIssue(
+                        "error",
+                        "concurrency",
+                        f"WEB_CONCURRENCY={workers} is not supported with in-memory WebSocket "
+                        "channels — realtime events will be silently dropped across workers. "
+                        "Set WEB_CONCURRENCY=1.",
+                    )
                 )
-                sys.exit(1)
+
+    return issues
+
+
+def _validate_database_mode() -> list[ConfigIssue]:
+    """Enterprise mode requires PostgreSQL."""
+    issues: list[ConfigIssue] = []
+
+    if app_config.mode == "enterprise" and "sqlite" in settings.database_url.lower():
+        issues.append(
+            ConfigIssue(
+                "error",
+                "database",
+                "Enterprise mode requires PostgreSQL. DATABASE_URL is currently "
+                "configured for SQLite. Set DATABASE_URL to a PostgreSQL connection string.",
+            )
+        )
+
+    return issues
+
+
+def _validate_site_profile() -> list[ConfigIssue]:
+    """site_profile=demo requires enterprise mode."""
+    issues: list[ConfigIssue] = []
+
+    if app_config.site_profile == "demo" and app_config.mode != "enterprise":
+        issues.append(
+            ConfigIssue(
+                "error",
+                "mode",
+                f"site_profile=demo requires APP_MODE=enterprise, " f"but current mode is '{app_config.mode}'.",
+            )
+        )
+
+    return issues
+
+
+def _validate_llm_config() -> list[ConfigIssue]:
+    """Warn if LLM keys are configured but egress is disabled."""
+    issues: list[ConfigIssue] = []
+
+    configured_llms = app_config.get_configured_llms()
+    if configured_llms and not app_config.egress_enabled:
+        providers = ", ".join(configured_llms.keys())
+        issues.append(
+            ConfigIssue(
+                "warning",
+                "llm",
+                f"LLM API keys configured ({providers}) but egress is disabled. "
+                "Set EGRESS_ENABLED=true to allow LLM API calls.",
+            )
+        )
+
+    return issues
+
+
+def _validate_cors() -> list[ConfigIssue]:
+    """Warn if CORS_ORIGINS is not explicitly set in non-local modes."""
+    issues: list[ConfigIssue] = []
+
+    if app_config.mode != "local" and not os.getenv("CORS_ORIGINS"):
+        issues.append(
+            ConfigIssue(
+                "warning",
+                "cors",
+                f"CORS_ORIGINS not explicitly set for {app_config.mode} mode — "
+                "using localhost defaults. Set CORS_ORIGINS for production.",
+            )
+        )
+
+    return issues
+
+
+def validate_config() -> ConfigValidationResult:
+    """Run all configuration validation checks.
+
+    Returns structured results. Errors should prevent startup; warnings are logged.
+    Called from lifespan Phase 1 (before DB initialization).
+    """
+    issues: list[ConfigIssue] = []
+    issues.extend(_validate_security())
+    issues.extend(_validate_concurrency())
+    issues.extend(_validate_database_mode())
+    issues.extend(_validate_site_profile())
+    issues.extend(_validate_llm_config())
+    issues.extend(_validate_cors())
+    return ConfigValidationResult(issues=issues)
+
+
+def validate_concurrency_settings() -> None:
+    """
+    Validate concurrency-related settings and warn about multi-worker deployments.
+
+    Thin wrapper around the unified config validation for backward compatibility.
+    """
+    for issue in _validate_concurrency():
+        if issue.level == "error":
+            logger.critical(issue.message)
+            sys.exit(1)
+        else:
+            logger.warning(issue.message)
+
+    # Additional logging not covered by structured validation
+    if app_config.mode in ("hybrid", "enterprise"):
+        try:
+            import fcntl  # noqa: F401
+
+            has_fcntl = True
+        except ImportError:
+            has_fcntl = False
 
         if not has_fcntl:
             logger.warning(
@@ -77,7 +285,6 @@ def validate_concurrency_settings() -> None:
                 "Consider using Redis-backed rate limiting for production."
             )
 
-        # Info about current concurrency model
         logger.info(
             f"Concurrency model: "
             f"rate_limiter=file-locked, job_manager=database-backed, "
@@ -89,75 +296,17 @@ def validate_security_settings() -> None:
     """
     Validate security-critical settings at startup.
 
-    In non-local modes (hybrid, enterprise, cloud), ensures:
-    - SECRET_KEY is not the default value
-    - MASTER_ENCRYPTION_KEY is set (warning only)
-    - Hybrid mode warns if bound to a non-loopback address
+    Thin wrapper around the unified config validation for backward compatibility.
 
     Raises:
         SystemExit: If critical security settings are invalid
     """
-    import os
-
-    if app_config.mode == "local":
-        # Local mode: security validation is relaxed
-        if settings.secret_key == DEFAULT_SECRET_KEY:
-            logger.warning(
-                "Using default SECRET_KEY in local mode. " "This is acceptable for development but not recommended."
-            )
-        return
-
-    # Non-local modes: strict security validation
-    if settings.secret_key == DEFAULT_SECRET_KEY:
-        logger.critical(
-            f"SECURITY ERROR: Cannot start in '{app_config.mode}' mode with default SECRET_KEY!\n"
-            f"Please set a secure SECRET_KEY environment variable.\n"
-            f'Generate one with: python -c "import secrets; print(secrets.token_urlsafe(32))"'
-        )
-        sys.exit(1)
-
-    # APP_API_KEY: when ALLOW_SYSTEM_API_KEY_AUTH is enabled, it becomes a
-    # shared authentication secret and must never remain at default value.
-    system_key_auth_enabled = os.getenv("ALLOW_SYSTEM_API_KEY_AUTH", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-    }
-    if settings.api_key == DEFAULT_API_KEY and system_key_auth_enabled:
-        logger.warning(
-            "APP_API_KEY is set to the default value while ALLOW_SYSTEM_API_KEY_AUTH "
-            "is enabled. Set a strong random APP_API_KEY."
-        )
-
-    if os.getenv("TRUST_PROXY", "").strip().lower() in {"1", "true", "yes"}:
-        trusted_proxy_cidrs = os.getenv("TRUSTED_PROXY_CIDRS", "").strip()
-        if not trusted_proxy_cidrs:
-            logger.warning(
-                "TRUST_PROXY is enabled but TRUSTED_PROXY_CIDRS is not set. "
-                "Only loopback proxy peers are trusted by default. "
-                "Set TRUSTED_PROXY_CIDRS (e.g. 172.18.0.0/16) for container reverse proxies."
-            )
-
-    # Check encryption key (warning, not fatal)
-    if not os.getenv("MASTER_ENCRYPTION_KEY") and app_config.mode != "local":
-        logger.warning(
-            "MASTER_ENCRYPTION_KEY not set — auto-generating. Stored API keys "
-            "will be lost on container restart. Set this env var explicitly."
-        )
-
-    # Hybrid mode: warn if bound to a non-loopback address.
-    # The auth middleware enforces loopback-only for unauthenticated hybrid
-    # requests, so non-loopback clients will need a JWT or API key.
-    if app_config.mode == "hybrid":
-        bind_host = os.getenv("HOST", "127.0.0.1")
-        loopback = {"127.0.0.1", "::1", "localhost"}
-        if bind_host not in loopback:
-            logger.warning(
-                "SECURITY: Hybrid mode is bound to '%s'. Non-loopback clients "
-                "must authenticate with a valid JWT or API key. Unauthenticated "
-                "access is restricted to loopback (127.0.0.1) only.",
-                bind_host,
-            )
+    for issue in _validate_security():
+        if issue.level == "error":
+            logger.critical(issue.message)
+            sys.exit(1)
+        else:
+            logger.warning(issue.message)
 
 
 def ensure_data_dirs() -> None:

@@ -15,6 +15,7 @@ type SystemEventNotification = {
   severity?: AppNotification["severity"];
   title: string;
   message: string;
+  detail?: string;
 };
 
 const TERMINAL_JOB_STATUSES = new Set(["completed", "failed"]);
@@ -53,6 +54,7 @@ export function useNotifier() {
       severity: input.severity ?? "info",
       title: input.title,
       message: input.message,
+      detail: input.detail,
     });
   }
 

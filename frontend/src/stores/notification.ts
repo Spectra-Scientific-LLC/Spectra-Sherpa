@@ -7,6 +7,7 @@ export interface AppNotification {
   severity: "info" | "success" | "warning" | "error";
   title: string;
   message: string;
+  detail?: string;  // expandable error detail (stack trace, response body)
   timestamp: number;
   readAt: number | null;
   entityRef?: {
@@ -52,6 +53,7 @@ export const useNotificationStore = defineStore("notification", () => {
         existing.severity = input.severity;
         existing.title = input.title;
         existing.message = input.message;
+        existing.detail = input.detail;
         existing.timestamp = now;
         existing.readAt = null;
         return;

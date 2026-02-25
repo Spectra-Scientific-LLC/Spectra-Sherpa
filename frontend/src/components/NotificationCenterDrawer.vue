@@ -65,8 +65,24 @@
           <div class="notif-title-row">
             <span class="notif-title">{{ n.title }}</span>
             <span v-if="!n.readAt" class="notif-unread-dot"></span>
+            <button
+              v-if="n.detail"
+              class="notif-expand-btn"
+              @click.stop="toggleExpand(n)"
+            >
+              <i
+                :class="
+                  expandedId === n.id
+                    ? 'pi pi-chevron-up'
+                    : 'pi pi-chevron-down'
+                "
+              ></i>
+            </button>
           </div>
           <div class="notif-message">{{ n.message }}</div>
+          <div v-if="n.detail && expandedId === n.id" class="notif-detail">
+            <pre class="notif-detail-text">{{ n.detail }}</pre>
+          </div>
           <div class="notif-meta">
             <span class="notif-time">{{ timeAgo(n.timestamp) }}</span>
             <span class="notif-source">{{ n.source }}</span>
@@ -112,6 +128,12 @@ const emit = defineEmits<{
 
 const store = useNotificationStore();
 const activeTab = ref<"all" | "action">("all");
+const expandedId = ref<string | null>(null);
+
+function toggleExpand(n: AppNotification) {
+  expandedId.value = expandedId.value === n.id ? null : n.id;
+  store.markRead(n.id);
+}
 
 const visible = computed({
   get: () => props.modelValue,
@@ -377,5 +399,40 @@ function timeAgo(timestamp: number): string {
   color: #94a3b8;
   max-width: 280px;
   line-height: 1.4;
+}
+
+.notif-expand-btn {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 2px 4px;
+  margin-left: auto;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.notif-expand-btn:hover {
+  color: #475569;
+  background: #f1f5f9;
+}
+
+.notif-detail {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #f1f5f9;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+}
+
+.notif-detail-text {
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+  font-size: 0.75rem;
+  color: #334155;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  max-height: 200px;
+  overflow-y: auto;
 }
 </style>

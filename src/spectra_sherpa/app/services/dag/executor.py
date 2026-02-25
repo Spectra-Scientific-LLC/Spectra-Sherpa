@@ -13,292 +13,26 @@ import hashlib
 import json
 import logging
 import uuid
-import warnings
-from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from spectra_sherpa.app.core.config import settings
-
-logger = logging.getLogger(__name__)
-
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset
-from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
+from .executor_pool import _run_node_in_worker, get_default_pool, set_default_pool  # noqa: F401
+from .executor_validation import (  # noqa: F401 — tests import/monkeypatch these
+    HAS_NDDATASET,
+    _category_from_type_ref,
+    _is_dataset,
+    _validate_port_type,
+    _validate_spectral_units,
+)
 from .graph_utils import Edge as _Edge
 from .graph_utils import build_dependency_map, topological_sort
-from .meta_helpers import safe_get_coord
 from .node_base import Node, NodeResult, NodeStatus, node_registry
 
-HAS_NDDATASET = HAS_SCP
-
-
-def _is_dataset(obj: Any) -> bool:
-    """Check if obj is a dataset (SherpaDataset primary; also catches legacy types)."""
-    if isinstance(obj, SherpaDataset):
-        return True
-    if HAS_SCP and isinstance(obj, NDDataset):
-        return True
-    return False
-
-
-def _category_from_type_ref(type_ref: str) -> str:
-    """Derive the visual category from a type_ref URI.
-
-    Resolves through the loaded type registry when available, otherwise
-    falls back to ``"dataset"``.
-    """
-    try:
-        from spectra_sherpa.app.types import type_registry
-
-        td = type_registry.resolve(type_ref)
-        return td.category
-    except Exception:
-        return "dataset"
-
-
-# SpectralResult removed - using NDDataset-only
-HAS_SPECTRAL_RESULT = False
-SpectralResult = None
-
-# Import unit validation from app/lib
-try:
-    from spectra_sherpa.app.lib.spectral.validators import validate_and_normalize_units
-
-    HAS_UNIT_VALIDATION = True
-except ImportError:
-    validate_and_normalize_units = None
-    HAS_UNIT_VALIDATION = False
-
-
-def _validate_spectral_units(
-    datasets: List[Any],
-    operation: str,
-) -> List[Any]:
-    """
-    Validate and normalize spectral units across multiple datasets.
-
-    Uses the "warning + auto-convert" policy: if incompatible units are
-    detected (e.g., mixing Absorbance and Transmittance), logs a warning
-    and auto-converts all datasets to Absorbance.
-
-    Args:
-        datasets: List of NDDataset objects to validate
-        operation: Name of the operation (for warning messages)
-
-    Returns:
-        List of datasets with compatible units (possibly auto-converted)
-    """
-    if not HAS_UNIT_VALIDATION or not HAS_NDDATASET:
-        return datasets
-
-    # Filter to only NDDataset objects (unit validation is SCP-specific)
-    nddatasets = [d for d in datasets if HAS_NDDATASET and isinstance(d, NDDataset)]
-    if len(nddatasets) < 2:
-        return datasets
-
-    # Validate and normalize units
-    normalized = validate_and_normalize_units(nddatasets, operation)
-
-    # Replace in original list
-    result = []
-    norm_idx = 0
-    for d in datasets:
-        if HAS_NDDATASET and isinstance(d, NDDataset):
-            result.append(normalized[norm_idx])
-            norm_idx += 1
-        else:
-            result.append(d)
-
-    return result
-
-
-def _validate_port_type(
-    data: Any,
-    expected_type: str,
-    port_name: str,
-    source_node_id: str,
-    target_node_id: str,
-    strict: bool = False,
-) -> None:
-    """
-    Validate that data matches the expected port type.
-
-    Port types:
-    - "dataset": Expects NDDataset (SpectroChemPy smart array)
-    - "array": Expects list, tuple, or numpy array
-    - "model": Expects fitted model object
-    - "target": Expects array-like (concentrations, labels)
-    - "config": Expects dict
-
-    Args:
-        data: The data to validate
-        expected_type: The expected port type
-        port_name: Name of the port for error messages
-        source_node_id: ID of the node providing the data
-        target_node_id: ID of the node receiving the data
-        strict: If True, raise error on mismatch. If False, warn only.
-
-    Raises:
-        TypeError: If strict=True and type doesn't match
-    """
-    import numpy as np
-
-    type_checks = {
-        "dataset": lambda d: _is_dataset(d),
-        "array": lambda d: isinstance(d, (list, tuple, np.ndarray)) or _is_dataset(d),
-        "model": lambda d: hasattr(d, "fit") or hasattr(d, "transform") or hasattr(d, "predict"),
-        "target": lambda d: isinstance(d, (list, tuple, np.ndarray)) or _is_dataset(d),
-        "config": lambda d: isinstance(d, dict),
-    }
-
-    # Skip validation for unknown types
-    if expected_type not in type_checks:
-        return
-
-    # Check type
-    is_valid = type_checks[expected_type](data)
-
-    if not is_valid:
-        actual_type = type(data).__name__
-        msg = (
-            f"Port type mismatch: '{port_name}' on node '{target_node_id}' "
-            f"expects '{expected_type}' but received '{actual_type}' from node '{source_node_id}'. "
-        )
-
-        if expected_type == "dataset":
-            msg += (
-                "Upstream node should return SherpaDataset with coordinates attached, "
-                "not raw arrays. This ensures X-axis (wavenumbers) stays coupled with data."
-            )
-
-        if strict:
-            raise TypeError(msg)
-        else:
-            warnings.warn(msg, UserWarning, stacklevel=3)
-
-    # Additional coordinate validation for datasets
-    # This catches mismatched axes that could cause cryptic errors downstream
-    if is_valid and expected_type == "dataset" and _is_dataset(data):
-        coord_issues = []
-
-        try:
-            # Check X-axis (spectral dimension) exists and matches data shape.
-            # Coordinate internals can occasionally be malformed (e.g., coord.data is None),
-            # so this validation must never raise and block execution.
-            x_coord = safe_get_coord(data, "x")
-            data_shape = tuple(data.shape) if hasattr(data, "shape") else ()
-            data_spectral_dim = data_shape[-1] if len(data_shape) > 0 else 0
-
-            if x_coord is not None:
-                x_len = None
-                try:
-                    x_data = getattr(x_coord, "data")
-                except Exception:
-                    x_data = None
-
-                if x_data is not None:
-                    try:
-                        x_len = len(x_data)
-                    except Exception:
-                        try:
-                            x_arr = np.asarray(x_data)
-                            x_len = int(x_arr.shape[0]) if x_arr.ndim > 0 else 1
-                        except Exception:
-                            x_len = None
-
-                if x_len is None:
-                    try:
-                        x_len = len(x_coord)
-                    except Exception:
-                        x_len = None
-
-                if x_len is None:
-                    coord_issues.append("X-axis coordinates exist but length could not be determined")
-                elif data_spectral_dim > 0 and x_len != data_spectral_dim:
-                    coord_issues.append(
-                        f"X-axis length ({x_len}) doesn't match spectral dimension ({data_spectral_dim})"
-                    )
-            elif data_spectral_dim > 1:
-                # Missing X-axis on multi-point data is a warning
-                coord_issues.append("No X-axis coordinates defined (wavenumbers will be unavailable for display)")
-
-            # Check for NaN in data (best effort; ignore non-numeric payloads)
-            try:
-                data_values = getattr(data, "data", None)
-                if data_values is not None and np.any(np.isnan(np.asarray(data_values, dtype=float))):
-                    coord_issues.append("Data contains NaN values")
-            except Exception:
-                pass
-        except Exception as coord_err:
-            warnings.warn(
-                f"Data integrity validation failed on '{port_name}' from node '{source_node_id}': {coord_err}",
-                UserWarning,
-                stacklevel=3,
-            )
-
-        # Warn about coordinate issues (don't block execution)
-        for issue in coord_issues:
-            warnings.warn(
-                f"Data integrity warning on '{port_name}' from node '{source_node_id}': {issue}",
-                UserWarning,
-                stacklevel=3,
-            )
-
-
-# ---------------------------------------------------------------------------
-# Process pool for CPU-bound node execution
-# ---------------------------------------------------------------------------
-
-_default_process_pool: Optional[ProcessPoolExecutor] = None
-
-
-def set_default_pool(pool: Optional[ProcessPoolExecutor]) -> None:
-    """Set the module-level default ProcessPoolExecutor.
-
-    Called once during app lifespan startup so that every ``DAGExecutor()``
-    created afterwards automatically offloads CPU-bound nodes.
-    """
-    global _default_process_pool
-    _default_process_pool = pool
-
-
-def _run_node_in_worker(
-    node_type: str,
-    node_id: str,
-    parameters: dict,
-    args: tuple,
-    kwargs: dict,
-) -> NodeResult:
-    """Execute a node in a worker process.
-
-    Top-level function (required for pickling by ProcessPoolExecutor).
-    Creates a fresh node instance in the worker process and runs it via
-    a throwaway event loop (the node's execute() is async-declared but
-    does only CPU-bound work — no real I/O awaits).
-    """
-    # Import node modules to populate the registry in the worker process.
-    # These are guarded at module scope in the main process by conftest /
-    # app startup, but spawned workers start fresh.
-    import spectra_sherpa.app.services.dag.nodes.classification  # noqa: F401
-    import spectra_sherpa.app.services.dag.nodes.modeling  # noqa: F401
-    import spectra_sherpa.app.services.dag.nodes.preprocessing  # noqa: F401
-
-    try:
-        import spectra_sherpa.app.services.dag.nodes.output  # noqa: F401
-    except Exception:
-        pass  # output nodes are rarely offloaded
-
-    node = node_registry.create_node(node_type, node_id, parameters)
-    if kwargs:
-        if list(kwargs.keys()) == ["default"]:
-            result = asyncio.run(node.run(kwargs["default"]))
-        else:
-            result = asyncio.run(node.run(**kwargs))
-    else:
-        result = asyncio.run(node.run(*args))
-    return result
+logger = logging.getLogger(__name__)
 
 
 class WorkflowStatus(str, Enum):
@@ -331,6 +65,40 @@ class WorkflowNode:
     position: Optional[Dict[str, float]] = None  # x, y coordinates for UI
 
 
+@dataclass
+class ValidationIssue:
+    """A single workflow validation issue."""
+
+    level: str  # "error" or "warning"
+    node_id: Optional[str]  # None for graph-level issues
+    port: Optional[str]  # Port name if applicable
+    message: str
+
+
+@dataclass
+class ValidationResult:
+    """Structured result from workflow validation."""
+
+    issues: List["ValidationIssue"]
+
+    @property
+    def is_valid(self) -> bool:
+        """True if no errors (warnings are OK)."""
+        return not any(i.level == "error" for i in self.issues)
+
+    @property
+    def errors(self) -> List["ValidationIssue"]:
+        return [i for i in self.issues if i.level == "error"]
+
+    @property
+    def warnings(self) -> List["ValidationIssue"]:
+        return [i for i in self.issues if i.level == "warning"]
+
+    def to_error_strings(self) -> List[str]:
+        """Backward-compatible: return error messages as list of strings."""
+        return [i.message for i in self.issues if i.level == "error"]
+
+
 class DAGExecutor:
     """
     Executes workflows represented as directed acyclic graphs.
@@ -339,7 +107,7 @@ class DAGExecutor:
     Supports caching to avoid re-executing unchanged nodes.
     """
 
-    def __init__(self, process_pool: Optional[ProcessPoolExecutor] = None, model_store: Any = None):
+    def __init__(self, process_pool=None, model_store: Any = None):
         """Initialize executor.
 
         Args:
@@ -357,7 +125,7 @@ class DAGExecutor:
         self.results: Dict[str, Any] = {}
         self.diagnostics: Dict[str, Dict[str, Any]] = {}
         self.status: WorkflowStatus = WorkflowStatus.IDLE
-        self._process_pool = process_pool if process_pool is not None else _default_process_pool
+        self._process_pool = process_pool if process_pool is not None else get_default_pool()
         self.model_store = model_store
         # Artifacts saved during this execution (for DB record creation by callers)
         self.saved_artifacts: List[Dict[str, Any]] = []
@@ -380,13 +148,12 @@ class DAGExecutor:
     def __setstate__(self, state: Dict[str, Any]) -> None:
         """Restore executor state, reconnecting to global process pool.
 
-        The process pool is restored from the global _default_process_pool
-        set at app startup, ensuring all cloned executors share the same
-        worker pool.
+        The process pool is restored from the global pool set at app startup,
+        ensuring all cloned executors share the same worker pool.
         """
         self.__dict__.update(state)
         # Restore reference to global process pool
-        self._process_pool = _default_process_pool
+        self._process_pool = get_default_pool()
 
     def _resolve_model_store(self) -> Any:
         """Return the active ModelStore: explicit > global singleton > None."""
@@ -580,52 +347,212 @@ class DAGExecutor:
         Returns:
             List of validation error messages (empty if valid)
         """
-        errors: List[str] = []
+        return self.validate_full().to_error_strings()
 
-        # Check for cycles (topological sort will fail if cycles exist)
+    def validate_full(self) -> ValidationResult:
+        """
+        Full workflow validation with structured results.
+
+        Checks graph structure, required ports, parameters, and port types.
+
+        Returns:
+            ValidationResult with categorized errors and warnings
+        """
+        issues: List[ValidationIssue] = []
+
+        # 1. Cycle detection (topological sort will fail if cycles exist)
         try:
             self._topological_sort()
         except ValueError as e:
-            errors.append(str(e))
-            return errors  # Can't continue validation if graph is cyclic
+            issues.append(ValidationIssue("error", None, None, str(e)))
+            return ValidationResult(issues)  # Can't continue if cyclic
 
-        # Check that multi-input nodes have all required inputs connected
+        # 2. Required port connections
+        issues.extend(self._validate_port_connections())
+
+        # 3. Non-source nodes must have inputs
+        issues.extend(self._validate_node_inputs())
+
+        # 4. Required parameters and value constraints
+        issues.extend(self._validate_parameters())
+
+        # 5. Port type compatibility between connected nodes
+        issues.extend(self._validate_port_types())
+
+        return ValidationResult(issues)
+
+    def _validate_port_connections(self) -> List[ValidationIssue]:
+        """Check that multi-input nodes have all required inputs connected."""
+        issues: List[ValidationIssue] = []
         for node_id, node in self.nodes.items():
             if node.uses_named_ports() and node.metadata.input_ports:
                 incoming_edges = [e for e in self.edges if e.to_node == node_id]
-                connected_ports = set()
+                connected_ports: Set[str] = set()
 
                 for edge in incoming_edges:
                     port_name = edge.to_input
                     if port_name == "default":
-                        # Legacy edge - assign to first available port
                         port_idx = len(connected_ports)
                         if port_idx < len(node.metadata.input_ports):
                             port_name = node.metadata.input_ports[port_idx].name
                     connected_ports.add(port_name)
 
-                # Check required ports
                 for port in node.metadata.input_ports:
                     if port.required and port.name not in connected_ports:
-                        errors.append(
-                            f"Node '{node_id}' ({node.metadata.label}): "
-                            f"Required input port '{port.label}' is not connected"
+                        issues.append(
+                            ValidationIssue(
+                                "error",
+                                node_id,
+                                port.name,
+                                f"Node '{node_id}' ({node.metadata.label}): "
+                                f"Required input port '{port.label}' is not connected",
+                            )
                         )
+        return issues
 
-        # Check that all non-source nodes have at least one input
+    def _validate_node_inputs(self) -> List[ValidationIssue]:
+        """Check that all non-source nodes have at least one input."""
+        issues: List[ValidationIssue] = []
         deps = self._get_dependencies()
         for node_id, dep_list in deps.items():
             node = self.nodes[node_id]
-            # Skip source nodes (no input_types or first input_type is empty)
             is_source = (
                 not node.metadata.input_types
                 or node.metadata.input_types == [""]
                 or node.metadata.node_type.startswith("data.")
             )
             if not is_source and len(dep_list) == 0:
-                errors.append(f"Node '{node_id}' ({node.metadata.label}): " f"Has no input connections")
+                issues.append(
+                    ValidationIssue(
+                        "error",
+                        node_id,
+                        None,
+                        f"Node '{node_id}' ({node.metadata.label}): Has no input connections",
+                    )
+                )
+        return issues
 
-        return errors
+    def _validate_parameters(self) -> List[ValidationIssue]:
+        """Validate required parameters have values and constraints are met."""
+        issues: List[ValidationIssue] = []
+        for node_id, node in self.nodes.items():
+            if not node.metadata:
+                continue
+            for param_def in node.metadata.parameters:
+                value = node.parameters.get(param_def.name)
+                has_value = value is not None and value != ""
+                has_default = param_def.default is not None
+
+                # Required parameter missing
+                if param_def.required and not has_value and not has_default:
+                    issues.append(
+                        ValidationIssue(
+                            "error",
+                            node_id,
+                            None,
+                            f"Node '{node_id}' ({node.metadata.label}): "
+                            f"Missing required parameter '{param_def.label}'",
+                        )
+                    )
+                    continue
+
+                if not has_value:
+                    continue
+
+                # Number range validation
+                if param_def.param_type == "number" and isinstance(value, (int, float)):
+                    if param_def.min_value is not None and value < param_def.min_value:
+                        issues.append(
+                            ValidationIssue(
+                                "error",
+                                node_id,
+                                None,
+                                f"Node '{node_id}' ({node.metadata.label}): "
+                                f"Parameter '{param_def.label}' value {value} "
+                                f"below minimum {param_def.min_value}",
+                            )
+                        )
+                    if param_def.max_value is not None and value > param_def.max_value:
+                        issues.append(
+                            ValidationIssue(
+                                "error",
+                                node_id,
+                                None,
+                                f"Node '{node_id}' ({node.metadata.label}): "
+                                f"Parameter '{param_def.label}' value {value} "
+                                f"above maximum {param_def.max_value}",
+                            )
+                        )
+
+                # Select parameter: value must be in options
+                if param_def.param_type == "select" and param_def.options:
+                    option_values = [o["value"] if isinstance(o, dict) else o for o in param_def.options]
+                    if value not in option_values:
+                        issues.append(
+                            ValidationIssue(
+                                "warning",
+                                node_id,
+                                None,
+                                f"Node '{node_id}' ({node.metadata.label}): "
+                                f"Parameter '{param_def.label}' value '{value}' "
+                                f"not in options",
+                            )
+                        )
+        return issues
+
+    def _validate_port_types(self) -> List[ValidationIssue]:
+        """Check port type compatibility between connected nodes."""
+        issues: List[ValidationIssue] = []
+        try:
+            from spectra_sherpa.app.types import type_registry
+
+            if not type_registry.is_loaded:
+                return issues
+        except Exception:
+            return issues
+
+        for edge in self.edges:
+            source_node = self.nodes.get(edge.from_node)
+            target_node = self.nodes.get(edge.to_node)
+            if not source_node or not target_node:
+                continue
+
+            # Resolve source output type_ref
+            source_type_ref = None
+            if source_node.metadata and source_node.metadata.output_ports:
+                for port in source_node.metadata.output_ports:
+                    if port.name == edge.from_output:
+                        source_type_ref = port.type_ref
+                        break
+                if source_type_ref is None and edge.from_output == "default" and source_node.metadata.output_ports:
+                    source_type_ref = source_node.metadata.output_ports[0].type_ref
+
+            # Resolve target input type_ref
+            target_type_ref = None
+            if target_node.metadata and target_node.metadata.input_ports:
+                for port in target_node.metadata.input_ports:
+                    if port.name == edge.to_input:
+                        target_type_ref = port.type_ref
+                        break
+                if target_type_ref is None and edge.to_input == "default" and target_node.metadata.input_ports:
+                    target_type_ref = target_node.metadata.input_ports[0].type_ref
+
+            # Both ports have type_refs: check compatibility
+            if source_type_ref and target_type_ref:
+                is_ok, reason = type_registry.is_compatible(source_type_ref, target_type_ref)
+                if not is_ok:
+                    src_label = source_node.metadata.label if source_node.metadata else edge.from_node
+                    tgt_label = target_node.metadata.label if target_node.metadata else edge.to_node
+                    issues.append(
+                        ValidationIssue(
+                            "warning",
+                            edge.to_node,
+                            edge.to_input,
+                            f"Port type mismatch: {src_label} output '{edge.from_output}' -> "
+                            f"{tgt_label} input '{edge.to_input}': {reason}",
+                        )
+                    )
+        return issues
 
     def add_node(self, workflow_node: WorkflowNode) -> None:
         """
@@ -938,7 +865,11 @@ class DAGExecutor:
 
             return positional_inputs, {}
 
-    async def execute(self, initial_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def execute(
+        self,
+        initial_data: Optional[Dict[str, Any]] = None,
+        status_callback: Optional[Any] = None,
+    ) -> Dict[str, Any]:
         """
         Execute the workflow.
 
@@ -946,6 +877,9 @@ class DAGExecutor:
             initial_data: Optional dict of node_id -> config for source nodes.
                          This is used to configure DATA nodes with experiment IDs,
                          file paths, etc. It is NOT passed as pre-computed results.
+            status_callback: Optional async callback ``(node_id, status, error?) -> None``
+                            called for per-node progress events (queued/running/completed/error).
+                            Failures in the callback are silently ignored.
 
         Returns:
             Dict mapping node_id to execution results
@@ -953,6 +887,14 @@ class DAGExecutor:
         Raises:
             ValueError: If workflow is invalid or execution fails
         """
+
+        async def _emit(nid: str, st: str, err: Optional[str] = None) -> None:
+            if status_callback is not None:
+                try:
+                    await status_callback(nid, st, err)
+                except Exception:
+                    pass  # Never let broadcast failure affect execution
+
         try:
             self.status = WorkflowStatus.RUNNING
             self.saved_artifacts = []  # Reset for this execution
@@ -974,6 +916,10 @@ class DAGExecutor:
             # Get execution order
             execution_order = self._topological_sort()
 
+            # Mark all nodes as queued
+            for node_id in execution_order:
+                await _emit(node_id, "queued")
+
             # Execute nodes in order (with caching)
             for node_id in execution_order:
                 node = self.nodes[node_id]
@@ -981,6 +927,7 @@ class DAGExecutor:
                 # Check if we can use cached result
                 if self._is_node_cached(node_id):
                     logger.debug("Using cached result: %s (%s)", node_id, node.metadata.label)
+                    await _emit(node_id, "completed")
                     continue
 
                 # Get inputs from upstream nodes (positional or named)
@@ -990,13 +937,16 @@ class DAGExecutor:
                 node_timeout = settings.max_job_duration_sec
                 label = node.metadata.label if node.metadata else node_id
                 logger.debug("Executing node: %s (%s)", node_id, label)
+                await _emit(node_id, "running")
                 try:
                     result = await self._run_one_node(node, positional_inputs, named_inputs, node_timeout)
                 except asyncio.TimeoutError:
-                    raise ValueError(
+                    err_msg = (
                         f"Node '{label}' exceeded {node_timeout}s timeout. "
                         f"Reduce dataset size or simplify parameters."
                     )
+                    await _emit(node_id, "error", err_msg)
+                    raise ValueError(err_msg)
 
                 # Unpack NodeResult: store outputs for downstream, diagnostics separately
                 if isinstance(result, NodeResult):
@@ -1011,6 +961,7 @@ class DAGExecutor:
 
                 self._param_hashes[node_id] = self._compute_param_hash(node_id)
                 logger.debug("Completed: %s (status: %s)", node_id, node.status.value)
+                await _emit(node_id, "completed")
 
             self.status = WorkflowStatus.COMPLETED
             return self.results

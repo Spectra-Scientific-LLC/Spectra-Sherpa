@@ -195,6 +195,25 @@ class WorkflowDetail(WorkflowSummary):
     edges: list[WorkflowEdgeOut] = Field(default_factory=list)
 
 
+# Validation schemas
+class WorkflowValidationIssue(BaseModel):
+    """A single validation issue."""
+
+    level: str = Field(..., description="'error' or 'warning'")
+    node_id: str | None = Field(None, description="Node ID (null for graph-level)")
+    port: str | None = Field(None, description="Port name if applicable")
+    message: str = Field(..., description="Human-readable description")
+
+
+class WorkflowValidationResponse(BaseModel):
+    """Response from workflow validation endpoint."""
+
+    is_valid: bool = Field(..., description="True if no errors (warnings OK)")
+    issues: list[WorkflowValidationIssue] = Field(default_factory=list, description="Validation issues")
+    error_count: int = Field(0, description="Number of errors")
+    warning_count: int = Field(0, description="Number of warnings")
+
+
 # Execution schemas
 class WorkflowExecuteRequest(BaseModel):
     """Schema for workflow execution request."""

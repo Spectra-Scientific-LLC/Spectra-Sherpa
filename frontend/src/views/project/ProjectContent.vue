@@ -1,5 +1,6 @@
 <template>
   <section class="project-content">
+    <OnboardingBanner />
     <div class="section-header">
       <div>
         <h1>Projects</h1>
@@ -263,6 +264,7 @@ import { useProjectStore } from "@/stores/project";
 import type { ProjectSummary } from "@/types";
 import ProjectDialog from "@/components/ProjectDialog.vue";
 import type { ProjectFormData } from "@/components/ProjectDialog.vue";
+import OnboardingBanner from "@/components/OnboardingBanner.vue";
 
 const router = useRouter();
 const toast = useToast();

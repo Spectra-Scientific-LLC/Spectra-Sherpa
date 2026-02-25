@@ -149,6 +149,8 @@ from spectra_sherpa.app.schemas.workflows import (
     WorkflowExecuteResponse,
     WorkflowSummary,
     WorkflowUpdate,
+    WorkflowValidationIssue,
+    WorkflowValidationResponse,
     WorkflowVersionDetail,
     WorkflowVersionListResponse,
     WorkflowVersionSummary,
@@ -1192,6 +1194,99 @@ async def delete_workflow(
     await session.commit()
 
 
+@router.post("/{workflow_id}/validate", response_model=WorkflowValidationResponse)
+async def validate_workflow_endpoint(
+    workflow_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> WorkflowValidationResponse:
+    """Validate a workflow without executing it.
+
+    Checks: graph structure, required parameters, port type compatibility.
+    Returns structured list of errors and warnings.
+    """
+    user_id = current_user.id
+
+    query = (
+        select(Workflow)
+        .where(Workflow.id == workflow_id)
+        .where(Workflow.user_id == user_id)
+        .options(
+            selectinload(Workflow.nodes),
+            selectinload(Workflow.edges),
+        )
+    )
+    result = await session.execute(query)
+    workflow = result.scalar_one_or_none()
+
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    # Build executor (same pattern as execute_workflow)
+    executor = DAGExecutor()
+    all_issues: list[WorkflowValidationIssue] = []
+
+    for node in workflow.nodes:
+        dag_node = DAGNode(
+            node_id=node.node_id,
+            node_type=node.node_type,
+            parameters=node.parameters or {},
+        )
+        try:
+            executor.add_node(dag_node)
+        except KeyError as e:
+            all_issues.append(
+                WorkflowValidationIssue(
+                    level="error",
+                    node_id=node.node_id,
+                    port=None,
+                    message=f"Unknown node type: {e}",
+                )
+            )
+
+    for edge in workflow.edges:
+        dag_edge = DAGEdge(
+            from_node=edge.from_node_id,
+            to_node=edge.to_node_id,
+            from_output=edge.from_output,
+            to_input=edge.to_input,
+        )
+        try:
+            executor.add_edge(dag_edge)
+        except ValueError as e:
+            all_issues.append(
+                WorkflowValidationIssue(
+                    level="error",
+                    node_id=None,
+                    port=None,
+                    message=str(e),
+                )
+            )
+
+    # Run structural + parameter + port type validation
+    if not any(i.level == "error" for i in all_issues):
+        validation = executor.validate_full()
+        for issue in validation.issues:
+            all_issues.append(
+                WorkflowValidationIssue(
+                    level=issue.level,
+                    node_id=issue.node_id,
+                    port=issue.port,
+                    message=issue.message,
+                )
+            )
+
+    errors = [i for i in all_issues if i.level == "error"]
+    warnings = [i for i in all_issues if i.level == "warning"]
+
+    return WorkflowValidationResponse(
+        is_valid=len(errors) == 0,
+        issues=all_issues,
+        error_count=len(errors),
+        warning_count=len(warnings),
+    )
+
+
 @router.post("/{workflow_id}/execute", response_model=WorkflowExecuteResponse)
 async def execute_workflow(
     workflow_id: int,
@@ -1265,13 +1360,36 @@ async def execute_workflow(
             )
             executor.add_edge(dag_edge)
 
+        # Build per-node status broadcast callback
+        import time as _time
+
+        from spectra_sherpa.app.services.websocket_manager import ws_manager
+
+        async def _broadcast_node_status(node_id: str, status: str, error: str | None = None) -> None:
+            try:
+                await ws_manager.broadcast(
+                    f"workflow:{workflow_id}",
+                    {
+                        "type": "node_status",
+                        "node_id": node_id,
+                        "status": status,
+                        "error": error,
+                        "timestamp": _time.time(),
+                    },
+                )
+            except Exception:
+                pass  # Never let broadcast failure affect execution
+
         # Execute
         if payload.node_id:
             # Execute single node and its dependencies (with initial_data for DATA nodes)
             results = await executor.execute_node(payload.node_id, initial_data=payload.initial_data)
         else:
             # Execute entire workflow
-            results = await executor.execute(initial_data=payload.initial_data)
+            results = await executor.execute(
+                initial_data=payload.initial_data,
+                status_callback=_broadcast_node_status,
+            )
 
         # Serialize results to JSON-safe format (per-node, so one failure doesn't lose all)
         logger.debug("[Serialization] Starting serialization of %s node results...", len(results))

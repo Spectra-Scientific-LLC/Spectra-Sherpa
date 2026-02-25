@@ -114,9 +114,14 @@ async def test_lifespan_runs_extra_shutdown_before_core_teardown(monkeypatch: py
     events: list[str] = []
 
     # Startup sync phase
+    from spectra_sherpa.app.core.startup import ConfigValidationResult
+
     monkeypatch.setattr(app_main, "configure_logging", _sync_event(events, "configure_logging"))
-    monkeypatch.setattr(app_main, "validate_security_settings", _sync_event(events, "validate_security_settings"))
-    monkeypatch.setattr(app_main, "validate_concurrency_settings", _sync_event(events, "validate_concurrency_settings"))
+    monkeypatch.setattr(
+        app_main,
+        "validate_config",
+        lambda: (events.append("validate_config"), ConfigValidationResult())[1],
+    )
     monkeypatch.setattr(app_main, "ensure_data_dirs", _sync_event(events, "ensure_data_dirs"))
     monkeypatch.setattr(app_main, "_try_leader_lock", lambda: True)
 

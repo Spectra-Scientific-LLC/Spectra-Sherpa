@@ -38,8 +38,7 @@ from spectra_sherpa.app.core.startup import (
     ensure_spectrochempy_testdata,
     ensure_workflow_templates,
     reconcile_stale_jobs,
-    validate_concurrency_settings,
-    validate_security_settings,
+    validate_config,
     wait_for_database_ready,
 )
 from spectra_sherpa.app.db.session import async_session
@@ -237,8 +236,14 @@ def _make_lifespan(
             # Phase 1: per-worker setup (safe to run in every worker)
             logger.info("Phase 1: per-worker setup ...")
             configure_logging()
-            validate_security_settings()  # Fail fast if security config is invalid
-            validate_concurrency_settings()  # Fail fast if multi-worker without pub/sub
+            # Unified config validation (security, concurrency, database, mode, LLM, CORS)
+            _config_result = validate_config()
+            for _w in _config_result.warnings:
+                logger.warning("[Config] %s: %s", _w.category, _w.message)
+            if _config_result.has_errors:
+                for _e in _config_result.errors:
+                    logger.critical("[Config] %s: %s", _e.category, _e.message)
+                raise SystemExit(1)
             ensure_data_dirs()
 
             # Initialize model artifact storage (safe in every worker — only creates dirs)
@@ -497,6 +502,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             if requested == job_channel:
                 return requested
             return None
+        # Allow workflow status channels (workflow:{workflow_id})
+        if requested.startswith("workflow:"):
+            return requested
         return requested
 
     # ---- Action dispatcher ----

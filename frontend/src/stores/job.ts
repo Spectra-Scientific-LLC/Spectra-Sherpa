@@ -137,6 +137,13 @@ export const useJobStore = defineStore("job", () => {
             message: payload.message,
           });
         }
+
+        // Dispatch workflow node status events (from workflow:{id} channels)
+        if (payload?.type === "node_status" && payload?.node_id) {
+          window.dispatchEvent(
+            new CustomEvent("workflow-node-status", { detail: payload })
+          );
+        }
       } catch {
         // Ignore malformed payloads
       }
@@ -208,6 +215,7 @@ export const useJobStore = defineStore("job", () => {
   return {
     jobs,
     connected,
+    wsRef,
     fetchJobs,
     fetchJob,
     connect,

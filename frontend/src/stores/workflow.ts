@@ -3,6 +3,7 @@ import { ref, computed } from "vue";
 import api from "@/api/client";
 import type { NodeTypeMetadata, NodeLibraryResponse, NodeExecutionState, NodeExecutionStatus } from "@/types";
 import { getErrorMessage } from "@/utils/errors";
+import { useJobStore } from "@/stores/job";
 
 type ParamsMap = Record<string, unknown>;
 type UnknownRecord = Record<string, unknown>;
@@ -1125,12 +1126,37 @@ export const useWorkflowStore = defineStore("workflow", () => {
       await saveWorkflow();
     }
 
-    // Mark all nodes as running before execution
+    // Mark all nodes as queued before execution
     for (const node of nodes.value) {
-      setNodeExecutionState(node.id, { status: "running" });
+      setNodeExecutionState(node.id, { status: "pending" });
     }
 
     isLoading.value = true;
+
+    // Subscribe to real-time per-node progress via existing WebSocket
+    const jobStore = useJobStore();
+    const wfChannel = workflowId.value ? `workflow:${workflowId.value}` : null;
+    const ws = jobStore.wsRef;
+
+    if (wfChannel && ws && ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(JSON.stringify({ action: "subscribe", channel: wfChannel }));
+      } catch { /* ignore */ }
+    }
+
+    const _onNodeStatus = (ev: Event) => {
+      const detail = (ev as CustomEvent).detail;
+      if (!detail?.node_id || !detail?.status) return;
+      const frontendId = resolveFrontendNodeId(detail.node_id);
+      if (frontendId !== null) {
+        setNodeExecutionState(frontendId, {
+          status: detail.status as NodeExecutionStatus,
+          error_message: detail.error || null,
+        });
+      }
+    };
+    window.addEventListener("workflow-node-status", _onNodeStatus);
+
     try {
       const response = await api.post(`/workflows/${workflowId.value}/execute`, {
         initial_data: initialData || {},
@@ -1215,6 +1241,13 @@ export const useWorkflowStore = defineStore("workflow", () => {
       }
       throw error;
     } finally {
+      // Clean up workflow progress subscription
+      window.removeEventListener("workflow-node-status", _onNodeStatus);
+      if (wfChannel && ws && ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(JSON.stringify({ action: "unsubscribe", channel: wfChannel }));
+        } catch { /* ignore */ }
+      }
       isLoading.value = false;
     }
   }

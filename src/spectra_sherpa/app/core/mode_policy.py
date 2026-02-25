@@ -45,6 +45,15 @@ def is_multi_user() -> bool:
     return app_config.mode != "local"
 
 
+def allows_admin() -> bool:
+    """Whether admin routes are enabled.
+
+    Backward-compatible helper used by spectra-server admin routes.
+    Admin capabilities are only meaningful in multi-user modes.
+    """
+    return is_multi_user()
+
+
 # ── Authentication ───────────────────────────────────────────────
 
 

@@ -61,6 +61,19 @@ function emitAsyncApiErrorNotification(error: AxiosError): void {
     return;
   }
 
+  // Build extended detail from response body
+  let extendedDetail: string | undefined;
+  if (error.response?.data) {
+    try {
+      extendedDetail =
+        typeof error.response.data === "string"
+          ? error.response.data
+          : JSON.stringify(error.response.data, null, 2);
+    } catch {
+      extendedDetail = undefined;
+    }
+  }
+
   import("@/composables/useNotifier")
     .then(({ useNotifier }) => {
       const { notifyDeployOutcome, notifySystemEvent } = useNotifier();
@@ -73,6 +86,7 @@ function emitAsyncApiErrorNotification(error: AxiosError): void {
         severity: "error",
         title: "Background Sync Error",
         message,
+        detail: extendedDetail,
       });
     })
     .catch(() => undefined);
