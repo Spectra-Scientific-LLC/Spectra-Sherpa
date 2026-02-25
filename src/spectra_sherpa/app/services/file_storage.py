@@ -1,12 +1,32 @@
 from __future__ import annotations
 
+import os
+import re
+import unicodedata
 from pathlib import Path
 from typing import Iterable
 
 from fastapi import UploadFile
-from werkzeug.utils import secure_filename
 
 from spectra_sherpa.app.core.config import settings
+
+
+def _secure_filename(filename: str) -> str:
+    """Sanitize a filename (drop-in replacement for werkzeug.utils.secure_filename)."""
+    # Normalize unicode, keep only ASCII
+    filename = unicodedata.normalize("NFKD", filename)
+    filename = filename.encode("ascii", "ignore").decode("ascii")
+    # Replace path separators with spaces
+    for sep in (os.sep, os.altsep):
+        if sep:
+            filename = filename.replace(sep, " ")
+    # Keep only word chars, spaces, hyphens, dots
+    filename = re.sub(r"[^\w\s\-.]", "", filename).strip()
+    # Collapse whitespace / underscores
+    filename = re.sub(r"[\s]+", "_", filename)
+    # Strip leading dots (hidden files)
+    filename = filename.lstrip(".")
+    return filename
 
 
 class FileValidationError(ValueError):
@@ -21,7 +41,7 @@ def sanitize_filename(filename: str) -> str:
     if ".." in filename or "/" in filename or "\\" in filename:
         raise FileValidationError("Invalid filename")
 
-    sanitized = secure_filename(filename)
+    sanitized = _secure_filename(filename)
     if not sanitized:
         raise FileValidationError("Invalid filename")
     return sanitized

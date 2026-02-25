@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Deque
 
-import requests
+import httpx
 
 from spectra_sherpa.app.core.config import app_config, settings
 
@@ -163,7 +163,7 @@ class RemoteAuditHandler(logging.Handler):
             return True
 
         try:
-            response = requests.post(self.endpoint_url, json={"logs": batch, "batch": True}, timeout=10)
+            response = httpx.post(self.endpoint_url, json={"logs": batch, "batch": True}, timeout=10)
             if response.status_code < 400:
                 self._is_online = True
                 return True

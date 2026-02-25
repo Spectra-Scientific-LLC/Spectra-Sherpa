@@ -9,9 +9,13 @@ from typing import Any, TypeAlias
 # Force non-interactive matplotlib backend before SpectroChemPy imports it.
 # The macOS backend requires the main thread, but FastAPI runs handlers
 # in worker threads — 'agg' works everywhere without a display.
-import matplotlib
+# matplotlib is a transitive dep of spectrochempy (optional); guard the import.
+try:
+    import matplotlib
 
-matplotlib.use("agg")
+    matplotlib.use("agg")
+except (ImportError, AttributeError):
+    pass
 
 from fastapi import APIRouter, FastAPI, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware

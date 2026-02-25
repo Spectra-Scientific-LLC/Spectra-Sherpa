@@ -16,30 +16,28 @@ python-multipart>=0.0.22,<0.1.0
 python-dotenv>=1.0.1,<2.0.0
 cryptography>=46.0.5,<48.0.0
 httpx>=0.27.0,<0.28.0
-werkzeug>=3.0.3,<4.0.0
 
 numpy>=1.26.4,<2.0.0
 scipy>=1.13.1,<2.0.0
 pandas>=2.2.2,<3.0.0
 scikit-learn>=1.5.0,<2.0.0
-plotly>=5.22.0,<6.0.0
 beautifulsoup4>=4.12.3,<5.0.0
 pypdf>=6.6.2,<7.0.0
-pyarrow>=17.0.0,<18.0.0
 
-openai>=1.40.0,<2.0.0
 PyJWT>=2.8.0,<3.0.0
-passlib[bcrypt]>=1.7.4,<2.0.0
 bcrypt>=4.0.1,<4.1
 
 # Optional: spectral file I/O via SpectroChemPy (CeCILL-B license, not AGPL-compatible)
 # Install with: pip install spectra-sherpa[scp]
-# Supported release line:
 # spectrochempy>=0.8.1,<0.9.0
 
-# Optional: server deployment extras (uncomment as needed)
+# Optional: LLM providers (install with: pip install spectra-sherpa[sherpa])
+# openai>=1.40.0,<2.0.0
+# anthropic>=0.39.0,<1.0.0
+
+# Optional: Parquet support (install with: pip install spectra-sherpa[parquet])
+# pyarrow>=18.0.0
+
+# Optional: server deployment extras (install with: pip install spectra-sherpa[cloud])
 # asyncpg>=0.29.0,<0.30.0
 # gunicorn>=22.0.0,<23.0.0
-
-# Optional: Anthropic Claude as LLM provider (uncomment if needed)
-# anthropic>=0.39.0,<1.0.0
