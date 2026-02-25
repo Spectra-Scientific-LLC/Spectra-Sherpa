@@ -2,7 +2,7 @@
 Meta dict conventions for SherpaDataset provenance and sample management.
 
 This module standardizes how we store provenance and sample metadata in
-dataset.meta, enabling PLS_Toolbox-like functionality without a wrapper class.
+dataset.meta, enabling sample management without a wrapper class.
 
 Meta Dict Schema:
     processing_history: List[Dict]  # Provenance chain
@@ -191,7 +191,7 @@ def clear_processing_history(dataset: Any) -> None:
 
 
 # =============================================================================
-# Sample Management (PLS_Toolbox-like Include/Exclude + Classes)
+# Sample Management (Include/Exclude + Classes)
 # =============================================================================
 
 
@@ -227,7 +227,7 @@ def exclude_samples(
     """
     Mark samples as excluded (soft delete, keeps data but sets include_mask=False).
 
-    This is the PLS_Toolbox approach: data is never deleted, just flagged.
+    Soft delete: data is never deleted, just flagged.
     Use get_included_data() to get only included samples.
 
     Args:

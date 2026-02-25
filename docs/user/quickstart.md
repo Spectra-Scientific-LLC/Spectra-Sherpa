@@ -160,6 +160,6 @@ Enterprise features including advanced analytics and commercial support are avai
 - **Experiment Management**: Organize spectra with version tracking — see the [User Guide](experiments.md).
 - **NIST Search**: Download reference spectra from NIST WebBook directly in the app (requires `EGRESS_ENABLED=true`).
 - **Calibration**: Build quantitative models from multi-concentration measurements.
-- **Export**: Send results to CSV or Excel for use in Origin/MATLAB.
+- **Export**: Send results to CSV or Excel.
 
 For the full node catalog, see the [Node Reference](reference/nodes.md).

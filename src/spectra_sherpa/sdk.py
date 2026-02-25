@@ -53,7 +53,7 @@ Version policy
 from __future__ import annotations
 
 # ── Provenance / processing history ────────────────────────────────
-# ── Sample management (PLS_Toolbox-style) ──────────────────────────
+# ── Sample management ────────────────────────────────────────────────
 # ── Spectral detection utilities ───────────────────────────────────
 from spectra_sherpa.app.services.dag.meta_helpers import (
     add_processing_step,
