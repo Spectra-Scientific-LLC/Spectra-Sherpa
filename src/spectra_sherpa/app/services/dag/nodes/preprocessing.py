@@ -1573,8 +1573,6 @@ def _sg_deriv_transform(data: np.ndarray, size: int = 11, order: int = 2, deriv:
 
 
 def _sg_deriv_export(params, inp, node_id, indent, use_scp):
-    size = params.get("size", 11)
-    order = params.get("order", 2)
     deriv_order = int(params.get("deriv", "1"))
     return _deriv_export("SG Derivative", deriv_order, params, inp, node_id, indent, use_scp)
 
