@@ -9,6 +9,7 @@ nav:
       - Installation: user/installation.md
       - Configuration: user/configuration.md
       - Quickstart: user/quickstart.md
+      - Applications: user/applications.md
       - Experiments: user/experiments.md
       - Library (NIST): user/library.md
       - DOE (96-Well): user/doe.md

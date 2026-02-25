@@ -101,7 +101,7 @@ Edge adapters in `app/lib/adapters/` handle all external format conversions (num
 
 ### 4. SpectroChemPy Optional Dependency
 
-[SpectroChemPy](https://www.spectrochempy.fr/) is an optional dependency (`pip install spectra-sherpa[scp]`) developed by A. Travert & C. Fernandez at LCS (ENSICAEN/CNRS), licensed under [CeCILL-B](https://cecill.info/licences/Licence_CeCILL-B_V1-en.html) (BSD-compatible). CeCILL-B and AGPL-3.0 differ, so SpectroChemPy is an opt-in extra.
+[SpectroChemPy](https://www.spectrochempy.fr/) is an optional dependency (`pip install spectra-sherpa[scp]`) developed by A. Travert & C. Fernandez at LCS (ENSICAEN/CNRS), licensed under [CeCILL-B](https://cecill.info/licences/Licence_CeCILL-B_V1-en.html) (BSD-compatible).
 
 The `scp_compat.py` module provides:
 - `HAS_SCP` boolean flag
