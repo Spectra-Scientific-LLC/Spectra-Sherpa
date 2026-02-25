@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import APIKeyHeader
-from jose import JWTError
+from jwt.exceptions import PyJWTError as JWTError
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

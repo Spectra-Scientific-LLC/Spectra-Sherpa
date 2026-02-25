@@ -7,9 +7,10 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
 import bcrypt
+import jwt
 from fastapi import Depends, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
+from jwt.exceptions import PyJWTError as JWTError
 
 from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.core.mode_policy import (
