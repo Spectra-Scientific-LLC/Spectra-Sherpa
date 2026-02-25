@@ -475,31 +475,6 @@ def read_spectral_file(filepath: Path) -> "NDDataset":
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def read_parquet_spectrum(filepath: Path) -> "NDDataset":
-    """
-    Read a spectrum from Parquet format with metadata sidecar.
-
-    Expects:
-    - {path}.parquet - Data matrix
-    - {path}.meta.json - Coordinates and metadata
-
-    Parameters
-    ----------
-    filepath : Path
-        Path to .parquet file or base path
-
-    Returns
-    -------
-    NDDataset
-        Loaded spectrum with coordinates and metadata
-    """
-    from .spectral.serialization import load_dataset_parquet
-
-    # Handle both .parquet and base path
-    base_path = filepath.with_suffix("") if filepath.suffix == ".parquet" else filepath
-    return load_dataset_parquet(base_path)
-
-
 def load_spectrum(filepath: Union[str, Path]) -> "NDDataset":
     """
     Load a spectrum from any supported format.
@@ -510,7 +485,6 @@ def load_spectrum(filepath: Union[str, Path]) -> "NDDataset":
     - .csv - Two-column wavenumber/absorbance
     - .json - Calibration signature files
     - .mat - MATLAB files
-    - .parquet - Parquet with .meta.json sidecar
     - .jdx, .dx, .spc, .spa, .spg, .opus - SpectroChemPy native formats
 
     Parameters
@@ -536,8 +510,6 @@ def load_spectrum(filepath: Union[str, Path]) -> "NDDataset":
             return datasets[0]
         # Stack multiple spectra
         return stack_datasets(datasets)
-    elif ext == ".parquet":
-        return read_parquet_spectrum(filepath)
     elif ext in [".jdx", ".dx", ".spc", ".spa", ".spg", ".opus"]:
         return read_spectral_file(filepath)
     else:
@@ -593,7 +565,6 @@ __all__ = [
     "read_json_signature",
     "read_mat_file",
     "read_spectral_file",
-    "read_parquet_spectrum",
     "load_spectrum",
     "stack_datasets",
     "extract_concentration",

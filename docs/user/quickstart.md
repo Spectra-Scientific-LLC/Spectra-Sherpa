@@ -111,7 +111,7 @@ After running a workflow, export your results:
 
 1. Select the output node (e.g., PCA).
 2. Click **Export** in the Results panel.
-3. Choose format: **CSV**, **Excel**, or **Parquet**.
+3. Choose format: **CSV** or **Excel**.
 4. The file downloads to your browser.
 
 ---
@@ -160,6 +160,6 @@ Enterprise features including advanced analytics and commercial support are avai
 - **Experiment Management**: Organize spectra with version tracking — see the [User Guide](experiments.md).
 - **NIST Search**: Download reference spectra from NIST WebBook directly in the app (requires `EGRESS_ENABLED=true`).
 - **Calibration**: Build quantitative models from multi-concentration measurements.
-- **Export**: Send results to CSV, Excel, or Parquet for use in Origin/MATLAB.
+- **Export**: Send results to CSV or Excel for use in Origin/MATLAB.
 
 For the full node catalog, see the [Node Reference](reference/nodes.md).

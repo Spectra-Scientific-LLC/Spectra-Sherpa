@@ -5,7 +5,6 @@ Provides:
 - SpectralUnit enum for type-safe unit handling
 - create_spectral_dataset() factory function
 - Unit validation and auto-conversion
-- Parquet serialization with metadata sidecar
 - Structured chemometrics metadata (ChemometricsMeta)
 """
 
@@ -52,10 +51,6 @@ from .metadata import (
     # Helper functions
     extract_chemometrics_meta,
 )
-from .serialization import (
-    load_dataset_parquet,
-    save_dataset_parquet,
-)
 from .validators import (
     UnitMismatchWarning,
     assert_compatible_units,
@@ -77,9 +72,6 @@ __all__ = [
     "reflectance_to_kubelka_munk",
     "check_reference_applied",
     "ReferenceNotAppliedWarning",
-    # Serialization
-    "save_dataset_parquet",
-    "load_dataset_parquet",
     # Validators
     "UnitMismatchWarning",
     "assert_compatible_units",
