@@ -163,9 +163,9 @@ Full documentation is available at [docs.spectrascientific.ai](https://docs.spec
 
 SpectraSherpa optionally integrates with [SpectroChemPy](https://www.spectrochempy.fr/), a Python library for advanced spectroscopic data analysis developed by **Arnaud Travert and Christian Fernandez** at the [Laboratoire Catalyse et Spectrochimie (LCS)](https://www.lcs.ensicaen.fr/), ENSICAEN / Universit&eacute; de Caen / CNRS.
 
-SpectroChemPy is licensed under the [CeCILL-B](https://cecill.info/licences/Licence_CeCILL-B_V1-en.html) free software license, which is compatible with BSD-style licenses. Because CeCILL-B is not compatible with AGPL-3.0, SpectroChemPy is distributed as an **opt-in extra** (`pip install spectra-sherpa[scp]`) and is never bundled into the core package.
+SpectroChemPy is licensed under [CeCILL-B](https://cecill.info/licences/Licence_CeCILL-B_V1-en.html) (BSD-compatible); SpectraSherpa is AGPL-3.0. The two licenses differ, so SpectroChemPy is an opt-in extra (`pip install spectra-sherpa[scp]`).
 
-When installed, SpectroChemPy powers the following SpectraSherpa nodes:
+When installed, SpectroChemPy powers the following nodes:
 
 | Node | Algorithm | SpectroChemPy Docs |
 |------|-----------|-------------------|
@@ -180,7 +180,67 @@ When installed, SpectroChemPy powers the following SpectraSherpa nodes:
 | OSC Filter | Orthogonal Signal Correction | [spectrochempy.PLSRegression](https://www.spectrochempy.fr/reference/generated/spectrochempy.PLSRegression.html) |
 | File Readers | JCAMP-DX, SPC, SPA, OPUS | [spectrochempy.NDDataset](https://www.spectrochempy.fr/reference/generated/spectrochempy.NDDataset.html) |
 
-All other nodes (40+ preprocessing, clustering, regression, diagnostics, and visualization nodes) run on **NumPy, SciPy, and scikit-learn** with no SpectroChemPy dependency.
+### Built-in Algorithm Garden (no SpectroChemPy required)
+
+The following nodes ship with the core install and run on **NumPy, SciPy, and scikit-learn**:
+
+**Preprocessing**
+
+| Category | Nodes |
+|----------|-------|
+| Baseline | Polynomial, ALS, Penalized LS, SNIP |
+| Smoothing | Savitzky-Golay, Gaussian, Whittaker, Moving Average |
+| Normalization | Min-Max, L2, Standard (z-score), Area |
+| Scatter Correction | SNV, MSC, EMSC |
+| Derivatives | First, Second (Savitzky-Golay) |
+| Cleanup | Cosmic Ray Removal, Remove NaN, Trim Edges, Crop Spectral Region |
+
+**Modeling & Decomposition**
+
+| Node | Algorithm |
+|------|-----------|
+| NMF | Non-negative Matrix Factorization (sklearn) |
+| Fast ICA | Independent Component Analysis (sklearn) |
+| PCR | Principal Component Regression (sklearn) |
+| SVR | Support Vector Regression (sklearn) |
+| Linear Regression | Ordinary Least Squares (sklearn) |
+
+**Clustering & Classification**
+
+| Node | Algorithm |
+|------|-----------|
+| K-Means | K-Means clustering (sklearn) |
+| DBSCAN | Density-based clustering (sklearn) |
+| HCA | Hierarchical Cluster Analysis (scipy) |
+| KNN | K-Nearest Neighbors classifier (sklearn) |
+
+**Diagnostics & Analysis**
+
+| Node | Algorithm |
+|------|-----------|
+| Outlier Detection | Hotelling T² and Q residuals |
+| Cross-Validation | K-fold with RMSE/R² metrics |
+| Peak Finding | Automated peak detection (scipy) |
+
+**Synthesis & DOE**
+
+| Node | Description |
+|------|-------------|
+| Blend | Generate synthetic mixtures with concentration profiles |
+| Species | Mark spectra as blend components |
+| Merge | Combine spectra into stacked datasets |
+| Concentration Curve | Generate concentration profiles |
+| Noise Injection | Add controlled Gaussian noise |
+
+**Data & Deployment**
+
+| Node | Description |
+|------|-------------|
+| Data Source | Load from sklearn, CSV, or reference datasets |
+| NIST Library | Fetch reference spectra from NIST WebBook |
+| Train/Test Split | Stratified dataset splitting |
+| Load & Apply Model | Reload any saved model artifact |
+| Deploy Input/Output | Headless batch prediction endpoints |
 
 ### Other Dependencies
 
@@ -190,7 +250,6 @@ SpectraSherpa also builds on these open-source projects:
 - [NumPy](https://numpy.org/) / [SciPy](https://scipy.org/) — Numerical computing (BSD-3-Clause)
 - [FastAPI](https://fastapi.tiangolo.com/) — Web framework (MIT)
 - [SQLAlchemy](https://www.sqlalchemy.org/) — Database ORM (MIT)
-- [Plotly](https://plotly.com/python/) — Visualization (MIT)
 
 ## Contributing
 
