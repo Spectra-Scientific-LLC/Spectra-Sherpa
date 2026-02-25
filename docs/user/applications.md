@@ -20,13 +20,13 @@ The backbone of chemometrics. Whether you are building a NIR moisture calibratio
 | Exploratory analysis | PCA, HCA | PCA, HCA |
 | Quantitative calibration | PLS, PCR, SVR, linear regression | PLS, PCR, SVR, Linear Regression |
 | Mixture resolution | MCR-ALS, EFA, SIMPLISMA, NMF, ICA | MCR-ALS, EFA, SIMPLISMA, NMF, Fast ICA |
-| Classification | PLS-DA, SIMCA, KNN, K-Means, DBSCAN | Classification nodes |
+| Classification | PLS-DA, KNN, K-Means, DBSCAN | Classification nodes |
 | Validation | Cross-validation (K-fold), outlier detection (T², Q) | Diagnostics nodes |
 | Deployment | Batch prediction, folder watching | Deploy Input/Output, Load & Apply Model |
 
 ### Terahertz (THz) Spectroscopy
 
-THz spectra exhibit the same Beer-Lambert linearity and scattering effects as mid-IR. The identical preprocessing (baseline correction, SNV) and modeling (PLS, PCA, SIMCA) pipeline applies. SpectraSherpa treats THz data as any other spectral matrix — load, preprocess, model.
+THz spectra exhibit the same Beer-Lambert linearity and scattering effects as mid-IR. The identical preprocessing (baseline correction, SNV) and modeling (PLS, PCA) pipeline applies. SpectraSherpa treats THz data as any other spectral matrix — load, preprocess, model.
 
 ### UV-Vis Spectroscopy
 
@@ -53,7 +53,7 @@ LIBS produces emission spectra virtually identical in structure to OES data. The
 
 **XRF / TXRF** — Elemental fluorescence spectra. PCA for sample fingerprinting, PLS/PCR for quantitative elemental analysis, HCA for provenance studies.
 
-**XRD / HRXRD** — Diffraction patterns. PCA for phase mixture analysis, PLS for quantitative phase determination, KNN/SIMCA for phase classification.
+**XRD / HRXRD** — Diffraction patterns. PCA for phase mixture analysis, PLS for quantitative phase determination, KNN for phase classification.
 
 **XPS** — Binding energy spectra from surface analysis. PCA for compositional screening, MCR-ALS for chemical state decomposition, PLS for quantitative surface stoichiometry.
 
@@ -63,7 +63,11 @@ LIBS produces emission spectra virtually identical in structure to OES data. The
 
 **TOF-SIMS** — Surface mass spectra and images. PCA for spatial composition mapping, NMF for component extraction (naturally non-negative), MCR-ALS for chemical phase identification, K-Means for pixel-wise segmentation.
 
-**ICP-OES / ICP-MS** — Multi-element concentration profiles rather than continuous spectra, but the same multivariate classification applies. PCA and HCA for geographic origin / provenance studies, PLS-DA and KNN for sample classification by elemental fingerprint.
+**ICP-MS** — Multi-element concentration profiles rather than continuous spectra, but the same multivariate classification applies. PCA and HCA for geographic origin / provenance studies, PLS-DA and KNN for sample classification by elemental fingerprint.
+
+### Atomic Emission Spectroscopy
+
+**ICP-OES** — Optical emission spectra from inductively coupled plasma. PCA for multi-element fingerprinting, PLS for quantitative elemental analysis, HCA and PLS-DA for provenance and classification studies. Shares its chemometric toolkit with other emission techniques (OES, LIBS) rather than with mass spectrometry.
 
 ### NMR Spectroscopy (Benchtop / Low-Field)
 
@@ -77,7 +81,7 @@ Hyperspectral images unfold to (pixels × wavelengths) — a standard spectral m
 
 ### Sensor Arrays (Electronic Nose / Tongue)
 
-Electronic nose and electronic tongue instruments produce sensor response matrices rather than continuous spectra, but the pattern recognition pipeline is identical: PCA for visualization, PLS for concentration prediction, KNN/PLS-DA/SIMCA for classification, and K-Means/HCA for unsupervised grouping.
+Electronic nose and electronic tongue instruments produce sensor response matrices rather than continuous spectra, but the pattern recognition pipeline is identical: PCA for visualization, PLS for concentration prediction, KNN/PLS-DA for classification, and K-Means/HCA for unsupervised grouping.
 
 ---
 
@@ -90,8 +94,8 @@ SpectraSherpa's chemometric toolkit maps directly to semiconductor fab metrology
 | Tool | Data Type | Preprocessing | Modeling | Classification |
 |------|-----------|--------------|----------|---------------|
 | **OES** (plasma etch / deposition) | Emission spectra (200–900 nm) | SNV, normalization, baseline | PCA, PLS, PCR | PLS-DA, KNN, outlier detection |
-| **FTIR** (thin film, contamination) | Absorption / transmission spectra | Baseline, derivatives, SNV | PCA, PLS, MCR-ALS | SIMCA, KNN |
-| **Raman** (stress, composition) | Raman shift spectra | Baseline, cosmic ray removal | PCA, PLS, MCR-ALS | SIMCA, K-Means |
+| **FTIR** (thin film, contamination) | Absorption / transmission spectra | Baseline, derivatives, SNV | PCA, PLS, MCR-ALS | KNN |
+| **Raman** (stress, composition) | Raman shift spectra | Baseline, cosmic ray removal | PCA, PLS, MCR-ALS | K-Means |
 | **XRF / TXRF** (elemental composition) | Fluorescence spectra | Normalization | PCA, PLS | KNN |
 | **XRD / HRXRD / CD-SAXS** (crystal structure, CD) | Diffraction patterns | Baseline, normalization | PCA, PLS | HCA, KNN |
 | **XPS** (surface chemistry) | Binding energy spectra | Baseline | PCA, MCR-ALS, PLS | — |
@@ -151,7 +155,7 @@ Regardless of the technique, the SpectraSherpa workflow follows the same structu
 2. Preprocess         →  Baseline, smoothing, normalization, scatter correction
 3. Explore            →  PCA, HCA for sample grouping and outlier screening
 4. Model              →  PLS, MCR-ALS, NMF for quantitation or resolution
-5. Classify           →  PLS-DA, SIMCA, KNN for sample identification
+5. Classify           →  PLS-DA, KNN for sample identification
 6. Validate           →  Cross-validation, outlier detection (T², Q)
 7. Deploy             →  Save model artifact → Load & Apply on new data
 ```

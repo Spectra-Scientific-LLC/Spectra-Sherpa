@@ -40,7 +40,8 @@ SpectraSherpa's chemometric toolkit applies to any technique that produces multi
 | Vibrational Spectroscopy | NIR, FTIR (mid-IR), Raman, Terahertz (THz) |
 | Optical Spectroscopy | UV-Vis, Fluorescence / EEM, LIBS |
 | X-ray Methods | XRF, TXRF, XRD, HRXRD, XPS, CD-SAXS |
-| Mass Spectrometry | GC-MS, LC-MS, TOF-SIMS, ICP-MS, ICP-OES |
+| Mass Spectrometry | GC-MS, LC-MS, TOF-SIMS, ICP-MS |
+| Atomic Emission | ICP-OES |
 | Magnetic Resonance | Benchtop NMR, low-field NMR |
 | Imaging | Hyperspectral imaging (HSI) |
 | Sensor Arrays | Electronic nose / tongue, inline process sensors |
@@ -51,7 +52,7 @@ See the [Applications Guide](docs/user/applications.md) for detailed algorithm-t
 ## Features
 
 - **Workflow Builder** — Visually design reproducible analysis pipelines (DAGs) with 100+ nodes for preprocessing, modeling, classification, diagnostics, and DOE
-- **Model Artifacts** — Train, persist, and reload models (PCA, PLS, MCR, PLSDA, KNN, SIMCA) with a generic Load & Apply node
+- **Model Artifacts** — Train, persist, and reload models (PCA, PLS, MCR, PLSDA, KNN) with a generic Load & Apply node
 - **Type System** — Typed port connections with registry-driven validation prevent incompatible node wiring
 - **Python & Notebook Export** — Generate standalone `.py` scripts or Jupyter notebooks from any workflow
 - **Project Management** — Organize experiments, workflows, scripts, and models with versioned snapshots
@@ -83,7 +84,6 @@ Install with `pip install spectra-sherpa[scp]` to enable [SpectroChemPy](https:/
 | EFA | Evolving Factor Analysis | [spectrochempy.EFA](https://www.spectrochempy.fr/reference/generated/spectrochempy.EFA.html) |
 | SIMPLISMA | Pure variable resolution | [spectrochempy.SIMPLISMA](https://www.spectrochempy.fr/reference/generated/spectrochempy.SIMPLISMA.html) |
 | PLS-DA | Discriminant Analysis (via PLS) | [spectrochempy.PLSRegression](https://www.spectrochempy.fr/reference/generated/spectrochempy.PLSRegression.html) |
-| SIMCA | Class-specific PCA models | [spectrochempy.PCA](https://www.spectrochempy.fr/reference/generated/spectrochempy.PCA.html) |
 | Baseline (Rubberband) | Convex hull baseline | [spectrochempy.basc](https://www.spectrochempy.fr/reference/generated/spectrochempy.basc.html) |
 | OSC Filter | Orthogonal Signal Correction | [spectrochempy.PLSRegression](https://www.spectrochempy.fr/reference/generated/spectrochempy.PLSRegression.html) |
 | File Readers | JCAMP-DX, SPC, SPA, OPUS | [spectrochempy.NDDataset](https://www.spectrochempy.fr/reference/generated/spectrochempy.NDDataset.html) |
@@ -137,7 +137,7 @@ Ships with the core install, powered by NumPy, SciPy, and scikit-learn:
 | Blend | Generate synthetic mixtures with concentration profiles |
 | Species | Mark spectra as blend components |
 | Merge | Combine spectra into stacked datasets |
-| Concentration Curve | Generate concentration profiles |
+| Concentration Curve | Catmull-Rom spline (interactive control points), sigmoid, Gaussian, linear, exponential, step |
 | Noise Injection | Add controlled Gaussian noise |
 
 **Data & Deployment**
