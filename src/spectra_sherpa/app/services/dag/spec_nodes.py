@@ -82,6 +82,7 @@ class TransformSpec:
     extra_imports: List[str] = field(default_factory=list)
     input_dtype: Any = np.float64
     numpy_expr: Optional[str] = None
+    state_effects: List[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +155,7 @@ class TransformSpecNode(Node):
             self.metadata.node_type,
             params,
             node_id=self.node_id,
+            state_effects=self.spec.state_effects or None,
         )
 
         return result

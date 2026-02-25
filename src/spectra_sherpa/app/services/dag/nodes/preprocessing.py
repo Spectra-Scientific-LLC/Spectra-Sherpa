@@ -65,8 +65,29 @@ from ..node_base import (
 from ..spec_nodes import TransformSpec, TransformSpecNode
 
 
+def _baseline_pls_export(params, inp, node_id, indent, use_scp):
+    method = params.get("method", "als")
+    lam = params.get("lam", 1e5)
+    p = params.get("p", 0.001)
+    max_iter = params.get("max_iter", 50)
+    tol = params.get("tol", 1e-6)
+    lines = [
+        f"{indent}# --- Baseline Penalized LS ({node_id}) ---",
+        f"{indent}from spectra_sherpa.app.lib.preprocessing import baseline_penalized_ls",
+    ]
+    lines += extract_data_lines(inp, indent)
+    lines.append(
+        f"{indent}_corrected = baseline_penalized_ls("
+        f"_data, method='{method}', lam={_format_value(lam)}, "
+        f"p={_format_value(p)}, max_iter={max_iter}, "
+        f"tol={_format_value(tol)})"
+    )
+    lines += _wrap_result_lines(node_id, "_corrected", inp, indent, use_scp)
+    return lines
+
+
 @register_node
-class BaselinePenalizedLSNode(Node):
+class BaselinePenalizedLSNode(TransformSpecNode):
     """
     Penalized Least Squares baseline correction node.
 
@@ -143,60 +164,12 @@ class BaselinePenalizedLSNode(Node):
         output_type="NDDataset",
     )
 
-    python_extra_imports = [
-        "import numpy as np",
-        "from scipy import sparse",
-    ]
-
-    def generate_python(self, inputs, indent="    ", use_scp=True):
-        inp = next(iter(inputs.values())) if inputs else "input_data"
-        params = self._resolve_params()
-        method = params.get("method", "als")
-        lam = params.get("lam", 1e5)
-        p = params.get("p", 0.001)
-        max_iter = params.get("max_iter", 50)
-        tol = params.get("tol", 1e-6)
-        lines = [
-            f"{indent}# --- Baseline Penalized LS ({self.node_id}) ---",
-            f"{indent}from spectra_sherpa.app.lib.preprocessing import baseline_penalized_ls",
-            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
-            f"{indent}_corrected = baseline_penalized_ls("
-            f"_data, method='{method}', lam={_format_value(lam)}, "
-            f"p={_format_value(p)}, max_iter={max_iter}, "
-            f"tol={_format_value(tol)})",
-        ]
-        lines += _wrap_result_lines(self.node_id, "_corrected", inp, indent, use_scp)
-        return lines
-
-    async def execute(self, input_data: Any) -> SherpaDataset:
-        """Execute penalized LS baseline correction."""
-        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
-        method = self.parameters.get("method", "als")
-        lam = self.parameters.get("lam", 1e5)
-        p = self.parameters.get("p", 0.001)
-        max_iter = self.parameters.get("max_iter", 50)
-        tol = self.parameters.get("tol", 1e-6)
-
-        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
-        corrected = baseline_penalized_ls(
-            data,
-            method=method,
-            lam=lam,
-            p=p,
-            max_iter=max_iter,
-            tol=tol,
-        )
-
-        result = build_dataset_like(corrected, input_ds)
-        add_processing_step(
-            result,
-            "baseline.penalized_ls",
-            {"method": method, "lam": lam, "p": p, "max_iter": max_iter, "tol": tol},
-            node_id=self.node_id,
-            state_effects=[EFFECT_BASELINE_CORRECTED],
-        )
-
-        return result
+    spec = TransformSpec(
+        transform_fn=baseline_penalized_ls,
+        export_lines_fn=_baseline_pls_export,
+        extra_imports=["import numpy as np", "from scipy import sparse"],
+        state_effects=[EFFECT_BASELINE_CORRECTED],
+    )
 
 
 @register_node
@@ -257,8 +230,39 @@ class BaselineRubberbandNode(Node):
         )
 
 
+def _savgol_smooth(data: np.ndarray, size: int = 11, order: int = 2) -> np.ndarray:
+    from scipy.signal import savgol_filter
+
+    return np.apply_along_axis(
+        savgol_filter, -1, data, window_length=int(size), polyorder=int(order)
+    )
+
+
+def _savgol_smooth_export(params, inp, node_id, indent, use_scp):
+    size = params.get("size", 11)
+    order = params.get("order", 2)
+    if use_scp:
+        return [
+            f"{indent}# --- Smooth (Savitzky-Golay) ({node_id}) ---",
+            f"{indent}data = {inp}.copy()",
+            f"{indent}data.smooth(size={size}, order={order})",
+            f"{indent}results['{node_id}'] = data",
+        ]
+    lines = [header_line("Smooth (Savitzky-Golay)", node_id, indent)]
+    lines += extract_data_lines(inp, indent)
+    lines += [
+        f"{indent}if _data.ndim >= 2:",
+        f"{indent}    _data = np.apply_along_axis("
+        f"savgol_filter, -1, _data, window_length={size}, polyorder={order})",
+        f"{indent}else:",
+        f"{indent}    _data = savgol_filter(" f"_data, window_length={size}, polyorder={order})",
+    ]
+    lines += _wrap_result_lines(node_id, "_data", inp, indent, use_scp)
+    return lines
+
+
 @register_node
-class SmoothSavitzkyGolayNode(Node):
+class SmoothSavitzkyGolayNode(TransformSpecNode):
     """
     Savitzky-Golay smoothing node.
 
@@ -302,62 +306,47 @@ class SmoothSavitzkyGolayNode(Node):
         output_type="NDDataset",
     )
 
-    python_extra_imports = ["from scipy.signal import savgol_filter"]
+    spec = TransformSpec(
+        transform_fn=_savgol_smooth,
+        export_lines_fn=_savgol_smooth_export,
+        extra_imports=["from scipy.signal import savgol_filter"],
+        state_effects=[EFFECT_SMOOTHED],
+    )
 
-    def generate_python(self, inputs, indent="    ", use_scp=True):
-        inp = next(iter(inputs.values())) if inputs else "input_data"
-        params = self._resolve_params()
-        size = params.get("size", 11)
-        order = params.get("order", 2)
-        if use_scp:
-            return [
-                f"{indent}# --- Smooth (Savitzky-Golay) ({self.node_id}) ---",
-                f"{indent}data = {inp}.copy()",
-                f"{indent}data.smooth(size={size}, order={order})",
-                f"{indent}results['{self.node_id}'] = data",
-            ]
-        return [
-            f"{indent}# --- Smooth (Savitzky-Golay) ({self.node_id}) ---",
-            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
-            f"{indent}if _data.ndim >= 2:",
-            f"{indent}    _data = np.apply_along_axis("
-            f"savgol_filter, -1, _data, window_length={size}, polyorder={order})",
-            f"{indent}else:",
-            f"{indent}    _data = savgol_filter(" f"_data, window_length={size}, polyorder={order})",
-        ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
 
-    async def execute(self, input_data: Any) -> Any:
-        """Execute Savitzky-Golay smoothing."""
-        size = self.parameters.get("size", 11)
-        order = self.parameters.get("order", 2)
+def _snv_transform(data: np.ndarray) -> np.ndarray:
+    mean_vals = np.mean(data, axis=1, keepdims=True)
+    std_vals = np.std(data, axis=1, keepdims=True)
+    std_vals[std_vals == 0] = 1.0
+    return (data - mean_vals) / std_vals
 
-        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
-        from scipy.signal import savgol_filter
 
-        raw = np.asarray(input_ds.data, dtype=np.float64)
-        smoothed = (
-            np.apply_along_axis(savgol_filter, -1, raw, window_length=int(size), polyorder=int(order))
-            if raw.ndim >= 2
-            else savgol_filter(raw, window_length=int(size), polyorder=int(order))
-        )
-        result = build_dataset_like(smoothed, input_ds)
-        add_processing_step(
-            result,
-            "smooth.savitzky_golay",
-            {"size": size, "order": order},
-            node_id=self.node_id,
-            state_effects=[EFFECT_SMOOTHED],
-        )
-
-        return result
+def _snv_export(params, inp, node_id, indent, use_scp):
+    lines = [header_line("SNV Normalization", node_id, indent)]
+    lines += extract_data_lines(inp, indent)
+    lines += [
+        f"{indent}if _data.ndim == 1:",
+        f"{indent}    _mean = np.mean(_data)",
+        f"{indent}    _std = np.std(_data)",
+        f"{indent}    if _std == 0: _std = 1.0",
+        f"{indent}    _data = (_data - _mean) / _std",
+        f"{indent}else:",
+        f"{indent}    _mean = np.mean(_data, axis=1, keepdims=True)",
+        f"{indent}    _std = np.std(_data, axis=1, keepdims=True)",
+        f"{indent}    _std[_std == 0] = 1.0",
+        f"{indent}    _data = (_data - _mean) / _std",
+    ]
+    lines += _wrap_result_lines(node_id, "_data", inp, indent, use_scp)
+    return lines
 
 
 @register_node
-class NormalizeSNVNode(Node):
+class NormalizeSNVNode(TransformSpecNode):
     """
     Standard Normal Variate (SNV) normalization node.
 
     Normalizes each spectrum to zero mean and unit variance.
+    Overrides execute() to compute diagnostics.
     """
 
     metadata = NodeMetadata(
@@ -399,54 +388,30 @@ class NormalizeSNVNode(Node):
         ),
     )
 
-    python_extra_imports = ["import numpy as np"]
+    spec = TransformSpec(
+        transform_fn=_snv_transform,
+        output_units="dimensionless",
+        export_lines_fn=_snv_export,
+        extra_imports=["import numpy as np"],
+        state_effects=[EFFECT_NORMALIZED, EFFECT_SCATTER_CORRECTED],
+    )
 
-    def generate_python(self, inputs, indent="    ", use_scp=True):
-        inp = next(iter(inputs.values())) if inputs else "input_data"
-        return [
-            f"{indent}# --- SNV Normalization ({self.node_id}) ---",
-            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
-            f"{indent}if _data.ndim == 1:",
-            f"{indent}    _mean = np.mean(_data)",
-            f"{indent}    _std = np.std(_data)",
-            f"{indent}    if _std == 0: _std = 1.0",
-            f"{indent}    _data = (_data - _mean) / _std",
-            f"{indent}else:",
-            f"{indent}    _mean = np.mean(_data, axis=1, keepdims=True)",
-            f"{indent}    _std = np.std(_data, axis=1, keepdims=True)",
-            f"{indent}    _std[_std == 0] = 1.0",
-            f"{indent}    _data = (_data - _mean) / _std",
-        ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
-
-    async def execute(self, input_data: Any) -> NodeResult:
-        """Execute SNV normalization."""
-        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
-        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
-        before = data.copy()
-
-        mean_vals = np.mean(data, axis=1, keepdims=True)
-        std_vals = np.std(data, axis=1, keepdims=True)
-        std_vals[std_vals == 0] = 1.0
-        normalized_data = (data - mean_vals) / std_vals
-
-        result = build_dataset_like(
-            normalized_data,
-            input_ds,
-            units="dimensionless",
+    async def execute(self, input_data: Any = None, **kwargs: Any) -> NodeResult:
+        """Execute SNV with diagnostics."""
+        input_ds = coerce_to_sherpa(
+            input_data if input_data is not None else kwargs.get("input_0"),
+            input_name="input_data",
         )
-        add_processing_step(
-            result,
-            "normalize.snv",
-            {},
-            node_id=self.node_id,
-            state_effects=[EFFECT_NORMALIZED, EFFECT_SCATTER_CORRECTED],
-        )
+        before = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
 
+        result = await super().execute(input_data, **kwargs)
+
+        after = np.asarray(result.data, dtype=np.float64)
         eps = 1e-12
         snr_before = float(np.mean(np.abs(before)) / (np.std(before) + eps))
-        snr_after = float(np.mean(np.abs(normalized_data)) / (np.std(normalized_data) + eps))
-        mean_spectrum_shift = float(np.mean(normalized_data) - np.mean(before))
-        max_absolute_change = float(np.max(np.abs(normalized_data - before)))
+        snr_after = float(np.mean(np.abs(after)) / (np.std(after) + eps))
+        mean_spectrum_shift = float(np.mean(after) - np.mean(before))
+        max_absolute_change = float(np.max(np.abs(after - before)))
 
         return NodeResult(
             outputs={"default": result},
@@ -459,8 +424,54 @@ class NormalizeSNVNode(Node):
         )
 
 
+def _normalize_scale(data: np.ndarray, method: str = "max") -> np.ndarray:
+    if method == "max":
+        max_vals = np.abs(data).max(axis=-1, keepdims=True)
+        max_vals[max_vals == 0] = 1
+        return data / max_vals
+    elif method == "area":
+        areas = np.abs(data).sum(axis=-1, keepdims=True)
+        areas[areas == 0] = 1
+        return data / areas
+    elif method == "minmax":
+        min_vals = data.min(axis=-1, keepdims=True)
+        max_vals = data.max(axis=-1, keepdims=True)
+        range_vals = max_vals - min_vals
+        range_vals[range_vals == 0] = 1
+        return (data - min_vals) / range_vals
+    return data
+
+
+def _normalize_scale_export(params, inp, node_id, indent, use_scp):
+    method = params.get("method", "max")
+    lines = [header_line("Scale Normalization", node_id, indent)]
+    lines += extract_data_lines(inp, indent)
+    if method == "max":
+        lines += [
+            f"{indent}_max = np.abs(_data).max(axis=-1, keepdims=True)",
+            f"{indent}_max[_max == 0] = 1",
+            f"{indent}_data = _data / _max",
+        ]
+    elif method == "area":
+        lines += [
+            f"{indent}_area = np.abs(_data).sum(axis=-1, keepdims=True)",
+            f"{indent}_area[_area == 0] = 1",
+            f"{indent}_data = _data / _area",
+        ]
+    elif method == "minmax":
+        lines += [
+            f"{indent}_min = _data.min(axis=-1, keepdims=True)",
+            f"{indent}_max = _data.max(axis=-1, keepdims=True)",
+            f"{indent}_range = _max - _min",
+            f"{indent}_range[_range == 0] = 1",
+            f"{indent}_data = (_data - _min) / _range",
+        ]
+    lines += _wrap_result_lines(node_id, "_data", inp, indent, use_scp)
+    return lines
+
+
 @register_node
-class NormalizeScaleNode(Node):
+class NormalizeScaleNode(TransformSpecNode):
     """
     Scale normalization node.
 
@@ -487,73 +498,59 @@ class NormalizeScaleNode(Node):
         output_type="NDDataset",
     )
 
-    python_extra_imports = ["import numpy as np"]
+    spec = TransformSpec(
+        transform_fn=_normalize_scale,
+        output_units="normalized",
+        export_lines_fn=_normalize_scale_export,
+        extra_imports=["import numpy as np"],
+        state_effects=[EFFECT_SCALED],
+    )
 
-    def generate_python(self, inputs, indent="    ", use_scp=True):
-        inp = next(iter(inputs.values())) if inputs else "input_data"
-        method = self._resolve_params().get("method", "max")
-        lines = [
-            f"{indent}# --- Scale Normalization ({self.node_id}) ---",
-            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
-        ]
-        if method == "max":
-            lines += [
-                f"{indent}_max = np.abs(_data).max(axis=-1, keepdims=True)",
-                f"{indent}_max[_max == 0] = 1",
-                f"{indent}_data = _data / _max",
-            ]
-        elif method == "area":
-            lines += [
-                f"{indent}_area = np.abs(_data).sum(axis=-1, keepdims=True)",
-                f"{indent}_area[_area == 0] = 1",
-                f"{indent}_data = _data / _area",
-            ]
-        elif method == "minmax":
-            lines += [
-                f"{indent}_min = _data.min(axis=-1, keepdims=True)",
-                f"{indent}_max = _data.max(axis=-1, keepdims=True)",
-                f"{indent}_range = _max - _min",
-                f"{indent}_range[_range == 0] = 1",
-                f"{indent}_data = (_data - _min) / _range",
-            ]
-        lines += _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
-        return lines
 
-    async def execute(self, input_data: Any) -> SherpaDataset:
-        """Execute scale normalization."""
-        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
-        method = self.parameters.get("method", "max")
-        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
+def _msc_transform(data: np.ndarray, reference: str = "mean") -> np.ndarray:
+    if reference == "mean":
+        ref_spectrum = np.mean(data, axis=0)
+    elif reference == "median":
+        ref_spectrum = np.median(data, axis=0)
+    else:
+        ref_spectrum = data[0]
 
-        if method == "max":
-            max_vals = np.abs(data).max(axis=-1, keepdims=True)
-            max_vals[max_vals == 0] = 1
-            data = data / max_vals
-        elif method == "area":
-            areas = np.abs(data).sum(axis=-1, keepdims=True)
-            areas[areas == 0] = 1
-            data = data / areas
-        elif method == "minmax":
-            min_vals = data.min(axis=-1, keepdims=True)
-            max_vals = data.max(axis=-1, keepdims=True)
-            range_vals = max_vals - min_vals
-            range_vals[range_vals == 0] = 1
-            data = (data - min_vals) / range_vals
+    # Design matrix: [reference | ones] for linear regression
+    A = np.vstack([ref_spectrum, np.ones(data.shape[1])]).T
 
-        result = build_dataset_like(data, input_ds, units="normalized")
-        add_processing_step(
-            result,
-            "normalize.scale",
-            {"method": method},
-            node_id=self.node_id,
-            state_effects=[EFFECT_SCALED],
-        )
+    corrected = np.zeros_like(data)
+    for i in range(data.shape[0]):
+        m, c = np.linalg.lstsq(A, data[i], rcond=None)[0]
+        if abs(m) > 1e-10:
+            corrected[i] = (data[i] - c) / m
+        else:
+            corrected[i] = data[i]
+    return corrected
 
-        return result
+
+def _msc_export(params, inp, node_id, indent, use_scp):
+    ref = params.get("reference", "mean")
+    lines = [header_line("MSC", node_id, indent)]
+    lines += extract_data_lines(inp, indent)
+    if ref == "mean":
+        lines.append(f"{indent}_ref = np.mean(_data, axis=0)")
+    elif ref == "median":
+        lines.append(f"{indent}_ref = np.median(_data, axis=0)")
+    else:
+        lines.append(f"{indent}_ref = _data[0]")
+    lines += [
+        f"{indent}_A = np.vstack([_ref, np.ones(len(_ref))]).T",
+        f"{indent}_corrected = np.zeros_like(_data)",
+        f"{indent}for _i in range(_data.shape[0]):",
+        f"{indent}    _m, _c = np.linalg.lstsq(_A, _data[_i], rcond=None)[0]",
+        f"{indent}    _corrected[_i] = (_data[_i] - _c) / _m if abs(_m) > 1e-10 else _data[_i]",
+    ]
+    lines += _wrap_result_lines(node_id, "_corrected", inp, indent, use_scp)
+    return lines
 
 
 @register_node
-class NormalizeMSCNode(Node):
+class NormalizeMSCNode(TransformSpecNode):
     """
     Multiplicative Scatter Correction (MSC) node.
 
@@ -599,79 +596,74 @@ class NormalizeMSCNode(Node):
         ],
     )
 
-    python_extra_imports = ["import numpy as np"]
+    spec = TransformSpec(
+        transform_fn=_msc_transform,
+        output_units="dimensionless",
+        export_lines_fn=_msc_export,
+        extra_imports=["import numpy as np"],
+        state_effects=[EFFECT_SCATTER_CORRECTED],
+    )
 
-    def generate_python(self, inputs, indent="    ", use_scp=True):
-        inp = next(iter(inputs.values())) if inputs else "input_data"
-        ref = self.parameters.get("reference", "mean")
-        lines = [
-            f"{indent}# --- MSC ({self.node_id}) ---",
-            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
+
+def _savgol_deriv(data: np.ndarray, size: int = 11, order: int = 2, deriv: int = 1) -> np.ndarray:
+    from scipy.signal import savgol_filter
+
+    return np.apply_along_axis(
+        savgol_filter, -1, data, window_length=int(size), polyorder=int(order), deriv=int(deriv)
+    )
+
+
+def _deriv_export(label, deriv_order, params, inp, node_id, indent, use_scp):
+    size = params.get("size", 11)
+    order = params.get("order", 2)
+    if use_scp:
+        return [
+            f"{indent}# --- {label} ({node_id}) ---",
+            f"{indent}data = {inp}.copy()",
+            f"{indent}data.savgol(size={size}, order={order}, deriv={deriv_order})",
+            f"{indent}results['{node_id}'] = data",
         ]
-        if ref == "mean":
-            lines.append(f"{indent}_ref = np.mean(_data, axis=0)")
-        elif ref == "median":
-            lines.append(f"{indent}_ref = np.median(_data, axis=0)")
-        else:
-            lines.append(f"{indent}_ref = _data[0]")
-        lines += [
-            f"{indent}_A = np.vstack([_ref, np.ones(len(_ref))]).T",
-            f"{indent}_corrected = np.zeros_like(_data)",
-            f"{indent}for _i in range(_data.shape[0]):",
-            f"{indent}    _m, _c = np.linalg.lstsq(_A, _data[_i], rcond=None)[0]",
-            f"{indent}    _corrected[_i] = (_data[_i] - _c) / _m if abs(_m) > 1e-10 else _data[_i]",
-        ]
-        lines += _wrap_result_lines(self.node_id, "_corrected", inp, indent, use_scp)
-        return lines
+    lines = [header_line(label, node_id, indent)]
+    lines += extract_data_lines(inp, indent)
+    lines += [
+        f"{indent}if _data.ndim >= 2:",
+        f"{indent}    _data = np.apply_along_axis("
+        f"savgol_filter, -1, _data, window_length={size}, polyorder={order}, deriv={deriv_order})",
+        f"{indent}else:",
+        f"{indent}    _data = savgol_filter("
+        f"_data, window_length={size}, polyorder={order}, deriv={deriv_order})",
+    ]
+    lines += _wrap_result_lines(node_id, "_data", inp, indent, use_scp)
+    return lines
 
-    async def execute(self, input_data) -> NodeResult:
-        """Execute MSC normalization using pure numpy."""
-        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
-        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
-        reference = self.parameters.get("reference", "mean")
 
-        if reference == "mean":
-            ref_spectrum = np.mean(data, axis=0)
-        elif reference == "median":
-            ref_spectrum = np.median(data, axis=0)
-        else:
-            ref_spectrum = data[0]
+def _update_derivative_units(result, input_ds, deriv_order: int):
+    """Update output units for derivative results."""
+    try:
+        original_units = str(input_ds.units) if getattr(input_ds, "units", None) else None
+        x_units = input_ds.feature_axis.units if input_ds.feature_axis is not None else None
 
-        # Design matrix: [reference | ones] for linear regression
-        A = np.vstack([ref_spectrum, np.ones(data.shape[1])]).T
-
-        corrected = np.zeros_like(data)
-        for i in range(data.shape[0]):
-            m, c = np.linalg.lstsq(A, data[i], rcond=None)[0]
-            if abs(m) > 1e-10:
-                corrected[i] = (data[i] - c) / m
-            else:
-                corrected[i] = data[i]
-
-        result = build_dataset_like(
-            corrected,
-            input_ds,
-            units="dimensionless",
-        )
-        add_processing_step(
-            result,
-            "normalize.msc",
-            {"reference": reference},
-            node_id=self.node_id,
-            state_effects=[EFFECT_SCATTER_CORRECTED],
-        )
-
-        return NodeResult(
-            outputs={"default": result},
-        )
+        if deriv_order == 1:
+            if original_units and x_units and original_units != "dimensionless":
+                result.units = f"d({original_units})/d({x_units})"
+            elif original_units and original_units != "dimensionless":
+                result.units = f"d({original_units})/dx"
+        elif deriv_order == 2:
+            if original_units and x_units and original_units != "dimensionless":
+                result.units = f"d²({original_units})/d({x_units})²"
+            elif original_units and original_units != "dimensionless":
+                result.units = f"d²({original_units})/dx²"
+    except Exception:
+        pass  # leave units unchanged if assignment fails
 
 
 @register_node
-class DerivativeFirstNode(Node):
+class DerivativeFirstNode(TransformSpecNode):
     """
     First derivative node.
 
     Computes the first derivative of spectral data.
+    Overrides execute() to update output units.
     """
 
     scp_method = "deriv"
@@ -710,75 +702,32 @@ class DerivativeFirstNode(Node):
         output_type="NDDataset",
     )
 
-    python_extra_imports = ["from scipy.signal import savgol_filter"]
+    spec = TransformSpec(
+        transform_fn=lambda data, size=11, order=2: _savgol_deriv(data, size, order, deriv=1),
+        export_lines_fn=lambda params, inp, node_id, indent, use_scp: _deriv_export(
+            "1st Derivative", 1, params, inp, node_id, indent, use_scp
+        ),
+        extra_imports=["from scipy.signal import savgol_filter"],
+        state_effects=[EFFECT_DERIVATIVE],
+    )
 
-    def generate_python(self, inputs, indent="    ", use_scp=True):
-        inp = next(iter(inputs.values())) if inputs else "input_data"
-        params = self._resolve_params()
-        size = params.get("size", 11)
-        order = params.get("order", 2)
-        if use_scp:
-            return [
-                f"{indent}# --- 1st Derivative ({self.node_id}) ---",
-                f"{indent}data = {inp}.copy()",
-                f"{indent}data.savgol(size={size}, order={order}, deriv=1)",
-                f"{indent}results['{self.node_id}'] = data",
-            ]
-        return [
-            f"{indent}# --- 1st Derivative ({self.node_id}) ---",
-            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
-            f"{indent}if _data.ndim >= 2:",
-            f"{indent}    _data = np.apply_along_axis("
-            f"savgol_filter, -1, _data, window_length={size}, polyorder={order}, deriv=1)",
-            f"{indent}else:",
-            f"{indent}    _data = savgol_filter(" f"_data, window_length={size}, polyorder={order}, deriv=1)",
-        ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
-
-    async def execute(self, input_data: Any) -> Any:
-        """Execute first derivative calculation."""
-        size = self.parameters.get("size", 11)
-        order = self.parameters.get("order", 2)
-
-        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
-        from scipy.signal import savgol_filter
-
-        raw = np.asarray(input_ds.data, dtype=np.float64)
-        derived = (
-            np.apply_along_axis(savgol_filter, -1, raw, window_length=int(size), polyorder=int(order), deriv=1)
-            if raw.ndim >= 2
-            else savgol_filter(raw, window_length=int(size), polyorder=int(order), deriv=1)
+    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
+        input_ds = coerce_to_sherpa(
+            input_data if input_data is not None else kwargs.get("input_0"),
+            input_name="input_data",
         )
-        result = build_dataset_like(derived, input_ds)
-
-        # Update units — only when meaningful units exist on both axes
-        try:
-            original_units = str(input_ds.units) if getattr(input_ds, "units", None) else None
-            x_units = input_ds.feature_axis.units if input_ds.feature_axis is not None else None
-
-            if original_units and x_units and original_units != "dimensionless":
-                result.units = f"d({original_units})/d({x_units})"
-            elif original_units and original_units != "dimensionless":
-                result.units = f"d({original_units})/dx"
-        except Exception:
-            pass  # leave units unchanged if assignment fails
-
-        add_processing_step(
-            result,
-            "derivative.first",
-            {"size": size, "order": order},
-            node_id=self.node_id,
-            state_effects=[EFFECT_DERIVATIVE],
-        )
-
+        result = await super().execute(input_data, **kwargs)
+        _update_derivative_units(result, input_ds, deriv_order=1)
         return result
 
 
 @register_node
-class DerivativeSecondNode(Node):
+class DerivativeSecondNode(TransformSpecNode):
     """
     Second derivative node.
 
     Computes the second derivative of spectral data.
+    Overrides execute() to update output units.
     """
 
     scp_method = "deriv"
@@ -817,66 +766,22 @@ class DerivativeSecondNode(Node):
         output_type="NDDataset",
     )
 
-    python_extra_imports = ["from scipy.signal import savgol_filter"]
+    spec = TransformSpec(
+        transform_fn=lambda data, size=11, order=2: _savgol_deriv(data, size, order, deriv=2),
+        export_lines_fn=lambda params, inp, node_id, indent, use_scp: _deriv_export(
+            "2nd Derivative", 2, params, inp, node_id, indent, use_scp
+        ),
+        extra_imports=["from scipy.signal import savgol_filter"],
+        state_effects=[EFFECT_DERIVATIVE],
+    )
 
-    def generate_python(self, inputs, indent="    ", use_scp=True):
-        inp = next(iter(inputs.values())) if inputs else "input_data"
-        params = self._resolve_params()
-        size = params.get("size", 11)
-        order = params.get("order", 2)
-        if use_scp:
-            return [
-                f"{indent}# --- 2nd Derivative ({self.node_id}) ---",
-                f"{indent}data = {inp}.copy()",
-                f"{indent}data.savgol(size={size}, order={order}, deriv=2)",
-                f"{indent}results['{self.node_id}'] = data",
-            ]
-        return [
-            f"{indent}# --- 2nd Derivative ({self.node_id}) ---",
-            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
-            f"{indent}if _data.ndim >= 2:",
-            f"{indent}    _data = np.apply_along_axis("
-            f"savgol_filter, -1, _data, window_length={size}, polyorder={order}, deriv=2)",
-            f"{indent}else:",
-            f"{indent}    _data = savgol_filter(" f"_data, window_length={size}, polyorder={order}, deriv=2)",
-        ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
-
-    async def execute(self, input_data: Any) -> Any:
-        """Execute second derivative calculation."""
-        size = self.parameters.get("size", 11)
-        order = self.parameters.get("order", 2)
-
-        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
-        from scipy.signal import savgol_filter
-
-        raw = np.asarray(input_ds.data, dtype=np.float64)
-        derived = (
-            np.apply_along_axis(savgol_filter, -1, raw, window_length=int(size), polyorder=int(order), deriv=2)
-            if raw.ndim >= 2
-            else savgol_filter(raw, window_length=int(size), polyorder=int(order), deriv=2)
+    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
+        input_ds = coerce_to_sherpa(
+            input_data if input_data is not None else kwargs.get("input_0"),
+            input_name="input_data",
         )
-        result = build_dataset_like(derived, input_ds)
-
-        # Update units — only when meaningful units exist on both axes
-        try:
-            original_units = str(input_ds.units) if getattr(input_ds, "units", None) else None
-            x_units = input_ds.feature_axis.units if input_ds.feature_axis is not None else None
-
-            if original_units and x_units and original_units != "dimensionless":
-                result.units = f"d²({original_units})/d({x_units})²"
-            elif original_units and original_units != "dimensionless":
-                result.units = f"d²({original_units})/dx²"
-        except Exception:
-            pass  # leave units unchanged if assignment fails
-
-        add_processing_step(
-            result,
-            "derivative.second",
-            {"size": size, "order": order},
-            node_id=self.node_id,
-            state_effects=[EFFECT_DERIVATIVE],
-        )
-
+        result = await super().execute(input_data, **kwargs)
+        _update_derivative_units(result, input_ds, deriv_order=2)
         return result
 
 
@@ -885,8 +790,41 @@ class DerivativeSecondNode(Node):
 # ============================================================================
 
 
+def _cosmic_ray_transform(data: np.ndarray, window: int = 7, zscore: float = 3.0) -> np.ndarray:
+    window = int(window)
+    if window % 2 == 0:
+        window += 1
+    result = data.copy()
+    for i in range(result.shape[0]):
+        result[i] = remove_cosmic_rays(result[i], window=window, zscore_threshold=zscore)
+    return result
+
+
+def _cosmic_ray_export(params, inp, node_id, indent, use_scp):
+    window = params.get("window", 7)
+    zscore = params.get("zscore", 3.0)
+    return [
+        f"{indent}# --- Cosmic Ray Removal ({node_id}) ---",
+        f"{indent}from scipy.ndimage import median_filter",
+        f"{indent}def _remove_cosmic_rays(spectrum, window={window}, zscore={zscore}):",
+        f"{indent}    med = median_filter(spectrum, size=window)",
+        f"{indent}    diff = np.abs(spectrum - med)",
+        f"{indent}    mad = np.median(diff)",
+        f"{indent}    threshold = zscore * mad / 0.6745 if mad > 0 else np.inf",
+        f"{indent}    cleaned = spectrum.copy()",
+        f"{indent}    cleaned[diff > threshold] = med[diff > threshold]",
+        f"{indent}    return cleaned",
+        f"{indent}_data = np.array({inp}.data)",
+        f"{indent}if _data.ndim == 1:",
+        f"{indent}    _data = _remove_cosmic_rays(_data)",
+        f"{indent}else:",
+        f"{indent}    for _i in range(_data.shape[0]):",
+        f"{indent}        _data[_i] = _remove_cosmic_rays(_data[_i])",
+    ] + _wrap_result_lines(node_id, "_data", inp, indent, use_scp)
+
+
 @register_node
-class CosmicRayRemovalNode(Node):
+class CosmicRayRemovalNode(TransformSpecNode):
     """
     Cosmic ray removal node.
 
@@ -926,60 +864,11 @@ class CosmicRayRemovalNode(Node):
         output_type="NDDataset",
     )
 
-    python_extra_imports = [
-        "import numpy as np",
-        "from scipy.ndimage import median_filter",
-    ]
-
-    def generate_python(self, inputs, indent="    ", use_scp=True):
-        inp = next(iter(inputs.values())) if inputs else "input_data"
-        params = self._resolve_params()
-        window = params.get("window", 7)
-        zscore = params.get("zscore", 3.0)
-        return [
-            f"{indent}# --- Cosmic Ray Removal ({self.node_id}) ---",
-            f"{indent}def _remove_cosmic_rays(spectrum, window={window}, zscore={zscore}):",
-            f"{indent}    med = median_filter(spectrum, size=window)",
-            f"{indent}    diff = np.abs(spectrum - med)",
-            f"{indent}    mad = np.median(diff)",
-            f"{indent}    threshold = zscore * mad / 0.6745 if mad > 0 else np.inf",
-            f"{indent}    cleaned = spectrum.copy()",
-            f"{indent}    cleaned[diff > threshold] = med[diff > threshold]",
-            f"{indent}    return cleaned",
-            f"{indent}_data = np.array({inp}.data)",
-            f"{indent}if _data.ndim == 1:",
-            f"{indent}    _data = _remove_cosmic_rays(_data)",
-            f"{indent}else:",
-            f"{indent}    for _i in range(_data.shape[0]):",
-            f"{indent}        _data[_i] = _remove_cosmic_rays(_data[_i])",
-        ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
-
-    async def execute(self, input_data: Any) -> SherpaDataset:
-        """Execute cosmic ray removal."""
-        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
-        window = self.parameters.get("window", 7)
-        zscore = self.parameters.get("zscore", 3.0)
-
-        if window % 2 == 0:
-            window += 1
-
-        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
-
-        if data.ndim == 1:
-            data = remove_cosmic_rays(data, window=window, zscore_threshold=zscore)
-        else:
-            for i in range(data.shape[0]):
-                data[i] = remove_cosmic_rays(data[i], window=window, zscore_threshold=zscore)
-
-        result = build_dataset_like(data, input_ds)
-        add_processing_step(
-            result,
-            "preprocess.cosmic_ray",
-            {"window": window, "zscore": zscore},
-            node_id=self.node_id,
-        )
-
-        return result
+    spec = TransformSpec(
+        transform_fn=_cosmic_ray_transform,
+        export_lines_fn=_cosmic_ray_export,
+        extra_imports=["import numpy as np", "from scipy.ndimage import median_filter"],
+    )
 
 
 @register_node
@@ -1249,8 +1138,29 @@ class WavenumberAlignNode(Node):
         return result
 
 
+def _scale_max_transform(data: np.ndarray, target_max: float = 1.0) -> np.ndarray:
+    row_max = np.abs(data).max(axis=1, keepdims=True)
+    row_max[row_max == 0] = 1.0
+    return data * (target_max / row_max)
+
+
+def _scale_max_export(params, inp, node_id, indent, use_scp):
+    target = params.get("target_max", 1.0)
+    return [
+        f"{indent}# --- Scale to Max ({node_id}) ---",
+        f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
+        f"{indent}if _data.ndim == 1:",
+        f"{indent}    _cmax = np.abs(_data).max()",
+        f"{indent}    if _cmax > 0: _data = _data * ({_format_value(target)} / _cmax)",
+        f"{indent}else:",
+        f"{indent}    _rmax = np.abs(_data).max(axis=1, keepdims=True)",
+        f"{indent}    _rmax[_rmax == 0] = 1.0",
+        f"{indent}    _data = _data * ({_format_value(target)} / _rmax)",
+    ] + _wrap_result_lines(node_id, "_data", inp, indent, use_scp)
+
+
 @register_node
-class ScaleMaxNode(Node):
+class ScaleMaxNode(TransformSpecNode):
     """
     Scale to maximum node.
 
@@ -1279,49 +1189,13 @@ class ScaleMaxNode(Node):
         output_type="NDDataset",
     )
 
-    python_extra_imports = ["import numpy as np"]
-
-    def generate_python(self, inputs, indent="    ", use_scp=True):
-        inp = next(iter(inputs.values())) if inputs else "input_data"
-        target = self._resolve_params().get("target_max", 1.0)
-        return [
-            f"{indent}# --- Scale to Max ({self.node_id}) ---",
-            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
-            f"{indent}if _data.ndim == 1:",
-            f"{indent}    _cmax = np.abs(_data).max()",
-            f"{indent}    if _cmax > 0: _data = _data * ({_format_value(target)} / _cmax)",
-            f"{indent}else:",
-            f"{indent}    _rmax = np.abs(_data).max(axis=1, keepdims=True)",
-            f"{indent}    _rmax[_rmax == 0] = 1.0",
-            f"{indent}    _data = _data * ({_format_value(target)} / _rmax)",
-        ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
-
-    async def execute(self, input_data: Any) -> SherpaDataset:
-        """Execute scale to maximum normalization."""
-        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
-        target_max = self.parameters.get("target_max", 1.0)
-
-        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
-
-        if data.ndim == 1:
-            current_max = np.abs(data).max()
-            if current_max > 0:
-                data = data * (target_max / current_max)
-        else:
-            row_max = np.abs(data).max(axis=1, keepdims=True)
-            row_max[row_max == 0] = 1.0
-            data = data * (target_max / row_max)
-
-        result = build_dataset_like(data, input_ds, units="normalized")
-        add_processing_step(
-            result,
-            "preprocess.scale_max",
-            {"target_max": target_max},
-            node_id=self.node_id,
-            state_effects=[EFFECT_SCALED],
-        )
-
-        return result
+    spec = TransformSpec(
+        transform_fn=_scale_max_transform,
+        output_units="normalized",
+        export_lines_fn=_scale_max_export,
+        extra_imports=["import numpy as np"],
+        state_effects=[EFFECT_SCALED],
+    )
 
 
 def _center_mean_export(params, inp, node_id, indent, use_scp):
@@ -1696,13 +1570,30 @@ class AutoscalingNode(TransformSpecNode):
     )
 
 
+def _sg_deriv_transform(data: np.ndarray, size: int = 11, order: int = 2, deriv: str = "1") -> np.ndarray:
+    size = int(size)
+    if size % 2 == 0:
+        size += 1
+    return _savgol_deriv(data, size=size, order=int(order), deriv=int(deriv))
+
+
+def _sg_deriv_export(params, inp, node_id, indent, use_scp):
+    size = params.get("size", 11)
+    order = params.get("order", 2)
+    deriv_order = int(params.get("deriv", "1"))
+    return _deriv_export("SG Derivative", deriv_order, params, inp, node_id, indent, use_scp)
+
+
 @register_node
-class SGDerivativeNode(Node):
+class SGDerivativeNode(TransformSpecNode):
     """
     Savitzky-Golay Derivative node.
 
     Combines smoothing and derivative calculation in a single operation.
+    Overrides execute() to update output units when deriv > 0.
     """
+
+    scp_method = "deriv"
 
     metadata = NodeMetadata(
         node_type="preprocess.sg_derivative",
@@ -1746,84 +1637,25 @@ class SGDerivativeNode(Node):
         output_type="NDDataset",
     )
 
-    scp_method = "deriv"
+    spec = TransformSpec(
+        transform_fn=_sg_deriv_transform,
+        export_lines_fn=_sg_deriv_export,
+        extra_imports=["from scipy.signal import savgol_filter"],
+        state_effects=[EFFECT_DERIVATIVE, EFFECT_SMOOTHED],
+    )
 
-    python_extra_imports = ["from scipy.signal import savgol_filter"]
-
-    def generate_python(self, inputs, indent="    ", use_scp=True):
-        inp = next(iter(inputs.values())) if inputs else "input_data"
-        params = self._resolve_params()
-        size = params.get("size", 11)
-        order = params.get("order", 2)
-        deriv_order = int(params.get("deriv", "1"))
-        if use_scp:
-            return [
-                f"{indent}# --- SG Derivative ({self.node_id}) ---",
-                f"{indent}data = {inp}.copy()",
-                f"{indent}data.savgol(size={size}, order={order}, deriv={deriv_order})",
-                f"{indent}results['{self.node_id}'] = data",
-            ]
-        return [
-            f"{indent}# --- SG Derivative ({self.node_id}) ---",
-            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
-            f"{indent}if _data.ndim >= 2:",
-            f"{indent}    _data = np.apply_along_axis("
-            f"savgol_filter, -1, _data, window_length={size}, polyorder={order}, deriv={deriv_order})",
-            f"{indent}else:",
-            f"{indent}    _data = savgol_filter("
-            f"_data, window_length={size}, polyorder={order}, deriv={deriv_order})",
-        ] + _wrap_result_lines(self.node_id, "_data", inp, indent, use_scp)
-
-    async def execute(self, input_data: Any) -> Any:
-        """Execute Savitzky-Golay derivative."""
-        size = self.parameters.get("size", 11)
-        order = self.parameters.get("order", 2)
-        deriv_order = int(self.parameters.get("deriv", "1"))
-
-        if size % 2 == 0:
-            size += 1
-
-        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
-        from scipy.signal import savgol_filter
-
-        raw = np.asarray(input_ds.data, dtype=np.float64)
-        derived = (
-            np.apply_along_axis(
-                savgol_filter, -1, raw, window_length=int(size), polyorder=int(order), deriv=int(deriv_order)
-            )
-            if raw.ndim >= 2
-            else savgol_filter(raw, window_length=int(size), polyorder=int(order), deriv=int(deriv_order))
+    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
+        input_ds = coerce_to_sherpa(
+            input_data if input_data is not None else kwargs.get("input_0"),
+            input_name="input_data",
         )
-        result = build_dataset_like(derived, input_ds)
-
-        # Update units
+        result = await super().execute(input_data, **kwargs)
+        deriv_order = int(self._resolve_params().get("deriv", "1"))
         if deriv_order > 0:
-            original_units = str(input_ds.units) if getattr(input_ds, "units", None) else None
-            x_units = input_ds.feature_axis.units if input_ds.feature_axis is not None else None
-
-            if deriv_order == 1:
-                if original_units and x_units and original_units != "dimensionless":
-                    result.units = f"d({original_units})/d({x_units})"
-                elif original_units and original_units != "dimensionless":
-                    result.units = f"d({original_units})/dx"
-                else:
-                    result.units = "d/dx"
-            elif deriv_order == 2:
-                if original_units and x_units and original_units != "dimensionless":
-                    result.units = f"d²({original_units})/d({x_units})²"
-                elif original_units and original_units != "dimensionless":
-                    result.units = f"d²({original_units})/dx²"
-                else:
-                    result.units = "d²/dx²"
-
-        add_processing_step(
-            result,
-            "preprocess.sg_derivative",
-            {"size": size, "order": order, "deriv": deriv_order},
-            node_id=self.node_id,
-            state_effects=[EFFECT_DERIVATIVE, EFFECT_SMOOTHED],
-        )
-
+            _update_derivative_units(result, input_ds, deriv_order)
+            # Fallback units when no original units available
+            if not getattr(result, "units", None):
+                result.units = "d/dx" if deriv_order == 1 else "d²/dx²"
         return result
 
 

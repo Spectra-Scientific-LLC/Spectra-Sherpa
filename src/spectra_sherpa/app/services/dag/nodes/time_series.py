@@ -17,6 +17,7 @@ from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
 
 from ..io_contracts import build_dataset_like, coerce_to_sherpa, to_numpy_2d
 from ..node_base import Node, NodeMetadata, NodeParameter, register_node
+from ..spec_nodes import TransformSpec, TransformSpecNode
 
 
 @register_node
@@ -144,8 +145,43 @@ class MovingWindowNode(Node):
         return result
 
 
+def _trend_removal_transform(
+    data: np.ndarray,
+    method: str = "linear",
+    poly_order: int = 2,
+    window_size: int = 5,
+) -> np.ndarray:
+    n_samples, n_features = data.shape
+    detrended = np.zeros_like(data)
+
+    if method == "linear":
+        t = np.arange(n_samples)
+        for j in range(n_features):
+            p = np.polyfit(t, data[:, j], 1)
+            detrended[:, j] = data[:, j] - np.polyval(p, t)
+
+    elif method == "polynomial":
+        t = np.arange(n_samples)
+        for j in range(n_features):
+            p = np.polyfit(t, data[:, j], poly_order)
+            detrended[:, j] = data[:, j] - np.polyval(p, t)
+
+    elif method == "difference":
+        detrended[0] = data[0]
+        detrended[1:] = np.diff(data, axis=0)
+
+    elif method == "moving_average":
+        from scipy.ndimage import uniform_filter1d
+
+        for j in range(n_features):
+            baseline = uniform_filter1d(data[:, j], window_size, mode="nearest")
+            detrended[:, j] = data[:, j] - baseline
+
+    return detrended
+
+
 @register_node
-class TrendRemovalNode(Node):
+class TrendRemovalNode(TransformSpecNode):
     """
     Trend Removal node.
 
@@ -199,71 +235,7 @@ class TrendRemovalNode(Node):
         output_type="NDDataset",
     )
 
-    async def execute(self, input_data: Any) -> Any:
-        """
-        Execute trend removal.
-
-        Args:
-            input_data: Any containing time series spectral data
-
-        Returns:
-            Dataset with detrended data
-        """
-        method = self.parameters.get("method", "linear")
-        poly_order = self.parameters.get("poly_order", 2)
-        window_size = self.parameters.get("window_size", 5)
-
-        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
-        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
-        n_samples, n_features = data.shape
-        input_shape = input_ds.shape
-
-        detrended_data = np.zeros_like(data)
-
-        if method == "linear":
-            # Linear detrending along time axis for each wavelength
-            t = np.arange(n_samples)
-            for j in range(n_features):
-                # Fit linear trend
-                p = np.polyfit(t, data[:, j], 1)
-                trend = np.polyval(p, t)
-                detrended_data[:, j] = data[:, j] - trend
-
-        elif method == "polynomial":
-            # Polynomial detrending
-            t = np.arange(n_samples)
-            for j in range(n_features):
-                # Fit polynomial trend
-                p = np.polyfit(t, data[:, j], poly_order)
-                trend = np.polyval(p, t)
-                detrended_data[:, j] = data[:, j] - trend
-
-        elif method == "difference":
-            # First difference (removes linear trends)
-            detrended_data[0] = data[0]  # Keep first spectrum as reference
-            detrended_data[1:] = np.diff(data, axis=0)
-
-        elif method == "moving_average":
-            # Remove moving average baseline
-            from scipy.ndimage import uniform_filter1d
-
-            for j in range(n_features):
-                baseline = uniform_filter1d(data[:, j], window_size, mode="nearest")
-                detrended_data[:, j] = data[:, j] - baseline
-
-        logger.debug(f"[Trend Removal] Applied {method} detrending")
-
-        result = build_dataset_like(detrended_data, input_ds)
-        add_processing_step(
-            result,
-            "time_series.trend_removal",
-            {
-                "method": method,
-                "poly_order": poly_order if method == "polynomial" else None,
-                "window_size": window_size if method == "moving_average" else None,
-            },
-            node_id=self.node_id,
-            input_shape=input_shape,
-        )
-
-        return result
+    spec = TransformSpec(
+        transform_fn=_trend_removal_transform,
+        extra_imports=["import numpy as np"],
+    )

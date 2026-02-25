@@ -33,6 +33,7 @@ from ..io_contracts import (
     to_numpy_2d,
 )
 from ..node_base import Node, NodeMetadata, NodeParameter, register_node
+from ..spec_nodes import TransformSpec, TransformSpecNode
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CUSTOM NODE SET #1: BLENDING NODES
@@ -839,8 +840,27 @@ class GoldenGridAlignNode(Node):
         return aligned
 
 
+def _noise_injection_transform(
+    data: np.ndarray,
+    noise_level: float = 0.01,
+    noise_type: str = "relative",
+    seed: float = -1,
+) -> np.ndarray:
+    seed = int(seed)
+    if seed >= 0:
+        np.random.seed(seed)
+
+    if noise_type == "relative":
+        noise_std = noise_level * np.abs(data).mean()
+    else:
+        noise_std = noise_level
+
+    noise = np.random.randn(*data.shape) * noise_std
+    return data + noise
+
+
 @register_node
-class NoiseInjectionNode(Node):
+class NoiseInjectionNode(TransformSpecNode):
     """
     Gaussian Noise Injection
 
@@ -886,55 +906,10 @@ class NoiseInjectionNode(Node):
         output_type="NDDataset",
     )
 
-    async def execute(self, input_data: Any, **kwargs) -> NDDataset:
-        """
-        Add Gaussian noise to spectra.
-
-        Parameters
-        ----------
-        input_data : NDDataset
-            Clean spectra
-
-        Returns
-        -------
-        NDDataset
-            Noisy spectra
-        """
-
-        input_data = resolve_legacy_input(input_data, kwargs, "default")
-        input_ds = bind_X(
-            input_data,
-            kwargs,
-            missing_message="Missing required input: input_data",
-            dataset_error_message="input_data must be an dataset object",
-        )
-        noise_level = self.parameters.get("noise_level", 0.01)
-        noise_type = self.parameters.get("noise_type", "relative")
-        seed = int(self.parameters.get("seed", -1))
-
-        if seed >= 0:
-            np.random.seed(seed)
-
-        data = to_numpy_2d(input_ds, name="input_data").copy()
-
-        if noise_type == "relative":
-            # Noise proportional to signal magnitude
-            noise_std = noise_level * np.abs(data).mean()
-        else:
-            # Absolute noise level
-            noise_std = noise_level
-
-        noise = np.random.randn(*data.shape) * noise_std
-        noisy_data = data + noise
-
-        result = build_dataset_like(noisy_data, input_ds)
-        add_processing_step(
-            result,
-            "custom.noise_injection",
-            {"noise_level": noise_level, "noise_type": noise_type, "seed": seed},
-            node_id=self.node_id,
-        )
-        return result
+    spec = TransformSpec(
+        transform_fn=_noise_injection_transform,
+        extra_imports=["import numpy as np"],
+    )
 
 
 __all__ = [
