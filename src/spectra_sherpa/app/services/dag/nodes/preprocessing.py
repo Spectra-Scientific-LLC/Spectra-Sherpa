@@ -233,9 +233,7 @@ class BaselineRubberbandNode(Node):
 def _savgol_smooth(data: np.ndarray, size: int = 11, order: int = 2) -> np.ndarray:
     from scipy.signal import savgol_filter
 
-    return np.apply_along_axis(
-        savgol_filter, -1, data, window_length=int(size), polyorder=int(order)
-    )
+    return np.apply_along_axis(savgol_filter, -1, data, window_length=int(size), polyorder=int(order))
 
 
 def _savgol_smooth_export(params, inp, node_id, indent, use_scp):
@@ -608,9 +606,7 @@ class NormalizeMSCNode(TransformSpecNode):
 def _savgol_deriv(data: np.ndarray, size: int = 11, order: int = 2, deriv: int = 1) -> np.ndarray:
     from scipy.signal import savgol_filter
 
-    return np.apply_along_axis(
-        savgol_filter, -1, data, window_length=int(size), polyorder=int(order), deriv=int(deriv)
-    )
+    return np.apply_along_axis(savgol_filter, -1, data, window_length=int(size), polyorder=int(order), deriv=int(deriv))
 
 
 def _deriv_export(label, deriv_order, params, inp, node_id, indent, use_scp):
@@ -630,8 +626,7 @@ def _deriv_export(label, deriv_order, params, inp, node_id, indent, use_scp):
         f"{indent}    _data = np.apply_along_axis("
         f"savgol_filter, -1, _data, window_length={size}, polyorder={order}, deriv={deriv_order})",
         f"{indent}else:",
-        f"{indent}    _data = savgol_filter("
-        f"_data, window_length={size}, polyorder={order}, deriv={deriv_order})",
+        f"{indent}    _data = savgol_filter(" f"_data, window_length={size}, polyorder={order}, deriv={deriv_order})",
     ]
     lines += _wrap_result_lines(node_id, "_data", inp, indent, use_scp)
     return lines

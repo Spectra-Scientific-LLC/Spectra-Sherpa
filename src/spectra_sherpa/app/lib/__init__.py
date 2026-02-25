@@ -10,9 +10,12 @@ Submodules:
 - preprocessing: Spectral preprocessing (alignment, smoothing, etc.)
 - curves: Catmull-Rom and concentration curve utilities
 - io: File I/O for various spectral formats
+
+All submodules are imported lazily to keep ``import spectra_sherpa``
+lightweight (no scipy, pandas, or spectrochempy on cold import).
 """
 
-from . import blending, curves, io, preprocessing, spectral
+from __future__ import annotations
 
 __all__ = [
     "spectral",
@@ -21,3 +24,11 @@ __all__ = [
     "curves",
     "io",
 ]
+
+
+def __getattr__(name: str):
+    if name in __all__:
+        import importlib
+
+        return importlib.import_module(f".{name}", __name__)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

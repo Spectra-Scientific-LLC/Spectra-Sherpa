@@ -196,8 +196,8 @@ async def run_batch_prediction(
         workflow: Workflow with eagerly-loaded nodes + edges.
         files: List of file paths to process.
     """
-    from spectra_sherpa.app.api.v1.routes.workflows import serialize_result
     from spectra_sherpa.app.services.job_manager import job_manager
+    from spectra_sherpa.app.services.serialization import serialize_result
 
     total = len(files)
     success_count = 0

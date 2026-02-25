@@ -188,7 +188,7 @@ class FolderWatchService:
                 await session.flush()
 
                 # Process each file
-                from spectra_sherpa.app.api.v1.routes.workflows import serialize_result
+                from spectra_sherpa.app.services.serialization import serialize_result
 
                 success_count = 0
                 error_count = 0

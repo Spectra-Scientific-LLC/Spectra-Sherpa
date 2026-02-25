@@ -199,7 +199,7 @@ async def predict(
         raise HTTPException(status_code=500, detail=f"Execution error: {exc}")
 
     # --- 7. Collect and serialize exit-node results ----------------------
-    from spectra_sherpa.app.api.v1.routes.workflows import serialize_result
+    from spectra_sherpa.app.services.serialization import serialize_result
 
     exit_nodes = executor.find_exit_nodes()
     serialized: dict[str, Any] = {}

@@ -370,7 +370,7 @@ def test_serialize_for_api_with_sherpa_dataset(iris_dataset):
 
 def test_serialize_result_with_sherpa_dataset(iris_dataset):
     """serialize_result should serialize SherpaDataset to dict with type='SherpaDataset'."""
-    from spectra_sherpa.app.api.v1.routes.workflows import serialize_result
+    from spectra_sherpa.app.services.serialization import serialize_result
 
     result = serialize_result(iris_dataset)
     assert isinstance(result, dict)
@@ -383,7 +383,7 @@ def test_serialize_result_with_sherpa_dataset(iris_dataset):
 
 def test_serialize_result_with_nested_sherpa_dataset(iris_dataset):
     """serialize_result should handle dicts containing SherpaDataset values."""
-    from spectra_sherpa.app.api.v1.routes.workflows import serialize_result
+    from spectra_sherpa.app.services.serialization import serialize_result
 
     multi_output = {
         "default": iris_dataset,

@@ -228,3 +228,72 @@ def test_import_speed_reasonable():
         for k in [k for k in sys.modules if k.startswith("spectra_sherpa")]:
             del sys.modules[k]
         sys.modules.update(saved)
+
+
+def test_top_level_front_door_exports():
+    """Top-level package should expose stable front-door symbols."""
+    import spectra_sherpa as ss
+    from spectra_sherpa.app.lib.adapters.numpy_adapter import from_numpy, to_numpy
+    from spectra_sherpa.app.lib.axes import (
+        AxisInfo,
+        FeatureAxis,
+        FrequencyAxis,
+        MZAxis,
+        PotentialAxis,
+        SampleAxis,
+        SpatialAxis,
+        SpectralAxis,
+        TimeAxis,
+    )
+    from spectra_sherpa.app.lib.sherpa_dataset import (
+        DomainContext,
+        EvaluationResult,
+        Provenance,
+        QualityMetrics,
+        SherpaDataset,
+        TargetContext,
+    )
+
+    assert ss.SherpaDataset is SherpaDataset
+    assert ss.Provenance is Provenance
+    assert ss.DomainContext is DomainContext
+    assert ss.TargetContext is TargetContext
+    assert ss.QualityMetrics is QualityMetrics
+    assert ss.EvaluationResult is EvaluationResult
+
+    assert ss.AxisInfo is AxisInfo
+    assert ss.FeatureAxis is FeatureAxis
+    assert ss.SpectralAxis is SpectralAxis
+    assert ss.TimeAxis is TimeAxis
+    assert ss.MZAxis is MZAxis
+    assert ss.PotentialAxis is PotentialAxis
+    assert ss.FrequencyAxis is FrequencyAxis
+    assert ss.SpatialAxis is SpatialAxis
+    assert ss.SampleAxis is SampleAxis
+
+    assert ss.from_numpy is from_numpy
+    assert ss.to_numpy is to_numpy
+
+
+def test_top_level_lazy_submodules():
+    """`io` and `preprocessing` should load lazily via package __getattr__."""
+    saved = {k: v for k, v in sys.modules.items() if k.startswith("spectra_sherpa")}
+    for key in list(saved):
+        del sys.modules[key]
+
+    try:
+        import spectra_sherpa as ss
+
+        assert "spectra_sherpa.app.lib.io" not in sys.modules
+        assert "spectra_sherpa.app.lib.preprocessing" not in sys.modules
+        assert "spectra_sherpa.app.lib.scp_compat" not in sys.modules
+
+        _ = ss.io
+        assert "spectra_sherpa.app.lib.io" in sys.modules
+
+        _ = ss.preprocessing
+        assert "spectra_sherpa.app.lib.preprocessing" in sys.modules
+    finally:
+        for k in [k for k in sys.modules if k.startswith("spectra_sherpa")]:
+            del sys.modules[k]
+        sys.modules.update(saved)
