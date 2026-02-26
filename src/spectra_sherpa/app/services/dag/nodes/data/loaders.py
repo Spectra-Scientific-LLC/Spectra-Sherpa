@@ -227,10 +227,10 @@ class MyDatasetNode(Node):
             ),
             PortMetadata(
                 name="target",
-                type_ref="spectrasherpa://types/Array1D/1.0",
+                type_ref="spectrasherpa://types/TargetMatrix/1.0",
                 required=False,
                 label="Properties",
-                description="Property / target data if available",
+                description="Property / target data if available (1D or 2D for multi-response)",
             ),
         ],
     )

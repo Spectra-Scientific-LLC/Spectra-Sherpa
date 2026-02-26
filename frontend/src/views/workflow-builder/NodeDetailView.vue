@@ -1439,14 +1439,29 @@ const mapMetadataParams = (nodeType: string, parameters: any[]): any[] => {
       description: param.description,
       default: param.default,
       required: param.required,
+      visible_when: param.visible_when || null,
     };
   });
 };
-const nodeParams = computed(() => {
-  if (nodeMetadata.value?.parameters?.length) {
-    return mapMetadataParams(nodeType.value, nodeMetadata.value.parameters);
+
+/** Check if a parameter should be visible based on visible_when rules. */
+const isParamVisible = (param: any): boolean => {
+  if (!param.visible_when) return true;
+  for (const [controlParam, allowedValues] of Object.entries(param.visible_when)) {
+    const currentValue = String(localParams.value[controlParam] ?? '');
+    if (!(allowedValues as string[]).includes(currentValue)) return false;
   }
-  return nodeData.value?.paramDefinitions || [];
+  return true;
+};
+
+const nodeParams = computed(() => {
+  let params: any[];
+  if (nodeMetadata.value?.parameters?.length) {
+    params = mapMetadataParams(nodeType.value, nodeMetadata.value.parameters);
+  } else {
+    params = nodeData.value?.paramDefinitions || [];
+  }
+  return params.filter(isParamVisible);
 });
 const nodeOutput = computed(() => nodeData.value?.output || null);
 

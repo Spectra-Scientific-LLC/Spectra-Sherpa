@@ -16,11 +16,14 @@ SpectraSherpa follows a "Clean Architecture" pattern with a strict separation be
 │                                                      │
 │  REST API ──► DAG Executor ──► Node Registry         │
 │  WebSocket ──► DAG Executor    ┌──────────────────┐  │
-│                 │              │ DataSource        │  │
+│                 │              │ Data / Synthesis  │  │
 │                 │ topological  │ Preprocessing     │  │
-│                 │ sort         │ Modeling          │  │
-│                 ▼              │ Classification    │  │
-│              Results           │ Visualization     │  │
+│                 │ sort         │ Exploratory       │  │
+│                 ▼              │ Regression        │  │
+│              Results           │ Classification    │  │
+│                │               │ Clustering        │  │
+│                │               │ Validation        │  │
+│                │               │ Output / Deploy   │  │
 │                │               └──────────────────┘  │
 │                ▼                                      │
 │          ModelStore (disk)                            │
@@ -78,9 +81,11 @@ Mode logic is centralized in `spectra_sherpa.app.core.mode_policy`.
 
 ### 2. The Node Graph
 SpectraSherpa is fundamentally a Directed Acyclic Graph (DAG) engine.
-- **Nodes** (`spectra_sherpa.app.services.dag.nodes.*`) are self-contained units of logic.
+- **Nodes** (`spectra_sherpa.app.services.dag.nodes.*`) are self-contained units of logic organized into 11 categories: `data`, `synthesis`, `preprocessing`, `exploratory`, `regression`, `classification`, `clustering`, `validation`, `custom_algo`, `output`, `deploy`.
 - **Workflows** are serializable JSON structures defining the graph.
-- **Execution** is topological. Data flows from `DataSourceNode` -> `PreprocessingNode` -> `ModelingNode`.
+- **Execution** is topological. Data flows from `DataSourceNode` -> `PreprocessingNode` -> modeling/classification/clustering nodes -> output/deploy nodes.
+- **Consolidated nodes** merge related algorithms behind a `method` dropdown (e.g., `preprocess.smooth` supports Savitzky-Golay, Whittaker, and Gaussian). Old node types resolve via the **alias system** in `NodeMetadata.aliases`.
+- **Conditional visibility** (`NodeParameter.visible_when`) hides irrelevant parameters in the Inspector based on the selected method.
 
 ### 3. Data Containers
 
@@ -108,7 +113,7 @@ The `scp_compat.py` module provides:
 - `require_scp()` guard function
 - Stub `NDDataset`/`Coord` classes when SCP is absent (safe for `isinstance()`)
 
-Each node declares `requires_scp=True` in its `NodeMetadata` if it needs SCP. Nodes that use SCP also declare `help_url` linking to the relevant SpectroChemPy API documentation. Without SCP, ~40 nodes run on pure numpy/scipy/sklearn via SherpaDataset. With SCP, 12 additional nodes are unlocked.
+Each node declares `requires_scp=True` in its `NodeMetadata` if it needs SCP. Consolidated nodes that mix SCP and non-SCP code paths (e.g., `classification.predict`) gate SCP at the method level instead. Without SCP, ~40 nodes run on pure numpy/scipy/sklearn via SherpaDataset. With SCP, 12 additional nodes are unlocked.
 
 ### 5. Type System
 

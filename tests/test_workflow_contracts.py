@@ -135,7 +135,7 @@ class TestPreflightContracts:
         expected = {
             "data.source",
             "data.train_test_split",
-            "normalize.snv",
+            "preprocess.normalize",
             "model.load_apply",
             "deploy.input",
             "deploy.output",

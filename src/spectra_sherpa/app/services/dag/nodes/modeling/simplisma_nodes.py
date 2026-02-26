@@ -43,7 +43,7 @@ class SIMPLISMANode(Node):
 
     metadata = NodeMetadata(
         node_type="model.simplisma",
-        category="modeling",
+        category="exploratory",
         label="SIMPLISMA",
         description="Self-modeling mixture analysis using purity maximization",
         parameters=[

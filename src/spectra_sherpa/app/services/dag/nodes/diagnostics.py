@@ -47,7 +47,7 @@ class OutlierDetectionNode(Node):
 
     metadata = NodeMetadata(
         node_type="diagnostics.outliers",
-        category="modeling",
+        category="validation",
         label="Outlier Detection",
         description="Hotelling T² and Q statistics for outlier detection",
         parameters=[
@@ -266,7 +266,7 @@ class CrossValidationNode(Node):
 
     metadata = NodeMetadata(
         node_type="diagnostics.cross_validation",
-        category="modeling",
+        category="validation",
         label="Cross-Validation",
         description="Calculate cross-validation metrics for model assessment",
         parameters=[

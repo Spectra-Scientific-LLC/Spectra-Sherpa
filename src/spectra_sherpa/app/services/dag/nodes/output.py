@@ -525,7 +525,7 @@ class StatsSummaryNode(Node):
 
     metadata = NodeMetadata(
         node_type="stats.summary",
-        category="analysis",
+        category="validation",
         label="Statistics",
         description="Compute adaptive statistics based on input type",
         parameters=[

@@ -31,6 +31,7 @@ from spectra_sherpa.app.lib.sherpa_dataset import (
     SampleAxis,
     SherpaDataset,
     SpectralAxis,
+    TargetContext,
 )
 from spectra_sherpa.app.models.spectra_meta import (
     AcquisitionParams,
@@ -228,10 +229,10 @@ class DataSourceNode(Node):
             ),
             PortMetadata(
                 name="target",
-                type_ref="spectrasherpa://types/Array1D/1.0",
+                type_ref="spectrasherpa://types/TargetMatrix/1.0",
                 required=False,
-                label="Target Labels",
-                description="Class/target labels if available (e.g., sklearn datasets)",
+                label="Target Values",
+                description="Target/property values if available (1D or 2D for multi-response)",
             ),
         ],
     )
@@ -338,7 +339,7 @@ class DataSourceNode(Node):
             target = None
             if source == "sklearn" and hasattr(self, "_sklearn_bunch"):
                 dataset = from_sklearn_bunch(self._sklearn_bunch, name=sklearn_dataset)
-                target = self._sklearn_bunch.target.tolist()
+                # from_sklearn_bunch already embeds target + target_context
             elif source == "eigenvector" and hasattr(self, "_eigenvector_properties"):
                 target = self._eigenvector_properties
             dataset = coerce_to_sherpa(dataset, input_name="dataset", allow_array=True)
@@ -351,6 +352,36 @@ class DataSourceNode(Node):
             sklearn_dataset=sklearn_dataset,
             eigenvector_dataset=self.parameters.get("eigenvector_dataset"),
         )
+
+        # ----- Embed target into dataset (self-describing data) -----
+        if target is not None and dataset.target is None:
+            target_arr = np.asarray(target) if not isinstance(target, np.ndarray) else target
+            dataset.target = target_arr
+            if source == "eigenvector":
+                prop_names = getattr(self, "_eigenvector_target_names", [])
+                dataset.target_context = TargetContext(
+                    target_type="continuous",
+                    target_names=prop_names or None,
+                )
+            elif source == "sklearn":
+                # SCP path: infer target context from extracted values
+                n_unique = len(np.unique(target_arr))
+                is_categorical = n_unique <= 30 and (
+                    np.issubdtype(target_arr.dtype, np.integer)
+                    or np.issubdtype(target_arr.dtype, np.str_)
+                    or target_arr.dtype.kind == "U"
+                )
+                if is_categorical:
+                    dataset.target_context = TargetContext(
+                        target_type="categorical",
+                        target_name=sklearn_dataset or None,
+                        n_classes=n_unique,
+                    )
+                else:
+                    dataset.target_context = TargetContext(
+                        target_type="continuous",
+                        target_name=sklearn_dataset or None,
+                    )
 
         # ----- Unified provenance (always SherpaDataset from here) -----
         add_processing_step(
@@ -370,7 +401,7 @@ class DataSourceNode(Node):
 
         return {
             "default": dataset,
-            "target": target,
+            "target": dataset.target,  # Derived from embedded — one source of truth
         }
 
     def _apply_domain_context_hints(
@@ -691,12 +722,10 @@ class DataSourceNode(Node):
         wavelengths = result["wavelengths"]
         catalog = result["catalog_entry"]
 
-        # Store properties for the target output port
+        # Store properties for the target output port (as numpy array)
         if properties is not None:
-            self._eigenvector_properties = {
-                "data": properties.tolist(),
-                "columns": result.get("prop_names") or [],
-            }
+            self._eigenvector_properties = np.asarray(properties, dtype=np.float64)
+            self._eigenvector_target_names = result.get("prop_names") or []
 
         if HAS_SCP:
             # Rich path: wrap in NDDataset with wavelength Coord

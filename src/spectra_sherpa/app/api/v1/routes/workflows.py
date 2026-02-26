@@ -1421,8 +1421,11 @@ async def get_node_library(
     """
     from spectra_sherpa.app.core.config import settings
 
-    # Exclude custom_algo nodes — those are served via the project-scoped endpoint
-    nodes = [n for n in node_registry.list_nodes() if n.category != "custom_algo"]
+    # Exclude custom_algo nodes — those are served via the project-scoped endpoint.
+    # Use list_nodes_with_aliases() so legacy workflows that reference old node
+    # type strings (e.g. "smooth.whittaker", "classification.simca_predict") can
+    # still resolve metadata in the frontend.
+    nodes = [n for n in node_registry.list_nodes_with_aliases() if n.category != "custom_algo"]
 
     node_infos = []
     for node_meta in nodes:
@@ -1439,6 +1442,7 @@ async def get_node_library(
                 description=p.description,
                 required=p.required,
                 category=p.category,
+                visible_when=p.visible_when,
             )
             for p in node_meta.parameters
         ]

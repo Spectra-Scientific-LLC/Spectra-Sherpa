@@ -21,6 +21,7 @@ from ...io_contracts import (
     bind_y,
     resolve_legacy_input,
     to_numpy_1d,
+    to_numpy_y,
 )
 from ...node_base import (
     Node,
@@ -55,7 +56,7 @@ class PLSNode(Node):
 
     metadata = NodeMetadata(
         node_type="model.pls",
-        category="modeling",
+        category="regression",
         label="PLS",
         description="Partial Least Squares regression for calibration",
         parameters=[
@@ -94,10 +95,10 @@ class PLSNode(Node):
             ),
             PortMetadata(
                 name="y",
-                type_ref="spectrasherpa://types/Array1D/1.0",
-                required=True,
+                type_ref="spectrasherpa://types/TargetMatrix/1.0",
+                required=False,
                 label="Concentrations (y)",
-                description="Target concentration values",
+                description="Target values — optional if dataset has embedded target",
             ),
         ],
         output_ports=[
@@ -164,14 +165,22 @@ class PLSNode(Node):
             kwargs,
             X=X_ds,
             required=True,
-            infer_from_X=False,
+            infer_from_X=True,
             dataset_as_data=True,
-            missing_message="Missing required input: y (concentrations)",
+            missing_message=(
+                "No target values found. Either:\n"
+                "  1. Use a data source with embedded targets (e.g., Corn M5, sklearn)\n"
+                "  2. Connect target values to the 'y' input port\n"
+                "  3. Use 'Attach Target' node to add targets to your dataset"
+            ),
         )
 
         X_ndd = to_nddataset(X_ds)
-        y_array = to_numpy_1d(y_value, name="y", expected_length=X_ds.shape[0], dtype=np.float64)
-        y_dataset = scp.NDDataset(y_array.reshape(-1, 1))
+        y_array = to_numpy_y(y_value, name="y", expected_samples=X_ds.shape[0], dtype=np.float64)
+        # PLS expects 2D y: (n_samples, n_targets)
+        y_2d = y_array.reshape(-1, 1) if y_array.ndim == 1 else y_array
+        n_targets = y_2d.shape[1]
+        y_dataset = scp.NDDataset(y_2d)
 
         n_components = self.parameters.get("n_components", 3)
         scale = self.parameters.get("scale", True)
@@ -187,7 +196,7 @@ class PLSNode(Node):
         logger.debug("  - n_components: %s", n_components)
         logger.debug("  - scale: %s", scale)
         logger.debug("  - X shape: %s", X_ds.shape)
-        logger.debug("  - y shape: %s", y_dataset.shape)
+        logger.debug("  - y shape: %s (n_targets=%s)", y_dataset.shape, n_targets)
 
         # Perform PLS using SpectroChemPy
         pls = scp.PLSRegression(n_components=n_components, scale=scale)
@@ -195,7 +204,7 @@ class PLSNode(Node):
 
         # Extract results using typed extractor — all defensive unwrapping
         # and version-specific fallback logic lives in PLSExtract.from_scp()
-        extracted = PLSExtract.from_scp(pls, X_ndd)
+        extracted = PLSExtract.from_scp(pls, X_ndd, Y_ndd=y_dataset)
 
         X_scores_data = extracted.x_scores
         Y_scores_data = extracted.y_scores
@@ -207,12 +216,32 @@ class PLSNode(Node):
         pls_r2 = None
         pls_rmse = None
         try:
-            y_pred = to_numpy_1d(pls.predict(X_ndd), name="y_pred", expected_length=len(y_array), dtype=np.float64)
-            residual = y_array - y_pred
-            ss_res = float(np.sum(residual**2))
-            ss_tot = float(np.sum((y_array - np.mean(y_array)) ** 2))
-            pls_r2 = (1.0 - (ss_res / ss_tot)) if ss_tot > 0 else None
-            pls_rmse = float(np.sqrt(np.mean(residual**2)))
+            y_pred_raw = pls.predict(X_ndd)
+            y_pred = np.asarray(
+                y_pred_raw.data if hasattr(y_pred_raw, "data") else y_pred_raw,
+                dtype=np.float64,
+            )
+            if y_pred.ndim > 1 and y_2d.shape[1] == 1:
+                y_pred = y_pred.ravel()
+            if y_2d.shape[1] == 1:
+                # Single-target: flatten for metrics
+                y_flat = y_2d.ravel()
+                y_pred_flat = y_pred.ravel() if y_pred.ndim > 1 else y_pred
+                residual = y_flat - y_pred_flat
+                ss_res = float(np.sum(residual**2))
+                ss_tot = float(np.sum((y_flat - np.mean(y_flat)) ** 2))
+                pls_r2 = (1.0 - (ss_res / ss_tot)) if ss_tot > 0 else None
+                pls_rmse = float(np.sqrt(np.mean(residual**2)))
+            else:
+                # Multi-target: per-target R2, then average
+                if y_pred.ndim == 1:
+                    y_pred = y_pred.reshape(-1, n_targets)
+                residual = y_2d - y_pred
+                ss_res = np.sum(residual**2, axis=0)
+                ss_tot = np.sum((y_2d - np.mean(y_2d, axis=0)) ** 2, axis=0)
+                r2_per_target = np.where(ss_tot > 0, 1.0 - ss_res / ss_tot, np.nan)
+                pls_r2 = float(np.nanmean(r2_per_target))
+                pls_rmse = float(np.sqrt(np.mean(residual**2)))
         except Exception:
             logger.debug("[PLS Node] Could not compute calibration R2/RMSE from predictions", exc_info=True)
 
@@ -383,7 +412,7 @@ class PLSPredictNode(Node):
 
     metadata = NodeMetadata(
         node_type="model.pls_predict",
-        category="modeling",
+        category="regression",
         label="Apply PLS Model",
         description="Apply trained PLS model to predict concentrations for new spectra",
         parameters=[],
@@ -406,10 +435,10 @@ class PLSPredictNode(Node):
         output_ports=[
             PortMetadata(
                 name="y_pred",
-                type_ref="spectrasherpa://types/Array1D/1.0",
+                type_ref="spectrasherpa://types/TargetMatrix/1.0",
                 required=True,
                 label="Predictions",
-                description="Predicted concentration values",
+                description="Predicted values (1D for single response, 2D for multi-response)",
             ),
         ],
         input_types=["NDDataset", "dict"],
@@ -425,7 +454,7 @@ class PLSPredictNode(Node):
             model: Trained PLS model dict from PLS node
 
         Returns:
-            dict with 'y_pred' key containing predictions
+            dict with 'y_pred' key containing predictions (1D or 2D)
         """
         X_new = resolve_legacy_input(X_new, kwargs, "input_0")
         model = resolve_legacy_input(model, kwargs, "input_1")
@@ -451,10 +480,16 @@ class PLSPredictNode(Node):
         # Make predictions - SpectroChemPy PLSRegression can accept NDDataset or array
         try:
             X_ndd = to_nddataset(X_new_ds)
-            y_pred = pls_model.predict(X_ndd)
-            y_pred_array = to_numpy_1d(y_pred, name="y_pred", dtype=np.float64)
+            y_pred_raw = pls_model.predict(X_ndd)
+            y_pred_array = np.asarray(
+                y_pred_raw.data if hasattr(y_pred_raw, "data") else y_pred_raw,
+                dtype=np.float64,
+            )
+            # Squeeze single-target predictions to 1D for backward compat
+            if y_pred_array.ndim == 2 and y_pred_array.shape[1] == 1:
+                y_pred_array = y_pred_array.ravel()
 
-            logger.debug("[PLS Predict] Generated %s predictions", len(y_pred_array))
+            logger.debug("[PLS Predict] Generated predictions with shape %s", y_pred_array.shape)
 
             return {"y_pred": y_pred_array}
 

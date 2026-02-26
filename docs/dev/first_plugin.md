@@ -88,6 +88,25 @@ class ClipFloorNode(TransformSpecNode):
 
 Use raw `Node` only when you need full control over ports, outputs, or execution flow.
 
+## Available categories
+
+The `category` field determines which toolbar section your node appears in:
+
+| Category | Toolbar Section |
+|----------|----------------|
+| `data` | Data |
+| `synthesis` | Synthesis |
+| `preprocessing` | Preprocessing |
+| `exploratory` | Exploratory |
+| `regression` | Regression |
+| `classification` | Classification |
+| `clustering` | Clustering |
+| `validation` | Validation |
+| `output` | Output |
+| `deploy` | Deployment |
+
+Any unrecognized category automatically creates a new dynamic section in the toolbar.
+
 ## Where to put your node
 
 - Core contribution: `src/spectra_sherpa/app/services/dag/nodes/`
@@ -107,3 +126,36 @@ Example plugin layout:
 ## Verify registration
 
 `@register_node` performs registration when the module imports. If your module is discoverable and imports cleanly, the node appears in the workflow node library.
+
+## Advanced metadata features
+
+### Conditional parameter visibility
+
+Use `visible_when` to hide parameters that are irrelevant for a given method:
+
+```python
+NodeParameter(
+    name="lam",
+    label="Smoothness",
+    param_type="number",
+    default=1000,
+    visible_when={"method": ["whittaker"]},  # Only shown when method=whittaker
+)
+```
+
+### Alias system
+
+Consolidated nodes can register aliases for old node type strings:
+
+```python
+metadata = NodeMetadata(
+    node_type="preprocess.smooth",
+    aliases={
+        "smooth.savitzky_golay": {"method": "savitzky_golay"},
+        "smooth.whittaker": {"method": "whittaker"},
+    },
+    ...
+)
+```
+
+When a workflow references `smooth.savitzky_golay`, the registry resolves to `SmoothNode` and injects `method=savitzky_golay` as a default parameter.

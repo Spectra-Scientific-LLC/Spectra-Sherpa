@@ -35,7 +35,7 @@ class HCANode(Node):
 
     metadata = NodeMetadata(
         node_type="model.hca",
-        category="modeling",
+        category="clustering",
         label="HCA",
         description="Hierarchical clustering (agglomerative) for unsupervised grouping",
         parameters=[
@@ -334,7 +334,7 @@ class KMeansNode(Node):
 
     metadata = NodeMetadata(
         node_type="model.kmeans",
-        category="modeling",
+        category="clustering",
         label="KMeans",
         description="K-Means clustering for unsupervised grouping",
         parameters=[
@@ -508,7 +508,7 @@ class DBSCANNode(Node):
 
     metadata = NodeMetadata(
         node_type="model.dbscan",
-        category="modeling",
+        category="clustering",
         label="DBSCAN",
         description="Density-based clustering for unsupervised grouping",
         parameters=[

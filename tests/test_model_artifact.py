@@ -1208,7 +1208,7 @@ class TestLoadApplyModelNode:
             parameters={},
         )
         assert node.metadata.node_type == "model.load_apply"
-        assert node.metadata.category == "modeling"
+        assert node.metadata.category == "regression"
 
     def test_node_has_expected_ports(self):
         from spectra_sherpa.app.services.dag import node_registry

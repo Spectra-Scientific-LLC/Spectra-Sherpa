@@ -13,12 +13,14 @@ All node classes have been split into individual files for navigability.
 from . import (  # noqa: F401
     knn_nodes,
     plsda_nodes,
+    predict_node,
     simca_nodes,
 )
 from .knn_nodes import KNNNode, KNNPredictNode
 
 # Re-export node classes for backward compatibility
 from .plsda_nodes import PLSDANode, PLSDAPredictNode
+from .predict_node import ClassifierPredictNode
 from .simca_nodes import SIMCANode, SIMCAPredictNode
 
 __all__ = [
@@ -28,4 +30,5 @@ __all__ = [
     "KNNPredictNode",
     "SIMCANode",
     "SIMCAPredictNode",
+    "ClassifierPredictNode",
 ]

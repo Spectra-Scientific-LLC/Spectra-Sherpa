@@ -56,7 +56,7 @@ class PCANode(Node):
 
     metadata = NodeMetadata(
         node_type="model.pca",
-        category="modeling",
+        category="exploratory",
         label="PCA",
         description="Principal Component Analysis for dimensionality reduction",
         parameters=[
@@ -430,7 +430,7 @@ class PCATransformNode(Node):
 
     metadata = NodeMetadata(
         node_type="model.pca_transform",
-        category="modeling",
+        category="exploratory",
         label="Apply PCA Transform",
         description="Transform new data using trained PCA model (project to PC space)",
         parameters=[],

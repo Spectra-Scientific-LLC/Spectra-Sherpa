@@ -127,7 +127,7 @@ def _validate_port_type(
         "dataset": lambda d: _is_dataset(d),
         "array": lambda d: isinstance(d, (list, tuple, np.ndarray)) or _is_dataset(d),
         "model": lambda d: hasattr(d, "fit") or hasattr(d, "transform") or hasattr(d, "predict"),
-        "target": lambda d: isinstance(d, (list, tuple, np.ndarray)) or _is_dataset(d),
+        "target": lambda d: isinstance(d, (list, tuple, np.ndarray, dict)) or _is_dataset(d),
         "config": lambda d: isinstance(d, dict),
     }
 

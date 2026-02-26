@@ -404,7 +404,6 @@ class SIMCANode(Node):
         }
 
 
-@register_node
 class SIMCAPredictNode(Node):
     """
     Apply trained SIMCA model to classify new samples.

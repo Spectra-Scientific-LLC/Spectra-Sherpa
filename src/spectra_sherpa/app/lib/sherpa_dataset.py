@@ -170,6 +170,7 @@ class TargetContext(BaseModel):
 
     target_type: str | None = None  # "continuous", "categorical", "ordinal"
     target_name: str | None = None
+    target_names: list[str] | None = None  # column names for multi-target
     target_units: str | None = None
     n_classes: int | None = None
     class_names: list[str] | None = None
@@ -1116,7 +1117,7 @@ class SherpaDataset:
             sample_axis=sample_ax,
             axes=inner,
             target=self._target.copy() if self._target is not None else None,
-            target_context=self._target_context.model_copy(),
+            target_context=self._target_context.model_copy(deep=True),
             domain=self._domain.model_copy(deep=True),
             provenance=self._provenance.copy(),
             quality=self._quality.model_copy(deep=True),
@@ -1277,7 +1278,7 @@ class SherpaDataset:
             sample_axis=sample_axis,  # already sliced/copied
             axes=inner_axes,
             target=target,
-            target_context=self._target_context.model_copy(),
+            target_context=self._target_context.model_copy(deep=True),
             domain=self._domain.model_copy(deep=True),
             provenance=self._provenance.copy(),
             quality=self._quality.model_copy(deep=True),

@@ -46,7 +46,7 @@ class EFANode(Node):
 
     metadata = NodeMetadata(
         node_type="model.efa",
-        category="modeling",
+        category="exploratory",
         label="EFA",
         description="Evolving Factor Analysis for rank determination",
         parameters=[

@@ -62,7 +62,7 @@ class LoadApplyModelNode(Node):
 
     metadata = NodeMetadata(
         node_type="model.load_apply",
-        category="modeling",
+        category="regression",
         label="Load & Apply Model",
         description="Load a saved model artifact and apply it to new data",
         parameters=[

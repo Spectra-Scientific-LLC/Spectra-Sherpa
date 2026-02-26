@@ -906,7 +906,6 @@ class PLSDANode(Node):
         }
 
 
-@register_node
 class PLSDAPredictNode(Node):
     """
     Apply trained PLS-DA model to predict class labels for new samples.

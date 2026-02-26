@@ -50,7 +50,7 @@ class NMFNode(Node):
 
     metadata = NodeMetadata(
         node_type="model.nmf",
-        category="modeling",
+        category="exploratory",
         label="NMF",
         description="Non-negative Matrix Factorization for mixture analysis",
         parameters=[
@@ -304,7 +304,7 @@ class FastICANode(Node):
 
     metadata = NodeMetadata(
         node_type="model.ica",
-        category="modeling",
+        category="exploratory",
         label="FastICA",
         description="Independent Component Analysis for blind source separation",
         parameters=[

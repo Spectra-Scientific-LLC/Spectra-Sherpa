@@ -51,8 +51,8 @@ See the [Applications Guide](docs/user/applications.md) for detailed algorithm-t
 
 ## Features
 
-- **Workflow Builder** — Visually design reproducible analysis pipelines (DAGs) with 100+ nodes for preprocessing, modeling, classification, diagnostics, and DOE
-- **Model Artifacts** — Train, persist, and reload models (PCA, PLS, MCR, PLSDA, KNN) with a generic Load & Apply node
+- **Workflow Builder** — Visually design reproducible analysis pipelines (DAGs) with 11 toolbar sections: Data, Synthesis, Preprocessing, Exploratory, Regression, Classification, Clustering, Validation, Custom, Output, and Deployment
+- **Model Artifacts** — Train, persist, and reload models (PCA, PLS, MCR, PLSDA, KNN, SIMCA) with a generic Load & Apply node
 - **Type System** — Typed port connections with registry-driven validation prevent incompatible node wiring
 - **Python & Notebook Export** — Generate standalone `.py` scripts or Jupyter notebooks from any workflow
 - **Project Management** — Organize experiments, workflows, scripts, and models with versioned snapshots
@@ -84,6 +84,7 @@ Install with `pip install spectra-sherpa[scp]` to enable [SpectroChemPy](https:/
 | EFA | Evolving Factor Analysis | [spectrochempy.EFA](https://www.spectrochempy.fr/reference/generated/spectrochempy.EFA.html) |
 | SIMPLISMA | Pure variable resolution | [spectrochempy.SIMPLISMA](https://www.spectrochempy.fr/reference/generated/spectrochempy.SIMPLISMA.html) |
 | PLS-DA | Discriminant Analysis (via PLS) | [spectrochempy.PLSRegression](https://www.spectrochempy.fr/reference/generated/spectrochempy.PLSRegression.html) |
+| SIMCA | Soft Independent Modeling of Class Analogy | [spectrochempy.PCA](https://www.spectrochempy.fr/reference/generated/spectrochempy.PCA.html) (per-class models) |
 | Baseline (Rubberband) | Convex hull baseline | [spectrochempy.basc](https://www.spectrochempy.fr/reference/generated/spectrochempy.basc.html) |
 | OSC Filter | Orthogonal Signal Correction | [spectrochempy.PLSRegression](https://www.spectrochempy.fr/reference/generated/spectrochempy.PLSRegression.html) |
 | File Readers | JCAMP-DX, SPC, SPA, OPUS | [spectrochempy.NDDataset](https://www.spectrochempy.fr/reference/generated/spectrochempy.NDDataset.html) |
@@ -92,43 +93,57 @@ Install with `pip install spectra-sherpa[scp]` to enable [SpectroChemPy](https:/
 
 Ships with the core install, powered by NumPy, SciPy, and scikit-learn:
 
-**Preprocessing**
+**Preprocessing** (consolidated nodes with method dropdowns)
 
-| Category | Nodes |
-|----------|-------|
-| Baseline | Polynomial, ALS, Penalized LS, SNIP |
-| Smoothing | Savitzky-Golay, Gaussian, Whittaker, Moving Average |
-| Normalization | Min-Max, L2, Standard (z-score), Area |
-| Scatter Correction | SNV, MSC, EMSC |
-| Derivatives | First, Second (Savitzky-Golay) |
-| Cleanup | Cosmic Ray Removal, Remove NaN, Trim Edges, Crop Spectral Region |
+| Node | Methods |
+|------|---------|
+| Smooth | Savitzky-Golay, Whittaker, Gaussian |
+| Derivative | Savitzky-Golay, Norris-Williams (order 0/1/2) |
+| Normalize | SNV, MSC, Scale (max/area/minmax) |
+| Scale / Center | Mean Center, Autoscale, Pareto, Scale Max |
+| Baseline (Penalized LS) | ALS, ArPLS, AirPLS |
+| Baseline (Rubberband) | Convex hull (SCP) |
+| EMSC | Extended MSC with polynomial baseline |
+| Utilities | Cosmic Ray, Clip Range, Clip Floor, WN Align, Moving Window, Trend Removal |
 
-**Modeling & Decomposition**
+**Exploratory (Decomposition)**
 
 | Node | Algorithm |
 |------|-----------|
 | NMF | Non-negative Matrix Factorization |
-| Fast ICA | Independent Component Analysis |
+| ICA | Independent Component Analysis (FastICA) |
+| Peak Finding | Automated peak detection (scipy.signal) |
+
+**Regression**
+
+| Node | Algorithm |
+|------|-----------|
 | PCR | Principal Component Regression |
 | SVR | Support Vector Regression |
 | Linear Regression | Ordinary Least Squares |
 
-**Clustering & Classification**
+**Classification**
+
+| Node | Algorithm |
+|------|-----------|
+| KNN | K-Nearest Neighbors classifier |
+| Apply Classifier | Unified predict node (auto-detects PLS-DA, KNN, or SIMCA model) |
+
+**Clustering**
 
 | Node | Algorithm |
 |------|-----------|
 | K-Means | K-Means clustering |
 | DBSCAN | Density-based clustering |
 | HCA | Hierarchical Cluster Analysis |
-| KNN | K-Nearest Neighbors classifier |
 
-**Diagnostics & Analysis**
+**Validation**
 
 | Node | Algorithm |
 |------|-----------|
 | Outlier Detection | Hotelling T² and Q residuals |
 | Cross-Validation | K-fold with RMSE/R² metrics |
-| Peak Finding | Automated peak detection |
+| Statistics | Descriptive statistics (mean, std, min/max) |
 
 **Synthesis & DOE**
 

@@ -487,7 +487,6 @@ class KNNNode(Node):
         }
 
 
-@register_node
 class KNNPredictNode(Node):
     """
     Apply trained KNN model to predict class labels for new samples.

@@ -26,6 +26,12 @@
       "parent": null,
       "description": "Categorical labels (class names, sample IDs)"
     },
+    "TargetMatrix": {
+      "uri": "spectrasherpa://types/TargetMatrix/1.0",
+      "category": "target",
+      "parent": null,
+      "description": "Target values — 1D vector or 2D matrix for single/multi-response calibration"
+    },
     "Spectrum": {
       "uri": "spectrasherpa://types/Spectrum/1.0",
       "category": "dataset",

@@ -223,6 +223,7 @@ export interface NodeParameterMetadata {
   description?: string;
   required: boolean;
   category?: "basic" | "advanced";  // Parameter complexity level
+  visible_when?: Record<string, string[]>;  // Conditional visibility rules
 }
 
 // Port metadata for node inputs/outputs

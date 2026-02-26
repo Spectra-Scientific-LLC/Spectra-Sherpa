@@ -21,6 +21,7 @@ from ...io_contracts import (
     bind_y,
     to_numpy_1d,
     to_numpy_2d,
+    to_numpy_y,
 )
 from ...node_base import (
     Node,
@@ -57,7 +58,7 @@ class PCRNode(Node):
 
     metadata = NodeMetadata(
         node_type="model.pcr",
-        category="modeling",
+        category="regression",
         label="PCR",
         description="Principal Component Regression for calibration",
         parameters=[
@@ -95,10 +96,10 @@ class PCRNode(Node):
             ),
             PortMetadata(
                 name="y",
-                type_ref="spectrasherpa://types/Array1D/1.0",
-                required=True,
+                type_ref="spectrasherpa://types/TargetMatrix/1.0",
+                required=False,
                 label="Targets (y)",
-                description="Target values for regression",
+                description="Target values — optional if dataset has embedded target",
             ),
         ],
         output_ports=[
@@ -155,9 +156,14 @@ class PCRNode(Node):
             kwargs,
             X=X_ds,
             required=True,
-            infer_from_X=False,
+            infer_from_X=True,
             dataset_as_data=True,
-            missing_message="Missing required input: y (targets)",
+            missing_message=(
+                "No target values found. Either:\n"
+                "  1. Use a data source with embedded targets (e.g., Corn M5, sklearn)\n"
+                "  2. Connect target values to the 'y' input port\n"
+                "  3. Use 'Attach Target' node to add targets to your dataset"
+            ),
         )
 
         X_data = to_numpy_2d(X_ds, name="X", dtype=np.float64)
@@ -361,7 +367,7 @@ class SVRNode(EstimatorSpecNode):
 
     metadata = NodeMetadata(
         node_type="model.svr",
-        category="modeling",
+        category="regression",
         label="SVR",
         description="Support Vector Regression for calibration",
         parameters=[
@@ -455,10 +461,10 @@ class SVRNode(EstimatorSpecNode):
             ),
             PortMetadata(
                 name="y",
-                type_ref="spectrasherpa://types/Array1D/1.0",
-                required=True,
+                type_ref="spectrasherpa://types/TargetMatrix/1.0",
+                required=False,
                 label="Targets (y)",
-                description="Target values for regression",
+                description="Target values — optional if dataset has embedded target",
             ),
         ],
         output_ports=[
@@ -514,7 +520,7 @@ class LinearRegressionNode(EstimatorSpecNode):
 
     metadata = NodeMetadata(
         node_type="model.linear_regression",
-        category="modeling",
+        category="regression",
         label="Linear Regression",
         description="Simple linear regression for calibration",
         parameters=[
@@ -540,10 +546,10 @@ class LinearRegressionNode(EstimatorSpecNode):
             ),
             PortMetadata(
                 name="y",
-                type_ref="spectrasherpa://types/Array1D/1.0",
-                required=True,
+                type_ref="spectrasherpa://types/TargetMatrix/1.0",
+                required=False,
                 label="Targets (y)",
-                description="Target values",
+                description="Target values — optional if dataset has embedded target",
             ),
         ],
         output_ports=[

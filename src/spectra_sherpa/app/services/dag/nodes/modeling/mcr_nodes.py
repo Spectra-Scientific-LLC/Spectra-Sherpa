@@ -52,7 +52,7 @@ class MCRNode(Node):
 
     metadata = NodeMetadata(
         node_type="model.mcr_als",
-        category="modeling",
+        category="exploratory",
         label="MCR-ALS",
         description="Multivariate Curve Resolution for mixture analysis",
         parameters=[

@@ -252,6 +252,7 @@ class NodeParameterInfo(BaseModel):
     description: str | None = None
     required: bool = False
     category: str | None = "basic"  # "basic" or "advanced" - controls Inspector display
+    visible_when: dict[str, list[str]] | None = None  # Conditional visibility rules
 
 
 class NodePortInfo(BaseModel):

@@ -49,6 +49,7 @@ For `MySNVNode`:
 - Keep `node_type` namespaced and stable.
 - Use `dataset.data`, `dataset.feature_axis`, and `dataset.meta` as the standard API surface.
 - Add targeted tests for parameter behavior, shape handling, and diagnostics.
+- Valid categories: `data`, `synthesis`, `preprocessing`, `exploratory`, `regression`, `classification`, `clustering`, `validation`, `output`, `deploy`.
 
 ## Registration
 

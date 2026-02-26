@@ -69,6 +69,10 @@ class NodeParameter:
     description: Optional[str] = None
     required: bool = True
     category: Optional[str] = "basic"  # "basic" or "advanced" - complexity level for UI
+    # Conditional visibility: {param_name: [allowed_values]}
+    # When set, this parameter is only shown when the controlling param has one of the listed values.
+    # Example: visible_when={"method": ["whittaker"]} → only show when method is "whittaker"
+    visible_when: Optional[Dict[str, List[str]]] = None
 
 
 @dataclass
@@ -133,6 +137,9 @@ class NodeMetadata:
     policy: Optional[NodePolicy] = None
     # Optional URL linking to external documentation (e.g., SpectroChemPy API docs)
     help_url: Optional[str] = None
+    # Backward-compat aliases: {old_node_type: {param_name: default_value}}
+    # When a node is created via an alias type, the mapped defaults are injected.
+    aliases: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
 
 def _format_value(value: Any) -> str:
@@ -448,6 +455,11 @@ class NodeRegistry:
 
             self._nodes[node_type] = node_class
 
+            # Register aliases so old node_type strings still resolve
+            for alias_type in metadata.aliases:
+                if alias_type not in self._nodes or not (self._frozen and alias_type in self._builtin_types):
+                    self._nodes[alias_type] = node_class
+
     def unregister(self, node_type: str) -> bool:
         """Remove a non-builtin node type from the registry.
 
@@ -482,6 +494,12 @@ class NodeRegistry:
                 raise KeyError(f"Unknown node type: {node_type}")
 
             node_class = self._nodes[node_type]
+
+        # Inject alias defaults when created via an alias type
+        parameters = dict(parameters or {})
+        alias_defaults = node_class.get_metadata().aliases.get(node_type, {})
+        for k, v in alias_defaults.items():
+            parameters.setdefault(k, v)
         return node_class(node_id, parameters)
 
     def get_metadata(self, node_type: str) -> NodeMetadata:
@@ -499,9 +517,35 @@ class NodeRegistry:
             return self._nodes[node_type]
 
     def list_nodes(self) -> List[NodeMetadata]:
-        """List all registered node types."""
+        """List all registered node types (deduplicated by class identity)."""
         with self._lock:
-            return [cls.get_metadata() for cls in self._nodes.values()]
+            seen: set[int] = set()
+            result: List[NodeMetadata] = []
+            for cls in self._nodes.values():
+                cls_id = id(cls)
+                if cls_id not in seen:
+                    seen.add(cls_id)
+                    result.append(cls.get_metadata())
+            return result
+
+    def list_nodes_with_aliases(self) -> List[NodeMetadata]:
+        """List all registered node types including alias entries.
+
+        Each alias gets a shallow copy of the canonical node's metadata
+        with ``node_type`` replaced by the alias string.  This ensures
+        the frontend metadata lookup succeeds for legacy workflows that
+        reference old node type strings.
+        """
+        import copy
+
+        canonical = self.list_nodes()
+        result = list(canonical)
+        for meta in canonical:
+            for alias_type in meta.aliases:
+                alias_meta = copy.copy(meta)
+                alias_meta.node_type = alias_type
+                result.append(alias_meta)
+        return result
 
     def list_by_category(self, category: str) -> List[NodeMetadata]:
         """List nodes in a specific category."""

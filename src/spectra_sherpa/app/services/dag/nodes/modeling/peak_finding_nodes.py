@@ -41,7 +41,7 @@ class PeakFindingNode(Node):
 
     metadata = NodeMetadata(
         node_type="analysis.peak_finding",
-        category="modeling",
+        category="exploratory",
         label="Peak Finding",
         description="Find peaks in spectral data with domain-specific algorithms",
         parameters=[

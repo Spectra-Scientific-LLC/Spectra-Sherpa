@@ -295,8 +295,11 @@ async def test_data_source_sklearn_no_scp(no_scp):
 
     target = outputs.get("target")
     assert target is not None, "Sklearn source should produce 'target' output"
-    assert isinstance(target, list), f"Target should be a list, got {type(target).__name__}"
     assert len(target) == 150
+    # Target should also be embedded in dataset
+    assert dataset.target is not None
+    assert len(dataset.target) == 150
+    assert dataset.target_context.target_type == "categorical"
 
 
 # ---------------------------------------------------------------------------

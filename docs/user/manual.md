@@ -320,16 +320,21 @@ The **Workflow Builder** creates visual analysis pipelines.
 
 ### Adding Nodes
 
-From the left toolbar, click to add nodes:
+From the left toolbar, hover over a section to expand it and click to add nodes:
 
-| Category | Nodes |
-|----------|-------|
-| **Data** | Load Data |
-| **Preprocess** | Normalize, Scale, Baseline, Smooth |
-| **Analysis** | PCA, PLS, MCR-ALS |
-| **Stats** | Statistics |
-| **Visualize** | Scatter Plot |
-| **Export** | Export |
+| Section | Nodes |
+|---------|-------|
+| **Data** | Data Source, File Load, Train/Test Split, ... |
+| **Synthesis** | Species, Blend, Merge Spectra |
+| **Preprocessing** | Smooth, Derivative, Normalize, Scale, Baseline, ... |
+| **Exploratory** | PCA, Apply PCA, MCR-ALS, SIMPLISMA, EFA, NMF, ICA, Peak Finding |
+| **Regression** | PLS, Apply PLS, PCR, SVR, Linear Regression, Load & Apply Model |
+| **Classification** | PLS-DA, KNN, SIMCA, Apply Classifier |
+| **Clustering** | K-Means, DBSCAN, HCA |
+| **Validation** | Cross-Validation, Outlier Detection, Statistics |
+| **Custom** | User-defined algorithm nodes |
+| **Output** | Scatter Plot, Contour Plot, Data Table, Export |
+| **Deployment** | Deploy Input, Deploy Output |
 
 ### Connecting Nodes
 

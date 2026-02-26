@@ -310,6 +310,16 @@ def _serialize_sherpa_dataset(
             if key in metadata and isinstance(metadata[key], str):
                 metadata[key] = os.path.basename(metadata[key])
 
+    # Merge extra metadata into metadata (strips scp. prefix).
+    # Nodes store scientific metadata via NDDataset .meta which from_nddataset()
+    # moves to SherpaDataset._extra with "scp." prefix.  The frontend expects
+    # these keys (e.g. explained_variance_ratio, isPCA) in .metadata.
+    if result.get("extra"):
+        for k, v in result["extra"].items():
+            clean_key = k[4:] if k.startswith("scp.") else k
+            if clean_key not in metadata:
+                metadata[clean_key] = v
+
     # Title fallback
     if not result.get("title"):
         result["title"] = "Spectra" if is_spectra else "Data"

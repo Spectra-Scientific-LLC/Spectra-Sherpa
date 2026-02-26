@@ -132,9 +132,10 @@ class BaselinePenalizedLSNode(TransformSpecNode):
                 min_value=0.0001,
                 max_value=0.1,
                 step=0.0001,
-                description="Asymmetry parameter (ALS only; smaller = more asymmetric)",
+                description="Asymmetry parameter (smaller = more asymmetric)",
                 required=False,
                 category="basic",
+                visible_when={"method": ["als"]},
             ),
             NodeParameter(
                 name="max_iter",
@@ -259,7 +260,6 @@ def _savgol_smooth_export(params, inp, node_id, indent, use_scp):
     return lines
 
 
-@register_node
 class SmoothSavitzkyGolayNode(TransformSpecNode):
     """
     Savitzky-Golay smoothing node.
@@ -338,7 +338,6 @@ def _snv_export(params, inp, node_id, indent, use_scp):
     return lines
 
 
-@register_node
 class NormalizeSNVNode(TransformSpecNode):
     """
     Standard Normal Variate (SNV) normalization node.
@@ -468,7 +467,6 @@ def _normalize_scale_export(params, inp, node_id, indent, use_scp):
     return lines
 
 
-@register_node
 class NormalizeScaleNode(TransformSpecNode):
     """
     Scale normalization node.
@@ -547,7 +545,6 @@ def _msc_export(params, inp, node_id, indent, use_scp):
     return lines
 
 
-@register_node
 class NormalizeMSCNode(TransformSpecNode):
     """
     Multiplicative Scatter Correction (MSC) node.
@@ -652,7 +649,6 @@ def _update_derivative_units(result, input_ds, deriv_order: int):
         pass  # leave units unchanged if assignment fails
 
 
-@register_node
 class DerivativeFirstNode(TransformSpecNode):
     """
     First derivative node.
@@ -716,7 +712,6 @@ class DerivativeFirstNode(TransformSpecNode):
         return result
 
 
-@register_node
 class DerivativeSecondNode(TransformSpecNode):
     """
     Second derivative node.
@@ -1154,7 +1149,6 @@ def _scale_max_export(params, inp, node_id, indent, use_scp):
     ] + _wrap_result_lines(node_id, "_data", inp, indent, use_scp)
 
 
-@register_node
 class ScaleMaxNode(TransformSpecNode):
     """
     Scale to maximum node.
@@ -1206,7 +1200,6 @@ def _center_mean_export(params, inp, node_id, indent, use_scp):
     return lines
 
 
-@register_node
 class CenterMeanNode(TransformSpecNode):
     """
     Mean centering node.
@@ -1256,7 +1249,6 @@ def _pareto_export(params, inp, node_id, indent, use_scp):
     return lines
 
 
-@register_node
 class ParetoScalingNode(TransformSpecNode):
     """
     Pareto Scaling node.
@@ -1354,10 +1346,10 @@ class OSCNode(Node):
             ),
             PortMetadata(
                 name="y",
-                type_ref="spectrasherpa://types/Array1D/1.0",
-                required=True,
+                type_ref="spectrasherpa://types/TargetMatrix/1.0",
+                required=False,
                 label="Target (y)",
-                description="Target values (concentrations, class labels, etc.)",
+                description="Target values — optional if dataset has embedded target",
             ),
         ],
         requires_scp=True,
@@ -1419,9 +1411,14 @@ class OSCNode(Node):
             kwargs,
             X=X_ds,
             required=True,
-            infer_from_X=False,
+            infer_from_X=True,
             dataset_as_data=True,
-            missing_message="Missing required input: y (target)",
+            missing_message=(
+                "No target values found. Either:\n"
+                "  1. Use a data source with embedded targets (e.g., Corn M5, sklearn)\n"
+                "  2. Connect target values to the 'y' input port\n"
+                "  3. Use 'Attach Target' node to add targets to your dataset"
+            ),
         )
 
         n_components = self.parameters.get("n_components", 1)
@@ -1530,7 +1527,6 @@ def _autoscale_export(params, inp, node_id, indent, use_scp):
     return lines
 
 
-@register_node
 class AutoscalingNode(TransformSpecNode):
     """
     Autoscaling (Unit Variance Scaling) node.
@@ -1577,7 +1573,6 @@ def _sg_deriv_export(params, inp, node_id, indent, use_scp):
     return _deriv_export("SG Derivative", deriv_order, params, inp, node_id, indent, use_scp)
 
 
-@register_node
 class SGDerivativeNode(TransformSpecNode):
     """
     Savitzky-Golay Derivative node.
@@ -1847,7 +1842,6 @@ class EMSCNode(Node):
         return result
 
 
-@register_node
 class NorrisWilliamsDerivativeNode(Node):
     """
     Norris-Williams gap-segment derivative node.
@@ -1961,7 +1955,6 @@ class NorrisWilliamsDerivativeNode(Node):
         return result
 
 
-@register_node
 class SmoothWhittakerNode(Node):
     """
     Whittaker smoother node.
@@ -2042,7 +2035,6 @@ class SmoothWhittakerNode(Node):
         return result
 
 
-@register_node
 class SmoothGaussianNode(Node):
     """
     Gaussian smoothing node.
@@ -2112,3 +2104,543 @@ class SmoothGaussianNode(Node):
         )
 
         return result
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Consolidated preprocessing nodes
+# ──────────────────────────────────────────────────────────────────────
+
+
+def _smooth_dispatch(
+    data: np.ndarray,
+    method: str = "savitzky_golay",
+    size: int = 11,
+    order: int = 2,
+    lam: float = 1e2,
+    d: str = "2",
+    sigma: float = 2.0,
+) -> np.ndarray:
+    if method == "savitzky_golay":
+        return _savgol_smooth(data, size=int(size), order=int(order))
+    elif method == "whittaker":
+        return whittaker_smooth(data, lam=float(lam), d=int(d))
+    elif method == "gaussian":
+        return gaussian_smooth(data, sigma=float(sigma))
+    raise ValueError(f"Unknown smoothing method: {method}")
+
+
+@register_node
+class SmoothNode(Node):
+    """Unified smoothing node with method selection."""
+
+    metadata = NodeMetadata(
+        node_type="preprocess.smooth",
+        category="preprocessing",
+        label="Smooth",
+        description="Smooth spectra (Savitzky-Golay, Whittaker, or Gaussian)",
+        parameters=[
+            NodeParameter(
+                name="method",
+                label="Method",
+                param_type="select",
+                default="savitzky_golay",
+                options=[
+                    {"label": "Savitzky-Golay", "value": "savitzky_golay"},
+                    {"label": "Whittaker", "value": "whittaker"},
+                    {"label": "Gaussian", "value": "gaussian"},
+                ],
+                description="Smoothing algorithm",
+                required=True,
+                category="basic",
+            ),
+            # Savitzky-Golay params
+            NodeParameter(
+                name="size", label="Window Size", param_type="number",
+                default=11, min_value=3, max_value=51, step=2,
+                description="Window size (must be odd)", required=False,
+                category="basic",
+                visible_when={"method": ["savitzky_golay"]},
+            ),
+            NodeParameter(
+                name="order", label="Polynomial Order", param_type="number",
+                default=2, min_value=1, max_value=5, step=1,
+                description="Polynomial order", required=False,
+                category="basic",
+                visible_when={"method": ["savitzky_golay"]},
+            ),
+            # Whittaker params
+            NodeParameter(
+                name="lam", label="Lambda", param_type="number",
+                default=1e2, min_value=1, max_value=1e8,
+                description="Smoothness penalty", required=False,
+                category="basic",
+                visible_when={"method": ["whittaker"]},
+            ),
+            NodeParameter(
+                name="d", label="Difference Order", param_type="select",
+                default="2", options=["1", "2", "3"],
+                description="Difference order", required=False,
+                category="advanced",
+                visible_when={"method": ["whittaker"]},
+            ),
+            # Gaussian params
+            NodeParameter(
+                name="sigma", label="Sigma", param_type="number",
+                default=2.0, min_value=0.1, max_value=50.0, step=0.1,
+                description="Gaussian kernel width", required=False,
+                category="basic",
+                visible_when={"method": ["gaussian"]},
+            ),
+        ],
+        input_types=["NDDataset"],
+        output_type="NDDataset",
+        aliases={
+            "smooth.savitzky_golay": {"method": "savitzky_golay"},
+            "smooth.whittaker": {"method": "whittaker"},
+            "smooth.gaussian": {"method": "gaussian"},
+        },
+    )
+
+    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
+        input_ds = coerce_to_sherpa(
+            input_data if input_data is not None else kwargs.get("input_0"),
+            input_name="input_data",
+        )
+        params = self._resolve_params()
+        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
+        method = params.get("method", "savitzky_golay")
+        smoothed = _smooth_dispatch(data, **params)
+        result = build_dataset_like(smoothed, input_ds)
+        add_processing_step(
+            result, f"smooth.{method}", params,
+            node_id=self.node_id, state_effects=[EFFECT_SMOOTHED],
+        )
+        return result
+
+    def supports_python_export(self) -> bool:
+        return True
+
+    def generate_python(self, inputs, indent="    ", use_scp=True):
+        inp = next(iter(inputs.values())) if inputs else "input_data"
+        params = self._resolve_params()
+        method = params.get("method", "savitzky_golay")
+        if method == "savitzky_golay":
+            return _savgol_smooth_export(params, inp, self.node_id, indent, use_scp)
+        elif method == "whittaker":
+            lam = params.get("lam", 1e2)
+            d = int(params.get("d", "2"))
+            lines = [
+                f"{indent}# --- Whittaker Smoother ({self.node_id}) ---",
+                f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
+                f"{indent}_smoothed = whittaker_smooth(_data, lam={_format_value(lam)}, d={d})",
+            ]
+            lines += _wrap_result_lines(self.node_id, "_smoothed", inp, indent, use_scp)
+            return lines
+        elif method == "gaussian":
+            sigma = params.get("sigma", 2.0)
+            lines = [
+                f"{indent}# --- Gaussian Smoothing ({self.node_id}) ---",
+                f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
+                f"{indent}if _data.ndim == 1:",
+                f"{indent}    _smoothed = gaussian_filter1d(_data, sigma={_format_value(sigma)})",
+                f"{indent}else:",
+                f"{indent}    _smoothed = np.apply_along_axis(gaussian_filter1d, -1, _data, sigma={_format_value(sigma)})",
+            ]
+            lines += _wrap_result_lines(self.node_id, "_smoothed", inp, indent, use_scp)
+            return lines
+        return [f"{indent}# TODO: smooth method '{method}' export not implemented"]
+
+
+def _derivative_dispatch(
+    data: np.ndarray,
+    method: str = "savitzky_golay",
+    deriv: str = "1",
+    size: int = 11,
+    order: int = 2,
+    gap: int = 5,
+    segment: int = 5,
+) -> np.ndarray:
+    deriv_order = int(deriv)
+    if method == "savitzky_golay":
+        sz = int(size)
+        if sz % 2 == 0:
+            sz += 1
+        return _savgol_deriv(data, size=sz, order=int(order), deriv=deriv_order)
+    elif method == "norris_williams":
+        return norris_williams(data, gap=int(gap), segment=int(segment), deriv=deriv_order)
+    raise ValueError(f"Unknown derivative method: {method}")
+
+
+@register_node
+class DerivativeNode(Node):
+    """Unified derivative node with method selection."""
+
+    metadata = NodeMetadata(
+        node_type="preprocess.derivative",
+        category="preprocessing",
+        label="Derivative",
+        description="Compute spectral derivatives (Savitzky-Golay or Norris-Williams)",
+        parameters=[
+            NodeParameter(
+                name="method",
+                label="Method",
+                param_type="select",
+                default="savitzky_golay",
+                options=[
+                    {"label": "Savitzky-Golay", "value": "savitzky_golay"},
+                    {"label": "Norris-Williams", "value": "norris_williams"},
+                ],
+                description="Derivative algorithm",
+                required=True,
+                category="basic",
+            ),
+            NodeParameter(
+                name="deriv", label="Derivative Order", param_type="select",
+                default="1", options=["0", "1", "2"],
+                description="Derivative order: 0 (smooth only), 1 (first), 2 (second)",
+                required=True, category="basic",
+            ),
+            # Savitzky-Golay params
+            NodeParameter(
+                name="size", label="Window Size", param_type="number",
+                default=11, min_value=3, max_value=51, step=2,
+                description="Window size", required=False,
+                category="basic",
+                visible_when={"method": ["savitzky_golay"]},
+            ),
+            NodeParameter(
+                name="order", label="Polynomial Order", param_type="number",
+                default=2, min_value=1, max_value=5, step=1,
+                description="Polynomial order", required=False,
+                category="basic",
+                visible_when={"method": ["savitzky_golay"]},
+            ),
+            # Norris-Williams params
+            NodeParameter(
+                name="gap", label="Gap", param_type="number",
+                default=5, min_value=1, max_value=50, step=1,
+                description="Gap size", required=False,
+                category="basic",
+                visible_when={"method": ["norris_williams"]},
+            ),
+            NodeParameter(
+                name="segment", label="Segment", param_type="number",
+                default=5, min_value=1, max_value=50, step=1,
+                description="Segment size", required=False,
+                category="basic",
+                visible_when={"method": ["norris_williams"]},
+            ),
+        ],
+        input_types=["NDDataset"],
+        output_type="NDDataset",
+        aliases={
+            "derivative.first": {"method": "savitzky_golay", "deriv": "1"},
+            "derivative.second": {"method": "savitzky_golay", "deriv": "2"},
+            "preprocess.sg_derivative": {"method": "savitzky_golay"},
+            "preprocess.norris_williams": {"method": "norris_williams"},
+        },
+    )
+
+    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
+        input_ds = coerce_to_sherpa(
+            input_data if input_data is not None else kwargs.get("input_0"),
+            input_name="input_data",
+        )
+        params = self._resolve_params()
+        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
+        transformed = _derivative_dispatch(data, **params)
+        result = build_dataset_like(transformed, input_ds)
+
+        deriv_order = int(params.get("deriv", "1"))
+        if deriv_order > 0:
+            _update_derivative_units(result, input_ds, deriv_order)
+            if not getattr(result, "units", None):
+                result.units = "d/dx" if deriv_order == 1 else f"d\u00b2/dx\u00b2"
+
+        method = params.get("method", "savitzky_golay")
+        op_id = f"derivative.{method}" if method != "norris_williams" else "preprocess.norris_williams"
+        add_processing_step(
+            result, op_id, params,
+            node_id=self.node_id,
+            state_effects=[EFFECT_DERIVATIVE, EFFECT_SMOOTHED],
+        )
+        return result
+
+    def supports_python_export(self) -> bool:
+        return True
+
+    def generate_python(self, inputs, indent="    ", use_scp=True):
+        inp = next(iter(inputs.values())) if inputs else "input_data"
+        params = self._resolve_params()
+        method = params.get("method", "savitzky_golay")
+        deriv_order = int(params.get("deriv", "1"))
+        if method == "savitzky_golay":
+            return _sg_deriv_export(params, inp, self.node_id, indent, use_scp)
+        elif method == "norris_williams":
+            gap = params.get("gap", 5)
+            segment = params.get("segment", 5)
+            lines = [
+                f"{indent}# --- Norris-Williams Derivative ({self.node_id}) ---",
+                f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
+                f"{indent}_derived = norris_williams(_data, gap={gap}, segment={segment}, deriv={deriv_order})",
+            ]
+            lines += _wrap_result_lines(self.node_id, "_derived", inp, indent, use_scp)
+            return lines
+        return [f"{indent}# TODO: derivative method '{method}' export not implemented"]
+
+
+def _normalize_dispatch(
+    data: np.ndarray,
+    method: str = "snv",
+    reference: str = "mean",
+    scale_method: str = "max",
+) -> np.ndarray:
+    if method == "snv":
+        return _snv_transform(data)
+    elif method == "msc":
+        return _msc_transform(data, reference=reference)
+    elif method == "scale":
+        return _normalize_scale(data, method=scale_method)
+    raise ValueError(f"Unknown normalization method: {method}")
+
+
+@register_node
+class NormalizeNode(Node):
+    """Unified normalization node with method selection."""
+
+    metadata = NodeMetadata(
+        node_type="preprocess.normalize",
+        category="preprocessing",
+        label="Normalize",
+        description="Normalize spectra (SNV, MSC, or Scale)",
+        parameters=[
+            NodeParameter(
+                name="method",
+                label="Method",
+                param_type="select",
+                default="snv",
+                options=[
+                    {"label": "SNV", "value": "snv"},
+                    {"label": "MSC", "value": "msc"},
+                    {"label": "Scale", "value": "scale"},
+                ],
+                description="Normalization method",
+                required=True,
+                category="basic",
+            ),
+            # MSC params
+            NodeParameter(
+                name="reference", label="Reference", param_type="select",
+                default="mean", options=["mean", "median", "first"],
+                description="Reference spectrum", required=False,
+                category="basic",
+                visible_when={"method": ["msc"]},
+            ),
+            # Scale params
+            NodeParameter(
+                name="scale_method", label="Scale Method", param_type="select",
+                default="max", options=["max", "area", "minmax"],
+                description="Scaling method", required=False,
+                category="basic",
+                visible_when={"method": ["scale"]},
+            ),
+        ],
+        input_types=["NDDataset"],
+        output_type="NDDataset",
+        policy=NodePolicy(
+            safe_for_auto_apply=True,
+            requires_human_review=False,
+            data_egress_risk="none",
+        ),
+        aliases={
+            "normalize.snv": {"method": "snv"},
+            "normalize.msc": {"method": "msc"},
+            "normalize.scale": {"method": "scale"},
+        },
+    )
+
+    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
+        input_ds = coerce_to_sherpa(
+            input_data if input_data is not None else kwargs.get("input_0"),
+            input_name="input_data",
+        )
+        params = self._resolve_params()
+
+        # Backward compat: old normalize.scale node had method=max/area/minmax
+        method = params.get("method", "snv")
+        if method in ("max", "area", "minmax"):
+            params["scale_method"] = method
+            params["method"] = "scale"
+            method = "scale"
+
+        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
+        normalized = _normalize_dispatch(data, **params)
+        result = build_dataset_like(normalized, input_ds)
+
+        effects = []
+        if method == "snv":
+            effects = [EFFECT_NORMALIZED, EFFECT_SCATTER_CORRECTED]
+            result.units = "dimensionless"
+        elif method == "msc":
+            effects = [EFFECT_SCATTER_CORRECTED]
+            result.units = "dimensionless"
+        elif method == "scale":
+            effects = [EFFECT_SCALED]
+            result.units = "normalized"
+
+        add_processing_step(
+            result, f"normalize.{method}", params,
+            node_id=self.node_id, state_effects=effects,
+        )
+
+        # SNV diagnostics
+        if method == "snv":
+            after = np.asarray(result.data, dtype=np.float64)
+            eps = 1e-12
+            snr_before = float(np.mean(np.abs(data)) / (np.std(data) + eps))
+            snr_after = float(np.mean(np.abs(after)) / (np.std(after) + eps))
+            return NodeResult(
+                outputs={"default": result},
+                diagnostics={
+                    "snr_before": snr_before,
+                    "snr_after": snr_after,
+                    "mean_spectrum_shift": float(np.mean(after) - np.mean(data)),
+                    "max_absolute_change": float(np.max(np.abs(after - data))),
+                },
+            )
+        return result
+
+    def supports_python_export(self) -> bool:
+        return True
+
+    def generate_python(self, inputs, indent="    ", use_scp=True):
+        inp = next(iter(inputs.values())) if inputs else "input_data"
+        params = self._resolve_params()
+        method = params.get("method", "snv")
+        # Backward compat: old normalize.scale had method=max/area/minmax
+        if method in ("max", "area", "minmax"):
+            scale_params = {"method": method}
+            return _normalize_scale_export(scale_params, inp, self.node_id, indent, use_scp)
+        if method == "snv":
+            return _snv_export(params, inp, self.node_id, indent, use_scp)
+        elif method == "msc":
+            return _msc_export(params, inp, self.node_id, indent, use_scp)
+        elif method == "scale":
+            scale_params = {"method": params.get("scale_method", "max")}
+            return _normalize_scale_export(scale_params, inp, self.node_id, indent, use_scp)
+        return [f"{indent}# TODO: normalize method '{method}' export not implemented"]
+
+
+def _scale_dispatch(
+    data: np.ndarray,
+    method: str = "mean_center",
+    center: bool = True,
+    target_max: float = 1.0,
+) -> np.ndarray:
+    if method == "mean_center":
+        return data - np.mean(data, axis=0)
+    elif method == "autoscale":
+        return _autoscale(data, center=center)
+    elif method == "pareto":
+        return _pareto_scale(data, center=center)
+    elif method == "scale_max":
+        return _scale_max_transform(data, target_max=target_max)
+    raise ValueError(f"Unknown scaling method: {method}")
+
+
+@register_node
+class ScaleNode(Node):
+    """Unified scaling/centering node with method selection."""
+
+    metadata = NodeMetadata(
+        node_type="preprocess.scale",
+        category="preprocessing",
+        label="Scale / Center",
+        description="Scale or center spectra (Mean Center, Autoscale, Pareto, Max)",
+        parameters=[
+            NodeParameter(
+                name="method",
+                label="Method",
+                param_type="select",
+                default="mean_center",
+                options=[
+                    {"label": "Mean Center", "value": "mean_center"},
+                    {"label": "Autoscale", "value": "autoscale"},
+                    {"label": "Pareto", "value": "pareto"},
+                    {"label": "Scale to Max", "value": "scale_max"},
+                ],
+                description="Scaling method",
+                required=True,
+                category="basic",
+            ),
+            NodeParameter(
+                name="center", label="Mean Center First", param_type="boolean",
+                default=True,
+                description="Subtract mean before scaling",
+                required=False, category="basic",
+                visible_when={"method": ["autoscale", "pareto"]},
+            ),
+            NodeParameter(
+                name="target_max", label="Target Maximum", param_type="number",
+                default=1.0, min_value=0.01, max_value=100.0, step=0.1,
+                description="Target max value", required=False,
+                category="basic",
+                visible_when={"method": ["scale_max"]},
+            ),
+        ],
+        input_types=["NDDataset"],
+        output_type="NDDataset",
+        aliases={
+            "preprocess.center_mean": {"method": "mean_center"},
+            "preprocess.autoscaling": {"method": "autoscale"},
+            "preprocess.pareto_scaling": {"method": "pareto"},
+            "preprocess.scale_max": {"method": "scale_max"},
+        },
+    )
+
+    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
+        input_ds = coerce_to_sherpa(
+            input_data if input_data is not None else kwargs.get("input_0"),
+            input_name="input_data",
+        )
+        params = self._resolve_params()
+        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
+        scaled = _scale_dispatch(data, **params)
+        result = build_dataset_like(scaled, input_ds)
+
+        method = params.get("method", "mean_center")
+        if method in ("autoscale", "pareto"):
+            result.units = "dimensionless"
+        elif method == "scale_max":
+            result.units = "normalized"
+
+        # Map consolidated method names to legacy op_ids for provenance
+        _scale_op_ids = {
+            "mean_center": "preprocess.center_mean",
+            "autoscale": "preprocess.autoscaling",
+            "pareto": "preprocess.pareto_scaling",
+            "scale_max": "preprocess.scale_max",
+        }
+        effects = [EFFECT_SCALED] if method != "mean_center" else []
+        add_processing_step(
+            result, _scale_op_ids.get(method, f"preprocess.{method}"), params,
+            node_id=self.node_id, state_effects=effects,
+        )
+        return result
+
+    def supports_python_export(self) -> bool:
+        return True
+
+    def generate_python(self, inputs, indent="    ", use_scp=True):
+        inp = next(iter(inputs.values())) if inputs else "input_data"
+        params = self._resolve_params()
+        method = params.get("method", "mean_center")
+        if method == "mean_center":
+            return _center_mean_export(params, inp, self.node_id, indent, use_scp)
+        elif method == "autoscale":
+            return _autoscale_export(params, inp, self.node_id, indent, use_scp)
+        elif method == "pareto":
+            return _pareto_export(params, inp, self.node_id, indent, use_scp)
+        elif method == "scale_max":
+            return _scale_max_export(params, inp, self.node_id, indent, use_scp)
+        return [f"{indent}# TODO: scale method '{method}' export not implemented"]

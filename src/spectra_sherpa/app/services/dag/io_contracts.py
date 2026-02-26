@@ -239,6 +239,35 @@ def to_numpy_1d(
     return arr
 
 
+def to_numpy_y(
+    value: Any,
+    *,
+    name: str = "y",
+    expected_samples: int | None = None,
+    dtype: Any | None = None,
+) -> np.ndarray:
+    """Convert y target input to numpy array, preserving dimensionality.
+
+    - 1D input -> kept as (n_samples,)
+    - 2D input -> kept as (n_samples, n_targets)
+    - Dict with ``"data"`` key -> extracted and converted (legacy eigenvector format)
+
+    *dtype* defaults to ``None`` (preserve original dtype).  Pass
+    ``np.float64`` explicitly for regression targets.
+    """
+    if isinstance(value, dict) and "data" in value:
+        value = value["data"]
+    raw = value.data if isinstance(value, SherpaDataset) else value
+    arr = np.asarray(raw, dtype=dtype) if dtype is not None else np.asarray(raw)
+    if arr.ndim == 0:
+        raise ValueError(f"{name} must be 1D or 2D array-like, got scalar")
+    if arr.ndim > 2:
+        raise ValueError(f"{name} must be 1D or 2D array-like, got {arr.ndim}D")
+    if expected_samples is not None and arr.shape[0] != expected_samples:
+        raise ValueError(f"{name} must have {expected_samples} samples, got {arr.shape[0]}")
+    return arr
+
+
 class FlattenedView:
     """Provides a flat 2D view of nD data with unflatten capability.
 

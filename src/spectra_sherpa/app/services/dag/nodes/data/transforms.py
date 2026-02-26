@@ -12,7 +12,9 @@ import numpy as np
 
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
 
-from ...io_contracts import bind_X, bind_y, build_dataset_like, to_numpy_1d, to_numpy_2d
+from spectra_sherpa.app.lib.sherpa_dataset import TargetContext
+
+from ...io_contracts import bind_X, bind_y, build_dataset_like, to_numpy_1d, to_numpy_2d, to_numpy_y
 from ...node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
 from ._utils import slice_axis_for_indices
 
@@ -87,10 +89,10 @@ class TrainTestSplitNode(Node):
             ),
             PortMetadata(
                 name="y",
-                type_ref="spectrasherpa://types/Array1D/1.0",
+                type_ref="spectrasherpa://types/TargetMatrix/1.0",
                 required=False,
                 label="Target Values (optional)",
-                description="Target array for stratified splitting",
+                description="Target array for stratified splitting (1D or 2D)",
             ),
         ],
         output_ports=[
@@ -110,17 +112,17 @@ class TrainTestSplitNode(Node):
             ),
             PortMetadata(
                 name="y_train",
-                type_ref="spectrasherpa://types/Array1D/1.0",
+                type_ref="spectrasherpa://types/TargetMatrix/1.0",
                 required=False,
                 label="Training Targets",
-                description="Training subset of targets",
+                description="Training subset of targets (1D or 2D)",
             ),
             PortMetadata(
                 name="y_test",
-                type_ref="spectrasherpa://types/Array1D/1.0",
+                type_ref="spectrasherpa://types/TargetMatrix/1.0",
                 required=False,
                 label="Test Targets",
-                description="Test subset of targets",
+                description="Test subset of targets (1D or 2D)",
             ),
         ],
         input_types=["NDDataset"],
@@ -161,7 +163,7 @@ class TrainTestSplitNode(Node):
         )
 
         X_array = to_numpy_2d(X_ds, name="X", dtype=np.float64)
-        y_array = to_numpy_1d(y_value, name="y", expected_length=X_array.shape[0]) if y_value is not None else None
+        y_array = to_numpy_y(y_value, name="y", expected_samples=X_array.shape[0]) if y_value is not None else None
 
         n_samples = X_array.shape[0]
         n_test = int(n_samples * test_size)
@@ -271,3 +273,99 @@ class TrainTestSplitNode(Node):
         logger.debug(f"Train/Test Split: {n_train} train, {n_test} test samples ({test_size*100:.0f}% test)")
 
         return result
+
+
+@register_node
+class AttachTargetNode(Node):
+    """Attach target values to a dataset for supervised modeling.
+
+    Use this when target data comes from a different source than X,
+    or when you need to override the embedded target.
+    """
+
+    metadata = NodeMetadata(
+        node_type="data.attach_target",
+        category="data",
+        label="Attach Target",
+        description="Attach target values to a dataset for supervised modeling",
+        parameters=[
+            NodeParameter(
+                name="target_type",
+                label="Target Type",
+                param_type="select",
+                options=["continuous", "categorical"],
+                default="continuous",
+                description="Type of target variable",
+            ),
+        ],
+        input_ports=[
+            PortMetadata(
+                name="X",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Dataset",
+                description="Dataset to attach target values to",
+            ),
+            PortMetadata(
+                name="y",
+                type_ref="spectrasherpa://types/TargetMatrix/1.0",
+                required=True,
+                label="Target Values",
+                description="Target values (1D or 2D array, or dataset with target)",
+            ),
+        ],
+        output_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Dataset with Target",
+                description="Dataset with embedded target values",
+            ),
+        ],
+    )
+
+    async def execute(self, X=None, y=None, **kwargs):
+        """Attach target to dataset."""
+        X_ds = bind_X(
+            X,
+            kwargs,
+            missing_message="Missing required input: X (dataset)",
+            allow_array=True,
+        )
+
+        y_raw = bind_y(
+            y,
+            kwargs,
+            X=None,  # Don't infer from X — we're explicitly attaching
+            required=True,
+            infer_from_X=False,
+            dataset_as_data=True,
+            missing_message="Missing required input: y (target values)",
+        )
+
+        y_arr = to_numpy_y(y_raw, name="y", expected_samples=X_ds.shape[0])
+
+        result = X_ds.copy()
+        result.target = y_arr
+
+        target_type = self.parameters.get("target_type", "continuous")
+        if target_type == "categorical":
+            n_unique = len(np.unique(y_arr))
+            result.target_context = TargetContext(
+                target_type="categorical",
+                n_classes=n_unique,
+            )
+        else:
+            result.target_context = TargetContext(
+                target_type="continuous",
+            )
+
+        add_processing_step(
+            result,
+            "data.attach_target",
+            {"target_type": target_type, "target_shape": list(y_arr.shape)},
+            node_id=self.node_id,
+        )
+
+        return {"default": result}

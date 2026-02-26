@@ -310,9 +310,14 @@ class EstimatorSpecNode(Node):
             kwargs,
             X=X_ds,
             required=self.spec.y_required,
-            infer_from_X=False,
+            infer_from_X=True,
             dataset_as_data=True,
-            missing_message=f"{self.metadata.label}: missing required input y",
+            missing_message=(
+                f"{self.metadata.label}: no target values found. Either:\n"
+                "  1. Use a data source with embedded targets (e.g., Corn M5, sklearn)\n"
+                "  2. Connect target values to the 'y' input port\n"
+                "  3. Use 'Attach Target' node to add targets to your dataset"
+            ),
         )
 
         X_data = to_numpy_2d(X_ds, name="X", dtype=np.float64)

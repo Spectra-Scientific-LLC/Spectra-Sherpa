@@ -530,14 +530,20 @@ class TestDataSourceNodeEigenvector:
 
     @pytest.mark.asyncio
     async def test_eigenvector_diesel_properties_on_target(self, make_node):
-        """Properties should be available on the target port."""
+        """Properties should be available on the target port as numpy array."""
         node = make_node({"source": "eigenvector", "eigenvector_dataset": "diesel_nir"})
         result = await node.execute()
         target = result["target"]
         assert target is not None
-        assert "data" in target
-        assert "columns" in target
-        assert len(target["columns"]) == 7
+        assert isinstance(target, np.ndarray)
+        assert target.ndim == 2
+        assert target.shape == (784, 7)
+        # Target embedded in dataset with rich context
+        dataset = result["default"]
+        assert dataset.target is not None
+        np.testing.assert_array_equal(dataset.target, target)
+        assert dataset.target_context.target_type == "continuous"
+        assert dataset.target_context.target_names == ["BP50", "CN", "D4052", "FLASH", "FREEZE", "TOTAL", "VISC"]
 
     @pytest.mark.asyncio
     async def test_eigenvector_corn_m5(self, make_node):
@@ -548,7 +554,14 @@ class TestDataSourceNodeEigenvector:
         assert isinstance(dataset, SherpaDataset)
         assert dataset.shape == (80, 700)
         assert dataset.domain.technique == "NIR"
-        assert len(result["target"]["columns"]) == 4
+        target = result["target"]
+        assert isinstance(target, np.ndarray)
+        assert target.shape == (80, 4)
+        # Embedded target
+        assert dataset.target is not None
+        np.testing.assert_array_equal(dataset.target, target)
+        assert dataset.target_context.target_type == "continuous"
+        assert dataset.target_context.target_names == ["Moisture", "Oil", "Protein", "Starch"]
 
     @pytest.mark.skipif(not HAS_SCP, reason="SpectroChemPy not installed")
     @pytest.mark.asyncio
