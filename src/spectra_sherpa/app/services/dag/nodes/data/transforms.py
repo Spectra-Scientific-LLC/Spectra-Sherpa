@@ -10,11 +10,10 @@ from typing import Any
 
 import numpy as np
 
+from spectra_sherpa.app.lib.sherpa_dataset import TargetContext
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
 
-from spectra_sherpa.app.lib.sherpa_dataset import TargetContext
-
-from ...io_contracts import bind_X, bind_y, build_dataset_like, to_numpy_1d, to_numpy_2d, to_numpy_y
+from ...io_contracts import bind_X, bind_y, build_dataset_like, to_numpy_2d, to_numpy_y
 from ...node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
 from ._utils import slice_axis_for_indices
 

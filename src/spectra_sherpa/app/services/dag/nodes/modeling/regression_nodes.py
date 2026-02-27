@@ -21,7 +21,6 @@ from ...io_contracts import (
     bind_y,
     to_numpy_1d,
     to_numpy_2d,
-    to_numpy_y,
 )
 from ...node_base import (
     Node,

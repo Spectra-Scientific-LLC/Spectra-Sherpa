@@ -1504,7 +1504,8 @@ class SmoothNode(Node):
                 f"{indent}if _data.ndim == 1:",
                 f"{indent}    _smoothed = gaussian_filter1d(_data, sigma={_format_value(sigma)})",
                 f"{indent}else:",
-                f"{indent}    _smoothed = np.apply_along_axis(gaussian_filter1d, -1, _data, sigma={_format_value(sigma)})",
+                f"{indent}    _smoothed = np.apply_along_axis("
+                f"gaussian_filter1d, -1, _data, sigma={_format_value(sigma)})",
             ]
             lines += _wrap_result_lines(self.node_id, "_smoothed", inp, indent, use_scp)
             return lines
@@ -1646,7 +1647,7 @@ class DerivativeNode(Node):
         if deriv_order > 0:
             _update_derivative_units(result, input_ds, deriv_order)
             if not getattr(result, "units", None):
-                result.units = "d/dx" if deriv_order == 1 else f"d\u00b2/dx\u00b2"
+                result.units = "d/dx" if deriv_order == 1 else "d\u00b2/dx\u00b2"
 
         add_processing_step(
             result,
