@@ -36,7 +36,7 @@ def is_hybrid() -> bool:
 
 
 def is_enterprise() -> bool:
-    """True when running in enterprise / SaaS mode (JWT auth, rate-limits, PostgreSQL required)."""
+    """True when running in enterprise / SaaS mode (JWT auth, rate-limits)."""
     return app_config.mode == "enterprise"
 
 

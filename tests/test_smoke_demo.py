@@ -193,15 +193,13 @@ class TestAuthLogin:
         assert "access_token" in data
         assert data["token_type"] == "bearer"
 
-    async def test_login_not_found_oss(self, auth_client: AsyncClient):
-        """In OSS distribution, /auth/login should not exist."""
-        if _HAS_SERVER_AUTH:
-            pytest.skip("Server auth routes installed")
+    async def test_login_rejects_bad_credentials(self, auth_client: AsyncClient):
+        """Login endpoint rejects invalid credentials with 400."""
         resp = await auth_client.post(
             "/api/v1/auth/login",
             data={"username": "anyone", "password": "anything"},
         )
-        assert resp.status_code in (404, 405)
+        assert resp.status_code == 400
 
 
 # ---------------------------------------------------------------------------

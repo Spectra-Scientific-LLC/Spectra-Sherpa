@@ -172,6 +172,11 @@ def main(argv: list[str] | None = None) -> None:
         help="Data directory (default: ~/.spectra_sherpa/ or <repo>/data)",
     )
     parser.add_argument(
+        "--reload",
+        action="store_true",
+        help="Auto-restart on Python file changes (development mode)",
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"%(prog)s {__version__}",
@@ -189,15 +194,32 @@ def main(argv: list[str] | None = None) -> None:
 
     args = parser.parse_args(argv)
 
-    # Load .env before setting defaults, so .env values take precedence
-    from dotenv import load_dotenv
+    # Load .env before setting defaults, so .env values take precedence.
+    from dotenv import dotenv_values, load_dotenv
 
     from spectra_sherpa._paths import get_env_file_search_paths
 
+    _env_file_used = None
     for _env_candidate in get_env_file_search_paths():
         if _env_candidate.is_file():
             load_dotenv(_env_candidate)
+            _env_file_used = _env_candidate
             break
+
+    # Detect when a shell/direnv env var silently overrides the .env file.
+    # load_dotenv() won't override existing env vars, so if someone exported
+    # APP_MODE in their shell, the .env value is ignored — a common footgun.
+    if _env_file_used is not None:
+        _file_vals = dotenv_values(_env_file_used)
+        for _key in ("APP_MODE", "SITE_PROFILE"):
+            _file_val = _file_vals.get(_key)
+            _env_val = os.environ.get(_key)
+            if _file_val is not None and _env_val is not None and _file_val != _env_val:
+                print(
+                    f"Warning: {_key}={_env_val!r} (from shell/direnv) "
+                    f"overrides {_key}={_file_val!r} (from {_env_file_used.name}). "
+                    f"Check your shell environment or .envrc file.",
+                )
 
     # Set environment before any app imports (only if not already set via .env)
     os.environ.setdefault("APP_MODE", "local")
@@ -211,16 +233,35 @@ def main(argv: list[str] | None = None) -> None:
     # Check for headless mode BEFORE browser launch to avoid unnecessary GUI on servers
     is_headless = getattr(args, "command", None) == "serve-model"
 
-    # Optional startup behavior: clear any process listening on the requested
-    # port before starting uvicorn (configured via .env).
-    if _env_bool("KILL_PORT_ON_START", False):
-        grace = _env_float("KILL_PORT_GRACE_SECONDS", 2.0)
-        force = _env_bool("KILL_PORT_FORCE", True)
-        cleared = _clear_port(args.port, grace_seconds=grace, force_kill=force)
-        if not cleared:
-            print(
-                "Continuing startup. If the port is still occupied, " "uvicorn may fail to bind.",
-            )
+    # Early port availability check — detect conflicts BEFORE the app
+    # lifespan runs its multi-phase initialisation (DB, plugins, worker
+    # pool, etc.).  Failing fast here saves the user from a confusing
+    # "address already in use" traceback after a long startup delay.
+    mode = os.environ.get("APP_MODE", "local")
+    auto_clear = mode == "local" or _env_bool("KILL_PORT_ON_START", False)
+    pids_on_port = _find_listening_pids(args.port)
+    if pids_on_port:
+        if auto_clear:
+            # Local mode (single-user desktop): auto-clear stale processes.
+            # Also honours KILL_PORT_ON_START for hybrid/enterprise.
+            grace = _env_float("KILL_PORT_GRACE_SECONDS", 2.0)
+            force = _env_bool("KILL_PORT_FORCE", True)
+            cleared = _clear_port(args.port, grace_seconds=grace, force_kill=force)
+            if not cleared:
+                print(
+                    f"Error: Could not free port {args.port}. "
+                    "Stop the existing process manually or use --port to pick another.",
+                )
+                raise SystemExit(1)
+        else:
+            # Non-local mode without KILL_PORT_ON_START: fail fast.
+            pid_list = ", ".join(str(pid) for pid in pids_on_port)
+            print(f"Error: Port {args.port} is already in use by PID(s): {pid_list}")
+            print("  Options:")
+            print(f"    - Stop the existing process(es): kill {pid_list}")
+            print("    - Use a different port: spectra-sherpa --port <PORT>")
+            print("    - Set KILL_PORT_ON_START=true in .env to auto-clear")
+            raise SystemExit(1)
 
     # Auto-open browser only for normal mode (not headless)
     if not is_headless:
@@ -229,7 +270,10 @@ def main(argv: list[str] | None = None) -> None:
             t = threading.Thread(target=_open_browser, args=(url,), daemon=True)
             t.start()
         print(f"Starting SpectraSherpa v{__version__}")
-        print(f"  -> {url}")
+        print(f"  Mode:   {mode}{' (reload)' if args.reload else ''}")
+        if _env_file_used:
+            print(f"  Config: {_env_file_used}")
+        print(f"  URL:    {url}")
         print("  Press Ctrl+C to stop.\n")
     else:
         print(f"Starting SpectraSherpa Headless Prediction Server v{__version__}")
@@ -256,6 +300,7 @@ def main(argv: list[str] | None = None) -> None:
         port=args.port,
         workers=1,
         log_level="info",
+        reload=args.reload,
     )
 
 

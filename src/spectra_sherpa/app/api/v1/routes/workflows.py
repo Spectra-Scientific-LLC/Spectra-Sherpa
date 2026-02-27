@@ -734,11 +734,10 @@ async def update_workflow(
 
     # Update nodes if provided
     if payload.nodes is not None:
-        # Delete existing nodes
-        await session.execute(select(WorkflowNode).where(WorkflowNode.workflow_id == workflow_id))
-        await session.execute(WorkflowNode.__table__.delete().where(WorkflowNode.workflow_id == workflow_id))
+        # Clear via ORM relationship (delete-orphan cascade handles DB deletion)
+        workflow.nodes.clear()
 
-        # Create new nodes
+        # Create new nodes through the relationship
         for node_data in payload.nodes:
             node = WorkflowNode(
                 workflow_id=workflow.id,
@@ -749,14 +748,14 @@ async def update_workflow(
                 position_x=node_data.position_x,
                 position_y=node_data.position_y,
             )
-            session.add(node)
+            workflow.nodes.append(node)
 
     # Update edges if provided
     if payload.edges is not None:
-        # Delete existing edges
-        await session.execute(WorkflowEdge.__table__.delete().where(WorkflowEdge.workflow_id == workflow_id))
+        # Clear via ORM relationship (delete-orphan cascade handles DB deletion)
+        workflow.edges.clear()
 
-        # Create new edges
+        # Create new edges through the relationship
         for edge_data in payload.edges:
             edge = WorkflowEdge(
                 workflow_id=workflow.id,
@@ -765,7 +764,7 @@ async def update_workflow(
                 from_output=edge_data.from_output,
                 to_input=edge_data.to_input,
             )
-            session.add(edge)
+            workflow.edges.append(edge)
 
     # Recompute integrity hash if nodes or edges changed
     if payload.nodes is not None or payload.edges is not None:
@@ -968,8 +967,13 @@ async def restore_workflow_version(
     """Restore a workflow to a previous version for the authenticated user."""
     user_id = current_user.id
 
-    # Verify workflow exists and user owns it
-    workflow_query = select(Workflow).where(Workflow.id == workflow_id).where(Workflow.user_id == user_id)
+    # Verify workflow exists and user owns it (eager-load nodes/edges for ORM deletion)
+    workflow_query = (
+        select(Workflow)
+        .where(Workflow.id == workflow_id)
+        .where(Workflow.user_id == user_id)
+        .options(selectinload(Workflow.nodes), selectinload(Workflow.edges))
+    )
     workflow_result = await session.execute(workflow_query)
     workflow = workflow_result.scalar_one_or_none()
 
@@ -1007,9 +1011,9 @@ async def restore_workflow_version(
     if "sample_type" in snapshot:
         workflow.sample_type = snapshot["sample_type"]
 
-    # Delete existing nodes and edges
-    await session.execute(WorkflowNode.__table__.delete().where(WorkflowNode.workflow_id == workflow_id))
-    await session.execute(WorkflowEdge.__table__.delete().where(WorkflowEdge.workflow_id == workflow_id))
+    # Clear existing nodes and edges via ORM (delete-orphan cascade handles DB deletion)
+    workflow.nodes.clear()
+    workflow.edges.clear()
 
     # Restore nodes from snapshot
     if "nodes" in snapshot:
@@ -1023,7 +1027,7 @@ async def restore_workflow_version(
                 position_x=node_data.get("position_x"),
                 position_y=node_data.get("position_y"),
             )
-            session.add(node)
+            workflow.nodes.append(node)
 
     # Restore edges from snapshot
     if "edges" in snapshot:
@@ -1035,7 +1039,7 @@ async def restore_workflow_version(
                 from_output=edge_data.get("from_output", "default"),
                 to_input=edge_data.get("to_input", "default"),
             )
-            session.add(edge)
+            workflow.edges.append(edge)
 
     # Create a new version record for the restore action
     latest_version_query = select(func.max(WorkflowVersion.version_number)).where(
@@ -1432,10 +1436,7 @@ async def get_node_library(
     from spectra_sherpa.app.core.config import settings
 
     # Exclude custom_algo nodes — those are served via the project-scoped endpoint.
-    # Use list_nodes_with_aliases() so legacy workflows that reference old node
-    # type strings (e.g. "smooth.whittaker", "classification.simca_predict") can
-    # still resolve metadata in the frontend.
-    nodes = [n for n in node_registry.list_nodes_with_aliases() if n.category != "custom_algo"]
+    nodes = [n for n in node_registry.list_nodes() if n.category != "custom_algo"]
 
     node_infos = []
     for node_meta in nodes:

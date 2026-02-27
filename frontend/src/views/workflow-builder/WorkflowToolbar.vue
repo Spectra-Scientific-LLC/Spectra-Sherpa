@@ -7,7 +7,7 @@
     <div class="toolbar-content">
       <!-- Data Sources Section -->
       <div class="section" @mouseenter="!clickCooldown && (activeSection = 'data')">
-        <div class="section-header" :class="{ active: activeSection === 'data' }">
+        <div class="section-header" :class="{ active: activeSection === 'data' }" @click="toggleSection('data')">
           <span>Data Sources</span>
           <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'data' }"></i>
         </div>
@@ -22,13 +22,14 @@
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
+            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
           </div>
         </div>
       </div>
 
       <!-- Synthesis Section -->
       <div class="section" @mouseenter="!clickCooldown && (activeSection = 'synthesis')">
-        <div class="section-header" :class="{ active: activeSection === 'synthesis' }">
+        <div class="section-header" :class="{ active: activeSection === 'synthesis' }" @click="toggleSection('synthesis')">
           <span>Synthesis</span>
           <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'synthesis' }"></i>
         </div>
@@ -43,13 +44,14 @@
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
+            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
           </div>
         </div>
       </div>
 
       <!-- Preprocessing Section -->
       <div class="section" @mouseenter="!clickCooldown && (activeSection = 'preprocess')">
-        <div class="section-header" :class="{ active: activeSection === 'preprocess' }">
+        <div class="section-header" :class="{ active: activeSection === 'preprocess' }" @click="toggleSection('preprocess')">
           <span>Preprocessing</span>
           <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'preprocess' }"></i>
         </div>
@@ -64,13 +66,14 @@
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
+            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
           </div>
         </div>
       </div>
 
       <!-- Exploratory Section -->
       <div class="section" @mouseenter="!clickCooldown && (activeSection = 'exploratory')">
-        <div class="section-header" :class="{ active: activeSection === 'exploratory' }">
+        <div class="section-header" :class="{ active: activeSection === 'exploratory' }" @click="toggleSection('exploratory')">
           <span>Exploratory</span>
           <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'exploratory' }"></i>
         </div>
@@ -85,13 +88,14 @@
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
+            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
           </div>
         </div>
       </div>
 
       <!-- Regression Section -->
       <div class="section" @mouseenter="!clickCooldown && (activeSection = 'regression')">
-        <div class="section-header" :class="{ active: activeSection === 'regression' }">
+        <div class="section-header" :class="{ active: activeSection === 'regression' }" @click="toggleSection('regression')">
           <span>Regression</span>
           <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'regression' }"></i>
         </div>
@@ -106,13 +110,14 @@
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
+            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
           </div>
         </div>
       </div>
 
       <!-- Classification Section -->
       <div class="section" @mouseenter="!clickCooldown && (activeSection = 'classification')">
-        <div class="section-header" :class="{ active: activeSection === 'classification' }">
+        <div class="section-header" :class="{ active: activeSection === 'classification' }" @click="toggleSection('classification')">
           <span>Classification</span>
           <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'classification' }"></i>
         </div>
@@ -127,13 +132,14 @@
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
+            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
           </div>
         </div>
       </div>
 
       <!-- Clustering Section -->
       <div class="section" @mouseenter="!clickCooldown && (activeSection = 'clustering')">
-        <div class="section-header" :class="{ active: activeSection === 'clustering' }">
+        <div class="section-header" :class="{ active: activeSection === 'clustering' }" @click="toggleSection('clustering')">
           <span>Clustering</span>
           <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'clustering' }"></i>
         </div>
@@ -148,13 +154,14 @@
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
+            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
           </div>
         </div>
       </div>
 
       <!-- Validation Section -->
       <div class="section" @mouseenter="!clickCooldown && (activeSection = 'validation')">
-        <div class="section-header" :class="{ active: activeSection === 'validation' }">
+        <div class="section-header" :class="{ active: activeSection === 'validation' }" @click="toggleSection('validation')">
           <span>Validation</span>
           <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'validation' }"></i>
         </div>
@@ -169,13 +176,14 @@
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
+            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
           </div>
         </div>
       </div>
 
       <!-- Custom Algorithms Section -->
       <div class="section" @mouseenter="!clickCooldown && (activeSection = 'custom_algo')">
-        <div class="section-header" :class="{ active: activeSection === 'custom_algo' }">
+        <div class="section-header" :class="{ active: activeSection === 'custom_algo' }" @click="toggleSection('custom_algo')">
           <span>Custom</span>
           <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'custom_algo' }"></i>
         </div>
@@ -189,6 +197,7 @@
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
+            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
           </div>
           <div
             class="node-button node-custom new-algo-button"
@@ -202,7 +211,7 @@
 
       <!-- Output Section -->
       <div class="section" @mouseenter="!clickCooldown && (activeSection = 'output')">
-        <div class="section-header" :class="{ active: activeSection === 'output' }">
+        <div class="section-header" :class="{ active: activeSection === 'output' }" @click="toggleSection('output')">
           <span>Output</span>
           <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'output' }"></i>
         </div>
@@ -217,13 +226,14 @@
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
+            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
           </div>
         </div>
       </div>
 
       <!-- Deployment Section -->
       <div class="section" @mouseenter="!clickCooldown && (activeSection = 'deploy')">
-        <div class="section-header" :class="{ active: activeSection === 'deploy' }">
+        <div class="section-header" :class="{ active: activeSection === 'deploy' }" @click="toggleSection('deploy')">
           <span>Deployment</span>
           <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'deploy' }"></i>
         </div>
@@ -238,6 +248,7 @@
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
+            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
           </div>
         </div>
       </div>
@@ -249,7 +260,7 @@
         class="section"
         @mouseenter="!clickCooldown && (activeSection = extra.key)"
       >
-        <div class="section-header" :class="{ active: activeSection === extra.key }">
+        <div class="section-header" :class="{ active: activeSection === extra.key }" @click="toggleSection(extra.key)">
           <span>{{ extra.label }}</span>
           <i class="pi pi-chevron-right" :class="{ rotated: activeSection === extra.key }"></i>
         </div>
@@ -264,6 +275,7 @@
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
+            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
           </div>
         </div>
       </div>
@@ -491,6 +503,10 @@ const customAlgoNodes = computed(() => {
   return nodes;
 });
 
+const toggleSection = (section: string) => {
+  activeSection.value = activeSection.value === section ? '' : section;
+};
+
 const addNode = (nodeType: string) => {
   emit('add-node', nodeType);
   // Auto-collapse section after selection
@@ -599,6 +615,7 @@ const addNode = (nodeType: string) => {
 .node-button {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 12px;
   border-radius: 8px;
@@ -612,6 +629,19 @@ const addNode = (nodeType: string) => {
 .node-button:hover {
   opacity: 0.85;
   transform: translateX(4px);
+}
+
+.node-desc {
+  display: none;
+  width: 100%;
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.3;
+}
+
+.node-button:hover .node-desc {
+  display: block;
 }
 
 .node-icon {

@@ -9,6 +9,7 @@
 .env.*.example
 *.env
 !.env.example
+.envrc
 
 # Python
 __pycache__/

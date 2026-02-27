@@ -32,7 +32,7 @@ SpectraSherpa follows a "Clean Architecture" pattern with a strict separation be
 │  Auth (mode-dependent):                              │
 │    local → no auth │ hybrid → JWT+API │ enterprise   │
 │                                                      │
-│  DB: SQLite (local) or PostgreSQL (enterprise)       │
+│  DB: SQLAlchemy (SQLite default; configurable)       │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -144,7 +144,7 @@ The `useJobStore` Pinia store manages WebSocket state on the frontend.
 
 ### 8. Database Models
 
-SQLAlchemy models with SQLite (local) or PostgreSQL (enterprise) backend:
+SQLAlchemy models with a configurable async backend (SQLite default via `DATABASE_URL`):
 
 ```
 User

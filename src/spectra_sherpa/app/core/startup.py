@@ -172,20 +172,12 @@ def _validate_concurrency() -> list[ConfigIssue]:
 
 
 def _validate_database_mode() -> list[ConfigIssue]:
-    """Enterprise mode requires PostgreSQL."""
-    issues: list[ConfigIssue] = []
-
-    if app_config.mode == "enterprise" and "sqlite" in settings.database_url.lower():
-        issues.append(
-            ConfigIssue(
-                "error",
-                "database",
-                "Enterprise mode requires PostgreSQL. DATABASE_URL is currently "
-                "configured for SQLite. Set DATABASE_URL to a PostgreSQL connection string.",
-            )
-        )
-
-    return issues
+    """Check database configuration for the current mode."""
+    # The OSS layer is database-agnostic (SQLAlchemy handles the abstraction).
+    # Database-engine enforcement (e.g. requiring a production-grade backend
+    # for multi-user deployments) is the responsibility of the deployment layer
+    # (spectra-server or equivalent), not the core application.
+    return []
 
 
 def _validate_site_profile() -> list[ConfigIssue]:

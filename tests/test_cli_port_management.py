@@ -57,12 +57,16 @@ def test_clear_port_returns_false_when_lsof_missing(monkeypatch):
 
 
 def test_main_respects_kill_port_env(monkeypatch):
-    # Avoid loading .env from filesystem for this unit test.
+    """KILL_PORT_ON_START=true auto-clears a busy port in non-local mode."""
     monkeypatch.setattr(
         "spectra_sherpa._paths.get_env_file_search_paths",
         lambda: [Path("/does/not/exist")],
     )
     monkeypatch.setenv("KILL_PORT_ON_START", "true")
+    monkeypatch.setenv("APP_MODE", "hybrid")
+
+    # Simulate a stale process on the port
+    monkeypatch.setattr(cli, "_find_listening_pids", lambda _port: [9999])
 
     calls: list[tuple[int, float, bool]] = []
 
@@ -79,3 +83,80 @@ def test_main_respects_kill_port_env(monkeypatch):
     cli.main(["--no-browser", "--port", "8123"])
 
     assert calls == [(8123, 2.0, True)]
+
+
+def test_main_local_mode_auto_clears_port(monkeypatch):
+    """Local mode auto-clears a busy port without KILL_PORT_ON_START."""
+    monkeypatch.setattr(
+        "spectra_sherpa._paths.get_env_file_search_paths",
+        lambda: [Path("/does/not/exist")],
+    )
+    monkeypatch.delenv("KILL_PORT_ON_START", raising=False)
+    monkeypatch.setenv("APP_MODE", "local")
+
+    monkeypatch.setattr(cli, "_find_listening_pids", lambda _port: [9999])
+
+    calls: list[tuple[int, float, bool]] = []
+
+    def _fake_clear(port: int, *, grace_seconds: float, force_kill: bool) -> bool:
+        calls.append((port, grace_seconds, force_kill))
+        return True
+
+    monkeypatch.setattr(cli, "_clear_port", _fake_clear)
+    monkeypatch.setattr(cli, "_open_browser", lambda *_args, **_kwargs: None)
+
+    fake_uvicorn = types.SimpleNamespace(run=lambda *args, **kwargs: None)
+    monkeypatch.setitem(sys.modules, "uvicorn", fake_uvicorn)
+
+    cli.main(["--no-browser", "--port", "8123"])
+
+    assert calls == [(8123, 2.0, True)]
+
+
+def test_main_nonlocal_fails_fast_on_busy_port(monkeypatch):
+    """Non-local mode without KILL_PORT_ON_START exits immediately."""
+    monkeypatch.setattr(
+        "spectra_sherpa._paths.get_env_file_search_paths",
+        lambda: [Path("/does/not/exist")],
+    )
+    monkeypatch.delenv("KILL_PORT_ON_START", raising=False)
+    monkeypatch.setenv("APP_MODE", "hybrid")
+
+    monkeypatch.setattr(cli, "_find_listening_pids", lambda _port: [9999])
+    monkeypatch.setattr(cli, "_open_browser", lambda *_args, **_kwargs: None)
+
+    fake_uvicorn = types.SimpleNamespace(run=lambda *args, **kwargs: None)
+    monkeypatch.setitem(sys.modules, "uvicorn", fake_uvicorn)
+
+    import pytest
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(["--no-browser", "--port", "8123"])
+
+    assert exc_info.value.code == 1
+
+
+def test_main_skips_clear_when_port_free(monkeypatch):
+    """No port clearing when nothing is listening."""
+    monkeypatch.setattr(
+        "spectra_sherpa._paths.get_env_file_search_paths",
+        lambda: [Path("/does/not/exist")],
+    )
+    monkeypatch.delenv("KILL_PORT_ON_START", raising=False)
+
+    monkeypatch.setattr(cli, "_find_listening_pids", lambda _port: [])
+
+    calls: list[tuple[int, float, bool]] = []
+    monkeypatch.setattr(
+        cli,
+        "_clear_port",
+        lambda port, *, grace_seconds, force_kill: calls.append((port, grace_seconds, force_kill)) or True,
+    )
+    monkeypatch.setattr(cli, "_open_browser", lambda *_args, **_kwargs: None)
+
+    fake_uvicorn = types.SimpleNamespace(run=lambda *args, **kwargs: None)
+    monkeypatch.setitem(sys.modules, "uvicorn", fake_uvicorn)
+
+    cli.main(["--no-browser", "--port", "8123"])
+
+    assert calls == []

@@ -107,6 +107,10 @@ def _try_leader_lock() -> bool:
 
     Returns True if this worker is the leader (lock acquired).
     On platforms without fcntl (Windows) returns True so startup still runs.
+
+    The lock holder's PID is written to the file for diagnostic purposes.
+    ``fcntl.flock()`` is process-scoped — the OS releases it automatically
+    when the holder exits, even on crash, so stale *files* are harmless.
     """
     try:
         import fcntl
@@ -115,20 +119,46 @@ def _try_leader_lock() -> bool:
 
     lock_path = settings.data_dir / ".startup.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fd = -1
     try:
         fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT)
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        # Keep fd open for process lifetime (lock released on exit)
-        logger.info("Leader lock acquired: %s", lock_path)
+        # Write our PID for diagnostics (other workers can read it)
+        os.ftruncate(fd, 0)
+        os.lseek(fd, 0, os.SEEK_SET)
+        os.write(fd, f"{os.getpid()}\n".encode())
+        # Keep fd open for process lifetime (lock released on close/exit)
+        logger.info("Leader lock acquired: %s (PID %d)", lock_path, os.getpid())
         return True
-    except OSError as exc:
-        logger.warning(
-            "Could not acquire leader lock %s: %s — running as follower. "
-            "If no leader is running, delete the lock file and restart.",
-            lock_path,
-            exc,
-        )
+    except OSError:
+        # Read the holder PID for a helpful log message
+        holder_pid = _read_lock_pid(lock_path)
+        if holder_pid:
+            logger.warning(
+                "Leader lock held by PID %d — running as follower.",
+                holder_pid,
+            )
+        else:
+            logger.warning(
+                "Could not acquire leader lock %s — running as follower.",
+                lock_path,
+            )
+        # Close the fd we opened (we didn't acquire the lock)
+        if fd >= 0:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
         return False
+
+
+def _read_lock_pid(lock_path) -> int | None:
+    """Read the PID written to the lock file, if any."""
+    try:
+        content = lock_path.read_text().strip()
+        return int(content) if content.isdigit() else None
+    except (OSError, ValueError):
+        return None
 
 
 def _normalize_router_mounts(extra_routers: list[RouterMount] | None) -> list[tuple[APIRouter, dict[str, Any]]]:

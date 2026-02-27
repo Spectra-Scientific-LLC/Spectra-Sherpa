@@ -484,7 +484,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   const typeRefToDisplayName = (typeRef: string): string => {
     const parsed = parseTypeRef(typeRef);
     if (!parsed) return typeRef;
-    return `${parsed.name}@${parsed.major}.${parsed.minor}`;
+    return parsed.name;
   };
 
   /** Derive visual category (dataset, model, target, ...) from a type_ref URI. */
@@ -567,7 +567,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
       return {
         isValid: false,
         error: `Version mismatch: ${typeRefToDisplayName(sourceTypeRef)} cannot connect to ${typeRefToDisplayName(targetTypeRef)} (major version differs)`,
-        dataType: `${source.name}@${source.major}.${source.minor}`,
+        dataType: source.name,
       };
     }
 
@@ -575,14 +575,14 @@ export const useWorkflowStore = defineStore("workflow", () => {
     if (isSubtypeName(source.name, target.name)) {
       return {
         isValid: true,
-        dataType: `${source.name}@${source.major}.${source.minor}`,
+        dataType: source.name,
       };
     }
 
     return {
       isValid: false,
       error: `Type mismatch: ${typeRefToDisplayName(sourceTypeRef)} cannot connect to ${typeRefToDisplayName(targetTypeRef)}`,
-      dataType: `${source.name}@${source.major}.${source.minor}`,
+      dataType: source.name,
     };
   };
 

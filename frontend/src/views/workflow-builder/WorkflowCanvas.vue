@@ -168,7 +168,7 @@
             top: `${30 + idx * 20}px`,
             backgroundColor: getPortColor(getPortCategory(port.type_ref))
           }"
-          :title="isConnecting ? getPortCompatibilityReason(node.id, port.name) || `${port.label} (${port.type_ref})` : `${port.label} (${port.type_ref})`"
+          :title="isConnecting ? getPortCompatibilityReason(node.id, port.name) || `${port.label} (${getTypeName(port.type_ref)})` : `${port.label} (${getTypeName(port.type_ref)})`"
         >
           <span
             v-if="isConnecting"
@@ -179,7 +179,7 @@
           </span>
           <div class="port-tooltip">
             <div class="port-tooltip-label">{{ port.label }}</div>
-            <div class="port-tooltip-type">{{ port.type_ref }}</div>
+            <div class="port-tooltip-type">{{ getTypeName(port.type_ref) }}</div>
             <div
               v-if="isConnecting && getPortCompatibilityReason(node.id, port.name)"
               class="port-tooltip-desc"
@@ -201,11 +201,11 @@
             top: `${30 + idx * 20}px`,
             backgroundColor: getPortColor(getPortCategory(port.type_ref))
           }"
-          :title="`${port.label} (${port.type_ref})`"
+          :title="`${port.label} (${getTypeName(port.type_ref)})`"
         >
           <div class="port-tooltip">
             <div class="port-tooltip-label">{{ port.label }}</div>
-            <div class="port-tooltip-type">{{ port.type_ref }}</div>
+            <div class="port-tooltip-type">{{ getTypeName(port.type_ref) }}</div>
             <div v-if="port.description" class="port-tooltip-desc">{{ port.description }}</div>
           </div>
         </div>
@@ -257,6 +257,7 @@
           <i class="pi pi-database"></i>
           <span>{{ formatShape(node.executionState.output_shape) }}</span>
         </div>
+
       </div>
 
       <!-- Node footer with connect button -->
@@ -377,6 +378,12 @@ const PORT_COLORS: Record<string, string> = {
 // Get workflow store for node metadata
 const workflowStore = useWorkflowStore();
 
+// Extract the human-readable type name from a type_ref URI (e.g. "SpectralDataset").
+const getTypeName = (typeRef: string): string => {
+  const match = typeRef.match(/^spectrasherpa:\/\/types\/([A-Za-z0-9_]+)\/\d+\.\d+$/);
+  return match ? match[1] : typeRef;
+};
+
 // Derive visual category from a type_ref URI using the fetched type registry.
 const getPortCategory = (typeRef: string): string => {
   const match = typeRef.match(/^spectrasherpa:\/\/types\/([A-Za-z0-9_]+)\/\d+\.\d+$/);
@@ -411,10 +418,10 @@ const getNodeOutputPorts = (nodeType: string): NodePortMetadata[] => {
   if (metadata?.output_ports && metadata.output_ports.length > 0) {
     return metadata.output_ports;
   }
-  // Fallback to legacy single-output nodes (default port)
+  // Fallback for nodes that declare output_type but not output_ports
   return [{
     name: 'default',
-    type_ref: 'spectrasherpa://types/SpectralDataset/1.0',
+    type_ref: 'spectrasherpa://types/Any/1.0',
     required: true,
     label: 'Output',
   }];
@@ -973,6 +980,7 @@ watch(() => props.nodes, () => {
 }
 
 .node-body {
+  position: relative;
   padding: 10px;
   border-bottom: 1px solid #334155;
 }

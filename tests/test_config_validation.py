@@ -1,11 +1,13 @@
 """Tests for unified config validation (Issue #4).
 
 Verifies that startup.validate_config() catches misconfigurations:
-- Enterprise mode with SQLite database
 - site_profile=demo without enterprise mode
 - LLM keys with egress disabled
 - CORS origins missing in non-local modes
 - Security and concurrency checks
+
+Note: Database engine enforcement (e.g. requiring a production backend for
+multi-user modes) is the deployment layer's responsibility, not the OSS core.
 """
 
 from __future__ import annotations
@@ -47,7 +49,7 @@ class _FakeLLM:
 
 
 class _FakeSettings:
-    def __init__(self, secret_key="secure-key", api_key="secure-api-key", database_url="postgresql+asyncpg://..."):
+    def __init__(self, secret_key="secure-key", api_key="secure-api-key", database_url="sqlite+aiosqlite:///data/test.db"):
         self.secret_key = secret_key
         self.api_key = api_key
         self.database_url = database_url
@@ -63,21 +65,17 @@ _DEFAULT_API_KEY = "default-local-key"
 
 
 class TestDatabaseMode:
-    def test_enterprise_requires_postgres(self):
+    """Database engine enforcement is the deployment layer's responsibility.
+
+    The OSS core is database-agnostic (SQLAlchemy abstraction). These tests
+    verify that _validate_database_mode() never blocks startup regardless of
+    the database engine or app mode.
+    """
+
+    def test_enterprise_sqlite_ok(self):
+        """Enterprise + SQLite must not crash — deployment layer handles enforcement."""
         cfg = _FakeAppConfig(mode="enterprise")
         stg = _FakeSettings(database_url="sqlite+aiosqlite:///data/test.db")
-        with (
-            patch("spectra_sherpa.app.core.startup.app_config", cfg),
-            patch("spectra_sherpa.app.core.startup.settings", stg),
-        ):
-            issues = _validate_database_mode()
-        assert len(issues) == 1
-        assert issues[0].level == "error"
-        assert "PostgreSQL" in issues[0].message
-
-    def test_enterprise_postgres_ok(self):
-        cfg = _FakeAppConfig(mode="enterprise")
-        stg = _FakeSettings(database_url="postgresql+asyncpg://user:pw@host/db")
         with (
             patch("spectra_sherpa.app.core.startup.app_config", cfg),
             patch("spectra_sherpa.app.core.startup.settings", stg),
@@ -87,6 +85,16 @@ class TestDatabaseMode:
 
     def test_local_sqlite_ok(self):
         cfg = _FakeAppConfig(mode="local")
+        stg = _FakeSettings(database_url="sqlite+aiosqlite:///data/test.db")
+        with (
+            patch("spectra_sherpa.app.core.startup.app_config", cfg),
+            patch("spectra_sherpa.app.core.startup.settings", stg),
+        ):
+            issues = _validate_database_mode()
+        assert len(issues) == 0
+
+    def test_hybrid_sqlite_ok(self):
+        cfg = _FakeAppConfig(mode="hybrid")
         stg = _FakeSettings(database_url="sqlite+aiosqlite:///data/test.db")
         with (
             patch("spectra_sherpa.app.core.startup.app_config", cfg),
@@ -282,9 +290,8 @@ class TestValidateConfig:
             patch("spectra_sherpa.app.core.startup.settings", stg),
         ):
             result = validate_config()
-        # Should have at least: SECRET_KEY error, database error
+        # Should have at least: SECRET_KEY error (security)
         assert result.has_errors
-        assert len(result.errors) >= 2
+        assert len(result.errors) >= 1
         categories = {e.category for e in result.errors}
         assert "security" in categories
-        assert "database" in categories
