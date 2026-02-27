@@ -305,11 +305,6 @@ class SpectraSherpaTestRequest(BaseModel):
     api_key: str
 
 
-class SpectraSherpaSaveRequest(BaseModel):
-    server_url: str
-    api_key: str
-
-
 # SECURITY: SpectraSherpa config is ENV-ONLY to prevent runtime tampering
 # No in-memory storage - configuration must come from environment variables
 
@@ -420,39 +415,6 @@ async def test_spectrasherpa_connection(request: SpectraSherpaTestRequest):
         return {"success": False, "error": "Connection timed out"}
     except Exception as e:
         return {"success": False, "error": str(e)}
-
-
-@router.post("/spectrasherpa")
-async def save_spectrasherpa_config(request: SpectraSherpaSaveRequest):
-    """
-    DEPRECATED: SpectraSherpa configuration is now environment-only.
-
-    Set SPECTRASHERPA_API_URL and SPECTRASHERPA_API_KEY environment variables
-    instead of using this endpoint.
-
-    This endpoint is disabled for security (prevents runtime config tampering).
-    """
-    raise HTTPException(
-        status_code=403,
-        detail="SpectraSherpa configuration is environment-only. "
-        "Set SPECTRASHERPA_API_URL and SPECTRASHERPA_API_KEY in your .env file.",
-    )
-
-
-@router.delete("/spectrasherpa")
-async def delete_spectrasherpa_config():
-    """
-    DEPRECATED: SpectraSherpa configuration is now environment-only.
-
-    Remove SPECTRASHERPA_API_KEY from your environment to disconnect.
-
-    This endpoint is disabled for security (prevents runtime config tampering).
-    """
-    raise HTTPException(
-        status_code=403,
-        detail="SpectraSherpa configuration is environment-only. "
-        "Remove SPECTRASHERPA_API_KEY from your .env to disconnect.",
-    )
 
 
 @router.get("/spectrasherpa/user")

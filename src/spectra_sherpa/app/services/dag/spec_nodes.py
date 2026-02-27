@@ -129,10 +129,6 @@ class TransformSpecNode(Node):
         if self.spec is None:
             raise NotImplementedError(f"{type(self).__name__} must define a 'spec' class attribute")
 
-        # Accept legacy input_0 kwarg
-        if input_data is None and "input_0" in kwargs:
-            input_data = kwargs.pop("input_0")
-
         input_ds = coerce_to_sherpa(input_data, input_name="input_data")
         data = to_numpy_2d(input_ds, name="input_data", dtype=self.spec.input_dtype)
 
@@ -301,13 +297,11 @@ class EstimatorSpecNode(Node):
         # Bind inputs
         X_ds = bind_X(
             X,
-            kwargs,
             missing_message=f"{self.metadata.label}: missing required input X",
             allow_array=True,
         )
         y_value = bind_y(
             y,
-            kwargs,
             X=X_ds,
             required=self.spec.y_required,
             infer_from_X=True,

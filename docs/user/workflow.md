@@ -4,7 +4,7 @@ The **Workflow Builder** is a Directed Acyclic Graph (DAG) execution engine for 
 
 ## Architecture
 
-*   **Node Registry**: All nodes are registered in a central system (`app/services/dag/node_base.py`). This allows dynamic discovery of capabilities. Consolidated nodes use an **alias system** so old node type strings still resolve correctly.
+*   **Node Registry**: All nodes are registered in a central system (`app/services/dag/node_base.py`). This allows dynamic discovery of capabilities.
 *   **Execution Engine**: The backend uses an asynchronous topological sort to execute nodes in the correct order. Independent branches run in parallel where possible.
 *   **Data Flow**: Data is passed between nodes as `SherpaDataset` objects — the DAG's canonical runtime container (`app/lib/sherpa_dataset.py`). Processing history is tracked via typed `Provenance` entries with `state_effects`. SpectroChemPy `NDDataset` is used only by SCP-only nodes via round-trip adapters in `adapters/scp_adapter.py`. At API boundaries, results are serialized via `serialize_for_api()`, which includes spectral technique detection, data quantity identification, and the full processing chain.
 

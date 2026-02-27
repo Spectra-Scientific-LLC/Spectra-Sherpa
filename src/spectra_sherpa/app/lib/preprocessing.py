@@ -106,8 +106,14 @@ def build_golden_grid(
     """
     wavenumbers = []
     for ds in datasets:
-        if hasattr(ds, "x") and ds.x is not None:
+        wn = None
+        # SherpaDataset path
+        if hasattr(ds, "feature_axis") and ds.feature_axis is not None:
+            wn = np.asarray(ds.feature_axis.values)
+        # NDDataset path
+        elif hasattr(ds, "x") and ds.x is not None:
             wn = ds.x.data if hasattr(ds.x, "data") else np.array(ds.x)
+        if wn is not None:
             wavenumbers.append(wn)
 
     if not wavenumbers:
@@ -219,8 +225,13 @@ def interpolate_to_grid(
     if method in {"pchip", "linear"} and not HAS_SCIPY:
         raise ImportError("SciPy is required for interpolation")
 
-    # Get original wavenumbers
-    wavenumber = dataset.x.data if hasattr(dataset.x, "data") else np.array(dataset.x)
+    # Get original wavenumbers (SherpaDataset or NDDataset)
+    if hasattr(dataset, "feature_axis") and dataset.feature_axis is not None:
+        wavenumber = np.asarray(dataset.feature_axis.values)
+    elif hasattr(dataset, "x") and dataset.x is not None:
+        wavenumber = dataset.x.data if hasattr(dataset.x, "data") else np.array(dataset.x)
+    else:
+        raise ValueError("Dataset has no wavenumber/feature axis")
 
     # Calculate grid spacings for resolution tracking
     original_spacing = float(np.median(np.abs(np.diff(wavenumber))))

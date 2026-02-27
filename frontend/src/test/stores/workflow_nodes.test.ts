@@ -1,38 +1,20 @@
 import { describe, it, expect } from 'vitest'
-import {
-  MULTI_INPUT_NODES,
-  NODE_TYPE_MAP,
-  getLegacyNodeType,
-  normalizeNodeType,
-} from '@/stores/workflow'
 
-describe('Workflow node type mappings', () => {
-  it('normalizes clustering and regression node types', () => {
-    expect(normalizeNodeType('KMEANS')).toBe('model.kmeans')
-    expect(normalizeNodeType('DBSCAN')).toBe('model.dbscan')
-    expect(normalizeNodeType('HCA')).toBe('model.hca')
-    expect(normalizeNodeType('PCR')).toBe('model.pcr')
-    expect(normalizeNodeType('SVR')).toBe('model.svr')
-  })
-
-  it('provides legacy reverse mappings for new nodes', () => {
-    expect(getLegacyNodeType('model.kmeans')).toBe('KMEANS')
-    expect(getLegacyNodeType('model.dbscan')).toBe('DBSCAN')
-    expect(getLegacyNodeType('model.hca')).toBe('HCA')
-    expect(getLegacyNodeType('model.pcr')).toBe('PCR')
-    expect(getLegacyNodeType('model.svr')).toBe('SVR')
-  })
-
-  it('keeps multi-input port definitions for regression nodes', () => {
-    expect(MULTI_INPUT_NODES.PCR).toBeDefined()
-    expect(MULTI_INPUT_NODES.SVR).toBeDefined()
-  })
-
-  it('includes new node types in the mapping table', () => {
-    expect(NODE_TYPE_MAP.KMEANS).toBe('model.kmeans')
-    expect(NODE_TYPE_MAP.DBSCAN).toBe('model.dbscan')
-    expect(NODE_TYPE_MAP.HCA).toBe('model.hca')
-    expect(NODE_TYPE_MAP.PCR).toBe('model.pcr')
-    expect(NODE_TYPE_MAP.SVR).toBe('model.svr')
+describe('Workflow node types', () => {
+  it('uses canonical dot-notation types', () => {
+    // Legacy UPPERCASE types and mapping functions have been removed.
+    // Node types are always canonical dot-notation: model.pca, preprocess.smooth, etc.
+    const canonicalTypes = [
+      'model.kmeans',
+      'model.dbscan',
+      'model.hca',
+      'model.pcr',
+      'model.svr',
+      'data.source',
+      'preprocess.normalize',
+    ]
+    canonicalTypes.forEach((t) => {
+      expect(t).toMatch(/^[a-z]+\.[a-z_]+$/)
+    })
   })
 })

@@ -20,7 +20,7 @@ class WorkflowNode(Base):
     """
     Represents a node instance within a workflow.
 
-    Each node has a specific type (e.g., "model.pca", "smooth.savitzky_golay")
+    Each node has a specific type (e.g., "model.pca", "preprocess.smooth")
     and its own parameters and position on the canvas.
     """
 

@@ -563,31 +563,45 @@ async def ensure_spectrochempy_testdata() -> None:
 
 async def ensure_workflow_templates() -> None:
     """
-    Seed the database with common workflow templates if they don't exist.
+    Seed or update the database with common workflow templates.
+
+    Uses upsert-by-name so that new templates added to WORKFLOW_TEMPLATES
+    are propagated to existing databases on the next startup, and existing
+    templates have their definition and metadata refreshed.
     """
     try:
         from spectra_sherpa.app.core.workflow_templates import WORKFLOW_TEMPLATES
 
         async with async_session() as session:
-            # Check if any templates already exist
-            result = await session.execute(select(WorkflowTemplate).limit(1))
-            existing_template = result.scalar_one_or_none()
+            # Build lookup of existing templates by name
+            result = await session.execute(select(WorkflowTemplate))
+            existing_by_name = {t.name: t for t in result.scalars().all()}
 
-            if existing_template:
-                logger.info(
-                    "Workflow templates already seeded "
-                    f"({await session.scalar(select(func.count(WorkflowTemplate.id)))} templates)"
-                )
-                return
-
-            # Seed templates
-            logger.info(f"Seeding {len(WORKFLOW_TEMPLATES)} workflow templates")
+            inserted = 0
+            updated = 0
             for template_data in WORKFLOW_TEMPLATES:
-                template = WorkflowTemplate(**template_data)
-                session.add(template)
+                name = template_data["name"]
+                existing = existing_by_name.get(name)
+                if existing is None:
+                    session.add(WorkflowTemplate(**template_data))
+                    inserted += 1
+                else:
+                    # Refresh mutable fields (description, category, template_data, is_active)
+                    changed = False
+                    for key in ("description", "category", "template_data", "is_active"):
+                        if key in template_data and getattr(existing, key) != template_data[key]:
+                            setattr(existing, key, template_data[key])
+                            changed = True
+                    if changed:
+                        updated += 1
 
-            await session.commit()
-            logger.info(f"Successfully seeded {len(WORKFLOW_TEMPLATES)} workflow templates")
+            if inserted or updated:
+                await session.commit()
+
+            total = await session.scalar(select(func.count(WorkflowTemplate.id)))
+            logger.info(
+                f"Workflow templates: {total} total, {inserted} new, {updated} updated"
+            )
 
     except OperationalError:
         logger.warning("Skipping workflow template seeding; database not initialized.")

@@ -2,6 +2,7 @@
 Seed data for common workflow templates.
 
 This module defines pre-built workflow templates for common chemometrics tasks.
+All node types and parameter names match the registered node library exactly.
 """
 
 WORKFLOW_TEMPLATES = [
@@ -16,15 +17,15 @@ WORKFLOW_TEMPLATES = [
             "nodes": [
                 {
                     "node_id": "data_1",
-                    "node_type": "data.load_experiment",
+                    "node_type": "data.source",
                     "label": "Load Data",
-                    "parameters": {},
+                    "parameters": {"source": "experiment"},
                     "position_x": 100,
                     "position_y": 200,
                 },
                 {
                     "node_id": "preprocess_1",
-                    "node_type": "preprocessing.normalize",
+                    "node_type": "preprocess.normalize",
                     "label": "Normalize",
                     "parameters": {"method": "snv"},
                     "position_x": 300,
@@ -34,23 +35,23 @@ WORKFLOW_TEMPLATES = [
                     "node_id": "model_1",
                     "node_type": "model.pca",
                     "label": "PCA",
-                    "parameters": {"n_components": 5},
+                    "parameters": {"n_components": "5"},
                     "position_x": 500,
                     "position_y": 200,
                 },
                 {
                     "node_id": "viz_1",
-                    "node_type": "output.scatter_plot",
+                    "node_type": "output.plot",
                     "label": "Scores Plot",
-                    "parameters": {"pc_x": 1, "pc_y": 2},
+                    "parameters": {"plot_type": "spectra"},
                     "position_x": 700,
                     "position_y": 150,
                 },
                 {
                     "node_id": "viz_2",
-                    "node_type": "output.line_plot",
+                    "node_type": "output.plot",
                     "label": "Loadings Plot",
-                    "parameters": {"components": [1, 2]},
+                    "parameters": {"plot_type": "spectra"},
                     "position_x": 700,
                     "position_y": 250,
                 },
@@ -76,23 +77,23 @@ WORKFLOW_TEMPLATES = [
             "nodes": [
                 {
                     "node_id": "data_1",
-                    "node_type": "data.load_experiment",
+                    "node_type": "data.source",
                     "label": "Load Calibration Data",
-                    "parameters": {},
+                    "parameters": {"source": "experiment"},
                     "position_x": 100,
                     "position_y": 200,
                 },
                 {
                     "node_id": "preprocess_1",
-                    "node_type": "preprocessing.savgol",
+                    "node_type": "preprocess.smooth",
                     "label": "Savitzky-Golay",
-                    "parameters": {"window_length": 15, "polyorder": 2, "deriv": 1},
+                    "parameters": {"method": "savitzky_golay", "size": 15, "order": 2},
                     "position_x": 300,
                     "position_y": 200,
                 },
                 {
                     "node_id": "model_1",
-                    "node_type": "model.pls_regression",
+                    "node_type": "model.pls",
                     "label": "PLS Regression",
                     "parameters": {"n_components": 3},
                     "position_x": 500,
@@ -100,7 +101,7 @@ WORKFLOW_TEMPLATES = [
                 },
                 {
                     "node_id": "eval_1",
-                    "node_type": "evaluation.cross_validation",
+                    "node_type": "diagnostics.cross_validation",
                     "label": "Cross-Validation",
                     "parameters": {"cv_folds": 5},
                     "position_x": 700,
@@ -108,9 +109,9 @@ WORKFLOW_TEMPLATES = [
                 },
                 {
                     "node_id": "viz_1",
-                    "node_type": "output.scatter_plot",
+                    "node_type": "output.plot",
                     "label": "Predicted vs Actual",
-                    "parameters": {},
+                    "parameters": {"plot_type": "spectra"},
                     "position_x": 900,
                     "position_y": 200,
                 },
@@ -126,27 +127,27 @@ WORKFLOW_TEMPLATES = [
         "is_active": True,
     },
     {
-        "name": "Classification (PCA + LDA)",
+        "name": "Classification (PCA + PLS-DA)",
         "description": (
             "Supervised classification workflow using PCA for dimensionality reduction"
-            " followed by LDA for class discrimination."
+            " followed by PLS-DA for class discrimination."
         ),
         "category": "classification",
         "template_data": {
             "nodes": [
                 {
                     "node_id": "data_1",
-                    "node_type": "data.load_experiment",
+                    "node_type": "data.source",
                     "label": "Load Data",
-                    "parameters": {},
+                    "parameters": {"source": "experiment"},
                     "position_x": 100,
                     "position_y": 200,
                 },
                 {
                     "node_id": "preprocess_1",
-                    "node_type": "preprocessing.baseline",
+                    "node_type": "baseline.penalized_ls",
                     "label": "Baseline Correction",
-                    "parameters": {"method": "als"},
+                    "parameters": {"method": "als", "lam": 100000, "p": 0.001},
                     "position_x": 300,
                     "position_y": 200,
                 },
@@ -154,23 +155,23 @@ WORKFLOW_TEMPLATES = [
                     "node_id": "model_1",
                     "node_type": "model.pca",
                     "label": "PCA",
-                    "parameters": {"n_components": 10},
+                    "parameters": {"n_components": "10"},
                     "position_x": 500,
                     "position_y": 200,
                 },
                 {
                     "node_id": "model_2",
-                    "node_type": "model.lda",
-                    "label": "LDA",
-                    "parameters": {},
+                    "node_type": "classification.plsda",
+                    "label": "PLS-DA",
+                    "parameters": {"n_components": 2},
                     "position_x": 700,
                     "position_y": 200,
                 },
                 {
                     "node_id": "viz_1",
-                    "node_type": "output.scatter_plot",
-                    "label": "LDA Scores",
-                    "parameters": {},
+                    "node_type": "output.plot",
+                    "label": "Classification Scores",
+                    "parameters": {"plot_type": "spectra"},
                     "position_x": 900,
                     "position_y": 200,
                 },
@@ -196,9 +197,9 @@ WORKFLOW_TEMPLATES = [
             "nodes": [
                 {
                     "node_id": "data_1",
-                    "node_type": "data.load_experiment",
+                    "node_type": "data.source",
                     "label": "Load Data",
-                    "parameters": {},
+                    "parameters": {"source": "experiment"},
                     "position_x": 100,
                     "position_y": 200,
                 },
@@ -220,17 +221,17 @@ WORKFLOW_TEMPLATES = [
                 },
                 {
                     "node_id": "viz_1",
-                    "node_type": "output.line_plot",
+                    "node_type": "output.plot",
                     "label": "Resolved Spectra",
-                    "parameters": {},
+                    "parameters": {"plot_type": "spectra"},
                     "position_x": 700,
                     "position_y": 150,
                 },
                 {
                     "node_id": "viz_2",
-                    "node_type": "output.line_plot",
+                    "node_type": "output.plot",
                     "label": "Concentrations",
-                    "parameters": {},
+                    "parameters": {"plot_type": "spectra"},
                     "position_x": 700,
                     "position_y": 250,
                 },
@@ -249,38 +250,38 @@ WORKFLOW_TEMPLATES = [
         "name": "Preprocessing Pipeline",
         "description": (
             "Comprehensive spectral preprocessing workflow: baseline correction,"
-            " smoothing, normalization, and derivative."
+            " smoothing, normalization, and visualization."
         ),
         "category": "preprocessing",
         "template_data": {
             "nodes": [
                 {
                     "node_id": "data_1",
-                    "node_type": "data.load_experiment",
+                    "node_type": "data.source",
                     "label": "Load Raw Data",
-                    "parameters": {},
+                    "parameters": {"source": "experiment"},
                     "position_x": 100,
                     "position_y": 200,
                 },
                 {
                     "node_id": "preprocess_1",
-                    "node_type": "preprocessing.baseline",
+                    "node_type": "baseline.penalized_ls",
                     "label": "Baseline Correction",
-                    "parameters": {"method": "als"},
+                    "parameters": {"method": "als", "lam": 100000, "p": 0.001},
                     "position_x": 300,
                     "position_y": 200,
                 },
                 {
                     "node_id": "preprocess_2",
-                    "node_type": "preprocessing.savgol",
+                    "node_type": "preprocess.smooth",
                     "label": "Smoothing",
-                    "parameters": {"window_length": 11, "polyorder": 2, "deriv": 0},
+                    "parameters": {"method": "savitzky_golay", "size": 11, "order": 2},
                     "position_x": 500,
                     "position_y": 200,
                 },
                 {
                     "node_id": "preprocess_3",
-                    "node_type": "preprocessing.normalize",
+                    "node_type": "preprocess.normalize",
                     "label": "Normalize",
                     "parameters": {"method": "snv"},
                     "position_x": 700,
@@ -288,9 +289,9 @@ WORKFLOW_TEMPLATES = [
                 },
                 {
                     "node_id": "viz_1",
-                    "node_type": "output.spectra",
+                    "node_type": "output.plot",
                     "label": "View Spectra",
-                    "parameters": {},
+                    "parameters": {"plot_type": "spectra"},
                     "position_x": 900,
                     "position_y": 200,
                 },
@@ -313,15 +314,15 @@ WORKFLOW_TEMPLATES = [
             "nodes": [
                 {
                     "node_id": "data_1",
-                    "node_type": "data.load_experiment",
+                    "node_type": "data.source",
                     "label": "Load Reference Data",
-                    "parameters": {},
+                    "parameters": {"source": "experiment"},
                     "position_x": 100,
                     "position_y": 200,
                 },
                 {
                     "node_id": "preprocess_1",
-                    "node_type": "preprocessing.normalize",
+                    "node_type": "preprocess.normalize",
                     "label": "Normalize",
                     "parameters": {"method": "snv"},
                     "position_x": 300,
@@ -329,17 +330,17 @@ WORKFLOW_TEMPLATES = [
                 },
                 {
                     "node_id": "model_1",
-                    "node_type": "model.simca",
+                    "node_type": "classification.simca",
                     "label": "SIMCA",
-                    "parameters": {"n_components": 5, "alpha": 0.05},
+                    "parameters": {"n_components": 3, "confidence_level": 0.95},
                     "position_x": 500,
                     "position_y": 200,
                 },
                 {
                     "node_id": "viz_1",
-                    "node_type": "output.scatter_plot",
+                    "node_type": "output.plot",
                     "label": "Coomans Plot",
-                    "parameters": {},
+                    "parameters": {"plot_type": "spectra"},
                     "position_x": 700,
                     "position_y": 200,
                 },
@@ -361,15 +362,15 @@ WORKFLOW_TEMPLATES = [
             "nodes": [
                 {
                     "node_id": "data_1",
-                    "node_type": "data.load_experiment",
+                    "node_type": "data.source",
                     "label": "Load Data",
-                    "parameters": {},
+                    "parameters": {"source": "experiment"},
                     "position_x": 100,
                     "position_y": 200,
                 },
                 {
                     "node_id": "preprocess_1",
-                    "node_type": "preprocessing.normalize",
+                    "node_type": "preprocess.normalize",
                     "label": "Normalize",
                     "parameters": {"method": "snv"},
                     "position_x": 300,
@@ -377,7 +378,7 @@ WORKFLOW_TEMPLATES = [
                 },
                 {
                     "node_id": "model_1",
-                    "node_type": "model.hierarchical_clustering",
+                    "node_type": "model.hca",
                     "label": "Hierarchical Clustering",
                     "parameters": {"n_clusters": 3, "linkage": "ward"},
                     "position_x": 500,
@@ -385,9 +386,9 @@ WORKFLOW_TEMPLATES = [
                 },
                 {
                     "node_id": "viz_1",
-                    "node_type": "output.dendrogram",
+                    "node_type": "output.plot",
                     "label": "Dendrogram",
-                    "parameters": {},
+                    "parameters": {"plot_type": "spectra"},
                     "position_x": 700,
                     "position_y": 200,
                 },
@@ -409,23 +410,23 @@ WORKFLOW_TEMPLATES = [
             "nodes": [
                 {
                     "node_id": "data_1",
-                    "node_type": "data.load_experiment",
+                    "node_type": "data.source",
                     "label": "Load Training Data",
-                    "parameters": {},
+                    "parameters": {"source": "experiment"},
                     "position_x": 100,
                     "position_y": 200,
                 },
                 {
                     "node_id": "preprocess_1",
-                    "node_type": "preprocessing.savgol",
+                    "node_type": "preprocess.smooth",
                     "label": "Savitzky-Golay",
-                    "parameters": {"window_length": 15, "polyorder": 2, "deriv": 1},
+                    "parameters": {"method": "savitzky_golay", "size": 15, "order": 2},
                     "position_x": 300,
                     "position_y": 200,
                 },
                 {
                     "node_id": "model_1",
-                    "node_type": "model.knn",
+                    "node_type": "classification.knn",
                     "label": "KNN Classifier",
                     "parameters": {"n_neighbors": 5, "metric": "euclidean"},
                     "position_x": 500,
@@ -433,7 +434,7 @@ WORKFLOW_TEMPLATES = [
                 },
                 {
                     "node_id": "eval_1",
-                    "node_type": "evaluation.cross_validation",
+                    "node_type": "diagnostics.cross_validation",
                     "label": "Cross-Validation",
                     "parameters": {"cv_folds": 5},
                     "position_x": 700,
@@ -459,22 +460,22 @@ WORKFLOW_TEMPLATES = [
         "is_active": True,
     },
     {
-        "name": "Variable Selection + PLS",
-        "description": "Feature selection followed by PLS regression for improved calibration performance.",
+        "name": "Spectral Region Selection + PLS",
+        "description": "Spectral region selection followed by PLS regression for targeted calibration.",
         "category": "calibration",
         "template_data": {
             "nodes": [
                 {
                     "node_id": "data_1",
-                    "node_type": "data.load_experiment",
+                    "node_type": "data.source",
                     "label": "Load Data",
-                    "parameters": {},
+                    "parameters": {"source": "experiment"},
                     "position_x": 100,
                     "position_y": 200,
                 },
                 {
                     "node_id": "preprocess_1",
-                    "node_type": "preprocessing.normalize",
+                    "node_type": "preprocess.normalize",
                     "label": "Normalize",
                     "parameters": {"method": "snv"},
                     "position_x": 300,
@@ -482,15 +483,15 @@ WORKFLOW_TEMPLATES = [
                 },
                 {
                     "node_id": "feature_1",
-                    "node_type": "preprocessing.variable_selection",
-                    "label": "Variable Selection",
-                    "parameters": {"method": "variance", "threshold": 0.01},
+                    "node_type": "preprocess.clip_range",
+                    "label": "Region Selection",
+                    "parameters": {"min_wavenumber": 400, "max_wavenumber": 4000},
                     "position_x": 500,
                     "position_y": 200,
                 },
                 {
                     "node_id": "model_1",
-                    "node_type": "model.pls_regression",
+                    "node_type": "model.pls",
                     "label": "PLS Regression",
                     "parameters": {"n_components": 5},
                     "position_x": 700,
@@ -498,9 +499,9 @@ WORKFLOW_TEMPLATES = [
                 },
                 {
                     "node_id": "viz_1",
-                    "node_type": "output.scatter_plot",
+                    "node_type": "output.plot",
                     "label": "Predictions",
-                    "parameters": {},
+                    "parameters": {"plot_type": "spectra"},
                     "position_x": 900,
                     "position_y": 200,
                 },
@@ -516,24 +517,25 @@ WORKFLOW_TEMPLATES = [
         "is_active": True,
     },
     {
-        "name": "Compare Multiple Models",
+        "name": "Compare Multiple Classifiers",
         "description": (
-            "Compare different classification models (KNN, LDA, SVM) on the same" " dataset with cross-validation."
+            "Compare different classification models (KNN, PLS-DA, SIMCA) on the same"
+            " dataset with cross-validation."
         ),
         "category": "comparison",
         "template_data": {
             "nodes": [
                 {
                     "node_id": "data_1",
-                    "node_type": "data.load_experiment",
+                    "node_type": "data.source",
                     "label": "Load Data",
-                    "parameters": {},
+                    "parameters": {"source": "experiment"},
                     "position_x": 100,
                     "position_y": 250,
                 },
                 {
                     "node_id": "preprocess_1",
-                    "node_type": "preprocessing.normalize",
+                    "node_type": "preprocess.normalize",
                     "label": "Normalize",
                     "parameters": {"method": "snv"},
                     "position_x": 300,
@@ -541,7 +543,7 @@ WORKFLOW_TEMPLATES = [
                 },
                 {
                     "node_id": "model_1",
-                    "node_type": "model.knn",
+                    "node_type": "classification.knn",
                     "label": "KNN",
                     "parameters": {"n_neighbors": 5},
                     "position_x": 500,
@@ -549,23 +551,23 @@ WORKFLOW_TEMPLATES = [
                 },
                 {
                     "node_id": "model_2",
-                    "node_type": "model.lda",
-                    "label": "LDA",
-                    "parameters": {},
+                    "node_type": "classification.plsda",
+                    "label": "PLS-DA",
+                    "parameters": {"n_components": 2},
                     "position_x": 500,
                     "position_y": 250,
                 },
                 {
                     "node_id": "model_3",
-                    "node_type": "model.svm",
-                    "label": "SVM",
-                    "parameters": {"kernel": "rbf"},
+                    "node_type": "classification.simca",
+                    "label": "SIMCA",
+                    "parameters": {"n_components": 3},
                     "position_x": 500,
                     "position_y": 350,
                 },
                 {
                     "node_id": "eval_1",
-                    "node_type": "evaluation.cross_validation",
+                    "node_type": "diagnostics.cross_validation",
                     "label": "CV - KNN",
                     "parameters": {"cv_folds": 5},
                     "position_x": 700,
@@ -573,16 +575,16 @@ WORKFLOW_TEMPLATES = [
                 },
                 {
                     "node_id": "eval_2",
-                    "node_type": "evaluation.cross_validation",
-                    "label": "CV - LDA",
+                    "node_type": "diagnostics.cross_validation",
+                    "label": "CV - PLS-DA",
                     "parameters": {"cv_folds": 5},
                     "position_x": 700,
                     "position_y": 250,
                 },
                 {
                     "node_id": "eval_3",
-                    "node_type": "evaluation.cross_validation",
-                    "label": "CV - SVM",
+                    "node_type": "diagnostics.cross_validation",
+                    "label": "CV - SIMCA",
                     "parameters": {"cv_folds": 5},
                     "position_x": 700,
                     "position_y": 350,

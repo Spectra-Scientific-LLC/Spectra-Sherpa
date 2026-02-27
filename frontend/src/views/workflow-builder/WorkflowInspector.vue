@@ -101,7 +101,7 @@
 
         <div class="parameters-form">
           <!-- DATA node -->
-          <template v-if="selectedNodeType === 'DATA_SOURCE' || selectedNodeType === 'DATA'">
+          <template v-if="selectedNodeType === 'data.source'">
             <!-- Source type selector -->
             <div class="field">
               <label>Source</label>
@@ -272,7 +272,7 @@
           </template>
 
           <!-- MY_DATASET node -->
-          <template v-else-if="selectedNodeType === 'MY_DATASET'">
+          <template v-else-if="selectedNodeType === 'data.my_dataset'">
             <div class="field">
               <label>Dataset</label>
               <Dropdown
@@ -291,7 +291,7 @@
           </template>
 
           <!-- NORMALIZE node -->
-          <template v-else-if="selectedNodeType === 'NORMALIZE'">
+          <template v-else-if="selectedNodeType === 'preprocess.normalize'">
             <div class="field">
               <label>Method</label>
               <Dropdown
@@ -304,7 +304,7 @@
           </template>
 
           <!-- SCALE node -->
-          <template v-else-if="selectedNodeType === 'SCALE'">
+          <template v-else-if="selectedNodeType === 'preprocess.scale'">
             <div class="field">
               <label>Range</label>
               <div class="range-inputs">
@@ -324,7 +324,7 @@
           </template>
 
           <!-- BASELINE node -->
-          <template v-else-if="selectedNodeType === 'BASELINE'">
+          <template v-else-if="selectedNodeType === 'baseline.penalized_ls'">
             <div class="field" :class="{ 'field-error': getParamError('lam') }">
               <label class="param-label-with-info">
                 Lambda (λ): {{ localParams.lam?.toLocaleString() }}
@@ -376,7 +376,7 @@
           </template>
 
           <!-- SMOOTH node -->
-          <template v-else-if="selectedNodeType === 'SMOOTH'">
+          <template v-else-if="selectedNodeType === 'preprocess.smooth'">
             <div class="field" :class="{ 'field-error': getParamError('window') }">
               <label class="param-label-with-info">
                 Window Size: {{ localParams.window }}
@@ -430,7 +430,7 @@
           <!-- PCA, PLS, and MCR nodes now use metadata-driven rendering (removed hardcoded templates) -->
 
           <!-- PLOT node -->
-          <template v-else-if="selectedNodeType === 'PLOT'">
+          <template v-else-if="selectedNodeType === 'output.plot'">
             <div class="field">
               <label>X-Axis</label>
               <Dropdown
@@ -454,7 +454,7 @@
           </template>
 
           <!-- EXPORT node -->
-          <template v-else-if="selectedNodeType === 'EXPORT'">
+          <template v-else-if="selectedNodeType === 'output.export'">
             <div class="field">
               <label>Filename</label>
               <InputText
@@ -466,7 +466,7 @@
           </template>
 
           <!-- STATS node -->
-          <template v-else-if="selectedNodeType === 'STATS'">
+          <template v-else-if="selectedNodeType === 'stats.summary'">
             <div class="field">
               <label>Max Samples: {{ localParams.max_samples || 50 }}</label>
               <Slider
@@ -483,7 +483,7 @@
           </template>
 
           <!-- CONTOUR_PLOT node -->
-          <template v-else-if="selectedNodeType === 'CONTOUR_PLOT'">
+          <template v-else-if="selectedNodeType === 'output.contour'">
             <div class="field">
               <label>Color Scale</label>
               <Dropdown
@@ -757,7 +757,7 @@
           </div>
 
           <!-- Statistics output (compact inline) -->
-          <template v-if="selectedNodeType === 'STATS' && Array.isArray(nodeOutput.data)">
+          <template v-if="selectedNodeType === 'stats.summary' && Array.isArray(nodeOutput.data)">
             <div class="stats-table" style="max-height: 200px; overflow-y: auto;">
               <div
                 v-for="(stat, index) in outputStatsRows"
@@ -1426,7 +1426,7 @@ const emit = defineEmits<{
 const toast = useToast();
 const workflowStore = useWorkflowStore();
 const { isDemoMode } = useDemoMode();
-const selectedNodeType = computed(() => workflowStore.getLegacyNodeType(props.selectedNode?.type || ''));
+const selectedNodeType = computed(() => props.selectedNode?.type || '');
 
 const asObject = (value: unknown): Record<string, unknown> | null => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -1520,8 +1520,7 @@ const getNodeLabel = (nodeType: string): string => {
   if (metadata?.label) {
     return metadata.label;
   }
-  const legacyType = workflowStore.getLegacyNodeType(nodeType);
-  return NODE_LABELS[legacyType] || nodeType;
+  return NODE_LABELS[nodeType] || nodeType;
 };
 
 // Close inspector
@@ -1531,45 +1530,41 @@ const closeInspector = () => {
 
 const NODE_ICONS: Record<string, string> = {
   // Data source
-  'DATA': '📊',
-  'MY_DATASET': '📁',
+  'data.source': '📊',
+  'data.my_dataset': '📁',
 
   // Preprocessing - atomic
-  'COSMIC_RAY': '✨',
-  'CLIP_RANGE': '✂️',
-  'CLIP_FLOOR': '⬇️',
-  'WAVENUMBER_ALIGN': '📐',
-  'SCALE_MAX': '📏',
-  'CENTER_MEAN': '⚖️',
+  'preprocess.cosmic_ray': '✨',
+  'preprocess.clip_range': '✂️',
+  'preprocess.clip_floor': '⬇️',
+  'preprocess.wavenumber_align': '📐',
+  'preprocess.scale': '📏',
+  'preprocess.normalize': '⚖️',
 
   // Preprocessing - existing
-  'NORMALIZE': '⚖️',
-  'SCALE': '📏',
-  'BASELINE': '📉',
-  'BASELINE_RB': '📉',
-  'SMOOTH': '〰️',
-  'DERIV_1': '📈',
-  'DERIV_2': '📈',
-  'MSC': '🔧',
-  'SNV': '⚖️',
+  'baseline.penalized_ls': '📉',
+  'baseline.rubberband': '📉',
+  'preprocess.smooth': '〰️',
+  'preprocess.derivative': '📈',
+  'preprocess.emsc': '🔧',
 
   // Synthesis / Blend
-  'BLEND': '🔀',
-  'SPECIES': '🧬',
-  'MERGE_SPECTRA': '📚',
+  'synthesis.blend': '🔀',
+  'synthesis.species': '🧬',
+  'synthesis.merge': '📚',
 
   // Analysis
-  'PCA': '🔀',
-  'PLS': '📈',
-  'MCR': '🧩',
-  'EFA': '🔬',
-  'SIMPLISMA': '🎯',
+  'model.pca': '🔀',
+  'model.pls': '📈',
+  'model.mcr_als': '🧩',
+  'model.efa': '🔬',
+  'model.simplisma': '🎯',
 
   // Output
-  'STATS': '📊',
-  'PLOT': '📈',
-  'CONTOUR_PLOT': '🗺️',
-  'EXPORT': '💾',
+  'stats.summary': '📊',
+  'output.plot': '📈',
+  'output.contour': '🗺️',
+  'output.export': '💾',
 
   // Deploy
   'deploy.input': '📥',
@@ -1578,45 +1573,41 @@ const NODE_ICONS: Record<string, string> = {
 
 const NODE_LABELS: Record<string, string> = {
   // Data source
-  'DATA': 'Load Data',
-  'MY_DATASET': 'My Dataset',
+  'data.source': 'Load Data',
+  'data.my_dataset': 'My Dataset',
 
   // Preprocessing - atomic
-  'COSMIC_RAY': 'Cosmic Ray Removal',
-  'CLIP_RANGE': 'Clip Range',
-  'CLIP_FLOOR': 'Clip Floor',
-  'WAVENUMBER_ALIGN': 'Wavenumber Align',
-  'SCALE_MAX': 'Scale to Max',
-  'CENTER_MEAN': 'Mean Center',
+  'preprocess.cosmic_ray': 'Cosmic Ray Removal',
+  'preprocess.clip_range': 'Clip Range',
+  'preprocess.clip_floor': 'Clip Floor',
+  'preprocess.wavenumber_align': 'Wavenumber Align',
 
   // Preprocessing - existing
-  'NORMALIZE': 'Normalize',
-  'SCALE': 'Scale',
-  'BASELINE': 'Baseline (ALS)',
-  'BASELINE_RB': 'Baseline (Rubberband)',
-  'SMOOTH': 'Smooth (S-G)',
-  'DERIV_1': '1st Derivative',
-  'DERIV_2': '2nd Derivative',
-  'MSC': 'MSC',
-  'SNV': 'SNV',
+  'preprocess.normalize': 'Normalize',
+  'preprocess.scale': 'Scale',
+  'baseline.penalized_ls': 'Baseline (ALS)',
+  'baseline.rubberband': 'Baseline (Rubberband)',
+  'preprocess.smooth': 'Smooth (S-G)',
+  'preprocess.derivative': 'Derivative',
+  'preprocess.emsc': 'MSC',
 
   // Synthesis / Blend
-  'BLEND': 'Blend',
-  'SPECIES': 'Species',
-  'MERGE_SPECTRA': 'Merge Spectra',
+  'synthesis.blend': 'Blend',
+  'synthesis.species': 'Species',
+  'synthesis.merge': 'Merge Spectra',
 
   // Analysis
-  'PCA': 'PCA',
-  'PLS': 'PLS',
-  'MCR': 'MCR-ALS',
-  'EFA': 'EFA',
-  'SIMPLISMA': 'SIMPLISMA',
+  'model.pca': 'PCA',
+  'model.pls': 'PLS',
+  'model.mcr_als': 'MCR-ALS',
+  'model.efa': 'EFA',
+  'model.simplisma': 'SIMPLISMA',
 
   // Output
-  'STATS': 'Statistics',
-  'PLOT': 'Scatter Plot',
-  'CONTOUR_PLOT': 'Contour Plot',
-  'EXPORT': 'Export',
+  'stats.summary': 'Statistics',
+  'output.plot': 'Scatter Plot',
+  'output.contour': 'Contour Plot',
+  'output.export': 'Export',
 
   // Deploy
   'deploy.input': 'Deploy Input',
@@ -1641,7 +1632,7 @@ const hasValidationErrors = computed(() => validationErrors.value.length > 0);
 // Check if node is a preprocessing node (eligible for preview)
 const isPreprocessingNode = computed(() => {
   if (!props.selectedNode) return false;
-  const preprocessingTypes = ['SMOOTH', 'BASELINE', 'BASELINE_RB', 'NORMALIZE', 'SCALE', 'MSC', 'SNV', 'DERIV_1', 'DERIV_2'];
+  const preprocessingTypes = ['preprocess.smooth', 'baseline.penalized_ls', 'baseline.rubberband', 'preprocess.normalize', 'preprocess.scale', 'preprocess.emsc', 'preprocess.derivative'];
   return preprocessingTypes.includes(selectedNodeType.value);
 });
 
@@ -1652,17 +1643,10 @@ const nodeMetadata = computed(() => {
 });
 
 const mapMetadataParamNames = (
-  nodeType: string,
+  _nodeType: string,
   parameters: NodeParameterMetadata[]
 ): NodeParameterMetadata[] => {
-  const reverseMapping = workflowStore.getReverseParamMapping(nodeType);
-  if (!reverseMapping) {
-    return parameters;
-  }
-  return parameters.map((param) => ({
-    ...param,
-    name: reverseMapping[param.name] || param.name,
-  }));
+  return parameters;
 };
 
 const mappedMetadataParams = computed(() => {
@@ -1943,7 +1927,7 @@ const withMetadataDefaults = (metadataValue: unknown): SpectraMetadata => {
 const localMetadata = ref(createEmptyMetadata());
 
 // Data source node types that can edit metadata
-const DATA_SOURCE_NODES = ['DATA', 'NIST_LIBRARY', 'SYNTHETIC_CURVE', 'DOE_PLATE'];
+const DATA_SOURCE_NODES = ['data.source', 'data.nist_library', 'data.synthetic_curve', 'doe_plate'];
 
 const isDataSourceNode = computed(() => {
   return props.selectedNode && DATA_SOURCE_NODES.includes(selectedNodeType.value);
@@ -2158,8 +2142,7 @@ watch(() => props.selectedNode?.id, (newId, oldId) => {
     localParams.value = { ...defaults, ...node.params };
     // Reconstruct selectedDatasetKey from params if available
     const ref = asObject(node.params.dataset_ref);
-    const legacyType = workflowStore.getLegacyNodeType(node.type);
-    if (legacyType === 'DATA' && ref) {
+    if (node.type === 'data.source' && ref) {
       if (ref.source === 'experiment') {
         const experimentId = asKeyPart(ref.experiment_id);
         const stage = asKeyPart(ref.stage);
@@ -2171,7 +2154,7 @@ watch(() => props.selectedNode?.id, (newId, oldId) => {
         const libraryId = asKeyPart(ref.library_id);
         selectedDatasetKey.value = libraryId ? `lib-${libraryId}` : null;
       }
-    } else if (legacyType === 'MY_DATASET') {
+    } else if (node.type === 'data.my_dataset') {
       // Params (dataset_id, file_id, stage) are set directly via localParams — no key needed
       if (!localParams.value.stage) {
         localParams.value.stage = 'raw';
@@ -2387,7 +2370,7 @@ const axisOptions = computed(() => {
 // Should show scatter plot
 const shouldShowPlot = computed(() => {
   if (!props.selectedNode || !props.nodeOutput) return false;
-  return ['PLOT', 'PCA', 'DATA', 'NORMALIZE', 'SCALE'].includes(selectedNodeType.value) &&
+  return ['output.plot', 'model.pca', 'data.source', 'preprocess.normalize', 'preprocess.scale'].includes(selectedNodeType.value) &&
          Array.isArray(props.nodeOutput.data) &&
          props.nodeOutput.data.length > 0;
 });
@@ -2596,7 +2579,7 @@ const openInNewTab = () => {
   // Build input connections with icons and labels
   const inputConns = props.inputConnections.map(conn => ({
     nodeId: conn.nodeId,
-    icon: NODE_ICONS[workflowStore.getLegacyNodeType(conn.nodeType)] || '📦',
+    icon: NODE_ICONS[conn.nodeType] || '📦',
     label: conn.nodeLabel,
     port: conn.port,
     toPort: conn.toPort,  // Include input port name for multi-input nodes
@@ -2638,13 +2621,13 @@ const openInNewTab = () => {
     if (!includeData && metadata) {
       const lightMetadata = { ...metadata };
       // Remove large arrays from PCA metadata (loadings can be very large)
-      if (metadata.type === 'PCA' || props.selectedNode.type.includes('pca')) {
+      if (metadata.type === 'model.pca' || props.selectedNode.type.includes('pca')) {
         delete lightMetadata.loadings;
         delete lightMetadata.wavenumbers;
         // Keep essential metadata like n_components, pc_labels, explained_variance_ratio
       }
       // Remove large arrays from other decomposition methods
-      if (typeof metadata.type === "string" && ['SIMPLISMA', 'NMF', 'FastICA', 'MCR'].includes(metadata.type)) {
+      if (typeof metadata.type === "string" && ['model.simplisma', 'model.nmf', 'model.ica', 'model.mcr_als'].includes(metadata.type)) {
         delete lightMetadata.St;
         delete lightMetadata.H;
         delete lightMetadata.A;
@@ -2694,17 +2677,12 @@ const openInNewTab = () => {
 };
 
 const mapMetadataParams = (
-  nodeType: string,
+  _nodeType: string,
   parameters: NodeParameterMetadata[]
 ): NodeParameterDefinition[] => {
-  const reverseMapping = workflowStore.getReverseParamMapping(nodeType);
-
   return parameters.map((param) => {
-    // If backend name has a frontend equivalent, use the frontend name
-    const frontendName = reverseMapping?.[param.name] || param.name;
-
     return {
-      name: frontendName,
+      name: param.name,
       label: param.label,
       type: param.param_type,
       min: param.min_value,
@@ -2725,52 +2703,51 @@ const getParamDefinitions = (nodeType: string): NodeParameterDefinition[] => {
     return mapMetadataParams(nodeType, metadata.parameters);
   }
 
-  const legacyType = workflowStore.getLegacyNodeType(nodeType);
   const definitions: Record<string, NodeParameterDefinition[]> = {
-    DATA: [
+    'data.source': [
       { name: 'source', label: 'Source', type: 'select', options: dataSourceOptions.value },
       { name: 'file_path', label: 'File Path', type: 'text' },
       { name: 'transpose_on_load', label: 'Transpose on Load', type: 'boolean', default: false },
       { name: 'sample_axis_title', label: 'Sample Axis Title', type: 'text', default: 'Sample' },
       { name: 'spectral_axis_title', label: 'Spectral Axis Title', type: 'text', default: 'Wavenumber' },
     ],
-    NORMALIZE: [
+    'preprocess.normalize': [
       { name: 'method', label: 'Method', type: 'select', options: normalizeMethodOptions.map(m => ({ label: m, value: m })) },
     ],
-    BASELINE: [
+    'baseline.penalized_ls': [
       { name: 'lam', label: 'Lambda (λ)', type: 'number', min: 1000, max: 1000000, step: 1000, default: 100000 },
       { name: 'p', label: 'Asymmetry (p)', type: 'number', min: 0.001, max: 0.1, step: 0.001, default: 0.001 },
     ],
-    SMOOTH: [
+    'preprocess.smooth': [
       { name: 'window', label: 'Window Size', type: 'number', min: 5, max: 51, step: 2, default: 11 },
       { name: 'poly', label: 'Polynomial Order', type: 'number', min: 1, max: 5, step: 1, default: 2 },
     ],
-    PCA: [
+    'model.pca': [
       { name: 'n_components', label: 'Number of Components', type: 'text', default: "5", description: "Number of components: integer (e.g., '5'), 'mle' (auto-select via Maximum Likelihood), or float 0-1 (e.g., '0.95' for 95% variance)" },
       { name: 'standardized', label: 'Standardize (mean center + unit variance)', type: 'boolean', default: false },
       { name: 'scaled', label: 'Scale (unit variance)', type: 'boolean', default: false },
     ],
-    PLS: [
+    'model.pls': [
       { name: 'n_components', label: 'Number of Components', type: 'number', min: 1, max: 15, step: 1, default: 3 },
     ],
-    MCR: [
+    'model.mcr_als': [
       { name: 'n_components', label: 'Number of Components', type: 'number', min: 1, max: 10, step: 1, default: 3 },
     ],
-    STATS: [
+    'stats.summary': [
       { name: 'max_samples', label: 'Max Samples', type: 'number', min: 10, max: 500, step: 10, default: 50 },
     ],
-    CONTOUR_PLOT: [
+    'output.contour': [
       { name: 'colorscale', label: 'Color Scale', type: 'select', options: colorscaleOptions.map(c => ({ label: c, value: c })) },
       { name: 'plot_type', label: 'Plot Type', type: 'select', options: contourPlotTypeOptions.map(t => ({ label: t, value: t })) },
       { name: 'reverse_x', label: 'Reverse X-axis', type: 'boolean', default: true },
       { name: 'transpose', label: 'Transpose Data', type: 'boolean', default: false },
     ],
-    EXPORT: [
+    'output.export': [
       { name: 'filename', label: 'Filename', type: 'text', default: 'output.csv' },
     ],
   };
 
-  return definitions[legacyType] || definitions[nodeType] || [];
+  return definitions[nodeType] || [];
 };
 
 // Listen for storage changes from the detail view (when user saves)

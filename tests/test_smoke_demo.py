@@ -243,8 +243,8 @@ class TestWorkflowExecute:
         node = WorkflowNode(
             workflow_id=wf.id,
             node_id="snv_1",
-            node_type="normalize.snv",
-            parameters={},
+            node_type="preprocess.normalize",
+            parameters={"method": "snv"},
             status="ready",
         )
         smoke_session.add(node)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-__version__ = "1.4.1"
+__version__ = "0.1.5"
 
 from spectra_sherpa.app.lib.adapters.numpy_adapter import from_numpy, to_numpy
 from spectra_sherpa.app.lib.axes import (

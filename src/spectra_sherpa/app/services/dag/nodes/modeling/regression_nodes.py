@@ -146,14 +146,12 @@ class PCRNode(Node):
 
         X_ds = bind_X(
             X,
-            kwargs,
             missing_message="Missing required input: X (spectra)",
             dataset_error_message="X must be an dataset object",
             allow_array=True,
         )
         y_value = bind_y(
             y,
-            kwargs,
             X=X_ds,
             required=True,
             infer_from_X=True,

@@ -224,7 +224,7 @@ class TestWorkflowContextNodeDomain:
 
         node = WorkflowContextNode(
             node_id="n1",
-            node_type="normalize.snv",
+            node_type="preprocess.normalize",
             domain_technique="NIR",
             processing_effects=["normalized"],
         )
@@ -302,7 +302,7 @@ class TestNodePolicy:
         """SNV node is tagged as safe for auto-apply."""
         from spectra_sherpa.app.services.dag.node_base import node_registry
 
-        meta = node_registry.get_metadata("normalize.snv")
+        meta = node_registry.get_metadata("preprocess.normalize")
         assert meta.policy is not None
         assert meta.policy.safe_for_auto_apply is True
         assert meta.policy.requires_human_review is False

@@ -217,6 +217,17 @@ class TestCompatibility:
         )
         assert ok is True
 
+    def test_any_wildcard_accepts_all(self, registry: TypeRegistry):
+        """Any target accepts any source type."""
+        for source in [
+            "spectrasherpa://types/ScoreMatrix/1.0",
+            "spectrasherpa://types/SpectralDataset/1.0",
+            "spectrasherpa://types/FittedModel/1.0",
+            "spectrasherpa://types/Scalar/1.0",
+        ]:
+            ok, reason = registry.is_compatible(source, "spectrasherpa://types/Any/1.0")
+            assert ok is True, f"Expected {source} → Any to be compatible, got: {reason}"
+
     def test_unresolvable_source(self, registry: TypeRegistry):
         ok, reason = registry.is_compatible(
             "spectrasherpa://types/NonExistent/1.0",

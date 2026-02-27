@@ -15,7 +15,6 @@ from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, co
 from ...io_contracts import (
     bind_X,
     bind_y,
-    resolve_legacy_input,
     to_numpy_1d,
     to_numpy_2d,
 )
@@ -156,14 +155,12 @@ class SIMCANode(Node):
 
         X_ds = bind_X(
             X,
-            kwargs,
             missing_message="Missing required input: X (features)",
             dataset_error_message="X must be an dataset object",
             allow_array=False,
         )
         y = bind_y(
             y,
-            kwargs,
             X=X_ds,
             required=True,
             infer_from_X=True,
@@ -326,7 +323,7 @@ class SIMCANode(Node):
         logger.debug("Visualization: projecting all samples into class '%s' PC space", first_class)
 
         # Create serializable version of class models (exclude PCA objects)
-        # CRITICAL: Include class_mean for projecting new samples in SIMCAPredictNode
+        # CRITICAL: Include class_mean for projecting new samples in prediction
         serializable_models = {
             str(cls): {
                 "scores": model["scores"].tolist() if hasattr(model["scores"], "tolist") else model["scores"],
@@ -401,184 +398,4 @@ class SIMCANode(Node):
             "default": scores_dataset,  # NDDataset: viz scores + sample labels (y) + PC coords (x)
             "model": serializable_models,  # Model port: class models dict for SIMCA Predict
             "plots": plots,  # Pre-built Plotly traces (legitimate visualization output)
-        }
-
-
-class SIMCAPredictNode(Node):
-    """
-    Apply trained SIMCA model to classify new samples.
-
-    Takes new spectral data and a trained SIMCA model, returns predicted
-    class labels and distances. SIMCA classification is based on:
-    1. Projecting new samples onto each class's PCA model (after centering with class mean)
-    2. Calculating T² (distance in model space) and Q (residual distance) for each class
-    3. Classifying to the class with minimum normalized distance
-
-    CRITICAL: Requires class_mean from training for proper projection of new samples.
-    """
-
-    metadata = NodeMetadata(
-        node_type="classification.simca_predict",
-        category="classification",
-        label="Apply SIMCA Model",
-        description="Apply trained SIMCA model to classify new data",
-        parameters=[],
-        input_ports=[
-            PortMetadata(
-                name="X_new",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
-                required=True,
-                label="New Spectra",
-                description="New spectral data to classify",
-            ),
-            PortMetadata(
-                name="model",
-                type_ref="spectrasherpa://types/ClassificationModel/1.0",
-                required=True,
-                label="SIMCA Model",
-                description="Trained SIMCA model from training node",
-            ),
-        ],
-        output_ports=[
-            PortMetadata(
-                name="y_pred",
-                type_ref="spectrasherpa://types/Categorical/1.0",
-                required=True,
-                label="Predicted Classes",
-                description="Predicted class labels",
-            ),
-            PortMetadata(
-                name="distances",
-                type_ref="spectrasherpa://types/Array1D/1.0",
-                required=True,
-                label="Class Distances",
-                description="Normalized distances to each class (T²/T²_lim + Q/Q_lim)",
-            ),
-        ],
-        input_types=["NDDataset", "dict"],
-        output_type="dict",
-    )
-
-    async def execute(self, X_new: Any = None, model: Any = None, **kwargs: Any) -> dict[str, Any]:
-        """
-        Apply SIMCA model to new data.
-
-        Args:
-            X_new: New spectral data (NDDataset or array)
-            model: Trained SIMCA model dict from training node
-
-        Returns:
-            Dict with predicted classes and distances to each class
-        """
-        X_new = resolve_legacy_input(X_new, kwargs, "input_0")
-        model = resolve_legacy_input(model, kwargs, "input_1")
-
-        if X_new is None:
-            raise ValueError("Missing required input: X_new (new spectra)")
-        if model is None:
-            raise ValueError("Missing required input: model (trained SIMCA model)")
-
-        # Extract model components from result dict
-        if not isinstance(model, dict):
-            raise ValueError("Model must be a dict containing SIMCA model components")
-
-        class_models = model.get("class_models")
-        classes = model.get("classes", [])
-        T2_limits = model.get("T2_limits", {})
-        Q_limits = model.get("Q_limits", {})
-
-        if class_models is None:
-            raise ValueError("Model dict does not contain 'class_models' key")
-        if not classes:
-            raise ValueError("Model dict does not contain 'classes' list")
-
-        X_new_ds = bind_X(
-            X_new,
-            kwargs,
-            missing_message="Missing required input: X_new (new spectra)",
-            dataset_error_message="X_new must be an dataset object",
-            allow_array=True,
-        )
-        X_array = to_numpy_2d(X_new_ds, name="X_new", dtype=np.float64)
-
-        n_samples = X_array.shape[0]
-        predictions = []
-        all_distances = []
-
-        # Classify each sample
-        for i in range(n_samples):
-            sample = X_array[i]
-            sample_distances = {}
-
-            for cls in classes:
-                cls_str = str(cls)
-                class_model = class_models.get(cls_str)
-
-                if class_model is None:
-                    raise ValueError(f"Missing model for class '{cls}'")
-
-                # Get model components
-                loadings = np.array(class_model["loadings"])
-                eigenvalues = np.array(class_model["eigenvalues"])
-
-                # CRITICAL: Get class mean for proper centering
-                class_mean = class_model.get("class_mean")
-                if class_mean is None:
-                    raise ValueError(
-                        f"Class model for '{cls}' is missing 'class_mean'. "
-                        f"The SIMCA model may have been trained with an older version. "
-                        f"Please retrain the model."
-                    )
-                class_mean = np.array(class_mean)
-
-                # Get limits (convert string keys if needed)
-                T2_limit = T2_limits.get(cls_str, T2_limits.get(cls, 1.0))
-                Q_limit = Q_limits.get(cls_str, Q_limits.get(cls, 1.0))
-
-                # Ensure limits are positive
-                T2_limit = max(float(T2_limit), 1e-10)
-                Q_limit = max(float(Q_limit), 1e-10)
-
-                # Center sample using class mean
-                centered_sample = sample - class_mean
-
-                # Project onto class model: scores = centered_sample @ loadings.T
-                # loadings shape: (n_components, n_features)
-                if loadings.ndim == 1:
-                    loadings = loadings.reshape(1, -1)
-                scores = centered_sample @ loadings.T  # shape: (n_components,)
-
-                # Ensure eigenvalues match component count
-                n_components = loadings.shape[0]
-                eigenvalues = np.maximum(eigenvalues[:n_components], 1e-10)
-
-                # Calculate T² (Hotelling's T²)
-                T2 = np.sum((scores**2) / eigenvalues)
-
-                # Calculate Q (SPE - Squared Prediction Error)
-                reconstructed = scores @ loadings  # shape: (n_features,)
-                residual = centered_sample - reconstructed
-                Q = np.sum(residual**2)
-
-                # Combined normalized distance
-                distance = (T2 / T2_limit) + (Q / Q_limit)
-                sample_distances[cls_str] = distance
-
-            # Classify to closest class (minimum distance)
-            closest_class = min(sample_distances, key=sample_distances.get)
-            predictions.append(closest_class)
-            all_distances.append(sample_distances)
-
-        # Convert predictions to match original class type if possible
-        try:
-            if all(isinstance(c, (int, np.integer)) for c in classes):
-                predictions = [int(p) for p in predictions]
-        except (ValueError, TypeError):
-            pass
-
-        logger.debug("Classified %d samples into %d classes", n_samples, len(set(predictions)))
-
-        return {
-            "y_pred": predictions,
-            "distances": all_distances,
         }

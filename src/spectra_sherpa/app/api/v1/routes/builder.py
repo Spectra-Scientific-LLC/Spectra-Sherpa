@@ -300,9 +300,9 @@ async def blend_spectra(
     await _validate_payload_file_paths(payload.species, session, current_user)
 
     try:
-        result = service.blend(
+        result = service.synthesize_spectra(
             species=[item.model_dump() for item in payload.species],
-            concentration_timeseries=payload.concentration_timeseries,
+            concentrations=payload.concentration_timeseries,
             settings_dict=payload.settings,
             pathlength_m=payload.pathlength_m,
         )

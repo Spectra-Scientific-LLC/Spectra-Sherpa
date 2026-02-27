@@ -15,7 +15,6 @@ from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, co
 from ...io_contracts import (
     bind_X,
     bind_y,
-    resolve_legacy_input,
     to_numpy_2d,
 )
 from ...node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
@@ -152,14 +151,12 @@ class PLSDANode(Node):
 
         X_ds = bind_X(
             X,
-            kwargs,
             missing_message="Missing required input: X (spectra)",
             dataset_error_message="X must be an dataset object",
             allow_array=False,
         )
         y = bind_y(
             y,
-            kwargs,
             X=X_ds,
             required=True,
             infer_from_X=True,
@@ -903,130 +900,4 @@ class PLSDANode(Node):
             "name": name,
             "line": line_style,
             "showlegend": False,
-        }
-
-
-class PLSDAPredictNode(Node):
-    """
-    Apply trained PLS-DA model to predict class labels for new samples.
-
-    Takes new spectral data and a trained PLS-DA model, returns predicted
-    class labels and probabilities. Enables train/test workflows and
-    production inference.
-    """
-
-    metadata = NodeMetadata(
-        node_type="classification.plsda_predict",
-        category="classification",
-        label="Apply PLS-DA Model",
-        description="Apply trained PLS-DA model to classify new spectra",
-        parameters=[],
-        input_ports=[
-            PortMetadata(
-                name="X_new",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
-                required=True,
-                label="New Spectra",
-                description="New spectral data to classify",
-            ),
-            PortMetadata(
-                name="model",
-                type_ref="spectrasherpa://types/ClassificationModel/1.0",
-                required=True,
-                label="PLS-DA Model",
-                description="Trained PLS-DA model from training node",
-            ),
-        ],
-        output_ports=[
-            PortMetadata(
-                name="y_pred",
-                type_ref="spectrasherpa://types/Categorical/1.0",
-                required=True,
-                label="Predicted Classes",
-                description="Predicted class labels",
-            ),
-            PortMetadata(
-                name="y_prob",
-                type_ref="spectrasherpa://types/Array2D/1.0",
-                required=True,
-                label="Class Probabilities",
-                description="Predicted class probabilities",
-            ),
-        ],
-        input_types=["NDDataset", "dict"],
-        output_type="dict",
-        requires_scp=True,
-        help_url="https://www.spectrochempy.fr/reference/generated/spectrochempy.PLSRegression.html",
-    )
-
-    async def execute(self, X_new: Any = None, model: Any = None, **kwargs: Any) -> dict[str, Any]:
-        """
-        Apply PLS-DA model to new data.
-
-        Args:
-            X_new: New spectral data (NDDataset or array)
-            model: Trained PLS-DA model dict from training node
-
-        Returns:
-            Dict with predicted classes and probabilities
-        """
-        X_new = resolve_legacy_input(X_new, kwargs, "input_0")
-        model = resolve_legacy_input(model, kwargs, "input_1")
-
-        if X_new is None:
-            raise ValueError("Missing required input: X_new (new spectra)")
-        if model is None:
-            raise ValueError("Missing required input: model (trained PLS-DA model)")
-
-        # Extract model components from result dict
-        if isinstance(model, dict):
-            pls_model = model.get("model")
-            classes = np.array(model.get("classes", []))
-            n_classes = model.get("n_classes", 2)
-        else:
-            raise ValueError("Model must be a dict containing PLS-DA model and metadata")
-
-        if pls_model is None:
-            raise ValueError("Model dict does not contain 'model' key with trained PLS-DA model")
-
-        X_new_ds = bind_X(
-            X_new,
-            kwargs,
-            missing_message="Missing required input: X_new (new spectra)",
-            dataset_error_message="X_new must be an dataset object",
-            allow_array=True,
-        )
-        X_array = to_numpy_2d(X_new_ds, name="X_new", dtype=np.float64)
-
-        # Make predictions
-        # PLS-DA returns continuous predictions for each class (dummy variables)
-        # SpectroChemPy PLS model requires NDDataset input
-        from scipy.special import softmax
-
-        X_dataset = scp.NDDataset(X_array)
-        Y_pred_raw = pls_model.predict(X_dataset)
-        Y_pred_raw_np = to_numpy_2d(Y_pred_raw, name="Y_pred_raw", dtype=np.float64)
-
-        # Validate prediction shape before argmax
-        n_classes = len(classes)
-        if Y_pred_raw_np.ndim != 2:
-            raise ValueError(
-                f"PLS-DA predict returned unexpected shape: {Y_pred_raw_np.shape}. "
-                f"Expected 2D array with shape (n_samples, n_classes)."
-            )
-        if Y_pred_raw_np.shape[1] != n_classes:
-            raise ValueError(
-                f"PLS-DA predict returned {Y_pred_raw_np.shape[1]} columns but expected {n_classes} classes. "
-                f"Model may be incompatible with the provided class labels."
-            )
-
-        # CRITICAL: Apply softmax to convert raw PLS outputs to proper probabilities
-        Y_pred_prob = softmax(Y_pred_raw_np, axis=1)
-
-        # Convert to class labels (argmax of probabilities)
-        y_pred = classes[np.argmax(Y_pred_prob, axis=1)]
-
-        return {
-            "y_pred": y_pred.tolist(),
-            "y_prob": Y_pred_prob.tolist(),
         }

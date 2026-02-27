@@ -28,11 +28,10 @@ from ..io_contracts import (
     bind_y,
     build_dataset_like,
     coerce_to_sherpa,
-    resolve_legacy_input,
     to_numpy_1d,
     to_numpy_2d,
 )
-from ..node_base import Node, NodeMetadata, NodeParameter, register_node
+from ..node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
 from ..spec_nodes import TransformSpec, TransformSpecNode
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -92,6 +91,22 @@ class LinearCalibrationNode(Node):
             ),
         ],
         input_types=["NDDataset", "array"],  # spectrum, concentrations
+        input_ports=[
+            PortMetadata(
+                name="spectrum",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Spectrum",
+                description="Pure component spectrum with calibration metadata",
+            ),
+            PortMetadata(
+                name="concentrations",
+                type_ref="spectrasherpa://types/Any/1.0",
+                required=True,
+                label="Concentrations",
+                description="Concentration values for each timepoint",
+            ),
+        ],
         output_type="NDDataset",
     )
 
@@ -122,13 +137,11 @@ class LinearCalibrationNode(Node):
 
         spectrum_ds = bind_X(
             spectrum,
-            kwargs,
             missing_message="Missing required input: spectrum",
             dataset_error_message="spectrum must be an dataset object",
         )
         concentrations_bound = bind_y(
             concentrations,
-            kwargs,
             infer_from_X=False,
             required=True,
             dataset_as_data=True,
@@ -259,6 +272,22 @@ class SaturationModelNode(Node):
             ),
         ],
         input_types=["NDDataset", "array"],  # spectrum, concentrations
+        input_ports=[
+            PortMetadata(
+                name="spectrum",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Spectrum",
+                description="Pure component spectrum with calibration metadata",
+            ),
+            PortMetadata(
+                name="concentrations",
+                type_ref="spectrasherpa://types/Any/1.0",
+                required=True,
+                label="Concentrations",
+                description="Concentration values for each timepoint",
+            ),
+        ],
         output_type="NDDataset",
     )
 
@@ -290,13 +319,11 @@ class SaturationModelNode(Node):
 
         spectrum_ds = bind_X(
             spectrum,
-            kwargs,
             missing_message="Missing required input: spectrum",
             dataset_error_message="spectrum must be an dataset object",
         )
         concentrations_bound = bind_y(
             concentrations,
-            kwargs,
             infer_from_X=False,
             required=True,
             dataset_as_data=True,
@@ -424,6 +451,15 @@ class SystemSaturationNode(Node):
             ),
         ],
         input_types=["NDDataset"],
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Blended absorbance spectra to saturate",
+            ),
+        ],
         output_type="NDDataset",
     )
 
@@ -443,10 +479,8 @@ class SystemSaturationNode(Node):
         """
         from spectra_sherpa.app.lib.blending import apply_system_saturation
 
-        input_data = resolve_legacy_input(input_data, kwargs, "default")
         input_ds = bind_X(
             input_data,
-            kwargs,
             missing_message="Missing required input: input_data",
             dataset_error_message="input_data must be an dataset object",
         )
@@ -511,6 +545,7 @@ class CatmullRomCurveNode(Node):
             ),
         ],
         input_types=[],  # No inputs - this is a generator
+        input_ports=[],
         output_type="array",
     )
 
@@ -579,6 +614,29 @@ class HybridSelectorNode(Node):
             ),
         ],
         input_types=["NDDataset", "NDDataset", "array"],  # linear, saturation, concentrations
+        input_ports=[
+            PortMetadata(
+                name="linear_result",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Linear Result",
+                description="Output from LinearCalibrationNode",
+            ),
+            PortMetadata(
+                name="saturation_result",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Saturation Result",
+                description="Output from SaturationModelNode",
+            ),
+            PortMetadata(
+                name="concentrations",
+                type_ref="spectrasherpa://types/Any/1.0",
+                required=True,
+                label="Concentrations",
+                description="Original concentration values",
+            ),
+        ],
         output_type="NDDataset",
     )
 
@@ -607,8 +665,6 @@ class HybridSelectorNode(Node):
             Hybrid-selected absorbance spectra
         """
 
-        linear_result = resolve_legacy_input(linear_result, kwargs, "input_0")
-        saturation_result = resolve_legacy_input(saturation_result, kwargs, "input_1")
         linear_ds = coerce_to_sherpa(
             linear_result,
             input_name="linear_result",
@@ -722,6 +778,7 @@ class ConcentrationCurveNode(Node):
             ),
         ],
         input_types=[],  # No inputs - this is a generator
+        input_ports=[],
         output_type="array",
     )
 
@@ -787,17 +844,27 @@ class GoldenGridAlignNode(Node):
             ),
         ],
         input_types=["NDDataset"],  # Variable number of inputs
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Spectra to align (multiple edges accepted)",
+                variadic=True,
+            ),
+        ],
         output_type="NDDataset",
     )
 
-    async def execute(self, *input_data: Any, **kwargs) -> List[NDDataset]:
+    async def execute(self, input_data: Any, **kwargs) -> List[NDDataset]:
         """
         Align multiple spectra to a common golden grid.
 
         Parameters
         ----------
-        *input_data : NDDataset
-            Variable number of input spectra
+        input_data : list[NDDataset]
+            List of input spectra (multiple edges to default port)
 
         Returns
         -------
@@ -903,6 +970,15 @@ class NoiseInjectionNode(TransformSpecNode):
             ),
         ],
         input_types=["NDDataset"],
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Spectral data to process",
+            ),
+        ],
         output_type="NDDataset",
     )
 

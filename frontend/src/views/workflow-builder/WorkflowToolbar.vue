@@ -317,7 +317,7 @@ onMounted(async () => {
   }
 });
 
-// Icon mappings by node_type (from backend)
+// Icon mappings by canonical node_type
 const NODE_ICONS: Record<string, string> = {
   // Data sources
   'data.source': '📊',
@@ -330,33 +330,18 @@ const NODE_ICONS: Record<string, string> = {
   'synthesis.species': '🧬',
   'synthesis.blend': '🔀',
   'synthesis.merge': '📚',
-  // Preprocessing (consolidated)
+  // Preprocessing
   'preprocess.smooth': '〰️',
   'preprocess.derivative': '∂',
   'preprocess.normalize': '⚖️',
   'preprocess.scale': '📏',
-  // Preprocessing (individual)
   'baseline.penalized_ls': '📉',
   'baseline.rubberband': '📉',
-  'smooth.savitzky_golay': '〰️',
-  'smooth.whittaker': '〰️',
-  'smooth.gaussian': '〰️',
-  'preprocess.norris_williams': '∂',
-  'normalize.snv': '⚖️',
-  'normalize.scale': '📏',
-  'normalize.msc': '⚖️',
-  'derivative.first': '∂',
-  'derivative.second': '∂²',
   'preprocess.cosmic_ray': '✨',
   'preprocess.clip_range': '✂️',
   'preprocess.clip_floor': '⬆️',
   'preprocess.wavenumber_align': '⚙️',
-  'preprocess.scale_max': '📏',
-  'preprocess.center_mean': '⊖',
-  'preprocess.pareto_scaling': '📊',
   'preprocess.osc': '⊥',
-  'preprocess.autoscaling': '⚡',
-  'preprocess.sg_derivative': '∂⁓',
   'preprocess.emsc': '📐',
   'time_series.moving_window': '🕒',
   'time_series.trend_removal': '📉',
@@ -453,14 +438,13 @@ const nodesByCategory = computed(() => {
     groups[category] = {};
   }
 
-  // Populate from node library — accept ALL categories, not just built-in
+  // Populate from node library
   workflowStore.nodeLibrary.forEach((metadata, nodeType) => {
     const category = metadata.category;
     if (!groups[category]) {
       groups[category] = {};
     }
-    const normalizedType = workflowStore.normalizeNodeType(nodeType);
-    groups[category][normalizedType] = metadataToConfig(metadata);
+    groups[category][metadata.node_type] = metadataToConfig(metadata);
   });
 
   return groups;
@@ -481,150 +465,17 @@ const extraCategories = computed(() => {
   return extras;
 });
 
-// Fallback to hardcoded nodes if backend library hasn't loaded yet
-// Data Source Nodes (Blue)
-const DATA_NODES: Record<string, NodeConfig> = {
-  'data.source': { label: 'Data Source', icon: '📊', colorClass: 'node-data', description: 'Load from experiments or files' },
-  'data.my_dataset': { label: 'My Dataset', icon: '📁', colorClass: 'node-data', description: 'Load from your dataset collection' },
-  'data.file_load': { label: 'File Load', icon: '📂', colorClass: 'node-data', description: 'Load from local files' },
-  'data.nist_library': { label: 'NIST Library', icon: '📚', colorClass: 'node-data', description: 'Load from NIST spectral library' },
-  'data.synthetic_curve': { label: 'Synthetic Curve', icon: '📈', colorClass: 'node-data', description: 'Generate concentration curve' },
-  'data.train_test_split': { label: 'Train/Test Split', icon: '✂️', colorClass: 'node-data', description: 'Split data into training and test sets' },
-};
-
-// Synthesis/Blend Nodes (Cyan)
-const SYNTHESIS_NODES: Record<string, NodeConfig> = {
-  'synthesis.species': { label: 'Species', icon: '🧬', colorClass: 'node-synthesis', description: 'Mark spectrum as blend species' },
-  'synthesis.blend': { label: 'Blend', icon: '🔀', colorClass: 'node-synthesis', description: 'Blend species into mixture' },
-  'synthesis.merge': { label: 'Merge Spectra', icon: '📚', colorClass: 'node-synthesis', description: 'Stack multiple spectra' },
-};
-
-// Preprocessing Nodes (Green)
-const PREPROCESS_NODES: Record<string, NodeConfig> = {
-  'preprocess.smooth': { label: 'Smooth', icon: '〰️', colorClass: 'node-preprocess', description: 'Smooth spectra (Savitzky-Golay, Whittaker, Gaussian)' },
-  'preprocess.derivative': { label: 'Derivative', icon: '∂', colorClass: 'node-preprocess', description: 'Compute spectral derivatives (SG, Norris-Williams)' },
-  'preprocess.normalize': { label: 'Normalize', icon: '⚖️', colorClass: 'node-preprocess', description: 'Normalize spectra (SNV, MSC, Scale)' },
-  'preprocess.scale': { label: 'Scale / Center', icon: '📏', colorClass: 'node-preprocess', description: 'Scale or center spectra (Mean Center, Autoscale, Pareto, Max)' },
-  'baseline.penalized_ls': { label: 'Baseline (Penalized LS)', icon: '📉', colorClass: 'node-preprocess', description: 'Penalized LS baseline (ALS/ArPLS/AirPLS)' },
-  'baseline.rubberband': { label: 'Baseline (Rubberband)', icon: '📉', colorClass: 'node-preprocess', description: 'Rubberband baseline correction' },
-  'preprocess.emsc': { label: 'EMSC', icon: '📐', colorClass: 'node-preprocess', description: 'Extended MSC with polynomial baseline' },
-  'preprocess.osc': { label: 'OSC Filter', icon: '⊥', colorClass: 'node-preprocess', description: 'Orthogonal signal correction' },
-  'preprocess.cosmic_ray': { label: 'Cosmic Ray', icon: '✨', colorClass: 'node-preprocess', description: 'Remove cosmic ray spikes' },
-  'preprocess.clip_range': { label: 'Clip Range', icon: '✂️', colorClass: 'node-preprocess', description: 'Limit wavenumber range' },
-  'preprocess.clip_floor': { label: 'Clip Floor', icon: '⬆️', colorClass: 'node-preprocess', description: 'Remove negative values' },
-  'preprocess.wavenumber_align': { label: 'WN Align', icon: '⚙️', colorClass: 'node-preprocess', description: 'Align to common grid' },
-  'time_series.moving_window': { label: 'Moving Window', icon: '🕒', colorClass: 'node-preprocess', description: 'Apply moving window smoothing' },
-  'time_series.trend_removal': { label: 'Trend Removal', icon: '📉', colorClass: 'node-preprocess', description: 'Remove trends and drift' },
-};
-
-// Exploratory Nodes (Purple)
-const EXPLORATORY_NODES: Record<string, NodeConfig> = {
-  'model.pca': { label: 'PCA', icon: '🔀', colorClass: 'node-exploratory', description: 'Principal Component Analysis' },
-  'model.pca_transform': { label: 'Apply PCA', icon: '⚙️', colorClass: 'node-exploratory', description: 'Transform new data using PCA model' },
-  'model.mcr_als': { label: 'MCR-ALS', icon: '🧩', colorClass: 'node-exploratory', description: 'Multivariate Curve Resolution' },
-  'model.simplisma': { label: 'SIMPLISMA', icon: '🔎', colorClass: 'node-exploratory', description: 'Pure variable selection' },
-  'model.efa': { label: 'EFA', icon: '🔬', colorClass: 'node-exploratory', description: 'Evolving Factor Analysis' },
-  'model.nmf': { label: 'NMF', icon: '📊', colorClass: 'node-exploratory', description: 'Non-negative Matrix Factorization' },
-  'model.ica': { label: 'ICA', icon: '⚡', colorClass: 'node-exploratory', description: 'Independent Component Analysis' },
-  'analysis.peak_finding': { label: 'Peak Finding', icon: '⛰️', colorClass: 'node-exploratory', description: 'Find peaks in spectra' },
-};
-
-// Regression Nodes (Indigo)
-const REGRESSION_NODES: Record<string, NodeConfig> = {
-  'model.pls': { label: 'PLS', icon: '📈', colorClass: 'node-regression', description: 'Partial Least Squares regression' },
-  'model.pls_predict': { label: 'Apply PLS', icon: '🎯', colorClass: 'node-regression', description: 'Predict using trained PLS model' },
-  'model.pcr': { label: 'PCR', icon: '🧮', colorClass: 'node-regression', description: 'Principal Component Regression' },
-  'model.svr': { label: 'SVR', icon: '🧲', colorClass: 'node-regression', description: 'Support Vector Regression' },
-  'model.linear_regression': { label: 'Linear Regression', icon: '📉', colorClass: 'node-regression', description: 'Simple linear regression' },
-  'model.load_apply': { label: 'Load & Apply Model', icon: '📦', colorClass: 'node-regression', description: 'Load a saved model and apply to new data' },
-};
-
-// Clustering Nodes (Pink)
-const CLUSTERING_NODES: Record<string, NodeConfig> = {
-  'model.kmeans': { label: 'K-Means', icon: '🧭', colorClass: 'node-clustering', description: 'K-Means clustering' },
-  'model.dbscan': { label: 'DBSCAN', icon: '🫧', colorClass: 'node-clustering', description: 'Density-based clustering' },
-  'model.hca': { label: 'HCA', icon: '🌳', colorClass: 'node-clustering', description: 'Hierarchical clustering' },
-};
-
-// Validation Nodes (Yellow)
-const VALIDATION_NODES: Record<string, NodeConfig> = {
-  'diagnostics.cross_validation': { label: 'Cross-Validation', icon: '🔄', colorClass: 'node-validation', description: 'Calculate CV metrics' },
-  'diagnostics.outliers': { label: 'Outlier Detection', icon: '🚨', colorClass: 'node-validation', description: 'Detect outliers (Hotelling T², Q)' },
-  'stats.summary': { label: 'Statistics', icon: '📊', colorClass: 'node-validation', description: 'Compute descriptive statistics' },
-};
-
-// Classification Nodes (Orange)
-const CLASSIFICATION_NODES: Record<string, NodeConfig> = {
-  'classification.plsda': { label: 'PLS-DA', icon: '🎯', colorClass: 'node-classify', description: 'Partial Least Squares Discriminant Analysis' },
-  'classification.knn': { label: 'KNN', icon: '👥', colorClass: 'node-classify', description: 'K-Nearest Neighbors classification' },
-  'classification.simca': { label: 'SIMCA', icon: '🎲', colorClass: 'node-classify', description: 'Soft Independent Modeling of Class Analogy' },
-  'classification.predict': { label: 'Apply Classifier', icon: '🔮', colorClass: 'node-classify', description: 'Apply trained classifier (PLS-DA, KNN, or SIMCA) to new data' },
-};
-
-// Output Nodes (Gray)
-const OUTPUT_NODES: Record<string, NodeConfig> = {
-  'output.plot': { label: 'Scatter Plot', icon: '📈', colorClass: 'node-visualize', description: 'Create scatter plot visualization' },
-  'output.contour': { label: 'Contour Plot', icon: '🗺️', colorClass: 'node-visualize', description: 'Create 2D heatmap/contour visualization' },
-  'output.data_table': { label: 'Data Table', icon: '📋', colorClass: 'node-visualize', description: 'Interactive data table with sorting' },
-  'output.export': { label: 'Export', icon: '💾', colorClass: 'node-export', description: 'Export data to file' },
-};
-
-// Deploy Nodes (Teal)
-const DEPLOY_NODES: Record<string, NodeConfig> = {
-  'deploy.input': { label: 'Deploy Input', icon: '📥', colorClass: 'node-export', description: 'Injects external data into prediction pipelines' },
-  'deploy.output': { label: 'Deploy Output', icon: '📤', colorClass: 'node-export', description: 'Formats results for headless prediction server' },
-};
-
-// Computed properties with dynamic data (fallback to hardcoded if library not loaded)
-const dataNodes = computed(() => {
-  const dynamic = nodesByCategory.value.data;
-  return Object.keys(dynamic).length > 0 ? dynamic : DATA_NODES;
-});
-
-const synthesisNodes = computed(() => {
-  const dynamic = nodesByCategory.value.synthesis;
-  return Object.keys(dynamic).length > 0 ? dynamic : SYNTHESIS_NODES;
-});
-
-const preprocessNodes = computed(() => {
-  const dynamic = nodesByCategory.value.preprocessing;
-  return Object.keys(dynamic).length > 0 ? dynamic : PREPROCESS_NODES;
-});
-
-const exploratoryNodes = computed(() => {
-  const dynamic = nodesByCategory.value.exploratory;
-  return Object.keys(dynamic).length > 0 ? dynamic : EXPLORATORY_NODES;
-});
-
-const regressionNodes = computed(() => {
-  const dynamic = nodesByCategory.value.regression;
-  return Object.keys(dynamic).length > 0 ? dynamic : REGRESSION_NODES;
-});
-
-const clusteringNodes = computed(() => {
-  const dynamic = nodesByCategory.value.clustering;
-  return Object.keys(dynamic).length > 0 ? dynamic : CLUSTERING_NODES;
-});
-
-const validationNodes = computed(() => {
-  const dynamic = nodesByCategory.value.validation;
-  return Object.keys(dynamic).length > 0 ? dynamic : VALIDATION_NODES;
-});
-
-const classificationNodes = computed(() => {
-  const dynamic = nodesByCategory.value.classification;
-  return Object.keys(dynamic).length > 0 ? dynamic : CLASSIFICATION_NODES;
-});
-
-const outputNodes = computed(() => {
-  const dynamic = nodesByCategory.value.output;
-  return Object.keys(dynamic).length > 0 ? dynamic : OUTPUT_NODES;
-});
-
-const deployNodes = computed(() => {
-  const dynamic = nodesByCategory.value.deploy;
-  return Object.keys(dynamic).length > 0 ? dynamic : DEPLOY_NODES;
-});
+// Direct access to backend-populated category groups (no fallbacks)
+const dataNodes = computed(() => nodesByCategory.value.data || {});
+const synthesisNodes = computed(() => nodesByCategory.value.synthesis || {});
+const preprocessNodes = computed(() => nodesByCategory.value.preprocessing || {});
+const exploratoryNodes = computed(() => nodesByCategory.value.exploratory || {});
+const regressionNodes = computed(() => nodesByCategory.value.regression || {});
+const clusteringNodes = computed(() => nodesByCategory.value.clustering || {});
+const validationNodes = computed(() => nodesByCategory.value.validation || {});
+const classificationNodes = computed(() => nodesByCategory.value.classification || {});
+const outputNodes = computed(() => nodesByCategory.value.output || {});
+const deployNodes = computed(() => nodesByCategory.value.deploy || {});
 
 // Custom algo nodes from project-scoped store
 const customAlgoNodes = computed(() => {

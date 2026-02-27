@@ -453,7 +453,7 @@ class MetadataNormalizer:
                 if isinstance(entry, dict):
                     normalized_history.append(entry)
                 elif isinstance(entry, str):
-                    normalized_history.append({"operation": entry})
+                    normalized_history.append({"op_id": entry})
                 else:
                     normalized_history.append({"raw": str(entry)})
             merged["processing_history"] = normalized_history

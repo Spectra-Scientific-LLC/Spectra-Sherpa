@@ -157,6 +157,10 @@ class TypeRegistry:
         except ValueError as exc:
             return False, f"Cannot resolve target type: {exc}"
 
+        # Any wildcard: any source → Any target is always compatible.
+        if tgt_name == "Any":
+            return True, ""
+
         # Fast-path version checks on same base type.
         if src_name == tgt_name:
             if src_name not in self._by_name:

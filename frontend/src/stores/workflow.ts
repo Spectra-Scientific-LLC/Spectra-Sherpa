@@ -29,69 +29,6 @@ export interface WorkflowEdge {
   dataType?: string | null;  // Data type flowing through edge (e.g., "dataset", "PCA")
 }
 
-// Input port definition for multi-input nodes (mirrors backend InputPort)
-export interface InputPort {
-  name: string;
-  label: string;
-  dataType: string;
-  required: boolean;
-  description?: string;
-}
-
-// DEPRECATED: Node types that have multiple named input ports
-// This is now fetched from backend metadata via getNodeMetadata().input_ports
-// Kept for backward compatibility only - will be removed in future version
-export const MULTI_INPUT_NODES: Record<string, InputPort[]> = {
-  PLS: [
-    { name: "X", label: "Spectra (X)", dataType: "dataset", required: true, description: "Spectral data matrix" },
-    { name: "y", label: "Concentrations (y)", dataType: "array", required: true, description: "Target values" },
-  ],
-  PCR: [
-    { name: "X", label: "Spectra (X)", dataType: "dataset", required: true, description: "Spectral data matrix" },
-    { name: "y", label: "Targets (y)", dataType: "array", required: true, description: "Target values" },
-  ],
-  SVR: [
-    { name: "X", label: "Spectra (X)", dataType: "dataset", required: true, description: "Spectral data matrix" },
-    { name: "y", label: "Targets (y)", dataType: "array", required: true, description: "Target values" },
-  ],
-  LINEAR_REGRESSION: [
-    { name: "X", label: "Features (X)", dataType: "array", required: true, description: "Feature matrix" },
-    { name: "y", label: "Targets (y)", dataType: "array", required: true, description: "Target values" },
-  ],
-  PLS_DA: [
-    { name: "X", label: "Spectra (X)", dataType: "dataset", required: true, description: "Spectral data matrix" },
-    { name: "y", label: "Class Labels (y)", dataType: "array", required: false, description: "Class labels for each sample" },
-  ],
-  KNN: [
-    { name: "X", label: "Features (X)", dataType: "dataset", required: true, description: "Feature matrix (spectral data or scores)" },
-    { name: "y", label: "Class Labels (y)", dataType: "array", required: false, description: "Class labels for each sample" },
-  ],
-  SIMCA: [
-    { name: "X", label: "Features (X)", dataType: "dataset", required: true, description: "Feature matrix (spectral data or scores)" },
-    { name: "y", label: "Class Labels (y)", dataType: "array", required: false, description: "Class labels for each sample" },
-  ],
-  TRAIN_TEST_SPLIT: [
-    { name: "X", label: "Input Data", dataType: "dataset", required: true, description: "Data to split" },
-    { name: "y", label: "Target Values (optional)", dataType: "array", required: false, description: "Target values for stratification" },
-  ],
-  PLS_PREDICT: [
-    { name: "X_new", label: "New Spectra", dataType: "dataset", required: true, description: "New spectral data to predict" },
-    { name: "model", label: "PLS Model", dataType: "model", required: true, description: "Trained PLS model" },
-  ],
-  PCA_TRANSFORM: [
-    { name: "X_new", label: "New Spectra", dataType: "dataset", required: true, description: "New data to transform" },
-    { name: "model", label: "PCA Model", dataType: "model", required: true, description: "Trained PCA model" },
-  ],
-  PLSDA_PREDICT: [
-    { name: "X_new", label: "New Spectra", dataType: "dataset", required: true, description: "New spectral data to classify" },
-    { name: "model", label: "PLS-DA Model", dataType: "model", required: true, description: "Trained PLS-DA model" },
-  ],
-  KNN_PREDICT: [
-    { name: "X_new", label: "New Features", dataType: "dataset", required: true, description: "New feature data to classify" },
-    { name: "model", label: "KNN Model", dataType: "model", required: true, description: "Trained KNN model" },
-  ],
-};
-
 export interface WorkflowTemplate {
   id: string;
   name: string;
@@ -113,255 +50,6 @@ interface TypeRegistryPayload {
   version: string;
   types: Record<string, TypeRegistryEntry>;
   subtypes: Record<string, string[]>;
-}
-
-// Map frontend node types to backend DAG node types
-export const NODE_TYPE_MAP: Record<string, string> = {
-  // Data source nodes
-  DATA: "data.source",
-  FILE_LOAD: "data.file_load",
-  MY_DATASET: "data.my_dataset",
-  NIST_LIBRARY: "data.nist_library",
-  SYNTHETIC_CURVE: "data.synthetic_curve",
-  TRAIN_TEST_SPLIT: "data.train_test_split",
-
-  // Preprocessing - atomic nodes (new)
-  COSMIC_RAY: "preprocess.cosmic_ray",
-  CLIP_RANGE: "preprocess.clip_range",
-  CLIP_FLOOR: "preprocess.clip_floor",
-  WAVENUMBER_ALIGN: "preprocess.wavenumber_align",
-  SCALE_MAX: "preprocess.scale_max",
-  CENTER_MEAN: "preprocess.center_mean",
-  PARETO_SCALING: "preprocess.pareto_scaling",
-  OSC: "preprocess.osc",
-  AUTOSCALING: "preprocess.autoscaling",
-  SG_DERIVATIVE: "preprocess.sg_derivative",
-  EMSC: "preprocess.emsc",
-
-  // Preprocessing - existing nodes
-  NORMALIZE: "normalize.snv",
-  SCALE: "normalize.scale",
-  BASELINE: "baseline.penalized_ls",
-  BASELINE_RB: "baseline.rubberband",
-  SMOOTH: "smooth.savitzky_golay",
-  DERIV_1: "derivative.first",
-  DERIV_2: "derivative.second",
-  DERIVATIVE_1ST: "derivative.first",  // Alias for DERIV_1
-  DERIVATIVE_2ND: "derivative.second",  // Alias for DERIV_2
-  MSC: "normalize.msc",
-  SNV: "normalize.snv",
-  MEAN_CENTER: "preprocess.center_mean",  // Alias for CENTER_MEAN
-  AUTOSCALE: "preprocess.autoscaling",  // Alias for AUTOSCALING
-  PARETO_SCALE: "preprocess.pareto_scaling",  // Alias for PARETO_SCALING
-
-  // Synthesis / Blend nodes
-  BLEND: "synthesis.blend",
-  SPECIES: "synthesis.species",
-  MERGE_SPECTRA: "synthesis.merge",
-
-  // Analysis / Model nodes
-  PCA: "model.pca",
-  PCA_TRANSFORM: "model.pca_transform",
-  PLS: "model.pls",
-  PLS_PREDICT: "model.pls_predict",
-  LINEAR_REGRESSION: "model.linear_regression",
-  MCR: "model.mcr_als",
-  EFA: "model.efa",
-  PCR: "model.pcr",
-  SVR: "model.svr",
-  KMEANS: "model.kmeans",
-  DBSCAN: "model.dbscan",
-  HCA: "model.hca",
-  PEAK: "analysis.peak_finding",
-  PEAK_FINDING: "analysis.peak_finding",  // Alias for PEAK
-
-  // Classification nodes
-  PLS_DA: "classification.plsda",
-  PLSDA_PREDICT: "classification.plsda_predict",
-  KNN: "classification.knn",
-  KNN_PREDICT: "classification.knn_predict",
-  SIMCA: "classification.simca",
-
-  // Diagnostics nodes
-  OUTLIER_DETECTION: "diagnostics.outliers",
-  CROSS_VALIDATION: "diagnostics.cross_validation",
-
-  // Time Series nodes
-  MOVING_WINDOW: "time_series.moving_window",
-  TREND_REMOVAL: "time_series.trend_removal",
-
-  // Output nodes
-  STATS: "stats.summary",
-  PLOT: "output.plot",
-  CONTOUR_PLOT: "output.contour",
-  DATA_TABLE: "output.data_table",
-  EXPORT: "output.export",
-
-  // Legacy mappings (backward compatibility)
-  COSMIC: "preprocess.cosmic_ray",
-};
-
-const LEGACY_NODE_TYPE_REVERSE_MAP: Record<string, string> = {};
-for (const [legacyType, dotType] of Object.entries(NODE_TYPE_MAP)) {
-  if (!LEGACY_NODE_TYPE_REVERSE_MAP[dotType]) {
-    LEGACY_NODE_TYPE_REVERSE_MAP[dotType] = legacyType;
-  }
-}
-
-export const normalizeNodeType = (nodeType: string): string => {
-  if (!nodeType) return nodeType;
-  if (nodeType.includes(".")) {
-    return nodeType.toLowerCase();
-  }
-  const mapped = NODE_TYPE_MAP[nodeType];
-  if (mapped) {
-    return mapped;
-  }
-  if (nodeType.includes("_")) {
-    return nodeType.toLowerCase().replace(/_/g, ".");
-  }
-  return nodeType.toLowerCase();
-};
-
-export const getLegacyNodeType = (nodeType: string): string => {
-  if (!nodeType) return nodeType;
-  const legacy = LEGACY_NODE_TYPE_REVERSE_MAP[nodeType];
-  if (legacy) return legacy;
-  if (nodeType.includes(".")) {
-    return nodeType.toUpperCase().replace(/\./g, "_");
-  }
-  return nodeType;
-};
-
-const getParamMapping = (nodeType: string): Record<string, string> | undefined => {
-  const legacyType = getLegacyNodeType(nodeType);
-  return PARAM_NAME_MAP[nodeType] || PARAM_NAME_MAP[legacyType];
-};
-
-// Get reverse param mapping (backend → frontend) for a node type
-// Used to convert backend metadata param names back to frontend names
-export const getReverseParamMapping = (nodeType: string): Record<string, string> | undefined => {
-  const mapping = getParamMapping(nodeType);
-  if (!mapping) return undefined;
-
-  // Reverse the mapping: backend → frontend
-  const reverseMap: Record<string, string> = {};
-  for (const [frontend, backend] of Object.entries(mapping)) {
-    reverseMap[backend] = frontend;
-  }
-  return reverseMap;
-};
-
-// Map frontend parameter names to backend parameter names per node type
-// UI uses user-friendly names, backend uses library-specific names
-/**
- * Parameter name mapping between frontend and backend.
- *
- * This mapping is CRITICAL for validation and execution to work correctly.
- *
- * When adding new nodes with custom frontend parameter names:
- * 1. Add the mapping here
- * 2. Test validation in the UI
- * 3. Test execution to ensure backend receives correct parameter names
- *
- * Current mappings:
- * - SMOOTH, DERIV_1, DERIV_2: Savitzky-Golay parameters
- *   Frontend: window, poly | Backend: size, order
- *
- * - PCA, PLS, MCR, EFA, SIMPLISMA: Component analysis nodes
- *   Frontend: components | Backend: n_components
- */
-export const PARAM_NAME_MAP: Record<string, Record<string, string>> = {
-  // Smoothing and derivative nodes use Savitzky-Golay parameters
-  SMOOTH: {
-    window: "size",      // UI: window -> Backend: size
-    poly: "order",       // UI: poly -> Backend: order
-  },
-  DERIV_1: {
-    window: "size",      // UI: window -> Backend: size
-    poly: "order",       // UI: poly -> Backend: order
-  },
-  DERIV_2: {
-    window: "size",      // UI: window -> Backend: size
-    poly: "order",       // UI: poly -> Backend: order
-  },
-
-  // Component analysis nodes now use n_components directly in both frontend and backend
-  // No mapping needed anymore
-};
-
-// Migrate legacy parameter names (backward compatibility for old workflows)
-// CRITICAL: Handles workflows saved before n_components migration
-function migrateLegacyParams(nodeType: string, params: ParamsMap): ParamsMap {
-  const result = { ...params };
-
-  // Component analysis nodes: "components" → "n_components"
-  const componentNodes = ['PCA', 'PLS', 'MCR', 'EFA', 'SIMPLISMA', 'PLS_DA', 'SIMCA'];
-  const normalizedType = normalizeNodeType(nodeType);
-  const legacyType = getLegacyNodeType(nodeType);
-
-  if (componentNodes.includes(legacyType)) {
-    if ('components' in result && !('n_components' in result)) {
-      result.n_components = result.components;
-      delete result.components;
-      console.log(`[workflow.ts] Migrated legacy parameter: ${nodeType} components → n_components`);
-    }
-  }
-
-  return result;
-}
-
-// Convert frontend params to backend params for a given node type
-// IMPORTANT: If both frontend and backend keys exist (e.g., both "components" and "n_components"),
-// only use the frontend key (the user's current value) and skip the backend key (old value).
-function mapParamsToBackend(nodeType: string, params: ParamsMap): ParamsMap {
-  // First migrate legacy parameters
-  const migratedParams = migrateLegacyParams(nodeType, params);
-
-  const mapping = getParamMapping(nodeType);
-  if (!mapping) {
-    return migratedParams;
-  }
-
-  // Build reverse mapping to detect backend keys (e.g., n_components -> components)
-  const backendToFrontend: Record<string, string> = {};
-  for (const [frontend, backend] of Object.entries(mapping)) {
-    backendToFrontend[backend] = frontend;
-  }
-
-  const mappedParams: ParamsMap = {};
-  for (const [key, value] of Object.entries(migratedParams)) {
-    // Skip this key if it's a backend key AND its frontend equivalent exists
-    // (means we have both "components" and "n_components", prefer "components")
-    if (backendToFrontend[key] && migratedParams[backendToFrontend[key]] !== undefined) {
-      continue; // Skip the backend key, we'll use the frontend key instead
-    }
-
-    const backendKey = mapping[key] || key;
-    mappedParams[backendKey] = value;
-  }
-  return mappedParams;
-}
-
-// Convert backend params to frontend params for a given node type
-function mapParamsFromBackend(nodeType: string, params: ParamsMap): ParamsMap {
-  const mapping = getParamMapping(nodeType);
-  if (!mapping) {
-    return { ...params };
-  }
-
-  // Create reverse mapping
-  const reverseMapping: Record<string, string> = {};
-  for (const [frontend, backend] of Object.entries(mapping)) {
-    reverseMapping[backend] = frontend;
-  }
-
-  const mappedParams: ParamsMap = {};
-  for (const [key, value] of Object.entries(params)) {
-    const frontendKey = reverseMapping[key] || key;
-    mappedParams[frontendKey] = value;
-  }
-  return mappedParams;
 }
 
 // Backend API types
@@ -459,13 +147,13 @@ const TEMPLATES: Record<string, WorkflowTemplate> = {
     name: "Project 1: Absorption Calibration",
     description: "Build wavenumber-specific absorption vs. concentration calibration models",
     nodes: [
-      { id: 1, type: "DATA", x: 50, y: 100, params: { source: "experiment" } },
-      { id: 2, type: "DATA", x: 50, y: 250, params: { source: "spectrochempy", example_dataset: "irdata" } },
-      { id: 3, type: "BASELINE", x: 250, y: 100, params: { method: "als", lam: 100000, p: 0.001 } },
-      { id: 4, type: "NORMALIZE", x: 250, y: 250, params: { method: "snv" } },
-      { id: 5, type: "PLS", x: 450, y: 175, params: { n_components: 5 } },
-      { id: 6, type: "STATS", x: 650, y: 100, params: { metrics: ["r2", "rmse", "mae"] } },
-      { id: 7, type: "EXPORT", x: 650, y: 250, params: { filename: "calibration_model.pkl", format: "pickle" } },
+      { id: 1, type: "data.source", x: 50, y: 100, params: { source: "experiment" } },
+      { id: 2, type: "data.source", x: 50, y: 250, params: { source: "spectrochempy", example_dataset: "irdata" } },
+      { id: 3, type: "baseline.penalized_ls", x: 250, y: 100, params: { method: "als", lam: 100000, p: 0.001 } },
+      { id: 4, type: "preprocess.normalize", x: 250, y: 250, params: { method: "snv" } },
+      { id: 5, type: "model.pls", x: 450, y: 175, params: { n_components: 5 } },
+      { id: 6, type: "stats.summary", x: 650, y: 100, params: {} },
+      { id: 7, type: "output.export", x: 650, y: 250, params: { filename: "calibration_model.csv", format: "csv" } },
     ],
     edges: [
       { from: 1, to: 3 },
@@ -481,13 +169,13 @@ const TEMPLATES: Record<string, WorkflowTemplate> = {
     name: "Project 2: MCR-ALS with Kinetics",
     description: "Multivariate Curve Resolution with kinetic constraints for time-resolved analysis",
     nodes: [
-      { id: 1, type: "DATA", x: 50, y: 150, params: { source: "experiment" } },
-      { id: 2, type: "BASELINE", x: 230, y: 100, params: { method: "als", lam: 50000, p: 0.01 } },
-      { id: 3, type: "SMOOTH", x: 230, y: 250, params: { method: "savgol", window: 15, poly: 2 } },
-      { id: 4, type: "MCR", x: 430, y: 175, params: { n_components: 3, max_iter: 100, tol: 0.1, non_negative_C: true, non_negative_St: true } },
-      { id: 5, type: "PLOT", x: 630, y: 80, params: { type: "concentrations", xAxis: "time", yAxis: "conc" } },
-      { id: 6, type: "PLOT", x: 630, y: 175, params: { type: "spectra", xAxis: "wavenumber", yAxis: "absorbance" } },
-      { id: 7, type: "EXPORT", x: 630, y: 280, params: { filename: "mcr_results.csv", format: "csv" } },
+      { id: 1, type: "data.source", x: 50, y: 150, params: { source: "experiment" } },
+      { id: 2, type: "baseline.penalized_ls", x: 230, y: 100, params: { method: "als", lam: 50000, p: 0.01 } },
+      { id: 3, type: "preprocess.smooth", x: 230, y: 250, params: { method: "savitzky_golay", size: 15, order: 2 } },
+      { id: 4, type: "model.mcr_als", x: 430, y: 175, params: { n_components: 3, max_iter: 100, tol: 0.1, non_negative_C: true, non_negative_St: true } },
+      { id: 5, type: "output.plot", x: 630, y: 80, params: { plot_type: "spectra" } },
+      { id: 6, type: "output.plot", x: 630, y: 175, params: { plot_type: "spectra" } },
+      { id: 7, type: "output.export", x: 630, y: 280, params: { filename: "mcr_results.csv", format: "csv" } },
     ],
     edges: [
       { from: 1, to: 2 },
@@ -505,13 +193,13 @@ const TEMPLATES: Record<string, WorkflowTemplate> = {
     name: "IR OPUS Import & Analysis",
     description: "Import Bruker OPUS files, preprocess IR spectra, and perform spectral analysis",
     nodes: [
-      { id: 1, type: "DATA", x: 50, y: 150, params: { source: "file", format: "opus", path: "*.0" } },
-      { id: 2, type: "SLICE", x: 230, y: 150, params: { start: 4000, end: 400, unit: "cm-1" } },
-      { id: 3, type: "BASELINE_RB", x: 410, y: 100, params: {} },
-      { id: 4, type: "NORMALIZE", x: 410, y: 220, params: { method: "area", range: [1800, 1500] } },
-      { id: 5, type: "PEAK", x: 590, y: 150, params: { method: "find_peaks", prominence: 0.01, width: 5 } },
-      { id: 6, type: "PLOT", x: 770, y: 80, params: { type: "spectra", show_peaks: true } },
-      { id: 7, type: "STATS", x: 770, y: 220, params: { metrics: ["peak_areas", "peak_heights"] } },
+      { id: 1, type: "data.source", x: 50, y: 150, params: { source: "file" } },
+      { id: 2, type: "preprocess.clip_range", x: 230, y: 150, params: { min_wavenumber: 400, max_wavenumber: 4000 } },
+      { id: 3, type: "baseline.rubberband", x: 410, y: 100, params: {} },
+      { id: 4, type: "preprocess.normalize", x: 410, y: 220, params: { method: "snv" } },
+      { id: 5, type: "analysis.peak_finding", x: 590, y: 150, params: {} },
+      { id: 6, type: "output.plot", x: 770, y: 80, params: { plot_type: "spectra" } },
+      { id: 7, type: "stats.summary", x: 770, y: 220, params: {} },
     ],
     edges: [
       { from: 1, to: 2 },
@@ -528,12 +216,12 @@ const TEMPLATES: Record<string, WorkflowTemplate> = {
     name: "Evolving Factor Analysis (EFA)",
     description: "Determine the number of components in evolving mixtures using EFA",
     nodes: [
-      { id: 1, type: "DATA", x: 50, y: 150, params: { source: "experiment", format: "csv" } },
-      { id: 2, type: "NORMALIZE", x: 230, y: 150, params: { method: "mean_center" } },
-      { id: 3, type: "EFA", x: 430, y: 150, params: { n_components: 10, direction: "both" } },
-      { id: 4, type: "PLOT", x: 630, y: 80, params: { type: "efa_forward", log_scale: true } },
-      { id: 5, type: "PLOT", x: 630, y: 220, params: { type: "efa_backward", log_scale: true } },
-      { id: 6, type: "STATS", x: 810, y: 150, params: { metrics: ["rank", "explained_variance"] } },
+      { id: 1, type: "data.source", x: 50, y: 150, params: { source: "experiment" } },
+      { id: 2, type: "preprocess.scale", x: 230, y: 150, params: { method: "mean_center" } },
+      { id: 3, type: "model.efa", x: 430, y: 150, params: { n_components: 10 } },
+      { id: 4, type: "output.plot", x: 630, y: 80, params: { plot_type: "spectra" } },
+      { id: 5, type: "output.plot", x: 630, y: 220, params: { plot_type: "spectra" } },
+      { id: 6, type: "stats.summary", x: 810, y: 150, params: {} },
     ],
     edges: [
       { from: 1, to: 2 },
@@ -549,14 +237,14 @@ const TEMPLATES: Record<string, WorkflowTemplate> = {
     name: "PLS Regression Analysis",
     description: "Partial Least Squares regression for quantitative spectroscopy",
     nodes: [
-      { id: 1, type: "DATA", x: 50, y: 100, params: { source: "experiment", format: "csv" } },
-      { id: 2, type: "DATA", x: 50, y: 250, params: { source: "reference", format: "csv", column: "concentration" } },
-      { id: 3, type: "BASELINE", x: 250, y: 100, params: { method: "arpls", lam: 100000 } },
-      { id: 4, type: "NORMALIZE", x: 250, y: 250, params: { method: "snv" } },
-      { id: 5, type: "PLS", x: 450, y: 175, params: { n_components: 10 } },
-      { id: 6, type: "PLOT", x: 650, y: 80, params: { type: "rmsecv", xAxis: "components" } },
-      { id: 7, type: "PLOT", x: 650, y: 175, params: { type: "predicted_vs_actual" } },
-      { id: 8, type: "STATS", x: 650, y: 280, params: { metrics: ["r2", "rmsec", "rmsecv", "rpd"] } },
+      { id: 1, type: "data.source", x: 50, y: 100, params: { source: "experiment" } },
+      { id: 2, type: "data.source", x: 50, y: 250, params: { source: "experiment" } },
+      { id: 3, type: "baseline.penalized_ls", x: 250, y: 100, params: { method: "arpls", lam: 100000 } },
+      { id: 4, type: "preprocess.normalize", x: 250, y: 250, params: { method: "snv" } },
+      { id: 5, type: "model.pls", x: 450, y: 175, params: { n_components: 10 } },
+      { id: 6, type: "output.plot", x: 650, y: 80, params: { plot_type: "spectra" } },
+      { id: 7, type: "output.plot", x: 650, y: 175, params: { plot_type: "spectra" } },
+      { id: 8, type: "stats.summary", x: 650, y: 280, params: {} },
     ],
     edges: [
       { from: 1, to: 3 },
@@ -573,13 +261,13 @@ const TEMPLATES: Record<string, WorkflowTemplate> = {
     name: "Raman Processing Pipeline",
     description: "Denoise Raman spectra with cosmic ray removal and fluorescence correction",
     nodes: [
-      { id: 1, type: "DATA", x: 50, y: 150, params: { source: "experiment", format: "spc" } },
-      { id: 2, type: "COSMIC", x: 230, y: 150, params: { method: "whitaker", threshold: 5, width: 3 } },
-      { id: 3, type: "BASELINE", x: 410, y: 100, params: { method: "als", lam: 1e6, p: 0.001 } },
-      { id: 4, type: "SMOOTH", x: 410, y: 220, params: { method: "whittaker", lam: 10 } },
-      { id: 5, type: "NORMALIZE", x: 590, y: 150, params: { method: "max" } },
-      { id: 6, type: "PLOT", x: 770, y: 80, params: { type: "overlay", show_baseline: true } },
-      { id: 7, type: "EXPORT", x: 770, y: 220, params: { filename: "raman_processed.csv", format: "csv" } },
+      { id: 1, type: "data.source", x: 50, y: 150, params: { source: "experiment" } },
+      { id: 2, type: "preprocess.cosmic_ray", x: 230, y: 150, params: { zscore: 5, window: 3 } },
+      { id: 3, type: "baseline.penalized_ls", x: 410, y: 100, params: { method: "als", lam: 1e6, p: 0.001 } },
+      { id: 4, type: "preprocess.smooth", x: 410, y: 220, params: { method: "whittaker", lam: 10 } },
+      { id: 5, type: "preprocess.scale", x: 590, y: 150, params: { method: "mean_center" } },
+      { id: 6, type: "output.plot", x: 770, y: 80, params: { plot_type: "spectra" } },
+      { id: 7, type: "output.export", x: 770, y: 220, params: { filename: "raman_processed.csv", format: "csv" } },
     ],
     edges: [
       { from: 1, to: 2 },
@@ -594,15 +282,15 @@ const TEMPLATES: Record<string, WorkflowTemplate> = {
   nmr_processing: {
     id: "nmr_processing",
     name: "NMR Processing Workflow",
-    description: "Process NMR spectra with phase correction, baseline, and peak picking",
+    description: "Process NMR spectra with smoothing, baseline correction, and peak picking",
     nodes: [
-      { id: 1, type: "DATA", x: 50, y: 150, params: { source: "experiment", format: "bruker" } },
-      { id: 2, type: "PHASE", x: 230, y: 150, params: { method: "auto", pivot: null } },
-      { id: 3, type: "BASELINE", x: 410, y: 100, params: { method: "als", lam: 100000, p: 0.001 } },
-      { id: 4, type: "SLICE", x: 410, y: 220, params: { start: 12, end: -2, unit: "ppm" } },
-      { id: 5, type: "PEAK", x: 590, y: 150, params: { method: "cwt", min_snr: 3 } },
-      { id: 6, type: "FIT", x: 770, y: 100, params: { model: "lorentzian", optimize: true } },
-      { id: 7, type: "STATS", x: 770, y: 220, params: { metrics: ["peak_areas", "integrals", "chemical_shifts"] } },
+      { id: 1, type: "data.source", x: 50, y: 150, params: { source: "experiment" } },
+      { id: 2, type: "preprocess.smooth", x: 230, y: 150, params: { method: "savitzky_golay", size: 11, order: 2 } },
+      { id: 3, type: "baseline.penalized_ls", x: 410, y: 100, params: { method: "als", lam: 100000, p: 0.001 } },
+      { id: 4, type: "preprocess.clip_range", x: 410, y: 220, params: { min_wavenumber: -2, max_wavenumber: 12 } },
+      { id: 5, type: "analysis.peak_finding", x: 590, y: 150, params: {} },
+      { id: 6, type: "output.plot", x: 770, y: 100, params: { plot_type: "spectra" } },
+      { id: 7, type: "stats.summary", x: 770, y: 220, params: {} },
     ],
     edges: [
       { from: 1, to: 2 },
@@ -614,17 +302,17 @@ const TEMPLATES: Record<string, WorkflowTemplate> = {
       { from: 5, to: 7 },
     ],
   },
-  iris_decomposition: {
-    id: "iris_decomposition",
-    name: "IRIS Decomposition",
-    description: "Integral Regularized Inversion of Spectra for relaxation analysis",
+  spectral_decomposition: {
+    id: "spectral_decomposition",
+    name: "Spectral Decomposition (PCA)",
+    description: "Principal component decomposition for identifying spectral components and variance structure",
     nodes: [
-      { id: 1, type: "DATA", x: 50, y: 150, params: { source: "experiment", format: "csv" } },
-      { id: 2, type: "NORMALIZE", x: 230, y: 150, params: { method: "max" } },
-      { id: 3, type: "IRIS", x: 430, y: 150, params: { kernel: "exp", regularization: "tikhonov", alpha: 0.01 } },
-      { id: 4, type: "PLOT", x: 630, y: 80, params: { type: "distribution", xAxis: "tau", yAxis: "amplitude" } },
-      { id: 5, type: "PLOT", x: 630, y: 220, params: { type: "fit_residuals" } },
-      { id: 6, type: "EXPORT", x: 810, y: 150, params: { filename: "iris_distribution.csv", format: "csv" } },
+      { id: 1, type: "data.source", x: 50, y: 150, params: { source: "experiment" } },
+      { id: 2, type: "preprocess.scale", x: 230, y: 150, params: { method: "mean_center" } },
+      { id: 3, type: "model.pca", x: 430, y: 150, params: { n_components: "5" } },
+      { id: 4, type: "output.plot", x: 630, y: 80, params: { plot_type: "spectra" } },
+      { id: 5, type: "output.plot", x: 630, y: 220, params: { plot_type: "spectra" } },
+      { id: 6, type: "output.export", x: 810, y: 150, params: { filename: "decomposition.csv", format: "csv" } },
     ],
     edges: [
       { from: 1, to: 2 },
@@ -641,11 +329,11 @@ const TEMPLATES: Record<string, WorkflowTemplate> = {
     name: "Standard Preprocessing",
     description: "Basic preprocessing pipeline: baseline, smoothing, normalization",
     nodes: [
-      { id: 1, type: "DATA", x: 50, y: 150, params: { source: "experiment" } },
-      { id: 2, type: "BASELINE", x: 230, y: 150, params: { method: "als", lam: 100000, p: 0.001 } },
-      { id: 3, type: "SMOOTH", x: 410, y: 150, params: { method: "savgol", window: 15, poly: 2 } },
-      { id: 4, type: "NORMALIZE", x: 590, y: 150, params: { method: "snv" } },
-      { id: 5, type: "EXPORT", x: 770, y: 150, params: { filename: "preprocessed.csv", format: "csv" } },
+      { id: 1, type: "data.source", x: 50, y: 150, params: { source: "experiment" } },
+      { id: 2, type: "baseline.penalized_ls", x: 230, y: 150, params: { method: "als", lam: 100000, p: 0.001 } },
+      { id: 3, type: "preprocess.smooth", x: 410, y: 150, params: { method: "savitzky_golay", size: 15, order: 2 } },
+      { id: 4, type: "preprocess.normalize", x: 590, y: 150, params: { method: "snv" } },
+      { id: 5, type: "output.export", x: 770, y: 150, params: { filename: "preprocessed.csv", format: "csv" } },
     ],
     edges: [
       { from: 1, to: 2 },
@@ -659,13 +347,13 @@ const TEMPLATES: Record<string, WorkflowTemplate> = {
     name: "PCA Exploration",
     description: "Exploratory data analysis with PCA visualization and outlier detection",
     nodes: [
-      { id: 1, type: "DATA", x: 50, y: 150, params: { source: "experiment" } },
-      { id: 2, type: "NORMALIZE", x: 230, y: 150, params: { method: "mean_center" } },
-      { id: 3, type: "PCA", x: 430, y: 150, params: { n_components: "5" } },
-      { id: 4, type: "PLOT", x: 630, y: 60, params: { type: "scores", pc_x: 1, pc_y: 2 } },
-      { id: 5, type: "PLOT", x: 630, y: 160, params: { type: "loadings", pc: 1 } },
-      { id: 6, type: "PLOT", x: 630, y: 260, params: { type: "scree" } },
-      { id: 7, type: "STATS", x: 810, y: 150, params: { metrics: ["explained_variance", "hotelling_t2", "q_residuals"] } },
+      { id: 1, type: "data.source", x: 50, y: 150, params: { source: "experiment" } },
+      { id: 2, type: "preprocess.scale", x: 230, y: 150, params: { method: "mean_center" } },
+      { id: 3, type: "model.pca", x: 430, y: 150, params: { n_components: "5" } },
+      { id: 4, type: "output.plot", x: 630, y: 60, params: { plot_type: "spectra" } },
+      { id: 5, type: "output.plot", x: 630, y: 160, params: { plot_type: "spectra" } },
+      { id: 6, type: "output.plot", x: 630, y: 260, params: { plot_type: "spectra" } },
+      { id: 7, type: "stats.summary", x: 810, y: 150, params: {} },
     ],
     edges: [
       { from: 1, to: 2 },
@@ -678,16 +366,16 @@ const TEMPLATES: Record<string, WorkflowTemplate> = {
   },
   peaks: {
     id: "peaks",
-    name: "Peak Detection & Fitting",
-    description: "Automated peak detection, fitting, and quantification workflow",
+    name: "Peak Detection & Analysis",
+    description: "Automated peak detection and quantification workflow",
     nodes: [
-      { id: 1, type: "DATA", x: 50, y: 150, params: { source: "experiment" } },
-      { id: 2, type: "BASELINE", x: 230, y: 150, params: { method: "als", lam: 100000, p: 0.001 } },
-      { id: 3, type: "SMOOTH", x: 410, y: 150, params: { method: "savgol", window: 11, poly: 3 } },
-      { id: 4, type: "PEAK", x: 590, y: 100, params: { method: "find_peaks", prominence: 0.01 } },
-      { id: 5, type: "FIT", x: 590, y: 220, params: { model: "gaussian", optimize: true } },
-      { id: 6, type: "STATS", x: 770, y: 100, params: { metrics: ["peak_positions", "fwhm", "areas"] } },
-      { id: 7, type: "PLOT", x: 770, y: 220, params: { type: "fitted", show_components: true } },
+      { id: 1, type: "data.source", x: 50, y: 150, params: { source: "experiment" } },
+      { id: 2, type: "baseline.penalized_ls", x: 230, y: 150, params: { method: "als", lam: 100000, p: 0.001 } },
+      { id: 3, type: "preprocess.smooth", x: 410, y: 150, params: { method: "savitzky_golay", size: 11, order: 3 } },
+      { id: 4, type: "analysis.peak_finding", x: 590, y: 100, params: {} },
+      { id: 5, type: "output.plot", x: 590, y: 220, params: { plot_type: "spectra" } },
+      { id: 6, type: "stats.summary", x: 770, y: 100, params: {} },
+      { id: 7, type: "output.plot", x: 770, y: 220, params: { plot_type: "spectra" } },
     ],
     edges: [
       { from: 1, to: 2 },
@@ -703,12 +391,12 @@ const TEMPLATES: Record<string, WorkflowTemplate> = {
     name: "SIMPLISMA Pure Variable Selection",
     description: "SIMPLe-to-use Interactive Self-modeling Mixture Analysis for initial estimates",
     nodes: [
-      { id: 1, type: "DATA", x: 50, y: 150, params: { source: "experiment", format: "csv" } },
-      { id: 2, type: "NORMALIZE", x: 230, y: 150, params: { method: "mean_center" } },
-      { id: 3, type: "SIMPLISMA", x: 430, y: 150, params: { n_components: 3, noise: 3 } },
-      { id: 4, type: "PLOT", x: 630, y: 80, params: { type: "purity", xAxis: "variable" } },
-      { id: 5, type: "PLOT", x: 630, y: 220, params: { type: "pure_spectra" } },
-      { id: 6, type: "EXPORT", x: 810, y: 150, params: { filename: "initial_estimates.csv", format: "csv" } },
+      { id: 1, type: "data.source", x: 50, y: 150, params: { source: "experiment" } },
+      { id: 2, type: "preprocess.scale", x: 230, y: 150, params: { method: "mean_center" } },
+      { id: 3, type: "model.simplisma", x: 430, y: 150, params: { n_components: 3, noise: 3 } },
+      { id: 4, type: "output.plot", x: 630, y: 80, params: { plot_type: "spectra" } },
+      { id: 5, type: "output.plot", x: 630, y: 220, params: { plot_type: "spectra" } },
+      { id: 6, type: "output.export", x: 810, y: 150, params: { filename: "initial_estimates.csv", format: "csv" } },
     ],
     edges: [
       { from: 1, to: 2 },
@@ -864,6 +552,11 @@ export const useWorkflowStore = defineStore("workflow", () => {
       };
     }
 
+    // Any wildcard: any source type can connect to Any target
+    if (target.name === 'Any') {
+      return { isValid: true, dataType: `${source.name}@${source.major}.${source.minor}` };
+    }
+
     if (source.name === target.name) {
       if (source.major === target.major) {
         return {
@@ -925,10 +618,9 @@ export const useWorkflowStore = defineStore("workflow", () => {
   function toBackendFormat(): { nodes: BackendWorkflowNode[]; edges: BackendWorkflowEdge[] } {
     const backendNodes: BackendWorkflowNode[] = nodes.value.map((n) => ({
       node_id: resolveBackendNodeId(n.id),
-      node_type: normalizeNodeType(n.type),
+      node_type: n.type,
       label: n.type,
-      // Map UI parameter names to backend parameter names
-      parameters: mapParamsToBackend(n.type, n.params),
+      parameters: n.params,
       position_x: n.x,
       position_y: n.y,
     }));
@@ -980,14 +672,13 @@ export const useWorkflowStore = defineStore("workflow", () => {
     };
 
     const frontendNodes: WorkflowNode[] = backendNodes.map((n) => {
-      const frontendType = normalizeNodeType(n.node_type);
+      const frontendType = n.node_type;
       return {
         id: resolveNodeId(n.node_id),
         type: frontendType,
         x: n.position_x || 100,
         y: n.position_y || 100,
-        // Map backend parameter names to UI parameter names
-        params: mapParamsFromBackend(frontendType, n.parameters || {}),
+        params: { ...(n.parameters || {}) },
       };
     });
 
@@ -1009,10 +700,10 @@ export const useWorkflowStore = defineStore("workflow", () => {
       return false;
     }
 
-    // Deep copy the template data and normalize node types to dot format
+    // Deep copy the template data
     nodes.value = JSON.parse(JSON.stringify(template.nodes)).map((node: WorkflowNode) => ({
       ...node,
-      type: normalizeNodeType(node.type),
+      type: node.type,
     }));
     clearNodeIdMappings();
     for (const node of nodes.value) {
@@ -1382,7 +1073,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
     // Build nodes list from current workflow (using backend format)
     const trialNodes = nodes.value.map((node) => ({
       node_id: resolveBackendNodeId(node.id),
-      node_type: normalizeNodeType(node.type),
+      node_type: node.type,
       parameters: node.params || {},
     }));
 
@@ -1644,9 +1335,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
    * Get metadata for a node type (from library).
    */
   function getNodeMetadata(nodeType: string): NodeTypeMetadata | null {
-    // Map frontend node type to backend node type
-    const backendType = normalizeNodeType(nodeType);
-    return nodeLibrary.value.get(backendType) || null;
+    return nodeLibrary.value.get(nodeType) || null;
   }
 
   /**
@@ -1659,25 +1348,11 @@ export const useWorkflowStore = defineStore("workflow", () => {
       return [{ param_name: "_metadata", message: "Node metadata not available" }];
     }
 
-    // Map frontend parameter names to backend names before validation
-    // E.g., SMOOTH uses "window"/"poly" in UI but "size"/"order" in backend
-    const mappedParams = mapParamsToBackend(nodeType, params);
-
-    // Build reverse mapping to convert backend param names back to frontend names
-    const paramMapping = getParamMapping(nodeType);
-    const backendToFrontend: Record<string, string> = {};
-    if (paramMapping) {
-      for (const [frontend, backend] of Object.entries(paramMapping)) {
-        backendToFrontend[backend] = frontend;
-      }
-    }
-
     const errors: Array<{ param_name: string; message: string }> = [];
 
     for (const paramDef of metadata.parameters) {
-      const value = mappedParams[paramDef.name];
-      // Use frontend parameter name in error messages if mapping exists
-      const displayParamName = backendToFrontend[paramDef.name] || paramDef.name;
+      const value = params[paramDef.name];
+      const displayParamName = paramDef.name;
 
       // Check required
       if (paramDef.required && (value === undefined || value === null || value === '')) {
@@ -1808,7 +1483,6 @@ export const useWorkflowStore = defineStore("workflow", () => {
 
   function addNode(node: WorkflowNode) {
     // Initialize execution state
-    node.type = normalizeNodeType(node.type);
     node.executionState = { status: "pending" };
     nodes.value.push(node);
     resolveBackendNodeId(node.id);
@@ -1999,6 +1673,23 @@ export const useWorkflowStore = defineStore("workflow", () => {
         e.toPort === edge.toPort
     );
     if (!exists) {
+      // Enforce max-1 cardinality on non-variadic ports:
+      // if the target port already has an incoming edge, replace it.
+      const targetNode = nodes.value.find(n => n.id === edge.to);
+      const targetMeta = targetNode ? getNodeMetadata(targetNode.type) : null;
+      if (targetMeta?.input_ports) {
+        const toPort = edge.toPort || targetMeta.input_ports[0]?.name || 'default';
+        const portMeta = targetMeta.input_ports.find(p => p.name === toPort);
+        if (portMeta && !portMeta.variadic) {
+          const existingIdx = edges.value.findIndex(
+            e => e.to === edge.to && (e.toPort || targetMeta.input_ports![0]?.name || 'default') === toPort
+          );
+          if (existingIdx !== -1) {
+            edges.value.splice(existingIdx, 1);
+          }
+        }
+      }
+
       // Validate the edge before adding
       const validation = validateEdge(edge);
       edge.isValid = validation.isValid;
@@ -2101,9 +1792,6 @@ export const useWorkflowStore = defineStore("workflow", () => {
     fetchTypeRegistry,
     checkAndRefreshNodeLibrary,
     getNodeMetadata,
-    normalizeNodeType,
-    getLegacyNodeType,
-    getReverseParamMapping,
     validateTypeRefs,
     validateNodeParams,
     validateEdge,

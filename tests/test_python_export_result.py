@@ -34,7 +34,7 @@ def test_deploy_input_node_numpy_export():
 def test_clip_range_node_scp_export():
     """Test ClipRangeNode doesn't use _Result when use_scp=True."""
     node = ClipRangeNode(node_id="clip_1", parameters={"min_wavenumber": 400, "max_wavenumber": 4000})
-    lines = node.generate_python(inputs={"input_0": "data_in"}, indent="    ", use_scp=True)
+    lines = node.generate_python(inputs={"default": "data_in"}, indent="    ", use_scp=True)
 
     code = "\n".join(lines)
     # SCP mode operates on SCP objects directly (no need to explicitly wrap)
@@ -47,7 +47,7 @@ def test_clip_range_node_scp_export():
 def test_clip_range_node_numpy_export_with_axis():
     """Test ClipRangeNode exports _Result with axis handling when use_scp=False."""
     node = ClipRangeNode(node_id="clip_1", parameters={"min_wavenumber": 400, "max_wavenumber": 4000})
-    lines = node.generate_python(inputs={"input_0": "data_in"}, indent="    ", use_scp=False)
+    lines = node.generate_python(inputs={"default": "data_in"}, indent="    ", use_scp=False)
 
     code = "\n".join(lines)
     # numpy mode should use _Result
@@ -61,7 +61,7 @@ def test_clip_range_node_numpy_export_with_axis():
 def test_clip_range_node_numpy_export_fallback():
     """Test ClipRangeNode fallback case exports _Result when use_scp=False."""
     node = ClipRangeNode(node_id="clip_1", parameters={"min_wavenumber": 0, "max_wavenumber": 100})
-    lines = node.generate_python(inputs={"input_0": "data_in"}, indent="    ", use_scp=False)
+    lines = node.generate_python(inputs={"default": "data_in"}, indent="    ", use_scp=False)
 
     code = "\n".join(lines)
     # Should include fallback case with _Result
@@ -89,8 +89,8 @@ def test_both_nodes_respect_use_scp_flag():
     assert "scp.NDDataset" not in deploy_numpy_code
 
     # Test both modes for clip node
-    clip_scp_code = "\n".join(clip_node.generate_python({"input_0": "data_in"}, use_scp=True))
-    clip_numpy_code = "\n".join(clip_node.generate_python({"input_0": "data_in"}, use_scp=False))
+    clip_scp_code = "\n".join(clip_node.generate_python({"default": "data_in"}, use_scp=True))
+    clip_numpy_code = "\n".join(clip_node.generate_python({"default": "data_in"}, use_scp=False))
 
     # SCP mode should not have _Result (operates on SCP objects directly)
     assert "_Result" not in clip_scp_code

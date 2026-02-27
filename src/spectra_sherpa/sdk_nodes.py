@@ -295,8 +295,6 @@ class ChemometricsNode(Node):
         if input_data is None:
             if "default" in kwargs:
                 input_data = kwargs["default"]
-            elif "input_0" in kwargs:
-                input_data = kwargs["input_0"]
 
         input_ds = coerce_to_sherpa(input_data, input_name="input_data")
         params = self._resolve_params()

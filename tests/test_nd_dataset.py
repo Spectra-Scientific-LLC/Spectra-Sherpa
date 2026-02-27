@@ -476,23 +476,24 @@ class TestNDSerialization:
         assert isinstance(ds2.axis(2), SpatialAxis)
         assert isinstance(ds2.get_feature_axis(), SpectralAxis)
 
-    def test_v1_format_loads_in_v2_code(self):
-        """Manually constructed v1 dict still loads."""
-        v1 = {
+    def test_v2_format_loads(self):
+        """v2 dict with feature_axis loads correctly."""
+        v2 = {
             "type": "SherpaDataset",
-            "version": "1.0",
+            "version": "2.0",
             "data": np.random.rand(10, 50).tolist(),
             "shape": [10, 50],
             "n_samples": 10,
             "n_features": 50,
             "backend": "numpy",
-            "spectral_axis": {
+            "feature_axis": {
+                "axis_class": "SpectralAxis",
                 "data": np.arange(50.0).tolist(),
                 "units": "cm-1",
                 "title": "wavenumber",
             },
         }
-        ds = SherpaDataset.from_dict(v1)
+        ds = SherpaDataset.from_dict(v2)
         assert ds.shape == (10, 50)
         fa = ds.get_feature_axis()
         assert fa is not None

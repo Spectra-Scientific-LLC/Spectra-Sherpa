@@ -218,6 +218,7 @@ class DataSourceNode(Node):
             ),
         ],
         input_types=[],  # No inputs - this is a source node
+        input_ports=[],
         output_type="dict",  # Multi-output: dataset + optional target labels
         output_ports=[
             PortMetadata(

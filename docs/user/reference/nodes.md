@@ -4,7 +4,7 @@ This reference lists the available processing nodes in the Workflow Builder, org
 
 Nodes marked with **[SCP]** require [SpectroChemPy](https://www.spectrochempy.fr/) (`pip install spectra-sherpa[scp]`). All other nodes run on NumPy/SciPy/scikit-learn.
 
-**Consolidated nodes** use a `method` dropdown to select among multiple algorithms. Old node types (e.g., `smooth.savitzky_golay`) still work via the alias system and resolve to the consolidated node with the appropriate method pre-selected.
+**Consolidated nodes** use a `method` dropdown to select among multiple algorithms.
 
 ---
 
@@ -113,7 +113,6 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
     *   `lam` (number, default: `1000`): Smoothness parameter. *Visible when: whittaker.*
     *   `d` (number, default: `2`): Difference order. *Visible when: whittaker.*
     *   `sigma` (number, default: `2.0`): Gaussian standard deviation. *Visible when: gaussian.*
-*   **Aliases**: `smooth.savitzky_golay`, `smooth.whittaker`, `smooth.gaussian`.
 
 #### Derivative
 *   **Node Type**: `preprocess.derivative`
@@ -125,7 +124,6 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
     *   `order` (number, default: `2`): Polynomial order. *Visible when: savitzky_golay.*
     *   `gap` (number, default: `5`): Gap size. *Visible when: norris_williams.*
     *   `segment` (number, default: `5`): Segment size. *Visible when: norris_williams.*
-*   **Aliases**: `derivative.first`, `derivative.second`, `preprocess.sg_derivative`, `preprocess.norris_williams`.
 
 #### Normalize
 *   **Node Type**: `preprocess.normalize`
@@ -134,7 +132,6 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
 *   **Parameters**:
     *   `reference` (select, default: `mean`): Reference spectrum (`mean`, `median`, `first`). *Visible when: msc.*
     *   `scale_method` (select, default: `max`): Scaling method (`max`, `area`, `minmax`). *Visible when: scale.*
-*   **Aliases**: `normalize.snv`, `normalize.msc`, `normalize.scale`.
 *   **Notes**: EMSC (Extended MSC) remains a separate node due to its dual input ports and polynomial baseline logic.
 
 #### Scale / Center
@@ -144,7 +141,6 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
 *   **Parameters**:
     *   `center` (boolean, default: `True`): Subtract mean before scaling. *Visible when: autoscale, pareto.*
     *   `target_max` (number, default: `1.0`): Target maximum value. *Visible when: scale_max.*
-*   **Aliases**: `preprocess.center_mean`, `preprocess.autoscaling`, `preprocess.pareto_scaling`, `preprocess.scale_max`.
 
 ### Baseline Correction
 
@@ -394,8 +390,7 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
 *   **Description**: Apply a trained classification model (PLS-DA, KNN, or SIMCA) to new samples. Auto-detects the model type from the input dict.
 *   **Inputs**: `X_new` (Spectra), `model` (Trained model dict from any classification training node).
 *   **Outputs**: `y_pred` (Predicted classes), `y_prob` (Class probabilities or distances).
-*   **Aliases**: `classification.plsda_predict`, `classification.knn_predict`, `classification.simca_predict`.
-*   **Notes**: Replaces the individual Apply PLS-DA, Apply KNN, and Apply SIMCA nodes. Old node types still work via the alias system. PLS-DA prediction requires SpectroChemPy; KNN and SIMCA prediction use pure numpy/sklearn.
+*   **Notes**: Replaces the individual Apply PLS-DA, Apply KNN, and Apply SIMCA nodes. PLS-DA prediction requires SpectroChemPy; KNN and SIMCA prediction use pure numpy/sklearn.
 
 ---
 

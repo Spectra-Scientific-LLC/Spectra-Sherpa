@@ -73,7 +73,7 @@ def list_node_types(category: Optional[str] = None) -> list[dict[str, str]]:
             "node_type": {
                 "type": "string",
                 "description": (
-                    "Node type identifier (e.g. 'model.pca', " "'preprocess.autoscaling', 'baseline.penalized_ls')"
+                    "Node type identifier (e.g. 'model.pca', " "'preprocess.scale', 'baseline.penalized_ls')"
                 ),
             },
         },
@@ -155,28 +155,28 @@ def describe_node(node_type: str) -> dict[str, Any]:
 _TECHNIQUE_RECOMMENDATIONS: dict[str, list[dict[str, str]]] = {
     "IR": [
         {"step": "baseline.penalized_ls", "reason": "Remove baseline drift common in IR spectra"},
-        {"step": "normalize.snv", "reason": "Correct scatter effects (path-length variations)"},
-        {"step": "smooth.savitzky_golay", "reason": "Reduce high-frequency noise"},
+        {"step": "preprocess.normalize", "reason": "Correct scatter effects (path-length variations)"},
+        {"step": "preprocess.smooth", "reason": "Reduce high-frequency noise"},
     ],
     "NIR": [
-        {"step": "normalize.snv", "reason": "NIR spectra are dominated by scatter — SNV is standard"},
-        {"step": "derivative.first", "reason": "First derivative resolves overlapping NIR bands"},
-        {"step": "smooth.savitzky_golay", "reason": "Smooth before or after derivative"},
+        {"step": "preprocess.normalize", "reason": "NIR spectra are dominated by scatter — SNV is standard"},
+        {"step": "preprocess.derivative", "reason": "First derivative resolves overlapping NIR bands"},
+        {"step": "preprocess.smooth", "reason": "Smooth before or after derivative"},
     ],
     "Raman": [
         {"step": "baseline.penalized_ls", "reason": "Remove fluorescence background"},
         {"step": "preprocess.cosmic_ray", "reason": "Remove cosmic ray spikes"},
-        {"step": "normalize.snv", "reason": "Normalize intensity variations"},
+        {"step": "preprocess.normalize", "reason": "Normalize intensity variations"},
     ],
     "UV-Vis": [
         {"step": "baseline.rubberband", "reason": "Correct baseline curvature"},
-        {"step": "normalize.scale", "reason": "Scale to comparable intensities"},
+        {"step": "preprocess.normalize", "reason": "Scale to comparable intensities"},
     ],
 }
 
 _DEFAULT_RECOMMENDATIONS = [
-    {"step": "preprocess.autoscaling", "reason": "Center and scale for general chemometrics"},
-    {"step": "smooth.savitzky_golay", "reason": "Reduce noise while preserving spectral features"},
+    {"step": "preprocess.scale", "reason": "Center and scale for general chemometrics"},
+    {"step": "preprocess.smooth", "reason": "Reduce noise while preserving spectral features"},
 ]
 
 
@@ -213,16 +213,16 @@ def suggest_preprocessing(
     if goal == "classification":
         steps.append(
             {
-                "step": "preprocess.autoscaling",
+                "step": "preprocess.scale",
                 "reason": "Autoscaling is common before classification to equalize feature variance",
             }
         )
     elif goal == "regression":
-        steps.append({"step": "preprocess.center_mean", "reason": "Mean centering is standard for PLS regression"})
+        steps.append({"step": "preprocess.scale", "reason": "Mean centering is standard for PLS regression"})
     elif goal == "clustering":
         steps.append(
             {
-                "step": "preprocess.autoscaling",
+                "step": "preprocess.scale",
                 "reason": "Autoscaling prevents high-intensity features from dominating distance metrics",
             }
         )

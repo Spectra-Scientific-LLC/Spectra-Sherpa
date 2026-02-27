@@ -67,8 +67,8 @@ class TestStructuralValidation:
 
     def test_cycle_detection(self):
         executor = _build_executor(
-            WorkflowNode(node_id="a", node_type="normalize.snv", parameters={}),
-            WorkflowNode(node_id="b", node_type="normalize.snv", parameters={}),
+            WorkflowNode(node_id="a", node_type="preprocess.normalize", parameters={"method": "snv"}),
+            WorkflowNode(node_id="b", node_type="preprocess.normalize", parameters={"method": "snv"}),
             WorkflowEdge(from_node="a", to_node="b"),
             WorkflowEdge(from_node="b", to_node="a"),
         )
@@ -78,7 +78,7 @@ class TestStructuralValidation:
 
     def test_disconnected_non_source_node(self):
         executor = _build_executor(
-            WorkflowNode(node_id="snv1", node_type="normalize.snv", parameters={}),
+            WorkflowNode(node_id="snv1", node_type="preprocess.normalize", parameters={"method": "snv"}),
         )
         result = executor.validate_full()
         assert not result.is_valid
@@ -145,8 +145,8 @@ class TestParameterValidation:
             ),
             WorkflowNode(
                 node_id="test_node",
-                node_type="normalize.snv",
-                parameters={"bad_param": -5},
+                node_type="preprocess.normalize",
+                parameters={"method": "snv", "bad_param": -5},
             ),
             WorkflowEdge(from_node="src1", to_node="test_node"),
         )
@@ -182,8 +182,8 @@ class TestParameterValidation:
             ),
             WorkflowNode(
                 node_id="test_node",
-                node_type="normalize.snv",
-                parameters={"bad_param": 200},
+                node_type="preprocess.normalize",
+                parameters={"method": "snv", "bad_param": 200},
             ),
             WorkflowEdge(from_node="src1", to_node="test_node"),
         )
@@ -214,8 +214,8 @@ class TestParameterValidation:
             ),
             WorkflowNode(
                 node_id="test_node",
-                node_type="normalize.snv",
-                parameters={"mode": "bogus_option"},
+                node_type="preprocess.normalize",
+                parameters={"method": "snv", "mode": "bogus_option"},
             ),
             WorkflowEdge(from_node="src1", to_node="test_node"),
         )
@@ -251,7 +251,7 @@ class TestPortTypeValidation:
                 node_type="data.source",
                 parameters={"source": "sklearn", "sklearn_dataset": "iris"},
             ),
-            WorkflowNode(node_id="snv1", node_type="normalize.snv", parameters={}),
+            WorkflowNode(node_id="snv1", node_type="preprocess.normalize", parameters={"method": "snv"}),
             WorkflowEdge(from_node="src1", to_node="snv1"),
         )
         # Load type registry if available
@@ -274,7 +274,7 @@ class TestPortTypeValidation:
                 node_type="data.source",
                 parameters={"source": "sklearn", "sklearn_dataset": "iris"},
             ),
-            WorkflowNode(node_id="snv1", node_type="normalize.snv", parameters={}),
+            WorkflowNode(node_id="snv1", node_type="preprocess.normalize", parameters={"method": "snv"}),
             WorkflowEdge(from_node="src1", to_node="snv1"),
         )
         # Patch type_registry.is_loaded to return False
@@ -300,7 +300,7 @@ class TestPortTypeValidation:
 class TestBackwardCompat:
     def test_validate_returns_list_of_strings(self):
         executor = _build_executor(
-            WorkflowNode(node_id="snv1", node_type="normalize.snv", parameters={}),
+            WorkflowNode(node_id="snv1", node_type="preprocess.normalize", parameters={"method": "snv"}),
         )
         errors = executor.validate()
         assert isinstance(errors, list)

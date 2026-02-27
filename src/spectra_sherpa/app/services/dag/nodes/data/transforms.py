@@ -148,14 +148,12 @@ class TrainTestSplitNode(Node):
 
         X_ds = bind_X(
             X,
-            kwargs,
             missing_message="Missing required input: X (dataset)",
             dataset_error_message="X must be an NDDataset or SherpaDataset object",
             allow_array=True,
         )
         y_value = bind_y(
             y,
-            kwargs,
             X=X_ds,
             required=False,
             infer_from_X=True,
@@ -329,14 +327,12 @@ class AttachTargetNode(Node):
         """Attach target to dataset."""
         X_ds = bind_X(
             X,
-            kwargs,
             missing_message="Missing required input: X (dataset)",
             allow_array=True,
         )
 
         y_raw = bind_y(
             y,
-            kwargs,
             X=None,  # Don't infer from X — we're explicitly attaching
             required=True,
             infer_from_X=False,

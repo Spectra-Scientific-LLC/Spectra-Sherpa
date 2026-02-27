@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
 
 from ..io_contracts import build_dataset_like, coerce_to_sherpa, to_numpy_2d
-from ..node_base import Node, NodeMetadata, NodeParameter, register_node
+from ..node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
 from ..spec_nodes import TransformSpec, TransformSpecNode
 
 
@@ -72,6 +72,15 @@ class MovingWindowNode(Node):
         ],
         input_types=["NDDataset"],
         output_type="NDDataset",
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Data",
+                description="Input data to process",
+            ),
+        ],
     )
 
     async def execute(self, input_data: Any) -> Any:
@@ -233,6 +242,15 @@ class TrendRemovalNode(TransformSpecNode):
         ],
         input_types=["NDDataset"],
         output_type="NDDataset",
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Data",
+                description="Input data to process",
+            ),
+        ],
     )
 
     spec = TransformSpec(

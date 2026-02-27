@@ -408,6 +408,25 @@ class DAGExecutor:
                                 f"Required input port '{port.label}' is not connected",
                             )
                         )
+
+                # Check cardinality: non-variadic ports must not receive multiple edges
+                port_edge_counts: dict[str, int] = {}
+                for edge in incoming_edges:
+                    port_name = edge.to_input or "default"
+                    port_edge_counts[port_name] = port_edge_counts.get(port_name, 0) + 1
+
+                variadic_names = {p.name for p in node.metadata.input_ports if p.variadic}
+                for port_name, count in port_edge_counts.items():
+                    if count > 1 and port_name not in variadic_names:
+                        issues.append(
+                            ValidationIssue(
+                                "error",
+                                node_id,
+                                port_name,
+                                f"Node '{node_id}' ({node.metadata.label}): "
+                                f"Port '{port_name}' accepts only one connection but has {count}",
+                            )
+                        )
         return issues
 
     def _validate_node_inputs(self) -> List[ValidationIssue]:
@@ -731,20 +750,27 @@ class DAGExecutor:
 
         # Check if node uses named input ports
         if node.uses_named_ports():
+            # Build variadic port lookup
+            variadic_ports: set[str] = set()
+            actual_port_names: set[str] = set()
+            if node.metadata and node.metadata.input_ports:
+                variadic_ports = {p.name for p in node.metadata.input_ports if p.variadic}
+                actual_port_names = {p.name for p in node.metadata.input_ports}
+
             # Build kwargs dict by port name
             named_inputs: Dict[str, Any] = {}
+            _legacy_port_counter = 0  # tracks positional index for legacy "default" inference
             for edge in incoming_edges:
                 if edge.from_node not in self.results:
                     raise ValueError(f"Node {edge.from_node} has not been executed yet (required by {node_id})")
                 port_name = edge.to_input
-                if port_name == "default":
-                    # If edge uses legacy "default" port, try to infer from port order
-                    # This provides backward compatibility for existing workflows
-                    port_idx = len(named_inputs)
-                    if node.metadata.input_ports and port_idx < len(node.metadata.input_ports):
-                        port_name = node.metadata.input_ports[port_idx].name
+                if port_name == "default" and "default" not in actual_port_names:
+                    # Legacy edge without explicit port — infer from port order
+                    if node.metadata.input_ports and _legacy_port_counter < len(node.metadata.input_ports):
+                        port_name = node.metadata.input_ports[_legacy_port_counter].name
                     else:
-                        port_name = f"input_{port_idx}"
+                        port_name = f"input_{_legacy_port_counter}"
+                    _legacy_port_counter += 1
 
                 # Extract specific output from multi-output nodes
                 result = self.results[edge.from_node]
@@ -779,7 +805,19 @@ class DAGExecutor:
                         strict=False,  # Warn only, don't block execution
                     )
 
-                named_inputs[port_name] = data
+                # Variadic ports accumulate into lists; non-variadic overwrite
+                if port_name in variadic_ports:
+                    named_inputs.setdefault(port_name, []).append(data)
+                else:
+                    named_inputs[port_name] = data
+
+            # Safety: reject lists on non-variadic ports (should be caught by validation)
+            for port_name, value in named_inputs.items():
+                if isinstance(value, list) and port_name not in variadic_ports:
+                    raise ValueError(
+                        f"Port '{port_name}' on node '{node_id}' received "
+                        f"{len(value)} inputs but is not variadic"
+                    )
 
             # Validate and normalize spectral units only for true spectral dataset ports.
             # Do NOT include target/config/model ports even if they are NDDataset objects

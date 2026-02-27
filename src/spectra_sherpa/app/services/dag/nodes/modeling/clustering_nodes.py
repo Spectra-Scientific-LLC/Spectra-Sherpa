@@ -11,7 +11,6 @@ import numpy as np
 
 from ...io_contracts import (
     coerce_to_sherpa,
-    resolve_legacy_input,
     to_numpy_2d,
 )
 from ...node_base import (
@@ -84,6 +83,15 @@ class HCANode(Node):
             ),
         ],
         input_types=["NDDataset", "array"],
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Spectral data to process",
+            ),
+        ],
         output_type="dict",
         output_ports=[
             PortMetadata(
@@ -124,7 +132,6 @@ class HCANode(Node):
         from scipy.spatial.distance import pdist
         from sklearn.decomposition import PCA as SkPCA
 
-        input_data = resolve_legacy_input(input_data, kwargs, "default")
         input_ds = coerce_to_sherpa(
             input_data,
             input_name="input_data",
@@ -388,6 +395,15 @@ class KMeansNode(Node):
             ),
         ],
         input_types=["NDDataset", "array"],
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Spectral data to process",
+            ),
+        ],
         output_type="dict",
         output_ports=[
             PortMetadata(
@@ -427,7 +443,6 @@ class KMeansNode(Node):
         from sklearn.cluster import KMeans
         from sklearn.decomposition import PCA as SkPCA
 
-        input_data = resolve_legacy_input(input_data, kwargs, "default")
         input_ds = coerce_to_sherpa(
             input_data,
             input_name="input_data",
@@ -548,6 +563,15 @@ class DBSCANNode(Node):
             ),
         ],
         input_types=["NDDataset", "array"],
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Spectral data to process",
+            ),
+        ],
         output_type="dict",
         output_ports=[
             PortMetadata(
@@ -580,7 +604,6 @@ class DBSCANNode(Node):
         from sklearn.cluster import DBSCAN
         from sklearn.decomposition import PCA as SkPCA
 
-        input_data = resolve_legacy_input(input_data, kwargs, "default")
         input_ds = coerce_to_sherpa(
             input_data,
             input_name="input_data",

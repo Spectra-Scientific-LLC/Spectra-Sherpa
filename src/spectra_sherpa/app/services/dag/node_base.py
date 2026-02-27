@@ -91,6 +91,7 @@ class PortMetadata:
     required: bool = True
     label: str = ""  # Display label (e.g., "Training Spectra")
     description: Optional[str] = None
+    variadic: bool = False  # True = always receives a list, even for single edge
 
     def __post_init__(self):
         """Set label to name if not provided."""
@@ -123,9 +124,9 @@ class NodeMetadata:
     parameters: List[NodeParameter] = field(default_factory=list)
     input_types: List[str] = field(default_factory=lambda: ["NDDataset"])
     output_type: str = "NDDataset"
-    # Named input ports for multi-input nodes. If None, uses legacy positional inputs.
-    # When defined, executor passes inputs as kwargs: execute(X=data1, y=data2)
-    input_ports: Optional[List[PortMetadata]] = None
+    # Named input ports. Empty list = source node (no inputs).
+    # Executor passes inputs as kwargs: execute(X=data1, y=data2)
+    input_ports: List[PortMetadata] = field(default_factory=list)
     # Named output ports for multi-output nodes (e.g., train/test split)
     # If None, single output on "default" port
     output_ports: Optional[List[PortMetadata]] = None
@@ -137,9 +138,6 @@ class NodeMetadata:
     policy: Optional[NodePolicy] = None
     # Optional URL linking to external documentation (e.g., SpectroChemPy API docs)
     help_url: Optional[str] = None
-    # Backward-compat aliases: {old_node_type: {param_name: default_value}}
-    # When a node is created via an alias type, the mapped defaults are injected.
-    aliases: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
 
 def _format_value(value: Any) -> str:
@@ -199,25 +197,19 @@ class Node(ABC):
         """
         Execute the node's operation.
 
-        For single-input nodes: receives positional args
-        For multi-input nodes with named ports: receives kwargs by port name
-
-        Args:
-            *inputs: Input data from connected nodes (legacy positional)
-            **kwargs: Input data by port name (for nodes with input_ports defined)
+        Signature varies by node type:
+        - Source nodes: ``execute()`` (no inputs)
+        - Single-input: ``execute(input_data)``
+        - Multi-input: ``execute(X=..., y=...)`` (kwargs by port name)
 
         Returns:
-            Output data (typically an NDDataset)
+            Output data (typically a SherpaDataset)
 
         Raises:
             ValueError: If inputs are invalid
             RuntimeError: If execution fails
         """
         pass
-
-    def uses_named_ports(self) -> bool:
-        """Check if this node uses named input ports."""
-        return self.metadata is not None and self.metadata.input_ports is not None
 
     def validate_parameters(self) -> None:
         """
@@ -230,7 +222,7 @@ class Node(ABC):
             return
 
         for param_def in self.metadata.parameters:
-            if param_def.required and param_def.name not in self.parameters:
+            if param_def.required and param_def.name not in self.parameters and param_def.default is None:
                 raise ValueError(f"Missing required parameter: {param_def.name}")
 
             value = self.parameters.get(param_def.name)
@@ -249,6 +241,10 @@ class Node(ABC):
             elif param_def.param_type == "boolean":
                 if not isinstance(value, bool):
                     raise ValueError(f"Parameter {param_def.name} must be a boolean, got {type(value)}")
+
+    def uses_named_ports(self) -> bool:
+        """Return True if this node declares explicit named input ports."""
+        return bool(self.metadata and self.metadata.input_ports)
 
     # ------------------------------------------------------------------
     # Python export / code generation
@@ -320,7 +316,11 @@ class Node(ABC):
         lines.append(f"{indent}# --- {self.metadata.label} ({self.node_id}) ---")
 
         # Determine input expression
-        input_expr = next(iter(inputs.values())) if inputs else "input_data"
+        input_val = next(iter(inputs.values())) if inputs else "input_data"
+        if isinstance(input_val, list):
+            input_expr = "[" + ", ".join(input_val) + "]"
+        else:
+            input_expr = input_val
         lines.append(f"{indent}data = {input_expr}.copy()")
 
         # Build SCP method kwargs
@@ -342,16 +342,19 @@ class Node(ABC):
         """
         Run the node with error handling.
 
+        The executor always calls via kwargs (named ports).
+        Positional *inputs are accepted for direct test calls.
+
         Args:
-            *inputs: Input data (positional, for single-input nodes)
-            **kwargs: Input data by port name (for multi-input nodes)
+            *inputs: Positional input data (convenience for tests)
+            **kwargs: Input data by port name (executor path)
 
         Returns:
             NodeResult wrapping outputs and diagnostics
         """
         try:
             self.status = NodeStatus.RUNNING
-            # Per-node SCP gate (replaces former blanket _SCP_CATEGORIES check)
+            # Per-node SCP gate
             if self.metadata and self.metadata.requires_scp:
                 from spectra_sherpa.app.lib.scp_compat import HAS_SCP
 
@@ -363,13 +366,15 @@ class Node(ABC):
             self.validate_parameters()
             if kwargs:
                 # Single "default" port → pass as first positional arg
-                # (most execute() signatures use execute(self, input_data))
                 if list(kwargs.keys()) == ["default"]:
                     raw = await self.execute(kwargs["default"])
                 else:
                     raw = await self.execute(**kwargs)
-            else:
+            elif inputs:
                 raw = await self.execute(*inputs)
+            else:
+                # Source nodes (no inputs)
+                raw = await self.execute()
             self.result = NodeResult.wrap(raw)
             self.status = NodeStatus.COMPLETED
             return self.result
@@ -455,10 +460,10 @@ class NodeRegistry:
 
             self._nodes[node_type] = node_class
 
-            # Register aliases so old node_type strings still resolve
-            for alias_type in metadata.aliases:
-                if alias_type not in self._nodes or not (self._frozen and alias_type in self._builtin_types):
-                    self._nodes[alias_type] = node_class
+    def __contains__(self, node_type: str) -> bool:
+        """Check if a node type is registered."""
+        with self._lock:
+            return node_type in self._nodes
 
     def unregister(self, node_type: str) -> bool:
         """Remove a non-builtin node type from the registry.
@@ -495,12 +500,7 @@ class NodeRegistry:
 
             node_class = self._nodes[node_type]
 
-        # Inject alias defaults when created via an alias type
-        parameters = dict(parameters or {})
-        alias_defaults = node_class.get_metadata().aliases.get(node_type, {})
-        for k, v in alias_defaults.items():
-            parameters.setdefault(k, v)
-        return node_class(node_id, parameters)
+        return node_class(node_id, dict(parameters or {}))
 
     def get_metadata(self, node_type: str) -> NodeMetadata:
         """Get metadata for a node type."""
@@ -527,25 +527,6 @@ class NodeRegistry:
                     seen.add(cls_id)
                     result.append(cls.get_metadata())
             return result
-
-    def list_nodes_with_aliases(self) -> List[NodeMetadata]:
-        """List all registered node types including alias entries.
-
-        Each alias gets a shallow copy of the canonical node's metadata
-        with ``node_type`` replaced by the alias string.  This ensures
-        the frontend metadata lookup succeeds for legacy workflows that
-        reference old node type strings.
-        """
-        import copy
-
-        canonical = self.list_nodes()
-        result = list(canonical)
-        for meta in canonical:
-            for alias_type in meta.aliases:
-                alias_meta = copy.copy(meta)
-                alias_meta.node_type = alias_type
-                result.append(alias_meta)
-        return result
 
     def list_by_category(self, category: str) -> List[NodeMetadata]:
         """List nodes in a specific category."""

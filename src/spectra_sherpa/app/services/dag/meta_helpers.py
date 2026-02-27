@@ -99,7 +99,7 @@ def add_processing_step(
         dataset.meta["processing_history"] = []
 
     step = {
-        "operation": operation,
+        "op_id": operation,
         "parameters": parameters,
         "timestamp": datetime.utcnow().isoformat(),
         "node_id": node_id,

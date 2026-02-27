@@ -11,7 +11,6 @@ from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, co
 
 from ...io_contracts import (
     bind_X,
-    resolve_legacy_input,
 )
 from ...node_base import (
     Node,
@@ -63,6 +62,15 @@ class EFANode(Node):
             ),
         ],
         input_types=["NDDataset"],
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Spectral data to process",
+            ),
+        ],
         output_type="dict",
         output_ports=[
             PortMetadata(
@@ -101,10 +109,8 @@ class EFANode(Node):
         Returns:
             Dict containing forward and backward eigenvalues
         """
-        input_data = resolve_legacy_input(input_data, kwargs, "default")
         input_ds = bind_X(
             input_data,
-            kwargs,
             missing_message="Missing required input: input_data (evolving spectra)",
             dataset_error_message="input_data must be an dataset object",
             allow_array=False,

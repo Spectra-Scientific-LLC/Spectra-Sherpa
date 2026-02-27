@@ -507,30 +507,8 @@ class TestRegistrationRequiresCode:
             assert cfg.to_client_safe()["registrationRequiresCode"] is False
 
 
-class TestDemoBackwardCompat:
-    """Verify that APP_MODE=demo is gracefully mapped to enterprise in from_env()."""
-
-    def test_constructor_rejects_demo_mode(self):
-        """AppConfig(mode='demo') raises validation error — demo is not a valid mode."""
-        from pydantic import ValidationError
-
-        with pytest.raises(ValidationError):
-            AppConfig(
-                mode="demo",
-                egress_enabled=True,
-                api_base_url="http://localhost:8000",
-                llms={},
-            )
-
-    @patch.dict(os.environ, {"APP_MODE": "demo"}, clear=False)
-    def test_from_env_maps_demo_to_enterprise(self):
-        """from_env() maps APP_MODE=demo → enterprise (with deprecation warning)."""
-        cfg = AppConfig.from_env()
-        assert cfg.mode == "enterprise"
-
-
 # ===========================================================================
-# 10. Egress schema defaults
+# 9. Egress schema defaults
 # ===========================================================================
 
 

@@ -448,42 +448,41 @@ const hasMultipleOutputs = (nodeType: string): boolean => {
 };
 
 const NODE_ICONS: Record<string, string> = {
-  'DATA': '📊',
-  'NORMALIZE': '⚖️',
-  'SCALE': '📏',
-  'BASELINE': '📉',
-  'SMOOTH': '〰️',
-  'PCA': '🔀',
-  'PLS': '📈',
-  'MCR': '🧩',
-  'EFA': '🔍',
-  'SIMPLISMA': '🎯',
-  'STATS': '📊',
-  'PLOT': '📈',
-  'CONTOUR_PLOT': '🗺️',
-  'EXPORT': '💾',
+  'data.source': '📊',
+  'preprocess.normalize': '⚖️',
+  'preprocess.scale': '📏',
+  'baseline.penalized_ls': '📉',
+  'preprocess.smooth': '〰️',
+  'model.pca': '🔀',
+  'model.pls': '📈',
+  'model.mcr_als': '🧩',
+  'model.efa': '🔍',
+  'model.simplisma': '🎯',
+  'stats.summary': '📊',
+  'output.plot': '📈',
+  'output.contour': '🗺️',
+  'output.export': '💾',
 };
 
 const NODE_LABELS: Record<string, string> = {
-  'DATA': 'Load Data',
-  'NORMALIZE': 'Normalize',
-  'SCALE': 'Scale',
-  'BASELINE': 'Baseline',
-  'SMOOTH': 'Smooth',
-  'PCA': 'PCA',
-  'PLS': 'PLS',
-  'MCR': 'MCR-ALS',
-  'EFA': 'EFA',
-  'SIMPLISMA': 'SIMPLISMA',
-  'STATS': 'Statistics',
-  'PLOT': 'Scatter Plot',
-  'CONTOUR_PLOT': 'Contour Plot',
-  'EXPORT': 'Export',
+  'data.source': 'Load Data',
+  'preprocess.normalize': 'Normalize',
+  'preprocess.scale': 'Scale',
+  'baseline.penalized_ls': 'Baseline',
+  'preprocess.smooth': 'Smooth',
+  'model.pca': 'PCA',
+  'model.pls': 'PLS',
+  'model.mcr_als': 'MCR-ALS',
+  'model.efa': 'EFA',
+  'model.simplisma': 'SIMPLISMA',
+  'stats.summary': 'Statistics',
+  'output.plot': 'Scatter Plot',
+  'output.contour': 'Contour Plot',
+  'output.export': 'Export',
 };
 
 const getNodeIcon = (type: string): string => {
-  const legacyType = workflowStore.getLegacyNodeType(type);
-  return NODE_ICONS[legacyType] || '📦';
+  return NODE_ICONS[type] || '📦';
 };
 
 const getNodeLabel = (type: string): string => {
@@ -491,8 +490,7 @@ const getNodeLabel = (type: string): string => {
   if (metadata?.label) {
     return metadata.label;
   }
-  const legacyType = workflowStore.getLegacyNodeType(type);
-  return NODE_LABELS[legacyType] || type;
+  return NODE_LABELS[type] || type;
 };
 
 const getNodeCategory = (type: string): string => {
@@ -514,9 +512,8 @@ const getNodeCategory = (type: string): string => {
     if (mapped) return mapped;
   }
 
-  const normalizedType = workflowStore.normalizeNodeType(type);
-  if (normalizedType.includes(".")) {
-    const prefix = normalizedType.split(".")[0];
+  if (type.includes(".")) {
+    const prefix = type.split(".")[0];
     const prefixMap: Record<string, string> = {
       data: 'data',
       synthesis: 'data',
@@ -537,24 +534,7 @@ const getNodeCategory = (type: string): string => {
     if (mapped) return mapped;
   }
 
-  const legacyType = workflowStore.getLegacyNodeType(type);
-  const categories: Record<string, string> = {
-    'DATA': 'data',
-    'NORMALIZE': 'preprocess',
-    'SCALE': 'preprocess',
-    'BASELINE': 'preprocess',
-    'SMOOTH': 'preprocess',
-    'PCA': 'model',
-    'PLS': 'model',
-    'MCR': 'model',
-    'EFA': 'model',
-    'SIMPLISMA': 'model',
-    'STATS': 'analyze',
-    'PLOT': 'visualize',
-    'CONTOUR_PLOT': 'visualize',
-    'EXPORT': 'export',
-  };
-  return categories[legacyType] || 'default';
+  return 'default';
 };
 
 // Format data shape for display

@@ -186,9 +186,9 @@ async def test_pca_node_after_snv_accepts_analysis_dataset_units():
     )
 
     snv_node = node_registry.create_node(
-        node_type="normalize.snv",
+        node_type="preprocess.normalize",
         node_id="snv_before_pca",
-        parameters={},
+        parameters={"method": "snv"},
     )
     snv_result = await snv_node.run(default=dataset)
     snv_output = snv_result.outputs["default"]

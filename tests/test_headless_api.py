@@ -34,8 +34,8 @@ def _make_simple_workflow(executor: DAGExecutor) -> None:
     executor.add_node(
         WorkflowNode(
             node_id="snv",
-            node_type="normalize.snv",
-            parameters={},
+            node_type="preprocess.normalize",
+            parameters={"method": "snv"},
         )
     )
     executor.add_edge(

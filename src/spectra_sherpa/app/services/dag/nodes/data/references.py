@@ -53,6 +53,7 @@ class NISTLibraryNode(Node):
             ),
         ],
         input_types=[],
+        input_ports=[],
         output_type="SherpaDataset",
     )
 

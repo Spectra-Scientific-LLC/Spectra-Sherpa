@@ -377,12 +377,6 @@ class TestProvenance:
         assert restored[0].state_effects == ("eff1",)
         assert restored[1].op_id == "op2"
 
-    def test_from_list_legacy_format(self):
-        """Legacy format uses 'operation' key instead of 'op_id'."""
-        data = [{"operation": "normalize.snv", "parameters": {}}]
-        prov = Provenance.from_list(data)
-        assert prov[0].op_id == "normalize.snv"
-
     def test_copy_independent(self):
         prov = Provenance()
         prov.append("step1", {})
@@ -1461,7 +1455,7 @@ class TestSCPAdapter:
             y=y_coord,
             title="Mock IR Data",
             units="absorbance",
-            meta={"custom": "value", "processing_history": [{"operation": "load"}]},
+            meta={"custom": "value", "processing_history": [{"op_id": "load"}]},
         )
 
     def test_from_nddataset(self):

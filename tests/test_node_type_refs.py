@@ -84,7 +84,7 @@ class TestAllNodeTypeRefs:
         """Every port's type_ref should resolve to a type with a known category."""
         from spectra_sherpa.app.types import type_registry
 
-        valid_categories = {"dataset", "array", "number", "target", "model", "visualization", "config"}
+        valid_categories = {"dataset", "array", "number", "target", "model", "visualization", "config", "any"}
         errors: list[str] = []
 
         for meta in node_registry.list_nodes():

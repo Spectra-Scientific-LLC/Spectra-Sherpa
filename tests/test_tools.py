@@ -450,8 +450,8 @@ class TestBuiltinSpectralTools:
         result = suggest_preprocessing(technique="NIR", goal="classification")
         steps = [s["step"] for s in result["recommended_steps"]]
         # Should include both NIR-specific and classification-specific steps
-        assert "normalize.snv" in steps
-        assert "preprocess.autoscaling" in steps
+        assert "preprocess.normalize" in steps
+        assert "preprocess.scale" in steps
 
 
 class TestBuiltinWorkflowTools:

@@ -267,13 +267,6 @@ class TestTransformSpecNode:
         assert "import numpy as np" in node.python_extra_imports
 
     @pytest.mark.asyncio
-    async def test_legacy_input_0_kwarg(self, sample_ds):
-        node = DoubleNode("dbl_leg")
-        result = await node.execute(input_0=sample_ds)
-
-        np.testing.assert_array_equal(result.X, sample_ds.X * 2)
-
-    @pytest.mark.asyncio
     async def test_resolve_params_defaults(self, sample_ds):
         node = ClipFloorSpecNode("clip_def")
         # No explicit params → uses default floor=0.0

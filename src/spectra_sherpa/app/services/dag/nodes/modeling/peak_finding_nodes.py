@@ -11,7 +11,6 @@ import numpy as np
 
 from ...io_contracts import (
     bind_X,
-    resolve_legacy_input,
     to_numpy_2d,
 )
 from ...node_base import (
@@ -102,6 +101,15 @@ class PeakFindingNode(Node):
             ),
         ],
         input_types=["NDDataset"],
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Spectral data to process",
+            ),
+        ],
         output_type="PeakData",
         output_ports=[
             PortMetadata(
@@ -140,10 +148,8 @@ class PeakFindingNode(Node):
         """
         from scipy.signal import find_peaks as scipy_find_peaks
 
-        input_data = resolve_legacy_input(input_data, kwargs, "default")
         input_ds = bind_X(
             input_data,
-            kwargs,
             missing_message="Missing required input: input_data (spectrum)",
             dataset_error_message="input_data must be an dataset object",
             allow_array=False,

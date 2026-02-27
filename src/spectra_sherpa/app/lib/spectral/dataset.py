@@ -199,7 +199,7 @@ def add_provenance(
 
     dataset.meta["provenance"].append(
         {
-            "operation": operation,
+            "op_id": operation,
             "parameters": parameters,
         }
     )

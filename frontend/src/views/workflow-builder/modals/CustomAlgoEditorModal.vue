@@ -14,7 +14,7 @@ import SelectButton from "primevue/selectbutton";
 import MonacoEditor from "@/components/MonacoEditor.vue";
 import PlotlyChart from "@/components/PlotlyChart.vue";
 import { useCustomAlgoStore, type CustomAlgo, type UpdateCustomAlgo } from "@/stores/customAlgo";
-import { useWorkflowStore, normalizeNodeType } from "@/stores/workflow";
+import { useWorkflowStore } from "@/stores/workflow";
 import api from "@/api/client";
 
 const props = defineProps<{
@@ -122,7 +122,7 @@ async function runTrial() {
   try {
     // Find first data source node in the current workflow for trial input
     const dataSourceNode = workflowStore.nodes.find(
-      (n) => normalizeNodeType(n.type).startsWith("data.")
+      (n) => n.type.startsWith("data.")
     );
     const dataSourceParams = dataSourceNode?.params ?? {};
 

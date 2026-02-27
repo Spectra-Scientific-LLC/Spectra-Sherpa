@@ -39,8 +39,8 @@ def _make_snv_workflow(executor: DAGExecutor) -> str:
     executor.add_node(
         WorkflowNode(
             node_id="snv",
-            node_type="normalize.snv",
-            parameters={},
+            node_type="preprocess.normalize",
+            parameters={"method": "snv"},
         )
     )
     executor.add_edge(
@@ -68,11 +68,10 @@ class TestRunNodeInWorker:
 
         ds = SherpaDataset(X=np.random.default_rng(42).normal(size=(10, 50)))
         result = _run_node_in_worker(
-            node_type="normalize.snv",
+            node_type="preprocess.normalize",
             node_id="snv_w",
-            parameters={},
-            args=(ds,),
-            kwargs={},
+            parameters={"method": "snv"},
+            kwargs={"default": ds},
         )
         assert isinstance(result, NodeResult)
         out = result.outputs
@@ -87,7 +86,7 @@ class TestShouldOffload:
 
     def test_no_pool_never_offloads(self):
         executor = DAGExecutor(process_pool=None)
-        executor.add_node(WorkflowNode("snv", "normalize.snv", {}))
+        executor.add_node(WorkflowNode("snv", "preprocess.normalize", {"method": "snv"}))
         assert executor._should_offload(executor.nodes["snv"]) is False
 
     def test_data_node_stays_in_process(self):
@@ -99,7 +98,7 @@ class TestShouldOffload:
     def test_preprocessing_offloads(self):
         pool = MagicMock(spec=ProcessPoolExecutor)
         executor = DAGExecutor(process_pool=pool)
-        executor.add_node(WorkflowNode("snv", "normalize.snv", {}))
+        executor.add_node(WorkflowNode("snv", "preprocess.normalize", {"method": "snv"}))
         assert executor._should_offload(executor.nodes["snv"]) is True
 
     def test_modeling_offloads(self):

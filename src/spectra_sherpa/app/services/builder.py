@@ -254,33 +254,6 @@ class BuilderService:
             pathlength_m=pathlength_m,
         )
 
-    def blend(
-        self,
-        species: list[dict[str, Any]],
-        concentration_timeseries: dict[str, list[float]],
-        settings_dict: dict[str, Any],
-        pathlength_m: float | None = None,
-    ) -> "NDDataset":
-        """
-        DEPRECATED: Use synthesize_spectra() instead.
-
-        Blend multiple species according to concentration timeseries.
-        This method is preserved for backward compatibility.
-        """
-        import warnings
-
-        warnings.warn(
-            "blend() is deprecated, use synthesize_spectra() instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.synthesize_spectra(
-            species=species,
-            concentrations=concentration_timeseries,
-            settings_dict=settings_dict,
-            pathlength_m=pathlength_m,
-        )
-
     def generate_curves(self, count: int) -> tuple[list[dict[str, float]], list[dict[str, Any]]]:
         """
         Generate Catmull-Rom curve control points and segments.

@@ -13,7 +13,6 @@ from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, co
 
 from ...io_contracts import (
     bind_X,
-    resolve_legacy_input,
     to_numpy_2d,
 )
 from ...node_base import (
@@ -102,6 +101,15 @@ class NMFNode(Node):
             ),
         ],
         input_types=["NDDataset"],
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Spectral data to process",
+            ),
+        ],
         output_type="dict",
         output_ports=[
             PortMetadata(
@@ -149,10 +157,8 @@ class NMFNode(Node):
             - H: Coefficient matrix / pure spectra (n_components, n_wavenumbers) as SpectralResult
             - n_components: Number of components
         """
-        input_data = resolve_legacy_input(input_data, kwargs, "default")
         input_ds = bind_X(
             input_data,
-            kwargs,
             missing_message="Missing required input: input_data (non-negative spectra)",
             dataset_error_message="input_data must be an dataset object",
             allow_array=False,
@@ -366,6 +372,15 @@ class FastICANode(Node):
             ),
         ],
         input_types=["NDDataset"],
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Spectral data to process",
+            ),
+        ],
         output_type="dict",
         output_ports=[
             PortMetadata(
@@ -413,10 +428,8 @@ class FastICANode(Node):
             - A: Mixing matrix (n_components, n_wavenumbers)
             - n_components: Number of components
         """
-        input_data = resolve_legacy_input(input_data, kwargs, "default")
         input_ds = bind_X(
             input_data,
-            kwargs,
             missing_message="Missing required input: input_data (spectral mixtures)",
             dataset_error_message="input_data must be an dataset object",
             allow_array=False,

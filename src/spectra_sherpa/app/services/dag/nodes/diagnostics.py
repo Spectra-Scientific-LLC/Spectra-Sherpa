@@ -15,7 +15,7 @@ import numpy as np
 logger = logging.getLogger(__name__)
 from spectra_sherpa.app.lib.sherpa_dataset import EvaluationResult, SherpaDataset
 
-from ..io_contracts import resolve_legacy_input, to_numpy_1d, to_numpy_2d
+from ..io_contracts import to_numpy_1d, to_numpy_2d
 from ..node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
 
 
@@ -65,6 +65,15 @@ class OutlierDetectionNode(Node):
         ],
         input_types=["PCAModel"],
         output_type="dict",
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/Any/1.0",
+                required=True,
+                label="Input Data",
+                description="Input data to process",
+            ),
+        ],
         output_ports=[
             PortMetadata(
                 name="model",
@@ -351,9 +360,6 @@ class CrossValidationNode(Node):
             mean_squared_error,
             r2_score,
         )
-
-        y_true = resolve_legacy_input(y_true, kwargs, "input_0")
-        y_pred = resolve_legacy_input(y_pred, kwargs, "input_1")
 
         if y_true is None or y_pred is None:
             raise ValueError("Missing required inputs: y_true and y_pred")

@@ -49,7 +49,7 @@ APP_API_KEY = os.getenv("APP_API_KEY", "default-local-key")
 @dataclass(frozen=True)
 class Settings:
     app_name: str = "Spectra Scientific Platform"
-    app_version: str = "1.4.1"  # Increment when node definitions change
+    app_version: str = "0.1.5"  # Increment when node definitions change
     project_root: Path = PROJECT_ROOT
     backend_root: Path = BACKEND_ROOT
     data_dir: Path = DATA_DIR
@@ -303,22 +303,13 @@ class AppConfig(BaseModel):
         """Load configuration from environment variables using registry defaults.
 
         Reads APP_MODE to determine operational mode (local, hybrid, enterprise).
-        APP_MODE=demo is accepted as a deprecated alias for enterprise.
         """
         import logging
-        import warnings
 
         logger = logging.getLogger(__name__)
 
         # Determine app mode from environment
         raw_mode = os.getenv("APP_MODE", "local").strip().lower()
-        if raw_mode == "demo":
-            warnings.warn(
-                "APP_MODE=demo is deprecated. Use APP_MODE=enterprise with " "SITE_PROFILE=demo instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            raw_mode = "enterprise"
         if raw_mode not in ("local", "hybrid", "enterprise"):
             logger.warning("Unknown APP_MODE=%r — falling back to 'local'", raw_mode)
             raw_mode = "local"

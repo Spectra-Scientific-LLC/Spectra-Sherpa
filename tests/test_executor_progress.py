@@ -56,7 +56,7 @@ class TestStatusCallback:
                 parameters={"source": "sklearn", "sklearn_dataset": "iris"},
             )
         )
-        executor.add_node(WorkflowNode(node_id="snv1", node_type="normalize.snv", parameters={}))
+        executor.add_node(WorkflowNode(node_id="snv1", node_type="preprocess.normalize", parameters={"method": "snv"}))
         executor.add_edge(WorkflowEdge(from_node="src1", to_node="snv1"))
 
         await executor.execute(status_callback=callback)
@@ -144,7 +144,7 @@ class TestStatusCallback:
                 parameters={"source": "sklearn", "sklearn_dataset": "iris"},
             )
         )
-        executor.add_node(WorkflowNode(node_id="snv1", node_type="normalize.snv", parameters={}))
+        executor.add_node(WorkflowNode(node_id="snv1", node_type="preprocess.normalize", parameters={"method": "snv"}))
         executor.add_edge(WorkflowEdge(from_node="src1", to_node="snv1"))
 
         await executor.execute(status_callback=callback)

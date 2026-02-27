@@ -23,7 +23,7 @@ from typing import Any
 import numpy as np
 
 logger = logging.getLogger(__name__)
-from spectra_sherpa.app.lib.sherpa_dataset import AxisInfo
+from spectra_sherpa.app.lib.axes import SampleAxis, SpectralAxis
 from spectra_sherpa.app.models.spectra_meta import (
     ConcentrationProfile,
     ConcentrationUnit,
@@ -37,7 +37,7 @@ from spectra_sherpa.app.models.spectra_meta import (
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
 
 from ..io_contracts import build_dataset_like, coerce_to_sherpa, to_numpy_2d
-from ..node_base import Node, NodeMetadata, NodeParameter, register_node
+from ..node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
 
 
 def generate_concentration_curve(
@@ -143,15 +143,25 @@ class BlendNode(Node):
             ),
         ],
         input_types=["NDDataset"],  # Multiple inputs (one per species)
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Species spectra to blend (multiple edges accepted)",
+                variadic=True,
+            ),
+        ],
         output_type="NDDataset",
     )
 
-    async def execute(self, *input_data: Any) -> Any:
+    async def execute(self, input_data: Any) -> Any:
         """
         Execute blending of multiple spectra.
 
         Args:
-            *input_data: Variable number of dataset inputs (one per species)
+            input_data: List of dataset inputs (one per species)
 
         Returns:
             Dataset containing the blended mixture spectra
@@ -251,10 +261,12 @@ class BlendNode(Node):
             copy_history=False,
         )
         dataset.target = None
-        dataset.meta = {"processing_history": dataset.provenance}
-        dataset.set_coordset(
-            y=AxisInfo(values=np.arange(n_timepoints), title="Time", units="s"),
-            x=AxisInfo(values=wavenumbers, title="Wavenumber", units="cm^-1"),
+        dataset.meta["processing_history"] = dataset.provenance
+        dataset.feature_axis = SpectralAxis(
+            values=wavenumbers, title="Wavenumber", units="cm^-1"
+        )
+        dataset.sample_axis = SampleAxis(
+            values=np.arange(n_timepoints), title="Time"
         )
 
         # ---------------------------------------------------------------------
@@ -403,6 +415,15 @@ class SpeciesSelectorNode(Node):
         ],
         input_types=["NDDataset"],
         output_type="NDDataset",
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Data",
+                description="Input data to process",
+            ),
+        ],
     )
 
     async def execute(self, input_data: Any) -> Any:
@@ -502,15 +523,25 @@ class MergeSpectraNode(Node):
             ),
         ],
         input_types=["NDDataset"],
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Spectra to merge (multiple edges accepted)",
+                variadic=True,
+            ),
+        ],
         output_type="NDDataset",
     )
 
-    async def execute(self, *input_data: Any) -> Any:
+    async def execute(self, input_data: Any) -> Any:
         """
         Merge multiple spectra into a single dataset.
 
         Args:
-            *input_data: Variable number of dataset inputs
+            input_data: List of dataset inputs
 
         Returns:
             Dataset containing all spectra stacked
@@ -567,10 +598,12 @@ class MergeSpectraNode(Node):
             copy_history=False,
         )
         dataset.target = None
-        dataset.meta = {"processing_history": dataset.provenance}
-        dataset.set_coordset(
-            y=AxisInfo(values=np.arange(len(spectra)), title="Sample"),
-            x=AxisInfo(values=ref_wn, title="Wavenumber", units="cm^-1"),
+        dataset.meta["processing_history"] = dataset.provenance
+        dataset.feature_axis = SpectralAxis(
+            values=ref_wn, title="Wavenumber", units="cm^-1"
+        )
+        dataset.sample_axis = SampleAxis(
+            values=np.arange(len(spectra)), title="Sample"
         )
 
         # Record processing step

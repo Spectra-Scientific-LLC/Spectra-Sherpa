@@ -107,6 +107,7 @@ async def list_custom_algo_nodes(
                     required=p.required,
                     label=p.label,
                     description=p.description,
+                    variadic=p.variadic,
                 )
                 for p in meta.input_ports
             ]

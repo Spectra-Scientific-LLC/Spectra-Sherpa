@@ -716,7 +716,7 @@
             </template>
 
             <!-- MCR-ALS Plots -->
-            <template v-if="nodeTypeKey === 'MCR'">
+            <template v-if="nodeTypeKey === 'model.mcr_als'">
               <!-- Concentration Profiles -->
               <div class="plot-subsection">
                 <div class="plot-subsection-header" @click="togglePlot('mcrConcentrations')">
@@ -745,7 +745,7 @@
             </template>
 
             <!-- PLS Plots -->
-            <template v-if="nodeTypeKey === 'PLS'">
+            <template v-if="nodeTypeKey === 'model.pls'">
               <!-- Scores Plot -->
               <div class="plot-subsection">
                 <div class="plot-subsection-header" @click="togglePlot('plsScores')">
@@ -784,7 +784,7 @@
             </template>
 
             <!-- PLS-DA Plots -->
-            <template v-if="nodeTypeKey === 'PLS_DA'">
+            <template v-if="nodeTypeKey === 'classification.plsda'">
               <!-- Scores Plot -->
               <div class="plot-subsection">
                 <div class="plot-subsection-header" @click="togglePlot('classificationScores')">
@@ -876,7 +876,7 @@
             </template>
 
             <!-- SIMCA Plots -->
-            <template v-if="nodeTypeKey === 'SIMCA'">
+            <template v-if="nodeTypeKey === 'classification.simca'">
               <!-- Scores Plot -->
               <div class="plot-subsection">
                 <div class="plot-subsection-header" @click="togglePlot('classificationScores')">
@@ -902,7 +902,7 @@
             </template>
 
             <!-- KNN Plots -->
-            <template v-if="nodeTypeKey === 'KNN'">
+            <template v-if="nodeTypeKey === 'classification.knn'">
               <!-- Scores Plot -->
               <div class="plot-subsection">
                 <div class="plot-subsection-header" @click="togglePlot('classificationScores')">
@@ -928,7 +928,7 @@
             </template>
 
             <!-- HCA Plots -->
-            <template v-if="nodeTypeKey === 'HCA'">
+            <template v-if="nodeTypeKey === 'model.hca'">
               <div class="plot-subsection">
                 <div class="plot-subsection-header" @click="togglePlot('hcaDendrogram')">
                   <i :class="plotSections.hcaDendrogram ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
@@ -1032,7 +1032,7 @@
             </template>
 
             <!-- STATS Plots -->
-            <template v-if="nodeTypeKey === 'STATS'">
+            <template v-if="nodeTypeKey === 'stats.summary'">
               <div class="plot-subsection">
                 <div class="plot-subsection-header" @click="togglePlot('statsDistribution')">
                   <i :class="plotSections.statsDistribution ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
@@ -1047,7 +1047,7 @@
             </template>
 
             <!-- PLS Plots -->
-            <template v-if="nodeTypeKey === 'PLS'">
+            <template v-if="nodeTypeKey === 'model.pls'">
               <!-- Scores Plot -->
               <div class="plot-subsection">
                 <div class="plot-subsection-header" @click="togglePlot('plsScores')">
@@ -1165,7 +1165,7 @@ import QuickPlotModal from "./modals/QuickPlotModal.vue";
 import DataTableModal from "./modals/DataTableModal.vue";
 import PlotlyChart from "@/components/PlotlyChart.vue";
 import { useProjectStore } from "@/stores/project";
-import { PARAM_NAME_MAP, normalizeNodeType, getLegacyNodeType, useWorkflowStore } from "@/stores/workflow";
+import { useWorkflowStore } from "@/stores/workflow";
 import { createCategoryColorMap } from "@/utils/colors";
 import { getYAxisLabel, getXAxisLabel, isSpectralData as checkIsSpectral } from "@/utils/plotLabels";
 import { buildNodeOutput, type NodeOutput } from "@/utils/nodeOutput";
@@ -1178,39 +1178,6 @@ import {
 } from "@/utils/sampleLabels";
 import api from "@/api/client";
 
-/**
- * Map frontend parameter names to backend parameter names for a given node type.
- * E.g., UI uses "components" but backend expects "n_components" for PCA.
- *
- * IMPORTANT: If both frontend and backend keys exist (e.g., both "components" and "n_components"),
- * only use the frontend key (the user's current value) and skip the backend key (old value).
- */
-function mapParamsToBackend(nodeType: string, params: Record<string, any>): Record<string, any> {
-  const legacyType = getLegacyNodeType(nodeType);
-  const mapping = PARAM_NAME_MAP[nodeType] || PARAM_NAME_MAP[legacyType];
-  if (!mapping) {
-    return { ...params };
-  }
-
-  // Build reverse mapping to detect backend keys (e.g., n_components -> components)
-  const backendToFrontend: Record<string, string> = {};
-  for (const [frontend, backend] of Object.entries(mapping)) {
-    backendToFrontend[backend] = frontend;
-  }
-
-  const mappedParams: Record<string, any> = {};
-  for (const [key, value] of Object.entries(params)) {
-    // Skip this key if it's a backend key AND its frontend equivalent exists
-    // (means we have both "components" and "n_components", prefer "components")
-    if (backendToFrontend[key] && params[backendToFrontend[key]] !== undefined) {
-      continue; // Skip the backend key, we'll use the frontend key instead
-    }
-
-    const backendKey = mapping[key] || key;
-    mappedParams[backendKey] = value;
-  }
-  return mappedParams;
-}
 
 const route = useRoute();
 const router = useRouter();
@@ -1370,26 +1337,25 @@ watch(() => workflowStore.isLoadingNodeLibrary, (isLoading) => {
 
 // Node icon mapping
 const NODE_ICONS: Record<string, string> = {
-  DATA: "📊",
-  NORMALIZE: "📏",
-  SCALE: "📏",
-  BASELINE: "📉",
-  SMOOTH: "〰️",
-  PCA: "🔀",
-  PLS: "📈",
-  MCR: "🧩",
-  STATS: "📊",
-  PLOT: "📈",
-  CONTOUR_PLOT: "🗺️",
-  EXPORT: "💾",
+  "data.source": "📊",
+  "preprocess.normalize": "📏",
+  "preprocess.scale": "📏",
+  "baseline.penalized_ls": "📉",
+  "preprocess.smooth": "〰️",
+  "model.pca": "🔀",
+  "model.pls": "📈",
+  "model.mcr_als": "🧩",
+  "stats.summary": "📊",
+  "output.plot": "📈",
+  "output.contour": "🗺️",
+  "output.export": "💾",
 };
 
 // Computed properties
 const nodeId = computed(() => route.params.nodeId as string);
 const nodeType = computed(() => nodeData.value?.type || "Unknown");
-const nodeTypeKey = computed(() => getLegacyNodeType(nodeType.value));
-const normalizedNodeType = computed(() => normalizeNodeType(nodeType.value));
-const isDataNode = computed(() => normalizedNodeType.value.startsWith("data."));
+const nodeTypeKey = computed(() => nodeType.value);
+const isDataNode = computed(() => nodeType.value.startsWith("data."));
 
 // Detect if data is spectral (vs generic like Iris dataset)
 const isSpectraData = computed(() => {
@@ -1419,17 +1385,12 @@ const isGenericDataNode = computed(() => {
 });
 
 const nodeLabel = computed(() => nodeData.value?.label || `Node ${nodeId.value}`);
-const nodeIcon = computed(() => NODE_ICONS[nodeTypeKey.value] || "📦");
+const nodeIcon = computed(() => NODE_ICONS[nodeType.value] || "📦");
 const nodeMetadata = computed(() => workflowStore.getNodeMetadata(nodeType.value));
-const mapMetadataParams = (nodeType: string, parameters: any[]): any[] => {
-  const reverseMapping = workflowStore.getReverseParamMapping(nodeType);
-
+const mapMetadataParams = (_nodeType: string, parameters: any[]): any[] => {
   return parameters.map((param) => {
-    // If backend name has a frontend equivalent, use the frontend name
-    const frontendName = reverseMapping?.[param.name] || param.name;
-
     return {
-      name: frontendName,
+      name: param.name,
       label: param.label,
       type: param.param_type,
       min: param.min_value,
@@ -1731,7 +1692,7 @@ const resolvePortPayload = (port: any): any => {
 
 const isPCAOutput = computed(() => {
   const metadata = nodeOutput.value?.metadata || {};
-  return nodeTypeKey.value === "PCA" || metadata.type === "PCA" || metadata.isPCA === true;
+  return nodeTypeKey.value === "model.pca" || metadata.type === "model.pca" || metadata.isPCA === true;
 });
 
 const primaryOutputPayload = computed(() => {
@@ -1907,8 +1868,8 @@ const outputPreviewColumns = computed(() => {
   const mcrLabels = metadata.labels || [];
   const featureNames = metadata.feature_names || [];
   const xTitle = metadata.x_title || "";
-  const isPCA = metadata.type === "PCA" || metadata.isPCA;
-  const isMCR = metadata.type === "MCR_ALS";
+  const isPCA = metadata.type === "model.pca" || metadata.isPCA;
+  const isMCR = metadata.type === "model.mcr_als";
 
   return Object.keys(first)
     .filter((key) => key !== "_label_full")
@@ -2026,7 +1987,7 @@ const contourClickPoint = ref<{ sampleIdx: number; wavenumberIdx: number; wavenu
 
 // Check if node is a preprocessing type
 const isPreprocessingNode = computed(() => {
-  const nt = normalizedNodeType.value;
+  const nt = nodeType.value;
   return (
     nt.startsWith("normalize.") ||
     nt.startsWith("baseline.") ||
@@ -2044,32 +2005,32 @@ const availablePlots = computed(() => {
     return plots;
   }
   switch (nodeTypeKey.value) {
-    case "MCR":
+    case "model.mcr_als":
       plots.push("Concentration Profiles", "Pure Spectra");
       break;
-    case "PLS":
+    case "model.pls":
       plots.push("Scores Plot", "Loadings Plot");
       break;
-    case "PLS_DA":  // Fixed: was "PLS_DA", should be "PLS_DA" to match legacy node type mapping
+    case "classification.plsda":
       plots.push("Scores Plot (with confidence ellipses)", "Loadings Plot", "VIP Scores");
       break;
-    case "SIMCA":
+    case "classification.simca":
       plots.push("Scores Plot");
       break;
-    case "KNN":
+    case "classification.knn":
       plots.push("Scores Plot");
       break;
-    case "HCA":
+    case "model.hca":
       plots.push("Dendrogram");
       break;
-    case "STATS":
+    case "stats.summary":
       plots.push("Distribution Plot");
       break;
-    case "DATA":
-    case "NORMALIZE":
-    case "SCALE":
-    case "BASELINE":
-    case "SMOOTH":
+    case "data.source":
+    case "preprocess.normalize":
+    case "preprocess.scale":
+    case "baseline.penalized_ls":
+    case "preprocess.smooth":
       // Show appropriate overview based on data type
       if (isGenericDataNode.value) {
         plots.push("Data Overview");
@@ -2908,7 +2869,7 @@ const pcaDiagnosticsLayout = computed(() => {
 // ============================================================================
 
 const mcrConcentrationData = computed(() => {
-  if (nodeTypeKey.value !== "MCR" || !hasOutput.value) return [];
+  if (nodeTypeKey.value !== "model.mcr_als" || !hasOutput.value) return [];
   const data = nodeOutput.value?.data || [];
   const metadata = nodeOutput.value?.metadata || {};
   const labels = metadata.labels || Array.from({ length: data[0]?.length || 0 }, (_, i) => `Component ${i + 1}`);
@@ -2939,7 +2900,7 @@ const mcrConcentrationLayout = computed(() => ({
 }));
 
 const mcrSpectraData = computed(() => {
-  if (nodeTypeKey.value !== "MCR" || !hasOutput.value) return [];
+  if (nodeTypeKey.value !== "model.mcr_als" || !hasOutput.value) return [];
   const metadata = nodeOutput.value?.metadata || {};
   const St = metadata.St || [];
   const wavenumbers = metadata.wavenumbers || Array.from({ length: St[0]?.length || 0 }, (_, i) => i);
@@ -2980,7 +2941,7 @@ const mcrSpectraLayout = computed(() => {
 // ============================================================================
 
 const plsScoresData = computed(() => {
-  if (nodeTypeKey.value !== "PLS" || !hasOutput.value) return [];
+  if (nodeTypeKey.value !== "model.pls" || !hasOutput.value) return [];
   const scores = nodeOutput.value?.data || [];
   const metadata = nodeOutput.value?.metadata || {};
   if (!scores.length) return [];
@@ -3074,7 +3035,7 @@ const plsScoresLayout = computed(() => {
 });
 
 const plsLoadingsData = computed(() => {
-  if (nodeTypeKey.value !== "PLS" || !hasOutput.value) return [];
+  if (nodeTypeKey.value !== "model.pls" || !hasOutput.value) return [];
 
   // Read loadings from port (new architecture) or metadata (backwards compat)
   const loadingsPort = nodeOutput.value?.ports?.X_loadings;
@@ -3147,10 +3108,10 @@ const plsLoadingsLayout = computed(() => {
 
 const classificationScoresData = computed(() => {
   const nodeType = nodeTypeKey.value;
-  if (!["PLS_DA", "SIMCA", "KNN"].includes(nodeType) || !hasOutput.value) return [];
+  if (!["classification.plsda", "classification.simca", "classification.knn"].includes(nodeType) || !hasOutput.value) return [];
 
   // For PLS-DA, use pre-built scores plot if available
-  if (nodeType === "PLS_DA") {
+  if (nodeType === "classification.plsda") {
     const plots = nodeOutput.value?.plots;
     if (plots?.scores?.data) {
       return plots.scores.data;
@@ -3223,7 +3184,7 @@ const classificationScoresData = computed(() => {
 
 const classificationScoresLayout = computed(() => {
   // For PLS-DA, use pre-built layout if available
-  if (nodeTypeKey.value === "PLS_DA") {
+  if (nodeTypeKey.value === "classification.plsda") {
     const plots = nodeOutput.value?.plots;
     if (plots?.scores?.layout) {
       return {
@@ -3267,7 +3228,7 @@ const classificationScoresLayout = computed(() => {
 // ============================================================================
 
 const hcaDendrogramData = computed(() => {
-  if (nodeTypeKey.value !== "HCA" || !hasOutput.value) return [];
+  if (nodeTypeKey.value !== "model.hca" || !hasOutput.value) return [];
   const plots = nodeOutput.value?.plots;
   if (plots?.dendrogram?.data) {
     return plots.dendrogram.data;
@@ -3277,7 +3238,7 @@ const hcaDendrogramData = computed(() => {
 
 const hcaDendrogramLayout = computed(() => {
   // Early return for non-HCA nodes (consistent with hcaDendrogramData)
-  if (nodeTypeKey.value !== "HCA" || !hasOutput.value) {
+  if (nodeTypeKey.value !== "model.hca" || !hasOutput.value) {
     return { ...basePlotLayout, height: 500, showlegend: false };
   }
 
@@ -3303,7 +3264,7 @@ const hcaDendrogramLayout = computed(() => {
 });
 
 const plsdaLoadingsData = computed(() => {
-  if (nodeTypeKey.value !== "PLS_DA" || !hasOutput.value) return [];
+  if (nodeTypeKey.value !== "classification.plsda" || !hasOutput.value) return [];
 
   // Use pre-built plots from backend (preferred)
   const plots = nodeOutput.value?.plots;
@@ -3458,7 +3419,7 @@ const plsdaLoadingsLayout = computed(() => {
 });
 
 const plsdaVipData = computed(() => {
-  if (nodeTypeKey.value !== "PLS_DA" || !hasOutput.value) return [];
+  if (nodeTypeKey.value !== "classification.plsda" || !hasOutput.value) return [];
 
   // Use pre-built VIP plot
   const plots = nodeOutput.value?.plots;
@@ -3556,7 +3517,7 @@ const plsdaVipLayout = computed(() => {
 
 // Confusion Matrix (Training) for PLS-DA
 const plsdaConfusionTrainData = computed(() => {
-  if (nodeTypeKey.value !== "PLS_DA" || !hasOutput.value) return [];
+  if (nodeTypeKey.value !== "classification.plsda" || !hasOutput.value) return [];
 
   const plots = nodeOutput.value?.plots;
   if (plots?.confusion_matrix_train?.data) {
@@ -3587,7 +3548,7 @@ const plsdaConfusionTrainLayout = computed(() => {
 
 // Confusion Matrix (Cross-Validation) for PLS-DA
 const plsdaConfusionCVData = computed(() => {
-  if (nodeTypeKey.value !== "PLS_DA" || !hasOutput.value) return [];
+  if (nodeTypeKey.value !== "classification.plsda" || !hasOutput.value) return [];
 
   const plots = nodeOutput.value?.plots;
   if (plots?.confusion_matrix_cv?.data) {
@@ -3981,7 +3942,7 @@ const verticalSliceLayout = computed(() => ({
 // ============================================================================
 
 const statsDistributionData = computed(() => {
-  if (nodeTypeKey.value !== "STATS" || !hasOutput.value) return [];
+  if (nodeTypeKey.value !== "stats.summary" || !hasOutput.value) return [];
   const data = nodeOutput.value?.data || [];
 
   // Flatten 2D data for histogram
@@ -4196,8 +4157,8 @@ const handleRunTrial = async () => {
     // IMPORTANT: Map ALL node parameters from frontend names to backend names
     const trialNodes = workflowNodes.map((node: any) => ({
       node_id: String(node.id),
-      node_type: normalizeNodeType(node.type),
-      parameters: mapParamsToBackend(node.type, node.params || {}),
+      node_type: node.type,
+      parameters: { ...(node.params || {}) },
     }));
 
     // Build edges list for trial API
@@ -4215,7 +4176,7 @@ const handleRunTrial = async () => {
       // Find DATA node ID from input connections
       const inputConnections = nodeData.value.inputConnections || [];
       for (const conn of inputConnections) {
-        if (getLegacyNodeType(conn.nodeType) === "DATA") {
+        if (conn.nodeType === "data.source") {
           initialData[String(conn.nodeId)] = {
             experiment_id: nodeData.value.inputData.experiment_id,
             source: nodeData.value.inputData.source || "experiment",
@@ -4226,7 +4187,7 @@ const handleRunTrial = async () => {
 
     // Map trial params from frontend names to backend names
     // E.g., "components" -> "n_components" for PCA
-    const mappedTrialParams = mapParamsToBackend(nodeData.value.type, localParams.value);
+    const mappedTrialParams = { ...localParams.value };
     let inferredUalgoProjectId: number | null = null;
     if (typeof nodeData.value.type === "string" && nodeData.value.type.startsWith("ualgo.")) {
       const pid = Number.parseInt(nodeData.value.type.split(".")[1] || "", 10);
@@ -4260,23 +4221,16 @@ const handleRunTrial = async () => {
       allNodeIds: trialNodes.map((n: any) => ({ id: n.node_id, type: typeof n.node_id, params: n.parameters })),
     });
 
-    // Log only meaningful parameter changes (mapped parameters)
-    const paramMapping = PARAM_NAME_MAP[nodeData.value.type];
-    if (paramMapping) {
-      const changes: string[] = [];
-      for (const [frontendKey, backendKey] of Object.entries(paramMapping)) {
-        if (frontendKey in localParams.value && backendKey in mappedTrialParams) {
-          // If frontend key exists and was mapped, log the value change
-          const oldValue = nodeData.value.params?.[backendKey];
-          const newValue = localParams.value[frontendKey];
-          if (oldValue !== undefined && oldValue !== newValue) {
-            changes.push(`${frontendKey}: ${oldValue} → ${newValue}`);
-          }
-        }
+    // Log meaningful parameter changes
+    const changes: string[] = [];
+    for (const [key, value] of Object.entries(mappedTrialParams)) {
+      const oldValue = nodeData.value.params?.[key];
+      if (oldValue !== undefined && oldValue !== value) {
+        changes.push(`${key}: ${oldValue} → ${value}`);
       }
-      if (changes.length > 0) {
-        addLog("info", "Parameter changes", changes.join(", "));
-      }
+    }
+    if (changes.length > 0) {
+      addLog("info", "Parameter changes", changes.join(", "));
     }
 
     // Execute trial via direct API call

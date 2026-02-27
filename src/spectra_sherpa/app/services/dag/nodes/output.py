@@ -133,6 +133,15 @@ class PlotNode(Node):
         ],
         input_types=["NDDataset", "dict"],
         output_type="dict",
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/Any/1.0",
+                required=True,
+                label="Input Data",
+                description="Input data to process",
+            ),
+        ],
         output_ports=[
             PortMetadata(
                 name="visualization",
@@ -456,6 +465,15 @@ class ExportNode(Node):
         ],
         input_types=["NDDataset", "dict"],
         output_type="dict",
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/Any/1.0",
+                required=True,
+                label="Input Data",
+                description="Input data to process",
+            ),
+        ],
         output_ports=[
             PortMetadata(
                 name="file_info",
@@ -560,6 +578,15 @@ class StatsSummaryNode(Node):
         ],
         input_types=["NDDataset", "dict", "array"],
         output_type="dict",
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/Any/1.0",
+                required=True,
+                label="Input Data",
+                description="Input data to process",
+            ),
+        ],
         output_ports=[
             PortMetadata(
                 name="statistics",
@@ -938,6 +965,15 @@ class ContourPlotNode(Node):
         ],
         input_types=["NDDataset"],
         output_type="dict",
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/Any/1.0",
+                required=True,
+                label="Input Data",
+                description="Input data to process",
+            ),
+        ],
         output_ports=[
             PortMetadata(
                 name="visualization",
@@ -1183,6 +1219,15 @@ class DataTableNode(Node):
         ],
         input_types=["NDDataset", "dict", "array"],
         output_type="dict",
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/Any/1.0",
+                required=True,
+                label="Input Data",
+                description="Input data to process",
+            ),
+        ],
         output_ports=[
             PortMetadata(
                 name="visualization",

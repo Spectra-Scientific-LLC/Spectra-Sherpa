@@ -15,7 +15,6 @@ import numpy as np
 from spectra_sherpa.app.lib.scp_compat import scp
 from spectra_sherpa.app.services.dag.io_contracts import (
     bind_X,
-    resolve_legacy_input,
     to_numpy_2d,
 )
 from spectra_sherpa.app.services.dag.node_base import (
@@ -38,8 +37,8 @@ class ClassifierPredictNode(Node):
     - KNN: identified by sklearn model with ``predict_proba`` method
     - PLS-DA: SpectroChemPy PLS model (fallback)
 
-    Old node types (classification.plsda_predict, classification.knn_predict,
-    classification.simca_predict) resolve here via the alias system.
+    Consolidated classifier prediction node. Auto-detects the classifier type
+    from the model and dispatches accordingly.
     """
 
     metadata = NodeMetadata(
@@ -82,17 +81,9 @@ class ClassifierPredictNode(Node):
         ],
         input_types=["NDDataset", "dict"],
         output_type="dict",
-        aliases={
-            "classification.plsda_predict": {},
-            "classification.knn_predict": {},
-            "classification.simca_predict": {},
-        },
     )
 
     async def execute(self, X_new: Any = None, model: Any = None, **kwargs: Any) -> dict[str, Any]:
-        X_new = resolve_legacy_input(X_new, kwargs, "input_0")
-        model = resolve_legacy_input(model, kwargs, "input_1")
-
         if X_new is None:
             raise ValueError("Missing required input: X_new (new spectra)")
         if model is None:
@@ -103,7 +94,6 @@ class ClassifierPredictNode(Node):
 
         X_new_ds = bind_X(
             X_new,
-            kwargs,
             missing_message="Missing required input: X_new (new spectra)",
             dataset_error_message="X_new must be a dataset object",
             allow_array=True,
@@ -126,8 +116,7 @@ class ClassifierPredictNode(Node):
 
         if not HAS_SCP:
             raise ImportError(
-                "PLS-DA prediction requires SpectroChemPy. "
-                "Install with: pip install spectra-sherpa[scp]"
+                "PLS-DA prediction requires SpectroChemPy. " "Install with: pip install spectra-sherpa[scp]"
             )
 
         from scipy.special import softmax

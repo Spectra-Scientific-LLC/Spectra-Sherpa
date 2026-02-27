@@ -392,6 +392,18 @@ async def create_workflow(
             project_id=inferred_project_id,
         )
 
+    # Validate all node types exist in the registry
+    unknown_types = [
+        n.node_type
+        for n in payload.nodes
+        if not n.node_type.startswith("ualgo.") and n.node_type not in node_registry
+    ]
+    if unknown_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown node type(s): {', '.join(unknown_types)}",
+        )
+
     # Create workflow
     workflow = Workflow(
         user_id=user_id,

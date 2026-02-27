@@ -323,10 +323,6 @@ class Provenance:
     def from_list(cls, data: list[dict[str, Any]]) -> Provenance:
         entries = []
         for d in data:
-            # Handle legacy format: "operation" key → "op_id"
-            if "operation" in d and "op_id" not in d:
-                d = dict(d)
-                d["op_id"] = d.pop("operation")
             entries.append(ProvenanceEntry.model_validate(d))
         return cls(entries)
 
@@ -1396,14 +1392,11 @@ class SherpaDataset:
 
         # version = d.get("version", "1.0")
 
-        # Feature axis: prefer v2 "feature_axis" key, fall back to v1 "spectral_axis"
         feature_axis: FeatureAxis | None = None
         if d.get("feature_axis"):
             feature_axis = _deserialize_typed_axis(d["feature_axis"])
             if not isinstance(feature_axis, FeatureAxis):
                 feature_axis = None  # safety: must be a FeatureAxis subclass
-        elif d.get("spectral_axis"):
-            feature_axis = _deserialize_spectral_axis(d["spectral_axis"])
 
         sample_axis = _deserialize_sample_axis(d.get("sample_axis")) if d.get("sample_axis") else None
         target = np.asarray(d["target"]) if d.get("target") is not None else None
@@ -1510,15 +1503,6 @@ def _serialize_axis(axis: AxisInfo) -> dict[str, Any]:
     return result
 
 
-def _deserialize_spectral_axis(d: dict[str, Any]) -> SpectralAxis:
-    return SpectralAxis(
-        values=np.asarray(d["data"]) if d.get("data") is not None else None,
-        labels=d.get("labels"),
-        units=d.get("units"),
-        title=d.get("title"),
-    )
-
-
 def _deserialize_sample_axis(d: dict[str, Any]) -> SampleAxis:
     return SampleAxis(
         values=np.asarray(d["data"]) if d.get("data") is not None else None,
@@ -1601,7 +1585,3 @@ def _slice_axis(axis: AxisInfo | None, key: Any) -> AxisInfo | None:
     )
 
 
-def _slice_spectral_axis(axis: SpectralAxis | None, key: Any) -> SpectralAxis | None:
-    """Slice a SpectralAxis along the feature dimension (legacy wrapper)."""
-    result = _slice_axis(axis, key)
-    return result if isinstance(result, SpectralAxis) else None

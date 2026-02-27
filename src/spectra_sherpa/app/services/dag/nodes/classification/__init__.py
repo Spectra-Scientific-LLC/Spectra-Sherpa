@@ -16,19 +16,16 @@ from . import (  # noqa: F401
     predict_node,
     simca_nodes,
 )
-from .knn_nodes import KNNNode, KNNPredictNode
+from .knn_nodes import KNNNode
 
 # Re-export node classes for backward compatibility
-from .plsda_nodes import PLSDANode, PLSDAPredictNode
+from .plsda_nodes import PLSDANode
 from .predict_node import ClassifierPredictNode
-from .simca_nodes import SIMCANode, SIMCAPredictNode
+from .simca_nodes import SIMCANode
 
 __all__ = [
     "PLSDANode",
-    "PLSDAPredictNode",
     "KNNNode",
-    "KNNPredictNode",
     "SIMCANode",
-    "SIMCAPredictNode",
     "ClassifierPredictNode",
 ]

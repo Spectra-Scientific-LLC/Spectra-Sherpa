@@ -47,7 +47,6 @@ from ..io_contracts import (
     bind_y,
     build_dataset_like,
     coerce_to_sherpa,
-    resolve_legacy_input,
     to_numpy_1d,
     to_numpy_2d,
 )
@@ -162,6 +161,15 @@ class BaselinePenalizedLSNode(TransformSpecNode):
             ),
         ],
         input_types=["NDDataset"],
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Spectral data to process",
+            ),
+        ],
         output_type="NDDataset",
     )
 
@@ -200,6 +208,15 @@ class BaselineRubberbandNode(Node):
             ),
         ],
         input_types=["NDDataset"],
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Spectral data to process",
+            ),
+        ],
         output_type="NDDataset",
         requires_scp=True,
         help_url="https://www.spectrochempy.fr/reference/generated/spectrochempy.basc.html",
@@ -260,58 +277,6 @@ def _savgol_smooth_export(params, inp, node_id, indent, use_scp):
     return lines
 
 
-class SmoothSavitzkyGolayNode(TransformSpecNode):
-    """
-    Savitzky-Golay smoothing node.
-
-    Applies polynomial smoothing to reduce noise.
-    """
-
-    scp_method = "smooth"
-
-    metadata = NodeMetadata(
-        node_type="smooth.savitzky_golay",
-        category="preprocessing",
-        label="Smooth (Savitzky-Golay)",
-        description="Savitzky-Golay polynomial smoothing filter",
-        parameters=[
-            NodeParameter(
-                name="size",
-                label="Window Size",
-                param_type="number",
-                default=11,
-                min_value=3,
-                max_value=51,
-                step=2,
-                description="Window size (must be odd number)",
-                required=True,
-                category="basic",
-            ),
-            NodeParameter(
-                name="order",
-                label="Polynomial Order",
-                param_type="number",
-                default=2,
-                min_value=1,
-                max_value=5,
-                step=1,
-                description="Order of polynomial fit",
-                required=True,
-                category="basic",
-            ),
-        ],
-        input_types=["NDDataset"],
-        output_type="NDDataset",
-    )
-
-    spec = TransformSpec(
-        transform_fn=_savgol_smooth,
-        export_lines_fn=_savgol_smooth_export,
-        extra_imports=["from scipy.signal import savgol_filter"],
-        state_effects=[EFFECT_SMOOTHED],
-    )
-
-
 def _snv_transform(data: np.ndarray) -> np.ndarray:
     mean_vals = np.mean(data, axis=1, keepdims=True)
     std_vals = np.std(data, axis=1, keepdims=True)
@@ -336,89 +301,6 @@ def _snv_export(params, inp, node_id, indent, use_scp):
     ]
     lines += _wrap_result_lines(node_id, "_data", inp, indent, use_scp)
     return lines
-
-
-class NormalizeSNVNode(TransformSpecNode):
-    """
-    Standard Normal Variate (SNV) normalization node.
-
-    Normalizes each spectrum to zero mean and unit variance.
-    Overrides execute() to compute diagnostics.
-    """
-
-    metadata = NodeMetadata(
-        node_type="normalize.snv",
-        category="preprocessing",
-        label="Normalize (SNV)",
-        description="Standard Normal Variate normalization",
-        parameters=[],
-        input_types=["NDDataset"],
-        output_type="NDDataset",
-        input_ports=[
-            PortMetadata(
-                name="default",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
-                required=True,
-                label="Input Spectra",
-                description="Input spectral dataset",
-            )
-        ],
-        output_ports=[
-            PortMetadata(
-                name="default",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
-                required=True,
-                label="SNV Spectra",
-                description="SNV-normalized spectral dataset",
-            )
-        ],
-        diagnostics=[
-            "snr_before",
-            "snr_after",
-            "mean_spectrum_shift",
-            "max_absolute_change",
-        ],
-        policy=NodePolicy(
-            safe_for_auto_apply=True,
-            requires_human_review=False,
-            data_egress_risk="none",
-        ),
-    )
-
-    spec = TransformSpec(
-        transform_fn=_snv_transform,
-        output_units="dimensionless",
-        export_lines_fn=_snv_export,
-        extra_imports=["import numpy as np"],
-        state_effects=[EFFECT_NORMALIZED, EFFECT_SCATTER_CORRECTED],
-    )
-
-    async def execute(self, input_data: Any = None, **kwargs: Any) -> NodeResult:
-        """Execute SNV with diagnostics."""
-        input_ds = coerce_to_sherpa(
-            input_data if input_data is not None else kwargs.get("input_0"),
-            input_name="input_data",
-        )
-        before = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
-
-        result = await super().execute(input_data, **kwargs)
-
-        after = np.asarray(result.data, dtype=np.float64)
-        eps = 1e-12
-        snr_before = float(np.mean(np.abs(before)) / (np.std(before) + eps))
-        snr_after = float(np.mean(np.abs(after)) / (np.std(after) + eps))
-        mean_spectrum_shift = float(np.mean(after) - np.mean(before))
-        max_absolute_change = float(np.max(np.abs(after - before)))
-
-        return NodeResult(
-            outputs={"default": result},
-            diagnostics={
-                "snr_before": snr_before,
-                "snr_after": snr_after,
-                "mean_spectrum_shift": mean_spectrum_shift,
-                "max_absolute_change": max_absolute_change,
-            },
-        )
 
 
 def _normalize_scale(data: np.ndarray, method: str = "max") -> np.ndarray:
@@ -467,42 +349,6 @@ def _normalize_scale_export(params, inp, node_id, indent, use_scp):
     return lines
 
 
-class NormalizeScaleNode(TransformSpecNode):
-    """
-    Scale normalization node.
-
-    Normalizes spectra by scaling to a specified method (max, area, range).
-    """
-
-    metadata = NodeMetadata(
-        node_type="normalize.scale",
-        category="preprocessing",
-        label="Normalize (Scale)",
-        description="Scale normalization (to max, area, or range)",
-        parameters=[
-            NodeParameter(
-                name="method",
-                label="Scaling Method",
-                param_type="select",
-                default="max",
-                options=["max", "area", "minmax"],
-                description="Scaling method: max (unit max), area (unit area), minmax (0-1 range)",
-                required=False,
-            ),
-        ],
-        input_types=["NDDataset"],
-        output_type="NDDataset",
-    )
-
-    spec = TransformSpec(
-        transform_fn=_normalize_scale,
-        output_units="normalized",
-        export_lines_fn=_normalize_scale_export,
-        extra_imports=["import numpy as np"],
-        state_effects=[EFFECT_SCALED],
-    )
-
-
 def _msc_transform(data: np.ndarray, reference: str = "mean") -> np.ndarray:
     if reference == "mean":
         ref_spectrum = np.mean(data, axis=0)
@@ -543,61 +389,6 @@ def _msc_export(params, inp, node_id, indent, use_scp):
     ]
     lines += _wrap_result_lines(node_id, "_corrected", inp, indent, use_scp)
     return lines
-
-
-class NormalizeMSCNode(TransformSpecNode):
-    """
-    Multiplicative Scatter Correction (MSC) node.
-
-    Corrects for light scattering effects in spectral data.
-    Pure-numpy implementation — no SCP dependency.
-    """
-
-    metadata = NodeMetadata(
-        node_type="normalize.msc",
-        category="preprocessing",
-        label="Normalize (MSC)",
-        description="Multiplicative Scatter Correction",
-        parameters=[
-            NodeParameter(
-                name="reference",
-                label="Reference Spectrum",
-                param_type="select",
-                default="mean",
-                options=["mean", "median", "first"],
-                description="Reference spectrum for MSC",
-                required=False,
-            ),
-        ],
-        input_types=["NDDataset"],
-        output_type="NDDataset",
-        input_ports=[
-            PortMetadata(
-                name="default",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
-                required=True,
-                label="Input Spectra",
-                description="Input spectral dataset",
-            )
-        ],
-        output_ports=[
-            PortMetadata(
-                name="default",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
-                required=True,
-                label="MSC Spectra",
-                description="MSC-corrected spectral dataset",
-            )
-        ],
-    )
-
-    spec = TransformSpec(
-        transform_fn=_msc_transform,
-        output_units="dimensionless",
-        export_lines_fn=_msc_export,
-        extra_imports=["import numpy as np"],
-        state_effects=[EFFECT_SCATTER_CORRECTED],
-    )
 
 
 def _savgol_deriv(data: np.ndarray, size: int = 11, order: int = 2, deriv: int = 1) -> np.ndarray:
@@ -647,132 +438,6 @@ def _update_derivative_units(result, input_ds, deriv_order: int):
                 result.units = f"d²({original_units})/dx²"
     except Exception:
         pass  # leave units unchanged if assignment fails
-
-
-class DerivativeFirstNode(TransformSpecNode):
-    """
-    First derivative node.
-
-    Computes the first derivative of spectral data.
-    Overrides execute() to update output units.
-    """
-
-    scp_method = "deriv"
-    scp_extra_kwargs = {"deriv": 1}
-
-    metadata = NodeMetadata(
-        node_type="derivative.first",
-        category="preprocessing",
-        label="1st Derivative",
-        description="First derivative using Savitzky-Golay",
-        parameters=[
-            NodeParameter(
-                name="size",
-                label="Window Size",
-                param_type="number",
-                default=11,
-                min_value=3,
-                max_value=51,
-                step=2,
-                description="Window size for derivative calculation",
-                required=False,
-            ),
-            NodeParameter(
-                name="order",
-                label="Polynomial Order",
-                param_type="number",
-                default=2,
-                min_value=1,
-                max_value=5,
-                step=1,
-                description="Order of polynomial fit",
-                required=False,
-            ),
-        ],
-        input_types=["NDDataset"],
-        output_type="NDDataset",
-    )
-
-    spec = TransformSpec(
-        transform_fn=lambda data, size=11, order=2: _savgol_deriv(data, size, order, deriv=1),
-        export_lines_fn=lambda params, inp, node_id, indent, use_scp: _deriv_export(
-            "1st Derivative", 1, params, inp, node_id, indent, use_scp
-        ),
-        extra_imports=["from scipy.signal import savgol_filter"],
-        state_effects=[EFFECT_DERIVATIVE],
-    )
-
-    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
-        input_ds = coerce_to_sherpa(
-            input_data if input_data is not None else kwargs.get("input_0"),
-            input_name="input_data",
-        )
-        result = await super().execute(input_data, **kwargs)
-        _update_derivative_units(result, input_ds, deriv_order=1)
-        return result
-
-
-class DerivativeSecondNode(TransformSpecNode):
-    """
-    Second derivative node.
-
-    Computes the second derivative of spectral data.
-    Overrides execute() to update output units.
-    """
-
-    scp_method = "deriv"
-    scp_extra_kwargs = {"deriv": 2}
-
-    metadata = NodeMetadata(
-        node_type="derivative.second",
-        category="preprocessing",
-        label="2nd Derivative",
-        description="Second derivative using Savitzky-Golay",
-        parameters=[
-            NodeParameter(
-                name="size",
-                label="Window Size",
-                param_type="number",
-                default=11,
-                min_value=3,
-                max_value=51,
-                step=2,
-                description="Window size for derivative calculation",
-                required=False,
-            ),
-            NodeParameter(
-                name="order",
-                label="Polynomial Order",
-                param_type="number",
-                default=2,
-                min_value=2,
-                max_value=5,
-                step=1,
-                description="Order of polynomial fit",
-                required=False,
-            ),
-        ],
-        input_types=["NDDataset"],
-        output_type="NDDataset",
-    )
-
-    spec = TransformSpec(
-        transform_fn=lambda data, size=11, order=2: _savgol_deriv(data, size, order, deriv=2),
-        export_lines_fn=lambda params, inp, node_id, indent, use_scp: _deriv_export(
-            "2nd Derivative", 2, params, inp, node_id, indent, use_scp
-        ),
-        extra_imports=["from scipy.signal import savgol_filter"],
-        state_effects=[EFFECT_DERIVATIVE],
-    )
-
-    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
-        input_ds = coerce_to_sherpa(
-            input_data if input_data is not None else kwargs.get("input_0"),
-            input_name="input_data",
-        )
-        result = await super().execute(input_data, **kwargs)
-        _update_derivative_units(result, input_ds, deriv_order=2)
-        return result
 
 
 # ============================================================================
@@ -851,6 +516,15 @@ class CosmicRayRemovalNode(TransformSpecNode):
             ),
         ],
         input_types=["NDDataset"],
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Spectral data to process",
+            ),
+        ],
         output_type="NDDataset",
     )
 
@@ -897,6 +571,15 @@ class ClipRangeNode(Node):
             ),
         ],
         input_types=["NDDataset"],
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Spectral data to process",
+            ),
+        ],
         output_type="NDDataset",
     )
 
@@ -1040,6 +723,15 @@ class ClipFloorNode(TransformSpecNode):
             ),
         ],
         input_types=["NDDataset"],
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Spectral data to process",
+            ),
+        ],
         output_type="NDDataset",
     )
 
@@ -1086,6 +778,15 @@ class WavenumberAlignNode(Node):
             ),
         ],
         input_types=["NDDataset"],
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Spectral data to process",
+            ),
+        ],
         output_type="NDDataset",
     )
 
@@ -1149,44 +850,6 @@ def _scale_max_export(params, inp, node_id, indent, use_scp):
     ] + _wrap_result_lines(node_id, "_data", inp, indent, use_scp)
 
 
-class ScaleMaxNode(TransformSpecNode):
-    """
-    Scale to maximum node.
-
-    Normalizes each spectrum so that its maximum value equals a target value.
-    """
-
-    metadata = NodeMetadata(
-        node_type="preprocess.scale_max",
-        category="preprocessing",
-        label="Scale to Max",
-        description="Normalize each spectrum to a target maximum value",
-        parameters=[
-            NodeParameter(
-                name="target_max",
-                label="Target Maximum",
-                param_type="number",
-                default=1.0,
-                min_value=0.01,
-                max_value=100.0,
-                step=0.1,
-                description="Target maximum absorbance value",
-                required=True,
-            ),
-        ],
-        input_types=["NDDataset"],
-        output_type="NDDataset",
-    )
-
-    spec = TransformSpec(
-        transform_fn=_scale_max_transform,
-        output_units="normalized",
-        export_lines_fn=_scale_max_export,
-        extra_imports=["import numpy as np"],
-        state_effects=[EFFECT_SCALED],
-    )
-
-
 def _center_mean_export(params, inp, node_id, indent, use_scp):
     lines = [header_line("Mean Center", node_id, indent)]
     lines += extract_data_lines(inp, indent)
@@ -1198,30 +861,6 @@ def _center_mean_export(params, inp, node_id, indent, use_scp):
     ]
     lines += _wrap_result_lines(node_id, "_data", inp, indent, use_scp)
     return lines
-
-
-class CenterMeanNode(TransformSpecNode):
-    """
-    Mean centering node.
-
-    Subtracts the mean spectrum from all spectra.
-    """
-
-    metadata = NodeMetadata(
-        node_type="preprocess.center_mean",
-        category="preprocessing",
-        label="Mean Center",
-        description="Subtract the mean spectrum from all spectra",
-        parameters=[],
-        input_types=["NDDataset"],
-        output_type="NDDataset",
-    )
-
-    spec = TransformSpec(
-        transform_fn=lambda data: data - np.mean(data, axis=0),
-        export_lines_fn=_center_mean_export,
-        extra_imports=["import numpy as np"],
-    )
 
 
 def _pareto_scale(data: np.ndarray, center: bool = True) -> np.ndarray:
@@ -1247,40 +886,6 @@ def _pareto_export(params, inp, node_id, indent, use_scp):
     ]
     lines += _wrap_result_lines(node_id, "_data", inp, indent, use_scp)
     return lines
-
-
-class ParetoScalingNode(TransformSpecNode):
-    """
-    Pareto Scaling node.
-
-    Scales each variable by the square root of its standard deviation.
-    """
-
-    metadata = NodeMetadata(
-        node_type="preprocess.pareto_scaling",
-        category="preprocessing",
-        label="Pareto Scaling",
-        description="Scale by square root of standard deviation (chemometrics standard)",
-        parameters=[
-            NodeParameter(
-                name="center",
-                label="Mean Center",
-                param_type="boolean",
-                default=True,
-                description="Subtract mean before scaling",
-                required=False,
-            ),
-        ],
-        input_types=["NDDataset"],
-        output_type="NDDataset",
-    )
-
-    spec = TransformSpec(
-        transform_fn=_pareto_scale,
-        output_units="dimensionless",
-        export_lines_fn=_pareto_export,
-        extra_imports=["import numpy as np"],
-    )
 
 
 @register_node
@@ -1401,14 +1006,12 @@ class OSCNode(Node):
         """Execute OSC filtering."""
         X_ds = bind_X(
             X,
-            kwargs,
             missing_message="Missing required input: X (spectra)",
             dataset_error_message="X must be a dataset object",
             allow_array=True,
         )
         y_value = bind_y(
             y,
-            kwargs,
             X=X_ds,
             required=True,
             infer_from_X=True,
@@ -1527,40 +1130,6 @@ def _autoscale_export(params, inp, node_id, indent, use_scp):
     return lines
 
 
-class AutoscalingNode(TransformSpecNode):
-    """
-    Autoscaling (Unit Variance Scaling) node.
-
-    Scales each variable to unit variance after mean centering.
-    """
-
-    metadata = NodeMetadata(
-        node_type="preprocess.autoscaling",
-        category="preprocessing",
-        label="Autoscaling",
-        description="Scale to unit variance (mean centering + standardization)",
-        parameters=[
-            NodeParameter(
-                name="center",
-                label="Mean Center",
-                param_type="boolean",
-                default=True,
-                description="Subtract mean before scaling",
-                required=False,
-            ),
-        ],
-        input_types=["NDDataset"],
-        output_type="NDDataset",
-    )
-
-    spec = TransformSpec(
-        transform_fn=_autoscale,
-        output_units="dimensionless",
-        export_lines_fn=_autoscale_export,
-        extra_imports=["import numpy as np"],
-    )
-
-
 def _sg_deriv_transform(data: np.ndarray, size: int = 11, order: int = 2, deriv: str = "1") -> np.ndarray:
     size = int(size)
     if size % 2 == 0:
@@ -1571,80 +1140,6 @@ def _sg_deriv_transform(data: np.ndarray, size: int = 11, order: int = 2, deriv:
 def _sg_deriv_export(params, inp, node_id, indent, use_scp):
     deriv_order = int(params.get("deriv", "1"))
     return _deriv_export("SG Derivative", deriv_order, params, inp, node_id, indent, use_scp)
-
-
-class SGDerivativeNode(TransformSpecNode):
-    """
-    Savitzky-Golay Derivative node.
-
-    Combines smoothing and derivative calculation in a single operation.
-    Overrides execute() to update output units when deriv > 0.
-    """
-
-    scp_method = "deriv"
-
-    metadata = NodeMetadata(
-        node_type="preprocess.sg_derivative",
-        category="preprocessing",
-        label="SG Derivative",
-        description="Savitzky-Golay smoothing + derivative (combined operation)",
-        parameters=[
-            NodeParameter(
-                name="size",
-                label="Window Size",
-                param_type="number",
-                default=11,
-                min_value=3,
-                max_value=51,
-                step=2,
-                description="Window size (must be odd number)",
-                required=True,
-            ),
-            NodeParameter(
-                name="order",
-                label="Polynomial Order",
-                param_type="number",
-                default=2,
-                min_value=1,
-                max_value=5,
-                step=1,
-                description="Order of polynomial fit",
-                required=True,
-            ),
-            NodeParameter(
-                name="deriv",
-                label="Derivative Order",
-                param_type="select",
-                default="1",
-                options=["0", "1", "2"],
-                description="Derivative order: 0 (smooth only), 1 (first), 2 (second)",
-                required=True,
-            ),
-        ],
-        input_types=["NDDataset"],
-        output_type="NDDataset",
-    )
-
-    spec = TransformSpec(
-        transform_fn=_sg_deriv_transform,
-        export_lines_fn=_sg_deriv_export,
-        extra_imports=["from scipy.signal import savgol_filter"],
-        state_effects=[EFFECT_DERIVATIVE, EFFECT_SMOOTHED],
-    )
-
-    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
-        input_ds = coerce_to_sherpa(
-            input_data if input_data is not None else kwargs.get("input_0"),
-            input_name="input_data",
-        )
-        result = await super().execute(input_data, **kwargs)
-        deriv_order = int(self._resolve_params().get("deriv", "1"))
-        if deriv_order > 0:
-            _update_derivative_units(result, input_ds, deriv_order)
-            # Fallback units when no original units available
-            if not getattr(result, "units", None):
-                result.units = "d/dx" if deriv_order == 1 else "d²/dx²"
-        return result
 
 
 @register_node
@@ -1753,16 +1248,12 @@ class EMSCNode(Node):
 
     async def execute(self, input_data=None, constituents=None, **kwargs) -> SherpaDataset:
         """Execute EMSC correction with optional constituent spectra."""
-        input_data = resolve_legacy_input(input_data, kwargs, "default")
         input_ds = bind_X(
             input_data,
-            kwargs,
             missing_message="Missing required input: input_data (spectra)",
             dataset_error_message="input_data must be a dataset object",
             allow_array=True,
         )
-        constituents = resolve_legacy_input(constituents, kwargs, "input_1")
-
         reference_type = self.parameters.get("reference", "mean")
         poly_order = self.parameters.get("poly_order", 2)
 
@@ -1842,270 +1333,6 @@ class EMSCNode(Node):
         return result
 
 
-class NorrisWilliamsDerivativeNode(Node):
-    """
-    Norris-Williams gap-segment derivative node.
-
-    Computes derivatives using the gap-segment method, which is more robust
-    to noise than point-wise finite differences. Widely used in NIR
-    spectroscopy (Norris & Williams 1984).
-    """
-
-    metadata = NodeMetadata(
-        node_type="preprocess.norris_williams",
-        category="preprocessing",
-        label="Norris-Williams Derivative",
-        description="Gap-segment derivative (robust to noise, standard in NIR)",
-        parameters=[
-            NodeParameter(
-                name="gap",
-                label="Gap Size",
-                param_type="number",
-                default=5,
-                min_value=1,
-                max_value=50,
-                step=1,
-                description="Number of points between averaging segments",
-                required=True,
-                category="basic",
-            ),
-            NodeParameter(
-                name="segment",
-                label="Segment Size",
-                param_type="number",
-                default=5,
-                min_value=1,
-                max_value=50,
-                step=1,
-                description="Number of points to average in each segment",
-                required=True,
-                category="basic",
-            ),
-            NodeParameter(
-                name="deriv",
-                label="Derivative Order",
-                param_type="select",
-                default="1",
-                options=["1", "2"],
-                description="Derivative order: 1 (first) or 2 (second)",
-                required=True,
-            ),
-        ],
-        input_types=["NDDataset"],
-        output_type="NDDataset",
-    )
-
-    python_extra_imports = [
-        "import numpy as np",
-        "from spectra_sherpa.app.lib.preprocessing import norris_williams",
-    ]
-
-    def generate_python(self, inputs, indent="    ", use_scp=True):
-        inp = next(iter(inputs.values())) if inputs else "input_data"
-        params = self._resolve_params()
-        gap = params.get("gap", 5)
-        segment = params.get("segment", 5)
-        deriv = int(params.get("deriv", "1"))
-        lines = [
-            f"{indent}# --- Norris-Williams Derivative ({self.node_id}) ---",
-            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
-            f"{indent}_derived = norris_williams(_data, gap={gap}, segment={segment}, deriv={deriv})",
-        ]
-        lines += _wrap_result_lines(self.node_id, "_derived", inp, indent, use_scp)
-        return lines
-
-    async def execute(self, input_data: Any) -> SherpaDataset:
-        """Execute Norris-Williams gap-segment derivative."""
-        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
-        gap = self.parameters.get("gap", 5)
-        segment = self.parameters.get("segment", 5)
-        deriv_order = int(self.parameters.get("deriv", "1"))
-
-        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
-        derived = norris_williams(data, gap=gap, segment=segment, deriv=deriv_order)
-
-        result = build_dataset_like(derived, input_ds)
-        spectral = input_ds.feature_axis
-
-        # Update units for derivative
-        try:
-            original_units = str(input_ds.units) if hasattr(input_ds, "units") and input_ds.units else None
-            x_units = spectral.units if spectral is not None else None
-            if deriv_order == 1:
-                if original_units and x_units and original_units != "dimensionless":
-                    result.units = f"d({original_units})/d({x_units})"
-                else:
-                    result.units = "d/dx"
-            elif deriv_order == 2:
-                if original_units and x_units and original_units != "dimensionless":
-                    result.units = f"d²({original_units})/d({x_units})²"
-                else:
-                    result.units = "d²/dx²"
-        except Exception:
-            pass
-
-        add_processing_step(
-            result,
-            "preprocess.norris_williams",
-            {"gap": gap, "segment": segment, "deriv": deriv_order},
-            node_id=self.node_id,
-            state_effects=[EFFECT_DERIVATIVE, EFFECT_SMOOTHED],
-        )
-
-        return result
-
-
-class SmoothWhittakerNode(Node):
-    """
-    Whittaker smoother node.
-
-    Penalized least squares smoother (Eilers 2003). Minimises
-    ||y - z||² + λ ||D^d z||². More flexible than Savitzky-Golay for
-    unevenly spaced data and avoids window-size selection.
-    """
-
-    metadata = NodeMetadata(
-        node_type="smooth.whittaker",
-        category="preprocessing",
-        label="Smooth (Whittaker)",
-        description="Whittaker penalized least squares smoother",
-        parameters=[
-            NodeParameter(
-                name="lam",
-                label="Lambda (Smoothness)",
-                param_type="number",
-                default=1e2,
-                min_value=1,
-                max_value=1e8,
-                description="Smoothness penalty (larger = smoother)",
-                required=True,
-                category="basic",
-            ),
-            NodeParameter(
-                name="d",
-                label="Difference Order",
-                param_type="select",
-                default="2",
-                options=["1", "2", "3"],
-                description="Order of the difference penalty (2 is standard)",
-                required=False,
-                category="advanced",
-            ),
-        ],
-        input_types=["NDDataset"],
-        output_type="NDDataset",
-    )
-
-    python_extra_imports = [
-        "import numpy as np",
-        "from spectra_sherpa.app.lib.preprocessing import whittaker_smooth",
-    ]
-
-    def generate_python(self, inputs, indent="    ", use_scp=True):
-        inp = next(iter(inputs.values())) if inputs else "input_data"
-        params = self._resolve_params()
-        lam = params.get("lam", 1e2)
-        d = int(params.get("d", "2"))
-        lines = [
-            f"{indent}# --- Whittaker Smoother ({self.node_id}) ---",
-            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
-            f"{indent}_smoothed = whittaker_smooth(_data, lam={_format_value(lam)}, d={d})",
-        ]
-        lines += _wrap_result_lines(self.node_id, "_smoothed", inp, indent, use_scp)
-        return lines
-
-    async def execute(self, input_data: Any) -> SherpaDataset:
-        """Execute Whittaker smoothing."""
-        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
-        lam = self.parameters.get("lam", 1e2)
-        d = int(self.parameters.get("d", "2"))
-
-        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
-        smoothed = whittaker_smooth(data, lam=lam, d=d)
-
-        result = build_dataset_like(smoothed, input_ds)
-        add_processing_step(
-            result,
-            "smooth.whittaker",
-            {"lam": lam, "d": d},
-            node_id=self.node_id,
-            state_effects=[EFFECT_SMOOTHED],
-        )
-
-        return result
-
-
-class SmoothGaussianNode(Node):
-    """
-    Gaussian smoothing node.
-
-    Convolves the spectrum with a Gaussian kernel. Unlike Savitzky-Golay,
-    Gaussian smoothing has no polynomial fitting and is parameterised by a
-    single σ (standard deviation in data points).
-    """
-
-    metadata = NodeMetadata(
-        node_type="smooth.gaussian",
-        category="preprocessing",
-        label="Smooth (Gaussian)",
-        description="Gaussian kernel smoothing",
-        parameters=[
-            NodeParameter(
-                name="sigma",
-                label="Sigma (std dev)",
-                param_type="number",
-                default=2.0,
-                min_value=0.1,
-                max_value=50.0,
-                step=0.1,
-                description="Standard deviation of Gaussian kernel (in data points)",
-                required=True,
-                category="basic",
-            ),
-        ],
-        input_types=["NDDataset"],
-        output_type="NDDataset",
-    )
-
-    python_extra_imports = [
-        "import numpy as np",
-        "from scipy.ndimage import gaussian_filter1d",
-    ]
-
-    def generate_python(self, inputs, indent="    ", use_scp=True):
-        inp = next(iter(inputs.values())) if inputs else "input_data"
-        sigma = self._resolve_params().get("sigma", 2.0)
-        lines = [
-            f"{indent}# --- Gaussian Smoothing ({self.node_id}) ---",
-            f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
-            f"{indent}if _data.ndim == 1:",
-            f"{indent}    _smoothed = gaussian_filter1d(_data, sigma={_format_value(sigma)})",
-            f"{indent}else:",
-            f"{indent}    _smoothed = np.apply_along_axis(gaussian_filter1d, -1, _data, sigma={_format_value(sigma)})",
-        ]
-        lines += _wrap_result_lines(self.node_id, "_smoothed", inp, indent, use_scp)
-        return lines
-
-    async def execute(self, input_data: Any) -> SherpaDataset:
-        """Execute Gaussian smoothing."""
-        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
-        sigma = self.parameters.get("sigma", 2.0)
-
-        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
-        smoothed = gaussian_smooth(data, sigma=sigma)
-
-        result = build_dataset_like(smoothed, input_ds)
-        add_processing_step(
-            result,
-            "smooth.gaussian",
-            {"sigma": sigma},
-            node_id=self.node_id,
-            state_effects=[EFFECT_SMOOTHED],
-        )
-
-        return result
-
-
 # ──────────────────────────────────────────────────────────────────────
 # Consolidated preprocessing nodes
 # ──────────────────────────────────────────────────────────────────────
@@ -2155,65 +1382,98 @@ class SmoothNode(Node):
             ),
             # Savitzky-Golay params
             NodeParameter(
-                name="size", label="Window Size", param_type="number",
-                default=11, min_value=3, max_value=51, step=2,
-                description="Window size (must be odd)", required=False,
+                name="size",
+                label="Window Size",
+                param_type="number",
+                default=11,
+                min_value=3,
+                max_value=51,
+                step=2,
+                description="Window size (must be odd)",
+                required=False,
                 category="basic",
                 visible_when={"method": ["savitzky_golay"]},
             ),
             NodeParameter(
-                name="order", label="Polynomial Order", param_type="number",
-                default=2, min_value=1, max_value=5, step=1,
-                description="Polynomial order", required=False,
+                name="order",
+                label="Polynomial Order",
+                param_type="number",
+                default=2,
+                min_value=1,
+                max_value=5,
+                step=1,
+                description="Polynomial order",
+                required=False,
                 category="basic",
                 visible_when={"method": ["savitzky_golay"]},
             ),
             # Whittaker params
             NodeParameter(
-                name="lam", label="Lambda", param_type="number",
-                default=1e2, min_value=1, max_value=1e8,
-                description="Smoothness penalty", required=False,
+                name="lam",
+                label="Lambda",
+                param_type="number",
+                default=1e2,
+                min_value=1,
+                max_value=1e8,
+                description="Smoothness penalty",
+                required=False,
                 category="basic",
                 visible_when={"method": ["whittaker"]},
             ),
             NodeParameter(
-                name="d", label="Difference Order", param_type="select",
-                default="2", options=["1", "2", "3"],
-                description="Difference order", required=False,
+                name="d",
+                label="Difference Order",
+                param_type="select",
+                default="2",
+                options=["1", "2", "3"],
+                description="Difference order",
+                required=False,
                 category="advanced",
                 visible_when={"method": ["whittaker"]},
             ),
             # Gaussian params
             NodeParameter(
-                name="sigma", label="Sigma", param_type="number",
-                default=2.0, min_value=0.1, max_value=50.0, step=0.1,
-                description="Gaussian kernel width", required=False,
+                name="sigma",
+                label="Sigma",
+                param_type="number",
+                default=2.0,
+                min_value=0.1,
+                max_value=50.0,
+                step=0.1,
+                description="Gaussian kernel width",
+                required=False,
                 category="basic",
                 visible_when={"method": ["gaussian"]},
             ),
         ],
         input_types=["NDDataset"],
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Spectral data to process",
+            ),
+        ],
         output_type="NDDataset",
-        aliases={
-            "smooth.savitzky_golay": {"method": "savitzky_golay"},
-            "smooth.whittaker": {"method": "whittaker"},
-            "smooth.gaussian": {"method": "gaussian"},
-        },
     )
 
     async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         input_ds = coerce_to_sherpa(
-            input_data if input_data is not None else kwargs.get("input_0"),
+            input_data,
             input_name="input_data",
         )
         params = self._resolve_params()
         data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
-        method = params.get("method", "savitzky_golay")
         smoothed = _smooth_dispatch(data, **params)
         result = build_dataset_like(smoothed, input_ds)
         add_processing_step(
-            result, f"smooth.{method}", params,
-            node_id=self.node_id, state_effects=[EFFECT_SMOOTHED],
+            result,
+            "preprocess.smooth",
+            params,
+            node_id=self.node_id,
+            state_effects=[EFFECT_SMOOTHED],
         )
         return result
 
@@ -2295,55 +1555,86 @@ class DerivativeNode(Node):
                 category="basic",
             ),
             NodeParameter(
-                name="deriv", label="Derivative Order", param_type="select",
-                default="1", options=["0", "1", "2"],
+                name="deriv",
+                label="Derivative Order",
+                param_type="select",
+                default="1",
+                options=["0", "1", "2"],
                 description="Derivative order: 0 (smooth only), 1 (first), 2 (second)",
-                required=True, category="basic",
+                required=True,
+                category="basic",
             ),
             # Savitzky-Golay params
             NodeParameter(
-                name="size", label="Window Size", param_type="number",
-                default=11, min_value=3, max_value=51, step=2,
-                description="Window size", required=False,
+                name="size",
+                label="Window Size",
+                param_type="number",
+                default=11,
+                min_value=3,
+                max_value=51,
+                step=2,
+                description="Window size",
+                required=False,
                 category="basic",
                 visible_when={"method": ["savitzky_golay"]},
             ),
             NodeParameter(
-                name="order", label="Polynomial Order", param_type="number",
-                default=2, min_value=1, max_value=5, step=1,
-                description="Polynomial order", required=False,
+                name="order",
+                label="Polynomial Order",
+                param_type="number",
+                default=2,
+                min_value=1,
+                max_value=5,
+                step=1,
+                description="Polynomial order",
+                required=False,
                 category="basic",
                 visible_when={"method": ["savitzky_golay"]},
             ),
             # Norris-Williams params
             NodeParameter(
-                name="gap", label="Gap", param_type="number",
-                default=5, min_value=1, max_value=50, step=1,
-                description="Gap size", required=False,
+                name="gap",
+                label="Gap",
+                param_type="number",
+                default=5,
+                min_value=1,
+                max_value=50,
+                step=1,
+                description="Gap size",
+                required=False,
                 category="basic",
                 visible_when={"method": ["norris_williams"]},
             ),
             NodeParameter(
-                name="segment", label="Segment", param_type="number",
-                default=5, min_value=1, max_value=50, step=1,
-                description="Segment size", required=False,
+                name="segment",
+                label="Segment",
+                param_type="number",
+                default=5,
+                min_value=1,
+                max_value=50,
+                step=1,
+                description="Segment size",
+                required=False,
                 category="basic",
                 visible_when={"method": ["norris_williams"]},
             ),
         ],
         input_types=["NDDataset"],
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Spectral data to process",
+            ),
+        ],
         output_type="NDDataset",
-        aliases={
-            "derivative.first": {"method": "savitzky_golay", "deriv": "1"},
-            "derivative.second": {"method": "savitzky_golay", "deriv": "2"},
-            "preprocess.sg_derivative": {"method": "savitzky_golay"},
-            "preprocess.norris_williams": {"method": "norris_williams"},
-        },
     )
 
     async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         input_ds = coerce_to_sherpa(
-            input_data if input_data is not None else kwargs.get("input_0"),
+            input_data,
             input_name="input_data",
         )
         params = self._resolve_params()
@@ -2357,10 +1648,10 @@ class DerivativeNode(Node):
             if not getattr(result, "units", None):
                 result.units = "d/dx" if deriv_order == 1 else f"d\u00b2/dx\u00b2"
 
-        method = params.get("method", "savitzky_golay")
-        op_id = f"derivative.{method}" if method != "norris_williams" else "preprocess.norris_williams"
         add_processing_step(
-            result, op_id, params,
+            result,
+            "preprocess.derivative",
+            params,
             node_id=self.node_id,
             state_effects=[EFFECT_DERIVATIVE, EFFECT_SMOOTHED],
         )
@@ -2430,43 +1721,55 @@ class NormalizeNode(Node):
             ),
             # MSC params
             NodeParameter(
-                name="reference", label="Reference", param_type="select",
-                default="mean", options=["mean", "median", "first"],
-                description="Reference spectrum", required=False,
+                name="reference",
+                label="Reference",
+                param_type="select",
+                default="mean",
+                options=["mean", "median", "first"],
+                description="Reference spectrum",
+                required=False,
                 category="basic",
                 visible_when={"method": ["msc"]},
             ),
             # Scale params
             NodeParameter(
-                name="scale_method", label="Scale Method", param_type="select",
-                default="max", options=["max", "area", "minmax"],
-                description="Scaling method", required=False,
+                name="scale_method",
+                label="Scale Method",
+                param_type="select",
+                default="max",
+                options=["max", "area", "minmax"],
+                description="Scaling method",
+                required=False,
                 category="basic",
                 visible_when={"method": ["scale"]},
             ),
         ],
         input_types=["NDDataset"],
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Spectral data to process",
+            ),
+        ],
         output_type="NDDataset",
         policy=NodePolicy(
             safe_for_auto_apply=True,
             requires_human_review=False,
             data_egress_risk="none",
         ),
-        aliases={
-            "normalize.snv": {"method": "snv"},
-            "normalize.msc": {"method": "msc"},
-            "normalize.scale": {"method": "scale"},
-        },
     )
 
     async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         input_ds = coerce_to_sherpa(
-            input_data if input_data is not None else kwargs.get("input_0"),
+            input_data,
             input_name="input_data",
         )
         params = self._resolve_params()
 
-        # Backward compat: old normalize.scale node had method=max/area/minmax
+        # Convert scale sub-method shortcuts to canonical form
         method = params.get("method", "snv")
         if method in ("max", "area", "minmax"):
             params["scale_method"] = method
@@ -2489,8 +1792,11 @@ class NormalizeNode(Node):
             result.units = "normalized"
 
         add_processing_step(
-            result, f"normalize.{method}", params,
-            node_id=self.node_id, state_effects=effects,
+            result,
+            "preprocess.normalize",
+            params,
+            node_id=self.node_id,
+            state_effects=effects,
         )
 
         # SNV diagnostics
@@ -2517,7 +1823,7 @@ class NormalizeNode(Node):
         inp = next(iter(inputs.values())) if inputs else "input_data"
         params = self._resolve_params()
         method = params.get("method", "snv")
-        # Backward compat: old normalize.scale had method=max/area/minmax
+        # Convert scale sub-method shortcuts to canonical form
         if method in ("max", "area", "minmax"):
             scale_params = {"method": method}
             return _normalize_scale_export(scale_params, inp, self.node_id, indent, use_scp)
@@ -2574,33 +1880,45 @@ class ScaleNode(Node):
                 category="basic",
             ),
             NodeParameter(
-                name="center", label="Mean Center First", param_type="boolean",
+                name="center",
+                label="Mean Center First",
+                param_type="boolean",
                 default=True,
                 description="Subtract mean before scaling",
-                required=False, category="basic",
+                required=False,
+                category="basic",
                 visible_when={"method": ["autoscale", "pareto"]},
             ),
             NodeParameter(
-                name="target_max", label="Target Maximum", param_type="number",
-                default=1.0, min_value=0.01, max_value=100.0, step=0.1,
-                description="Target max value", required=False,
+                name="target_max",
+                label="Target Maximum",
+                param_type="number",
+                default=1.0,
+                min_value=0.01,
+                max_value=100.0,
+                step=0.1,
+                description="Target max value",
+                required=False,
                 category="basic",
                 visible_when={"method": ["scale_max"]},
             ),
         ],
         input_types=["NDDataset"],
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Input Spectra",
+                description="Spectral data to process",
+            ),
+        ],
         output_type="NDDataset",
-        aliases={
-            "preprocess.center_mean": {"method": "mean_center"},
-            "preprocess.autoscaling": {"method": "autoscale"},
-            "preprocess.pareto_scaling": {"method": "pareto"},
-            "preprocess.scale_max": {"method": "scale_max"},
-        },
     )
 
     async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         input_ds = coerce_to_sherpa(
-            input_data if input_data is not None else kwargs.get("input_0"),
+            input_data,
             input_name="input_data",
         )
         params = self._resolve_params()
@@ -2614,17 +1932,13 @@ class ScaleNode(Node):
         elif method == "scale_max":
             result.units = "normalized"
 
-        # Map consolidated method names to legacy op_ids for provenance
-        _scale_op_ids = {
-            "mean_center": "preprocess.center_mean",
-            "autoscale": "preprocess.autoscaling",
-            "pareto": "preprocess.pareto_scaling",
-            "scale_max": "preprocess.scale_max",
-        }
         effects = [EFFECT_SCALED] if method != "mean_center" else []
         add_processing_step(
-            result, _scale_op_ids.get(method, f"preprocess.{method}"), params,
-            node_id=self.node_id, state_effects=effects,
+            result,
+            "preprocess.scale",
+            params,
+            node_id=self.node_id,
+            state_effects=effects,
         )
         return result
 

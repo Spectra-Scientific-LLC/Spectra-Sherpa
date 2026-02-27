@@ -544,18 +544,18 @@ const broadcastChannel = ref<BroadcastChannel | null>(null);
 
 // Node type labels for display
 const NODE_LABELS: Record<string, string> = {
-  'DATA': 'Load Data',
-  'NORMALIZE': 'Normalize',
-  'SCALE': 'Scale',
-  'BASELINE': 'Baseline',
-  'SMOOTH': 'Smooth',
-  'PCA': 'PCA',
-  'PLS': 'PLS',
-  'MCR': 'MCR-ALS',
-  'STATS': 'Statistics',
-  'PLOT': 'Scatter Plot',
-  'CONTOUR_PLOT': 'Contour Plot',
-  'EXPORT': 'Export',
+  'data.source': 'Load Data',
+  'preprocess.normalize': 'Normalize',
+  'preprocess.scale': 'Scale',
+  'baseline.penalized_ls': 'Baseline',
+  'preprocess.smooth': 'Smooth',
+  'model.pca': 'PCA',
+  'model.pls': 'PLS',
+  'model.mcr_als': 'MCR-ALS',
+  'stats.summary': 'Statistics',
+  'output.plot': 'Scatter Plot',
+  'output.contour': 'Contour Plot',
+  'output.export': 'Export',
 };
 
 const getNodeLabel = (nodeType: string): string => {
@@ -563,8 +563,7 @@ const getNodeLabel = (nodeType: string): string => {
   if (metadata?.label) {
     return metadata.label;
   }
-  const legacyType = workflowStore.getLegacyNodeType(nodeType);
-  return NODE_LABELS[legacyType] || nodeType;
+  return NODE_LABELS[nodeType] || nodeType;
 };
 
 // Computed
@@ -625,7 +624,7 @@ const createNewWorkflow = () => {
     }
   }
   workflowStore.clearWorkflow();
-  workflowStore.addNode({ id: 1, type: workflowStore.normalizeNodeType('DATA'), x: 50, y: 150, params: { source: 'experiment' } });
+  workflowStore.addNode({ id: 1, type: 'data.source', x: 50, y: 150, params: { source: 'experiment' } });
   selectedNode.value = null;
   nodeOutputs.value.clear();
   nextNodeId.value = 2;
@@ -995,23 +994,22 @@ const getRangeParam = (params: ParamsMap, key: string, fallback: [number, number
 
 const getNodePythonCode = (node: WorkflowNode): string => {
   const codeMap: Record<string, (params: ParamsMap) => string> = {
-    'DATA': (p) => `dataset = scp.read("${getStringParam(p, "source", "data.csv")}")`,
-    'NORMALIZE': (p) => `dataset = dataset.normalize(method="${getStringParam(p, "method", "mean")}")`,
-    'SCALE': (p) => {
+    'data.source': (p) => `dataset = scp.read("${getStringParam(p, "source", "data.csv")}")`,
+    'preprocess.normalize': (p) => `dataset = dataset.normalize(method="${getStringParam(p, "method", "snv")}")`,
+    'preprocess.scale': (p) => {
       const [rangeStart, rangeEnd] = getRangeParam(p, "range", [0, 1]);
       return `dataset = dataset.scale(range=[${rangeStart}, ${rangeEnd}])`;
     },
-    'BASELINE': (p) => `dataset = dataset.baseline_als(lam=${getNumberParam(p, "lam", 100000)}, p=${getNumberParam(p, "p", 0.001)})`,
-    'SMOOTH': (p) => `dataset = dataset.savgol(window=${getNumberParam(p, "window", 15)}, poly=${getNumberParam(p, "poly", 2)})`,
-    'PCA': (p) => `pca_result = scp.PCA(n_components=${formatPythonValue(p.n_components ?? 2)}).fit(dataset)`,
-    'PLS': (p) => `pls_result = scp.PLS(n_components=${formatPythonValue(p.n_components ?? 3)}).fit(dataset, y)`,
-    'MCR': (p) => `mcr_result = scp.MCR_ALS(n_components=${formatPythonValue(p.n_components ?? 3)}).fit(dataset)`,
-    'STATS': () => `stats = dataset.describe()`,
-    'PLOT': (p) => `dataset.plot(x_axis=${getNumberParam(p, "xAxis", 0)}, y_axis=${getNumberParam(p, "yAxis", 1)})`,
-    'EXPORT': (p) => `dataset.write("${getStringParam(p, "filename", "output.csv")}")`,
+    'baseline.penalized_ls': (p) => `dataset = dataset.baseline_als(lam=${getNumberParam(p, "lam", 100000)}, p=${getNumberParam(p, "p", 0.001)})`,
+    'preprocess.smooth': (p) => `dataset = dataset.savgol(size=${getNumberParam(p, "size", getNumberParam(p, "window", 15))}, order=${getNumberParam(p, "order", getNumberParam(p, "poly", 2))})`,
+    'model.pca': (p) => `pca_result = scp.PCA(n_components=${formatPythonValue(p.n_components ?? 2)}).fit(dataset)`,
+    'model.pls': (p) => `pls_result = scp.PLS(n_components=${formatPythonValue(p.n_components ?? 3)}).fit(dataset, y)`,
+    'model.mcr_als': (p) => `mcr_result = scp.MCR_ALS(n_components=${formatPythonValue(p.n_components ?? 3)}).fit(dataset)`,
+    'stats.summary': () => `stats = dataset.describe()`,
+    'output.plot': (p) => `dataset.plot(x_axis=${getNumberParam(p, "xAxis", 0)}, y_axis=${getNumberParam(p, "yAxis", 1)})`,
+    'output.export': (p) => `dataset.write("${getStringParam(p, "filename", "output.csv")}")`,
   };
-  const legacyType = workflowStore.getLegacyNodeType(node.type);
-  return codeMap[legacyType]?.(node.params) || `# Unknown node type: ${node.type}`;
+  return codeMap[node.type]?.(node.params) || `# Unknown node type: ${node.type}`;
 };
 
 const topologicalSort = (): WorkflowNode[] => {
@@ -1142,7 +1140,7 @@ const buildInitialData = async (): Promise<Record<string, unknown>> => {
   const initialData: Record<string, unknown> = {};
 
   // Find all DATA nodes
-  const dataNodes = nodes.value.filter(n => workflowStore.getLegacyNodeType(n.type) === 'DATA');
+  const dataNodes = nodes.value.filter(n => n.type === 'data.source');
 
   for (const node of dataNodes) {
     const experimentId = coerceNumber(node.params.experiment_id);
@@ -1197,13 +1195,12 @@ const onCreateCustomAlgo = async () => {
 };
 
 const onAddNode = (nodeType: string) => {
-  const normalizedType = workflowStore.normalizeNodeType(nodeType);
   const newNode: WorkflowNode = {
     id: nextNodeId.value++,
-    type: normalizedType,
+    type: nodeType,
     x: 100 + (workflowStore.nodes.length * 40) % 400,
     y: 100 + Math.floor(workflowStore.nodes.length / 4) * 120,
-    params: getDefaultParams(normalizedType),
+    params: getDefaultParams(nodeType),
   };
   workflowStore.addNode(newNode);
   selectedNode.value = newNode;
@@ -1217,17 +1214,17 @@ const getDefaultParams = (nodeType: string): ParamsMap => {
 
   const defaults: Record<string, ParamsMap> = {
     // Data Source nodes
-    'DATA': {
+    'data.source': {
       source: 'file',  // Default to file so users can enter path directly
       file_path: '',
       experiment_id: defaultExperimentId,
       format: 'csv',
     },
-    'NIST_LIBRARY': {
+    'data.nist_library': {
       library_id: null,
       compound_name: '',
     },
-    'SYNTHETIC_CURVE': {
+    'data.synthetic_curve': {
       curve_type: 'sigmoid',
       n_points: 100,
       max_concentration: 1.0,
@@ -1235,52 +1232,50 @@ const getDefaultParams = (nodeType: string): ParamsMap => {
       width: 0.1,
     },
     // Synthesis nodes
-    'SPECIES': {
+    'synthesis.species': {
       species_name: 'Species',
       molar_absorptivity: 1.0,
     },
-    'BLEND': {
+    'synthesis.blend': {
       n_timepoints: 100,
       model_type: 'linear',
       pathlength: 0.01,
       noise_level: 0.01,
     },
-    'MERGE_SPECTRA': {
+    'synthesis.merge': {
       align_wavenumbers: true,
     },
     // Preprocessing nodes
-    'NORMALIZE': { method: 'snv' },
-    'SCALE': { range: [0, 1] },
-    'BASELINE': { method: 'als', lam: 100000, p: 0.001 },
-    'SMOOTH': { method: 'savgol', window: 15, poly: 2 },
-    'COSMIC_RAY': { window: 5, zscore: 3.0 },
-    'CLIP_RANGE': { min_wn: 400, max_wn: 4000 },
+    'preprocess.normalize': { method: 'snv' },
+    'preprocess.scale': { method: 'mean_center' },
+    'baseline.penalized_ls': { method: 'als', lam: 100000, p: 0.001 },
+    'preprocess.smooth': { method: 'savitzky_golay', size: 15, order: 2 },
+    'preprocess.cosmic_ray': { window: 5, zscore: 3.0 },
+    'preprocess.clip_range': { min_wavenumber: 400, max_wavenumber: 4000 },
     // Analysis nodes - use backend parameter names directly (n_components)
-    'PCA': { n_components: "5", standardized: false, scaled: false },
-    'PLS': { n_components: 3, scale: true },
-    'MCR': { n_components: 3, max_iter: 100 },
-    'EFA': { n_components: 10, direction: 'both' },
-    'PCR': { n_components: 3, scale: true },
-    'SVR': { kernel: 'rbf', C: 1.0, epsilon: 0.1, gamma: 'scale', degree: 3, coef0: 0.0, scale: true },
-    'KMEANS': { n_clusters: 3, n_init: 10, max_iter: 300, random_state: 42 },
-    'DBSCAN': { eps: 0.5, min_samples: 5, metric: 'euclidean' },
-    'HCA': { n_clusters: 3, linkage: 'ward', metric: 'euclidean' },
-    'SIMPLISMA': { n_components: 3, noise: 3 },
-    'STATS': { metrics: ['mean', 'std', 'min', 'max'], max_samples: 50 },
+    'model.pca': { n_components: "5", standardized: false, scaled: false },
+    'model.pls': { n_components: 3, scale: true },
+    'model.mcr_als': { n_components: 3, max_iter: 100 },
+    'model.efa': { n_components: 10, direction: 'both' },
+    'model.pcr': { n_components: 3, scale: true },
+    'model.svr': { kernel: 'rbf', C: 1.0, epsilon: 0.1, gamma: 'scale', degree: 3, coef0: 0.0, scale: true },
+    'model.kmeans': { n_clusters: 3, n_init: 10, max_iter: 300, random_state: 42 },
+    'model.dbscan': { eps: 0.5, min_samples: 5, metric: 'euclidean' },
+    'model.hca': { n_clusters: 3, linkage: 'ward', metric: 'euclidean' },
+    'model.simplisma': { n_components: 3, noise: 3 },
+    'stats.summary': {},
     // Classification nodes
-    'PLS_DA': { n_components: 3, scale: true },
-    'KNN': { n_neighbors: 5, metric: 'euclidean' },
-    'SIMCA': { n_components: 3, alpha: 0.05 },
+    'classification.plsda': { n_components: 3, scale: true },
+    'classification.knn': { n_neighbors: 5, metric: 'euclidean' },
+    'classification.simca': { n_components: 3, confidence_level: 0.95 },
     // Output nodes
-    'PLOT': { type: 'spectra', xAxis: 'wavenumber', yAxis: 'absorbance' },
-    'CONTOUR_PLOT': { colorscale: 'Viridis', plot_type: 'heatmap', reverse_x: true, transpose: false },
-    'EXPORT': { filename: 'output.csv', format: 'csv' },
+    'output.plot': { plot_type: 'spectra' },
+    'output.contour': { colorscale: 'Viridis', plot_type: 'heatmap', reverse_x: false, transpose: false },
+    'output.export': { filename: 'output.csv', format: 'csv' },
     // Legacy
-    'PEAK': { method: 'find_peaks', prominence: 0.01 },
-    'SLICE': { start: 4000, end: 400, unit: 'cm-1' },
+    'analysis.peak_finding': { method: 'find_peaks', prominence: 0.01 },
   };
-  const legacyType = workflowStore.getLegacyNodeType(nodeType);
-  return defaults[legacyType] || defaults[nodeType] || {};
+  return defaults[nodeType] || {};
 };
 
 const onNodesUpdate = (updatedNodes: WorkflowNode[]) => {

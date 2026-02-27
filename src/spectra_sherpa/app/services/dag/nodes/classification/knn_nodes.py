@@ -14,7 +14,6 @@ from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, co
 from ...io_contracts import (
     bind_X,
     bind_y,
-    resolve_legacy_input,
     to_numpy_2d,
 )
 from ...node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
@@ -155,14 +154,12 @@ class KNNNode(Node):
 
         X = bind_X(
             X,
-            kwargs,
             missing_message="Missing required input: X (features)",
             dataset_error_message="X must be an dataset object",
             allow_array=False,
         )
         y = bind_y(
             y,
-            kwargs,
             X=X,
             required=True,
             infer_from_X=True,
@@ -484,103 +481,4 @@ class KNNNode(Node):
                 "yaxis": {"title": "Component 2"},
                 "legend": {"title": {"text": "Classes"}},
             },
-        }
-
-
-class KNNPredictNode(Node):
-    """
-    Apply trained KNN model to predict class labels for new samples.
-
-    Takes new feature data and a trained KNN model, returns predicted
-    class labels and probabilities. Useful for test set evaluation and
-    production inference.
-    """
-
-    metadata = NodeMetadata(
-        node_type="classification.knn_predict",
-        category="classification",
-        label="Apply KNN Model",
-        description="Apply trained KNN model to classify new data",
-        parameters=[],
-        input_ports=[
-            PortMetadata(
-                name="X_new",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
-                required=True,
-                label="New Features",
-                description="New feature data to classify (spectra or scores)",
-            ),
-            PortMetadata(
-                name="model",
-                type_ref="spectrasherpa://types/ClassificationModel/1.0",
-                required=True,
-                label="KNN Model",
-                description="Trained KNN model from training node",
-            ),
-        ],
-        output_ports=[
-            PortMetadata(
-                name="y_pred",
-                type_ref="spectrasherpa://types/Categorical/1.0",
-                required=True,
-                label="Predicted Classes",
-                description="Predicted class labels",
-            ),
-            PortMetadata(
-                name="y_prob",
-                type_ref="spectrasherpa://types/Array2D/1.0",
-                required=True,
-                label="Class Probabilities",
-                description="Predicted class probabilities",
-            ),
-        ],
-        input_types=["NDDataset", "dict"],
-        output_type="dict",
-    )
-
-    async def execute(self, X_new: Any = None, model: Any = None, **kwargs: Any) -> dict[str, Any]:
-        """
-        Apply KNN model to new data.
-
-        Args:
-            X_new: New feature data (NDDataset or array)
-            model: Trained KNN model dict from training node
-
-        Returns:
-            Dict with predicted classes and probabilities
-        """
-        X_new = resolve_legacy_input(X_new, kwargs, "input_0")
-        model = resolve_legacy_input(model, kwargs, "input_1")
-
-        if X_new is None:
-            raise ValueError("Missing required input: X_new (new features)")
-        if model is None:
-            raise ValueError("Missing required input: model (trained KNN model)")
-
-        # Extract model from result dict
-        if isinstance(model, dict):
-            knn_model = model.get("model")
-            _classes = np.array(model.get("classes", []))
-        else:
-            raise ValueError("Model must be a dict containing KNN model and metadata")
-
-        if knn_model is None:
-            raise ValueError("Model dict does not contain 'model' key with trained KNN model")
-
-        X_new_ds = bind_X(
-            X_new,
-            kwargs,
-            missing_message="Missing required input: X_new (new features)",
-            dataset_error_message="X_new must be an dataset object",
-            allow_array=True,
-        )
-        X_array = to_numpy_2d(X_new_ds, name="X_new", dtype=np.float64)
-
-        # Make predictions
-        y_pred = knn_model.predict(X_array)
-        y_prob = knn_model.predict_proba(X_array)
-
-        return {
-            "y_pred": y_pred.tolist(),
-            "y_prob": y_prob.tolist(),
         }

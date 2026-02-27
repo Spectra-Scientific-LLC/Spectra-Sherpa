@@ -31,12 +31,6 @@ def _is_dataset_like(value: Any) -> bool:
     return False
 
 
-def resolve_legacy_input(value: Any, kwargs: dict[str, Any], key: str) -> Any:
-    """Apply legacy positional-via-kwargs fallback (e.g. input_0, input_1)."""
-    if value is None and key in kwargs:
-        return kwargs[key]
-    return value
-
 
 def coerce_to_sherpa(
     value: Any,
@@ -79,14 +73,12 @@ def coerce_to_sherpa(
 
 def bind_X(
     X: Any,
-    kwargs: dict[str, Any],
     *,
     missing_message: str = "Missing required input: X",
     dataset_error_message: str = "X must be an NDDataset or SherpaDataset object",
     allow_array: bool = False,
 ) -> SherpaDataset:
-    """Bind and normalize the X input (with legacy input_0 fallback)."""
-    X = resolve_legacy_input(X, kwargs, "input_0")
+    """Bind and normalize the X input."""
     if X is None:
         raise ValueError(missing_message)
     return coerce_to_sherpa(
@@ -148,7 +140,6 @@ def extract_target_like(dataset: Any) -> Any | None:
 
 def bind_y(
     y: Any,
-    kwargs: dict[str, Any],
     *,
     X: SherpaDataset | None = None,
     required: bool = False,
@@ -160,14 +151,13 @@ def bind_y(
     ),
 ) -> Any:
     """
-    Bind and normalize y input (with legacy input_1 fallback).
+    Bind and normalize y input.
 
     - If y is omitted and infer_from_X=True, attempts extraction from X.
     - If y is a dataset and dataset_as_data=True, returns y.data.
     - If y is a dataset and dataset_as_data=False, extracts target/labels.
     - Otherwise returns y unchanged.
     """
-    y = resolve_legacy_input(y, kwargs, "input_1")
 
     if y is None and infer_from_X and X is not None:
         inferred = extract_target_like(X)

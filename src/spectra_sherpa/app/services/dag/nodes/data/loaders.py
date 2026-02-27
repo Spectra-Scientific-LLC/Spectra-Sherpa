@@ -85,6 +85,7 @@ class FileLoadNode(Node):
             ),
         ],
         input_types=[],
+        input_ports=[],
         output_type="NDDataset",
     )
 
@@ -216,6 +217,7 @@ class MyDatasetNode(Node):
             ),
         ],
         input_types=[],
+        input_ports=[],
         output_type="dict",
         output_ports=[
             PortMetadata(
@@ -638,6 +640,7 @@ class LoadGroupNode(Node):
             ),
         ],
         input_types=[],  # No inputs - this is a source node
+        input_ports=[],
         output_type="NDDataset",
         requires_scp=True,
         help_url="https://www.spectrochempy.fr/reference/generated/spectrochempy.NDDataset.html",

@@ -93,7 +93,7 @@ async def test_requires_scp_gate_raises_import_error(no_scp):
 @pytest.mark.asyncio
 async def test_snv_node_on_sherpa_dataset(iris_dataset):
     """SNV normalization should work on SherpaDataset and preserve shape and axes."""
-    node = node_registry.create_node("normalize.snv", "test_snv", {})
+    node = node_registry.create_node("preprocess.normalize", "test_snv", {"method": "snv"})
     result = await node.run(default=iris_dataset)
 
     assert isinstance(result, NodeResult)
@@ -126,7 +126,7 @@ async def test_snv_node_on_sherpa_dataset(iris_dataset):
 @pytest.mark.asyncio
 async def test_scale_node_on_sherpa_dataset(iris_dataset):
     """Scale normalization should work on SherpaDataset with 'max' method."""
-    node = node_registry.create_node("normalize.scale", "test_scale", {"method": "max"})
+    node = node_registry.create_node("preprocess.normalize", "test_scale", {"method": "scale"})
     result = await node.run(default=iris_dataset)
 
     assert isinstance(result, NodeResult)
@@ -148,7 +148,7 @@ async def test_scale_node_on_sherpa_dataset(iris_dataset):
 @pytest.mark.asyncio
 async def test_scale_node_minmax_method(iris_dataset):
     """Scale normalization with 'minmax' should map each row to [0, 1]."""
-    node = node_registry.create_node("normalize.scale", "test_scale_mm", {"method": "minmax"})
+    node = node_registry.create_node("preprocess.normalize", "test_scale_mm", {"method": "scale", "scale_method": "minmax"})
     result = await node.run(default=iris_dataset)
 
     output = result.outputs.get("default")
@@ -183,7 +183,7 @@ async def test_clip_floor_execution(iris_dataset):
 @pytest.mark.asyncio
 async def test_center_mean_execution(iris_dataset):
     """CenterMeanNode (TransformSpecNode) should mean-center columns."""
-    node = node_registry.create_node("preprocess.center_mean", "test_cm", {})
+    node = node_registry.create_node("preprocess.scale", "test_cm", {"method": "mean_center"})
     result = await node.run(default=iris_dataset)
 
     output = result.outputs.get("default")
@@ -196,7 +196,7 @@ async def test_center_mean_execution(iris_dataset):
 @pytest.mark.asyncio
 async def test_autoscaling_execution(iris_dataset):
     """AutoscalingNode (TransformSpecNode) should produce unit-variance columns."""
-    node = node_registry.create_node("preprocess.autoscaling", "test_as", {"center": True})
+    node = node_registry.create_node("preprocess.scale", "test_as", {"method": "autoscale", "center": True})
     result = await node.run(default=iris_dataset)
 
     output = result.outputs.get("default")
@@ -211,7 +211,7 @@ async def test_autoscaling_execution(iris_dataset):
 @pytest.mark.asyncio
 async def test_pareto_scaling_execution(iris_dataset):
     """ParetoScalingNode (TransformSpecNode) should scale by sqrt(std)."""
-    node = node_registry.create_node("preprocess.pareto_scaling", "test_ps", {"center": True})
+    node = node_registry.create_node("preprocess.scale", "test_ps", {"method": "pareto", "center": True})
     result = await node.run(default=iris_dataset)
 
     output = result.outputs.get("default")
@@ -441,7 +441,7 @@ def test_is_dataset_with_numpy_array():
 @pytest.mark.asyncio
 async def test_provenance_recorded_after_snv(iris_dataset):
     """Running SNV on SherpaDataset should record provenance in the output."""
-    node = node_registry.create_node("normalize.snv", "test_snv_prov", {})
+    node = node_registry.create_node("preprocess.normalize", "test_snv_prov", {"method": "snv"})
     result = await node.run(default=iris_dataset)
 
     output = result.outputs["default"]
@@ -451,7 +451,7 @@ async def test_provenance_recorded_after_snv(iris_dataset):
     assert len(output.provenance) > 0, "Provenance should not be empty after SNV"
 
     # Find the SNV step — ProvenanceEntry uses .op_id, not dict .get("operation")
-    snv_steps = [entry for entry in output.provenance if entry.op_id == "normalize.snv"]
+    snv_steps = [entry for entry in output.provenance if entry.op_id == "preprocess.normalize"]
     assert len(snv_steps) == 1, "Should have exactly one SNV provenance entry"
 
     snv_step = snv_steps[0]
@@ -462,11 +462,11 @@ async def test_provenance_recorded_after_snv(iris_dataset):
 @pytest.mark.asyncio
 async def test_provenance_chain_snv_then_scale(iris_dataset):
     """Chaining SNV -> Scale should produce two entries in provenance."""
-    snv_node = node_registry.create_node("normalize.snv", "chain_snv", {})
+    snv_node = node_registry.create_node("preprocess.normalize", "chain_snv", {"method": "snv"})
     snv_result = await snv_node.run(default=iris_dataset)
     snv_output = snv_result.outputs["default"]
 
-    scale_node = node_registry.create_node("normalize.scale", "chain_scale", {"method": "max"})
+    scale_node = node_registry.create_node("preprocess.normalize", "chain_scale", {"method": "scale"})
     scale_result = await scale_node.run(default=snv_output)
     scale_output = scale_result.outputs["default"]
 
@@ -474,8 +474,8 @@ async def test_provenance_chain_snv_then_scale(iris_dataset):
 
     # Provenance is the single source of truth on SherpaDataset
     operations = [entry.op_id for entry in scale_output.provenance]
-    assert "normalize.snv" in operations, "SNV step should be in provenance"
-    assert "normalize.scale" in operations, "Scale step should be in provenance"
+    assert "preprocess.normalize" in operations, "SNV step should be in provenance"
+    assert "preprocess.normalize" in operations, "Scale step should be in provenance"
     assert len(scale_output.provenance) >= 2, "Should have at least 2 provenance entries"
 
 
@@ -574,7 +574,7 @@ def spectral_dataset():
 @pytest.mark.asyncio
 async def test_savgol_smooth_on_sherpa_dataset(spectral_dataset):
     """SG smooth should work via scipy fallback on SherpaDataset."""
-    node = node_registry.create_node("smooth.savitzky_golay", "sg_smooth", {"size": 11, "order": 2})
+    node = node_registry.create_node("preprocess.smooth", "sg_smooth", {"method": "savitzky_golay", "size": 11, "order": 2})
     result = await node.run(default=spectral_dataset)
     output = result.outputs["default"]
     assert isinstance(output, SherpaDataset)
@@ -586,7 +586,7 @@ async def test_savgol_smooth_on_sherpa_dataset(spectral_dataset):
 @pytest.mark.asyncio
 async def test_first_derivative_on_sherpa_dataset(spectral_dataset):
     """1st derivative should work via scipy fallback on SherpaDataset."""
-    node = node_registry.create_node("derivative.first", "deriv1", {"size": 11, "order": 2})
+    node = node_registry.create_node("preprocess.derivative", "deriv1", {"method": "savitzky_golay", "deriv": "1", "size": 11, "order": 2})
     result = await node.run(default=spectral_dataset)
     output = result.outputs["default"]
     assert isinstance(output, SherpaDataset)
@@ -596,7 +596,7 @@ async def test_first_derivative_on_sherpa_dataset(spectral_dataset):
 @pytest.mark.asyncio
 async def test_second_derivative_on_sherpa_dataset(spectral_dataset):
     """2nd derivative should work via scipy fallback on SherpaDataset."""
-    node = node_registry.create_node("derivative.second", "deriv2", {"size": 11, "order": 3})
+    node = node_registry.create_node("preprocess.derivative", "deriv2", {"method": "savitzky_golay", "deriv": "2", "size": 11, "order": 3})
     result = await node.run(default=spectral_dataset)
     output = result.outputs["default"]
     assert isinstance(output, SherpaDataset)
@@ -606,7 +606,7 @@ async def test_second_derivative_on_sherpa_dataset(spectral_dataset):
 @pytest.mark.asyncio
 async def test_sg_derivative_on_sherpa_dataset(spectral_dataset):
     """Generic SG derivative should work via scipy fallback on SherpaDataset."""
-    node = node_registry.create_node("preprocess.sg_derivative", "sg_deriv", {"size": 11, "order": 2, "deriv": "1"})
+    node = node_registry.create_node("preprocess.derivative", "sg_deriv", {"method": "savitzky_golay", "size": 11, "order": 2, "deriv": "1"})
     result = await node.run(default=spectral_dataset)
     output = result.outputs["default"]
     assert isinstance(output, SherpaDataset)
@@ -623,8 +623,8 @@ def test_copy_processing_history_syncs_provenance():
     from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
 
     source = SherpaDataset(X=np.ones((3, 5)))
-    add_processing_step(source, "normalize.snv", {}, node_id="n1")
-    add_processing_step(source, "normalize.scale", {"method": "max"}, node_id="n2")
+    add_processing_step(source, "preprocess.normalize", {}, node_id="n1")
+    add_processing_step(source, "preprocess.normalize", {"method": "max"}, node_id="n2")
 
     target = SherpaDataset(X=np.ones((3, 5)))
     # target starts with 0 history entries
@@ -637,7 +637,7 @@ def test_copy_processing_history_syncs_provenance():
 
     # Verify operations via ProvenanceEntry.op_id
     ops = [entry.op_id for entry in target.provenance]
-    assert ops == ["normalize.snv", "normalize.scale"]
+    assert ops == ["preprocess.normalize", "preprocess.normalize"]
 
 
 def test_provenance_chain_survives_to_dict():
@@ -651,14 +651,14 @@ def test_provenance_chain_survives_to_dict():
     # Create result from copy (simulating what a node does)
     result = ds.copy()
     copy_processing_history(ds, result)
-    add_processing_step(result, "normalize.snv", {}, node_id="snv")
+    add_processing_step(result, "preprocess.normalize", {}, node_id="snv")
 
     # Serialize
     d = result.to_dict()
     history = d["metadata"]["processing_history"]
     operations = [step["op_id"] for step in history]
     assert "data.source" in operations
-    assert "normalize.snv" in operations
+    assert "preprocess.normalize" in operations
     assert len(history) == 2
 
 
@@ -677,7 +677,7 @@ class TestGeneratePythonNoScp:
         return {"default": "results['source']"}
 
     def test_snv_no_scp_uses_result(self):
-        node = self._make_node("normalize.snv")
+        node = self._make_node("preprocess.normalize", {"method": "snv"})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
@@ -685,13 +685,13 @@ class TestGeneratePythonNoScp:
         assert "np.array(" in code
 
     def test_snv_scp_uses_nddataset(self):
-        node = self._make_node("normalize.snv")
+        node = self._make_node("preprocess.normalize", {"method": "snv"})
         lines = node.generate_python(self._inputs(), use_scp=True)
         code = "\n".join(lines)
         assert "scp.NDDataset" in code
 
     def test_scale_no_scp_uses_result(self):
-        node = self._make_node("normalize.scale", {"method": "max"})
+        node = self._make_node("preprocess.normalize", {"method": "scale"})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
@@ -712,28 +712,28 @@ class TestGeneratePythonNoScp:
         assert "_Result(" in code
 
     def test_scale_max_no_scp(self):
-        node = self._make_node("preprocess.scale_max", {"target_max": 1.0})
+        node = self._make_node("preprocess.scale", {"method": "scale_max", "target_max": 1.0})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
         assert "_Result(" in code
 
     def test_center_mean_no_scp(self):
-        node = self._make_node("preprocess.center_mean")
+        node = self._make_node("preprocess.scale", {"method": "mean_center"})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
         assert "_Result(" in code
 
     def test_pareto_no_scp(self):
-        node = self._make_node("preprocess.pareto_scaling", {"center": True})
+        node = self._make_node("preprocess.scale", {"method": "pareto", "center": True})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
         assert "_Result(" in code
 
     def test_autoscaling_no_scp(self):
-        node = self._make_node("preprocess.autoscaling", {"center": True})
+        node = self._make_node("preprocess.scale", {"method": "autoscale", "center": True})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
@@ -747,7 +747,7 @@ class TestGeneratePythonNoScp:
         assert "_Result(" in code
 
     def test_savgol_smooth_no_scp_uses_scipy(self):
-        node = self._make_node("smooth.savitzky_golay", {"size": 11, "order": 2})
+        node = self._make_node("preprocess.smooth", {"method": "savitzky_golay", "size": 11, "order": 2})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp" not in code.lower() or "scp" not in code
@@ -755,13 +755,13 @@ class TestGeneratePythonNoScp:
         assert "_Result(" in code
 
     def test_savgol_smooth_scp_uses_method(self):
-        node = self._make_node("smooth.savitzky_golay", {"size": 11, "order": 2})
+        node = self._make_node("preprocess.smooth", {"method": "savitzky_golay", "size": 11, "order": 2})
         lines = node.generate_python(self._inputs(), use_scp=True)
         code = "\n".join(lines)
         assert "data.smooth(" in code
 
     def test_first_deriv_no_scp_uses_scipy(self):
-        node = self._make_node("derivative.first", {"size": 11, "order": 2})
+        node = self._make_node("preprocess.derivative", {"method": "savitzky_golay", "deriv": "1", "size": 11, "order": 2})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "savgol_filter" in code
@@ -769,7 +769,7 @@ class TestGeneratePythonNoScp:
         assert "_Result(" in code
 
     def test_second_deriv_no_scp_uses_scipy(self):
-        node = self._make_node("derivative.second", {"size": 11, "order": 2})
+        node = self._make_node("preprocess.derivative", {"method": "savitzky_golay", "deriv": "2", "size": 11, "order": 2})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "savgol_filter" in code
@@ -777,21 +777,21 @@ class TestGeneratePythonNoScp:
         assert "_Result(" in code
 
     def test_sg_derivative_no_scp_uses_scipy(self):
-        node = self._make_node("preprocess.sg_derivative", {"size": 11, "order": 2, "deriv": "1"})
+        node = self._make_node("preprocess.derivative", {"method": "savitzky_golay", "size": 11, "order": 2, "deriv": "1"})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "savgol_filter" in code
         assert "_Result(" in code
 
     def test_sg_derivative_scp_uses_method(self):
-        node = self._make_node("preprocess.sg_derivative", {"size": 11, "order": 2, "deriv": "1"})
+        node = self._make_node("preprocess.derivative", {"method": "savitzky_golay", "size": 11, "order": 2, "deriv": "1"})
         lines = node.generate_python(self._inputs(), use_scp=True)
         code = "\n".join(lines)
         assert "data.savgol(" in code
 
     def test_scp_only_node_emits_import_error(self):
         """SCP-only nodes should emit ImportError when use_scp=False."""
-        # baseline.rubberband requires SCP (normalize.msc is now pure-numpy)
+        # baseline.rubberband requires SCP (preprocess.normalize is now pure-numpy)
         node = self._make_node("baseline.rubberband", {})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)

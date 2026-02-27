@@ -80,33 +80,27 @@ def topological_sort(node_ids: Sequence[str], edges: Sequence[Edge]) -> list[str
 def build_input_map(
     node_id: str,
     edges: Sequence[Edge],
-    uses_named_ports: bool,
-) -> dict[str, str]:
+) -> dict[str, str | list[str]]:
     """
     Build a mapping of input names to Python codegen expressions.
 
     Used by the Python exporter to generate ``results['upstream']``
     or ``results['upstream']['port']`` references for each input.
 
+    When multiple edges target the same port (variadic), the value
+    is a list of expression strings.
+
     Args:
         node_id: Target node ID
         edges: All edges in the graph
-        uses_named_ports: Whether the target node uses named input ports
 
     Returns:
-        Dict mapping input name -> Python expression string.
+        Dict mapping port name -> expression string (or list for variadic).
 
-        For named-port nodes::
+        Example::
 
             {"X": "results['node_1']", "y": "results['node_2']['target']"}
-
-        For legacy single-input::
-
-            {"input": "results['node_1']"}
-
-        For legacy multi-input::
-
-            {"input_0": "results['node_1']", "input_1": "results['node_2']"}
+            {"default": ["results['a']", "results['b']"]}  # variadic
     """
     incoming = sorted(
         (e for e in edges if e.to_node == node_id),
@@ -122,10 +116,15 @@ def build_input_map(
             return f"{base}['{edge.from_output}']"
         return base
 
-    if uses_named_ports:
-        return {e.to_input: _expr(e) for e in incoming}
-
-    if len(incoming) == 1:
-        return {"input": _expr(incoming[0])}
-
-    return {f"input_{i}": _expr(e) for i, e in enumerate(incoming)}
+    result: dict[str, str | list[str]] = {}
+    for e in incoming:
+        expr = _expr(e)
+        if e.to_input in result:
+            existing = result[e.to_input]
+            if isinstance(existing, list):
+                existing.append(expr)
+            else:
+                result[e.to_input] = [existing, expr]
+        else:
+            result[e.to_input] = expr
+    return result

@@ -84,7 +84,7 @@ SpectraSherpa is fundamentally a Directed Acyclic Graph (DAG) engine.
 - **Nodes** (`spectra_sherpa.app.services.dag.nodes.*`) are self-contained units of logic organized into 11 categories: `data`, `synthesis`, `preprocessing`, `exploratory`, `regression`, `classification`, `clustering`, `validation`, `custom_algo`, `output`, `deploy`.
 - **Workflows** are serializable JSON structures defining the graph.
 - **Execution** is topological. Data flows from `DataSourceNode` -> `PreprocessingNode` -> modeling/classification/clustering nodes -> output/deploy nodes.
-- **Consolidated nodes** merge related algorithms behind a `method` dropdown (e.g., `preprocess.smooth` supports Savitzky-Golay, Whittaker, and Gaussian). Old node types resolve via the **alias system** in `NodeMetadata.aliases`.
+- **Consolidated nodes** merge related algorithms behind a `method` dropdown (e.g., `preprocess.smooth` supports Savitzky-Golay, Whittaker, and Gaussian).
 - **Conditional visibility** (`NodeParameter.visible_when`) hides irrelevant parameters in the Inspector based on the selected method.
 
 ### 3. Data Containers

@@ -171,7 +171,7 @@ class TestLoadPathContract:
         assert isinstance(ds, SherpaDataset)
         n_samples, n_features = ds.shape
 
-        snv = node_registry.create_node("normalize.snv", "snv", {})
+        snv = node_registry.create_node("preprocess.normalize", "snv", {"method": "snv"})
         snv_result = await snv.run(default=ds)
         out = snv_result.outputs["default"]
         assert isinstance(out, SherpaDataset)
@@ -224,11 +224,11 @@ class TestLoadPathContract:
     @pytest.mark.asyncio
     async def test_multi_step_preprocessing_chain(self, spectral_dataset):
         """data → snv → scale → feature_axis preserved through transforms."""
-        snv = node_registry.create_node("normalize.snv", "snv", {})
+        snv = node_registry.create_node("preprocess.normalize", "snv", {"method": "snv"})
         snv_result = await snv.run(default=spectral_dataset)
         snv_out = snv_result.outputs["default"]
 
-        scale = node_registry.create_node("normalize.scale", "scale", {"method": "max"})
+        scale = node_registry.create_node("preprocess.normalize", "scale", {"method": "scale"})
         scale_result = await scale.run(default=snv_out)
         out = scale_result.outputs["default"]
 
@@ -244,7 +244,7 @@ class TestLoadPathContract:
         from spectra_sherpa.app.services.dag.executor import WorkflowNode
 
         # Add a processing node with no inputs
-        executor.add_node(WorkflowNode(node_id="lonely_snv", node_type="normalize.snv", parameters={}))
+        executor.add_node(WorkflowNode(node_id="lonely_snv", node_type="preprocess.normalize", parameters={"method": "snv"}))
         errors = executor.validate()
         assert len(errors) > 0
         assert any("no input" in e.lower() or "not connected" in e.lower() for e in errors)
@@ -254,8 +254,8 @@ class TestLoadPathContract:
         """A→B→A → validate() returns cycle error."""
         from spectra_sherpa.app.services.dag.executor import WorkflowEdge, WorkflowNode
 
-        executor.add_node(WorkflowNode(node_id="a", node_type="normalize.snv", parameters={}))
-        executor.add_node(WorkflowNode(node_id="b", node_type="normalize.snv", parameters={}))
+        executor.add_node(WorkflowNode(node_id="a", node_type="preprocess.normalize", parameters={"method": "snv"}))
+        executor.add_node(WorkflowNode(node_id="b", node_type="preprocess.normalize", parameters={"method": "snv"}))
         executor.add_edge(WorkflowEdge(from_node="a", to_node="b"))
         executor.add_edge(WorkflowEdge(from_node="b", to_node="a"))
 
@@ -350,7 +350,7 @@ class TestDeployPathContract:
         from spectra_sherpa.app.services.dag.executor import WorkflowEdge, WorkflowNode
 
         executor.add_node(WorkflowNode(node_id="d_in", node_type="deploy.input", parameters={"stream_name": "sample"}))
-        executor.add_node(WorkflowNode(node_id="snv", node_type="normalize.snv", parameters={}))
+        executor.add_node(WorkflowNode(node_id="snv", node_type="preprocess.normalize", parameters={"method": "snv"}))
         executor.add_node(
             WorkflowNode(node_id="d_out", node_type="deploy.output", parameters={"output_format": "json"})
         )
@@ -377,7 +377,7 @@ class TestDeployPathContract:
                 node_id="src", node_type="data.source", parameters={"source": "sklearn", "sklearn_dataset": "iris"}
             )
         )
-        executor.add_node(WorkflowNode(node_id="snv", node_type="normalize.snv", parameters={}))
+        executor.add_node(WorkflowNode(node_id="snv", node_type="preprocess.normalize", parameters={"method": "snv"}))
         executor.add_edge(WorkflowEdge(from_node="src", to_node="snv"))
 
         clone = copy.deepcopy(executor)
@@ -393,7 +393,7 @@ class TestDeployPathContract:
         from spectra_sherpa.app.services.dag.executor import WorkflowEdge, WorkflowNode
 
         executor.add_node(WorkflowNode(node_id="src", node_type="deploy.input", parameters={"stream_name": "sample"}))
-        executor.add_node(WorkflowNode(node_id="snv", node_type="normalize.snv", parameters={}))
+        executor.add_node(WorkflowNode(node_id="snv", node_type="preprocess.normalize", parameters={"method": "snv"}))
         executor.add_edge(WorkflowEdge(from_node="src", to_node="snv"))
 
         # Inject a pre-computed result for the source

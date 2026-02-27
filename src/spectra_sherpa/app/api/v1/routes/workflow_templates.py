@@ -18,6 +18,7 @@ from spectra_sherpa.app.models.workflow_edge import WorkflowEdge
 from spectra_sherpa.app.models.workflow_node import WorkflowNode
 from spectra_sherpa.app.models.workflow_template import WorkflowTemplate
 from spectra_sherpa.app.schemas.workflows import WorkflowDetail
+from spectra_sherpa.app.services.dag.node_base import node_registry
 
 router = APIRouter(prefix="/workflow-templates")
 
@@ -145,8 +146,23 @@ async def instantiate_template(
     if template is None:
         raise HTTPException(status_code=404, detail="Template not found")
 
-    # Create workflow from template
+    # Validate all node types in the template exist in the registry
     template_data = template.template_data
+    unknown_types = [
+        n["node_type"]
+        for n in template_data.get("nodes", [])
+        if not n["node_type"].startswith("ualgo.") and n["node_type"] not in node_registry
+    ]
+    if unknown_types:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Template '{template.name}' contains unknown node type(s): "
+                f"{', '.join(unknown_types)}. The template may need updating."
+            ),
+        )
+
+    # Create workflow from template
     workflow = Workflow(
         user_id=user_id,
         name=payload.workflow_name,

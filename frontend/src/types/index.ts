@@ -233,6 +233,7 @@ export interface NodePortMetadata {
   required: boolean;
   label: string;  // Display label (e.g., "Training Spectra")
   description?: string;
+  variadic?: boolean;  // True = accepts multiple incoming edges (list input)
 }
 
 // Node metadata from backend

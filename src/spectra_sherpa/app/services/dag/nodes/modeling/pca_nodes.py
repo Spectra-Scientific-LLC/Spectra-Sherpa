@@ -18,7 +18,6 @@ from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, co
 from ...io_contracts import (
     attach_evaluation,
     bind_X,
-    resolve_legacy_input,
     to_numpy_2d,
 )
 from ...node_base import (
@@ -163,10 +162,8 @@ class PCANode(Node):
         Returns:
             PCA model object with scores, loadings, and explained variance
         """
-        input_data = resolve_legacy_input(input_data, kwargs, "default")
         input_ds = bind_X(
             input_data,
-            kwargs,
             missing_message="Missing required input: input_data (X)",
             dataset_error_message="input_data must be an dataset or array-like object",
             allow_array=True,
@@ -474,9 +471,6 @@ class PCATransformNode(Node):
         Returns:
             dict with 'scores' key containing PC scores
         """
-        X_new = resolve_legacy_input(X_new, kwargs, "input_0")
-        model = resolve_legacy_input(model, kwargs, "input_1")
-
         if X_new is None or model is None:
             raise ValueError("Both X_new and model inputs are required")
 
@@ -490,7 +484,6 @@ class PCATransformNode(Node):
 
         X_new_ds = bind_X(
             X_new,
-            kwargs,
             missing_message="Missing required input: X_new (new spectra)",
             dataset_error_message="X_new must be an dataset object",
             allow_array=True,

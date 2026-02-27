@@ -4,7 +4,7 @@ Resolving pure components from a mixture.
 
 ## 1. Setting up MCR-ALS
 
-(Note: Requires `pymcr` or internal implementation)
+(Note: Requires SpectroChemPy MCRALS via `pip install spectra-sherpa[scp]`)
 
 ```python
 import numpy as np

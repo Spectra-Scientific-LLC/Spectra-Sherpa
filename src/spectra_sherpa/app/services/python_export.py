@@ -179,7 +179,7 @@ def generate_python_code(workflow: Workflow) -> str:
     # Generate code for each node in execution order
     for node_id in execution_order:
         node = node_map[node_id]
-        input_map = build_input_map(node_id, edges, node.uses_named_ports())
+        input_map = build_input_map(node_id, edges)
 
         if not input_map:
             # Source node — no upstream edges

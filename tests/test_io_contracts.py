@@ -33,27 +33,27 @@ def _make_dataset(with_target: bool = True) -> SherpaDataset:
     return ds
 
 
-def test_bind_x_legacy_kwarg():
+def test_bind_x_direct():
     ds = _make_dataset()
-    bound = bind_X(None, {"input_0": ds})
+    bound = bind_X(ds)
     assert bound is ds
 
 
 def test_bind_x_allows_array_wrapping():
-    bound = bind_X(None, {"input_0": [1.0, 2.0, 3.0]}, allow_array=True)
+    bound = bind_X([1.0, 2.0, 3.0], allow_array=True)
     assert isinstance(bound, SherpaDataset)
     assert bound.shape == (3, 1)
 
 
 def test_bind_y_infers_from_target():
     ds = _make_dataset(with_target=True)
-    y = bind_y(None, {}, X=ds, required=True)
+    y = bind_y(None, X=ds, required=True)
     np.testing.assert_array_equal(np.asarray(y), np.array([0, 1, 1]))
 
 
 def test_bind_y_infers_from_y_axis_labels_when_target_missing():
     ds = _make_dataset(with_target=False)
-    y = bind_y(None, {}, X=ds, required=True)
+    y = bind_y(None, X=ds, required=True)
     assert list(y) == ["A", "B", "C"]
 
 
@@ -62,20 +62,20 @@ def test_bind_y_extracts_embedded_labels_from_dataset_input():
         X=np.zeros((3, 1)),
         sample_axis=SampleAxis(values=np.arange(3, dtype=float), labels=["X", "Y", "Z"]),
     )
-    y = bind_y(y_ds, {}, required=True, infer_from_X=False)
+    y = bind_y(y_ds, required=True, infer_from_X=False)
     assert list(y) == ["X", "Y", "Z"]
 
 
 def test_bind_y_dataset_as_data_for_regression():
     y_ds = SherpaDataset(X=np.array([[1.0], [2.0], [3.0]]))
-    y = bind_y(y_ds, {}, required=True, infer_from_X=False, dataset_as_data=True)
+    y = bind_y(y_ds, required=True, infer_from_X=False, dataset_as_data=True)
     np.testing.assert_array_equal(np.asarray(y).reshape(-1), np.array([1.0, 2.0, 3.0]))
 
 
 def test_bind_y_dataset_with_values_but_no_labels_returns_values():
     """y_axis with numeric values but no labels → values are used as target."""
     y_ds = SherpaDataset(X=np.zeros((3, 1)), sample_axis=SampleAxis(values=np.arange(3, dtype=float)))
-    y = bind_y(y_ds, {}, required=True, infer_from_X=False)
+    y = bind_y(y_ds, required=True, infer_from_X=False)
     np.testing.assert_array_equal(y, np.arange(3, dtype=float))
 
 
@@ -83,7 +83,7 @@ def test_bind_y_dataset_without_labels_raises():
     """y_axis with neither labels nor values → raises ValueError."""
     y_ds = SherpaDataset(X=np.zeros((3, 1)), sample_axis=SampleAxis())
     with pytest.raises(ValueError, match="no embedded labels"):
-        bind_y(y_ds, {}, required=True, infer_from_X=False)
+        bind_y(y_ds, required=True, infer_from_X=False)
 
 
 def test_to_numpy_helpers():

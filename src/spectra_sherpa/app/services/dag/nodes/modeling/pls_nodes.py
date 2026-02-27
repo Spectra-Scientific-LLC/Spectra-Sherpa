@@ -19,8 +19,6 @@ from ...io_contracts import (
     attach_evaluation,
     bind_X,
     bind_y,
-    resolve_legacy_input,
-    to_numpy_1d,
     to_numpy_y,
 )
 from ...node_base import (
@@ -155,14 +153,12 @@ class PLSNode(Node):
         """
         X_ds = bind_X(
             X,
-            kwargs,
             missing_message="Missing required input: X (spectra)",
             dataset_error_message="X must be an dataset or array-like object",
             allow_array=True,
         )
         y_value = bind_y(
             y,
-            kwargs,
             X=X_ds,
             required=True,
             infer_from_X=True,
@@ -456,14 +452,10 @@ class PLSPredictNode(Node):
         Returns:
             dict with 'y_pred' key containing predictions (1D or 2D)
         """
-        X_new = resolve_legacy_input(X_new, kwargs, "input_0")
-        model = resolve_legacy_input(model, kwargs, "input_1")
-
         if X_new is None or model is None:
             raise ValueError("Both X_new and model inputs are required")
         X_new_ds = bind_X(
             X_new,
-            kwargs,
             missing_message="Missing required input: X_new (new spectra)",
             dataset_error_message="X_new must be an dataset object",
             allow_array=True,

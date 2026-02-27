@@ -263,6 +263,7 @@ class NodePortInfo(BaseModel):
     required: bool = Field(True, description="Whether this port must be connected")
     label: str = Field(..., description="Display label for UI")
     description: str | None = Field(None, description="Port description")
+    variadic: bool = Field(False, description="True if port accepts multiple edges (list input)")
 
 
 class NodeMetadataInfo(BaseModel):

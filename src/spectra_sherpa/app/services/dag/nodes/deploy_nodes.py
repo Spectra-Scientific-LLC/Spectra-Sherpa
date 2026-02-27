@@ -49,6 +49,7 @@ class DeployInputNode(Node):
             ),
         ],
         input_types=[],  # Source node
+        input_ports=[],
         output_type="spectrasherpa://types/SpectralDataset/1.0",
         output_ports=[
             PortMetadata(
@@ -138,6 +139,15 @@ class DeployOutputNode(Node):
             ),
         ],
         input_types=["any"],
+        input_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/Any/1.0",
+                required=True,
+                label="Payload",
+                description="Pipeline output to format and return",
+            ),
+        ],
         output_type="dict",
         output_ports=[
             PortMetadata(

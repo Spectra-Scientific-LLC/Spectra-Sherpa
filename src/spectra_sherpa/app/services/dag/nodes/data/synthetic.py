@@ -97,6 +97,7 @@ class SyntheticCurveNode(Node):
             ),
         ],
         input_types=[],
+        input_ports=[],
         output_type="NDDataset",
     )
 

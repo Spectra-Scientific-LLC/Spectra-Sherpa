@@ -80,9 +80,9 @@ class TestLocalModeE2E:
                 },
                 {
                     "node_id": "snv_1",
-                    "node_type": "normalize.snv",
+                    "node_type": "preprocess.normalize",
                     "label": "SNV",
-                    "parameters": {},
+                    "parameters": {"method": "snv"},
                 },
             ],
             "edges": [

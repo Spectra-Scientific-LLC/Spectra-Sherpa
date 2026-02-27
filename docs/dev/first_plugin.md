@@ -143,19 +143,3 @@ NodeParameter(
 )
 ```
 
-### Alias system
-
-Consolidated nodes can register aliases for old node type strings:
-
-```python
-metadata = NodeMetadata(
-    node_type="preprocess.smooth",
-    aliases={
-        "smooth.savitzky_golay": {"method": "savitzky_golay"},
-        "smooth.whittaker": {"method": "whittaker"},
-    },
-    ...
-)
-```
-
-When a workflow references `smooth.savitzky_golay`, the registry resolves to `SmoothNode` and injects `method=savitzky_golay` as a default parameter.
