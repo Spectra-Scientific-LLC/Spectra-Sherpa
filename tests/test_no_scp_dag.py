@@ -148,7 +148,9 @@ async def test_scale_node_on_sherpa_dataset(iris_dataset):
 @pytest.mark.asyncio
 async def test_scale_node_minmax_method(iris_dataset):
     """Scale normalization with 'minmax' should map each row to [0, 1]."""
-    node = node_registry.create_node("preprocess.normalize", "test_scale_mm", {"method": "scale", "scale_method": "minmax"})
+    node = node_registry.create_node(
+        "preprocess.normalize", "test_scale_mm", {"method": "scale", "scale_method": "minmax"}
+    )
     result = await node.run(default=iris_dataset)
 
     output = result.outputs.get("default")
@@ -574,7 +576,9 @@ def spectral_dataset():
 @pytest.mark.asyncio
 async def test_savgol_smooth_on_sherpa_dataset(spectral_dataset):
     """SG smooth should work via scipy fallback on SherpaDataset."""
-    node = node_registry.create_node("preprocess.smooth", "sg_smooth", {"method": "savitzky_golay", "size": 11, "order": 2})
+    node = node_registry.create_node(
+        "preprocess.smooth", "sg_smooth", {"method": "savitzky_golay", "size": 11, "order": 2}
+    )
     result = await node.run(default=spectral_dataset)
     output = result.outputs["default"]
     assert isinstance(output, SherpaDataset)
@@ -586,7 +590,9 @@ async def test_savgol_smooth_on_sherpa_dataset(spectral_dataset):
 @pytest.mark.asyncio
 async def test_first_derivative_on_sherpa_dataset(spectral_dataset):
     """1st derivative should work via scipy fallback on SherpaDataset."""
-    node = node_registry.create_node("preprocess.derivative", "deriv1", {"method": "savitzky_golay", "deriv": "1", "size": 11, "order": 2})
+    node = node_registry.create_node(
+        "preprocess.derivative", "deriv1", {"method": "savitzky_golay", "deriv": "1", "size": 11, "order": 2}
+    )
     result = await node.run(default=spectral_dataset)
     output = result.outputs["default"]
     assert isinstance(output, SherpaDataset)
@@ -596,7 +602,9 @@ async def test_first_derivative_on_sherpa_dataset(spectral_dataset):
 @pytest.mark.asyncio
 async def test_second_derivative_on_sherpa_dataset(spectral_dataset):
     """2nd derivative should work via scipy fallback on SherpaDataset."""
-    node = node_registry.create_node("preprocess.derivative", "deriv2", {"method": "savitzky_golay", "deriv": "2", "size": 11, "order": 3})
+    node = node_registry.create_node(
+        "preprocess.derivative", "deriv2", {"method": "savitzky_golay", "deriv": "2", "size": 11, "order": 3}
+    )
     result = await node.run(default=spectral_dataset)
     output = result.outputs["default"]
     assert isinstance(output, SherpaDataset)
@@ -606,7 +614,9 @@ async def test_second_derivative_on_sherpa_dataset(spectral_dataset):
 @pytest.mark.asyncio
 async def test_sg_derivative_on_sherpa_dataset(spectral_dataset):
     """Generic SG derivative should work via scipy fallback on SherpaDataset."""
-    node = node_registry.create_node("preprocess.derivative", "sg_deriv", {"method": "savitzky_golay", "size": 11, "order": 2, "deriv": "1"})
+    node = node_registry.create_node(
+        "preprocess.derivative", "sg_deriv", {"method": "savitzky_golay", "size": 11, "order": 2, "deriv": "1"}
+    )
     result = await node.run(default=spectral_dataset)
     output = result.outputs["default"]
     assert isinstance(output, SherpaDataset)
@@ -761,7 +771,9 @@ class TestGeneratePythonNoScp:
         assert "data.smooth(" in code
 
     def test_first_deriv_no_scp_uses_scipy(self):
-        node = self._make_node("preprocess.derivative", {"method": "savitzky_golay", "deriv": "1", "size": 11, "order": 2})
+        node = self._make_node(
+            "preprocess.derivative", {"method": "savitzky_golay", "deriv": "1", "size": 11, "order": 2}
+        )
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "savgol_filter" in code
@@ -769,7 +781,9 @@ class TestGeneratePythonNoScp:
         assert "_Result(" in code
 
     def test_second_deriv_no_scp_uses_scipy(self):
-        node = self._make_node("preprocess.derivative", {"method": "savitzky_golay", "deriv": "2", "size": 11, "order": 2})
+        node = self._make_node(
+            "preprocess.derivative", {"method": "savitzky_golay", "deriv": "2", "size": 11, "order": 2}
+        )
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "savgol_filter" in code
@@ -777,14 +791,18 @@ class TestGeneratePythonNoScp:
         assert "_Result(" in code
 
     def test_sg_derivative_no_scp_uses_scipy(self):
-        node = self._make_node("preprocess.derivative", {"method": "savitzky_golay", "size": 11, "order": 2, "deriv": "1"})
+        node = self._make_node(
+            "preprocess.derivative", {"method": "savitzky_golay", "size": 11, "order": 2, "deriv": "1"}
+        )
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "savgol_filter" in code
         assert "_Result(" in code
 
     def test_sg_derivative_scp_uses_method(self):
-        node = self._make_node("preprocess.derivative", {"method": "savitzky_golay", "size": 11, "order": 2, "deriv": "1"})
+        node = self._make_node(
+            "preprocess.derivative", {"method": "savitzky_golay", "size": 11, "order": 2, "deriv": "1"}
+        )
         lines = node.generate_python(self._inputs(), use_scp=True)
         code = "\n".join(lines)
         assert "data.savgol(" in code

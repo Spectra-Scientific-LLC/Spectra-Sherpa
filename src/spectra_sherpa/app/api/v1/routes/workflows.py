@@ -394,9 +394,7 @@ async def create_workflow(
 
     # Validate all node types exist in the registry
     unknown_types = [
-        n.node_type
-        for n in payload.nodes
-        if not n.node_type.startswith("ualgo.") and n.node_type not in node_registry
+        n.node_type for n in payload.nodes if not n.node_type.startswith("ualgo.") and n.node_type not in node_registry
     ]
     if unknown_types:
         raise HTTPException(

@@ -815,8 +815,7 @@ class DAGExecutor:
             for port_name, value in named_inputs.items():
                 if isinstance(value, list) and port_name not in variadic_ports:
                     raise ValueError(
-                        f"Port '{port_name}' on node '{node_id}' received "
-                        f"{len(value)} inputs but is not variadic"
+                        f"Port '{port_name}' on node '{node_id}' received " f"{len(value)} inputs but is not variadic"
                     )
 
             # Validate and normalize spectral units only for true spectral dataset ports.

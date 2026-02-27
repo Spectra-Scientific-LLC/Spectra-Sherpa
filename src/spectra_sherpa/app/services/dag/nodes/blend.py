@@ -262,12 +262,8 @@ class BlendNode(Node):
         )
         dataset.target = None
         dataset.meta["processing_history"] = dataset.provenance
-        dataset.feature_axis = SpectralAxis(
-            values=wavenumbers, title="Wavenumber", units="cm^-1"
-        )
-        dataset.sample_axis = SampleAxis(
-            values=np.arange(n_timepoints), title="Time"
-        )
+        dataset.feature_axis = SpectralAxis(values=wavenumbers, title="Wavenumber", units="cm^-1")
+        dataset.sample_axis = SampleAxis(values=np.arange(n_timepoints), title="Time")
 
         # ---------------------------------------------------------------------
         # Attach Ground Truth Metadata (Critical for MCR-ALS validation)
@@ -599,12 +595,8 @@ class MergeSpectraNode(Node):
         )
         dataset.target = None
         dataset.meta["processing_history"] = dataset.provenance
-        dataset.feature_axis = SpectralAxis(
-            values=ref_wn, title="Wavenumber", units="cm^-1"
-        )
-        dataset.sample_axis = SampleAxis(
-            values=np.arange(len(spectra)), title="Sample"
-        )
+        dataset.feature_axis = SpectralAxis(values=ref_wn, title="Wavenumber", units="cm^-1")
+        dataset.sample_axis = SampleAxis(values=np.arange(len(spectra)), title="Sample")
 
         # Record processing step
         add_processing_step(

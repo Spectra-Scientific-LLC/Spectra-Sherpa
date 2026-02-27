@@ -71,6 +71,7 @@ class TestRunNodeInWorker:
             node_type="preprocess.normalize",
             node_id="snv_w",
             parameters={"method": "snv"},
+            args=(),
             kwargs={"default": ds},
         )
         assert isinstance(result, NodeResult)

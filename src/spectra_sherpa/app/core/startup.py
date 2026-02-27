@@ -599,9 +599,7 @@ async def ensure_workflow_templates() -> None:
                 await session.commit()
 
             total = await session.scalar(select(func.count(WorkflowTemplate.id)))
-            logger.info(
-                f"Workflow templates: {total} total, {inserted} new, {updated} updated"
-            )
+            logger.info(f"Workflow templates: {total} total, {inserted} new, {updated} updated")
 
     except OperationalError:
         logger.warning("Skipping workflow template seeding; database not initialized.")

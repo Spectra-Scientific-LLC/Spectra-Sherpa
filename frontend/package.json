@@ -15,7 +15,6 @@
   },
   "dependencies": {
     "@monaco-editor/loader": "^1.7.0",
-    "@primevue/themes": "^4.2.0",
     "@tanstack/vue-query": "^5.61.5",
     "@vueuse/core": "^11.3.0",
     "axios": "^1.7.9",
@@ -25,8 +24,9 @@
     "lucide-vue-next": "^0.468.0",
     "monaco-editor": "^0.52.0",
     "pinia": "^2.2.8",
+    "plotly.js-dist-min": "^2.35.0",
     "primeicons": "^7.0.0",
-    "primevue": "^4.2.0",
+    "primevue": "^3.53.0",
     "vue": "^3.5.13",
     "vue-chartjs": "^5.3.2",
     "vue-demi": "^0.14.10",

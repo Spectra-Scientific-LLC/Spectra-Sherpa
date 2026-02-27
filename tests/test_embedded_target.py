@@ -13,12 +13,15 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from spectra_sherpa.app.lib.scp_compat import HAS_SCP
 from spectra_sherpa.app.lib.sherpa_dataset import (
     SherpaDataset,
     SpectralAxis,
     TargetContext,
 )
 from spectra_sherpa.app.services.dag.node_base import node_registry
+
+_skip_no_scp = pytest.mark.skipif(not HAS_SCP, reason="spectrochempy not installed")
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +152,7 @@ class TestDataSourceEmbeddedTarget:
 
 
 class TestSingleWirePLS:
+    @_skip_no_scp
     @pytest.mark.asyncio
     async def test_pls_infers_target_from_dataset(self, make_node):
         """PLS should extract y from dataset.target when y not wired."""
@@ -159,6 +163,7 @@ class TestSingleWirePLS:
         assert "default" in result  # X_scores
         assert "model" in result
 
+    @_skip_no_scp
     @pytest.mark.asyncio
     async def test_pls_multi_target_inferred(self, make_node):
         """PLS with 4 embedded targets should produce multi-target model."""
@@ -174,6 +179,7 @@ class TestSingleWirePLS:
         assert "model" in result
         assert "default" in result  # X_scores
 
+    @_skip_no_scp
     @pytest.mark.asyncio
     async def test_pls_explicit_y_still_works(self, make_node):
         """Explicit y wiring should override embedded target."""
@@ -255,6 +261,7 @@ class TestAttachTarget:
         with pytest.raises(ValueError, match="50 samples"):
             await node.execute(X=ds, y=y)
 
+    @_skip_no_scp
     @pytest.mark.asyncio
     async def test_attach_then_pls(self, make_node):
         """AttachTarget → PLS should work as single-wire pipeline."""

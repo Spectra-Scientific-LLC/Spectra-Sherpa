@@ -31,7 +31,6 @@ def _is_dataset_like(value: Any) -> bool:
     return False
 
 
-
 def coerce_to_sherpa(
     value: Any,
     *,

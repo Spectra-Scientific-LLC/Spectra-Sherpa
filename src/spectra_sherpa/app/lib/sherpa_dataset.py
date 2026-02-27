@@ -1583,5 +1583,3 @@ def _slice_axis(axis: AxisInfo | None, key: Any) -> AxisInfo | None:
         units=axis.units,
         title=axis.title,
     )
-
-

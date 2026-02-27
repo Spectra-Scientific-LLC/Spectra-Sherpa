@@ -519,8 +519,7 @@ WORKFLOW_TEMPLATES = [
     {
         "name": "Compare Multiple Classifiers",
         "description": (
-            "Compare different classification models (KNN, PLS-DA, SIMCA) on the same"
-            " dataset with cross-validation."
+            "Compare different classification models (KNN, PLS-DA, SIMCA) on the same" " dataset with cross-validation."
         ),
         "category": "comparison",
         "template_data": {

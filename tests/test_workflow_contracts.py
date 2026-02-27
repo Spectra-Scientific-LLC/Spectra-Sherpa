@@ -244,7 +244,9 @@ class TestLoadPathContract:
         from spectra_sherpa.app.services.dag.executor import WorkflowNode
 
         # Add a processing node with no inputs
-        executor.add_node(WorkflowNode(node_id="lonely_snv", node_type="preprocess.normalize", parameters={"method": "snv"}))
+        executor.add_node(
+            WorkflowNode(node_id="lonely_snv", node_type="preprocess.normalize", parameters={"method": "snv"})
+        )
         errors = executor.validate()
         assert len(errors) > 0
         assert any("no input" in e.lower() or "not connected" in e.lower() for e in errors)
