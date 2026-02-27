@@ -49,7 +49,9 @@ class _FakeLLM:
 
 
 class _FakeSettings:
-    def __init__(self, secret_key="secure-key", api_key="secure-api-key", database_url="sqlite+aiosqlite:///data/test.db"):
+    def __init__(
+        self, secret_key="secure-key", api_key="secure-api-key", database_url="sqlite+aiosqlite:///data/test.db"
+    ):
         self.secret_key = secret_key
         self.api_key = api_key
         self.database_url = database_url
