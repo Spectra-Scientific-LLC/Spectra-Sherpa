@@ -1,9 +1,11 @@
 # Spectra Sherpa — Entity Contributor License Agreement
 
-## Harmony Entity CLA (HA-CLA-E-E v1.0) — Exclusive License Grant
+## Harmony Entity CLA (HA-CLA-E-NE v1.0) — Non-Exclusive License Grant
 
-**Important:** This CLA is for organizations (companies, universities, etc.)
-whose employees or contractors contribute to Spectra Sherpa. For individual
+**Important:** This CLA grants a non-exclusive license. Organizations retain
+copyright and may license contributions to others. This CLA is for organizations
+(companies, universities, etc.) whose employees or contractors contribute to
+Spectra Sherpa. For individual
 contributions, see [CLA.md](CLA.md) instead.
 
 This Contributor License Agreement ("Agreement") is entered into between:
@@ -37,7 +39,7 @@ Effective date: the date You submit this Agreement (the "Effective Date").
 ### 2.1 Copyright License
 
 Subject to the terms of this Agreement, You hereby grant to Spectra a
-worldwide, royalty-free, **exclusive**, perpetual, and irrevocable license,
+worldwide, royalty-free, **non-exclusive**, perpetual, and irrevocable license,
 with the right to transfer and sublicense, under Your copyright covering the
 Contribution, to use, copy, modify, create derivative works of, publicly
 display, publicly perform, distribute, and sublicense the Contribution under

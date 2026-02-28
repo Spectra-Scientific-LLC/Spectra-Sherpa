@@ -211,6 +211,7 @@ class PLSNode(Node):
         # In-sample calibration quality metrics for Phase 2 quality wiring.
         pls_r2 = None
         pls_rmse = None
+        regression_meta: dict | None = None
         try:
             y_pred_raw = pls.predict(X_ndd)
             y_pred = np.asarray(
@@ -228,6 +229,13 @@ class PLSNode(Node):
                 ss_tot = float(np.sum((y_flat - np.mean(y_flat)) ** 2))
                 pls_r2 = (1.0 - (ss_res / ss_tot)) if ss_tot > 0 else None
                 pls_rmse = float(np.sqrt(np.mean(residual**2)))
+                # Store 2D for frontend consistency
+                regression_meta = {
+                    "y_true": y_2d.tolist(),
+                    "y_pred": y_pred_flat.reshape(-1, 1).tolist(),
+                    "r2_per_target": [pls_r2],
+                    "rmse_per_target": [pls_rmse],
+                }
             else:
                 # Multi-target: per-target R2, then average
                 if y_pred.ndim == 1:
@@ -238,6 +246,17 @@ class PLSNode(Node):
                 r2_per_target = np.where(ss_tot > 0, 1.0 - ss_res / ss_tot, np.nan)
                 pls_r2 = float(np.nanmean(r2_per_target))
                 pls_rmse = float(np.sqrt(np.mean(residual**2)))
+                rmse_per_target = [float(np.sqrt(np.mean(residual[:, j] ** 2))) for j in range(n_targets)]
+                regression_meta = {
+                    "y_true": y_2d.tolist(),
+                    "y_pred": y_pred.tolist(),
+                    "r2_per_target": [float(v) for v in r2_per_target],
+                    "rmse_per_target": rmse_per_target,
+                }
+            # Add target names from X_ds.target_context
+            tc = X_ds.target_context
+            if tc is not None and tc.target_names:
+                regression_meta["target_names"] = tc.target_names
         except Exception:
             logger.debug("[PLS Node] Could not compute calibration R2/RMSE from predictions", exc_info=True)
 
@@ -366,15 +385,16 @@ class PLSNode(Node):
 
         # Store scientific metadata in X_scores NDDataset meta
         if X_scores_dataset is not None:
-            X_scores_dataset.meta.update(
-                {
-                    "n_components": n_components,
-                    "pc_labels": lv_labels,  # LV labels (no EVR for PLS, so store explicitly)
-                    "label_categories": label_categories,
-                    "r2": pls_r2,
-                    "rmse": pls_rmse,
-                }
-            )
+            meta_dict = {
+                "n_components": n_components,
+                "pc_labels": lv_labels,  # LV labels (no EVR for PLS, so store explicitly)
+                "label_categories": label_categories,
+                "r2": pls_r2,
+                "rmse": pls_rmse,
+            }
+            if regression_meta is not None:
+                meta_dict.update(regression_meta)
+            X_scores_dataset.meta.update(meta_dict)
             attach_evaluation(
                 X_scores_dataset,
                 EvaluationResult(

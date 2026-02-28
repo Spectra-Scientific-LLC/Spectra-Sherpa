@@ -383,6 +383,8 @@ class SIMCANode(Node):
                 "accuracy": train_accuracy,
                 "confusion_matrix": cm.tolist(),
                 "classification_report": class_report,
+                "y_true": y_array.tolist(),
+                "y_pred": predictions.tolist(),
                 "confidence_level": confidence_level,
                 "acceptance_stats": {
                     "T2_limits": {str(k): float(v) for k, v in T2_limits.items()},

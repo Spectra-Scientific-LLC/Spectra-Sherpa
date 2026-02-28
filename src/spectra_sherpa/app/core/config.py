@@ -214,7 +214,7 @@ class DemoContract(BaseModel):
     """
 
     disabled_capabilities: list[str] = Field(
-        default_factory=lambda: ["data_upload", "project_import", "llm_config", "api_key_management"],
+        default_factory=lambda: ["data_upload", "project_import", "llm_config", "api_key_management", "file_load"],
         description="Capabilities disabled in demo mode",
     )
     max_executions_per_session: int = Field(default=25, description="Maximum workflow executions per demo session")
@@ -249,6 +249,13 @@ class DemoContract(BaseModel):
         default="Upgrade to unlock unlimited executions and full features",
         description="Message shown when demo limits are reached",
     )
+
+
+# Mapping from disabled_capabilities entries to node types that should
+# be hidden from the node library when that capability is disabled.
+CAPABILITY_HIDDEN_NODE_TYPES: dict[str, list[str]] = {
+    "file_load": ["data.file_load", "data.my_dataset", "data.load_group"],
+}
 
 
 class ExecutionConfig(BaseModel):
@@ -486,6 +493,7 @@ class AppConfig(BaseModel):
                 "featuredDatasets": self.demo_contract.featured_datasets,
                 "availablePlans": self.demo_contract.available_plans,
                 "upgradeUrl": self.demo_contract.upgrade_url,
+                "disabledCapabilities": self.demo_contract.disabled_capabilities,
             }
         else:
             result["demo"] = None

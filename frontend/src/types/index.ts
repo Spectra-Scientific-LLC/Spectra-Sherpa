@@ -56,23 +56,27 @@ export interface PreprocessResponse {
   metadata?: Record<string, unknown> | null;
 }
 
-export interface SpectrumPreview {
-  label: string;
-  absorbance: number[];
-}
-
-export interface FileInfoResponse {
-  status: string;
-  num_spectra: number;
-  num_wavenumbers: number;
-  wavenumber_min: number | null;
-  wavenumber_max: number | null;
-  absorbance_min: number | null;
-  absorbance_max: number | null;
-  labels: string[];
-  source: string;
-  preview_wavenumber: number[] | null;
-  preview_spectra: SpectrumPreview[] | null;
+/** SherpaDataset.to_dict() output — same shape used by overlay in NodeDetailView. */
+export interface SherpaDatasetDict {
+  type?: string;
+  data: (number | null)[][];
+  n_samples: number;
+  n_features: number;
+  title?: string;
+  units?: string;
+  x_axis?: {
+    data?: number[];
+    labels?: string[];
+    title?: string;
+    units?: string;
+  };
+  y_axis?: {
+    data?: number[];
+    labels?: string[];
+    title?: string;
+    units?: string;
+  };
+  metadata?: Record<string, unknown>;
 }
 
 export interface PreprocessSettings {

@@ -205,6 +205,17 @@ class FeatureAxis(AxisInfo):
             return None
         return (float(np.min(self.values)), float(np.max(self.values)))
 
+    def copy(self) -> FeatureAxis:
+        cp = FeatureAxis(
+            values=self.values.copy() if self.values is not None else None,
+            labels=list(self.labels) if self.labels is not None else None,
+            units=self.units,
+            title=self.title,
+        )
+        if self._expected_length is not None:
+            cp.bind_expected_length(self._expected_length)
+        return cp
+
     def select_region(self, start: float, end: float) -> np.ndarray:
         """Boolean mask for values within [start, end] (inclusive, order-independent)."""
         if self.values is None:

@@ -4,7 +4,7 @@ import api from "@/api/client";
 import type {
   ExperimentSummary,
   ExperimentFile,
-  FileInfoResponse,
+  SherpaDatasetDict,
 } from "@/types";
 import type {
   AvailableDatasets,
@@ -29,7 +29,7 @@ export const useDataStore = defineStore("data", () => {
   // File inspection
   const activeFileId = ref<number | null>(null);
   const activeFilePath = ref<string | null>(null);
-  const fileInfo = ref<FileInfoResponse | null>(null);
+  const fileInfo = ref<SherpaDatasetDict | null>(null);
   const fileInfoLoading = ref(false);
   const fileInfoError = ref<string | null>(null);
 
@@ -104,6 +104,16 @@ export const useDataStore = defineStore("data", () => {
     return response.data;
   };
 
+  const deleteExperiment = async (experimentId: number) => {
+    await api.delete(`/experiments/${experimentId}`);
+    if (activeExperimentId.value === experimentId) {
+      activeExperimentId.value = null;
+      experimentFiles.value = [];
+      clearInspection();
+    }
+    await Promise.all([fetchExperiments(), fetchCatalog()]);
+  };
+
   const uploadFile = async (
     experimentId: number,
     file: File,
@@ -138,7 +148,7 @@ export const useDataStore = defineStore("data", () => {
     try {
       const body: Record<string, unknown> = { file_path: filePath };
       if (experimentId != null) body.experiment_id = experimentId;
-      const response = await api.post<FileInfoResponse>("/builder/file-info", body);
+      const response = await api.post<SherpaDatasetDict>("/builder/file-info", body);
       fileInfo.value = response.data;
       return response.data;
     } catch (error: any) {
@@ -280,6 +290,7 @@ export const useDataStore = defineStore("data", () => {
     fetchExperiments,
     selectExperiment,
     createExperiment,
+    deleteExperiment,
     uploadFile,
     deleteFile,
     inspectFile,

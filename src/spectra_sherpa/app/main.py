@@ -342,6 +342,12 @@ def _make_lifespan(
 
             await start_folder_watch_service()
 
+            # Start demo user cleanup service (DEMO mode only)
+            if app_config.site_profile == "demo":
+                from spectra_sherpa.app.services.demo_cleanup_service import start_demo_cleanup_service
+
+                await start_demo_cleanup_service()
+
             # Load the type registry (JSON schemas for port type validation)
             from pathlib import Path as _Path
 
@@ -404,6 +410,12 @@ def _make_lifespan(
             logger.info("DAG worker pool shut down")
 
         await job_manager.shutdown()
+
+        # Stop demo user cleanup service
+        if app_config.site_profile == "demo":
+            from spectra_sherpa.app.services.demo_cleanup_service import stop_demo_cleanup_service
+
+            await stop_demo_cleanup_service()
 
         # Stop folder watch polling
         from spectra_sherpa.app.services.folder_watch_service import stop_folder_watch_service

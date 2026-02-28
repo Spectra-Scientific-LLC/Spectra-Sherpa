@@ -5,7 +5,7 @@ import type {
   BlendResponse,
   CurvePoint,
   CurveSegment,
-  FileInfoResponse,
+  SherpaDatasetDict,
   PreprocessResponse,
   PreprocessSettings,
   SpectrumPayload,
@@ -33,7 +33,7 @@ export const useBuilderStore = defineStore("builder", () => {
   const curveSegments = ref<CurveSegment[]>([]);
   const curveSamplesPerSegment = ref(30);
   const libraryEntries = ref<NistLibraryEntry[]>([]);
-  const fileInfo = ref<FileInfoResponse | null>(null);
+  const fileInfo = ref<SherpaDatasetDict | null>(null);
   const fileInfoLoading = ref(false);
 
   const settings = ref<PreprocessSettings>({
@@ -144,7 +144,7 @@ export const useBuilderStore = defineStore("builder", () => {
     fileInfoLoading.value = true;
     fileInfo.value = null;
     try {
-      const response = await api.post<FileInfoResponse>("/builder/file-info", {
+      const response = await api.post<SherpaDatasetDict>("/builder/file-info", {
         file_path: filePath,
       });
       fileInfo.value = response.data;

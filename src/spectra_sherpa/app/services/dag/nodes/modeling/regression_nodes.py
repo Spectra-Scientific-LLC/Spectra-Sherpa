@@ -261,6 +261,12 @@ class PCRNode(Node):
             node_id=self.node_id,
         )
 
+        # Get target names from X_ds.target_context
+        target_names = None
+        tc = X_ds.target_context
+        if tc is not None and tc.target_names:
+            target_names = tc.target_names
+
         # Store only scientific metadata that coordinates can't carry
         scores_dataset.meta.update(
             {
@@ -271,7 +277,11 @@ class PCRNode(Node):
                 "rmse": rmse,
                 "coef": regressor.coef_.tolist(),
                 "intercept": float(regressor.intercept_),
-                "y_pred": y_pred.tolist(),
+                "y_pred": [[v] for v in y_pred.tolist()],
+                "y_true": [[v] for v in y_array.tolist()],
+                "target_names": target_names,
+                "r2_per_target": [float(r2)],
+                "rmse_per_target": [rmse],
             }
         )
         attach_evaluation(
@@ -334,9 +344,18 @@ def _svr_post_fit(model, X_data, y_array, X_ds, params, node_id):
     if sample_labels is None:
         sample_labels = [f"Sample {i+1}" for i in range(n_observations)]
 
+    # Get target names from X_ds.target_context
+    target_names = None
+    tc = X_ds.target_context
+    if tc is not None and tc.target_names:
+        target_names = tc.target_names
+
+    r2 = float(model.score(X_data, y_array)) if y_array is not None else None
+    rmse = float(np.sqrt(np.mean((y_array - y_pred) ** 2))) if y_array is not None else None
+
     return {
         "support_vectors": svr.support_vectors_.tolist(),
-        "data": [[float(y_true), float(y_hat)] for y_true, y_hat in zip(y_array, y_pred)],
+        "data": [[float(yt), float(yh)] for yt, yh in zip(y_array, y_pred)],
         "metadata": {
             "type": "SVR",
             "output_type": "regression",
@@ -346,10 +365,15 @@ def _svr_post_fit(model, X_data, y_array, X_ds, params, node_id):
             "C": params.get("C", 1.0),
             "epsilon": params.get("epsilon", 0.1),
             "gamma": params.get("gamma", "scale"),
-            "r2": float(model.score(X_data, y_array)) if y_array is not None else None,
-            "rmse": float(np.sqrt(np.mean((y_array - y_pred) ** 2))) if y_array is not None else None,
+            "r2": r2,
+            "rmse": rmse,
             "sample_labels": sample_labels,
             "label_categories": label_categories,
+            "y_true": [[v] for v in y_array.tolist()],
+            "y_pred": [[v] for v in y_pred.tolist()],
+            "target_names": target_names,
+            "r2_per_target": [r2],
+            "rmse_per_target": [rmse],
         },
     }
 

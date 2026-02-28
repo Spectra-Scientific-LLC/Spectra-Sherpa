@@ -10,16 +10,16 @@
       <span>Analyzing file...</span>
     </div>
 
-    <div v-else-if="!fileInfo" class="dq-empty">
+    <div v-else-if="!datasetDict" class="dq-empty">
       <i class="pi pi-info-circle"></i>
       <span>Select a file to view quality metrics</span>
     </div>
 
     <div v-else class="dq-content">
       <!-- Labels -->
-      <div v-if="fileInfo.labels.length > 0" class="dq-labels">
+      <div v-if="sampleLabels.length > 0" class="dq-labels">
         <span class="dq-range-label">
-          Labels ({{ fileInfo.labels.length }})
+          Labels ({{ sampleLabels.length }})
         </span>
         <div class="dq-label-list" :class="{ 'dq-label-list--expanded': labelsExpanded }">
           <Tag
@@ -37,7 +37,7 @@
             +{{ hiddenLabelCount }} more
           </span>
           <span
-            v-if="labelsExpanded && fileInfo.labels.length > LABEL_PREVIEW_COUNT"
+            v-if="labelsExpanded && sampleLabels.length > LABEL_PREVIEW_COUNT"
             class="dq-label-toggle"
             @click="labelsExpanded = false"
           >
@@ -72,11 +72,11 @@
 import { computed, ref } from "vue";
 import Tag from "primevue/tag";
 import ProgressSpinner from "primevue/progressspinner";
-import type { FileInfoResponse } from "@/types";
+import type { SherpaDatasetDict } from "@/types";
 
 const props = withDefaults(
   defineProps<{
-    fileInfo: FileInfoResponse | null;
+    datasetDict: SherpaDatasetDict | null;
     loading?: boolean;
   }>(),
   { loading: false }
@@ -85,16 +85,26 @@ const props = withDefaults(
 const labelsExpanded = ref(false);
 const LABEL_PREVIEW_COUNT = 5;
 
-const visibleLabels = computed(() => {
-  if (!props.fileInfo) return [];
-  if (labelsExpanded.value) return props.fileInfo.labels;
-  return props.fileInfo.labels.slice(0, LABEL_PREVIEW_COUNT);
+const meta = computed(() => {
+  const m = props.datasetDict?.metadata as Record<string, unknown> | undefined;
+  return {
+    labels: (m?.labels ?? m?.sample_labels ?? []) as string[],
+    wavenumbers: (m?.wavenumbers ?? []) as number[],
+    is_spectra: (m?.is_spectra ?? false) as boolean,
+    spectral_technique: (m?.spectral_technique ?? null) as string | null,
+  };
 });
 
-const hiddenLabelCount = computed(() => {
-  if (!props.fileInfo) return 0;
-  return Math.max(0, props.fileInfo.labels.length - LABEL_PREVIEW_COUNT);
+const sampleLabels = computed(() => meta.value.labels);
+
+const visibleLabels = computed(() => {
+  if (labelsExpanded.value) return sampleLabels.value;
+  return sampleLabels.value.slice(0, LABEL_PREVIEW_COUNT);
 });
+
+const hiddenLabelCount = computed(() =>
+  Math.max(0, sampleLabels.value.length - LABEL_PREVIEW_COUNT)
+);
 
 interface QcFlag {
   severity: "success" | "warning" | "info";
@@ -102,12 +112,12 @@ interface QcFlag {
 }
 
 const qcFlags = computed<QcFlag[]>(() => {
-  if (!props.fileInfo) return [];
+  const sd = props.datasetDict;
+  if (!sd) return [];
   const flags: QcFlag[] = [];
-  const fi = props.fileInfo;
 
   // Spectra count
-  if (fi.num_spectra >= 3) {
+  if (sd.n_samples >= 3) {
     flags.push({ severity: "success", message: "Multiple spectra loaded" });
   } else {
     flags.push({
@@ -116,33 +126,19 @@ const qcFlags = computed<QcFlag[]>(() => {
     });
   }
 
-  // Wavenumber range
-  if (
-    fi.wavenumber_min !== null &&
-    fi.wavenumber_max !== null &&
-    fi.wavenumber_max - fi.wavenumber_min > 100
-  ) {
-    flags.push({ severity: "success", message: "Adequate spectral range" });
-  } else if (fi.wavenumber_min !== null && fi.wavenumber_max !== null) {
-    flags.push({ severity: "warning", message: "Narrow spectral range" });
-  }
-
-  // Absorbance issues
-  if (fi.absorbance_min !== null && fi.absorbance_min < -0.1) {
-    flags.push({
-      severity: "warning",
-      message: "Negative absorbance detected — check baseline",
-    });
-  }
-  if (fi.absorbance_max !== null && fi.absorbance_max > 5.0) {
-    flags.push({
-      severity: "warning",
-      message: "High absorbance — possible saturation",
-    });
+  // Spectral range (only if numeric feature axis)
+  const wn = meta.value.wavenumbers;
+  if (wn.length > 1) {
+    const range = Math.abs(wn[wn.length - 1] - wn[0]);
+    if (range > 100) {
+      flags.push({ severity: "success", message: "Adequate spectral range" });
+    } else {
+      flags.push({ severity: "warning", message: "Narrow spectral range" });
+    }
   }
 
   // Labels
-  if (fi.labels.length === 0) {
+  if (sampleLabels.value.length === 0) {
     flags.push({ severity: "info", message: "No sample labels detected" });
   }
 
@@ -197,12 +193,6 @@ const qcFlags = computed<QcFlag[]>(() => {
 .dq-range-label {
   font-size: 0.8rem;
   color: #64748b;
-  font-weight: 500;
-}
-
-.dq-range-value {
-  font-size: 0.9rem;
-  color: #334155;
   font-weight: 500;
 }
 

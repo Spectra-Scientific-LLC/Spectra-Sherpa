@@ -243,11 +243,17 @@ async def import_reference_dataset(
             )
 
             df = pd.DataFrame(spectra, columns=columns)
+
+            # Append property columns so spectra + properties live in ONE file
+            if result.get("properties") is not None and result.get("prop_names"):
+                for i, pname in enumerate(result["prop_names"]):
+                    df[pname] = result["properties"][:, i]
+
             if result.get("sample_ids"):
                 df.index = result["sample_ids"]
                 df.index.name = "sample_id"
 
-            csv_name = f"{name}_spectra.csv"
+            csv_name = f"{name}.csv"
             csv_path = raw_dir / csv_name
             if csv_path.exists():
                 raise ValueError(f"File already exists: {csv_name}")
@@ -259,24 +265,6 @@ async def import_reference_dataset(
                     session, experiment_id, "raw", rel, csv_path.stat().st_size, "csv", flush_only=True
                 )
             )
-
-            if result.get("properties") is not None and result.get("prop_names"):
-                prop_df = pd.DataFrame(result["properties"], columns=result["prop_names"])
-                if result.get("sample_ids"):
-                    prop_df.index = result["sample_ids"]
-                    prop_df.index.name = "sample_id"
-                prop_name = f"{name}_properties.csv"
-                prop_path = raw_dir / prop_name
-                if prop_path.exists():
-                    raise ValueError(f"File already exists: {prop_name}")
-                prop_df.to_csv(prop_path)
-                written_files.append(prop_path)
-                rel = prop_path.relative_to(exp_dir).as_posix()
-                created.append(
-                    await add_experiment_file(
-                        session, experiment_id, "raw", rel, prop_path.stat().st_size, "csv", flush_only=True
-                    )
-                )
 
         elif source == "sklearn":
             from spectra_sherpa.app.lib.sklearn_info import _LOADERS, SKLEARN_CATALOG

@@ -16,7 +16,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union
 
 import numpy as np
 
@@ -559,6 +559,102 @@ def stack_datasets(datasets: List["NDDataset"]) -> "NDDataset":
     return result
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# CSV → SherpaDataset (handles matrix spectra + properties/tabular CSVs)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def load_csv_as_sherpa(filepath: Union[str, Path]) -> "SherpaDataset":
+    """Read any CSV into a SherpaDataset.
+
+    Handles two layouts:
+    1. **Spectral matrix** — float-parseable column headers are x-axis values
+       (wavelengths/wavenumbers), rows are samples.  String-named columns
+       (e.g. ``sample_id``) become sample labels.
+    2. **Tabular / properties** — all column headers are strings.  Numeric
+       columns become features with string labels on the feature axis.
+
+    Parameters
+    ----------
+    filepath : str or Path
+        Path to CSV file.
+
+    Returns
+    -------
+    SherpaDataset
+    """
+    from spectra_sherpa.app.lib.axes import FeatureAxis, SampleAxis, SpectralAxis
+    from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+    filepath = Path(filepath)
+    df = pd.read_csv(filepath)
+
+    if df.empty:
+        raise ValueError(f"Empty CSV file: {filepath}")
+
+    # Partition columns: float-parseable headers vs string headers
+    spectral_cols: list[str] = []
+    x_vals: list[float] = []
+    label_cols: list[str] = []
+
+    for col in df.columns:
+        try:
+            x_vals.append(float(col))
+            spectral_cols.append(col)
+        except (ValueError, TypeError):
+            label_cols.append(col)
+
+    # Extract sample labels from the first string column (if any)
+    sample_labels: list[str] | None = None
+    if label_cols:
+        sample_labels = df[label_cols[0]].astype(str).tolist()
+
+    title = filepath.stem
+
+    if spectral_cols:
+        # ── Spectral matrix path ──
+        data = df[spectral_cols].values.astype(np.float64)
+        wavelengths = np.array(x_vals, dtype=np.float64)
+
+        # Detect string-named numeric columns as reference properties
+        extra: dict[str, Any] | None = None
+        prop_label_cols = label_cols[1:] if sample_labels else label_cols
+        if prop_label_cols:
+            prop_cols = [c for c in prop_label_cols if pd.api.types.is_numeric_dtype(df[c])]
+            if prop_cols:
+                extra = {
+                    "prop_names": prop_cols,
+                    "properties": {col: df[col].tolist() for col in prop_cols},
+                }
+
+        return SherpaDataset(
+            X=data,
+            feature_axis=SpectralAxis(values=wavelengths, title="Wavenumber"),
+            sample_axis=SampleAxis(labels=sample_labels) if sample_labels else None,
+            extra=extra,
+            title=title,
+        )
+
+    # ── Tabular / properties path ──
+    # The first label column was used for sample labels — exclude it from features.
+    # Remaining columns with numeric data are the property features.
+    id_cols = [label_cols[0]] if label_cols else []
+    feature_df = df.drop(columns=id_cols, errors="ignore")
+    numeric_df = feature_df.select_dtypes(include="number")
+    if numeric_df.empty:
+        raise ValueError(f"No numeric columns in {filepath.name}")
+
+    data = numeric_df.values.astype(np.float64)
+    col_names = list(numeric_df.columns)
+
+    return SherpaDataset(
+        X=data,
+        feature_axis=FeatureAxis(labels=col_names, title="Property"),
+        sample_axis=SampleAxis(labels=sample_labels) if sample_labels else None,
+        title=title,
+    )
+
+
 __all__ = [
     "read_csv_spectrum",
     "read_csv_directory",
@@ -566,6 +662,7 @@ __all__ = [
     "read_mat_file",
     "read_spectral_file",
     "load_spectrum",
+    "load_csv_as_sherpa",
     "stack_datasets",
     "extract_concentration",
     "extract_pathlength",

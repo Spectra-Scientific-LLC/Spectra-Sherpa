@@ -119,23 +119,6 @@ class FileInfoRequest(BaseModel):
     experiment_id: int | None = None
 
 
-class SpectrumPreview(BaseModel):
-    label: str
-    absorbance: list[float]
-
-
-class FileInfoResponse(BaseModel):
-    status: str
-    num_spectra: int
-    num_wavenumbers: int
-    wavenumber_min: float | None
-    wavenumber_max: float | None
-    absorbance_min: float | None
-    absorbance_max: float | None
-    labels: list[str]
-    source: str
-    preview_wavenumber: list[float] | None = None
-    preview_spectra: list[SpectrumPreview] | None = None
 
 
 async def _validate_payload_file_paths(
@@ -172,118 +155,54 @@ async def preprocess_spectra(
     return PreprocessResponse(status="ok", data=data, metadata=metadata)
 
 
-@router.post("/file-info", response_model=FileInfoResponse)
+@router.post("/file-info")
 async def get_file_info(
     payload: FileInfoRequest,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-) -> FileInfoResponse:
-    """Get basic info about a spectral file without preprocessing."""
-    # If experiment_id provided, construct the full data_dir-relative path
-    # (ExperimentFile.file_path is stored relative to experiment dir)
+) -> dict:
+    """Inspect a file: load as SherpaDataset and return to_dict() format."""
+    from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
+    from spectra_sherpa.app.lib.io import load_csv_as_sherpa
+    from spectra_sherpa.app.services.dag.serialize import _serialize_sherpa_dataset
+
     file_path = payload.file_path
     if payload.experiment_id is not None:
         exp_dir = experiment_dir(payload.experiment_id)
         full_path = (exp_dir / file_path).resolve()
         file_path = str(full_path.relative_to(settings.data_dir))
 
-    # Validate user has access to this file path
     await _validate_file_path_ownership(file_path, session, current_user)
 
+    resolved = service._resolve_payload_path(file_path)
+
     try:
-        datasets = service._load_datasets_from_file({"file_path": file_path})
-        if not datasets:
-            raise ValueError("No spectra found in file")
+        if resolved.suffix.lower() == ".csv":
+            sd = load_csv_as_sherpa(resolved)
+        else:
+            datasets = service._load_datasets_from_file({"file_path": file_path})
+            if not datasets:
+                raise ValueError("No spectra found in file")
+            if len(datasets) > 1:
+                from spectra_sherpa.app.lib.io import stack_datasets
 
-        # Compute stats across all spectra
-        all_wavenumbers = []
-        all_absorbances = []
-        for ds in datasets:
-            try:
-                x_coord = ds.x
-            except (KeyError, AttributeError):
-                x_coord = None
-            if x_coord is not None:
-                all_wavenumbers.append(x_coord.data)
+                stacked = stack_datasets(datasets)
+                sd = from_nddataset(stacked)
             else:
-                all_wavenumbers.append(np.arange(ds.shape[-1]))
-            all_absorbances.append(ds.data.flatten())
+                sd = from_nddataset(datasets[0])
 
-        wn_min = float(min(w.min() for w in all_wavenumbers))
-        wn_max = float(max(w.max() for w in all_wavenumbers))
-        abs_min = float(min(a.min() for a in all_absorbances))
-        abs_max = float(max(a.max() for a in all_absorbances))
+        result = _serialize_sherpa_dataset(sd)
 
-        # Extract labels
-        labels = []
-        for ds in datasets:
-            label = ds.title if hasattr(ds, "title") and ds.title else "UNKNOWN"
-            labels.append(label)
+        # Cap traces at 50 (same as overlay in NodeDetailView)
+        data = result.get("data", [])
+        if len(data) > 50:
+            result["data"] = data[:50]
+            y_axis = result.get("y_axis")
+            if y_axis and y_axis.get("labels"):
+                result["y_axis"]["labels"] = y_axis["labels"][:50]
 
-        # Get source type
-        source = datasets[0].meta.get("source_type", "csv") if hasattr(datasets[0], "meta") else "csv"
+        return result
 
-        # Build preview data (all spectra, downsampled via min-max bucketing
-        # to preserve spectral peak shapes — max ~500 output points)
-        max_pts = 500
-        preview_wn = None
-        preview_spectra = None
-        try:
-            wn = all_wavenumbers[0]
-            n = len(wn)
-            if n <= max_pts:
-                preview_wn = wn.tolist()
-                preview_spectra = []
-                for i, ds in enumerate(datasets):
-                    lbl = labels[i] if i < len(labels) else f"Spectrum_{i+1}"
-                    preview_spectra.append(
-                        SpectrumPreview(
-                            label=lbl,
-                            absorbance=all_absorbances[i].tolist(),
-                        )
-                    )
-            else:
-                # Each bucket produces 2 points (min, max); target ~250 buckets
-                n_buckets = max_pts // 2
-                bucket_size = n // n_buckets
-                indices = []
-                for b in range(n_buckets):
-                    start = b * bucket_size
-                    end = start + bucket_size if b < n_buckets - 1 else n
-                    # Use first spectrum to pick representative indices
-                    chunk = all_absorbances[0][start:end]
-                    idx_min = start + int(np.argmin(chunk))
-                    idx_max = start + int(np.argmax(chunk))
-                    # Keep them in x-order so the line doesn't zigzag
-                    indices.extend(sorted({idx_min, idx_max}))
-                # Deduplicate and sort
-                indices = sorted(set(indices))
-                preview_wn = wn[indices].tolist()
-                preview_spectra = []
-                for i, ds in enumerate(datasets):
-                    lbl = labels[i] if i < len(labels) else f"Spectrum_{i+1}"
-                    preview_spectra.append(
-                        SpectrumPreview(
-                            label=lbl,
-                            absorbance=all_absorbances[i][indices].tolist(),
-                        )
-                    )
-        except Exception:
-            pass  # Preview is best-effort
-
-        return FileInfoResponse(
-            status="ok",
-            num_spectra=len(datasets),
-            num_wavenumbers=len(all_wavenumbers[0]),
-            wavenumber_min=wn_min,
-            wavenumber_max=wn_max,
-            absorbance_min=abs_min,
-            absorbance_max=abs_max,
-            labels=labels,
-            source=source,
-            preview_wavenumber=preview_wn,
-            preview_spectra=preview_spectra,
-        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:

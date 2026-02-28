@@ -164,6 +164,7 @@
                   :step="param.step || 1"
                   :minFractionDigits="param.step && param.step < 1 ? 2 : 0"
                   :maxFractionDigits="param.step && param.step < 1 ? 4 : 0"
+                  :placeholder="param.required ? '' : 'Optional input'"
                   class="full-width"
                   :class="{ 'p-invalid': getParamError(param.name) }"
                 />
@@ -191,6 +192,7 @@
                   v-else
                   v-model="localParams[param.name]"
                   :id="param.name"
+                  :placeholder="param.required ? '' : 'Optional input'"
                   class="full-width"
                   :class="{ 'p-invalid': getParamError(param.name) }"
                 />
@@ -927,6 +929,42 @@
               </div>
             </template>
 
+            <!-- Predicted vs Actual (Regression) — data-driven, works for PLS/PCR/SVR -->
+            <template v-if="regressionCorrelationData.length > 0">
+              <div class="plot-subsection">
+                <div class="plot-subsection-header" @click="togglePlot('regressionCorrelation')">
+                  <i :class="plotSections.regressionCorrelation ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                  <span>Predicted vs Actual</span>
+                </div>
+                <Transition name="collapse">
+                  <div v-if="plotSections.regressionCorrelation" class="plot-container">
+                    <div v-if="regressionTargetOptions.length > 1" class="plot-controls">
+                      <div class="control-group">
+                        <label>Target</label>
+                        <Dropdown v-model="regressionTargetIdx" :options="regressionTargetOptions" optionLabel="label" optionValue="value" />
+                      </div>
+                    </div>
+                    <PlotlyChart :data="regressionCorrelationData" :layout="regressionCorrelationLayout" />
+                  </div>
+                </Transition>
+              </div>
+            </template>
+
+            <!-- Per-Class Accuracy (Classification) — data-driven, works for PLS-DA/SIMCA/KNN -->
+            <template v-if="classificationAccuracyData.length > 0">
+              <div class="plot-subsection">
+                <div class="plot-subsection-header" @click="togglePlot('classificationAccuracy')">
+                  <i :class="plotSections.classificationAccuracy ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                  <span>Per-Class Accuracy</span>
+                </div>
+                <Transition name="collapse">
+                  <div v-if="plotSections.classificationAccuracy" class="plot-container">
+                    <PlotlyChart :data="classificationAccuracyData" :layout="classificationAccuracyLayout" />
+                  </div>
+                </Transition>
+              </div>
+            </template>
+
             <!-- HCA Plots -->
             <template v-if="nodeTypeKey === 'model.hca'">
               <div class="plot-subsection">
@@ -937,6 +975,21 @@
                 <Transition name="collapse">
                   <div v-if="plotSections.hcaDendrogram" class="plot-container">
                     <PlotlyChart :data="hcaDendrogramData" :layout="hcaDendrogramLayout" />
+                  </div>
+                </Transition>
+              </div>
+            </template>
+
+            <!-- Peak Finding Plot (pre-computed on the backend) -->
+            <template v-if="nodeTypeKey === 'analysis.peak_finding'">
+              <div class="plot-subsection">
+                <div class="plot-subsection-header" @click="togglePlot('peakFinding')">
+                  <i :class="plotSections.peakFinding ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                  <span>Spectra with Peaks</span>
+                </div>
+                <Transition name="collapse">
+                  <div v-if="plotSections.peakFinding" class="plot-container">
+                    <PlotlyChart :data="peakFindingPlotData" :layout="peakFindingPlotLayout" />
                   </div>
                 </Transition>
               </div>
@@ -1074,6 +1127,7 @@
                 </Transition>
               </div>
             </template>
+
           </div>
         </Transition>
       </section>
@@ -1264,11 +1318,17 @@ const plotSections = ref<Record<string, boolean>>({
   plsdaVip: false,
   plsdaConfusionTrain: false,
   plsdaConfusionCV: false,
+  regressionCorrelation: true,
+  classificationAccuracy: true,
   hcaDendrogram: true,
+  peakFinding: true,
 });
 
 // PLS-DA loadings view mode (lines or biplot)
 const plsdaLoadingsViewMode = ref<"lines" | "biplot">("lines");
+
+// Regression correlation plot target selector
+const regressionTargetIdx = ref(0);
 
 // Modal state
 const showQuickPlotModal = ref(false);
@@ -1867,6 +1927,7 @@ const outputPreviewColumns = computed(() => {
   const pcLabels = metadata.pc_labels || [];
   const mcrLabels = metadata.labels || [];
   const featureNames = metadata.feature_names || [];
+  const columnNames: string[] = Array.isArray(metadata.column_names) ? metadata.column_names : [];
   const xTitle = metadata.x_title || "";
   const isPCA = metadata.type === "model.pca" || metadata.isPCA;
   const isMCR = metadata.type === "model.mcr_als";
@@ -1884,7 +1945,9 @@ const outputPreviewColumns = computed(() => {
       header = Number.isNaN(labelIdx) ? "Label" : `Field ${labelIdx + 1}`;
     } else if (key.startsWith("col_")) {
       const colIdx = parseInt(key.replace("col_", ""));
-      if (isPCA && pcLabels[colIdx]) {
+      if (columnNames.length > colIdx) {
+        header = columnNames[colIdx];
+      } else if (isPCA && pcLabels[colIdx]) {
         header = pcLabels[colIdx];
       } else if (isMCR && mcrLabels[colIdx]) {
         header = mcrLabels[colIdx];
@@ -2009,22 +2072,29 @@ const availablePlots = computed(() => {
       plots.push("Concentration Profiles", "Pure Spectra");
       break;
     case "model.pls":
-      plots.push("Scores Plot", "Loadings Plot");
+      plots.push("Scores Plot", "Loadings Plot", "Predicted vs Actual");
+      break;
+    case "model.pcr":
+    case "model.svr":
+      plots.push("Predicted vs Actual");
       break;
     case "classification.plsda":
-      plots.push("Scores Plot (with confidence ellipses)", "Loadings Plot", "VIP Scores");
+      plots.push("Scores Plot (with confidence ellipses)", "Loadings Plot", "VIP Scores", "Class Accuracy");
       break;
     case "classification.simca":
-      plots.push("Scores Plot");
+      plots.push("Scores Plot", "Class Accuracy");
       break;
     case "classification.knn":
-      plots.push("Scores Plot");
+      plots.push("Scores Plot", "Class Accuracy");
       break;
     case "model.hca":
       plots.push("Dendrogram");
       break;
     case "stats.summary":
       plots.push("Distribution Plot");
+      break;
+    case "analysis.peak_finding":
+      plots.push("Spectra with Peaks");
       break;
     case "data.source":
     case "preprocess.normalize":
@@ -3263,6 +3333,30 @@ const hcaDendrogramLayout = computed(() => {
   };
 });
 
+// ============================================================================
+// Peak Finding Plot (pre-computed on the backend)
+// ============================================================================
+const peakFindingPlotData = computed(() => {
+  if (nodeTypeKey.value !== "analysis.peak_finding" || !hasOutput.value) return [];
+  const plots = nodeOutput.value?.plots;
+  if (plots?.peak_finding?.data) {
+    return plots.peak_finding.data;
+  }
+  return [];
+});
+
+const peakFindingPlotLayout = computed(() => {
+  if (nodeTypeKey.value !== "analysis.peak_finding" || !hasOutput.value) {
+    return { ...basePlotLayout, height: 500 };
+  }
+  const plots = nodeOutput.value?.plots;
+  const backendLayout = plots?.peak_finding?.layout;
+  if (backendLayout) {
+    return { ...basePlotLayout, height: 500, ...backendLayout };
+  }
+  return { ...basePlotLayout, height: 500 };
+});
+
 const plsdaLoadingsData = computed(() => {
   if (nodeTypeKey.value !== "classification.plsda" || !hasOutput.value) return [];
 
@@ -3975,6 +4069,153 @@ const statsDistributionLayout = computed(() => ({
 }));
 
 
+
+// ============================================================================
+// Regression: Predicted vs Actual correlation plot
+// ============================================================================
+
+const regressionTargetOptions = computed(() => {
+  const metadata = nodeOutput.value?.metadata || {};
+  const yTrue = metadata.y_true;
+  if (!Array.isArray(yTrue) || yTrue.length === 0) return [];
+  const nTargets = Array.isArray(yTrue[0]) ? yTrue[0].length : 1;
+  const names = metadata.target_names || [];
+  return Array.from({ length: nTargets }, (_, i) => ({
+    label: names[i] || `Target ${i + 1}`,
+    value: i,
+  }));
+});
+
+const regressionCorrelationData = computed(() => {
+  const metadata = nodeOutput.value?.metadata || {};
+  const yTrue = metadata.y_true;
+  const yPred = metadata.y_pred;
+  if (!Array.isArray(yTrue) || !Array.isArray(yPred) || yTrue.length === 0) return [];
+
+  const idx = regressionTargetIdx.value;
+  const trueVals = yTrue.map((row: number[]) => (Array.isArray(row) ? row[idx] : row));
+  const predVals = yPred.map((row: number[]) => (Array.isArray(row) ? row[idx] : row));
+
+  const allVals = [...trueVals, ...predVals];
+  const minVal = Math.min(...allVals);
+  const maxVal = Math.max(...allVals);
+  const pad = (maxVal - minVal) * 0.05 || 0.1;
+
+  return [
+    {
+      type: "scatter",
+      mode: "markers",
+      x: trueVals,
+      y: predVals,
+      marker: { color: "#3b82f6", size: 7, opacity: 0.7 },
+      name: "Samples",
+      hovertemplate: "Actual: %{x:.3f}<br>Predicted: %{y:.3f}<extra></extra>",
+    },
+    {
+      type: "scatter",
+      mode: "lines",
+      x: [minVal - pad, maxVal + pad],
+      y: [minVal - pad, maxVal + pad],
+      line: { color: "#94a3b8", dash: "dash", width: 1.5 },
+      name: "1:1 Line",
+      showlegend: false,
+      hoverinfo: "skip",
+    },
+  ];
+});
+
+const regressionCorrelationLayout = computed(() => {
+  const metadata = nodeOutput.value?.metadata || {};
+  const idx = regressionTargetIdx.value;
+  const r2List = metadata.r2_per_target || [];
+  const rmseList = metadata.rmse_per_target || [];
+  const names = metadata.target_names || [];
+  const r2 = r2List[idx];
+  const rmse = rmseList[idx];
+  const targetName = names[idx] || "";
+
+  let title = "Predicted vs Actual";
+  if (targetName) title += ` — ${targetName}`;
+  const metrics: string[] = [];
+  if (r2 != null) metrics.push(`R² = ${r2.toFixed(4)}`);
+  if (rmse != null) metrics.push(`RMSE = ${rmse.toFixed(4)}`);
+  if (metrics.length) title += `<br><span style="font-size:11px;color:#94a3b8">${metrics.join("  |  ")}</span>`;
+
+  return {
+    ...basePlotLayout,
+    height: 400,
+    title: { text: title, font: { size: 14, color: "#f8fafc" } },
+    xaxis: { ...basePlotLayout.xaxis, title: "Actual" },
+    yaxis: { ...basePlotLayout.yaxis, title: "Predicted", scaleanchor: "x", scaleratio: 1 },
+    showlegend: false,
+  };
+});
+
+// ============================================================================
+// Classification: Per-class accuracy bar chart
+// ============================================================================
+
+const classificationAccuracyData = computed(() => {
+  const metadata = nodeOutput.value?.metadata || {};
+  const yTrue = metadata.y_true;
+  const yPred = metadata.y_pred;
+  const categories = metadata.label_categories;
+  if (!Array.isArray(yTrue) || !Array.isArray(yPred) || !Array.isArray(categories)) return [];
+
+  // Compute per-class accuracy
+  const classCorrect: Record<string, number> = {};
+  const classTotal: Record<string, number> = {};
+  for (const c of categories) {
+    classCorrect[c] = 0;
+    classTotal[c] = 0;
+  }
+  for (let i = 0; i < yTrue.length; i++) {
+    const t = String(yTrue[i]);
+    const p = String(yPred[i]);
+    if (classTotal[t] !== undefined) {
+      classTotal[t]++;
+      if (t === p) classCorrect[t]++;
+    }
+  }
+
+  const accuracies = categories.map((c: string) =>
+    classTotal[c] > 0 ? classCorrect[c] / classTotal[c] : 0
+  );
+  const overall = yTrue.length > 0
+    ? yTrue.filter((t: string, i: number) => String(t) === String(yPred[i])).length / yTrue.length
+    : 0;
+
+  return [
+    {
+      type: "bar",
+      x: categories,
+      y: accuracies.map((a: number) => a * 100),
+      marker: { color: "#3b82f6" },
+      name: "Per-class",
+      hovertemplate: "%{x}: %{y:.1f}%<extra></extra>",
+    },
+    {
+      type: "scatter",
+      mode: "lines",
+      x: [categories[0], categories[categories.length - 1]],
+      y: [overall * 100, overall * 100],
+      line: { color: "#f59e0b", dash: "dash", width: 2 },
+      name: `Overall (${(overall * 100).toFixed(1)}%)`,
+    },
+  ];
+});
+
+const classificationAccuracyLayout = computed(() => {
+  return {
+    ...basePlotLayout,
+    height: 350,
+    title: { text: "Per-Class Accuracy", font: { size: 14, color: "#f8fafc" } },
+    xaxis: { ...basePlotLayout.xaxis, title: "Class" },
+    yaxis: { ...basePlotLayout.yaxis, title: "Accuracy (%)", range: [0, 105] },
+    showlegend: true,
+    legend: { x: 1, xanchor: "right", y: 1, bgcolor: "rgba(0,0,0,0)" },
+  };
+});
 
 // ============================================================================
 // End of Plots Section

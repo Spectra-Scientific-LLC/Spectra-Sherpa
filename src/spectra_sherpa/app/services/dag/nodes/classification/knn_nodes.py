@@ -323,6 +323,9 @@ class KNNNode(Node):
                 "confusion_matrix_train": cm_train.tolist(),
                 "confusion_matrix_cv": cm_cv.tolist(),
                 "classification_report": class_report,
+                "y_true": y_array.tolist(),
+                "y_pred": y_pred_train.tolist(),
+                "y_pred_cv": y_pred_cv.tolist(),
                 "optimal_k": k_tuning_results.get("best_k") if k_tuning_results else None,
             }
         )

@@ -20,7 +20,8 @@ SpectraSherpa brings transparent, reproducible multivariate analysis to spectros
 
 ## Try It
 
-**Free online demo** — Email [info@spectrascientific.ai](mailto:info@spectrascientific.ai) to apply for a free access code and explore SpectraSherpa at [demo.spectrascientific.ai](https://demo.spectrascientific.ai) with all AI-enabled features.
+**Free online demo** — Register and explore SpectraSherpa as a sandbox at [demo.spectrascientific.ai](https://demo.spectrascientific.ai/register) with all features including the LLM assistant enabled.
+*(Note: For a limited time, use the access code `welcome_to_spectra_sherpa` to create an account. No upload of proprietary data to the demo server is allowed. Accounts inactive for more than a week will be automatically deleted.)*
 
 **Install locally:**
 

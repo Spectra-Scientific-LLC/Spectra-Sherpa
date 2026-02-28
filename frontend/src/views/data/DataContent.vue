@@ -196,6 +196,13 @@
                 @click="showCreateDialog = true"
               />
               <Button
+                label="Delete Dataset"
+                icon="pi pi-trash"
+                class="p-button-sm p-button-danger p-button-outlined"
+                :disabled="!dataStore.activeExperimentId"
+                @click="showDeleteExpDialog = true"
+              />
+              <Button
                 label="Upload File"
                 icon="pi pi-upload"
                 class="p-button-text p-button-sm"
@@ -558,81 +565,92 @@
             />
           </div>
 
-          <!-- Spectral preview plot -->
-          <div
-            v-if="dataStore.fileInfo.preview_wavenumber && dataStore.fileInfo.preview_spectra"
-            class="explore-plot"
-          >
-            <div class="plot-toolbar">
-              <Button
-                label="Identify Peaks"
-                icon="pi pi-search"
-                class="p-button-sm p-button-outlined"
-                :loading="peakLoading"
-                @click="onIdentifyPeaks"
-              />
+          <!-- ── Box plots (tabular data with string labels on feature axis) ── -->
+          <div v-if="isTabular" class="explore-table">
+            <div class="table-summary">
+              <Tag value="Properties" severity="info" />
+              <span class="meta-val">
+                {{ dataStore.fileInfo.n_samples?.toLocaleString() }} samples
+                &times;
+                {{ dataStore.fileInfo.n_features }} properties
+              </span>
             </div>
             <PlotlyChart
-              :data="peakPlotData"
+              :data="boxPlotData"
+              :layout="boxPlotLayout"
+              :config="{ displayModeBar: true, displaylogo: false }"
+            />
+          </div>
+
+          <!-- ── Spectral overlay plot ── -->
+          <div v-else-if="hasSpectra" class="explore-plot">
+            <PlotlyChart
+              :data="previewPlotData"
               :layout="previewPlotLayout"
               :config="{ displayModeBar: true, displaylogo: false }"
             />
-            <div v-if="peakAnalysisText" class="peak-analysis-panel">
-              <h4 class="panel-title">Peak Analysis</h4>
-              <p class="peak-analysis-text">{{ peakAnalysisText }}</p>
+          </div>
+
+          <!-- ── Reference Properties table (when properties exist alongside spectra) ── -->
+          <div v-if="propertyStats.length > 0" class="explore-panels">
+            <div class="metadata-panel" style="flex: 1">
+              <h4 class="panel-title">Reference Properties</h4>
+              <DataTable
+                :value="propertyStats"
+                size="small"
+                stripedRows
+                class="prop-stats-table"
+              >
+                <Column field="name" header="Property" />
+                <Column header="Range">
+                  <template #body="{ data }">
+                    <span v-if="data.min != null">
+                      {{ data.min.toFixed(2) }} &ndash; {{ data.max.toFixed(2) }}
+                    </span>
+                    <span v-else class="meta-key">N/A</span>
+                  </template>
+                </Column>
+                <Column header="Mean">
+                  <template #body="{ data }">
+                    {{ data.mean != null ? data.mean.toFixed(2) : 'N/A' }}
+                  </template>
+                </Column>
+              </DataTable>
             </div>
           </div>
 
-          <div class="explore-panels">
-            <!-- Metadata table -->
+          <!-- ── Metadata + QC panels (spectra only) ── -->
+          <div v-if="hasSpectra" class="explore-panels">
             <div class="metadata-panel">
               <h4 class="panel-title">File Metadata</h4>
               <div class="metadata-table">
                 <div class="meta-row">
-                  <span class="meta-key">Source</span>
-                  <span class="meta-val">{{ dataStore.fileInfo.source }}</span>
+                  <span class="meta-key">Samples</span>
+                  <span class="meta-val">{{ dataStore.fileInfo.n_samples?.toLocaleString() }}</span>
                 </div>
                 <div class="meta-row">
-                  <span class="meta-key">Status</span>
-                  <Tag
-                    :value="dataStore.fileInfo.status"
-                    :severity="dataStore.fileInfo.status === 'ok' ? 'success' : 'warning'"
-                  />
+                  <span class="meta-key">Features</span>
+                  <span class="meta-val">{{ dataStore.fileInfo.n_features?.toLocaleString() }}</span>
                 </div>
-                <div class="meta-row">
-                  <span class="meta-key">Spectra</span>
-                  <span class="meta-val">{{ dataStore.fileInfo.num_spectra.toLocaleString() }}</span>
+                <div v-if="sdMeta.spectral_technique" class="meta-row">
+                  <span class="meta-key">Technique</span>
+                  <Tag :value="String(sdMeta.spectral_technique)" severity="info" />
                 </div>
-                <div class="meta-row">
-                  <span class="meta-key">Wavenumbers</span>
-                  <span class="meta-val">{{ dataStore.fileInfo.num_wavenumbers.toLocaleString() }}</span>
-                </div>
-                <div
-                  v-if="dataStore.fileInfo.wavenumber_min !== null"
-                  class="meta-row"
-                >
-                  <span class="meta-key">Wavenumber Range</span>
+                <div v-if="sdMeta.x_title" class="meta-row">
+                  <span class="meta-key">X-Axis</span>
                   <span class="meta-val">
-                    {{ dataStore.fileInfo.wavenumber_min.toFixed(1) }} &ndash;
-                    {{ dataStore.fileInfo.wavenumber_max?.toFixed(1) }} cm<sup>-1</sup>
+                    {{ sdMeta.x_title }}{{ sdMeta.x_units ? ` (${sdMeta.x_units})` : '' }}
                   </span>
                 </div>
-                <div
-                  v-if="dataStore.fileInfo.absorbance_min !== null"
-                  class="meta-row"
-                >
-                  <span class="meta-key">Absorbance Range</span>
-                  <span class="meta-val">
-                    {{ dataStore.fileInfo.absorbance_min.toFixed(4) }} &ndash;
-                    {{ dataStore.fileInfo.absorbance_max?.toFixed(4) }} AU
-                  </span>
+                <div v-if="sdMeta.data_quantity" class="meta-row">
+                  <span class="meta-key">Y-Axis</span>
+                  <span class="meta-val">{{ sdMeta.data_quantity }}</span>
                 </div>
               </div>
             </div>
 
-            <!-- QC panel -->
             <DataQualityPanel
-              :fileInfo="dataStore.fileInfo"
+              :datasetDict="dataStore.fileInfo"
               :loading="dataStore.fileInfoLoading"
             />
           </div>
@@ -830,11 +848,39 @@
         />
       </template>
     </Dialog>
+
+    <!-- Delete Dataset Confirmation -->
+    <Dialog
+      v-model:visible="showDeleteExpDialog"
+      header="Delete Dataset"
+      :modal="true"
+      :style="{ width: '380px' }"
+    >
+      <p>
+        Are you sure you want to delete
+        <strong>{{ selectedExperiment?.name }}</strong>
+        and all its files?
+      </p>
+      <template #footer>
+        <Button
+          label="Cancel"
+          class="p-button-text"
+          @click="showDeleteExpDialog = false"
+        />
+        <Button
+          label="Delete"
+          icon="pi pi-trash"
+          class="p-button-danger"
+          :loading="deletingExp"
+          @click="onDeleteExperiment"
+        />
+      </template>
+    </Dialog>
   </section>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch } from "vue";
+import { ref, reactive, computed, onMounted } from "vue";
 import TabView from "primevue/tabview";
 import TabPanel from "primevue/tabpanel";
 import Button from "primevue/button";
@@ -850,21 +896,14 @@ import Panel from "primevue/panel";
 import ProgressSpinner from "primevue/progressspinner";
 import Tag from "primevue/tag";
 import { useDataStore } from "@/stores/data";
-import { useSherpaStore, type PeaksResult } from "@/stores/sherpa";
-import { useLlmStore } from "@/stores/llm";
 import { useToast } from "primevue/usetoast";
-import { useSherpaUpgrade } from "@/composables/useSherpaUpgrade";
 import type { ExperimentFile, ExperimentSummary } from "@/types";
 import DataQualityPanel from "./DataQualityPanel.vue";
 import PlotlyChart from "@/components/PlotlyChart.vue";
 
 const dataStore = useDataStore();
-const sherpaStore = useSherpaStore();
-const llmStore = useLlmStore();
 const toast = useToast();
-const { requireFeature } = useSherpaUpgrade();
 const activeTab = ref(0);
-const peakLoading = ref(false);
 
 // --- Load tab state ---
 const libraryCollapsed = ref(true);
@@ -877,6 +916,8 @@ const importing = ref(false);
 const showCreateDialog = ref(false);
 const showUploadDialog = ref(false);
 const showDeleteDialog = ref(false);
+const showDeleteExpDialog = ref(false);
+const deletingExp = ref(false);
 const newExpName = ref("");
 const newExpDescription = ref("");
 const createSubmitted = ref(false);
@@ -1002,37 +1043,90 @@ const PLOT_COLORS = [
   "#2dd4bf", "#fb923c", "#818cf8", "#f472b6", "#34d399",
 ];
 
+// --- Helpers reading to_dict() format from _serialize_sherpa_dataset ---
+
+const sdMeta = computed(() => {
+  const m = dataStore.fileInfo?.metadata as Record<string, unknown> | undefined;
+  return {
+    wavenumbers: (m?.wavenumbers ?? []) as number[],
+    labels: (m?.labels ?? m?.sample_labels ?? []) as string[],
+    x_title: (m?.x_title ?? "") as string,
+    x_units: (m?.x_units ?? "") as string,
+    spectral_technique: (m?.spectral_technique ?? null) as string | null,
+    data_quantity: (m?.data_quantity ?? null) as string | null,
+    value_units: (m?.value_units ?? null) as string | null,
+    is_spectra: (m?.is_spectra ?? false) as boolean,
+    prop_names: (m?.prop_names ?? []) as string[],
+    properties: (m?.properties ?? null) as Record<string, number[]> | null,
+  };
+});
+
+/** Compute property stats (min, max, mean) from metadata.properties */
+const propertyStats = computed(() => {
+  const { properties, prop_names } = sdMeta.value;
+  if (!properties || !prop_names.length) return [];
+  return prop_names.map((name) => {
+    const vals = (properties[name] ?? []).filter((v) => v != null && isFinite(v));
+    if (!vals.length) return { name, min: null, max: null, mean: null };
+    const min = Math.min(...vals);
+    const max = Math.max(...vals);
+    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+    return { name, min, max, mean };
+  });
+});
+
+const isTabular = computed(() => {
+  const fi = dataStore.fileInfo;
+  if (!fi) return false;
+  return fi.x_axis?.labels != null && fi.x_axis.labels.length > 0;
+});
+
+const hasSpectra = computed(() => {
+  const fi = dataStore.fileInfo;
+  if (!fi?.data?.length) return false;
+  return !isTabular.value;
+});
+
+// --- Spectral overlay (same pattern as NodeDetailView) ---
+
 const previewPlotData = computed(() => {
   const fi = dataStore.fileInfo;
-  if (!fi?.preview_wavenumber || !fi?.preview_spectra) return [];
-  const wn = fi.preview_wavenumber;
-  return fi.preview_spectra.map((s, i) => ({
-    x: wn,
-    y: s.absorbance,
+  if (!fi?.data?.length) return [];
+  const wavenumbers = sdMeta.value.wavenumbers.length
+    ? sdMeta.value.wavenumbers
+    : Array.from({ length: fi.n_features }, (_, i) => i);
+  const labels = sdMeta.value.labels;
+  const maxTraces = Math.min(fi.data.length, 50);
+  return fi.data.slice(0, maxTraces).map((spectrum, i) => ({
+    x: wavenumbers,
+    y: spectrum,
     type: "scatter" as const,
     mode: "lines" as const,
-    name: s.label,
+    name: labels[i] || `Spectrum ${i + 1}`,
     line: { color: PLOT_COLORS[i % PLOT_COLORS.length], width: 1.2 },
   }));
 });
 
 const isReversedXAxis = computed(() => {
-  const src = (dataStore.fileInfo?.source ?? "").toLowerCase();
-  // FTIR / IR data: reversed wavenumber axis. Everything else: normal.
-  return src.includes("spa") || src.includes("spg") || src.includes("jdx")
-    || src.includes("opus") || src.includes("dx");
+  const technique = (sdMeta.value.spectral_technique ?? "").toUpperCase();
+  if (technique === "IR" || technique === "NIR" || technique === "RAMAN") return true;
+  const units = sdMeta.value.x_units.toLowerCase();
+  return units.includes("cm") || units.includes("wavenumber");
 });
 
 const xAxisLabel = computed(() => {
-  const src = (dataStore.fileInfo?.source ?? "").toLowerCase();
-  if (src.includes("spa") || src.includes("spg") || src.includes("jdx")
-    || src.includes("opus") || src.includes("dx")) {
-    return "Wavenumber (cm\u207B\u00B9)";
-  }
-  if (src.includes("wdf") || src.includes("spc")) {
-    return "Raman Shift (cm\u207B\u00B9)";
-  }
-  return "Variable Index";
+  const { x_title, x_units, spectral_technique } = sdMeta.value;
+  if (x_title && x_units) return `${x_title} (${x_units})`;
+  if (x_title) return x_title;
+  const tech = (spectral_technique ?? "").toUpperCase();
+  if (tech === "IR" || tech === "NIR") return "Wavenumber (cm\u207B\u00B9)";
+  if (tech === "RAMAN") return "Raman Shift (cm\u207B\u00B9)";
+  return "Feature";
+});
+
+const yAxisLabel = computed(() => {
+  const { data_quantity, value_units } = sdMeta.value;
+  return data_quantity || value_units || "Intensity";
 });
 
 const previewPlotLayout = computed(() => ({
@@ -1041,11 +1135,11 @@ const previewPlotLayout = computed(() => ({
     title: xAxisLabel.value,
     autorange: isReversedXAxis.value ? ("reversed" as const) : (true as const),
   },
-  yaxis: { title: "Intensity" },
+  yaxis: { title: yAxisLabel.value },
   autosize: true,
   height: 380,
   margin: { t: 40, r: 20, b: 50, l: 60 },
-  showlegend: (dataStore.fileInfo?.preview_spectra?.length ?? 0) <= 20,
+  showlegend: (dataStore.fileInfo?.data?.length ?? 0) <= 20,
   legend: { font: { size: 10 }, orientation: "h" as const, y: -0.25 },
   plot_bgcolor: "#fafafa",
   paper_bgcolor: "#ffffff",
@@ -1053,130 +1147,42 @@ const previewPlotLayout = computed(() => ({
 
 // --- Peak identification ---
 
-const peakPlotData = computed(() => {
-  const base = previewPlotData.value;
-  const peaks = (sherpaStore.lastPeaksResult as PeaksResult | null)?.peaks;
-  if (!peaks?.length || !dataStore.fileInfo?.preview_wavenumber) return base;
+// --- Box plots for properties (feature axis has string labels) ---
 
-  // Add peak markers as a scatter trace
-  const wn = dataStore.fileInfo.preview_wavenumber;
-  const firstSpectrum = dataStore.fileInfo.preview_spectra?.[0]?.absorbance;
-  if (!firstSpectrum) return base;
-
-  // For each peak, find the closest wavenumber index and get the y value
-  const peakX: number[] = [];
-  const peakY: number[] = [];
-  const peakLabels: string[] = [];
-  for (const p of peaks) {
-    let closestIdx = 0;
-    let closestDist = Math.abs(wn[0] - p.wavenumber);
-    for (let i = 1; i < wn.length; i++) {
-      const dist = Math.abs(wn[i] - p.wavenumber);
-      if (dist < closestDist) {
-        closestDist = dist;
-        closestIdx = i;
-      }
-    }
-    peakX.push(wn[closestIdx]);
-    peakY.push(firstSpectrum[closestIdx]);
-    peakLabels.push(p.assignment || `${p.wavenumber.toFixed(0)} cm\u207B\u00B9`);
-  }
-
-  return [
-    ...base,
-    {
-      x: peakX,
-      y: peakY,
-      type: "scatter" as const,
-      mode: "markers+text" as const,
-      name: "Peaks",
-      marker: { color: "#ef4444", size: 8, symbol: "diamond" },
-      text: peakLabels,
-      textposition: "top center" as const,
-      textfont: { size: 9, color: "#ef4444" },
-    },
-  ];
-});
-
-const peakAnalysisText = computed(() => {
-  const result = sherpaStore.lastPeaksResult as PeaksResult | null;
-  if (!result?.response) return "";
-  return result.response;
-});
-
-async function onIdentifyPeaks() {
-  if (!requireFeature("sherpaPeakId")) return;
-
+const boxPlotData = computed(() => {
   const fi = dataStore.fileInfo;
-  if (!fi?.preview_wavenumber || !fi?.preview_spectra?.[0]) {
-    toast.add({
-      severity: "warn",
-      summary: "No Data",
-      detail: "Load and inspect a spectral file first.",
-      life: 3000,
-    });
-    return;
-  }
+  const labels = fi?.x_axis?.labels;
+  if (!labels?.length || !fi?.data?.length) return [];
 
-  peakLoading.value = true;
-  sherpaStore.lastPeaksResult = null;
+  return labels.map((col, colIdx) => {
+    const values = fi.data
+      .map((row) => row[colIdx])
+      .filter((v): v is number => v !== null && typeof v === "number");
+    return {
+      type: "box" as const,
+      y: values,
+      name: col,
+      marker: { color: PLOT_COLORS[colIdx % PLOT_COLORS.length] },
+      boxpoints: false,
+    };
+  });
+});
 
-  try {
-    await llmStore.connect();
-    const ws = llmStore.wsRef;
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      throw new Error("WebSocket not connected");
-    }
-
-    ws.send(JSON.stringify({
-      action: "sherpa_identify_peaks",
-      payload: {
-        wavenumbers: fi.preview_wavenumber,
-        absorbance: fi.preview_spectra[0].absorbance,
-      },
-    }));
-
-    // Wait for result via sherpa store (with timeout)
-    await new Promise<void>((resolve, reject) => {
-      const timeout = window.setTimeout(() => {
-        cleanup();
-        reject(new Error("Peak identification timed out"));
-      }, 30_000);
-
-      const unwatch = watch(
-        () => sherpaStore.lastPeaksResult,
-        (val) => {
-          if (val) {
-            cleanup();
-            resolve();
-          }
-        }
-      );
-
-      const cleanup = () => {
-        clearTimeout(timeout);
-        unwatch();
-      };
-    });
-
-    const peakCount = (sherpaStore.lastPeaksResult as PeaksResult | null)?.peaks?.length;
-    toast.add({
-      severity: "success",
-      summary: "Peaks Identified",
-      detail: peakCount ? `Found ${peakCount} peaks` : "Analysis complete",
-      life: 3000,
-    });
-  } catch (err: any) {
-    toast.add({
-      severity: "error",
-      summary: "Peak Identification Failed",
-      detail: err?.message || "Failed to identify peaks",
-      life: 4000,
-    });
-  } finally {
-    peakLoading.value = false;
-  }
-}
+const boxPlotLayout = computed(() => {
+  const { value_units, x_title } = sdMeta.value;
+  const yLabel = value_units || x_title || "Value";
+  return {
+    title: { text: "Property Distributions", font: { size: 14 } },
+    xaxis: { title: "Property" },
+    yaxis: { title: yLabel },
+    autosize: true,
+    height: 400,
+    margin: { t: 40, r: 20, b: 50, l: 60 },
+    showlegend: false,
+    plot_bgcolor: "#fafafa",
+    paper_bgcolor: "#ffffff",
+  };
+});
 
 // --- Lifecycle ---
 
@@ -1288,6 +1294,19 @@ async function onDeleteFile() {
   }
 }
 
+async function onDeleteExperiment() {
+  if (!dataStore.activeExperimentId) return;
+  deletingExp.value = true;
+  try {
+    await dataStore.deleteExperiment(dataStore.activeExperimentId);
+    showDeleteExpDialog.value = false;
+  } catch (err) {
+    console.error("Delete dataset failed:", err);
+  } finally {
+    deletingExp.value = false;
+  }
+}
+
 async function onInspectFile(file: ExperimentFile) {
   if (!dataStore.activeExperimentId) return;
   dataStore.clearCatalogExploration();
@@ -1364,7 +1383,7 @@ function formatDate(dateStr: string): string {
 
 .load-panels {
   display: grid;
-  grid-template-columns: 2fr 3fr;
+  grid-template-columns: 1fr 1fr;
   gap: 16px;
   min-height: 420px;
 }
@@ -1542,6 +1561,17 @@ function formatDate(dateStr: string): string {
 
 .explore-title i {
   color: #3b82f6;
+}
+
+.explore-table {
+  margin-bottom: 16px;
+}
+
+.table-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
 .explore-plot {

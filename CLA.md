@@ -1,9 +1,10 @@
 # Spectra Sherpa — Individual Contributor License Agreement
 
-## Harmony Individual CLA (HA-CLA-I-E v1.0) — Exclusive License Grant
+## Harmony Individual CLA (HA-CLA-I-NE v1.0) — Non-Exclusive License Grant
 
-**Important:** This CLA replaces copyright assignment with an exclusive license
-grant. You retain copyright ownership of your contributions.
+**Important:** This CLA replaces copyright assignment with a non-exclusive license
+grant. You retain copyright ownership of your contributions and may license them
+to others.
 
 This Contributor License Agreement ("Agreement") is entered into between:
 
@@ -31,7 +32,7 @@ Effective date: the date You submit this Agreement (the "Effective Date").
 ### 2.1 Copyright License
 
 Subject to the terms of this Agreement, You hereby grant to Spectra a
-worldwide, royalty-free, **exclusive**, perpetual, and irrevocable license,
+worldwide, royalty-free, **non-exclusive**, perpetual, and irrevocable license,
 with the right to transfer and sublicense, under Your copyright covering the
 Contribution, to use, copy, modify, create derivative works of, publicly
 display, publicly perform, distribute, and sublicense the Contribution under
