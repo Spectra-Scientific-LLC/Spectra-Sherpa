@@ -929,8 +929,8 @@
               </div>
             </template>
 
-            <!-- Predicted vs Actual (Regression) — data-driven, works for PLS/PCR/SVR -->
-            <template v-if="regressionCorrelationData.length > 0">
+            <!-- Predicted vs Actual (Regression) — PLS/PCR/SVR only -->
+            <template v-if="['model.pls', 'model.pcr', 'model.svr'].includes(nodeTypeKey) && regressionCorrelationData.length > 0">
               <div class="plot-subsection">
                 <div class="plot-subsection-header" @click="togglePlot('regressionCorrelation')">
                   <i :class="plotSections.regressionCorrelation ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
@@ -950,8 +950,8 @@
               </div>
             </template>
 
-            <!-- Per-Class Accuracy (Classification) — data-driven, works for PLS-DA/SIMCA/KNN -->
-            <template v-if="classificationAccuracyData.length > 0">
+            <!-- Per-Class Accuracy (Classification) — PLS-DA/SIMCA/KNN only -->
+            <template v-if="['classification.plsda', 'classification.simca', 'classification.knn'].includes(nodeTypeKey) && classificationAccuracyData.length > 0">
               <div class="plot-subsection">
                 <div class="plot-subsection-header" @click="togglePlot('classificationAccuracy')">
                   <i :class="plotSections.classificationAccuracy ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
