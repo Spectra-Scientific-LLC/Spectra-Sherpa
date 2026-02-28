@@ -254,7 +254,7 @@ class DemoContract(BaseModel):
 # Mapping from disabled_capabilities entries to node types that should
 # be hidden from the node library when that capability is disabled.
 CAPABILITY_HIDDEN_NODE_TYPES: dict[str, list[str]] = {
-    "file_load": ["data.file_load", "data.my_dataset", "data.load_group"],
+    "file_load": ["data.file_load", "data.load_group"],
 }
 
 
