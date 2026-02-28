@@ -1231,7 +1231,7 @@ async def execute_workflow(
         for nt in node_types:
             if nt in blocked:
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
+                    status_code=403,
                     detail=f"Node type '{nt}' is not available in demo mode.",
                 )
 

@@ -119,8 +119,6 @@ class FileInfoRequest(BaseModel):
     experiment_id: int | None = None
 
 
-
-
 async def _validate_payload_file_paths(
     items: list[Any],
     session: AsyncSession,

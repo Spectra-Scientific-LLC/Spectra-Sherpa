@@ -22,9 +22,6 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
-    last_active: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True, default=None
-    )
 
     projects = relationship("Project", back_populates="user", cascade="all, delete-orphan")
     experiments = relationship("Experiment", back_populates="user", cascade="all, delete-orphan")

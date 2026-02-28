@@ -138,8 +138,14 @@ class PeakFindingNode(Node):
 
     # Colour palette shared with the frontend (NodeDetailView.vue)
     _COLORS = [
-        "#3b82f6", "#ef4444", "#22c55e", "#f59e0b",
-        "#8b5cf6", "#ec4899", "#06b6d4", "#f97316",
+        "#3b82f6",
+        "#ef4444",
+        "#22c55e",
+        "#f59e0b",
+        "#8b5cf6",
+        "#ec4899",
+        "#06b6d4",
+        "#f97316",
     ]
 
     @staticmethod
@@ -178,18 +184,20 @@ class PeakFindingNode(Node):
             count = len(indices)
             fraction = count / n_samples if n_samples > 0 else 0.0
             q1_h, med_h, q3_h = np.percentile(h_arr, [25, 50, 75]).tolist()
-            rows.append([
-                float(np.median(pos_arr)),
-                float(np.mean(pos_arr)),
-                float(np.std(pos_arr)) if count > 1 else 0.0,
-                float(pos_arr.min()),
-                float(pos_arr.max()),
-                count,
-                f"{count}/{n_samples}",
-                med_h,
-                q1_h,
-                q3_h,
-            ])
+            rows.append(
+                [
+                    float(np.median(pos_arr)),
+                    float(np.mean(pos_arr)),
+                    float(np.std(pos_arr)) if count > 1 else 0.0,
+                    float(pos_arr.min()),
+                    float(pos_arr.max()),
+                    count,
+                    f"{count}/{n_samples}",
+                    med_h,
+                    q1_h,
+                    q3_h,
+                ]
+            )
 
         # Sort consensus rows by median position
         rows.sort(key=lambda r: r[0])
@@ -271,11 +279,7 @@ class PeakFindingNode(Node):
         if _y_coord is not None:
             try:
                 if hasattr(_y_coord, "labels") and _y_coord.labels is not None:
-                    raw = (
-                        _y_coord.labels.tolist()
-                        if hasattr(_y_coord.labels, "tolist")
-                        else list(_y_coord.labels)
-                    )
+                    raw = _y_coord.labels.tolist() if hasattr(_y_coord.labels, "tolist") else list(_y_coord.labels)
                     sample_labels = [str(l) for l in raw]
             except Exception:
                 pass
@@ -327,46 +331,52 @@ class PeakFindingNode(Node):
             all_heights.extend(heights)
 
             # -- Plotly: spectrum line trace --
-            plotly_traces.append({
-                "type": "scatter",
-                "mode": "lines",
-                "x": x_axis_list,
-                "y": spectrum.tolist(),
-                "name": label,
-                "legendgroup": label,
-                "line": {"color": color, "width": 1.5},
-                "opacity": 0.8,
-            })
+            plotly_traces.append(
+                {
+                    "type": "scatter",
+                    "mode": "lines",
+                    "x": x_axis_list,
+                    "y": spectrum.tolist(),
+                    "name": label,
+                    "legendgroup": label,
+                    "line": {"color": color, "width": 1.5},
+                    "opacity": 0.8,
+                }
+            )
 
             # -- Plotly: peak markers --
             if len(positions) > 0:
-                plotly_traces.append({
-                    "type": "scatter",
-                    "mode": "markers",
-                    "x": positions,
-                    "y": heights,
-                    "name": f"{label} peaks",
-                    "legendgroup": label,
-                    "showlegend": False,
-                    "marker": {
-                        "symbol": "triangle-down",
-                        "size": 10,
-                        "color": color,
-                        "line": {"color": "#fff", "width": 0.5},
-                    },
-                })
+                plotly_traces.append(
+                    {
+                        "type": "scatter",
+                        "mode": "markers",
+                        "x": positions,
+                        "y": heights,
+                        "name": f"{label} peaks",
+                        "legendgroup": label,
+                        "showlegend": False,
+                        "marker": {
+                            "symbol": "triangle-down",
+                            "size": 10,
+                            "color": color,
+                            "line": {"color": "#fff", "width": 0.5},
+                        },
+                    }
+                )
 
                 # -- Plotly: vertical dashed lines at peaks --
                 for pos, h in zip(positions, heights):
-                    plotly_shapes.append({
-                        "type": "line",
-                        "x0": pos,
-                        "x1": pos,
-                        "y0": 0,
-                        "y1": h,
-                        "line": {"color": color, "width": 1, "dash": "dot"},
-                        "opacity": 0.35,
-                    })
+                    plotly_shapes.append(
+                        {
+                            "type": "line",
+                            "x0": pos,
+                            "x1": pos,
+                            "y0": 0,
+                            "y1": h,
+                            "line": {"color": color, "width": 1, "dash": "dot"},
+                            "opacity": 0.35,
+                        }
+                    )
 
         # ---- Consensus peak binning ----
         # Tolerance = distance (points) × mean x-axis spacing (x-units per point)
@@ -377,22 +387,27 @@ class PeakFindingNode(Node):
         bin_tolerance = (distance or 10) * mean_spacing
 
         consensus_rows = self._bin_consensus_peaks(
-            all_positions, all_heights, bin_tolerance, n_samples,
+            all_positions,
+            all_heights,
+            bin_tolerance,
+            n_samples,
         )
 
         # Add consensus peak markers to plot (white dashed full-height lines)
         for row in consensus_rows:
             median_pos = row[0]
-            plotly_shapes.append({
-                "type": "line",
-                "x0": median_pos,
-                "x1": median_pos,
-                "y0": 0,
-                "y1": 1,
-                "yref": "paper",
-                "line": {"color": "#ffffff", "width": 1.5, "dash": "dash"},
-                "opacity": 0.45,
-            })
+            plotly_shapes.append(
+                {
+                    "type": "line",
+                    "x0": median_pos,
+                    "x1": median_pos,
+                    "y0": 0,
+                    "y1": 1,
+                    "yref": "paper",
+                    "line": {"color": "#ffffff", "width": 1.5, "dash": "dash"},
+                    "opacity": 0.45,
+                }
+            )
 
         # Build Plotly layout (dark theme matching basePlotLayout in the frontend)
         plotly_layout: dict[str, Any] = {
@@ -415,8 +430,11 @@ class PeakFindingNode(Node):
             },
             "showlegend": True,
             "legend": {
-                "x": 1, "xanchor": "right", "y": 1,
-                "bgcolor": "rgba(0,0,0,0)", "font": {"size": 10},
+                "x": 1,
+                "xanchor": "right",
+                "y": 1,
+                "bgcolor": "rgba(0,0,0,0)",
+                "font": {"size": 10},
             },
             "shapes": plotly_shapes,
         }
@@ -433,10 +451,16 @@ class PeakFindingNode(Node):
                     "x_title": x_title,
                     "x_units": x_units,
                     "column_names": [
-                        "Median Pos", "Mean Pos", "Std",
-                        "Min Pos", "Max Pos", "Count",
-                        "Detected", "Median Height",
-                        "Q1 Height", "Q3 Height",
+                        "Median Pos",
+                        "Mean Pos",
+                        "Std",
+                        "Min Pos",
+                        "Max Pos",
+                        "Count",
+                        "Detected",
+                        "Median Height",
+                        "Q1 Height",
+                        "Q3 Height",
                     ],
                 },
             },
@@ -452,7 +476,9 @@ class PeakFindingNode(Node):
 
         logger.debug(
             "[Peak Finding] %s consensus peaks from %s detections across %s spectra",
-            len(consensus_rows), total_peaks, n_samples,
+            len(consensus_rows),
+            total_peaks,
+            n_samples,
         )
 
         return result

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, AsyncGenerator, Optional
 
 if TYPE_CHECKING:
@@ -163,18 +162,6 @@ async def get_current_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account disabled",
         )
-
-    # Stamp last_active (throttled — only in demo mode for cleanup service)
-    if app_config.site_profile == "demo" and hasattr(user, "last_active"):
-        now = datetime.now(timezone.utc)
-        if user.last_active is None or (now - user.last_active) > timedelta(minutes=5):
-            user.last_active = now
-            session.add(user)
-            try:
-                await session.commit()
-            except Exception:
-                await session.rollback()
-
     return user
 
 
