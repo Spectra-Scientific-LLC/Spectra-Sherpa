@@ -182,7 +182,6 @@ class PeakFindingNode(Node):
             pos_arr = sorted_pos[indices]
             h_arr = sorted_h[indices]
             count = len(indices)
-            fraction = count / n_samples if n_samples > 0 else 0.0
             q1_h, med_h, q3_h = np.percentile(h_arr, [25, 50, 75]).tolist()
             rows.append(
                 [
@@ -314,7 +313,6 @@ class PeakFindingNode(Node):
             positions = x_axis[indices].tolist()
             heights = spectrum[indices].tolist()
             widths = props.get("widths", np.zeros(len(indices))).tolist()
-            prominences = props.get("prominences", np.zeros(len(indices))).tolist()
 
             # Estimate peak areas
             areas: list[float] = []

@@ -16,7 +16,10 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import TYPE_CHECKING, Any, List, Optional, Union
+
+if TYPE_CHECKING:
+    from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
 import numpy as np
 
