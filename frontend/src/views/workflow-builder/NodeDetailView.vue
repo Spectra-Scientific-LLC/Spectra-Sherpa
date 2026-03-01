@@ -4092,14 +4092,15 @@ const regressionCorrelationData = computed(() => {
   const yPred = metadata.y_pred;
   if (!Array.isArray(yTrue) || !Array.isArray(yPred) || yTrue.length === 0) return [];
 
-  const idx = regressionTargetIdx.value;
-  const trueVals = yTrue.map((row: number[]) => (Array.isArray(row) ? row[idx] : row));
-  const predVals = yPred.map((row: number[]) => (Array.isArray(row) ? row[idx] : row));
+  try {
+    const idx = regressionTargetIdx.value;
+    const trueVals = yTrue.map((row: number[]) => (Array.isArray(row) ? row[idx] : row));
+    const predVals = yPred.map((row: number[]) => (Array.isArray(row) ? row[idx] : row));
 
-  const allVals = [...trueVals, ...predVals];
-  const minVal = Math.min(...allVals);
-  const maxVal = Math.max(...allVals);
-  const pad = (maxVal - minVal) * 0.05 || 0.1;
+    const allVals = [...trueVals, ...predVals];
+    const minVal = Math.min(...allVals);
+    const maxVal = Math.max(...allVals);
+    const pad = (maxVal - minVal) * 0.05 || 0.1;
 
   return [
     {
@@ -4122,6 +4123,10 @@ const regressionCorrelationData = computed(() => {
       hoverinfo: "skip",
     },
   ];
+  } catch (e) {
+    console.error("[Regression Plot] ERROR in computed:", e);
+    return [];
+  }
 });
 
 const regressionCorrelationLayout = computed(() => {

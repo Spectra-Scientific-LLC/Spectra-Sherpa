@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy as np
 
+from spectra_sherpa.app.lib.adapters.scp_extractors import _safe_getattr
 from spectra_sherpa.app.lib.scp_compat import scp
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
 
@@ -262,16 +263,16 @@ class PLSDANode(Node):
         cv_f1_macro = f1_score(y_array, y_pred_cv, average="macro")
 
         # Get PLS scores for visualization (extract numpy arrays from SpectroChemPy model)
-        X_scores = (
-            _coerce_numeric_array(pls.x_scores.data)
-            if hasattr(pls.x_scores, "data")
-            else _coerce_numeric_array(pls.x_scores)
-        )
-        X_loadings = (
-            _coerce_numeric_array(pls.x_loadings.data)
-            if hasattr(pls.x_loadings, "data")
-            else _coerce_numeric_array(pls.x_loadings)
-        )
+        # Use _safe_getattr for version-resilient attribute access (SCP 0.8.1+)
+        raw_scores = _safe_getattr(pls, ("x_scores", "_x_scores", "x_scores_"))
+        if raw_scores is None:
+            raw_scores = pls.transform(X_ndd)
+        X_scores = _coerce_numeric_array(raw_scores)
+
+        raw_loadings = _safe_getattr(pls, ("x_loadings", "_x_loadings", "x_loadings_"))
+        if raw_loadings is None:
+            raise RuntimeError("Could not extract x_loadings from PLS-DA model")
+        X_loadings = _coerce_numeric_array(raw_loadings)
 
         # Calculate VIP scores (Variable Importance in Projection)
         vip_error = None
@@ -331,14 +332,14 @@ class PLSDANode(Node):
         # Get unique categories from the classes already computed
         label_categories = [str(c) for c in classes]
 
-        # Build LV labels for scores NDDataset x-axis
+        # Build LV labels for scores dataset x-axis
         lv_labels = [f"LV{i+1}" for i in range(n_components)]
 
         # =====================================================================
-        # Create NDDataset outputs with proper coordinate coupling
+        # Create SherpaDataset outputs with proper coordinate coupling
         # =====================================================================
 
-        # Scores NDDataset: shape (n_samples, n_components)
+        # Scores: shape (n_samples, n_components)
         scores_dataset = create_spectral_dataset(
             data=X_scores,
             x_coord=_make_labeled_coord(lv_labels, title="Latent Variable"),
@@ -347,7 +348,7 @@ class PLSDANode(Node):
             title="PLS-DA Scores",
         )
 
-        # Loadings NDDataset: shape (n_components, n_features)
+        # Loadings: shape (n_components, n_features)
         loadings_dataset = create_spectral_dataset(
             data=X_loadings,
             x_coord=_x_coord,  # Preserve wavenumber/feature axis from input
@@ -376,6 +377,7 @@ class PLSDANode(Node):
         # Store ONLY scientific metadata that coordinates can't carry
         scores_dataset.meta.update(
             {
+                "type": "PLS_DA",
                 "n_components": n_components,
                 "label_categories": label_categories,
                 "lv_labels": lv_labels,
@@ -395,10 +397,10 @@ class PLSDANode(Node):
             }
         )
 
-        # NDDataset-only return: one serialization boundary at API layer
+        # SherpaDataset-only return: one serialization boundary at API layer
         return {
-            "default": scores_dataset,  # NDDataset: scores + sample labels (y) + LV coords (x)
-            "loadings": loadings_dataset,  # NDDataset: loadings + wavenumbers (x) + LV coords (y)
+            "default": scores_dataset,  # SherpaDataset: scores (n_samples, n_components)
+            "loadings": loadings_dataset,  # SherpaDataset: loadings (n_components, n_features)
             "model": pls,  # Model port for Apply PLS-DA Model
             "plots": plots,  # Pre-built Plotly traces (legitimate visualization output)
         }
@@ -459,36 +461,6 @@ class PLSDANode(Node):
 
         return y_pred, Y_pred_prob
 
-    def _get_cv_probabilities(self, X, y, Y_dummy, n_components, scale, cv_folds):
-        """
-        Get cross-validated probability predictions using SpectroChemPy.
-
-        Note: This method is currently unused but maintained for consistency.
-        """
-        from sklearn.model_selection import StratifiedKFold
-
-        X_data = to_numpy_2d(X, name="X", dtype=np.float64)
-
-        Y_pred_cv = np.zeros_like(Y_dummy)
-        kf = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=42)
-
-        for train_idx, test_idx in kf.split(X_data, y):
-            X_train_data, X_test_data = X_data[train_idx], X_data[test_idx]
-            Y_train = Y_dummy[train_idx]
-
-            # Create NDDatasets for SpectroChemPy
-            X_train = scp.NDDataset(X_train_data)
-            X_test = scp.NDDataset(X_test_data)
-            Y_train_dataset = scp.NDDataset(Y_train)
-
-            pls = scp.PLSRegression(n_components=n_components, scale=scale)
-            pls.fit(X_train, Y_train_dataset)
-
-            Y_pred_raw = pls.predict(X_test)
-            Y_pred_cv[test_idx] = to_numpy_2d(Y_pred_raw, name="Y_pred_raw", dtype=np.float64)
-
-        return Y_pred_cv
-
     def _calculate_vip(self, pls_model, X, Y):
         """
         Calculate Variable Importance in Projection (VIP) scores.
@@ -497,24 +469,24 @@ class PLSDANode(Node):
         VIP > 1 indicates important variables.
         """
         # Extract numeric arrays from SpectroChemPy model
-        t = (
-            _coerce_numeric_array(pls_model.x_scores.data)
-            if hasattr(pls_model.x_scores, "data")
-            else _coerce_numeric_array(pls_model.x_scores)
-        )
+        # Use _safe_getattr for version-resilient attribute access (SCP 0.8.1+)
+        raw_t = _safe_getattr(pls_model, ("x_scores", "_x_scores", "x_scores_"))
+        if raw_t is None:
+            return np.zeros(X.shape[1], dtype=float)
+        t = _coerce_numeric_array(raw_t)
+
         # SpectroChemPy returns x_weights as (n_components, n_features),
         # but VIP calculation expects (n_features, n_components)
-        w_raw = (
-            _coerce_numeric_array(pls_model.x_weights.data)
-            if hasattr(pls_model.x_weights, "data")
-            else _coerce_numeric_array(pls_model.x_weights)
-        )
+        raw_w = _safe_getattr(pls_model, ("x_weights", "_x_weights", "x_weights_"))
+        if raw_w is None:
+            return np.zeros(X.shape[1], dtype=float)
+        w_raw = _coerce_numeric_array(raw_w)
         w = w_raw.T  # Transpose to (n_features, n_components)
-        q = (
-            _coerce_numeric_array(pls_model.y_loadings.data)
-            if hasattr(pls_model.y_loadings, "data")
-            else _coerce_numeric_array(pls_model.y_loadings)
-        )
+
+        raw_q = _safe_getattr(pls_model, ("y_loadings", "_y_loadings", "y_loadings_"))
+        if raw_q is None:
+            return np.zeros(X.shape[1], dtype=float)
+        q = _coerce_numeric_array(raw_q)
 
         # Guard against malformed arrays
         if t.ndim != 2 or w.ndim != 2 or q.ndim < 1:

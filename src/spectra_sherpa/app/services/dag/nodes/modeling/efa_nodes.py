@@ -85,14 +85,14 @@ class EFANode(Node):
                 type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Forward Eigenvalues",
-                description="Eigenvalues from forward EFA as NDDataset (samples × components)",
+                description="Eigenvalues from forward EFA (samples × components)",
             ),
             PortMetadata(
                 name="backward_eigenvalues",
                 type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Backward Eigenvalues",
-                description="Eigenvalues from backward EFA as NDDataset (samples × components)",
+                description="Eigenvalues from backward EFA (samples × components)",
             ),
         ],
         requires_scp=True,
@@ -128,11 +128,28 @@ class EFANode(Node):
         forward_ev = extracted.forward_ev
         backward_ev = extracted.backward_ev
 
+        # Defensive shape check — EFA eigenvalues should be (n_samples, n_components)
+        n_samples = input_ds.shape[0]
+        if forward_ev is not None and forward_ev.shape != (n_samples, n_components):
+            logger.warning(
+                "EFA forward_ev shape %s != expected (%s, %s)",
+                forward_ev.shape,
+                n_samples,
+                n_components,
+            )
+        if backward_ev is not None and backward_ev.shape != (n_samples, n_components):
+            logger.warning(
+                "EFA backward_ev shape %s != expected (%s, %s)",
+                backward_ev.shape,
+                n_samples,
+                n_components,
+            )
+
         # Get input y_coord for sample labels
         _y_coord = input_ds.sample_axis
 
         # =====================================================================
-        # Create proper NDDataset objects for eigenvalues with coordinate coupling
+        # Create SherpaDataset objects for eigenvalues with coordinate coupling
         # This enables "smart array" behavior - slicing data also slices axes
         # =====================================================================
 
@@ -160,7 +177,7 @@ class EFANode(Node):
                 title="EFA Backward Eigenvalues",
             )
 
-        # Add processing history to NDDataset outputs
+        # Add processing history to SherpaDataset outputs
         if forward_ev_dataset is not None:
             copy_processing_history(input_ds, forward_ev_dataset)
             add_processing_step(
@@ -185,13 +202,14 @@ class EFANode(Node):
         if default_dataset is not None:
             default_dataset.meta.update(
                 {
+                    "type": "EFA",
                     "n_components": n_components,
                 }
             )
 
         return {
-            "default": default_dataset,  # NDDataset: forward eigenvalues (primary output)
-            "forward_eigenvalues": forward_ev_dataset,  # NDDataset: forward eigenvalues
-            "backward_eigenvalues": backward_ev_dataset,  # NDDataset: backward eigenvalues
+            "default": default_dataset,  # SherpaDataset: forward eigenvalues (primary output)
+            "forward_eigenvalues": forward_ev_dataset,  # SherpaDataset: forward eigenvalues (n_samples, n_components)
+            "backward_eigenvalues": backward_ev_dataset,  # SherpaDataset: backward eigenvalues
             "model": efa,  # Model port
         }

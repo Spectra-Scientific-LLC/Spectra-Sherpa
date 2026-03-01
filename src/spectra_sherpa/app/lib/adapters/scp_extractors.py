@@ -30,6 +30,22 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+def _safe_getattr(obj: Any, names: tuple[str, ...]) -> Any | None:
+    """Try attribute names in order, returning first non-None.
+
+    Catches exceptions from property descriptors that may raise
+    (e.g. SCP wraps _coef in a property that can fail on some versions).
+    """
+    for name in names:
+        try:
+            val = getattr(obj, name, None)
+            if val is not None:
+                return val
+        except Exception:
+            continue
+    return None
+
+
 def _unwrap_to_numpy(value: Any, name: str = "value") -> np.ndarray:
     """Safely unwrap NDDataset or array-like to numpy array."""
     if value is None:
@@ -249,8 +265,9 @@ class PLSExtract:
     def from_scp(cls, pls_model: Any, X_ndd: Any, *, Y_ndd: Any = None) -> PLSExtract:
         """Extract from fitted SCP PLS model.
 
-        SCP 0.8.x does not always populate x_scores_ attributes; this method
-        handles fallback to .transform() when attributes are missing.
+        Uses _safe_getattr with fallback chains to handle SCP version
+        differences (0.8.x uses x_scores/coef, older uses x_scores_/coef_).
+        Falls back to .transform() for x_scores when all attribute names miss.
 
         Args:
             pls_model: Fitted scp.PLSRegression instance
@@ -264,11 +281,12 @@ class PLSExtract:
 
         n_components = pls_model.n_components
 
-        # Extract X scores — try attribute first, then transform()
+        # Extract X scores — try public/private/legacy names, then transform()
         x_scores = None
-        if hasattr(pls_model, "x_scores_") and pls_model.x_scores_ is not None:
+        raw = _safe_getattr(pls_model, ("x_scores", "_x_scores", "x_scores_"))
+        if raw is not None:
             try:
-                x_scores = _to_numpy_2d(pls_model.x_scores_, name="x_scores_")
+                x_scores = _to_numpy_2d(raw, name="x_scores")
             except Exception:
                 pass
 
@@ -277,39 +295,44 @@ class PLSExtract:
             try:
                 transformed = pls_model.transform(X_ndd)
                 x_scores = _to_numpy_2d(transformed, name="transform(X)")
-                logger.debug("[PLSExtract] Derived x_scores from transform() (x_scores_ missing)")
+                logger.debug("[PLSExtract] Derived x_scores from transform()")
             except Exception as e:
                 logger.warning("[PLSExtract] Could not derive x_scores: %s", e)
 
         # Extract Y scores
         y_scores = None
-        if hasattr(pls_model, "y_scores_") and pls_model.y_scores_ is not None:
+        raw = _safe_getattr(pls_model, ("y_scores", "_y_scores", "y_scores_"))
+        if raw is not None:
             try:
-                y_scores = _to_numpy_2d(pls_model.y_scores_, name="y_scores_")
+                y_scores = _to_numpy_2d(raw, name="y_scores")
             except Exception:
                 pass
 
         # Extract X loadings
         x_loadings = None
-        if hasattr(pls_model, "x_loadings_") and pls_model.x_loadings_ is not None:
+        raw = _safe_getattr(pls_model, ("x_loadings", "_x_loadings", "x_loadings_"))
+        if raw is not None:
             try:
-                x_loadings = _to_numpy_2d(pls_model.x_loadings_, name="x_loadings_")
+                x_loadings = _to_numpy_2d(raw, name="x_loadings")
             except Exception:
                 pass
 
         # Extract Y loadings
         y_loadings = None
-        if hasattr(pls_model, "y_loadings_") and pls_model.y_loadings_ is not None:
+        raw = _safe_getattr(pls_model, ("y_loadings", "_y_loadings", "y_loadings_"))
+        if raw is not None:
             try:
-                y_loadings = _to_numpy_2d(pls_model.y_loadings_, name="y_loadings_")
+                y_loadings = _to_numpy_2d(raw, name="y_loadings")
             except Exception:
                 pass
 
-        # Extract coefficients
+        # Extract coefficients — prefer raw _coef (ndarray) over coef
+        # property (NDDataset wrapper that may raise on some SCP versions)
         coef = None
-        if hasattr(pls_model, "coef_") and pls_model.coef_ is not None:
+        raw = _safe_getattr(pls_model, ("_coef", "coef_", "coef"))
+        if raw is not None:
             try:
-                coef = _unwrap_to_numpy(pls_model.coef_, name="coef_")
+                coef = _unwrap_to_numpy(raw, name="coef")
             except Exception:
                 pass
 

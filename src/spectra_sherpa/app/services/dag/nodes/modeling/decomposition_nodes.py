@@ -280,6 +280,7 @@ class NMFNode(Node):
         # Store only scientific metadata that coordinates can't carry
         W_dataset.meta.update(
             {
+                "type": "NMF",
                 "n_components": n_components,
                 "label_categories": label_categories,
                 "reconstruction_error": reconstruction_err,
@@ -596,6 +597,7 @@ class FastICANode(Node):
         # Store only scientific metadata that coordinates can't carry
         S_dataset.meta.update(
             {
+                "type": "FastICA",
                 "n_components": n_components,
                 "label_categories": label_categories,
                 "species_names": species_names,

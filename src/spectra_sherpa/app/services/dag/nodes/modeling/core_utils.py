@@ -246,6 +246,31 @@ def create_spectral_dataset(
     )
 
 
+def ensure_orientation(
+    data: np.ndarray,
+    *,
+    expected_rows: int,
+    expected_cols: int,
+    name: str = "matrix",
+) -> np.ndarray:
+    """Ensure a 2D array has shape (expected_rows, expected_cols), transposing if needed.
+
+    Handles SCP version differences where loadings/scores may arrive in
+    either orientation.  If both dimensions match (square case), returns
+    data unchanged.
+
+    Raises:
+        ValueError: If neither orientation matches the expected shape.
+    """
+    if data.ndim != 2:
+        raise ValueError(f"{name}: expected 2D, got {data.ndim}D")
+    if data.shape == (expected_rows, expected_cols):
+        return data
+    if data.shape == (expected_cols, expected_rows):
+        return data.T
+    raise ValueError(f"{name}: shape {data.shape} cannot be oriented to ({expected_rows}, {expected_cols})")
+
+
 def is_sequential_numeric(values: list) -> bool:
     """Check if numeric values are sequential (e.g., time series, temperature series).
 

@@ -32,6 +32,9 @@ from .core_utils import (
     create_spectral_dataset as _create_spectral_dataset,
 )
 from .core_utils import (
+    ensure_orientation as _ensure_orientation,
+)
+from .core_utils import (
     is_sequential_numeric as _is_sequential_numeric,
 )
 from .core_utils import (
@@ -112,28 +115,28 @@ class PLSNode(Node):
                 type_ref="spectrasherpa://types/ScoreMatrix/1.0",
                 required=True,
                 label="X Scores",
-                description="Scores for X block as NDDataset (samples × components) with sample labels",
+                description="Scores for X block (samples × components) with sample labels",
             ),
             PortMetadata(
                 name="Y_scores",
                 type_ref="spectrasherpa://types/ScoreMatrix/1.0",
                 required=True,
                 label="Y Scores",
-                description="Scores for Y block as NDDataset (samples × components) with sample labels",
+                description="Scores for Y block (samples × components) with sample labels",
             ),
             PortMetadata(
                 name="X_loadings",
                 type_ref="spectrasherpa://types/LoadingMatrix/1.0",
                 required=True,
                 label="X Loadings",
-                description="Loadings for X block as NDDataset (features × components) with wavenumber axis",
+                description="Loadings for X block (components × features) with wavenumber axis",
             ),
             PortMetadata(
                 name="Y_loadings",
                 type_ref="spectrasherpa://types/LoadingMatrix/1.0",
                 required=True,
                 label="Y Loadings",
-                description="Loadings for Y block as NDDataset (targets × components)",
+                description="Loadings for Y block (targets × components)",
             ),
         ],
         requires_scp=True,
@@ -281,7 +284,7 @@ class PLSNode(Node):
             except Exception:
                 label_categories = None
 
-        # Get input x_coord for loadings NDDataset
+        # Get input x_coord for loadings dataset
         _x_coord = X_ds.feature_axis
 
         # Build LV labels with physical quantity context for scientific traceability
@@ -292,7 +295,7 @@ class PLSNode(Node):
             x_data_quantity = str(X_ds.title)
 
         # =====================================================================
-        # Create proper NDDataset objects for scores and loadings with coordinate coupling
+        # Create SherpaDataset objects for scores and loadings with coordinate coupling
         # This enables "smart array" behavior - slicing data also slices axes
         # =====================================================================
 
@@ -323,30 +326,46 @@ class PLSNode(Node):
                 title="PLS Y Scores",
             )
 
-        # X_loadings: shape (n_features, n_components) - needs wavenumber axis
+        # X_loadings: canonical (n_components, n_features) with y=LV labels, x=wavenumbers
         X_loadings_dataset = None
         if X_loadings_data is not None:
+            xl = _ensure_orientation(
+                X_loadings_data,
+                expected_rows=n_components,
+                expected_cols=X_ds.shape[1],
+                name="X_loadings",
+            )
             X_loadings_dataset = _create_spectral_dataset(
-                data=(
-                    X_loadings_data.T if X_loadings_data.ndim == 2 else X_loadings_data
-                ),  # Transpose to (n_components, n_features)
+                data=xl,
                 x_coord=_x_coord,
                 y_coord=_make_safe_coord(lv_labels, title="Latent Variable"),
                 units="loading",
                 title="PLS X Loadings",
             )
 
-        # Y_loadings: shape (n_targets, n_components)
+        # Y_loadings: canonical (n_targets, n_components) with y=target names, x=LV labels
         Y_loadings_dataset = None
         if Y_loadings_data is not None:
+            yl = _ensure_orientation(
+                Y_loadings_data,
+                expected_rows=n_targets,
+                expected_cols=n_components,
+                name="Y_loadings",
+            )
+            tc = X_ds.target_context
+            if tc is not None and tc.target_names and len(tc.target_names) == yl.shape[0]:
+                y_target_coord = _make_safe_coord(tc.target_names, title="Target")
+            else:
+                y_target_coord = _make_safe_coord([f"Target {i+1}" for i in range(yl.shape[0])], title="Target")
             Y_loadings_dataset = _create_spectral_dataset(
-                data=Y_loadings_data,
+                data=yl,
                 x_coord=_make_safe_coord(lv_labels, title="Latent Variable"),
+                y_coord=y_target_coord,
                 units="loading",
                 title="PLS Y Loadings",
             )
 
-        # Add processing history to NDDataset outputs
+        # Add processing history to SherpaDataset outputs
         if X_scores_dataset is not None:
             copy_processing_history(X_ds, X_scores_dataset)
             add_processing_step(
@@ -383,9 +402,10 @@ class PLSNode(Node):
                 node_id=self.node_id,
             )
 
-        # Store scientific metadata in X_scores NDDataset meta
+        # Store scientific metadata in X_scores SherpaDataset meta
         if X_scores_dataset is not None:
             meta_dict = {
+                "type": "PLS",
                 "n_components": n_components,
                 "pc_labels": lv_labels,  # LV labels (no EVR for PLS, so store explicitly)
                 "label_categories": label_categories,
@@ -406,14 +426,13 @@ class PLSNode(Node):
                 ),
             )
 
-        # NDDataset-only return: one serialization boundary at API layer
         return {
-            "default": X_scores_dataset,  # NDDataset: X scores + sample labels (y) + LV coords (x)
-            "X_loadings": X_loadings_dataset,  # NDDataset: loadings + wavenumbers (x) + LV coords (y)
-            "Y_scores": Y_scores_dataset,  # NDDataset: Y scores
-            "Y_loadings": Y_loadings_dataset,  # NDDataset: Y loadings
-            "model": pls,  # Model port for Apply PLS Model
-            "coef": coef_data,
+            "default": X_scores_dataset,  # SherpaDataset: X scores (n_samples, n_components)
+            "X_loadings": X_loadings_dataset,  # SherpaDataset: loadings (n_components, n_features)
+            "Y_scores": Y_scores_dataset,  # SherpaDataset: Y scores (n_samples, n_components)
+            "Y_loadings": Y_loadings_dataset,  # SherpaDataset: Y loadings (n_targets, n_components)
+            "model": pls,  # SCP PLSRegression for Apply PLS Model
+            "coef": coef_data,  # ndarray: regression coefficients (n_features, n_targets)
         }
 
 

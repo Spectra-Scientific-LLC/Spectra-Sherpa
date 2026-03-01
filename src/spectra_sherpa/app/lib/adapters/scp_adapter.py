@@ -31,6 +31,20 @@ from spectra_sherpa.app.lib.sherpa_dataset import (
 logger = logging.getLogger(__name__)
 
 
+def _extract_title(ds: Any) -> str | None:
+    """Get a meaningful title from NDDataset, falling back to .name.
+
+    NDDataset has separate ``.title`` and ``.name`` attributes.
+    Programmatically constructed datasets (e.g. Eigenvector loader) often
+    set ``.name`` while ``.title`` stays ``'<untitled>'``.
+    """
+    if hasattr(ds, "title") and ds.title and str(ds.title) != "<untitled>":
+        return str(ds.title)
+    if hasattr(ds, "name") and ds.name:
+        return str(ds.name)
+    return None
+
+
 def from_nddataset(ds: Any) -> SherpaDataset:
     """Lossless conversion from SCP NDDataset to SherpaDataset.
 
@@ -70,7 +84,7 @@ def from_nddataset(ds: Any) -> SherpaDataset:
         domain=domain,
         provenance=provenance,
         backend="scp",
-        title=str(ds.title) if hasattr(ds, "title") and ds.title else None,
+        title=_extract_title(ds),
         units=str(ds.units) if hasattr(ds, "units") and ds.units else None,
         extra=extra if extra else None,
     )

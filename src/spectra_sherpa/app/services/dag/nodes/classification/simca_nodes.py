@@ -20,6 +20,7 @@ from ...io_contracts import (
 )
 from ...node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
 from ..modeling import create_spectral_dataset
+from ..modeling.core_utils import ensure_orientation as _ensure_orientation
 from ..visualization import generate_confusion_matrix_heatmap
 from .core_utils import (
     make_labeled_coord as _make_labeled_coord,
@@ -210,10 +211,20 @@ class SIMCANode(Node):
             pca = scp.PCA(n_components=n_components, standardized=False, scaled=True)
             pca.fit(X_class_dataset)
 
-            # Get scores and loadings
+            # Get scores and loadings with orientation guards
             scores = pca.transform()
-            scores_data = to_numpy_2d(scores, name="scores", dtype=np.float64)
-            loadings_data = to_numpy_2d(pca.components, name="components", dtype=np.float64)
+            scores_data = _ensure_orientation(
+                to_numpy_2d(scores, name="scores", dtype=np.float64),
+                expected_rows=n_class_samples,
+                expected_cols=n_components,
+                name=f"SIMCA scores (class {cls})",
+            )
+            loadings_data = _ensure_orientation(
+                to_numpy_2d(pca.components, name="components", dtype=np.float64),
+                expected_rows=n_components,
+                expected_cols=X_data.shape[1],
+                name=f"SIMCA loadings (class {cls})",
+            )
 
             # Get class mean for proper projection of new samples
             # CRITICAL: PCA centers data, so we need the mean to project new samples correctly
@@ -342,7 +353,7 @@ class SIMCANode(Node):
         # Get unique categories from the classes already computed
         label_categories = [str(c) for c in classes]
 
-        # Get input coordinates for NDDataset creation
+        # Get input coordinates for dataset creation
         _y_coord = X_ds.sample_axis
 
         # Generate plots
@@ -350,13 +361,13 @@ class SIMCANode(Node):
         plots["confusion_matrix"] = generate_confusion_matrix_heatmap(cm, classes, "Confusion Matrix (Training Set)")
 
         # =====================================================================
-        # Create NDDataset output with proper coordinate coupling
+        # Create SherpaDataset output with proper coordinate coupling
         # =====================================================================
 
         # Build PC labels for the visualization scores (projected into first class PC space)
         pc_labels = [f"PC{i+1} (Class {first_class})" for i in range(n_components)]
 
-        # Scores NDDataset: shape (n_samples, n_components) — projected into first class PC space
+        # Scores: shape (n_samples, n_components) — projected into first class PC space
         scores_dataset = create_spectral_dataset(
             data=viz_scores_data,
             x_coord=_make_labeled_coord(pc_labels, title="Principal Component"),
@@ -377,6 +388,7 @@ class SIMCANode(Node):
         # Store ONLY scientific metadata that coordinates can't carry
         scores_dataset.meta.update(
             {
+                "type": "SIMCA",
                 "n_components": n_components,
                 "label_categories": label_categories,
                 "pc_labels": pc_labels,
@@ -395,9 +407,9 @@ class SIMCANode(Node):
 
         logger.debug("Train accuracy: %.3f with %d PCs per class", train_accuracy, n_components)
 
-        # NDDataset-only return: one serialization boundary at API layer
+        # SherpaDataset-only return: one serialization boundary at API layer
         return {
-            "default": scores_dataset,  # NDDataset: viz scores + sample labels (y) + PC coords (x)
+            "default": scores_dataset,  # SherpaDataset: viz scores (n_samples, n_components)
             "model": serializable_models,  # Model port: class models dict for SIMCA Predict
             "plots": plots,  # Pre-built Plotly traces (legitimate visualization output)
         }

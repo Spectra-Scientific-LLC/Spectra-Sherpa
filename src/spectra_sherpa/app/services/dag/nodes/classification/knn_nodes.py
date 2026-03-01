@@ -315,6 +315,7 @@ class KNNNode(Node):
         # Store ONLY scientific metadata that coordinates can't carry
         scores_dataset.meta.update(
             {
+                "type": "KNN",
                 "n_neighbors": n_neighbors,
                 "label_categories": label_categories,
                 "pc_labels": viz_labels,

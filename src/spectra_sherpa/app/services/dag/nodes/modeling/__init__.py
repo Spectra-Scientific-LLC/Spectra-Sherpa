@@ -32,6 +32,7 @@ from .clustering_nodes import DBSCANNode, HCANode, KMeansNode
 # Public utilities
 from .core_utils import (
     create_spectral_dataset,
+    ensure_orientation,
     is_sequential_numeric,
     make_safe_coord,
 )
@@ -51,6 +52,7 @@ __all__ = [
     # Public utilities
     "make_safe_coord",
     "create_spectral_dataset",
+    "ensure_orientation",
     "is_sequential_numeric",
     # All node classes
     "PCANode",

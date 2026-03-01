@@ -115,16 +115,14 @@ class PCANode(Node):
                 type_ref="spectrasherpa://types/ScoreMatrix/1.0",
                 required=True,
                 label="Scores",
-                description="Transformed scores as NDDataset (n_samples × n_components) with sample labels",
+                description="Transformed scores (n_samples × n_components) with sample labels",
             ),
             PortMetadata(
                 name="loadings",
                 type_ref="spectrasherpa://types/LoadingMatrix/1.0",
                 required=True,
                 label="Loadings",
-                description=(
-                    "Principal component loadings as NDDataset" " (n_components × n_features) with wavenumber axis"
-                ),
+                description="Principal component loadings (n_components × n_features) with wavenumber axis",
             ),
             PortMetadata(
                 name="explained_variance",
@@ -344,7 +342,7 @@ class PCANode(Node):
 
         # Store only scientific metadata that coordinates can't carry.
         # serialize_for_api() extracts wavenumbers, sample_labels, x_title, etc.
-        # from NDDataset coordinates automatically at the API boundary.
+        # from SherpaDataset coordinates automatically at the API boundary.
         scores_dataset.meta.update(
             {
                 "type": "PCA",
@@ -365,6 +363,23 @@ class PCANode(Node):
         # Convert NDDataset outputs to SherpaDataset for DAG uniformity
         scores_dataset = from_nddataset(scores_dataset)
         loadings_dataset = from_nddataset(loadings_dataset)
+
+        # Defensive shape check — guard against future SCP API orientation changes.
+        # SCP 0.8.1 returns scores=(n_samples, n_components), loadings=(n_components, n_features).
+        if scores_dataset.data.shape != (n_observations, actual_n_components):
+            logger.warning(
+                "PCA scores shape %s != expected (%s, %s) — SCP API may have changed",
+                scores_dataset.data.shape,
+                n_observations,
+                actual_n_components,
+            )
+        if loadings_dataset.data.shape != (actual_n_components, n_features):
+            logger.warning(
+                "PCA loadings shape %s != expected (%s, %s) — SCP API may have changed",
+                loadings_dataset.data.shape,
+                actual_n_components,
+                n_features,
+            )
 
         attach_evaluation(
             scores_dataset,

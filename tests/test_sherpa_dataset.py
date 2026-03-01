@@ -1491,6 +1491,16 @@ class TestSCPAdapter:
         ds = from_nddataset(mock)
         assert ds.get_extra("scp.custom") == "value"
 
+    def test_from_nddataset_preserves_name_as_title(self):
+        """When NDDataset.title is '<untitled>', fall back to .name."""
+        from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
+
+        mock = self._make_mock_nddataset()
+        mock.title = "<untitled>"
+        mock.name = "Corn MP5 NIR"
+        ds = from_nddataset(mock)
+        assert ds.title == "Corn MP5 NIR"
+
     def test_from_nddataset_domain_inference(self):
         from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
 

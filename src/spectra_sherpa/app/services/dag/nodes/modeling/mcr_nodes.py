@@ -26,6 +26,9 @@ from .core_utils import (
     create_spectral_dataset as _create_spectral_dataset,
 )
 from .core_utils import (
+    ensure_orientation as _ensure_orientation,
+)
+from .core_utils import (
     is_sequential_numeric as _is_sequential_numeric,
 )
 from .core_utils import (
@@ -134,7 +137,7 @@ class MCRNode(Node):
                 type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Concentrations",
-                description="Resolved concentration profiles (C) as NDDataset with sample/component axes",
+                description="Resolved concentration profiles (C) with sample/component axes",
             ),
             PortMetadata(
                 name="St",
@@ -219,10 +222,20 @@ class MCRNode(Node):
 
         # Extract results using typed extractor
         extracted = MCRExtract.from_scp(mcr)
-        C_data = extracted.C
-        St_data = extracted.St
+        C_data = _ensure_orientation(
+            extracted.C,
+            expected_rows=n_samples,
+            expected_cols=n_components,
+            name="MCR.C",
+        )
+        St_data = _ensure_orientation(
+            extracted.St,
+            expected_rows=n_components,
+            expected_cols=n_features,
+            name="MCR.St",
+        )
 
-        # Get input coordinates for NDDataset creation
+        # Get input coordinates for SherpaDataset creation
         # Use generic accessors to support all axis types (TimeAxis, SampleAxis, etc.)
         _x_coord = input_ds.get_feature_axis()
         _y_coord = input_ds.get_observation_axis()
@@ -269,7 +282,7 @@ class MCRNode(Node):
         spectrum_labels = species_names or [f"Pure Spectrum {i+1}" for i in range(n_components)]
 
         # =====================================================================
-        # Create proper NDDataset objects for St and C with coordinate coupling
+        # Create SherpaDataset objects for St and C with coordinate coupling
         # This enables "smart array" behavior - slicing data also slices axes
         # =====================================================================
 
@@ -293,7 +306,7 @@ class MCRNode(Node):
             title="MCR-ALS Concentration Profiles",
         )
 
-        # Compute residuals as NDDataset
+        # Compute residuals as SherpaDataset
         reconstructed = C_data @ St_data
         residuals_data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64) - reconstructed
         residuals_dataset = _create_spectral_dataset(
@@ -304,7 +317,7 @@ class MCRNode(Node):
             title="MCR-ALS Residuals",
         )
 
-        # Add processing history to NDDataset outputs
+        # Add processing history to SherpaDataset outputs
         copy_processing_history(input_ds, C_dataset)
         add_processing_step(
             C_dataset,
@@ -332,6 +345,7 @@ class MCRNode(Node):
         # Store only scientific metadata that coordinates can't carry
         C_dataset.meta.update(
             {
+                "type": "MCR_ALS",
                 "n_components": n_components,
                 "label_categories": label_categories,
                 "species_names": species_names,
@@ -339,9 +353,9 @@ class MCRNode(Node):
         )
 
         return {
-            "default": C_dataset,  # NDDataset: concentration profiles + sample labels (y) + component coords (x)
+            "default": C_dataset,  # SherpaDataset: concentration profiles (n_samples, n_components)
             "C": C_dataset,  # Alias for concentrations
-            "St": St_dataset,  # NDDataset: pure spectra + wavenumbers (x) + component coords (y)
-            "residuals": residuals_dataset,  # NDDataset: residuals
+            "St": St_dataset,  # SherpaDataset: pure spectra (n_components, n_features)
+            "residuals": residuals_dataset,  # SherpaDataset: residuals (n_samples, n_features)
             "model": mcr,  # Model port
         }

@@ -10,7 +10,7 @@ exit-node results are returned.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import numpy as np
@@ -21,11 +21,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session
-from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset
+from spectra_sherpa.app.lib.scp_compat import HAS_SCP
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, SpectralAxis
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
-
-HAS_NDDATASET = HAS_SCP
 
 router = APIRouter(prefix="/workflows")
 
@@ -87,7 +86,7 @@ async def predict(
     1. Load the saved workflow (nodes + edges) from DB.
     2. Build a DAGExecutor with the full pipeline.
     3. Detect entry nodes (data.*) and exit nodes (no outgoing edges).
-    4. Convert ``payload.data`` to an NDDataset and inject it into every
+    4. Convert ``payload.data`` to a SherpaDataset and inject it into every
        entry node.
     5. Execute the rest of the DAG (entry nodes are skipped as cached).
     6. Collect and serialize only exit-node results.
@@ -97,10 +96,10 @@ async def predict(
         422 — Shape mismatch between data and wavenumbers
         500 — Execution error
     """
-    if not HAS_NDDATASET:
+    if not HAS_SCP:
         raise HTTPException(
             status_code=500,
-            detail="SpectroChemPy is not installed — prediction requires NDDataset support.",
+            detail="SpectroChemPy is not installed — prediction requires SCP support.",
         )
 
     # --- 1. Load workflow ------------------------------------------------
@@ -143,12 +142,11 @@ async def predict(
                 ),
             )
 
-    # --- 3. Build NDDataset from payload ---------------------------------
-    dataset = NDDataset(data_array)
+    # --- 3. Build SherpaDataset from payload ------------------------------
+    feature_axis = None
     if payload.wavenumbers is not None:
-        from spectra_sherpa.app.lib.scp_compat import Coord
-
-        dataset.set_coordset(x=Coord(payload.wavenumbers, title="Wavenumbers"))
+        feature_axis = SpectralAxis(values=np.asarray(payload.wavenumbers), title="Wavenumbers")
+    dataset = SherpaDataset(X=data_array, feature_axis=feature_axis)
 
     # --- 4. Build DAGExecutor --------------------------------------------
     from spectra_sherpa.app.services.dag import (
@@ -218,5 +216,5 @@ async def predict(
         results=serialized,
         terminal_node_ids=exit_nodes,
         integrity_hash=workflow.integrity_hash,
-        executed_at=datetime.utcnow().isoformat(),
+        executed_at=datetime.now(timezone.utc).isoformat(),
     )

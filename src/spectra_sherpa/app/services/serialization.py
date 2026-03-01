@@ -60,8 +60,14 @@ def serialize_result(obj: Any, *, owner_user_id: int | None = None) -> Any:
     if isinstance(obj, SherpaDataset):
         return serialize_for_api(obj, sanitize_paths=settings.sanitize_paths, owner_user_id=owner_user_id)
 
-    # 1b. NDDataset — primary path for SCP spectral data
+    # 1b. NDDataset — convert to SherpaDataset first, then serialize
     if HAS_NDDATASET and isinstance(obj, NDDataset):
+        import logging
+
+        logging.getLogger(__name__).warning("NDDataset reached serialize_result — converting to SherpaDataset")
+        from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
+
+        obj = from_nddataset(obj)
         return serialize_for_api(obj, sanitize_paths=settings.sanitize_paths, owner_user_id=owner_user_id)
 
     # 2. Non-serializable model objects (sklearn, spectrochempy)
@@ -86,6 +92,10 @@ def serialize_result(obj: Any, *, owner_user_id: int | None = None) -> Any:
             # object that may have .transform/.fit attributes, which would incorrectly
             # trigger the model placeholder path.
             if isinstance(v, SherpaDataset) or (HAS_NDDATASET and isinstance(v, NDDataset)):
+                if HAS_NDDATASET and isinstance(v, NDDataset):
+                    from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
+
+                    v = from_nddataset(v)
                 result_dict[k] = serialize_for_api(
                     v, sanitize_paths=settings.sanitize_paths, owner_user_id=owner_user_id
                 )
@@ -99,6 +109,10 @@ def serialize_result(obj: Any, *, owner_user_id: int | None = None) -> Any:
                 serialized_models = {}
                 for model_key, model_val in v.items():
                     if isinstance(model_val, SherpaDataset) or (HAS_NDDATASET and isinstance(model_val, NDDataset)):
+                        if HAS_NDDATASET and isinstance(model_val, NDDataset):
+                            from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
+
+                            model_val = from_nddataset(model_val)
                         serialized_models[model_key] = serialize_for_api(
                             model_val, sanitize_paths=settings.sanitize_paths, owner_user_id=owner_user_id
                         )

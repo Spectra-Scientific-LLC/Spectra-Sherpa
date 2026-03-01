@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import numpy as np
+from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
 
 from ...io_contracts import (
     bind_X,
@@ -20,12 +20,21 @@ from ...node_base import (
     register_node,
 )
 from .core_utils import (
+    create_spectral_dataset as _create_spectral_dataset,
+)
+from .core_utils import (
+    ensure_orientation as _ensure_orientation,
+)
+from .core_utils import (
     is_sequential_numeric as _is_sequential_numeric,
+)
+from .core_utils import (
+    make_safe_coord as _make_safe_coord,
 )
 
 logger = logging.getLogger(__name__)
 
-from spectra_sherpa.app.lib.adapters.scp_extractors import SIMPLISMAExtract, _unwrap_to_numpy
+from spectra_sherpa.app.lib.adapters.scp_extractors import SIMPLISMAExtract
 from spectra_sherpa.app.lib.scp_compat import scp, to_nddataset
 
 
@@ -177,122 +186,125 @@ class SIMPLISMANode(Node):
 
         # Extract results using typed extractor
         extracted = SIMPLISMAExtract.from_scp(simplisma)
-        C_data = extracted.C
-        St_data = extracted.St
+        C_data = _ensure_orientation(
+            extracted.C,
+            expected_rows=n_samples,
+            expected_cols=n_components,
+            name="SIMPLISMA.C",
+        )
+        St_data = _ensure_orientation(
+            extracted.St,
+            expected_rows=n_components,
+            expected_cols=n_features,
+            name="SIMPLISMA.St",
+        )
         purities = extracted.purities
 
-        # Get wavenumber axis from input if available
-        wavenumbers = None
-        _x_coord = input_ds.feature_axis
-        if _x_coord is not None:
-            try:
-                wavenumbers = _unwrap_to_numpy(_x_coord, name="wavenumbers").astype(np.float64).tolist()
-            except Exception:
-                pass
-
-        # Get time axis from input if available
-        times = None
-        _y_coord = input_ds.sample_axis
-        if _y_coord is not None:
-            try:
-                times = _unwrap_to_numpy(_y_coord, name="times").astype(np.float64).tolist()
-            except Exception:
-                pass
-        if times is None:
-            # Use sample indices as time points
-            times = list(range(n_samples))
+        # Get input coordinates for dataset creation
+        _x_coord = input_ds.get_feature_axis()
+        _y_coord = input_ds.get_observation_axis()
 
         logger.debug("[SIMPLISMA Node] Decomposition completed successfully")
         logger.debug("  - C shape: %s", C_data.shape)
         logger.debug("  - St shape: %s", St_data.shape)
 
-        # Extract sample labels from input data for categorical coloring
-        sample_labels = None
+        # Extract label_categories for categorical coloring
         label_categories = None
-
         if _y_coord is not None:
-            if hasattr(_y_coord, "labels") and _y_coord.labels is not None:
-                try:
-                    labels = _y_coord.labels
-                    raw = labels.tolist() if hasattr(labels, "tolist") else list(labels)
-                    # Convert ALL labels to native Python str — avoids numpy StrDType
-                    # ufunc errors when sorting/comparing numpy string scalars
-                    sample_labels = [str(l) for l in raw]
-                    label_categories = sorted(set(sample_labels))
-                    logger.debug(
-                        "[SIMPLISMA Node] Extracted %s sample labels with %s unique categories",
-                        len(sample_labels),
-                        len(label_categories),
-                    )
-                except Exception as e:
-                    logger.warning(
-                        "[SIMPLISMA Node] Could not extract categorical labels from y.labels: %s", e, exc_info=True
-                    )
-                    sample_labels = None
-                    label_categories = None
+            try:
+                if hasattr(_y_coord, "labels") and _y_coord.labels is not None:
+                    raw = _y_coord.labels.tolist() if hasattr(_y_coord.labels, "tolist") else list(_y_coord.labels)
+                    label_categories = sorted(set(str(l) for l in raw))
+                elif hasattr(_y_coord, "data") and _y_coord.data is not None:
+                    raw = _y_coord.data.tolist() if hasattr(_y_coord.data, "tolist") else list(_y_coord.data)
+                    str_labels = [str(l) for l in raw]
+                    unique = sorted(set(str_labels))
+                    if len(unique) < 20 and not _is_sequential_numeric(raw):
+                        label_categories = unique
+            except Exception:
+                label_categories = None
 
-            if sample_labels is None and hasattr(_y_coord, "data") and _y_coord.data is not None:
-                try:
-                    # Fallback: use y-axis data as numeric labels
-                    y_data = _y_coord.data
-                    raw = y_data.tolist() if hasattr(y_data, "tolist") else list(y_data)
-                    sample_labels = [str(l) for l in raw]
+        # Try to extract species names from input metadata (from BlendNode ground truth)
+        species_names = None
+        if hasattr(input_ds, "meta") and input_ds.meta:
+            spectra_meta = input_ds.meta.get("spectra", {})
+            if isinstance(spectra_meta, dict):
+                species_list = spectra_meta.get("species", [])
+                if species_list and len(species_list) >= n_components:
+                    try:
+                        names = []
+                        for spec in species_list[:n_components]:
+                            if isinstance(spec, dict):
+                                names.append(spec.get("name", f"Species {len(names)+1}"))
+                            elif hasattr(spec, "name"):
+                                names.append(spec.name)
+                            else:
+                                names.append(f"Species {len(names)+1}")
+                        species_names = names
+                    except Exception:
+                        pass
 
-                    # For numeric data, only treat as categorical if:
-                    # 1. Reasonable number of unique values (< 20)
-                    # 2. NOT a sequential series (e.g., not time indices or temperature series)
-                    unique_values = sorted(set(sample_labels))
-                    if len(unique_values) < 20 and not _is_sequential_numeric(raw):
-                        label_categories = unique_values
-                        logger.debug(
-                            "[SIMPLISMA Node] Using numeric y.data as categorical labels: %s categories",
-                            len(label_categories),
-                        )
-                except Exception as e:
-                    logger.warning(
-                        "[SIMPLISMA Node] Could not extract categorical labels from y.data: %s", e, exc_info=True
-                    )
-                    sample_labels = None
-                    label_categories = None
+        # Use species names if available, otherwise use generic labels
+        component_labels = species_names or [f"Component {i+1}" for i in range(n_components)]
+        spectrum_labels = species_names or [f"Pure Spectrum {i+1}" for i in range(n_components)]
 
-        # If no labels found, generate default sample labels
-        if sample_labels is None:
-            sample_labels = [f"Sample {i+1}" for i in range(n_samples)]
+        # =====================================================================
+        # Create SherpaDataset objects for St and C with coordinate coupling
+        # Same pattern as MCRNode (same C/St decomposition structure)
+        # =====================================================================
+
+        # St (Pure Spectra): shape (n_components, n_features)
+        St_dataset = _create_spectral_dataset(
+            data=St_data,
+            x_coord=_x_coord,
+            y_coord=_make_safe_coord(spectrum_labels, title="Component"),
+            units=input_ds.units if hasattr(input_ds, "units") else None,
+            title="SIMPLISMA Pure Component Spectra",
+        )
+
+        # C (Concentrations): shape (n_samples, n_components)
+        C_dataset = _create_spectral_dataset(
+            data=C_data,
+            x_coord=_make_safe_coord(component_labels, title="Component"),
+            y_coord=_y_coord,
+            units="relative concentration",
+            title="SIMPLISMA Concentration Profiles",
+        )
+
+        # Add processing history
+        copy_processing_history(input_ds, C_dataset)
+        add_processing_step(
+            C_dataset,
+            "model.simplisma.concentrations",
+            {"n_components": n_components},
+            node_id=self.node_id,
+        )
+
+        copy_processing_history(input_ds, St_dataset)
+        add_processing_step(
+            St_dataset,
+            "model.simplisma.spectra",
+            {"n_components": n_components},
+            node_id=self.node_id,
+        )
+
+        # Store scientific metadata that coordinates can't carry
+        C_dataset.meta.update(
+            {
+                "type": "SIMPLISMA",
+                "n_components": n_components,
+                "label_categories": label_categories,
+                "species_names": species_names,
+            }
+        )
 
         # Purity values extracted by SIMPLISMAExtract
         purity_list = purities.tolist() if purities is not None else []
 
         return {
-            "model": simplisma,
-            "concentrations": C_data.tolist(),
-            "spectra": St_data.tolist(),
-            "purity_values": purity_list,
-            "C": C_data.tolist(),  # Concentration profiles (n_samples, n_components)
-            "St": St_data.tolist(),  # Pure spectra (n_components, n_features)
-            "n_components": n_components,
-            "n_samples": n_samples,
-            "n_features": n_features,
-            # Primary data for visualization - concentration profiles
-            "data": C_data.tolist(),
-            "metadata": {
-                "type": "SIMPLISMA",
-                "output_type": "decomposition",
-                "n_components": n_components,
-                "n_samples": n_samples,
-                "n_features": n_features,
-                # Labels for concentration columns
-                "labels": [f"Component {i+1}" for i in range(n_components)],
-                # X-axis for C plot (time/sample index)
-                "x_axis": times,
-                "x_label": "Time / Sample Index",
-                "y_label": "Relative Concentration",
-                # Wavenumbers for St plot
-                "wavenumbers": wavenumbers,
-                # Additional data for St visualization
-                "St": St_data.tolist(),
-                "St_labels": [f"Pure Spectrum {i+1}" for i in range(n_components)],
-                # Sample labels for categorical coloring
-                "sample_labels": sample_labels,  # List of labels (one per sample)
-                "label_categories": label_categories,  # List of unique categories (None if no categorical labels)
-            },
+            "default": C_dataset,  # SherpaDataset: concentrations + sample labels (y) + component coords (x)
+            "concentrations": C_dataset,  # Alias
+            "spectra": St_dataset,  # SherpaDataset: pure spectra + wavenumbers (x) + component coords (y)
+            "model": simplisma,  # Model port
+            "purity_values": purity_list,  # Plain list (1D diagnostic)
         }
