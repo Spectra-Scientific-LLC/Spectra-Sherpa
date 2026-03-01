@@ -20,7 +20,7 @@ from typing import Any, List
 import numpy as np
 
 from spectra_sherpa.app.lib.scp_compat import NDDataset
-from spectra_sherpa.app.lib.sherpa_dataset import AxisInfo
+from spectra_sherpa.app.lib.sherpa_dataset import SampleAxis
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
 
 from ..io_contracts import (
@@ -202,7 +202,7 @@ class LinearCalibrationNode(Node):
             title=f"{spectrum_ds.title}_linear",
         )
         result.x = spec_x_coord.copy()
-        result.y = AxisInfo(values=np.arange(len(concentrations_array)), title="Sample Index")
+        result.y = SampleAxis(values=np.arange(len(concentrations_array)), title="Sample Index")
 
         result.meta["calibration_model"] = "linear"
         result.meta["concentrations"] = concentrations_array.tolist()
@@ -396,7 +396,7 @@ class SaturationModelNode(Node):
             title=f"{spectrum_ds.title}_saturation",
         )
         result.x = spec_x_coord.copy()
-        result.y = AxisInfo(values=np.arange(len(concentrations_array)), title="Sample Index")
+        result.y = SampleAxis(values=np.arange(len(concentrations_array)), title="Sample Index")
 
         result.meta["calibration_model"] = "saturation"
         result.meta["concentrations"] = concentrations_array.tolist()

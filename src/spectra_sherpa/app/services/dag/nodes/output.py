@@ -110,8 +110,17 @@ class PlotNode(Node):
                 label="Plot Type",
                 param_type="select",
                 default="spectra",
-                options=["spectra", "scores", "biplot", "loadings", "scatter"],
+                options=["spectra", "contour", "heatmap", "scores", "biplot", "loadings", "scatter"],
                 description="Type of plot to generate",
+                required=False,
+            ),
+            NodeParameter(
+                name="colorscale",
+                label="Color Scale",
+                param_type="select",
+                default="Viridis",
+                options=["Viridis", "Hot", "RdBu", "Blues", "Greys", "Jet", "Spectral"],
+                description="Color scale for contour/heatmap plots",
                 required=False,
             ),
             NodeParameter(
@@ -173,6 +182,9 @@ class PlotNode(Node):
 
         # Handle NDDataset / SherpaDataset input
         if isinstance(input_data, SherpaDataset):
+            if plot_type in ("contour", "heatmap"):
+                colorscale = self.parameters.get("colorscale", "Viridis")
+                return self._plot_contour(input_data, plot_type, colorscale)
             return self._plot_spectra(input_data)
 
         # Handle dict input (e.g., from PCA node)
@@ -228,15 +240,30 @@ class PlotNode(Node):
         if data.ndim == 1:
             data = data.reshape(1, -1)
 
-        # Create trace for each spectrum/sample
-        for i in range(min(data.shape[0], 50)):  # Limit to 50 spectra
+        # Get sample labels from observation axis if available
+        sample_labels = None
+        obs_axis = dataset.get_observation_axis()
+        if obs_axis is not None and getattr(obs_axis, "labels", None) is not None:
+            sample_labels = list(obs_axis.labels)
+
+        # Create trace for each spectrum/sample (cap at 50 to avoid browser overload)
+        max_traces = 50
+        n_samples = data.shape[0]
+        if n_samples > max_traces:
+            # Evenly-spaced subsample to keep representative coverage
+            indices = np.linspace(0, n_samples - 1, max_traces, dtype=int)
+        else:
+            indices = range(n_samples)
+
+        for i in indices:
+            name = sample_labels[i] if sample_labels and i < len(sample_labels) else f"Sample {i+1}"
             traces.append(
                 {
                     "x": x_data,
                     "y": data[i].tolist(),
                     "type": "scatter",
                     "mode": "lines",
-                    "name": f"Sample {i+1}",
+                    "name": name,
                 }
             )
 
@@ -247,6 +274,76 @@ class PlotNode(Node):
                 "layout": {
                     "title": dataset.title if hasattr(dataset, "title") and dataset.title else "Data Plot",
                     "xaxis": x_axis_config,
+                    "yaxis": {"title": y_label},
+                },
+            }
+        }
+
+    def _plot_contour(self, dataset: Any, plot_type: str, colorscale: str) -> Dict[str, Any]:
+        """Generate contour/heatmap plot from SherpaDataset."""
+        data = np.array(dataset.data)
+        if data.ndim == 1:
+            data = data.reshape(1, -1)
+
+        # X-axis (feature axis — wavelength, wavenumber, etc.)
+        x_coord = dataset.feature_axis
+        if x_coord is not None:
+            x_data = x_coord.data.tolist()
+            x_info = get_axis_display_info(x_coord)
+            x_label = x_info["label"]
+            should_reverse_x = x_info["should_reverse"]
+        else:
+            x_data = list(range(data.shape[1]))
+            x_label = "Feature"
+            should_reverse_x = False
+
+        # Y-axis (sample axis)
+        y_coord = dataset.get_observation_axis()
+        if y_coord is not None and y_coord.data is not None:
+            y_data = np.array(y_coord.data).tolist()
+            y_info = get_axis_display_info(y_coord)
+            y_label = y_info["label"]
+        elif y_coord is not None and getattr(y_coord, "labels", None) is not None:
+            y_data = list(range(len(y_coord.labels)))
+            y_info = get_axis_display_info(y_coord)
+            y_label = y_info["label"]
+        else:
+            y_data = list(range(data.shape[0]))
+            y_label = "Sample"
+
+        z_title = str(dataset.units) if dataset.units and str(dataset.units) != "dimensionless" else "Response"
+        title = dataset.title if hasattr(dataset, "title") and dataset.title else "Data Plot"
+
+        if plot_type == "contour":
+            trace = {
+                "x": x_data,
+                "y": y_data,
+                "z": data.tolist(),
+                "type": "contour",
+                "colorscale": colorscale,
+                "contours": {"coloring": "heatmap", "showlabels": True},
+                "colorbar": {"title": z_title},
+            }
+        else:
+            trace = {
+                "x": x_data,
+                "y": y_data,
+                "z": data.tolist(),
+                "type": "heatmap",
+                "colorscale": colorscale,
+                "colorbar": {"title": z_title},
+            }
+
+        return {
+            "visualization": {
+                "plot_type": plot_type,
+                "data": [trace],
+                "layout": {
+                    "title": title,
+                    "xaxis": {
+                        "title": x_label,
+                        "autorange": "reversed" if should_reverse_x else True,
+                    },
                     "yaxis": {"title": y_label},
                 },
             }
@@ -1053,8 +1150,13 @@ class ContourPlotNode(Node):
             auto_reverse_x = False
 
         y_coord = dataset.get_observation_axis()
-        if y_coord is not None:
+        if y_coord is not None and y_coord.data is not None:
             y_data = np.array(y_coord.data).tolist()
+            y_info = get_axis_display_info(y_coord)
+            y_title = y_info["title"]
+            y_units = y_info["units"]
+        elif y_coord is not None and getattr(y_coord, "labels", None) is not None:
+            y_data = list(range(len(y_coord.labels)))
             y_info = get_axis_display_info(y_coord)
             y_title = y_info["title"]
             y_units = y_info["units"]
@@ -1088,7 +1190,7 @@ class ContourPlotNode(Node):
             x_units=x_units,
             y_title=y_title,
             y_units=y_units,
-            z_title=str(dataset.units) if dataset.units else "Intensity",
+            z_title=str(dataset.units) if dataset.units and str(dataset.units) != "dimensionless" else "Response",
         )
         return {"visualization": plot_data}
 

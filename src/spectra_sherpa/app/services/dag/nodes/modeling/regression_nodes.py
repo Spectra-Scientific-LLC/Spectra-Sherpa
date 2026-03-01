@@ -19,6 +19,7 @@ from ...io_contracts import (
     attach_evaluation,
     bind_X,
     bind_y,
+    resolve_target_names,
     to_numpy_1d,
     to_numpy_2d,
 )
@@ -149,6 +150,9 @@ class PCRNode(Node):
             dataset_error_message="X must be an dataset object",
             allow_array=True,
         )
+        # Resolve target names BEFORE bind_y strips dataset metadata
+        _resolved_target_names = resolve_target_names(y, X_ds)
+
         y_value = bind_y(
             y,
             X=X_ds,
@@ -261,11 +265,7 @@ class PCRNode(Node):
             node_id=self.node_id,
         )
 
-        # Get target names from X_ds.target_context
-        target_names = None
-        tc = X_ds.target_context
-        if tc is not None and tc.target_names:
-            target_names = tc.target_names
+        target_names = _resolved_target_names
 
         # Store only scientific metadata that coordinates can't carry
         scores_dataset.meta.update(

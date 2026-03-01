@@ -300,7 +300,7 @@ class PeakFindingNode(Node):
             x_units.lower() in ("cm⁻¹", "cm-1", "1/cm")
         )
         x_label = f"{x_title} ({x_units})" if x_units else x_title
-        y_label = y_title or y_units or "Intensity"
+        y_label = y_title or y_units or "Response"
 
         total_peaks = 0
 

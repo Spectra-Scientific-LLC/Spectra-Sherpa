@@ -2614,24 +2614,41 @@ const openInNewTab = () => {
     toPort: edge.toPort || 'default',
   }));
 
-  const buildNodeDetailData = (includeData: boolean) => {
+  // detail level: "full" = all data+ports, "primary" = data+metadata only, "minimal" = no data
+  const buildNodeDetailData = (level: "full" | "primary" | "minimal") => {
     if (!props.selectedNode) return null;
-    // Strip large metadata fields when data is excluded to avoid sessionStorage quota
+    const includeData = level !== "minimal";
+    const includePorts = level === "full";
+
+    // Strip large metadata fields to avoid sessionStorage quota.
+    // Visualization nodes (output.*) embed Plotly traces in metadata.data
+    // which duplicates the top-level data array — strip it in non-full tiers.
     let metadata = outputMetadata.value;
-    if (!includeData && metadata) {
+    const nt = props.selectedNode.type;
+    if (level !== "full" && metadata && nt.startsWith("output.")) {
+      const lightMetadata = { ...metadata };
+      delete lightMetadata.data; // Plotly traces (duplicated in output.data)
+      metadata = lightMetadata;
+    }
+    if (level === "minimal" && metadata) {
       const lightMetadata = { ...metadata };
       // Remove large arrays from PCA metadata (loadings can be very large)
-      if (metadata.type === 'model.pca' || props.selectedNode.type.includes('pca')) {
+      if (nt.includes('pca')) {
         delete lightMetadata.loadings;
         delete lightMetadata.wavenumbers;
-        // Keep essential metadata like n_components, pc_labels, explained_variance_ratio
       }
-      // Remove large arrays from other decomposition methods
-      if (typeof metadata.type === "string" && ['model.simplisma', 'model.nmf', 'model.ica', 'model.mcr_als'].includes(metadata.type)) {
+      // Remove large arrays from decomposition methods
+      if (['model.simplisma', 'model.nmf', 'model.ica', 'model.mcr_als'].includes(nt)) {
         delete lightMetadata.St;
         delete lightMetadata.H;
         delete lightMetadata.A;
         delete lightMetadata.wavenumbers;
+        delete lightMetadata.spectral_wavenumbers;
+      }
+      // For visualization nodes, trace data has already been removed above;
+      // drop remaining large fields but keep layout and plot_type.
+      if (nt.startsWith("output.")) {
+        delete lightMetadata.data;
       }
       metadata = lightMetadata;
     }
@@ -2642,10 +2659,13 @@ const openInNewTab = () => {
       label: getNodeLabel(props.selectedNode.type),
       params: { ...localParams.value },
       output: props.nodeOutput ? {
-        data: includeData ? props.nodeOutput.data : null,
+        // For output.* nodes in reduced tiers, top-level data duplicates
+        // the Plotly traces already stripped from metadata — omit it too.
+        data: (includeData && !(level !== "full" && nt.startsWith("output.")))
+          ? props.nodeOutput.data : null,
         metadata: metadata,
         plots: props.nodeOutput.plots || null,
-        ports: includeData ? (props.nodeOutput.ports || null) : null,
+        ports: includePorts ? (props.nodeOutput.ports || null) : null,
         primary_port: props.nodeOutput.primary_port || null,
       } : null,
       // Include input connections with their data
@@ -2659,15 +2679,21 @@ const openInNewTab = () => {
     };
   };
 
-  // Store in sessionStorage for the new tab to read
+  // Store in sessionStorage for the new tab to read.
+  // Three tiers: full (all ports), primary (data+metadata only), minimal (no data).
+  // Multi-port nodes (MCR-ALS, PCA, PLS) often exceed the ~5 MB sessionStorage
+  // quota when secondary ports carry large matrices (residuals, loadings).
   try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(buildNodeDetailData(true)));
-  } catch (error) {
-    // Fallback: drop large arrays to avoid quota errors
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(buildNodeDetailData("full")));
+  } catch {
     try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(buildNodeDetailData(false)));
-    } catch (fallbackError) {
-      console.error('[WorkflowInspector] Failed to store node detail data:', fallbackError);
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(buildNodeDetailData("primary")));
+    } catch {
+      try {
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(buildNodeDetailData("minimal")));
+      } catch (fallbackError) {
+        console.error('[WorkflowInspector] Failed to store node detail data:', fallbackError);
+      }
     }
   }
 

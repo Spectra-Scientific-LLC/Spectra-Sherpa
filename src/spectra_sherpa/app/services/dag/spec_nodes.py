@@ -20,6 +20,8 @@ from typing import Any, Callable, Dict, List, Optional, Type
 
 import numpy as np
 
+from spectra_sherpa.app.lib.sherpa_dataset import TargetContext
+
 from .export_helpers import (
     extract_data_lines,
     format_kwargs,
@@ -32,6 +34,7 @@ from .io_contracts import (
     bind_y,
     build_dataset_like,
     coerce_to_sherpa,
+    resolve_target_names,
     to_numpy_1d,
     to_numpy_2d,
 )
@@ -300,6 +303,17 @@ class EstimatorSpecNode(Node):
             missing_message=f"{self.metadata.label}: missing required input X",
             allow_array=True,
         )
+        # Resolve target names BEFORE bind_y strips dataset metadata.
+        # Enrich X_ds.target_context so post_fit hooks can read from it.
+        _resolved_target_names = resolve_target_names(y, X_ds)
+        if _resolved_target_names:
+            tc = X_ds.target_context
+            if tc is None or not tc.target_names:
+                X_ds.target_context = TargetContext(
+                    target_type=tc.target_type if tc else "continuous",
+                    target_names=_resolved_target_names,
+                )
+
         y_value = bind_y(
             y,
             X=X_ds,

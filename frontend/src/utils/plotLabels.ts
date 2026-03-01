@@ -84,11 +84,9 @@ export function getLoadingsXAxisLabel(metadata?: PlotMetadata | null): string {
     return buildAxisLabel(metadata.x_title, metadata.loadings_axis_units, "Feature");
   }
 
-  // If we have wavenumbers, it's spectral data
+  // If we have wavenumbers, use axis metadata (could be wavenumber OR wavelength etc.)
   if (metadata.wavenumbers && metadata.wavenumbers.length > 0) {
-    return metadata.x_units
-      ? `${metadata.x_title || "Wavenumber"} (${metadata.x_units})`
-      : metadata.x_title || "Wavenumber (cm⁻¹)";
+    return buildAxisLabel(metadata.x_title, metadata.x_units, "Feature");
   }
 
   // If we have feature names, it's tabular data
@@ -101,7 +99,7 @@ export function getLoadingsXAxisLabel(metadata?: PlotMetadata | null): string {
 
 /**
  * Detect if data is spectral based on metadata.
- * Used to determine if X-axis should be reversed.
+ * Note: This does NOT determine reversal — only wavenumber data should be reversed.
  */
 export function isSpectralData(metadata?: PlotMetadata | null): boolean {
   if (!metadata) return false;

@@ -342,13 +342,34 @@ class MCRNode(Node):
             node_id=self.node_id,
         )
 
-        # Store only scientific metadata that coordinates can't carry
+        # Store scientific metadata + embed St/wavenumber data for detailed view plots
+        wavenumbers = None
+        x_title = None
+        x_units = None
+        if _x_coord is not None:
+            try:
+                wavenumbers = np.array(_x_coord.data).tolist()
+            except Exception:
+                pass
+            x_title = getattr(_x_coord, "title", None)
+            x_units = str(_x_coord.units) if getattr(_x_coord, "units", None) else None
+
+        # NOTE: Keys "wavenumbers", "x_title", "x_units" are OVERWRITTEN by
+        # _serialize_sherpa_dataset() with C_dataset's own feature axis (component
+        # indices).  Use "spectral_" prefix so the original input wavenumbers
+        # survive serialization and are available for St plots.
         C_dataset.meta.update(
             {
                 "type": "MCR_ALS",
                 "n_components": n_components,
                 "label_categories": label_categories,
                 "species_names": species_names,
+                "labels": component_labels,
+                "St": St_data.tolist(),
+                "St_labels": spectrum_labels,
+                "spectral_wavenumbers": wavenumbers,
+                "spectral_x_title": x_title,
+                "spectral_x_units": x_units,
             }
         )
 

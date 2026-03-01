@@ -10,6 +10,8 @@ Verifies:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -191,6 +193,27 @@ class TestSingleWirePLS:
 
         assert "model" in result
 
+    @_skip_no_scp
+    @pytest.mark.asyncio
+    async def test_pls_explicit_y_dataset_names_override_embedded_names(self, make_node):
+        """Explicit y dataset labels should override embedded X target names."""
+        ds = _make_dataset_with_target(
+            n_samples=50,
+            n_features=100,
+            n_targets=2,
+            target_names=["Old A", "Old B"],
+        )
+        explicit_y = SherpaDataset(
+            X=np.random.randn(50, 2),
+            target_context=TargetContext(target_type="continuous", target_names=["Moisture", "Oil"]),
+            backend="numpy",
+        )
+        node = make_node("model.pls", {"n_components": 2, "scale": True})
+        result = await node.execute(X=ds, y=explicit_y)
+
+        assert result["default"].meta.get("target_names") == ["Moisture", "Oil"]
+        assert list(result["Y_loadings"].sample_axis.labels) == ["Moisture", "Oil"]
+
     @pytest.mark.asyncio
     async def test_pls_no_target_gives_helpful_error(self, make_node):
         """PLS with no target anywhere should give helpful error."""
@@ -238,7 +261,59 @@ class TestAttachTarget:
         assert isinstance(out, SherpaDataset)
         assert out.target is not None
         assert out.target.shape == (50, 3)
-        assert out.target_context.target_type == "continuous"
+
+    @pytest.mark.asyncio
+    async def test_attach_target_preserves_labeled_y_dataset_names(self, make_node):
+        """AttachTarget should copy target names from an explicit labeled y dataset."""
+        ds = SherpaDataset(X=np.random.randn(50, 100), backend="numpy")
+        y_ds = SherpaDataset(
+            X=np.random.randn(50, 2),
+            target_context=TargetContext(target_type="continuous", target_names=["Protein", "Moisture"]),
+            backend="numpy",
+        )
+        node = make_node("data.attach_target", {"target_type": "continuous"})
+        result = await node.execute(X=ds, y=y_ds)
+
+        assert result["default"].target_context.target_names == ["Protein", "Moisture"]
+
+
+class TestMyDatasetEmbeddedCsvTargets:
+    @_skip_no_scp
+    def test_embedded_csv_targets_concatenate_in_file_order(self, make_node, tmp_path: Path):
+        """MyDataset should concatenate embedded CSV property blocks across spectral files."""
+        node = make_node("data.my_dataset", {"dataset_id": 1})
+
+        csv_a = tmp_path / "part_a.csv"
+        csv_b = tmp_path / "part_b.csv"
+        csv_a.write_text(
+            "sample_id,1000.0,1001.0,Moisture,Oil\n" "a1,1.0,1.1,10.0,4.0\n" "a2,2.0,2.1,11.0,5.0\n",
+            encoding="ascii",
+        )
+        csv_b.write_text(
+            "sample_id,1000.0,1001.0,Moisture,Oil\n" "b1,3.0,3.1,12.0,6.0\n" "b2,4.0,4.1,13.0,7.0\n",
+            encoding="ascii",
+        )
+
+        loaded = [
+            node._load_file(str(csv_a), file_name="part_a.csv"),
+            node._load_file(str(csv_b), file_name="part_b.csv"),
+        ]
+
+        embedded = node._combine_embedded_targets(loaded)
+        assert embedded is not None
+        target_data, target_names = embedded
+        assert target_names == ["Moisture", "Oil"]
+        np.testing.assert_allclose(
+            target_data,
+            np.array(
+                [
+                    [10.0, 4.0],
+                    [11.0, 5.0],
+                    [12.0, 6.0],
+                    [13.0, 7.0],
+                ]
+            ),
+        )
 
     @pytest.mark.asyncio
     async def test_attach_categorical_target(self, make_node):

@@ -19,6 +19,7 @@ from ...io_contracts import (
     attach_evaluation,
     bind_X,
     bind_y,
+    resolve_target_names,
     to_numpy_y,
 )
 from ...node_base import (
@@ -160,6 +161,9 @@ class PLSNode(Node):
             dataset_error_message="X must be an dataset or array-like object",
             allow_array=True,
         )
+        # Resolve target names BEFORE bind_y strips dataset metadata
+        _resolved_target_names = resolve_target_names(y, X_ds)
+
         y_value = bind_y(
             y,
             X=X_ds,
@@ -256,10 +260,8 @@ class PLSNode(Node):
                     "r2_per_target": [float(v) for v in r2_per_target],
                     "rmse_per_target": rmse_per_target,
                 }
-            # Add target names from X_ds.target_context
-            tc = X_ds.target_context
-            if tc is not None and tc.target_names:
-                regression_meta["target_names"] = tc.target_names
+            if _resolved_target_names:
+                regression_meta["target_names"] = _resolved_target_names
         except Exception:
             logger.debug("[PLS Node] Could not compute calibration R2/RMSE from predictions", exc_info=True)
 
@@ -352,9 +354,8 @@ class PLSNode(Node):
                 expected_cols=n_components,
                 name="Y_loadings",
             )
-            tc = X_ds.target_context
-            if tc is not None and tc.target_names and len(tc.target_names) == yl.shape[0]:
-                y_target_coord = _make_safe_coord(tc.target_names, title="Target")
+            if _resolved_target_names and len(_resolved_target_names) == yl.shape[0]:
+                y_target_coord = _make_safe_coord(_resolved_target_names, title="Target")
             else:
                 y_target_coord = _make_safe_coord([f"Target {i+1}" for i in range(yl.shape[0])], title="Target")
             Y_loadings_dataset = _create_spectral_dataset(

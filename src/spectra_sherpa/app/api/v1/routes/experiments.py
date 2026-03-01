@@ -146,14 +146,12 @@ async def update_experiment_endpoint(
 @router.delete("/{experiment_id}")
 async def delete_experiment_endpoint(
     experiment_id: int,
-    purge_files: bool = Query(False),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> dict:
     experiment = await _require_experiment(session, experiment_id, current_user.id)
     await delete_experiment(session, experiment)
-    if purge_files:
-        delete_experiment_files(experiment_id)
+    delete_experiment_files(experiment_id)
     return {"status": "deleted"}
 
 

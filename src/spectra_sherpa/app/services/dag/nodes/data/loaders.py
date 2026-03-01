@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -23,6 +24,7 @@ from spectra_sherpa.app.lib.scp_compat import (
     require_scp,
     scp,
 )
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext
 from spectra_sherpa.app.models.spectra_meta import (
     DataProvenance,
     SourceType,
@@ -35,6 +37,14 @@ from ...node_base import Node, NodeMetadata, NodeParameter, PortMetadata, regist
 from ._utils import extract_dataset_from_result, remove_index_columns
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _LoadedDataset:
+    dataset: NDDataset
+    file_name: str
+    embedded_target_names: list[str] | None = None
+    embedded_target_data: np.ndarray | None = None
 
 
 # ============================================================================
@@ -276,12 +286,11 @@ class MyDatasetNode(Node):
         base_dir = settings.data_dir / "experiments" / exp_dir
 
         # Load each file
-        loaded: list[tuple[NDDataset, str]] = []
+        loaded: list[_LoadedDataset] = []
         for rec in file_records:
             full_path = base_dir / rec.file_path
             try:
-                ds = self._load_file(str(full_path))
-                loaded.append((ds, rec.file_path))
+                loaded.append(self._load_file(str(full_path), file_name=rec.file_path))
             except Exception as e:
                 logger.warning(f"[MY_DATASET] Skipping {rec.file_path}: {e}")
 
@@ -293,12 +302,14 @@ class MyDatasetNode(Node):
 
         # Pick the group with the most x-axis points as "spectra",
         # remaining groups become "properties" / target
-        groups.sort(key=lambda g: self._x_length(g[0][0]), reverse=True)
+        groups.sort(key=lambda g: self._x_length(g[0].dataset), reverse=True)
         spectra_group = groups[0]
         prop_groups = groups[1:]
+        embedded_target = self._combine_embedded_targets(spectra_group)
 
         # Stack spectra
-        s_datasets, s_names = zip(*spectra_group)
+        s_datasets = [item.dataset for item in spectra_group]
+        s_names = [item.file_name for item in spectra_group]
         s_datasets, s_names = list(s_datasets), list(s_names)
         spectra = self._concatenate(s_datasets, s_names) if len(s_datasets) > 1 else s_datasets[0]
         spectra.title = f"{exp_name} ({len(s_datasets)} file{'s' if len(s_datasets) != 1 else ''})"
@@ -326,9 +337,9 @@ class MyDatasetNode(Node):
             all_props = []
             all_pnames = []
             for grp in prop_groups:
-                for ds, fn in grp:
-                    all_props.append(ds)
-                    all_pnames.append(fn)
+                for item in grp:
+                    all_props.append(item.dataset)
+                    all_pnames.append(item.file_name)
             target = self._concatenate(all_props, all_pnames) if len(all_props) > 1 else all_props[0]
             target.title = f"{exp_name} properties"
             logger.debug(
@@ -338,6 +349,38 @@ class MyDatasetNode(Node):
         # Convert to SherpaDataset for uniform DAG contract
         spectra_out = from_nddataset(spectra) if isinstance(spectra, NDDataset) else spectra
         target_out = from_nddataset(target) if isinstance(target, NDDataset) else target
+
+        # Embed target into default output for single-wire use (parity with DataSourceNode)
+        # Priority 1: CSV property columns embedded alongside the spectra
+        if embedded_target is not None:
+            embedded_target_data, embedded_target_names = embedded_target
+            spectra_out.target = embedded_target_data
+            spectra_out.target_context = TargetContext(
+                target_type="continuous",
+                target_names=embedded_target_names,
+            )
+            if target_out is None:
+                from spectra_sherpa.app.lib.axes import FeatureAxis
+
+                target_out = SherpaDataset(
+                    X=embedded_target_data,
+                    feature_axis=FeatureAxis(labels=embedded_target_names, title="Property"),
+                    sample_axis=spectra_out.sample_axis,
+                    title=f"{exp_name} properties",
+                )
+        # Priority 2: Multi-file property groups
+        elif target_out is not None:
+            target_data = np.asarray(target_out.data, dtype=np.float64)
+            spectra_out.target = target_data
+            t_names = None
+            fa = getattr(target_out, "feature_axis", None)
+            if fa is not None and getattr(fa, "labels", None):
+                t_names = list(fa.labels)
+            spectra_out.target_context = TargetContext(
+                target_type="continuous",
+                target_names=t_names,
+            )
+
         return {"default": spectra_out, "target": target_out}
 
     @staticmethod
@@ -350,17 +393,18 @@ class MyDatasetNode(Node):
         coord = safe_get_coord(ds, "x")
         return len(np.array(coord.data)) if coord is not None else 0
 
-    def _group_by_x_axis(self, loaded: list[tuple[NDDataset, str]]) -> list[list[tuple[NDDataset, str]]]:
+    def _group_by_x_axis(self, loaded: list[_LoadedDataset]) -> list[list[_LoadedDataset]]:
         """Group loaded datasets by compatible x-axis.
 
         Two datasets are compatible if they have the same number of x points
         and (when both have numeric x) the values match within tolerance.
         Datasets without an x-axis form their own group.
         """
-        groups: list[list[tuple[NDDataset, str]]] = []
+        groups: list[list[_LoadedDataset]] = []
         group_keys: list[tuple[int, np.ndarray | None]] = []  # (length, x_values)
 
-        for ds, fname in loaded:
+        for item in loaded:
+            ds = item.dataset
             coord = safe_get_coord(ds, "x")
             if coord is not None:
                 x = np.array(coord.data)
@@ -374,16 +418,16 @@ class MyDatasetNode(Node):
                 if length != glen:
                     continue
                 if x is None and gx is None:
-                    groups[i].append((ds, fname))
+                    groups[i].append(item)
                     matched = True
                     break
                 if x is not None and gx is not None and np.allclose(x, gx, rtol=1e-9, atol=1e-12):
-                    groups[i].append((ds, fname))
+                    groups[i].append(item)
                     matched = True
                     break
 
             if not matched:
-                groups.append([(ds, fname)])
+                groups.append([item])
                 group_keys.append((length, x))
 
         return groups
@@ -472,12 +516,61 @@ class MyDatasetNode(Node):
 
         return merged
 
-    def _load_file(self, file_path: str) -> NDDataset:
+    @staticmethod
+    def _sample_count(ds: NDDataset) -> int:
+        data = np.asarray(ds.data)
+        if data.ndim == 0:
+            return 1
+        if data.ndim == 1:
+            return 1
+        return int(data.shape[0])
+
+    def _combine_embedded_targets(self, loaded: list[_LoadedDataset]) -> tuple[np.ndarray, list[str]] | None:
+        """Concatenate embedded property blocks from the spectra group in file order."""
+        target_names: list[str] | None = None
+        target_chunks: list[np.ndarray] = []
+        saw_embedded_target = False
+
+        for item in loaded:
+            target_data = item.embedded_target_data
+            if target_data is None:
+                if saw_embedded_target:
+                    raise ValueError(
+                        f"Embedded property columns are missing for "
+                        f"'{item.file_name}' while other spectral "
+                        f"files have them."
+                    )
+                continue
+
+            saw_embedded_target = True
+            names = item.embedded_target_names or []
+            if target_names is None:
+                target_names = list(names)
+            elif list(names) != target_names:
+                raise ValueError(
+                    f"Embedded property columns in '{item.file_name}' do not match the other spectral files."
+                )
+
+            if target_data.shape[0] != self._sample_count(item.dataset):
+                raise ValueError(
+                    f"Embedded property row count mismatch in '{item.file_name}': "
+                    f"{target_data.shape[0]} target rows for {self._sample_count(item.dataset)} spectra."
+                )
+
+            target_chunks.append(target_data)
+
+        if not target_chunks:
+            return None
+
+        return np.concatenate(target_chunks, axis=0), target_names or []
+
+    def _load_file(self, file_path: str, *, file_name: str | None = None) -> _LoadedDataset:
         """Load data from a file, with pandas fallback for CSVs that SCP can't read."""
         if not os.path.exists(file_path):
             raise ValueError(f"File not found: {file_path}")
 
         ext = os.path.splitext(file_path)[1].lower()
+        resolved_file_name = file_name or Path(file_path).name
 
         # Try SpectroChemPy first
         try:
@@ -493,17 +586,23 @@ class MyDatasetNode(Node):
                     dataset = remove_index_columns(dataset)
                 elif ext == ".csv":
                     dataset = remove_index_columns(dataset)
-                return dataset
+                return _LoadedDataset(dataset=dataset, file_name=resolved_file_name)
         except Exception:
             pass  # fall through to pandas fallback
 
         # Pandas fallback for CSV files SCP can't parse
         if ext == ".csv":
-            return self._load_csv_pandas(file_path)
+            dataset, embedded_target_names, embedded_target_data = self._load_csv_pandas(file_path)
+            return _LoadedDataset(
+                dataset=dataset,
+                file_name=resolved_file_name,
+                embedded_target_names=embedded_target_names,
+                embedded_target_data=embedded_target_data,
+            )
 
         raise ValueError(f"Failed to load {file_path} (format: {ext or 'unknown'})")
 
-    def _load_csv_pandas(self, file_path: str) -> NDDataset:
+    def _load_csv_pandas(self, file_path: str) -> tuple[NDDataset, list[str] | None, np.ndarray | None]:
         """Load a CSV via pandas -- handles headers, mixed types, etc.
 
         Splits columns by whether the *header name* parses as a float:
@@ -533,7 +632,7 @@ class MyDatasetNode(Node):
             data = numeric_df.values.astype(np.float64)
             dataset = scp.NDDataset(data)
             dataset.title = Path(file_path).stem
-            return dataset
+            return dataset, None, None
 
         data = df[spectral_cols].values.astype(np.float64)
         dataset = scp.NDDataset(data)
@@ -549,11 +648,19 @@ class MyDatasetNode(Node):
             ),
             x=scp.Coord(
                 np.array(x_vals),
-                title="Wavenumber",
+                title="Feature",
             ),
         )
 
-        return dataset
+        # Detect string-named numeric columns as reference properties
+        # (mirrors io.py load_csv_as_sherpa logic)
+        prop_label_cols = label_cols[1:] if y_labels is not None else label_cols
+        if prop_label_cols:
+            prop_cols = [c for c in prop_label_cols if pd.api.types.is_numeric_dtype(df[c])]
+            if prop_cols:
+                return dataset, prop_cols, df[prop_cols].values.astype(np.float64)
+
+        return dataset, None, None
 
 
 @register_node

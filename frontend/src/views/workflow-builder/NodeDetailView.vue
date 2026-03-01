@@ -495,6 +495,19 @@
                   <i :class="outputSubsections.quality ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
                 </button>
                 <div v-if="outputSubsections.quality" class="inspector-grid">
+                  <div
+                    v-if="isRegressionNode && regressionTargetOptions.length > 1"
+                    class="inspector-item wide"
+                  >
+                    <span class="insp-label">Target Metric</span>
+                    <Dropdown
+                      v-model="regressionTargetIdx"
+                      :options="regressionTargetOptions"
+                      optionLabel="label"
+                      optionValue="value"
+                      class="detail-target-dropdown"
+                    />
+                  </div>
                   <div v-if="qualitySummary.latest_model_type" class="inspector-item">
                     <span class="insp-label">Model</span>
                     <span class="insp-value">{{ qualitySummary.latest_model_type }}</span>
@@ -506,6 +519,14 @@
                   <div v-if="qualitySummary.latest_rmse != null" class="inspector-item">
                     <span class="insp-label">RMSE</span>
                     <span class="insp-value">{{ Number(qualitySummary.latest_rmse).toFixed(4) }}</span>
+                  </div>
+                  <div v-if="selectedRegressionR2 != null" class="inspector-item">
+                    <span class="insp-label">Selected R&sup2;</span>
+                    <span class="insp-value">{{ Number(selectedRegressionR2).toFixed(4) }}</span>
+                  </div>
+                  <div v-if="selectedRegressionRmse != null" class="inspector-item">
+                    <span class="insp-label">Selected RMSE</span>
+                    <span class="insp-value">{{ Number(selectedRegressionRmse).toFixed(4) }}</span>
                   </div>
                   <div v-if="qualitySummary.n_evaluations" class="inspector-item">
                     <span class="insp-label">Evaluations</span>
@@ -995,6 +1016,25 @@
               </div>
             </template>
 
+            <!-- Plot / Contour Node Visualization (server-rendered Plotly) -->
+            <template v-if="nodeTypeKey === 'output.plot' || nodeTypeKey === 'output.contour'">
+              <div class="plot-subsection">
+                <div class="plot-subsection-header" @click="togglePlot('plotVisualization')">
+                  <i :class="plotSections.plotVisualization ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                  <span>Visualization</span>
+                </div>
+                <Transition name="collapse">
+                  <div v-if="plotSections.plotVisualization" class="plot-container">
+                    <PlotlyChart v-if="plotNodeData.length > 0" :data="plotNodeData" :layout="plotNodeLayout" />
+                    <div v-else class="empty-plot-message">
+                      <i class="pi pi-play" />
+                      <span>Run the node to generate the visualization.</span>
+                    </div>
+                  </div>
+                </Transition>
+              </div>
+            </template>
+
             <!-- Preprocessing / DATA Plots with Interactive Contour -->
             <template v-if="(isPreprocessingNode || isDataNode) && isSpectraData">
               <!-- Spectra Overview - Only for spectral data -->
@@ -1029,7 +1069,7 @@
                           <PlotlyChart :data="horizontalSliceData" :layout="horizontalSliceLayout" />
                         </div>
                         <div class="slice-plot">
-                          <h5>Time Profile at {{ contourClickPoint.wavenumber.toFixed(1) }} cm<sup>-1</sup></h5>
+                          <h5>Time Profile at {{ contourClickPoint.wavenumber.toFixed(1) }} {{ nodeOutput?.metadata?.x_units || '' }}</h5>
                           <PlotlyChart :data="verticalSliceData" :layout="verticalSliceLayout" />
                         </div>
                       </div>
@@ -1322,6 +1362,7 @@ const plotSections = ref<Record<string, boolean>>({
   classificationAccuracy: true,
   hcaDendrogram: true,
   peakFinding: true,
+  plotVisualization: true,
 });
 
 // PLS-DA loadings view mode (lines or biplot)
@@ -1495,7 +1536,11 @@ const hasOutput = computed(() => {
   const hasData = nodeOutput.value.data &&
     (Array.isArray(nodeOutput.value.data) ? nodeOutput.value.data.length > 0 : true);
   const hasPlots = nodeOutput.value.plots && Object.keys(nodeOutput.value.plots).length > 0;
-  return !!hasData || !!hasPlots;
+  // Visualization nodes may have layout in metadata even when trace data was
+  // stripped for sessionStorage transfer (large spectral plots).
+  const hasMeta = nodeOutput.value.metadata &&
+    Object.keys(nodeOutput.value.metadata).length > 0;
+  return !!hasData || !!hasPlots || !!hasMeta;
 });
 
 const inputSummary = computed(() => {
@@ -1685,6 +1730,8 @@ const qualitySummary = computed(() => {
   const qs = nodeOutput.value?.metadata?.quality_summary;
   return qs && typeof qs === "object" ? qs as Record<string, unknown> : null;
 });
+
+const isRegressionNode = computed(() => ["model.pls", "model.pcr", "model.svr"].includes(nodeTypeKey.value));
 
 /** Summaries of secondary output ports (e.g. loadings, X_loadings, target). */
 const portSummaries = computed(() => {
@@ -2095,6 +2142,10 @@ const availablePlots = computed(() => {
       break;
     case "analysis.peak_finding":
       plots.push("Spectra with Peaks");
+      break;
+    case "output.plot":
+    case "output.contour":
+      plots.push("Visualization");
       break;
     case "data.source":
     case "preprocess.normalize":
@@ -2620,18 +2671,21 @@ const pcaLoadingsLayout = computed(() => {
   const portXUnits = loadingsPayload?.x_axis?.units;
   const wavenumbers = loadingsPayload?.x_axis?.data || metadata.wavenumbers;
 
-  // Determine x-axis title and orientation
+  // Determine x-axis title and orientation from actual metadata
   let xaxis_title = "Feature Index";
   let xaxis_reversed = false;
   if (feature_names && feature_names.length > 0) {
     xaxis_title = "Feature";
   } else if (portXTitle) {
-    // Use title/units from loadings NDDataset coordinate
+    // Use title/units from loadings port coordinate
     xaxis_title = portXUnits ? `${portXTitle} (${portXUnits})` : portXTitle;
     xaxis_reversed = portXTitle.toLowerCase().includes("wavenumber");
   } else if (wavenumbers && wavenumbers.length > 0) {
-    xaxis_title = "Wavenumber (cm⁻¹)";
-    xaxis_reversed = true;
+    // Use metadata x_title/x_units (could be wavenumber, wavelength, m/z, etc.)
+    const xTitle = metadata.x_title || "Feature";
+    const xUnits = metadata.x_units || "";
+    xaxis_title = xUnits ? `${xTitle} (${xUnits})` : xTitle;
+    xaxis_reversed = xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber");
   }
 
   return {
@@ -2960,21 +3014,32 @@ const mcrConcentrationData = computed(() => {
   }));
 });
 
-const mcrConcentrationLayout = computed(() => ({
-  ...basePlotLayout,
-  height: 350,
-  showlegend: true,
-  legend: { x: 1, xanchor: "right", y: 1, bgcolor: "rgba(0,0,0,0)" },
-  xaxis: { ...basePlotLayout.xaxis, title: "Sample / Time Index" },
-  yaxis: { ...basePlotLayout.yaxis, title: "Relative Concentration" },
-}));
+const mcrConcentrationLayout = computed(() => {
+  const metadata = nodeOutput.value?.metadata || {};
+  return {
+    ...basePlotLayout,
+    height: 350,
+    showlegend: true,
+    legend: { x: 1, xanchor: "right", y: 1, bgcolor: "rgba(0,0,0,0)" },
+    xaxis: { ...basePlotLayout.xaxis, title: metadata.y_title || "Sample Index" },
+    yaxis: { ...basePlotLayout.yaxis, title: metadata.value_units_label || metadata.value_units || "Relative Concentration" },
+  };
+});
 
 const mcrSpectraData = computed(() => {
   if (nodeTypeKey.value !== "model.mcr_als" || !hasOutput.value) return [];
   const metadata = nodeOutput.value?.metadata || {};
   const St = metadata.St || [];
-  const wavenumbers = metadata.wavenumbers || Array.from({ length: St[0]?.length || 0 }, (_, i) => i);
-  const labels = metadata.St_labels || metadata.labels || Array.from({ length: St.length }, (_, i) => `Component ${i + 1}`);
+  if (!St.length) return [];
+  const nFeatures = St[0]?.length || 0;
+  // Use spectral_wavenumbers (survives serialization) with length-check fallback.
+  // metadata.wavenumbers may be component indices [0,1] from C_dataset's feature
+  // axis, so only use it if its length matches the spectrum length.
+  const candidates = metadata.spectral_wavenumbers || metadata.wavenumbers;
+  const wavenumbers = (candidates && Array.isArray(candidates) && candidates.length === nFeatures)
+    ? candidates
+    : Array.from({ length: nFeatures }, (_, i) => i);
+  const labels = metadata.St_labels || Array.from({ length: St.length }, (_, i) => `Component ${i + 1}`);
 
   return St.map((spectrum: number[], i: number) => ({
     type: "scatter",
@@ -2988,9 +3053,18 @@ const mcrSpectraData = computed(() => {
 
 const mcrSpectraLayout = computed(() => {
   const metadata = nodeOutput.value?.metadata || {};
-  // Use dynamic axis labels from metadata, with spectral-aware defaults
-  const xLabel = xAxisLabel.value || "Wavenumber (cm⁻¹)";
-  const yLabel = yAxisLabel.value || "Intensity";
+  // Use spectral_x_title/x_units (survives serialization) with fallback.
+  // Only use axis info if the actual wavenumber data was resolved (not index fallback).
+  const St = metadata.St || [];
+  const nFeatures = St[0]?.length || 0;
+  const candidates = metadata.spectral_wavenumbers || metadata.wavenumbers;
+  const hasRealWavenumbers = candidates && Array.isArray(candidates) && candidates.length === nFeatures;
+  const xTitle = hasRealWavenumbers ? (metadata.spectral_x_title || metadata.x_title || "") : "";
+  const xUnits = hasRealWavenumbers ? (metadata.spectral_x_units || metadata.x_units || "") : "";
+  const xLabel = xUnits ? `${xTitle} (${xUnits})` : (xTitle || "Feature Index");
+  const yLabel = yAxisLabel.value || "Response";
+  // Reverse x-axis for wavenumber data (cm⁻¹), not for wavelength (nm)
+  const shouldReverse = hasRealWavenumbers && (xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber"));
 
   return {
     ...basePlotLayout,
@@ -3000,9 +3074,34 @@ const mcrSpectraLayout = computed(() => {
     xaxis: {
       ...basePlotLayout.xaxis,
       title: xLabel,
-      autorange: isSpectraData.value ? "reversed" : true,
+      autorange: shouldReverse ? "reversed" : true,
     },
     yaxis: { ...basePlotLayout.yaxis, title: yLabel },
+  };
+});
+
+// ============================================================================
+// Plot / Contour Node Visualization (server-rendered Plotly)
+// ============================================================================
+
+const plotNodeData = computed(() => {
+  if (!['output.plot', 'output.contour'].includes(nodeTypeKey.value) || !hasOutput.value) return [];
+  // The visualization port stores {plot_type, data, layout}.
+  // After buildNodeOutput, data = plotly traces, metadata = full vis object.
+  const viz = nodeOutput.value?.ports?.visualization?.value || nodeOutput.value?.metadata || {};
+  return viz.data || nodeOutput.value?.data || [];
+});
+
+const plotNodeLayout = computed(() => {
+  if (!['output.plot', 'output.contour'].includes(nodeTypeKey.value) || !hasOutput.value) return basePlotLayout;
+  const viz = nodeOutput.value?.ports?.visualization?.value || nodeOutput.value?.metadata || {};
+  return {
+    ...basePlotLayout,
+    ...(viz.layout || {}),
+    height: 450,
+    paper_bgcolor: basePlotLayout.paper_bgcolor,
+    plot_bgcolor: basePlotLayout.plot_bgcolor,
+    font: basePlotLayout.font,
   };
 });
 
@@ -3149,7 +3248,7 @@ const plsLoadingsLayout = computed(() => {
   const portXUnits = loadingsPayload?.x_axis?.units;
   const wavenumbers = loadingsPayload?.x_axis?.data || metadata.wavenumbers;
 
-  // Determine x-axis title and orientation
+  // Determine x-axis title and orientation from actual metadata
   let xaxis_title = "Feature Index";
   let xaxis_reversed = false;
   if (feature_names && feature_names.length > 0) {
@@ -3158,8 +3257,10 @@ const plsLoadingsLayout = computed(() => {
     xaxis_title = portXUnits ? `${portXTitle} (${portXUnits})` : portXTitle;
     xaxis_reversed = portXTitle.toLowerCase().includes("wavenumber");
   } else if (wavenumbers && wavenumbers.length > 0) {
-    xaxis_title = "Wavenumber (cm⁻¹)";
-    xaxis_reversed = true;
+    const xTitle = metadata.x_title || "Feature";
+    const xUnits = metadata.x_units || "";
+    xaxis_title = xUnits ? `${xTitle} (${xUnits})` : xTitle;
+    xaxis_reversed = xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber");
   }
 
   return {
@@ -3580,14 +3681,16 @@ const plsdaVipLayout = computed(() => {
   const feature_names = metadata.feature_names;
   const wavenumbers = metadata.wavenumbers;
 
-  // Determine x-axis title
+  // Determine x-axis title from actual metadata
   let xaxis_title = "Feature Index";
   let xaxis_reversed = false;
   if (feature_names && feature_names.length > 0) {
     xaxis_title = "Feature";
   } else if (wavenumbers && wavenumbers.length > 0) {
-    xaxis_title = "Wavenumber (cm⁻¹)";
-    xaxis_reversed = true;
+    const xTitle = metadata.x_title || "Feature";
+    const xUnits = metadata.x_units || "";
+    xaxis_title = xUnits ? `${xTitle} (${xUnits})` : xTitle;
+    xaxis_reversed = xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber");
   }
 
   // Calculate number of bars for threshold line
@@ -3679,7 +3782,9 @@ const spectraOverlayData = computed(() => {
   if (!hasOutput.value) return [];
   const data = nodeOutput.value?.data || [];
   const metadata = nodeOutput.value?.metadata || {};
-  const wavenumbers = metadata.wavenumbers || Array.from({ length: data[0]?.length || 0 }, (_, i) => i);
+  const nFeatures = data[0]?.length || 0;
+  const wn = metadata.wavenumbers;
+  const wavenumbers = (Array.isArray(wn) && wn.length === nFeatures) ? wn : Array.from({ length: nFeatures }, (_, i) => i);
   const labelsRaw = metadata.labels || metadata.sample_labels || [];
   const labels = Array.isArray(labelsRaw) ? labelsRaw.map((label: any) => normalizeSampleLabel(label)) : [];
 
@@ -3702,14 +3807,14 @@ const spectraOverlayLayout = computed(() => {
   const xTitle = metadata.x_title || "Feature";
   const xUnits = metadata.x_units || "";
   const xLabel = xUnits ? `${xTitle} (${xUnits})` : xTitle;
-  const isWavenumber = xTitle.toLowerCase().includes("wavenumber");
+  const shouldReverse = xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber");
 
   return {
     ...basePlotLayout,
     height: 400,
     showlegend: true,
     legend: { x: 1, xanchor: "right", y: 1, bgcolor: "rgba(0,0,0,0)", font: { size: 10 } },
-    xaxis: { ...basePlotLayout.xaxis, title: xLabel, autorange: isWavenumber ? "reversed" : true },
+    xaxis: { ...basePlotLayout.xaxis, title: xLabel, autorange: shouldReverse ? "reversed" : true },
     yaxis: { ...basePlotLayout.yaxis, title: yAxisLabel.value || "Response" },
   };
 });
@@ -3721,7 +3826,9 @@ const spectraContourData = computed(() => {
 
   if (!Array.isArray(data[0])) return [];
 
-  const xValues = metadata.wavenumbers || Array.from({ length: data[0].length }, (_, i) => i);
+  const nFeatures = data[0].length;
+  const wn = metadata.wavenumbers;
+  const xValues = (Array.isArray(wn) && wn.length === nFeatures) ? wn : Array.from({ length: nFeatures }, (_, i) => i);
   const sampleIndices = Array.from({ length: data.length }, (_, i) => i + 1);
   const xTitle = metadata.x_title || "Feature";
 
@@ -3740,12 +3847,12 @@ const spectraContourLayout = computed(() => {
   const xTitle = metadata.x_title || "Feature";
   const xUnits = metadata.x_units || "";
   const xLabel = xUnits ? `${xTitle} (${xUnits})` : xTitle;
-  const isWavenumber = xTitle.toLowerCase().includes("wavenumber");
+  const shouldReverse = xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber");
 
   return {
     ...basePlotLayout,
     height: 400,
-    xaxis: { ...basePlotLayout.xaxis, title: xLabel, autorange: isWavenumber ? "reversed" : true },
+    xaxis: { ...basePlotLayout.xaxis, title: xLabel, autorange: shouldReverse ? "reversed" : true },
     yaxis: { ...basePlotLayout.yaxis, title: "Sample Index" },
   };
 });
@@ -3955,7 +4062,9 @@ const horizontalSliceData = computed(() => {
   if (!contourClickPoint.value || !hasOutput.value) return [];
   const data = nodeOutput.value?.data || [];
   const metadata = nodeOutput.value?.metadata || {};
-  const xValues = metadata.wavenumbers || Array.from({ length: data[0]?.length || 0 }, (_, i) => i);
+  const nFeatures = data[0]?.length || 0;
+  const wn = metadata.wavenumbers;
+  const xValues = (Array.isArray(wn) && wn.length === nFeatures) ? wn : Array.from({ length: nFeatures }, (_, i) => i);
   const xTitle = metadata.x_title || "Feature";
 
   const spectrum = data[contourClickPoint.value.sampleIdx];
@@ -3985,13 +4094,13 @@ const horizontalSliceLayout = computed(() => {
   const xTitle = metadata.x_title || "Feature";
   const xUnits = metadata.x_units || "";
   const xLabel = xUnits ? `${xTitle} (${xUnits})` : xTitle;
-  const isWavenumber = xTitle.toLowerCase().includes("wavenumber");
+  const shouldReverse = xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber");
 
   return {
     ...basePlotLayout,
     height: 250,
     showlegend: false,
-    xaxis: { ...basePlotLayout.xaxis, title: xLabel, autorange: isWavenumber ? "reversed" : true },
+    xaxis: { ...basePlotLayout.xaxis, title: xLabel, autorange: shouldReverse ? "reversed" : true },
     yaxis: { ...basePlotLayout.yaxis, title: yAxisLabel.value || "Response" },
   };
 });
@@ -4074,16 +4183,66 @@ const statsDistributionLayout = computed(() => ({
 // Regression: Predicted vs Actual correlation plot
 // ============================================================================
 
+const regressionTargetNames = computed(() => {
+  const metadata = nodeOutput.value?.metadata || {};
+  const yLoadings = resolvePortPayload(nodeOutput.value?.ports?.Y_loadings);
+  const targetPort = resolvePortPayload(nodeOutput.value?.ports?.target);
+  const candidates = [
+    metadata.target_names,
+    yLoadings?.y_axis?.labels,
+    targetPort?.y_axis?.labels,
+    targetPort?.metadata?.target_names,
+  ];
+
+  for (const raw of candidates) {
+    if (Array.isArray(raw) && raw.length > 0) {
+      return raw.map((name: unknown) => normalizeSampleLabel(name));
+    }
+  }
+
+  return [];
+});
+
 const regressionTargetOptions = computed(() => {
   const metadata = nodeOutput.value?.metadata || {};
   const yTrue = metadata.y_true;
   if (!Array.isArray(yTrue) || yTrue.length === 0) return [];
   const nTargets = Array.isArray(yTrue[0]) ? yTrue[0].length : 1;
-  const names = metadata.target_names || [];
+  const names = regressionTargetNames.value;
   return Array.from({ length: nTargets }, (_, i) => ({
     label: names[i] || `Target ${i + 1}`,
     value: i,
   }));
+});
+
+watch(
+  regressionTargetOptions,
+  (options) => {
+    if (options.length === 0) {
+      regressionTargetIdx.value = 0;
+      return;
+    }
+    if (!options.some((option) => option.value === regressionTargetIdx.value)) {
+      regressionTargetIdx.value = options[0].value;
+    }
+  },
+  { immediate: true },
+);
+
+const selectedRegressionR2 = computed(() => {
+  const metadata = nodeOutput.value?.metadata || {};
+  const r2List = metadata.r2_per_target;
+  if (!Array.isArray(r2List)) return null;
+  const value = r2List[regressionTargetIdx.value];
+  return typeof value === "number" ? value : null;
+});
+
+const selectedRegressionRmse = computed(() => {
+  const metadata = nodeOutput.value?.metadata || {};
+  const rmseList = metadata.rmse_per_target;
+  if (!Array.isArray(rmseList)) return null;
+  const value = rmseList[regressionTargetIdx.value];
+  return typeof value === "number" ? value : null;
 });
 
 const regressionCorrelationData = computed(() => {
@@ -4130,14 +4289,9 @@ const regressionCorrelationData = computed(() => {
 });
 
 const regressionCorrelationLayout = computed(() => {
-  const metadata = nodeOutput.value?.metadata || {};
-  const idx = regressionTargetIdx.value;
-  const r2List = metadata.r2_per_target || [];
-  const rmseList = metadata.rmse_per_target || [];
-  const names = metadata.target_names || [];
-  const r2 = r2List[idx];
-  const rmse = rmseList[idx];
-  const targetName = names[idx] || "";
+  const targetName = regressionTargetOptions.value.find((option) => option.value === regressionTargetIdx.value)?.label || "";
+  const r2 = selectedRegressionR2.value;
+  const rmse = selectedRegressionRmse.value;
 
   let title = "Predicted vs Actual";
   if (targetName) title += ` — ${targetName}`;
@@ -5219,6 +5373,10 @@ onUnmounted(() => {
 
 .plot-controls :deep(.p-dropdown) {
   min-width: 140px;
+}
+
+.detail-target-dropdown {
+  width: 100%;
 }
 
 /* Interactive Contour */

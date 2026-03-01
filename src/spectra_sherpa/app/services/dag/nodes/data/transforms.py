@@ -13,7 +13,7 @@ import numpy as np
 from spectra_sherpa.app.lib.sherpa_dataset import TargetContext
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
 
-from ...io_contracts import bind_X, bind_y, build_dataset_like, to_numpy_2d, to_numpy_y
+from ...io_contracts import bind_X, bind_y, build_dataset_like, resolve_target_names, to_numpy_2d, to_numpy_y
 from ...node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
 from ._utils import slice_axis_for_indices
 
@@ -330,6 +330,9 @@ class AttachTargetNode(Node):
             allow_array=True,
         )
 
+        # Resolve target names BEFORE bind_y strips dataset metadata
+        _resolved_target_names = resolve_target_names(y, X_ds)
+
         y_raw = bind_y(
             y,
             X=None,  # Don't infer from X — we're explicitly attaching
@@ -350,10 +353,12 @@ class AttachTargetNode(Node):
             result.target_context = TargetContext(
                 target_type="categorical",
                 n_classes=n_unique,
+                target_names=_resolved_target_names,
             )
         else:
             result.target_context = TargetContext(
                 target_type="continuous",
+                target_names=_resolved_target_names,
             )
 
         add_processing_step(

@@ -137,6 +137,35 @@ def extract_target_like(dataset: Any) -> Any | None:
     return None
 
 
+def resolve_target_names(
+    y_raw: Any,
+    X_ds: "SherpaDataset | None" = None,
+) -> list[str] | None:
+    """Extract target column names from available metadata.
+
+    Must be called **before** ``bind_y()`` which may strip dataset metadata.
+
+    Priority:
+    1. y.target_context.target_names  (if y is a SherpaDataset)
+    2. y.feature_axis.labels          (if y is a SherpaDataset — property column names)
+    3. X_ds.target_context.target_names
+    """
+    if isinstance(y_raw, SherpaDataset):
+        tc = getattr(y_raw, "target_context", None)
+        if tc is not None and tc.target_names:
+            return list(tc.target_names)
+        fa = getattr(y_raw, "feature_axis", None)
+        if fa is not None and getattr(fa, "labels", None):
+            return list(fa.labels)
+
+    if X_ds is not None:
+        tc = getattr(X_ds, "target_context", None)
+        if tc is not None and tc.target_names:
+            return list(tc.target_names)
+
+    return None
+
+
 def bind_y(
     y: Any,
     *,

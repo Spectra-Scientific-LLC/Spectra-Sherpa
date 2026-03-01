@@ -262,7 +262,9 @@ class BlendNode(Node):
         )
         dataset.target = None
         dataset.meta["processing_history"] = dataset.provenance
-        dataset.feature_axis = SpectralAxis(values=wavenumbers, title="Wavenumber", units="cm^-1")
+        fa_title = getattr(first_x_coord, "title", None) or "Feature"
+        fa_units = str(first_x_coord.units) if getattr(first_x_coord, "units", None) else None
+        dataset.feature_axis = SpectralAxis(values=wavenumbers, title=fa_title, units=fa_units)
         dataset.sample_axis = SampleAxis(values=np.arange(n_timepoints), title="Time")
 
         # ---------------------------------------------------------------------
@@ -595,7 +597,10 @@ class MergeSpectraNode(Node):
         )
         dataset.target = None
         dataset.meta["processing_history"] = dataset.provenance
-        dataset.feature_axis = SpectralAxis(values=ref_wn, title="Wavenumber", units="cm^-1")
+        ref_fa = datasets[0].feature_axis
+        fa_title = getattr(ref_fa, "title", None) or "Feature"
+        fa_units = str(ref_fa.units) if getattr(ref_fa, "units", None) else None
+        dataset.feature_axis = SpectralAxis(values=ref_wn, title=fa_title, units=fa_units)
         dataset.sample_axis = SampleAxis(values=np.arange(len(spectra)), title="Sample")
 
         # Record processing step

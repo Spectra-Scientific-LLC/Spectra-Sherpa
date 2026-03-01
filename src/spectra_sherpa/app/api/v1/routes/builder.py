@@ -397,6 +397,7 @@ async def synthesize_spectra(
 async def list_reference_datasets() -> dict[str, list[dict[str, Any]]]:
     """List all available reference datasets across all sources."""
     from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG
+    from spectra_sherpa.app.lib.oes_datasets import OES_CATALOG
     from spectra_sherpa.app.lib.scp_catalog import build_scp_catalog
     from spectra_sherpa.app.lib.sklearn_info import SKLEARN_CATALOG
 
@@ -411,6 +412,17 @@ async def list_reference_datasets() -> dict[str, list[dict[str, Any]]]:
                 "featured": v.get("featured", False),
             }
             for k, v in DATASET_CATALOG.items()
+        ],
+        "oes": [
+            {
+                "name": k,
+                "source": "oes",
+                "label": v["label"],
+                "technique": v["technique"],
+                "description": v["description"],
+                "featured": v.get("featured", False),
+            }
+            for k, v in OES_CATALOG.items()
         ],
         "sklearn": [
             {
@@ -454,6 +466,13 @@ async def get_reference_dataset_info(source: str, name: str) -> dict[str, Any]:
         if name not in SKLEARN_CATALOG:
             raise HTTPException(404, f"Dataset '{name}' not found")
         return get_sklearn_dataset_info(name)
+
+    elif source == "oes":
+        from spectra_sherpa.app.lib.oes_datasets import OES_CATALOG, get_oes_dataset_info
+
+        if name not in OES_CATALOG:
+            raise HTTPException(404, f"Dataset '{name}' not found")
+        return get_oes_dataset_info(name)
 
     elif source == "spectrochempy":
         from spectra_sherpa.app.lib.scp_catalog import get_scp_dataset_info

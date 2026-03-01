@@ -344,6 +344,38 @@ async def import_reference_dataset(
                                 flush_only=True,
                             )
                         )
+        elif source == "oes":
+            from spectra_sherpa.app.lib.oes_datasets import OES_CATALOG, load_oes_dataset
+
+            if name not in OES_CATALOG:
+                raise ValueError(f"Unknown OES dataset: {name}")
+
+            result = load_oes_dataset(name)
+            spectra = result["spectra"]
+            wavelengths = result["wavelengths"]
+
+            columns = (
+                [str(w) for w in wavelengths] if wavelengths is not None else [str(i) for i in range(spectra.shape[1])]
+            )
+            df = pd.DataFrame(spectra, columns=columns)
+
+            if result.get("sample_ids"):
+                df.index = result["sample_ids"]
+                df.index.name = "sample_id"
+
+            csv_name = f"{name}.csv"
+            csv_path = raw_dir / csv_name
+            if csv_path.exists():
+                raise ValueError(f"File already exists: {csv_name}")
+            df.to_csv(csv_path)
+            written_files.append(csv_path)
+            rel = csv_path.relative_to(exp_dir).as_posix()
+            created.append(
+                await add_experiment_file(
+                    session, experiment_id, "raw", rel, csv_path.stat().st_size, "csv", flush_only=True
+                )
+            )
+
         else:
             raise ValueError(f"Unknown reference source: {source}")
 

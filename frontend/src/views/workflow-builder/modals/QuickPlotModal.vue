@@ -752,7 +752,7 @@ const yAxisLabel = computed(() => {
   return yAxisUnits.value ? `${yAxisTitle.value} (${yAxisUnits.value})` : yAxisTitle.value;
 });
 
-// Detect if data is spectral type (wavenumber-based)
+// Detect if data is spectral type
 const isSpectraData = computed(() => {
   const metadata = props.nodeOutput?.metadata || {};
   // Check backend-provided flag first
@@ -763,6 +763,14 @@ const isSpectraData = computed(() => {
   const xTitle = (metadata.x_title || "").toLowerCase();
   const spectralKeywords = ['wavenumber', 'wavelength', 'raman', 'cm-1', 'cm⁻¹', 'nm', 'shift'];
   return spectralKeywords.some(kw => xTitle.includes(kw));
+});
+
+// Whether x-axis should be reversed (only for wavenumber-like units, NOT wavelength)
+const shouldReverseXAxis = computed(() => {
+  const metadata = props.nodeOutput?.metadata || {};
+  const xTitle = (metadata.x_title || "").toLowerCase();
+  const xUnits = (metadata.x_units || "").toLowerCase();
+  return xUnits.includes("cm") || xTitle.includes("wavenumber") || xTitle.includes("raman");
 });
 
 // Feature names for hover templates and labels
@@ -957,7 +965,8 @@ function buildMCRData(output: any, mode: "C" | "St"): any[] {
     // Each column is a component's concentration over time
     // For NMF, data is W matrix; for FastICA, data is S matrix
     const C = output.data; // Already in correct format
-    const x = metadata.x_axis || Array.from({ length: C.length }, (_, i) => i);
+    const xRaw = metadata.x_axis;
+    const x = (Array.isArray(xRaw) && xRaw.length === C.length) ? xRaw : Array.from({ length: C.length }, (_, i) => i);
     const labels = getNormalizedOptionalLabelArray(metadata.labels);
     const n_components = C[0]?.length || 0;
     const sampleLabels = getNormalizedLabelArray(metadata.sample_labels, C.length, "Sample");
@@ -983,9 +992,11 @@ function buildMCRData(output: any, mode: "C" | "St"): any[] {
     // Pure spectra: St is (n_components, n_features)
     // Each row is a pure component spectrum
     const St = metadata.St || [];
-    // Priority: feature_names > wavenumbers > feature indices (DRY with NodeDetailView)
+    // Priority: feature_names > spectral_wavenumbers > wavenumbers > indices
+    // spectral_wavenumbers survives serialization (wavenumbers gets overwritten
+    // by C_dataset's component-axis values)
     const _featureNames = metadata.feature_names;
-    const wavenumbers = metadata.wavenumbers;
+    const wavenumbers = metadata.spectral_wavenumbers || metadata.wavenumbers;
     let x_values;
     if (_featureNames && _featureNames.length === St[0]?.length) {
       x_values = _featureNames;
@@ -1731,7 +1742,9 @@ function buildLineData(data: any[], xAxisValues: any[] | null, metadata: any) {
     const maxTraces = Math.min(data.length, 50); // Limit for performance
     for (let i = 0; i < maxTraces; i++) {
       const row = data[i];
-      const x = xAxisValues || Array.from({ length: row.length }, (_, j) => j);
+      const x = (xAxisValues && xAxisValues.length === row.length)
+        ? xAxisValues
+        : Array.from({ length: row.length }, (_, j) => j);
       traces.push({
         type: "scatter",
         mode: "lines",
@@ -1744,7 +1757,9 @@ function buildLineData(data: any[], xAxisValues: any[] | null, metadata: any) {
     }
   } else {
     // 1D array: single spectrum/row
-    const x = xAxisValues || Array.from({ length: data.length }, (_, i) => i);
+    const x = (xAxisValues && xAxisValues.length === data.length)
+      ? xAxisValues
+      : Array.from({ length: data.length }, (_, i) => i);
     traces.push({
       type: "scatter",
       mode: "lines",
@@ -1761,8 +1776,10 @@ function buildLineData(data: any[], xAxisValues: any[] | null, metadata: any) {
 function buildHeatmapData(data: any[], wavenumbers: number[] | null, metadata: any) {
   // Transpose if needed (rows = spectra, cols = wavenumbers)
   const z = Array.isArray(data[0]) ? data : [data];
-  const x = wavenumbers || Array.from({ length: z[0]?.length || 0 }, (_, i) => i);
-  const y = metadata.times || Array.from({ length: z.length }, (_, i) => i);
+  const nCols = z[0]?.length || 0;
+  const x = (wavenumbers && wavenumbers.length === nCols) ? wavenumbers : Array.from({ length: nCols }, (_, i) => i);
+  const timesRaw = metadata.times;
+  const y = (Array.isArray(timesRaw) && timesRaw.length === z.length) ? timesRaw : Array.from({ length: z.length }, (_, i) => i);
 
   // Use dynamic y-axis title for colorbar (DRY with NodeDetailView)
   const colorbarTitle = metadata.y_title || yAxisTitle.value || "Value";
@@ -1859,23 +1876,28 @@ const plotLayout = computed(() => {
         ...baseLayout,
         showlegend: true,
         xaxis: {
-          title: metadata.x_label || "Time / Sample Index",
+          title: metadata.y_title || "Sample Index",
           gridcolor: "#334155",
           zerolinecolor: "#475569",
         },
         yaxis: {
-          title: metadata.y_label || "Relative Concentration",
+          title: metadata.value_units_label || metadata.value_units || "Relative Concentration",
           gridcolor: "#334155",
           zerolinecolor: "#475569",
         },
       };
     } else {
+      // St plot: use spectral_ prefixed keys (survive serialization)
+      const spectralTitle = metadata.spectral_x_title || metadata.x_title || "Feature";
+      const spectralUnits = metadata.spectral_x_units || metadata.x_units || "";
+      const stXLabel = spectralUnits ? `${spectralTitle} (${spectralUnits})` : spectralTitle;
+      const shouldReverse = spectralUnits.includes("cm") || spectralTitle.toLowerCase().includes("wavenumber");
       return {
         ...baseLayout,
         showlegend: true,
         xaxis: {
-          title: xAxisLabel.value,
-          autorange: isSpectraData.value ? "reversed" : true,
+          title: stXLabel,
+          autorange: shouldReverse ? "reversed" : true,
           gridcolor: "#334155",
           zerolinecolor: "#475569",
         },
@@ -1930,7 +1952,7 @@ const plotLayout = computed(() => {
         showlegend: true,
         xaxis: {
           title: xAxisLabel.value,
-          autorange: isSpectraData.value ? "reversed" : true,
+          autorange: shouldReverseXAxis.value ? "reversed" : true,
           gridcolor: "#334155",
           zerolinecolor: "#475569",
         },
@@ -2030,7 +2052,7 @@ const plotLayout = computed(() => {
         showlegend: true,
         xaxis: {
           title: xAxisLabel.value,
-          autorange: isSpectraData.value ? "reversed" : true,
+          autorange: shouldReverseXAxis.value ? "reversed" : true,
           gridcolor: "#334155",
           zerolinecolor: "#475569",
         },
@@ -2184,7 +2206,7 @@ const plotLayout = computed(() => {
       ...baseLayout,
       xaxis: {
         title: metadata.x_label || xAxisLabel.value,
-        autorange: isSpectraData.value ? "reversed" : true,
+        autorange: shouldReverseXAxis.value ? "reversed" : true,
         gridcolor: "#334155",
         zerolinecolor: "#475569",
       },
@@ -2199,7 +2221,7 @@ const plotLayout = computed(() => {
       ...baseLayout,
       xaxis: {
         title: metadata.x_label || xAxisLabel.value,
-        autorange: isSpectraData.value ? "reversed" : true,
+        autorange: shouldReverseXAxis.value ? "reversed" : true,
       },
       yaxis: {
         title: metadata.y_label || "Sample Index",

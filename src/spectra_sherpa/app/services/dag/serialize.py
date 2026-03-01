@@ -276,13 +276,15 @@ def _serialize_sherpa_dataset(
             metadata["sample_labels"] = formatted
             metadata["labels"] = formatted
 
-    # Data units
+    # Data units — always emit value_units so consumers don't need per-node fallbacks
     if dataset.units and str(dataset.units) != "dimensionless":
         metadata["value_units"] = str(dataset.units)
     semantic_units = dataset.get_extra("scp.value_units_label")
     if semantic_units:
         metadata["value_units_label"] = str(semantic_units)
         metadata.setdefault("value_units", str(semantic_units))
+    # Final fallback — only if nothing above set value_units
+    metadata.setdefault("value_units", "Response")
 
     # Rich provenance from SherpaDataset.provenance
     history = dataset.provenance.to_list()

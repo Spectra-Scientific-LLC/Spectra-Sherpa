@@ -84,6 +84,45 @@
               </div>
             </Panel>
 
+            <!-- OES Datasets -->
+            <Panel
+              v-if="dataStore.referenceCatalog?.oes?.length"
+              :toggleable="true"
+              :collapsed="oesCollapsed"
+              @update:collapsed="oesCollapsed = $event"
+              class="ref-group-panel"
+            >
+              <template #header>
+                <span class="ref-panel-header">
+                  <i class="pi pi-bolt"></i>
+                  OES Datasets
+                  <Tag :value="String(dataStore.referenceCatalog.oes.length)" severity="info" rounded />
+                </span>
+              </template>
+              <div
+                v-for="ds in dataStore.referenceCatalog.oes"
+                :key="ds.name"
+                class="ref-dataset-item"
+                :class="{ selected: selectedRefDatasets.has(dsKey(ds)) }"
+                @click="toggleRefDataset(ds)"
+              >
+                <Checkbox
+                  :modelValue="selectedRefDatasets.has(dsKey(ds))"
+                  :binary="true"
+                  @click.stop
+                  @update:model-value="toggleRefDataset(ds)"
+                />
+                <span class="ref-ds-label">{{ ds.label }}</span>
+                <Tag :value="ds.technique" severity="info" class="ref-ds-tag" />
+                <Button
+                  icon="pi pi-search"
+                  class="p-button-text p-button-sm p-button-rounded ref-explore-btn"
+                  title="Explore"
+                  @click.stop="onExploreReference(ds.source, ds.name)"
+                />
+              </div>
+            </Panel>
+
             <!-- SpectroChemPy -->
             <Panel
               :toggleable="true"
@@ -910,6 +949,7 @@ const libraryCollapsed = ref(true);
 const librarySearch = ref("");
 const selectedRefDatasets = reactive(new Set<string>());
 const eigenvectorCollapsed = ref(false);
+const oesCollapsed = ref(false);
 const scpCollapsed = ref(true);
 const sklearnCollapsed = ref(true);
 const importing = ref(false);
