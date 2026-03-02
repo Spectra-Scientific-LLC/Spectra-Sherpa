@@ -13,7 +13,7 @@ SpectraSherpa brings transparent, reproducible multivariate analysis to spectros
 
 - **Transparent algorithms** — Open source means every preprocessing step, decomposition, and calibration model is auditable. No black boxes.
 - **Data stays on your machine** — Built for IP-sensitive labs in pharma, semiconductor, food science, and materials. Network egress is denied by default.
-- **No coding required** — Visual drag-and-drop workflow builder with 100+ nodes. Go from raw spectra to a deployed PLS model without writing Python.
+- **No coding required** — Visual drag-and-drop workflow builder with over 60 processing nodes. Go from raw spectra to a deployed PLS model without writing Python.
 - **Extensible when you need it** — Export any workflow to standalone Python or Jupyter notebooks. Add custom nodes via plugins or drop-in scripts.
 - **Modern metadata management** — Versioned projects, experiments, workflows, and model artifacts with full provenance tracking and audit trails.
 - **AI-assisted analysis** — Integrated LLM chat with bring-your-own-key (BYOK) support for OpenAI, Anthropic, Google, DeepSeek, and Qwen. Agentic AI features in progressive development.
@@ -305,8 +305,13 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for deta
 
 ## License
 
+Copyright (C) 2024-2026 Spectra Scientific LLC.
+
 SpectraSherpa is licensed under the AGPL-3.0. See [LICENSE](./LICENSE) for details.
 
 You are free to use, modify, and distribute SpectraSherpa. If you distribute a modified version — including as a network service — you must make your modifications available under the same license.
+
+> [!WARNING]
+> This software is provided "AS IS" without warranty of any kind. Spectra Scientific LLC disclaims all liability for damages arising from use of this software, including reliance on analytical results. See [DISCLAIMER](./DISCLAIMER) for full terms.
 
 Enterprise features and commercial licensing are available from Spectra Scientific LLC.

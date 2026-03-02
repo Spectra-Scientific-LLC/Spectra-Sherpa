@@ -68,7 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Initial open-source release.
 
 ### Added
-- **Workflow Builder** — Visual DAG editor with 100+ nodes for preprocessing, modeling, classification, diagnostics, and DOE
+- **Workflow Builder** — Visual DAG editor with over 60 nodes for preprocessing, modeling, classification, diagnostics, and DOE
 - **Model Artifacts** — Train, persist, and reload PCA, PLS, MCR, PLSDA, KNN, SIMCA models
 - **Type System** — URI-based port typing with registry-driven connection validation
 - **Python & Notebook Export** — Generate standalone scripts or Jupyter notebooks from any workflow

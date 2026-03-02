@@ -1,0 +1,175 @@
+DISCLAIMER
+==========
+
+Copyright (C) 2024-2026 Spectra Scientific LLC. All rights reserved.
+
+This disclaimer supplements the GNU Affero General Public License v3.0
+(AGPL-3.0) under which SpectraSherpa is distributed. See LICENSE for the
+full license text. In the event of any conflict between this disclaimer
+and the AGPL-3.0, the AGPL-3.0 shall govern.
+
+
+1. NO WARRANTY
+--------------
+
+THIS SOFTWARE IS PROVIDED BY SPECTRA SCIENTIFIC LLC AND ITS CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE, AND NON-INFRINGEMENT ARE DISCLAIMED. SPECTRA SCIENTIFIC LLC DOES
+NOT WARRANT THAT THE SOFTWARE WILL MEET YOUR REQUIREMENTS, THAT THE
+OPERATION OF THE SOFTWARE WILL BE UNINTERRUPTED OR ERROR-FREE, OR THAT
+DEFECTS IN THE SOFTWARE WILL BE CORRECTED.
+
+
+2. LIMITATION OF LIABILITY
+--------------------------
+
+IN NO EVENT SHALL SPECTRA SCIENTIFIC LLC, ITS OFFICERS, DIRECTORS,
+EMPLOYEES, AGENTS, AFFILIATES, SUCCESSORS, OR ASSIGNS BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, CONSEQUENTIAL, OR
+PUNITIVE DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
+GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; BUSINESS INTERRUPTION;
+LOSS OF GOODWILL; OR ANY OTHER COMMERCIAL DAMAGES OR LOSSES) ARISING OUT
+OF OR IN CONNECTION WITH THE USE, INABILITY TO USE, OR PERFORMANCE OF THIS
+SOFTWARE, HOWEVER CAUSED AND UNDER ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE),
+EVEN IF SPECTRA SCIENTIFIC LLC HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH
+DAMAGES.
+
+
+3. ANALYTICAL AND SCIENTIFIC RESULTS
+-------------------------------------
+
+THIS SOFTWARE PERFORMS CHEMOMETRIC COMPUTATIONS, MULTIVARIATE DATA
+ANALYSIS, SPECTRAL PREPROCESSING, CALIBRATION MODELING, AND RELATED
+ANALYTICAL OPERATIONS. SPECTRA SCIENTIFIC LLC MAKES NO REPRESENTATION OR
+WARRANTY REGARDING THE ACCURACY, RELIABILITY, COMPLETENESS, OR SUITABILITY
+OF ANY ANALYTICAL RESULTS, MODEL PREDICTIONS, CALIBRATIONS, CLASSIFICATIONS,
+DECOMPOSITIONS, OR OTHER OUTPUTS PRODUCED BY THIS SOFTWARE.
+
+USERS ARE SOLELY RESPONSIBLE FOR:
+
+  (a) INDEPENDENTLY VALIDATING ALL ANALYTICAL RESULTS AGAINST APPROPRIATE
+      REFERENCE METHODS, CERTIFIED REFERENCE MATERIALS, AND ACCEPTED
+      ANALYTICAL STANDARDS BEFORE RELYING ON SUCH RESULTS FOR ANY PURPOSE;
+
+  (b) DETERMINING WHETHER THE SOFTWARE AND ITS OUTPUTS ARE SUITABLE FOR
+      THEIR INTENDED APPLICATION, INCLUDING BUT NOT LIMITED TO
+      PHARMACEUTICAL, FOOD SAFETY, ENVIRONMENTAL, SEMICONDUCTOR, CLINICAL,
+      FORENSIC, OR ANY OTHER REGULATED OR SAFETY-CRITICAL USE;
+
+  (c) ENSURING COMPLIANCE WITH ALL APPLICABLE REGULATIONS, QUALITY
+      MANAGEMENT SYSTEMS, AND INDUSTRY STANDARDS (INCLUDING BUT NOT LIMITED
+      TO FDA 21 CFR PART 11, GMP, GLP, ISO 17025, AND EQUIVALENT
+      FRAMEWORKS) WHEN USING THIS SOFTWARE IN REGULATED ENVIRONMENTS;
+
+  (d) ASSESSING AND MANAGING ALL RISKS ASSOCIATED WITH DECISIONS MADE ON
+      THE BASIS OF OUTPUTS FROM THIS SOFTWARE.
+
+SPECTRA SCIENTIFIC LLC SHALL NOT BE LIABLE FOR ANY LOSSES, INJURIES, DEATHS,
+PROPERTY DAMAGE, ENVIRONMENTAL HARM, REGULATORY NON-COMPLIANCE, PRODUCT
+RECALLS, FAILED INSPECTIONS, OR OTHER CONSEQUENCES ARISING FROM RELIANCE ON
+RESULTS PRODUCED BY THIS SOFTWARE.
+
+
+4. NOT PROFESSIONAL ADVICE
+--------------------------
+
+Nothing in this software or its documentation constitutes professional,
+scientific, engineering, medical, legal, regulatory, or compliance advice.
+The software is a computational tool only. Users should seek qualified
+professional counsel appropriate to their specific application and
+regulatory environment.
+
+
+5. DATA AND PRIVACY
+-------------------
+
+While SpectraSherpa is designed for local-first operation, Spectra
+Scientific LLC makes no warranty regarding data security, data integrity,
+data privacy, or protection against unauthorized access. Users are solely
+responsible for securing their data, systems, and network environments.
+Spectra Scientific LLC shall not be liable for any data loss, data
+corruption, data breach, or unauthorized disclosure arising from the use
+of this software.
+
+
+6. THIRD-PARTY COMPONENTS
+--------------------------
+
+This software may incorporate or depend on third-party open-source
+libraries and components, each governed by their own license terms. Spectra
+Scientific LLC makes no warranty regarding the functionality, accuracy,
+security, or continued availability of any third-party component. See the
+Third-Party Notices section in README.md and individual package licenses
+for details.
+
+
+7. AI AND LLM FEATURES
+-----------------------
+
+This software includes optional integration with third-party large language
+model (LLM) providers (including but not limited to OpenAI, Anthropic,
+Google, DeepSeek, and Qwen) via user-supplied API keys. Spectra Scientific
+LLC:
+
+  (a) DOES NOT CONTROL, ENDORSE, OR GUARANTEE THE ACCURACY, COMPLETENESS,
+      OR RELIABILITY OF ANY LLM-GENERATED CONTENT, SUGGESTIONS, OR ANALYSIS;
+
+  (b) IS NOT RESPONSIBLE FOR ANY DATA TRANSMITTED TO THIRD-PARTY LLM
+      PROVIDERS WHEN USERS ENABLE THESE FEATURES;
+
+  (c) SHALL NOT BE LIABLE FOR ANY DECISIONS, ACTIONS, OR CONSEQUENCES
+      ARISING FROM RELIANCE ON LLM-GENERATED OUTPUTS.
+
+Users are solely responsible for reviewing and validating any AI-generated
+content before use.
+
+
+8. INDEMNIFICATION
+------------------
+
+By using this software, you agree to indemnify, defend, and hold harmless
+Spectra Scientific LLC, its officers, directors, employees, agents,
+affiliates, successors, and assigns from and against any and all claims,
+damages, losses, liabilities, costs, and expenses (including reasonable
+attorneys' fees) arising out of or in connection with your use of the
+software, your violation of any term of the AGPL-3.0 license, or your
+violation of any applicable law or regulation.
+
+
+9. GOVERNING LAW
+----------------
+
+This disclaimer and any disputes arising from the use of this software
+shall be governed by and construed in accordance with the laws of the
+State of Delaware, United States, without regard to its conflict of law
+provisions. Any legal action or proceeding arising under this disclaimer
+shall be brought exclusively in the courts located in the State of
+Delaware.
+
+
+10. SEVERABILITY
+----------------
+
+If any provision of this disclaimer is held to be unenforceable or invalid,
+such provision shall be modified to the minimum extent necessary to make it
+enforceable, and the remaining provisions shall continue in full force and
+effect.
+
+
+11. ENTIRE DISCLAIMER
+---------------------
+
+This disclaimer, together with the AGPL-3.0 license (LICENSE), constitutes
+the entire agreement between you and Spectra Scientific LLC regarding the
+use of this software and supersedes all prior or contemporaneous
+understandings, representations, or warranties regarding such subject
+matter.
+
+-------------------------------------------------------------------------------
+
+NOTICE: This disclaimer is provided for informational purposes and does not
+constitute legal advice. Spectra Scientific LLC recommends that users and
+organizations consult with qualified legal counsel to understand their
+rights and obligations under the AGPL-3.0 license and applicable law.
