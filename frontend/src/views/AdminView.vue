@@ -77,7 +77,24 @@
             </Column>
             <Column field="email" header="Email" sortable>
               <template #body="slotProps">
-                <span :class="{ 'text-secondary': !slotProps.data.email }">{{ slotProps.data.email || '—' }}</span>
+                <div v-if="editingEmailUserId === slotProps.data.id" class="email-edit-inline">
+                  <InputText
+                    v-model="editingEmailValue"
+                    size="small"
+                    placeholder="user@example.com"
+                    @keyup.enter="saveEmail(slotProps.data)"
+                    @keyup.escape="cancelEmailEdit"
+                  />
+                  <Button icon="pi pi-check" class="p-button-success p-button-sm p-button-text" @click="saveEmail(slotProps.data)" />
+                  <Button icon="pi pi-times" class="p-button-secondary p-button-sm p-button-text" @click="cancelEmailEdit" />
+                </div>
+                <span
+                  v-else
+                  class="email-cell"
+                  :class="{ 'text-secondary': !slotProps.data.email }"
+                  @click="startEmailEdit(slotProps.data)"
+                  v-tooltip.top="'Click to edit'"
+                >{{ slotProps.data.email || '—' }}</span>
               </template>
             </Column>
             <Column field="is_superuser" header="Role" style="width: 100px">
@@ -90,9 +107,21 @@
                 <Tag :severity="slotProps.data.is_active !== false ? 'success' : 'secondary'" :value="slotProps.data.is_active !== false ? 'Active' : 'Disabled'" />
               </template>
             </Column>
-            <Column field="created_at" header="Created" style="width: 150px" sortable>
+            <Column field="created_at" header="Created" style="width: 120px" sortable>
               <template #body="slotProps">
                 {{ formatDate(slotProps.data.created_at) }}
+              </template>
+            </Column>
+            <Column field="last_login_at" header="Last Login" style="width: 120px" sortable>
+              <template #body="slotProps">
+                <span :class="{ 'text-secondary': !slotProps.data.last_login_at }">
+                  {{ slotProps.data.last_login_at ? formatRelativeTime(slotProps.data.last_login_at) : 'Never' }}
+                </span>
+              </template>
+            </Column>
+            <Column field="login_count" header="Logins" style="width: 80px" sortable>
+              <template #body="slotProps">
+                {{ slotProps.data.login_count ?? 0 }}
               </template>
             </Column>
             <Column header="Actions" style="width: 200px">
@@ -258,6 +287,10 @@
         <InputText id="username" v-model="newUser.username" />
       </div>
       <div class="field">
+        <label for="new-email">Email <span class="text-secondary" style="font-weight: normal">(optional)</span></label>
+        <InputText id="new-email" v-model="newUser.email" type="email" placeholder="user@example.com" />
+      </div>
+      <div class="field">
         <label for="password">Password</label>
         <InputText id="password" v-model="newUser.password" type="password" />
       </div>
@@ -324,6 +357,8 @@ interface AdminUser {
   email?: string;
   is_superuser: boolean;
   is_active?: boolean;
+  last_login_at?: string;
+  login_count?: number;
   created_at?: string;
   [key: string]: unknown;
 }
@@ -374,12 +409,17 @@ const showCreateDialog = ref(false);
 const creating = ref(false);
 const newUser = ref({
   username: '',
+  email: '',
   password: '',
   is_superuser: false,
 });
 
 const showKeyDialog = ref(false);
 const newApiKey = ref('');
+
+// Inline email editing
+const editingEmailUserId = ref<number | null>(null);
+const editingEmailValue = ref('');
 
 // LLM management
 const llmProviders = ref<LlmProviderConfig[]>([]);
@@ -392,7 +432,10 @@ const savingLlmKey = ref(false);
 const filteredUsers = computed(() => {
   if (!userSearch.value) return users.value;
   const search = userSearch.value.toLowerCase();
-  return users.value.filter(u => u.username.toLowerCase().includes(search));
+  return users.value.filter(u =>
+    u.username.toLowerCase().includes(search) ||
+    (u.email && u.email.toLowerCase().includes(search))
+  );
 });
 
 const modeSeverity = computed(() => {
@@ -517,10 +560,16 @@ const createUser = async () => {
 
   creating.value = true;
   try {
-    await api.post('/admin/users', newUser.value);
+    const payload: Record<string, unknown> = {
+      username: newUser.value.username,
+      password: newUser.value.password,
+      is_superuser: newUser.value.is_superuser,
+    };
+    if (newUser.value.email) payload.email = newUser.value.email;
+    await api.post('/admin/users', payload);
     toast.add({ severity: 'success', summary: 'Success', detail: 'User created' });
     showCreateDialog.value = false;
-    newUser.value = { username: '', password: '', is_superuser: false };
+    newUser.value = { username: '', email: '', password: '', is_superuser: false };
     fetchUsers();
   } catch (error: unknown) {
     toast.add({ severity: 'error', summary: 'Error', detail: getErrorMessage(error, 'Failed to create user') });
@@ -570,6 +619,29 @@ const confirmDeleteUser = async (user: AdminUser) => {
   } catch (error) {
     toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to delete user' });
   }
+};
+
+// Inline email editing
+const startEmailEdit = (user: AdminUser) => {
+  editingEmailUserId.value = user.id;
+  editingEmailValue.value = user.email || '';
+};
+
+const cancelEmailEdit = () => {
+  editingEmailUserId.value = null;
+  editingEmailValue.value = '';
+};
+
+const saveEmail = async (user: AdminUser) => {
+  const email = editingEmailValue.value.trim() || null;
+  try {
+    await api.patch(`/admin/users/${user.id}/email`, { email });
+    user.email = email ?? undefined;
+    toast.add({ severity: 'success', summary: 'Success', detail: 'Email updated', life: 2000 });
+  } catch (error: unknown) {
+    toast.add({ severity: 'error', summary: 'Error', detail: getErrorMessage(error, 'Failed to update email') });
+  }
+  cancelEmailEdit();
 };
 
 // LLM key management
@@ -922,5 +994,28 @@ const getJobSeverity = (status: string) => {
 
 .text-secondary {
   color: var(--text-color-secondary);
+}
+
+/* Inline email editing */
+.email-cell {
+  cursor: pointer;
+  border-bottom: 1px dashed transparent;
+  transition: border-color 0.2s;
+}
+
+.email-cell:hover {
+  border-bottom-color: var(--primary-color);
+}
+
+.email-edit-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.email-edit-inline :deep(.p-inputtext) {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+  width: 180px;
 }
 </style>
