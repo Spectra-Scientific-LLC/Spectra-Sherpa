@@ -61,9 +61,7 @@ See the [Applications Guide](docs/user/applications.md) for detailed algorithm-t
 - **Deploy** — Batch prediction, folder watching, and execution run tracking with model provenance
 - **LLM Chat** — BYOK AI assistant (OpenAI, Anthropic, Google, DeepSeek, Qwen) for spectral analysis and workflow guidance
 - **Plugin System** — Extend the node library via Python entry points or drop-in modules
-- **Privacy Controls** — Fine-grained egress permissions for LLM context and data exports
-
-### Deployment Modes
+- **Privacy Controls** — Fine-grained egress permissions; "deny all" network policy by default; local-first architecture for IP-sensitive labs
 
 | Mode | Auth | Use Case |
 |------|------|----------|
@@ -73,102 +71,13 @@ See the [Applications Guide](docs/user/applications.md) for detailed algorithm-t
 
 ## Algorithm Library
 
-### SpectroChemPy Nodes (optional)
+Over 60 processing nodes across preprocessing, exploratory analysis, regression, classification, clustering, validation, synthesis, and deployment. Optionally install [SpectroChemPy](https://www.spectrochempy.fr/)-powered algorithms with `pip install spectra-sherpa[scp]`.
 
-Install with `pip install spectra-sherpa[scp]` to enable [SpectroChemPy](https://www.spectrochempy.fr/)-powered algorithms:
-
-| Node | Algorithm | SpectroChemPy Docs |
-|------|-----------|-------------------|
-| PCA | Principal Component Analysis | [spectrochempy.PCA](https://www.spectrochempy.fr/reference/generated/spectrochempy.PCA.html) |
-| PLS | Partial Least Squares Regression | [spectrochempy.PLSRegression](https://www.spectrochempy.fr/reference/generated/spectrochempy.PLSRegression.html) |
-| MCR-ALS | Multivariate Curve Resolution | [spectrochempy.MCRALS](https://www.spectrochempy.fr/reference/generated/spectrochempy.MCRALS.html) |
-| EFA | Evolving Factor Analysis | [spectrochempy.EFA](https://www.spectrochempy.fr/reference/generated/spectrochempy.EFA.html) |
-| SIMPLISMA | Pure variable resolution | [spectrochempy.SIMPLISMA](https://www.spectrochempy.fr/reference/generated/spectrochempy.SIMPLISMA.html) |
-| PLS-DA | Discriminant Analysis (via PLS) | [spectrochempy.PLSRegression](https://www.spectrochempy.fr/reference/generated/spectrochempy.PLSRegression.html) |
-| SIMCA | Soft Independent Modeling of Class Analogy | [spectrochempy.PCA](https://www.spectrochempy.fr/reference/generated/spectrochempy.PCA.html) (per-class models) |
-| Baseline (Rubberband) | Convex hull baseline | [spectrochempy.basc](https://www.spectrochempy.fr/reference/generated/spectrochempy.basc.html) |
-| OSC Filter | Orthogonal Signal Correction | [spectrochempy.PLSRegression](https://www.spectrochempy.fr/reference/generated/spectrochempy.PLSRegression.html) |
-| File Readers | JCAMP-DX, SPC, SPA, OPUS | [spectrochempy.NDDataset](https://www.spectrochempy.fr/reference/generated/spectrochempy.NDDataset.html) |
-
-### Built-in Algorithms (no SpectroChemPy required)
-
-Ships with the core install, powered by NumPy, SciPy, and scikit-learn:
-
-**Preprocessing** (consolidated nodes with method dropdowns)
-
-| Node | Methods |
-|------|---------|
-| Smooth | Savitzky-Golay, Whittaker, Gaussian |
-| Derivative | Savitzky-Golay, Norris-Williams (order 0/1/2) |
-| Normalize | SNV, MSC, Scale (max/area/minmax) |
-| Scale / Center | Mean Center, Autoscale, Pareto, Scale Max |
-| Baseline (Penalized LS) | ALS, ArPLS, AirPLS |
-| Baseline (Rubberband) | Convex hull (SCP) |
-| EMSC | Extended MSC with polynomial baseline |
-| Utilities | Cosmic Ray, Clip Range, Clip Floor, WN Align, Moving Window, Trend Removal |
-
-**Exploratory (Decomposition)**
-
-| Node | Algorithm |
-|------|-----------|
-| NMF | Non-negative Matrix Factorization |
-| ICA | Independent Component Analysis (FastICA) |
-| Peak Finding | Automated peak detection (scipy.signal) |
-
-**Regression**
-
-| Node | Algorithm |
-|------|-----------|
-| PCR | Principal Component Regression |
-| SVR | Support Vector Regression |
-| Linear Regression | Ordinary Least Squares |
-
-**Classification**
-
-| Node | Algorithm |
-|------|-----------|
-| KNN | K-Nearest Neighbors classifier |
-| Apply Classifier | Unified predict node (auto-detects PLS-DA, KNN, or SIMCA model) |
-
-**Clustering**
-
-| Node | Algorithm |
-|------|-----------|
-| K-Means | K-Means clustering |
-| DBSCAN | Density-based clustering |
-| HCA | Hierarchical Cluster Analysis |
-
-**Validation**
-
-| Node | Algorithm |
-|------|-----------|
-| Outlier Detection | Hotelling T² and Q residuals |
-| Cross-Validation | K-fold with RMSE/R² metrics |
-| Statistics | Descriptive statistics (mean, std, min/max) |
-
-**Synthesis & DOE**
-
-| Node | Description |
-|------|-------------|
-| Blend | Generate synthetic mixtures with concentration profiles |
-| Species | Mark spectra as blend components |
-| Merge | Combine spectra into stacked datasets |
-| Concentration Curve | Catmull-Rom spline (interactive control points), sigmoid, Gaussian, linear, exponential, step |
-| Noise Injection | Add controlled Gaussian noise |
-
-**Data & Deployment**
-
-| Node | Description |
-|------|-------------|
-| Data Source | Load from CSV, reference datasets, or sklearn |
-| NIST Library | Fetch reference spectra from NIST WebBook |
-| Train/Test Split | Stratified dataset splitting |
-| Load & Apply Model | Reload any saved model artifact |
-| Deploy Input/Output | Headless batch prediction endpoints |
+- **[Node Reference](docs/user/reference/nodes.md)** — Full catalog of every node with parameters and port definitions
+- **[Applications Guide](docs/user/applications.md)** — Algorithm-to-technique mapping for analytical chemistry and semiconductor metrology
+- **[Workflow Builder Guide](docs/user/workflow.md)** — How to build, connect, and execute processing pipelines
 
 ## Core Concepts
-
-### Projects, Workflows, and Models
 
 SpectraSherpa organizes work into **Projects** — containers that group related experiments, workflows, scripts, and trained models:
 
@@ -187,76 +96,31 @@ Project
     └── arrays.npz     — Numpy arrays (loadings, scores, etc.)
 ```
 
-- **Experiments** hold raw spectral data. Upload files or import example datasets.
-- **Workflows** define processing pipelines as directed acyclic graphs with version history and execution runs.
-- **Models** are trained artifacts (PCA, PLS, MCR, etc.) persisted to disk. Reload in new workflows via the **Load & Apply Model** node.
-- **Scripts** are Python exports for standalone reproducibility.
-
-### Workflow Execution
-
-```
-Data Source → Preprocessing → Modeling → Diagnostics
-                                ↓
-                          Model Artifact (saved)
-                                ↓
-                    Load & Apply Model (new data)
-```
-
-Training nodes automatically persist model artifacts. The **Load & Apply Model** node loads any saved model and applies `transform()` (decomposition) or `predict()` (classification) to new data.
-
 ## Installation
 
-### Requirements
-
-- Python 3.11+
-- Node.js 22+ (for frontend development only)
-
-### From source (minimal)
+**Requirements:** Python 3.11+ (Node.js 22+ for frontend development only)
 
 ```bash
-git clone https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa.git
-cd Spectra-Sherpa
-poetry install --with dev
+# User install
+pip install spectra-sherpa
 spectra-sherpa
-```
 
-### Optional extras
-
-| Extra | Install | Description |
-|-------|---------|-------------|
-| `scp` | `pip install spectra-sherpa[scp]` | [SpectroChemPy](https://www.spectrochempy.fr/) algorithms and file readers (see [Third-Party Notices](#third-party-notices)) |
-
-## Development Setup
-
-```bash
-# Backend (includes SpectroChemPy + Sherpa AI extras)
+# From source (development)
 git clone https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa.git
 cd Spectra-Sherpa
 poetry install --with dev --extras "scp sherpa"
 
-# Frontend
-cd frontend
-npm install
-npm run dev        # Dev server at http://localhost:5173
-```
+# Frontend development
+cd frontend && npm install && npm run dev
 
-### Running Tests
-
-```bash
-# Backend (from repo root)
+# Run tests
 poetry run pytest tests/ -v --no-cov
-
-# Frontend type check + build
 cd frontend && npx vue-tsc --noEmit && npm run build
 ```
 
-### Automated Test Triggers (GitHub Actions)
-
-Backend/frontend/docs CI runs automatically when:
-
-- A commit is pushed to `main`
-- A pull request targets `main`
-- A maintainer manually starts the workflow (`workflow_dispatch`)
+| Extra | Install | Description |
+|-------|---------|-------------|
+| `scp` | `pip install spectra-sherpa[scp]` | [SpectroChemPy](https://www.spectrochempy.fr/) algorithms and file readers |
 
 ## Documentation
 
@@ -266,33 +130,12 @@ Full documentation at [docs.spectrascientific.ai](https://docs.spectrascientific
 - [Quickstart](docs/user/quickstart.md)
 - [Configuration](docs/user/configuration.md)
 - [Applications Guide](docs/user/applications.md)
-- [Architecture](docs/dev/architecture.md)
 - [Node Reference](docs/user/reference/nodes.md)
-
-## Privacy-First Design
-
-SpectraSherpa is built for IP-sensitive environments.
-
-- **Local by default** — No data leaves your machine unless you explicitly configure it.
-- **Egress control** — The system enforces a "deny all" network policy by default. You opt in to features that require network access (NIST library, LLM assistance).
-- **Lab-grade safety** — Leader locks and database migrations ensure data integrity in shared and multi-user environments.
+- [Architecture](docs/dev/architecture.md)
 
 ## Third-Party Notices
 
-### SpectroChemPy
-
-SpectraSherpa optionally integrates with [SpectroChemPy](https://www.spectrochempy.fr/), a Python library for advanced spectroscopic data analysis developed by **Arnaud Travert and Christian Fernandez** at the [Laboratoire Catalyse et Spectrochimie (LCS)](https://www.lcs.ensicaen.fr/), ENSICAEN / Universit&eacute; de Caen / CNRS.
-
-SpectroChemPy is licensed under [CeCILL-B](https://cecill.info/licences/Licence_CeCILL-B_V1-en.html) (BSD-compatible); SpectraSherpa is AGPL-3.0. The two licenses differ, so SpectroChemPy is an opt-in extra (`pip install spectra-sherpa[scp]`).
-
-### Other Dependencies
-
-SpectraSherpa also builds on these open-source projects:
-
-- [scikit-learn](https://scikit-learn.org/) — Machine learning (BSD-3-Clause)
-- [NumPy](https://numpy.org/) / [SciPy](https://scipy.org/) — Numerical computing (BSD-3-Clause)
-- [FastAPI](https://fastapi.tiangolo.com/) — Web framework (MIT)
-- [SQLAlchemy](https://www.sqlalchemy.org/) — Database ORM (MIT)
+SpectraSherpa optionally integrates with [SpectroChemPy](https://www.spectrochempy.fr/), a Python library for advanced spectroscopic data analysis developed by **Arnaud Travert and Christian Fernandez** at the [Laboratoire Catalyse et Spectrochimie (LCS)](https://www.lcs.ensicaen.fr/), ENSICAEN / Universit&eacute; de Caen / CNRS. SpectroChemPy is licensed under [CeCILL-B](https://cecill.info/licences/Licence_CeCILL-B_V1-en.html) (BSD-compatible); SpectraSherpa is AGPL-3.0.
 
 ## Contributing
 
