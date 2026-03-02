@@ -63,6 +63,13 @@ htmlcov/
 .coverage.*
 coverage.xml
 
+# Generated files
+openapi.json
+
+# Linter / type-checker caches
+.mypy_cache/
+.ruff_cache/
+
 # Legacy backend/ directory (superseded by src/spectra_sherpa/)
 backend/
 

@@ -7,7 +7,7 @@
     <!-- Backend Status Banner -->
     <div v-if="!backendConnected" class="backend-status-banner">
       <i class="pi pi-exclamation-triangle"></i>
-      <span>Backend server is not running. Start the server at <code>http://127.0.0.1:8000</code></span>
+      <span>Unable to reach the backend server. Please check your connection.</span>
       <button @click="checkBackendStatus" class="retry-btn" :disabled="checkingStatus">
         <i class="pi pi-refresh" :class="{ 'pi-spin': checkingStatus }"></i>
         {{ checkingStatus ? 'Checking...' : 'Retry' }}
