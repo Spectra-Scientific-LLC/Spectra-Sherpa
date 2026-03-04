@@ -77,11 +77,7 @@ def validate_export(workflow: Workflow) -> list[ExportValidationError]:
         # Check that wired output ports exist in the node's exported output
         exported_ports = node.exported_output_ports()
         if exported_ports is not None:
-            wired_ports = {
-                e.from_output or "default"
-                for e in workflow.edges
-                if e.from_node_id == wf_node.node_id
-            }
+            wired_ports = {e.from_output or "default" for e in workflow.edges if e.from_node_id == wf_node.node_id}
             missing = wired_ports - exported_ports - {"default"}
             if missing:
                 errors.append(
@@ -156,8 +152,7 @@ def generate_python_code(workflow: Workflow) -> str:
     # by the _multi_port flag (handled separately in the source-node block).
     nodes_with_incoming = {e.to_node for e in edges}
     dict_output_nodes = frozenset(
-        nid for nid, node in node_map.items()
-        if nid in nodes_with_incoming and node.exported_output_ports() is not None
+        nid for nid, node in node_map.items() if nid in nodes_with_incoming and node.exported_output_ports() is not None
     )
 
     # --- build code lines ------------------------------------------------
@@ -236,11 +231,7 @@ def generate_python_code(workflow: Workflow) -> str:
             # Check if downstream edges use multiple output ports from this
             # node.  When they do, the result must be a dict so that
             # port-qualified references like results['node']['target'] work.
-            used_ports = {
-                e.from_output or "default"
-                for e in edges
-                if e.from_node == node_id
-            }
+            used_ports = {e.from_output or "default" for e in edges if e.from_node == node_id}
             is_multi_port = len(used_ports) > 1
 
             # Exportable source nodes (e.g. sklearn/eigenvector/SCP loaders)

@@ -324,7 +324,9 @@ class DataSourceNode(Node):
         lines.append(f"{indent}_ds = SherpaDataset(")
         lines.append(f"{indent}    _ev['spectra'],")
         lines.append(f"{indent}    feature_axis=SpectralAxis(")
-        lines.append(f"{indent}        values=_wavelengths if _wavelengths is not None else np.arange(_ev['spectra'].shape[1]),")
+        lines.append(
+            f"{indent}        values=_wavelengths if _wavelengths is not None else np.arange(_ev['spectra'].shape[1]),"
+        )
         lines.append(f"{indent}        title={x_title!r},")
         if x_units:
             lines.append(f"{indent}        units={x_units!r},")

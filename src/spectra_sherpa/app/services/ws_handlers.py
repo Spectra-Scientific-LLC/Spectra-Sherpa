@@ -485,29 +485,37 @@ async def handle_llm_chat_with_tools(
             async for event in event_stream:
                 event_type = event.get("type", "")
                 if event_type == "chunk":
-                    await ws.send_json({
-                        "type": f"{event_prefix}_chunk",
-                        "conversation_id": convo_id,
-                        "chunk": event.get("text", ""),
-                    })
+                    await ws.send_json(
+                        {
+                            "type": f"{event_prefix}_chunk",
+                            "conversation_id": convo_id,
+                            "chunk": event.get("text", ""),
+                        }
+                    )
                 elif event_type == "tool_start":
-                    await ws.send_json({
-                        "type": f"{event_prefix}_tool_start",
-                        "tool_name": event.get("tool_name", ""),
-                        "arguments": event.get("arguments"),
-                    })
+                    await ws.send_json(
+                        {
+                            "type": f"{event_prefix}_tool_start",
+                            "tool_name": event.get("tool_name", ""),
+                            "arguments": event.get("arguments"),
+                        }
+                    )
                 elif event_type == "tool_result":
-                    await ws.send_json({
-                        "type": f"{event_prefix}_tool_result",
-                        "tool_name": event.get("tool_name", ""),
-                        "success": event.get("success", False),
-                        "summary": event.get("summary", ""),
-                    })
+                    await ws.send_json(
+                        {
+                            "type": f"{event_prefix}_tool_result",
+                            "tool_name": event.get("tool_name", ""),
+                            "success": event.get("success", False),
+                            "summary": event.get("summary", ""),
+                        }
+                    )
 
             await ws.send_json({"type": f"{event_prefix}_done", "conversation_id": convo_id})
     except Exception as exc:
         logger.exception("llm_chat_with_tools failed: %s", exc)
-        await ws.send_json({"type": f"{event_prefix}_error", "detail": "LLM request failed. Check server logs for details."})
+        await ws.send_json(
+            {"type": f"{event_prefix}_error", "detail": "LLM request failed. Check server logs for details."}
+        )
 
 
 async def handle_sherpa_chat_with_tools(

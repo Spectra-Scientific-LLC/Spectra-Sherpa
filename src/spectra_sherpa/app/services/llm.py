@@ -430,28 +430,32 @@ class LLMService:
                 # Process tool calls
                 if is_anthropic:
                     # Append the full assistant response to messages
-                    llm_messages.append({
-                        "role": "assistant",
-                        "content": response.content,
-                    })
+                    llm_messages.append(
+                        {
+                            "role": "assistant",
+                            "content": response.content,
+                        }
+                    )
                 else:
                     # Append the assistant message with tool_calls
                     assistant_msg = response.choices[0].message
-                    llm_messages.append({
-                        "role": "assistant",
-                        "content": assistant_msg.content or "",
-                        "tool_calls": [
-                            {
-                                "id": tc.id,
-                                "type": "function",
-                                "function": {
-                                    "name": tc.function.name,
-                                    "arguments": tc.function.arguments,
-                                },
-                            }
-                            for tc in assistant_msg.tool_calls
-                        ],
-                    })
+                    llm_messages.append(
+                        {
+                            "role": "assistant",
+                            "content": assistant_msg.content or "",
+                            "tool_calls": [
+                                {
+                                    "id": tc.id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc.function.name,
+                                        "arguments": tc.function.arguments,
+                                    },
+                                }
+                                for tc in assistant_msg.tool_calls
+                            ],
+                        }
+                    )
 
                 tool_result_blocks: list[dict[str, Any]] = []
                 for tc_id, tc_name, tc_args in tool_calls:
@@ -465,9 +469,7 @@ class LLMService:
                         tool_name=tc_name,
                         arguments=tc_args,
                     )
-                    result = await execute_tool(
-                        invocation, tool_ctx, allow_internal=True
-                    )
+                    result = await execute_tool(invocation, tool_ctx, allow_internal=True)
 
                     summary = ""
                     if result.success:
@@ -484,20 +486,18 @@ class LLMService:
 
                     # Append tool result for next LLM round
                     if is_anthropic:
-                        tool_result_blocks.append(
-                            result.to_anthropic_block(tc_id)
-                        )
+                        tool_result_blocks.append(result.to_anthropic_block(tc_id))
                     else:
-                        llm_messages.append(
-                            result.to_openai_message(tc_id)
-                        )
+                        llm_messages.append(result.to_openai_message(tc_id))
 
                 # For Anthropic, batch tool results into a single user message
                 if is_anthropic and tool_result_blocks:
-                    llm_messages.append({
-                        "role": "user",
-                        "content": tool_result_blocks,
-                    })
+                    llm_messages.append(
+                        {
+                            "role": "user",
+                            "content": tool_result_blocks,
+                        }
+                    )
 
                 # If there was intermediate text with tool calls, emit it
                 if text:

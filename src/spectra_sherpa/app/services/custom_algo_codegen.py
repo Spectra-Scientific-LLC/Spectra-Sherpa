@@ -195,9 +195,7 @@ def validate_loader_plugin_source(code: str, *, project_id: int, slug: str) -> d
 
             metadata: dict[str, str] = {}
             for kw in item.value.keywords:
-                if kw.arg in {"node_type", "category", "label", "description"} and isinstance(
-                    kw.value, ast.Constant
-                ):
+                if kw.arg in {"node_type", "category", "label", "description"} and isinstance(kw.value, ast.Constant):
                     value = kw.value.value
                     if isinstance(value, str):
                         metadata[kw.arg] = value

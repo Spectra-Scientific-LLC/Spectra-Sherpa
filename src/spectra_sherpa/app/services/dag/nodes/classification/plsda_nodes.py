@@ -191,7 +191,9 @@ class PLSDANode(Node):
         lines.append(f"{indent}_pred_idx = np.argmax(_probs, axis=1)")
         lines.append(f"{indent}_pred_labels = np.array([_classes[i] for i in _pred_idx])")
         lines.append(f"{indent}_accuracy = np.mean(_pred_labels == _y_labels)")
-        lines.append(f'{indent}print(f"  PLS-DA ({n_components} LVs): accuracy={{_accuracy:.4f}} ({{len(_classes)}} classes)")')
+        lines.append(
+            f'{indent}print(f"  PLS-DA ({n_components} LVs): accuracy={{_accuracy:.4f}} ({{len(_classes)}} classes)")'
+        )
 
         # Store result
         lines.append(f"{indent}results['{self.node_id}'] = {{")

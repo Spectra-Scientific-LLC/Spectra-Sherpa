@@ -32,7 +32,7 @@ def main():
     print("=" * 60)
     print("Loading Corn MP5 dataset...")
     result = load_eigenvector_dataset("corn_mp5")
-    spectra = result["spectra"]        # (80, 700)
+    spectra = result["spectra"]  # (80, 700)
     properties = result["properties"]  # (80, 4): Moisture, Oil, Protein, Starch
     prop_names = result["prop_names"]
 
@@ -54,7 +54,6 @@ def main():
     print("=" * 60)
 
     import spectrochempy as scp
-    from spectra_sherpa.app.lib.adapters.scp_extractors import PLSExtract
 
     X_ndd = scp.NDDataset(spectra.astype(np.float64))
 
@@ -84,12 +83,12 @@ def main():
     print("PHASE 2: Generate Python export code")
     print("=" * 60)
 
-    from spectra_sherpa.app.services.dag.graph_utils import Edge, build_input_map
-    from spectra_sherpa.app.services.dag.node_base import node_registry
+    import spectra_sherpa.app.services.dag.nodes.data.source  # noqa: F401
 
     # Import node modules to register them
     import spectra_sherpa.app.services.dag.nodes.modeling.pls_nodes  # noqa: F401
-    import spectra_sherpa.app.services.dag.nodes.data.source  # noqa: F401
+    from spectra_sherpa.app.services.dag.graph_utils import Edge, build_input_map
+    from spectra_sherpa.app.services.dag.node_base import node_registry
 
     # Simulate a workflow: DataSource → PLS
     # The PLS node needs X and y inputs
@@ -112,7 +111,8 @@ def main():
     export_r2 = {}
     for target_name, target_idx in [("Moisture", moisture_idx), ("Protein", protein_idx)]:
         pls_node = node_registry.create_node(
-            "model.pls", "pls_1",
+            "model.pls",
+            "pls_1",
             {"n_components": n_components, "scale": scale},
         )
 
@@ -124,7 +124,8 @@ def main():
 
         # Build the full executable script
         y_col = properties[:, target_idx].astype(np.float64)
-        script = textwrap.dedent(f"""\
+        script = textwrap.dedent(
+            f"""\
             import numpy as np
             import spectrochempy as scp
 
@@ -136,7 +137,8 @@ def main():
                 'target': np.array({y_col.tolist()}, dtype=np.float64),
             }}
 
-        """)
+        """
+        )
         script += code_block
         script += "\n"
 

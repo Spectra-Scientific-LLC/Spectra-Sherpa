@@ -534,10 +534,18 @@ class PlotNode(Node):
 
         # Resolve axis labels from feature_axis or fallback to index
         feature_axis = dataset.feature_axis
-        if feature_axis is not None and feature_axis.labels is not None and len(feature_axis.labels) > max(x_col, y_col):
+        if (
+            feature_axis is not None
+            and feature_axis.labels is not None
+            and len(feature_axis.labels) > max(x_col, y_col)
+        ):
             x_label = str(feature_axis.labels[x_col])
             y_label = str(feature_axis.labels[y_col])
-        elif feature_axis is not None and feature_axis.values is not None and len(feature_axis.values) > max(x_col, y_col):
+        elif (
+            feature_axis is not None
+            and feature_axis.values is not None
+            and len(feature_axis.values) > max(x_col, y_col)
+        ):
             x_label = str(feature_axis.values[x_col])
             y_label = str(feature_axis.values[y_col])
         else:
@@ -556,8 +564,16 @@ class PlotNode(Node):
 
             unique_targets = np.unique(target)
             colors = [
-                "#3b82f6", "#ef4444", "#22c55e", "#f59e0b", "#8b5cf6",
-                "#ec4899", "#06b6d4", "#f97316", "#14b8a6", "#6366f1",
+                "#3b82f6",
+                "#ef4444",
+                "#22c55e",
+                "#f59e0b",
+                "#8b5cf6",
+                "#ec4899",
+                "#06b6d4",
+                "#f97316",
+                "#14b8a6",
+                "#6366f1",
             ]
 
             for i, t_val in enumerate(unique_targets):
@@ -570,23 +586,27 @@ class PlotNode(Node):
                 else:
                     label = str(t_val)
 
-                traces.append({
-                    "x": data[mask, x_col].tolist(),
-                    "y": data[mask, y_col].tolist(),
+                traces.append(
+                    {
+                        "x": data[mask, x_col].tolist(),
+                        "y": data[mask, y_col].tolist(),
+                        "type": "scatter",
+                        "mode": "markers",
+                        "marker": {"size": 8, "color": colors[i % len(colors)]},
+                        "name": label,
+                    }
+                )
+        else:
+            traces.append(
+                {
+                    "x": data[:, x_col].tolist(),
+                    "y": data[:, y_col].tolist(),
                     "type": "scatter",
                     "mode": "markers",
-                    "marker": {"size": 8, "color": colors[i % len(colors)]},
-                    "name": label,
-                })
-        else:
-            traces.append({
-                "x": data[:, x_col].tolist(),
-                "y": data[:, y_col].tolist(),
-                "type": "scatter",
-                "mode": "markers",
-                "marker": {"size": 8, "color": "#3b82f6"},
-                "name": "Samples",
-            })
+                    "marker": {"size": 8, "color": "#3b82f6"},
+                    "name": "Samples",
+                }
+            )
 
         return {
             "visualization": {

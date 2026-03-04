@@ -148,7 +148,9 @@ class OutlierDetectionNode(Node):
         lines.append(f"{indent}_flags = _t2 > _t2_limit")
 
         # Print summary
-        lines.append(f'{indent}print(f"  Outliers: {{np.sum(_flags)}} of {{len(_flags)}} flagged (T² > {{_t2_limit:.4f}})")')
+        lines.append(
+            f'{indent}print(f"  Outliers: {{np.sum(_flags)}} of {{len(_flags)}} flagged (T² > {{_t2_limit:.4f}})")'
+        )
 
         # Store multi-port output
         lines.append(f"{indent}results['{self.node_id}'] = {{")

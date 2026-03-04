@@ -142,7 +142,11 @@ class HCANode(Node):
         lines.append(f"{indent})")
         lines.append(f"{indent}_Z = linkage(_X_data, method='{linkage_method}', metric='{metric}')")
         lines.append(f"{indent}_labels = fcluster(_Z, t={n_clusters}, criterion='maxclust')")
-        lines.append(f'{indent}print(f"  HCA ({n_clusters} clusters, {linkage_method} linkage, {metric}): {{len(set(_labels))}} clusters found")')
+        lines.append(
+            f'{indent}print(f"  HCA ({n_clusters} clusters,'
+            f" {linkage_method} linkage, {metric}):"
+            f' {{len(set(_labels))}} clusters found")'
+        )
         lines.append(f"{indent}results['{self.node_id}'] = {{")
         lines.append(f"{indent}    'labels': _labels.tolist(),")
         lines.append(f"{indent}    'model': None,")
@@ -486,7 +490,11 @@ class KMeansNode(Node):
         lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
         lines.append(f"{indent}    dtype=np.float64,")
         lines.append(f"{indent})")
-        lines.append(f"{indent}_km = KMeans(n_clusters={n_clusters}, n_init={n_init}, max_iter={max_iter}, random_state={random_state})")
+        lines.append(
+            f"{indent}_km = KMeans(n_clusters={n_clusters},"
+            f" n_init={n_init}, max_iter={max_iter},"
+            f" random_state={random_state})"
+        )
         lines.append(f"{indent}_labels = _km.fit_predict(_X_data)")
         lines.append(f"{indent}_centroids = _km.cluster_centers_")
         lines.append(f'{indent}print(f"  KMeans ({n_clusters} clusters): inertia={{_km.inertia_:.4f}}")')
@@ -683,7 +691,12 @@ class DBSCANNode(Node):
         lines.append(f"{indent})")
         lines.append(f"{indent}_db = DBSCAN(eps={eps}, min_samples={min_samples}, metric='{metric}')")
         lines.append(f"{indent}_labels = _db.fit_predict(_X_data)")
-        lines.append(f'{indent}print(f"  DBSCAN (eps={eps}, min_samples={min_samples}, {metric}): {{len(set(_labels) - {{-1}})}} clusters, {{(_labels == -1).sum()}} noise points")')
+        lines.append(
+            f'{indent}print(f"  DBSCAN (eps={eps},'
+            f" min_samples={min_samples}, {metric}):"
+            f" {{len(set(_labels) - {{-1}})}} clusters,"
+            f' {{(_labels == -1).sum()}} noise points")'
+        )
         lines.append(f"{indent}results['{self.node_id}'] = {{")
         lines.append(f"{indent}    'labels': _labels.tolist(),")
         lines.append(f"{indent}    'model': _db,")

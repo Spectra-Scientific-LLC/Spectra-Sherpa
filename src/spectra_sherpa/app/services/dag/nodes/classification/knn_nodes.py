@@ -174,7 +174,9 @@ class KNNNode(Node):
 
         # KNN uses sklearn regardless of use_scp
         lines.append(f"{indent}from sklearn.neighbors import KNeighborsClassifier")
-        lines.append(f"{indent}_knn = KNeighborsClassifier(n_neighbors={n_neighbors}, weights='{weights}', metric='{metric}')")
+        lines.append(
+            f"{indent}_knn = KNeighborsClassifier(n_neighbors={n_neighbors}, weights='{weights}', metric='{metric}')"
+        )
         lines.append(f"{indent}_knn.fit(_X_data, _y_labels)")
         lines.append(f"{indent}_pred = _knn.predict(_X_data)")
         lines.append(f"{indent}_probs = _knn.predict_proba(_X_data)")

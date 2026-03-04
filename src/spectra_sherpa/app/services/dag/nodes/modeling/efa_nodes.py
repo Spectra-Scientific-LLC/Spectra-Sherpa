@@ -130,7 +130,9 @@ class EFANode(Node):
         lines.append(f"{indent}_efa.fit(_X_ndd)")
         lines.append(f"{indent}_fwd = np.asarray(_efa.f_ev.data, dtype=np.float64)")
         lines.append(f"{indent}_bwd = np.asarray(_efa.b_ev.data, dtype=np.float64)")
-        lines.append(f'{indent}print(f"  EFA ({n_components} components): forward={{_fwd.shape}}, backward={{_bwd.shape}}")')
+        lines.append(
+            f'{indent}print(f"  EFA ({n_components} components): forward={{_fwd.shape}}, backward={{_bwd.shape}}")'
+        )
         lines.append(f"{indent}results['{self.node_id}'] = {{")
         lines.append(f"{indent}    'model': _efa,")
         lines.append(f"{indent}    'forward_eigenvalues': _fwd,")

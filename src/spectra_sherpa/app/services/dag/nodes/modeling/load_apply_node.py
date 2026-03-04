@@ -170,7 +170,9 @@ class LoadApplyModelNode(Node):
         lines.append(f"{indent}    _result = _X_data @ np.linalg.pinv(_St)")
         lines.append(f"{indent}elif _model_type in ('plsda', 'knn', 'simca'):")
         lines.append(f"{indent}    # Classification: reconstruct extract and predict")
-        lines.append(f"{indent}    from spectra_sherpa.app.lib.adapters.scp_extractors import EXTRACT_REGISTRY as _EXTRACT_REGISTRY")
+        lines.append(f"{indent}    from spectra_sherpa.app.lib.adapters.scp_extractors import (")
+        lines.append(f"{indent}        EXTRACT_REGISTRY as _EXTRACT_REGISTRY,")
+        lines.append(f"{indent}    )")
         lines.append(f"{indent}    _extract_cls = _EXTRACT_REGISTRY.get(_model_type)")
         lines.append(f"{indent}    if _extract_cls is None:")
         lines.append(f"{indent}        raise ValueError(f'No extract class for {{_model_type}}')")
@@ -180,7 +182,11 @@ class LoadApplyModelNode(Node):
         lines.append(f"{indent}else:")
         lines.append(f"{indent}    raise ValueError(f'Unsupported model type: {{_model_type}}')")
 
-        lines.append(f"{indent}print(f\"  Load & Apply ({{_model_type}}): result={{_result.shape if hasattr(_result, 'shape') else type(_result).__name__}}\")")
+        lines.append(
+            f'{indent}print(f"  Load & Apply ({{_model_type}}):'
+            f" result={{_result.shape if hasattr(_result, 'shape')"
+            f' else type(_result).__name__}}")'
+        )
         lines.append(f"{indent}results['{self.node_id}'] = {{")
         lines.append(f"{indent}    'result': _result,")
         lines.append(f"{indent}    'labels': _labels,")

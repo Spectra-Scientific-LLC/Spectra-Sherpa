@@ -15,9 +15,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 # Register nodes
-import spectra_sherpa.app.services.dag.nodes.modeling.pls_nodes  # noqa: F401
 import spectra_sherpa.app.services.dag.nodes.data.source  # noqa: F401
-
+import spectra_sherpa.app.services.dag.nodes.modeling.pls_nodes  # noqa: F401
 from spectra_sherpa.app.lib.eigenvector import load_eigenvector_dataset
 from spectra_sherpa.app.services.python_export import generate_python_code
 
@@ -83,7 +82,7 @@ def main():
         y_pred = np.asarray(pls.predict(X_ndd).data, dtype=np.float64).ravel()
         backend_r2[name] = r2_score(y.ravel(), y_pred)
 
-    print(f"\nBackend (reference):")
+    print("\nBackend (reference):")
     for name, r2 in backend_r2.items():
         print(f"  {name}: R² = {r2:.6f}")
 
@@ -111,7 +110,6 @@ def main():
 
         # Fill in the source placeholder with actual Corn MP5 data
         # Replace the placeholder block with actual data loading
-        y_col = properties[:, target_idx]
         source_replacement = (
             f"    # --- Source: source_1 (data.source) ---\n"
             f"    # Corn MP5 {target_name} data\n"
@@ -134,9 +132,7 @@ def main():
                 new_lines.extend(source_replacement.split("\n"))
                 continue
             if skip_until_next_section:
-                if line.strip() == "" and not any(
-                    marker in line for marker in ["EDIT", "results['source_1']"]
-                ):
+                if line.strip() == "" and not any(marker in line for marker in ["EDIT", "results['source_1']"]):
                     skip_until_next_section = False
                     new_lines.append(line)
                 continue

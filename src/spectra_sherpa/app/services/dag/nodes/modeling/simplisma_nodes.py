@@ -170,7 +170,12 @@ class SIMPLISMANode(Node):
         lines.append(f"{indent}_simplisma.fit(_X_ndd)")
         lines.append(f"{indent}_C = np.asarray(_simplisma.C.data, dtype=np.float64)")
         lines.append(f"{indent}_St = np.asarray(_simplisma.St.data, dtype=np.float64)")
-        lines.append(f"{indent}_purity = np.asarray(_simplisma.Pur.data, dtype=np.float64).tolist() if hasattr(_simplisma, 'Pur') and _simplisma.Pur is not None else []")
+        lines.append(
+            f"{indent}_purity = ("
+            f"np.asarray(_simplisma.Pur.data, dtype=np.float64).tolist()"
+            f" if hasattr(_simplisma, 'Pur') and _simplisma.Pur is not None"
+            f" else [])"
+        )
         lines.append(f'{indent}print(f"  SIMPLISMA ({n_components} components): C={{_C.shape}}, St={{_St.shape}}")')
         lines.append(f"{indent}results['{self.node_id}'] = {{")
         lines.append(f"{indent}    'model': _simplisma,")

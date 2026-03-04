@@ -106,7 +106,7 @@ class ClassifierPredictNode(Node):
         # Get model dict and dispatch by type
         lines.append(f"{indent}_model_dict = {model_expr}")
         lines.append(f"{indent}_model_type = _model_dict.get('type', '') if isinstance(_model_dict, dict) else ''")
-        lines.append(f"")
+        lines.append("")
         lines.append(f"{indent}if _model_type == 'knn':")
         lines.append(f"{indent}    # KNN — sklearn predict + predict_proba")
         lines.append(f"{indent}    _estimator = _model_dict['model']")
@@ -117,7 +117,9 @@ class ClassifierPredictNode(Node):
         lines.append(f"{indent}    _pls_model = _model_dict['model']")
         lines.append(f"{indent}    _classes = _model_dict['classes']")
         if use_scp:
-            lines.append(f"{indent}    _y_raw = np.asarray(_pls_model.predict(scp.NDDataset(_X_data)).data, dtype=np.float64)")
+            lines.append(
+                f"{indent}    _y_raw = np.asarray(_pls_model.predict(scp.NDDataset(_X_data)).data, dtype=np.float64)"
+            )
         else:
             lines.append(f"{indent}    _y_raw = np.asarray(_pls_model.predict(_X_data), dtype=np.float64)")
         lines.append(f"{indent}    if _y_raw.ndim == 1:")
@@ -151,7 +153,10 @@ class ClassifierPredictNode(Node):
         lines.append(f"{indent}    _y_pred = np.array(_y_pred)")
         lines.append(f"{indent}else:")
         lines.append(f"{indent}    # Fallback: bare estimator with predict()")
-        lines.append(f"{indent}    _estimator = _model_dict.get('model', _model_dict) if isinstance(_model_dict, dict) else _model_dict")
+        lines.append(
+            f"{indent}    _estimator = _model_dict.get('model', _model_dict)"
+            f" if isinstance(_model_dict, dict) else _model_dict"
+        )
         lines.append(f"{indent}    if hasattr(_estimator, 'predict_proba'):")
         lines.append(f"{indent}        _y_pred = _estimator.predict(_X_data)")
         lines.append(f"{indent}        _y_prob = _estimator.predict_proba(_X_data)")
@@ -165,7 +170,11 @@ class ClassifierPredictNode(Node):
         # Store result
         lines.append(f"{indent}results['{self.node_id}'] = {{")
         lines.append(f"{indent}    'y_pred': _y_pred.tolist() if hasattr(_y_pred, 'tolist') else list(_y_pred),")
-        lines.append(f"{indent}    'y_prob': _y_prob if isinstance(_y_prob, list) else (_y_prob.tolist() if _y_prob is not None and hasattr(_y_prob, 'tolist') else _y_prob),")
+        lines.append(
+            f"{indent}    'y_prob': _y_prob if isinstance(_y_prob, list)"
+            f" else (_y_prob.tolist() if _y_prob is not None"
+            f" and hasattr(_y_prob, 'tolist') else _y_prob),"
+        )
         lines.append(f"{indent}}}")
 
         return lines

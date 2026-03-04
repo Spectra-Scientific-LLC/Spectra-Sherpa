@@ -30,9 +30,7 @@ async def init_db() -> None:
     from sqlalchemy import inspect as sa_inspect
 
     async with engine.connect() as conn:
-        table_names = await conn.run_sync(
-            lambda sync_conn: sa_inspect(sync_conn).get_table_names()
-        )
+        table_names = await conn.run_sync(lambda sync_conn: sa_inspect(sync_conn).get_table_names())
 
     has_alembic = "alembic_version" in table_names
 
@@ -53,7 +51,9 @@ async def init_db() -> None:
         logger.info("Alembic migrations applied successfully")
     except Exception as exc:
         logger.error(
-            "Alembic migration failed: %s", exc, exc_info=True,
+            "Alembic migration failed: %s",
+            exc,
+            exc_info=True,
         )
         raise RuntimeError("Database migration failed; startup aborted.") from exc
 
@@ -74,9 +74,7 @@ async def _run_alembic(cmd: str, revision: str) -> None:
     alembic_ini = package_root / "alembic.ini"
 
     if not alembic_ini.exists() or not alembic_dir.exists():
-        raise RuntimeError(
-            f"Alembic config missing (ini={alembic_ini}, dir={alembic_dir})"
-        )
+        raise RuntimeError(f"Alembic config missing (ini={alembic_ini}, dir={alembic_dir})")
 
     cfg = Config(str(alembic_ini))
     cfg.set_main_option("script_location", str(alembic_dir))

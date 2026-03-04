@@ -172,12 +172,14 @@ class NMFNode(Node):
 
         # NMF uses sklearn regardless of use_scp
         lines.append(f"{indent}from sklearn.decomposition import NMF as _NMF")
-        lines.append(f"{indent}_nmf = _NMF(n_components={n_components}, solver='{solver}', max_iter={max_iter}, tol={tol})")
+        lines.append(
+            f"{indent}_nmf = _NMF(n_components={n_components}, solver='{solver}', max_iter={max_iter}, tol={tol})"
+        )
         lines.append(f"{indent}_W = _nmf.fit_transform(_X_data)")
         lines.append(f"{indent}_H = _nmf.components_")
         lines.append(f"{indent}_err = _nmf.reconstruction_err_ if hasattr(_nmf, 'reconstruction_err_') else None")
         lines.append(f'{indent}print(f"  NMF ({n_components} components): W={{_W.shape}}, H={{_H.shape}}")')
-        lines.append(f'{indent}if _err is not None:')
+        lines.append(f"{indent}if _err is not None:")
         lines.append(f'{indent}    print(f"    Reconstruction error: {{_err:.6f}}")')
 
         # Store result
@@ -493,12 +495,16 @@ class FastICANode(Node):
 
         # FastICA uses sklearn regardless of use_scp
         lines.append(f"{indent}from sklearn.decomposition import FastICA as _FastICA")
-        lines.append(f"{indent}_ica = _FastICA(n_components={n_components}, algorithm='{algorithm}', fun='{fun}', max_iter={max_iter}, tol={tol})")
+        lines.append(
+            f"{indent}_ica = _FastICA(n_components={n_components},"
+            f" algorithm='{algorithm}', fun='{fun}',"
+            f" max_iter={max_iter}, tol={tol})"
+        )
         lines.append(f"{indent}_S = _ica.fit_transform(_X_data)")
         lines.append(f"{indent}_St = _ica.components_ if hasattr(_ica, 'components_') else None")
         lines.append(f"{indent}_A = _ica.mixing_ if hasattr(_ica, 'mixing_') else None")
         lines.append(f'{indent}print(f"  FastICA ({n_components} components): sources={{_S.shape}}")')
-        lines.append(f'{indent}if _St is not None:')
+        lines.append(f"{indent}if _St is not None:")
         lines.append(f'{indent}    print(f"    Spectral profiles: {{_St.shape}}")')
 
         # Store result

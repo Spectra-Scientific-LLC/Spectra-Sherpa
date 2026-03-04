@@ -48,8 +48,7 @@ def _assert_expected_source_table() -> None:
     missing = expected - actual
     if missing:
         raise RuntimeError(
-            f"custom_algo table missing required columns: {sorted(missing)}. "
-            "Cannot rebuild table safely."
+            f"custom_algo table missing required columns: {sorted(missing)}. " "Cannot rebuild table safely."
         )
 
 

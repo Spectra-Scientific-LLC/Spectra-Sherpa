@@ -182,7 +182,9 @@ class PCANode(Node):
             std_str = "True" if standardized else "False"
             scl_str = "True" if scaled else "False"
             lines.append(f"{indent}_X_ndd = scp.NDDataset(_X_data)")
-            lines.append(f"{indent}_pca = scp.PCA(n_components={n_components}, standardized={std_str}, scaled={scl_str})")
+            lines.append(
+                f"{indent}_pca = scp.PCA(n_components={n_components}, standardized={std_str}, scaled={scl_str})"
+            )
             lines.append(f"{indent}_pca.fit(_X_ndd)")
             # Extract results
             lines.append(f"{indent}_scores = np.asarray(_pca.transform().data, dtype=np.float64)")
@@ -205,7 +207,7 @@ class PCANode(Node):
 
         # Print summary
         lines.append(f'{indent}print(f"  PCA ({n_components} components):")')
-        lines.append(f'{indent}for _i, _v in enumerate(_evr):')
+        lines.append(f"{indent}for _i, _v in enumerate(_evr):")
         lines.append(f'{indent}    print(f"    PC{{_i+1}}: {{_v*100:.2f}}% variance")')
         lines.append(f'{indent}print(f"    Cumulative: {{np.cumsum(_evr)[-1]*100:.2f}}%")')
 

@@ -216,8 +216,10 @@ class PLSNode(Node):
         lines.append(f"{indent}_ss_tot = np.sum((_y_data - np.mean(_y_data, axis=0)) ** 2, axis=0)")
         lines.append(f"{indent}_r2 = np.where(_ss_tot > 0, 1.0 - _ss_res / _ss_tot, np.nan)")
         lines.append(f"{indent}_rmse = np.sqrt(np.mean((_y_data - _y_pred) ** 2, axis=0))")
-        lines.append(f'{indent}print(f"  PLS ({{_y_data.shape[1]}} target(s), {n_components} LVs, scale={scale_str}):")')
-        lines.append(f'{indent}for _i, (_r, _m) in enumerate(zip(_r2.flat, _rmse.flat)):')
+        lines.append(
+            f'{indent}print(f"  PLS ({{_y_data.shape[1]}} target(s), {n_components} LVs, scale={scale_str}):")'
+        )
+        lines.append(f"{indent}for _i, (_r, _m) in enumerate(zip(_r2.flat, _rmse.flat)):")
         lines.append(f'{indent}    print(f"    Target {{_i}}: R²={{_r:.6f}}  RMSE={{_m:.6f}}")')
 
         # Extract model components for multi-port output
@@ -612,7 +614,9 @@ class PLSPredictNode(Node):
 
         # Get model
         lines.append(f"{indent}_model_input = {model_expr}")
-        lines.append(f"{indent}_pls_model = _model_input.get('model') if isinstance(_model_input, dict) else _model_input")
+        lines.append(
+            f"{indent}_pls_model = _model_input.get('model') if isinstance(_model_input, dict) else _model_input"
+        )
 
         if use_scp:
             lines.append(f"{indent}_X_ndd = scp.NDDataset(_X_data)")

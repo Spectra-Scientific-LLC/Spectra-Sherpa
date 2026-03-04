@@ -154,7 +154,9 @@ class PCRNode(Node):
         # Extract y
         if y_expr:
             lines.append(f"{indent}_y_raw = {y_expr}")
-            lines.append(f"{indent}_y = np.array(_y_raw.data if hasattr(_y_raw, 'data') else _y_raw, dtype=np.float64).ravel()")
+            lines.append(
+                f"{indent}_y = np.array(_y_raw.data if hasattr(_y_raw, 'data') else _y_raw, dtype=np.float64).ravel()"
+            )
         else:
             lines.append(f"{indent}_y = np.array(")
             lines.append(f"{indent}    _X_input.target if hasattr(_X_input, 'target') and _X_input.target is not None")
@@ -178,7 +180,9 @@ class PCRNode(Node):
         lines.append(f"{indent}_y_pred = _pcr.predict(_X_data)")
         lines.append(f"{indent}_r2 = _r2_score(_y, _y_pred)")
         lines.append(f"{indent}_rmse = float(np.sqrt(_mse(_y, _y_pred)))")
-        lines.append(f"{indent}_scores = _pcr.named_steps['pca'].transform(_pcr.named_steps['scaler'].transform(_X_data))")
+        lines.append(
+            f"{indent}_scores = _pcr.named_steps['pca'].transform(_pcr.named_steps['scaler'].transform(_X_data))"
+        )
         lines.append(f"{indent}_loadings = _pcr.named_steps['pca'].components_")
         lines.append(f'{indent}print(f"  PCR ({n_components} components): R²={{_r2:.4f}}, RMSE={{_rmse:.4f}}")')
 

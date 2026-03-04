@@ -16,7 +16,6 @@ import pytest
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP
 from spectra_sherpa.app.services.dag.node_base import node_registry
 
-
 # ═══════════════════════════════════════════════════════════════════════════
 # Helpers
 # ═══════════════════════════════════════════════════════════════════════════
@@ -322,11 +321,14 @@ class TestOrchestratorIntegration:
 class TestCodeExecutability:
     """Generated code should be syntactically valid Python."""
 
-    @pytest.mark.parametrize("source,extra", [
-        ("sklearn", {"sklearn_dataset": "iris"}),
-        ("eigenvector", {"eigenvector_dataset": "corn_m5"}),
-        ("spectrochempy", {"example_dataset": "irdata"}),
-    ])
+    @pytest.mark.parametrize(
+        "source,extra",
+        [
+            ("sklearn", {"sklearn_dataset": "iris"}),
+            ("eigenvector", {"eigenvector_dataset": "corn_m5"}),
+            ("spectrochempy", {"example_dataset": "irdata"}),
+        ],
+    )
     def test_syntax_valid(self, source, extra):
         """Generated code compiles without SyntaxError."""
         node = _create_source(source, **extra)
@@ -412,11 +414,10 @@ def _make_workflow(name: str, nodes: list, edges: list) -> SimpleNamespace:
 @pytest.mark.skipif(not HAS_SCP, reason="SCP required for export execution")
 def test_preprocess_normalize_then_pls_export_preserves_embedded_targets():
     """Preprocessing export should preserve embedded targets for downstream PLS."""
-    from spectra_sherpa.app.services.python_export import generate_python_code, validate_export
-
     import spectra_sherpa.app.services.dag.nodes.data.source  # noqa: F401
     import spectra_sherpa.app.services.dag.nodes.modeling.pls_nodes  # noqa: F401
     import spectra_sherpa.app.services.dag.nodes.preprocessing  # noqa: F401
+    from spectra_sherpa.app.services.python_export import generate_python_code, validate_export
 
     wf = _make_workflow(
         "normalize to pls",
@@ -441,13 +442,13 @@ def test_preprocess_normalize_then_pls_export_preserves_embedded_targets():
     assert results["pls"]["r2"].shape == (4,)
 
 
+@pytest.mark.skipif(not HAS_SCP, reason="SIMCA export requires spectrochempy")
 def test_simca_to_classifier_predict_export_uses_model_port():
     """SIMCA export should validate when wired through the wrapped model port."""
-    from spectra_sherpa.app.services.python_export import generate_python_code, validate_export
-
     import spectra_sherpa.app.services.dag.nodes.classification.predict_node  # noqa: F401
     import spectra_sherpa.app.services.dag.nodes.classification.simca_nodes  # noqa: F401
     import spectra_sherpa.app.services.dag.nodes.data.source  # noqa: F401
+    from spectra_sherpa.app.services.python_export import generate_python_code, validate_export
 
     wf = _make_workflow(
         "simca predict",

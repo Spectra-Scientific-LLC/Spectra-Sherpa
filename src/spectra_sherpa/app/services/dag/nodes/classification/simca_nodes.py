@@ -193,7 +193,11 @@ class SIMCANode(Node):
         lines.append(f"{indent}    _pca.fit(_ndd)")
         lines.append(f"{indent}    _scores = np.asarray(_pca.transform().data, dtype=np.float64)")
         lines.append(f"{indent}    _loadings = np.asarray(_pca.components.data, dtype=np.float64)")
-        lines.append(f"{indent}    _class_models[_cls] = {{'pca': _pca, 'scores': _scores, 'loadings': _loadings, 'mean': np.mean(_X_cls, axis=0)}}")
+        lines.append(
+            f"{indent}    _class_models[_cls] = {{"
+            f"'pca': _pca, 'scores': _scores,"
+            f" 'loadings': _loadings, 'mean': np.mean(_X_cls, axis=0)}}"
+        )
 
         # Classify all samples
         lines.append(f"{indent}_predictions = []")
@@ -215,7 +219,11 @@ class SIMCANode(Node):
         lines.append(f"{indent}    _distances.append(_sample_distances)")
         lines.append(f"{indent}_predictions = np.array(_predictions)")
         lines.append(f"{indent}_accuracy = np.mean(_predictions == _y_labels)")
-        lines.append(f'{indent}print(f"  SIMCA ({n_components} PCs, conf={confidence_level}): accuracy={{_accuracy:.4f}} ({{len(_classes)}} classes)")')
+        lines.append(
+            f'{indent}print(f"  SIMCA ({n_components} PCs,'
+            f" conf={confidence_level}):"
+            f' accuracy={{_accuracy:.4f}} ({{len(_classes)}} classes)")'
+        )
 
         # Store result — compute T²/Q limits for export (simplified)
         lines.append(f"{indent}_T2_limits = {{}}")
@@ -230,7 +238,18 @@ class SIMCANode(Node):
         lines.append(f"{indent}    _Q_limits[str(_cls)] = float(np.mean(np.sum((_resid - _recon) ** 2, axis=1)) * 3.0)")
         lines.append(f"{indent}results['{self.node_id}'] = {{")
         lines.append(f"{indent}    'model': {{")
-        lines.append(f"{indent}        'class_models': {{str(c): {{'loadings': _class_models[c]['loadings'], 'eigenvalues': np.var(_class_models[c]['scores'], axis=0) * _class_models[c]['scores'].shape[0], 'class_mean': _class_models[c]['mean'], 'n_samples': _class_models[c]['scores'].shape[0]}} for c in _classes}},")
+        # Build class_models dict comprehension across multiple lines
+        lines.append(f"{indent}        'class_models': {{")
+        lines.append(f"{indent}            str(c): {{")
+        lines.append(f"{indent}                'loadings': _class_models[c]['loadings'],")
+        lines.append(
+            f"{indent}                'eigenvalues': np.var(_class_models[c]['scores'], axis=0)"
+            f" * _class_models[c]['scores'].shape[0],"
+        )
+        lines.append(f"{indent}                'class_mean': _class_models[c]['mean'],")
+        lines.append(f"{indent}                'n_samples': _class_models[c]['scores'].shape[0],")
+        lines.append(f"{indent}            }} for c in _classes")
+        lines.append(f"{indent}        }},")
         lines.append(f"{indent}        'classes': [str(c) for c in _classes],")
         lines.append(f"{indent}        'T2_limits': _T2_limits,")
         lines.append(f"{indent}        'Q_limits': _Q_limits,")

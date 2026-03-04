@@ -167,7 +167,6 @@ class TrainTestSplitNode(Node):
             lines.append(f"{indent}    _y_data = np.asarray(_y_data, dtype=np.float64)")
 
         # Split
-        shuffle_str = "True" if shuffle else "False"
         if split_method == "sequential":
             lines.append(f"{indent}_n = _X_data.shape[0]")
             lines.append(f"{indent}_n_test = int(_n * {test_size})")
