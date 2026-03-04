@@ -694,11 +694,11 @@ class TestGeneratePythonNoScp:
         assert "_Result(" in code
         assert "np.array(" in code
 
-    def test_snv_scp_uses_nddataset(self):
+    def test_snv_scp_uses_sherpa_dataset(self):
         node = self._make_node("preprocess.normalize", {"method": "snv"})
         lines = node.generate_python(self._inputs(), use_scp=True)
         code = "\n".join(lines)
-        assert "scp.NDDataset" in code
+        assert "SherpaDataset(" in code
 
     def test_scale_no_scp_uses_result(self):
         node = self._make_node("preprocess.normalize", {"method": "scale"})

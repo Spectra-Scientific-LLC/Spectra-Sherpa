@@ -64,12 +64,13 @@ async def test_custom_algo_startup_succeeds_when_reload_succeeds(monkeypatch, tm
         _reload,
     )
 
-    await main._load_custom_algo_plugins_or_raise()
+    await main._load_custom_algo_plugins()
     assert reloaded == ["ualgo.1.ok"]
 
 
 @pytest.mark.asyncio
-async def test_custom_algo_startup_fails_fast_with_node_type_context(monkeypatch, tmp_path):
+async def test_custom_algo_startup_skips_broken_plugins(monkeypatch, tmp_path, caplog):
+    """Broken plugins are skipped (logged), not fatal."""
     broken = _FakeAlgo(node_type="ualgo.2.broken")
 
     monkeypatch.setattr(main, "async_session", lambda: _FakeSession([broken]))
@@ -90,9 +91,12 @@ async def test_custom_algo_startup_fails_fast_with_node_type_context(monkeypatch
         _reload,
     )
 
-    with pytest.raises(RuntimeError) as exc_info:
-        await main._load_custom_algo_plugins_or_raise()
+    # Should NOT raise — broken plugins are skipped
+    import logging
 
-    msg = str(exc_info.value)
-    assert "Custom algo startup failed" in msg
-    assert "ualgo.2.broken" in msg
+    with caplog.at_level(logging.ERROR, logger="spectra_sherpa.app.main"):
+        await main._load_custom_algo_plugins()
+
+    # Verify the error was logged
+    assert any("Skipping broken custom algo" in r.message for r in caplog.records)
+    assert any("ualgo.2.broken" in r.message for r in caplog.records)

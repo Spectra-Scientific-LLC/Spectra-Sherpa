@@ -131,6 +131,77 @@ class PLSDANode(Node):
         help_url="https://www.spectrochempy.fr/reference/generated/spectrochempy.PLSRegression.html",
     )
 
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python export code for PLS-DA classification."""
+        if not use_scp:
+            return [
+                f"{indent}# --- PLS-DA ({self.node_id}) ---",
+                f"{indent}# PLS-DA requires SpectroChemPy (pip install spectra-sherpa[scp])",
+                f"{indent}raise ImportError('PLS-DA requires spectrochempy')",
+            ]
+
+        params = self._resolve_params()
+        n_components = params.get("n_components", 2)
+        scale = params.get("scale", True)
+
+        X_expr = inputs.get("X", inputs.get("default", "input_data"))
+        y_expr = inputs.get("y")
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- PLS-DA ({self.node_id}) ---")
+
+        # Extract X
+        lines.append(f"{indent}_X_input = {X_expr}")
+        lines.append(f"{indent}_X_data = np.array(")
+        lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
+        lines.append(f"{indent}    dtype=np.float64,")
+        lines.append(f"{indent})")
+
+        # Extract y (class labels)
+        if y_expr:
+            lines.append(f"{indent}_y_raw = {y_expr}")
+            lines.append(f"{indent}_y_labels = np.asarray(_y_raw.data if hasattr(_y_raw, 'data') else _y_raw).ravel()")
+        else:
+            lines.append(f"{indent}_y_labels = np.asarray(")
+            lines.append(f"{indent}    _X_input.target if hasattr(_X_input, 'target') and _X_input.target is not None")
+            lines.append(f"{indent}    else _X_input.meta.get('target'),")
+            lines.append(f"{indent}).ravel()")
+
+        # One-hot encode → PLS → classify
+        scale_str = "True" if scale else "False"
+        lines.append(f"{indent}_classes = sorted(set(_y_labels.tolist()))")
+        lines.append(f"{indent}_class_map = {{c: i for i, c in enumerate(_classes)}}")
+        lines.append(f"{indent}_y_idx = np.array([_class_map[c] for c in _y_labels.tolist()])")
+        lines.append(f"{indent}_Y_dummy = np.eye(len(_classes))[_y_idx]")
+        lines.append(f"{indent}_X_ndd = scp.NDDataset(_X_data)")
+        lines.append(f"{indent}_Y_ndd = scp.NDDataset(_Y_dummy)")
+        lines.append(f"{indent}_pls = scp.PLSRegression(n_components={n_components}, scale={scale_str})")
+        lines.append(f"{indent}_pls.fit(_X_ndd, _Y_ndd)")
+        lines.append(f"{indent}_y_pred_raw = np.asarray(_pls.predict(_X_ndd).data, dtype=np.float64)")
+        lines.append(f"{indent}if _y_pred_raw.ndim == 1:")
+        lines.append(f"{indent}    _y_pred_raw = _y_pred_raw.reshape(-1, len(_classes))")
+        lines.append(f"{indent}# Softmax to probabilities")
+        lines.append(f"{indent}_exp = np.exp(_y_pred_raw - _y_pred_raw.max(axis=1, keepdims=True))")
+        lines.append(f"{indent}_probs = _exp / _exp.sum(axis=1, keepdims=True)")
+        lines.append(f"{indent}_pred_idx = np.argmax(_probs, axis=1)")
+        lines.append(f"{indent}_pred_labels = np.array([_classes[i] for i in _pred_idx])")
+        lines.append(f"{indent}_accuracy = np.mean(_pred_labels == _y_labels)")
+        lines.append(f'{indent}print(f"  PLS-DA ({n_components} LVs): accuracy={{_accuracy:.4f}} ({{len(_classes)}} classes)")')
+
+        # Store result
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'model': {{'model': _pls, 'classes': _classes, 'type': 'plsda'}},")
+        lines.append(f"{indent}    'predictions': _pred_labels,")
+        lines.append(f"{indent}    'probabilities': _probs,")
+        lines.append(f"{indent}}}")
+
+        return lines
+
     async def execute(self, X: Any = None, y: Any = None, **kwargs) -> Any:
         """
         Execute PLS-DA classification.
@@ -401,7 +472,11 @@ class PLSDANode(Node):
         return {
             "default": scores_dataset,  # SherpaDataset: scores (n_samples, n_components)
             "loadings": loadings_dataset,  # SherpaDataset: loadings (n_components, n_features)
-            "model": pls,  # Model port for Apply PLS-DA Model
+            "model": {  # Wrapped model dict for ClassifierPredictNode
+                "model": pls,
+                "classes": classes.tolist(),
+                "type": "plsda",
+            },
             "plots": plots,  # Pre-built Plotly traces (legitimate visualization output)
         }
 

@@ -137,6 +137,60 @@ class KNNNode(Node):
         ],
     )
 
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python export code for KNN classification."""
+        params = self._resolve_params()
+        n_neighbors = params.get("n_neighbors", 5)
+        weights = params.get("weights", "uniform")
+        metric = params.get("metric", "euclidean")
+
+        X_expr = inputs.get("X", inputs.get("default", "input_data"))
+        y_expr = inputs.get("y")
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- KNN Classifier ({self.node_id}) ---")
+
+        # Extract X
+        lines.append(f"{indent}_X_input = {X_expr}")
+        lines.append(f"{indent}_X_data = np.array(")
+        lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
+        lines.append(f"{indent}    dtype=np.float64,")
+        lines.append(f"{indent})")
+
+        # Extract y (class labels)
+        if y_expr:
+            lines.append(f"{indent}_y_raw = {y_expr}")
+            lines.append(f"{indent}_y_labels = np.asarray(_y_raw.data if hasattr(_y_raw, 'data') else _y_raw).ravel()")
+        else:
+            lines.append(f"{indent}_y_labels = np.asarray(")
+            lines.append(f"{indent}    _X_input.target if hasattr(_X_input, 'target') and _X_input.target is not None")
+            lines.append(f"{indent}    else _X_input.meta.get('target'),")
+            lines.append(f"{indent}).ravel()")
+
+        # KNN uses sklearn regardless of use_scp
+        lines.append(f"{indent}from sklearn.neighbors import KNeighborsClassifier")
+        lines.append(f"{indent}_knn = KNeighborsClassifier(n_neighbors={n_neighbors}, weights='{weights}', metric='{metric}')")
+        lines.append(f"{indent}_knn.fit(_X_data, _y_labels)")
+        lines.append(f"{indent}_pred = _knn.predict(_X_data)")
+        lines.append(f"{indent}_probs = _knn.predict_proba(_X_data)")
+        lines.append(f"{indent}_accuracy = np.mean(_pred == _y_labels)")
+        lines.append(f'{indent}print(f"  KNN (k={n_neighbors}, weights={weights}): accuracy={{_accuracy:.4f}}")')
+
+        # Store result
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'model': {{'model': _knn, 'type': 'knn'}},")
+        lines.append(f"{indent}    'predictions': _pred,")
+        lines.append(f"{indent}    'probabilities': _probs,")
+        lines.append(f"{indent}    'plots': {{}},")
+        lines.append(f"{indent}}}")
+
+        return lines
+
     async def execute(self, X: Any = None, y: Any = None, **kwargs) -> Any:
         """
         Execute KNN classification.
@@ -336,7 +390,10 @@ class KNNNode(Node):
         # NDDataset-only return: one serialization boundary at API layer
         return {
             "default": scores_dataset,  # NDDataset: viz scores + sample labels (y) + feature coords (x)
-            "model": knn,  # Model port for Apply KNN Model
+            "model": {  # Wrapped model dict for ClassifierPredictNode
+                "model": knn,
+                "type": "knn",
+            },
             "plots": plots,  # Pre-built Plotly traces (legitimate visualization output)
         }
 

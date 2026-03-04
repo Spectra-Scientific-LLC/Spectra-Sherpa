@@ -32,12 +32,25 @@ from spectra_sherpa.app.services.custom_algo_codegen import (
     reload_into_registry,
     unregister_and_remove,
     validate_code_syntax,
+    validate_loader_plugin_source,
     validate_slug,
 )
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects/{project_id}/custom-algos")
+
+
+def _validate_custom_algo_payload(
+    *,
+    project_id: int,
+    slug: str,
+    code: str,
+    mode: str,
+) -> None:
+    validate_code_syntax(code)
+    if mode == "loader":
+        validate_loader_plugin_source(code, project_id=project_id, slug=slug)
 
 
 def _check_custom_code_allowed() -> None:
@@ -159,7 +172,12 @@ async def create_custom_algo(
 
     # Validate
     slug = validate_slug(payload.slug)
-    validate_code_syntax(payload.code)
+    _validate_custom_algo_payload(
+        project_id=project_id,
+        slug=slug,
+        code=payload.code,
+        mode=payload.mode,
+    )
 
     node_type = make_node_type(project_id, slug)
 
@@ -237,8 +255,14 @@ async def update_custom_algo(
 
     # Validate new code if provided
     update_data = payload.model_dump(exclude_unset=True)
-    if "code" in update_data:
-        validate_code_syntax(update_data["code"])
+    new_mode = update_data.get("mode", algo.mode)
+    new_code = update_data.get("code", algo.code)
+    _validate_custom_algo_payload(
+        project_id=project_id,
+        slug=algo.slug,
+        code=new_code,
+        mode=new_mode,
+    )
 
     # Snapshot old values for rollback
     old_values = {key: getattr(algo, key) for key in update_data}

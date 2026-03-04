@@ -238,6 +238,151 @@ class DataSourceNode(Node):
         ],
     )
 
+    def supports_python_export(self) -> bool:
+        """Standard data sources (sklearn, eigenvector, spectrochempy) support export."""
+        source = self.parameters.get("source", "")
+        return source in ("sklearn", "eigenvector", "spectrochempy")
+
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python export code for standard data source loading.
+
+        Emits SherpaDataset construction so developers can learn the API.
+        Supports sklearn, Eigenvector, and SpectroChemPy example datasets.
+        """
+        source = self.parameters.get("source", "spectrochempy")
+        is_multi = inputs.get("_multi_port") == "True"
+
+        if source == "sklearn":
+            return self._gen_sklearn(indent, is_multi)
+        elif source == "eigenvector":
+            return self._gen_eigenvector(indent, is_multi)
+        elif source == "spectrochempy":
+            return self._gen_spectrochempy(indent, is_multi, use_scp)
+        return []
+
+    def _gen_sklearn(self, indent: str, is_multi: bool) -> list[str]:
+        ds_name = self.parameters.get("sklearn_dataset", "iris")
+        loader_map = {
+            "iris": "load_iris",
+            "wine": "load_wine",
+            "breast_cancer": "load_breast_cancer",
+            "digits": "load_digits",
+        }
+        loader = loader_map.get(ds_name, f"load_{ds_name}")
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- Data Source ({self.node_id}) — sklearn.{ds_name} ---")
+        lines.append(f"{indent}from sklearn.datasets import {loader}")
+        lines.append(f"{indent}from spectra_sherpa.app.lib.sherpa_dataset import (")
+        lines.append(f"{indent}    SherpaDataset, SpectralAxis, SampleAxis, TargetContext,")
+        lines.append(f"{indent})")
+        lines.append(f"{indent}")
+        lines.append(f"{indent}_bunch = {loader}()")
+        lines.append(f"{indent}_ds = SherpaDataset(")
+        lines.append(f"{indent}    _bunch.data,")
+        lines.append(f"{indent}    feature_axis=SpectralAxis(")
+        lines.append(f"{indent}        values=np.arange(_bunch.data.shape[1]),")
+        lines.append(f"{indent}        title='Feature',")
+        lines.append(f"{indent}    ),")
+        lines.append(f"{indent}    sample_axis=SampleAxis(")
+        lines.append(f"{indent}        values=np.arange(_bunch.data.shape[0]),")
+        lines.append(f"{indent}        title='Sample',")
+        lines.append(f"{indent}    ),")
+        lines.append(f"{indent}    target=_bunch.target,")
+        lines.append(f"{indent}    target_context=TargetContext(")
+        lines.append(f"{indent}        target_type='categorical',")
+        lines.append(f"{indent}        target_names=list(_bunch.target_names),")
+        lines.append(f"{indent}    ),")
+        lines.append(f"{indent}    title={ds_name!r},")
+        lines.append(f"{indent})")
+        lines.append(f'{indent}print(f"  Data Source (sklearn.{ds_name}): {{_ds.shape}}")')
+        self._emit_result(lines, indent, is_multi)
+        return lines
+
+    def _gen_eigenvector(self, indent: str, is_multi: bool) -> list[str]:
+        ds_name = self.parameters.get("eigenvector_dataset", "diesel_nir")
+        catalog = DATASET_CATALOG.get(ds_name, {})
+        x_title = catalog.get("x_title", "Channel")
+        x_units = catalog.get("x_units")
+        label = catalog.get("label", ds_name)
+        prop_names = catalog.get("prop_names")
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- Data Source ({self.node_id}) — eigenvector.{ds_name} ---")
+        lines.append(f"{indent}from spectra_sherpa.app.lib.eigenvector import load_eigenvector_dataset")
+        lines.append(f"{indent}from spectra_sherpa.app.lib.sherpa_dataset import (")
+        lines.append(f"{indent}    SherpaDataset, SpectralAxis, SampleAxis, TargetContext,")
+        lines.append(f"{indent})")
+        lines.append(f"{indent}")
+        lines.append(f"{indent}_ev = load_eigenvector_dataset({ds_name!r})")
+        lines.append(f"{indent}_wavelengths = _ev.get('wavelengths')")
+        lines.append(f"{indent}_ds = SherpaDataset(")
+        lines.append(f"{indent}    _ev['spectra'],")
+        lines.append(f"{indent}    feature_axis=SpectralAxis(")
+        lines.append(f"{indent}        values=_wavelengths if _wavelengths is not None else np.arange(_ev['spectra'].shape[1]),")
+        lines.append(f"{indent}        title={x_title!r},")
+        if x_units:
+            lines.append(f"{indent}        units={x_units!r},")
+        lines.append(f"{indent}    ),")
+        lines.append(f"{indent}    sample_axis=SampleAxis(")
+        lines.append(f"{indent}        values=np.arange(_ev['spectra'].shape[0]),")
+        lines.append(f"{indent}        title='Sample',")
+        lines.append(f"{indent}    ),")
+        if prop_names:
+            lines.append(f"{indent}    target=_ev.get('properties'),")
+            lines.append(f"{indent}    target_context=TargetContext(")
+            lines.append(f"{indent}        target_type='continuous',")
+            lines.append(f"{indent}        target_names={prop_names!r},")
+            lines.append(f"{indent}    ),")
+        lines.append(f"{indent}    title={label!r},")
+        lines.append(f"{indent})")
+        lines.append(f'{indent}print(f"  Data Source (eigenvector.{ds_name}): {{_ds.shape}}")')
+        self._emit_result(lines, indent, is_multi)
+        return lines
+
+    def _gen_spectrochempy(self, indent: str, is_multi: bool, use_scp: bool) -> list[str]:
+        example_dataset = self.parameters.get("example_dataset", "irdata")
+        example_file = self.parameters.get("example_file", "")
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- Data Source ({self.node_id}) — spectrochempy.{example_dataset} ---")
+
+        if not use_scp:
+            lines.append(f"{indent}# SpectroChemPy examples require SCP (pip install spectra-sherpa[scp])")
+            lines.append(f"{indent}raise ImportError('SpectroChemPy datasets require spectrochempy')")
+            return lines
+
+        lines.append(f"{indent}from spectra_sherpa.app.lib.scp_compat import from_nddataset")
+        lines.append(f"{indent}")
+
+        # Determine file path
+        if example_file:
+            scp_path = f"{example_dataset}/{example_file}" if "/" not in example_file else example_file
+        elif example_dataset in _SCP_KNOWN_DEFAULTS:
+            scp_path, _ = _SCP_KNOWN_DEFAULTS[example_dataset]
+        else:
+            scp_path = f"{example_dataset}/YOUR_FILE_HERE"
+            lines.append(f"{indent}# >>> EDIT: replace the file path with your SpectroChemPy data file <<<")
+
+        lines.append(f"{indent}_ndd = scp.read({scp_path!r})")
+        lines.append(f"{indent}# Convert NDDataset → SherpaDataset (lossless: preserves axes, units, metadata)")
+        lines.append(f"{indent}_ds = from_nddataset(_ndd)")
+        lines.append(f'{indent}print(f"  Data Source (scp.{example_dataset}): {{_ds.shape}}")')
+        self._emit_result(lines, indent, is_multi)
+        return lines
+
+    def _emit_result(self, lines: list[str], indent: str, is_multi: bool) -> None:
+        """Append result storage lines — single or multi-port dict format."""
+        if is_multi:
+            lines.append(f"{indent}results['{self.node_id}'] = {{'default': _ds, 'target': _ds.target}}")
+        else:
+            lines.append(f"{indent}results['{self.node_id}'] = _ds")
+
     async def execute(self, *args) -> Any:
         """
         Execute data loading.

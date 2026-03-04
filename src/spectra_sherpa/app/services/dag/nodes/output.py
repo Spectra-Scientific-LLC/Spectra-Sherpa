@@ -185,6 +185,8 @@ class PlotNode(Node):
             if plot_type in ("contour", "heatmap"):
                 colorscale = self.parameters.get("colorscale", "Viridis")
                 return self._plot_contour(input_data, plot_type, colorscale)
+            if plot_type == "scatter":
+                return self._plot_scatter(input_data, x_axis, y_axis)
             return self._plot_spectra(input_data)
 
         # Handle dict input (e.g., from PCA node)
@@ -512,6 +514,88 @@ class PlotNode(Node):
                     "title": "PCA Biplot",
                     "xaxis": {"title": f"PC{pc_x + 1} (scores)", "zeroline": True, "zerolinecolor": "#94a3b8"},
                     "yaxis": {"title": f"PC{pc_y + 1} (scores)", "zeroline": True, "zerolinecolor": "#94a3b8"},
+                    "hovermode": "closest",
+                },
+            }
+        }
+
+    def _plot_scatter(self, dataset: SherpaDataset, x_col: int, y_col: int) -> Dict[str, Any]:
+        """Generate a scatter plot of two dataset columns (features).
+
+        Uses ``x_axis`` and ``y_axis`` parameters to select which feature
+        columns to plot.  When the dataset carries a target vector, each
+        class is drawn as a separate trace with a distinct colour.
+        """
+        data = np.array(dataset.data, dtype=np.float64)
+        n_features = data.shape[-1]
+
+        x_col = min(int(x_col), n_features - 1)
+        y_col = min(int(y_col), n_features - 1)
+
+        # Resolve axis labels from feature_axis or fallback to index
+        feature_axis = dataset.feature_axis
+        if feature_axis is not None and feature_axis.labels is not None and len(feature_axis.labels) > max(x_col, y_col):
+            x_label = str(feature_axis.labels[x_col])
+            y_label = str(feature_axis.labels[y_col])
+        elif feature_axis is not None and feature_axis.values is not None and len(feature_axis.values) > max(x_col, y_col):
+            x_label = str(feature_axis.values[x_col])
+            y_label = str(feature_axis.values[y_col])
+        else:
+            x_label = f"Feature {x_col}"
+            y_label = f"Feature {y_col}"
+
+        # Check for target-based coloring
+        target = dataset.target
+        traces: List[Dict[str, Any]] = []
+
+        if target is not None:
+            # Resolve class names
+            tc = dataset.target_context
+            class_names = tc.class_names if tc and tc.class_names else None
+            target_names = tc.target_names if tc and tc.target_names else None
+
+            unique_targets = np.unique(target)
+            colors = [
+                "#3b82f6", "#ef4444", "#22c55e", "#f59e0b", "#8b5cf6",
+                "#ec4899", "#06b6d4", "#f97316", "#14b8a6", "#6366f1",
+            ]
+
+            for i, t_val in enumerate(unique_targets):
+                mask = target == t_val
+                # Determine label
+                if class_names and int(t_val) < len(class_names):
+                    label = class_names[int(t_val)]
+                elif target_names and len(target_names) == 1:
+                    label = f"{target_names[0]}={t_val}"
+                else:
+                    label = str(t_val)
+
+                traces.append({
+                    "x": data[mask, x_col].tolist(),
+                    "y": data[mask, y_col].tolist(),
+                    "type": "scatter",
+                    "mode": "markers",
+                    "marker": {"size": 8, "color": colors[i % len(colors)]},
+                    "name": label,
+                })
+        else:
+            traces.append({
+                "x": data[:, x_col].tolist(),
+                "y": data[:, y_col].tolist(),
+                "type": "scatter",
+                "mode": "markers",
+                "marker": {"size": 8, "color": "#3b82f6"},
+                "name": "Samples",
+            })
+
+        return {
+            "visualization": {
+                "plot_type": "scatter",
+                "data": traces,
+                "layout": {
+                    "title": f"Scatter: {x_label} vs {y_label}",
+                    "xaxis": {"title": x_label},
+                    "yaxis": {"title": y_label},
                     "hovermode": "closest",
                 },
             }

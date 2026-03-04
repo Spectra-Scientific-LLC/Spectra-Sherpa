@@ -80,6 +80,8 @@ def topological_sort(node_ids: Sequence[str], edges: Sequence[Edge]) -> list[str
 def build_input_map(
     node_id: str,
     edges: Sequence[Edge],
+    *,
+    dict_output_nodes: frozenset[str] = frozenset(),
 ) -> dict[str, str | list[str]]:
     """
     Build a mapping of input names to Python codegen expressions.
@@ -93,6 +95,10 @@ def build_input_map(
     Args:
         node_id: Target node ID
         edges: All edges in the graph
+        dict_output_nodes: Node IDs whose ``generate_python()`` always
+            emits a dict result (regardless of how many ports are wired).
+            When an upstream node is in this set, all references are
+            dict-qualified (e.g. ``results['pca']['default']``).
 
     Returns:
         Dict mapping port name -> expression string (or list for variadic).
@@ -110,10 +116,26 @@ def build_input_map(
     if not incoming:
         return {}
 
+    # Detect nodes that use more than one distinct output port across
+    # all edges in the graph.  These must be dict-qualified so the
+    # generated code matches the dict output.
+    from_ports: dict[str, set[str]] = {}
+    for e in edges:
+        from_ports.setdefault(e.from_node, set()).add(e.from_output or "default")
+    multi_port_nodes = {nid for nid, ports in from_ports.items() if len(ports) > 1}
+
+    # Also include nodes known to always emit dict output in generate_python(),
+    # even when only one port is wired downstream.
+    multi_port_nodes |= dict_output_nodes
+
     def _expr(edge: Edge) -> str:
         base = f"results['{edge.from_node}']"
-        if edge.from_output and edge.from_output != "default":
-            return f"{base}['{edge.from_output}']"
+        port = edge.from_output or "default"
+        if edge.from_node in multi_port_nodes:
+            # Dict-emitting node: always qualify with port name
+            return f"{base}['{port}']"
+        if port != "default":
+            return f"{base}['{port}']"
         return base
 
     result: dict[str, str | list[str]] = {}

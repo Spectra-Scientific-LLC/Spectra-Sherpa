@@ -144,6 +144,37 @@ def test_ws_enterprise_superuser_can_subscribe_any_jobs_channel(ws_client, monke
         assert response == {"type": "subscribed", "channel": "jobs:2"}
 
 
+def test_ws_data_import_rejected_for_non_loopback_even_with_custom_code_enabled(ws_client, monkeypatch):
+    app_config.mode = "enterprise"
+    _install_noop_async_session(monkeypatch)
+
+    async def _valid_api_key(api_key):
+        return api_key == "k1"
+
+    async def _resolve_user(_session, api_key=None, token=None, client_host=None):
+        if api_key == "k1":
+            return SimpleNamespace(id=1, is_superuser=False, is_active=True)
+        return None
+
+    monkeypatch.setattr(app_main, "is_valid_api_key", _valid_api_key)
+    monkeypatch.setattr(app_main, "get_user_from_credentials", _resolve_user)
+    monkeypatch.setattr(
+        "spectra_sherpa.app.core.mode_policy.allows_custom_code_execution",
+        lambda: True,
+    )
+
+    async def _unexpected(*args, **kwargs):
+        raise AssertionError("llm_data_import should be rejected before tool execution")
+
+    monkeypatch.setattr(ws_handlers_mod, "handle_llm_chat_with_tools", _unexpected)
+
+    with ws_client.websocket_connect("/ws?api_key=k1") as ws:
+        ws.send_json({"action": "llm_data_import", "message": "inspect /etc/hosts"})
+        response = ws.receive_json()
+        assert response["type"] == "import_error"
+        assert "loopback clients" in response["detail"]
+
+
 # ---------------------------------------------------------------------------
 # Helpers for WS tool tests
 # ---------------------------------------------------------------------------

@@ -117,6 +117,78 @@ class LoadApplyModelNode(Node):
         output_type="varies",
     )
 
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python export code for loading and applying a saved model.
+
+        Emits code that loads a model artifact from disk and applies it.
+        The user must provide the model artifact path.
+        """
+        X_expr = inputs.get("X_new", inputs.get("default", "input_data"))
+        model_id = self.parameters.get("model_id", "")
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- Load & Apply Model ({self.node_id}) ---")
+        lines.append(f"{indent}# >>> EDIT: provide path to model artifact directory <<<")
+        lines.append(f"{indent}# Original model_id: {model_id!r}")
+        lines.append(f"{indent}import json")
+        lines.append(f"{indent}_model_dir = 'path/to/model/artifact'  # EDIT THIS")
+        lines.append(f"{indent}from pathlib import Path as _Path")
+        lines.append(f"{indent}_mdir = _Path(_model_dir)")
+        lines.append(f"{indent}with open(_mdir / 'manifest.json') as _f:")
+        lines.append(f"{indent}    _manifest = json.load(_f)")
+        lines.append(f"{indent}_arrays = dict(np.load(_mdir / 'arrays.npz'))")
+        lines.append(f"{indent}_model_type = _manifest.get('model_type', '')")
+
+        # Extract X
+        lines.append(f"{indent}_X_input = {X_expr}")
+        lines.append(f"{indent}_X_data = np.array(")
+        lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
+        lines.append(f"{indent}    dtype=np.float64,")
+        lines.append(f"{indent})")
+        lines.append(f"{indent}if _X_data.ndim == 1:")
+        lines.append(f"{indent}    _X_data = _X_data.reshape(1, -1)")
+
+        # Dispatch by model type using Extract classes
+        lines.append(f"{indent}_labels = None  # Only set for classification models")
+        lines.append(f"{indent}if _model_type == 'pca':")
+        lines.append(f"{indent}    _loadings = _arrays['loadings']")
+        lines.append(f"{indent}    _mean = _arrays.get('mean')")
+        lines.append(f"{indent}    _centered = _X_data - _mean if _mean is not None else _X_data")
+        lines.append(f"{indent}    _result = _centered @ _loadings.T")
+        lines.append(f"{indent}elif _model_type == 'pls':")
+        lines.append(f"{indent}    _coef = _arrays['coef']")
+        lines.append(f"{indent}    _x_mean = _arrays.get('x_mean', np.zeros(_X_data.shape[1]))")
+        lines.append(f"{indent}    _y_mean = _arrays.get('y_mean', np.zeros(_coef.shape[1]))")
+        lines.append(f"{indent}    _result = (_X_data - _x_mean) @ _coef + _y_mean")
+        lines.append(f"{indent}elif _model_type in ('mcr', 'simplisma'):")
+        lines.append(f"{indent}    _St = _arrays['St']")
+        lines.append(f"{indent}    _result = _X_data @ np.linalg.pinv(_St)")
+        lines.append(f"{indent}elif _model_type in ('plsda', 'knn', 'simca'):")
+        lines.append(f"{indent}    # Classification: reconstruct extract and predict")
+        lines.append(f"{indent}    from spectra_sherpa.app.lib.adapters.scp_extractors import EXTRACT_REGISTRY as _EXTRACT_REGISTRY")
+        lines.append(f"{indent}    _extract_cls = _EXTRACT_REGISTRY.get(_model_type)")
+        lines.append(f"{indent}    if _extract_cls is None:")
+        lines.append(f"{indent}        raise ValueError(f'No extract class for {{_model_type}}')")
+        lines.append(f"{indent}    _extract = _extract_cls.from_artifact(_manifest, _arrays)")
+        lines.append(f"{indent}    _labels, _probs = _extract.predict(_X_data)")
+        lines.append(f"{indent}    _result = _probs")
+        lines.append(f"{indent}else:")
+        lines.append(f"{indent}    raise ValueError(f'Unsupported model type: {{_model_type}}')")
+
+        lines.append(f"{indent}print(f\"  Load & Apply ({{_model_type}}): result={{_result.shape if hasattr(_result, 'shape') else type(_result).__name__}}\")")
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'result': _result,")
+        lines.append(f"{indent}    'labels': _labels,")
+        lines.append(f"{indent}    'model_id': {model_id!r},")
+        lines.append(f"{indent}}}")
+
+        return lines
+
     async def execute(self, X_new: Any = None, model_ref: Any = None, **kwargs: Any) -> dict[str, Any]:
         # --- Resolve model_id ---
         model_id = self._resolve_model_id(model_ref)

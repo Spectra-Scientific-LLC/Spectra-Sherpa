@@ -486,6 +486,19 @@ class EstimatorSpecNode(Node):
         else:
             lines.append(f"{indent}model.fit(X)")
         lines.append(f"{indent}y_pred = model.predict(X)")
-        lines.append(f"{indent}results['{self.node_id}'] = " f"{{'model': model, 'y_pred': y_pred.tolist()}}")
+
+        # Build result dict matching declared output ports
+        declared_ports = set()
+        if self.metadata and self.metadata.output_ports:
+            declared_ports = {p.name for p in self.metadata.output_ports}
+
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'model': model,")
+        lines.append(f"{indent}    'y_pred': y_pred.tolist(),")
+        if "predictions" in declared_ports:
+            lines.append(f"{indent}    'predictions': y_pred.tolist(),")
+        if "residuals" in declared_ports and self.spec.y_required:
+            lines.append(f"{indent}    'residuals': (y - y_pred).tolist(),")
+        lines.append(f"{indent}}}")
 
         return lines

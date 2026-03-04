@@ -20,7 +20,8 @@ a {
 
 .app-shell {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   background: #f5f7fa;
 }
 
@@ -95,6 +96,8 @@ a {
   display: flex;
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .main {

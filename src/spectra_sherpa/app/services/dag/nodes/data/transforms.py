@@ -128,6 +128,92 @@ class TrainTestSplitNode(Node):
         output_type="dict",  # Returns dict with multiple outputs
     )
 
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python export code for train/test splitting."""
+        params = self._resolve_params()
+        test_size = params.get("test_size", 0.2)
+        split_method = params.get("split_method", "random")
+        random_seed = params.get("random_seed", 42)
+        shuffle = params.get("shuffle", True)
+
+        X_expr = inputs.get("X", inputs.get("default", "input_data"))
+        y_expr = inputs.get("y")
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- Train/Test Split ({self.node_id}) ---")
+
+        # Extract X
+        lines.append(f"{indent}_X_input = {X_expr}")
+        lines.append(f"{indent}_X_data = np.array(")
+        lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
+        lines.append(f"{indent}    dtype=np.float64,")
+        lines.append(f"{indent})")
+
+        # Extract y
+        if y_expr:
+            lines.append(f"{indent}_y_input = {y_expr}")
+            lines.append(f"{indent}_y_data = np.array(")
+            lines.append(f"{indent}    _y_input.data if hasattr(_y_input, 'data') else _y_input,")
+            lines.append(f"{indent}    dtype=np.float64,")
+            lines.append(f"{indent})")
+        else:
+            lines.append(f"{indent}_y_data = getattr(_X_input, 'target', None)")
+            lines.append(f"{indent}if _y_data is not None:")
+            lines.append(f"{indent}    _y_data = np.asarray(_y_data, dtype=np.float64)")
+
+        # Split
+        shuffle_str = "True" if shuffle else "False"
+        if split_method == "sequential":
+            lines.append(f"{indent}_n = _X_data.shape[0]")
+            lines.append(f"{indent}_n_test = int(_n * {test_size})")
+            lines.append(f"{indent}_n_train = _n - _n_test")
+            lines.append(f"{indent}_train_idx = np.arange(_n_train)")
+            lines.append(f"{indent}_test_idx = np.arange(_n_train, _n)")
+        else:
+            lines.append(f"{indent}_n = _X_data.shape[0]")
+            lines.append(f"{indent}_indices = np.arange(_n)")
+            if shuffle:
+                lines.append(f"{indent}_rng = np.random.RandomState({random_seed})")
+                lines.append(f"{indent}_rng.shuffle(_indices)")
+            lines.append(f"{indent}_n_test = int(_n * {test_size})")
+            lines.append(f"{indent}_n_train = _n - _n_test")
+            lines.append(f"{indent}_train_idx = _indices[:_n_train]")
+            lines.append(f"{indent}_test_idx = _indices[_n_train:]")
+
+        lines.append(f"{indent}_X_train = _X_data[_train_idx]")
+        lines.append(f"{indent}_X_test = _X_data[_test_idx]")
+
+        # Wrap results
+        if use_scp:
+            lines.append(f"{indent}_X_train_ds = scp.NDDataset(_X_train)")
+            lines.append(f"{indent}_X_test_ds = scp.NDDataset(_X_test)")
+            lines.append(f"{indent}if hasattr(_X_input, 'x') and _X_input.x is not None:")
+            lines.append(f"{indent}    _X_train_ds.x = _X_input.x.copy()")
+            lines.append(f"{indent}    _X_test_ds.x = _X_input.x.copy()")
+        else:
+            lines.append(f"{indent}_X_train_ds = _Result(_X_train, x=getattr(_X_input, 'x', None))")
+            lines.append(f"{indent}_X_test_ds = _Result(_X_test, x=getattr(_X_input, 'x', None))")
+
+        # Build result dict
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'X_train': _X_train_ds,")
+        lines.append(f"{indent}    'X_test': _X_test_ds,")
+        lines.append(f"{indent}}}")
+
+        # Split y if available
+        lines.append(f"{indent}if _y_data is not None:")
+        lines.append(f"{indent}    results['{self.node_id}']['y_train'] = _y_data[_train_idx]")
+        lines.append(f"{indent}    results['{self.node_id}']['y_test'] = _y_data[_test_idx]")
+
+        lines.append(f'{indent}print(f"  Split: {{_n_train}} train, {{_n_test}} test ({test_size*100:.0f}% test)")')
+
+        return lines
+
     async def execute(self, X: Any = None, y: Any = None, **kwargs: Any) -> dict[str, Any]:
         """
         Split data into train and test sets.
@@ -321,6 +407,54 @@ class AttachTargetNode(Node):
             ),
         ],
     )
+
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python export code for attaching target to dataset."""
+        X_expr = inputs.get("X", inputs.get("default", "input_data"))
+        y_expr = inputs.get("y")
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- Attach Target ({self.node_id}) ---")
+
+        # Extract X
+        lines.append(f"{indent}_X_input = {X_expr}")
+
+        # Extract y
+        if y_expr:
+            lines.append(f"{indent}_y_input = {y_expr}")
+            lines.append(f"{indent}_y_data = np.array(")
+            lines.append(f"{indent}    _y_input.data if hasattr(_y_input, 'data') else _y_input,")
+            lines.append(f"{indent}    dtype=np.float64,")
+            lines.append(f"{indent})")
+        else:
+            lines.append(f"{indent}_y_data = None")
+
+        if use_scp:
+            # SCP mode: copy NDDataset and store target alongside
+            lines.append(f"{indent}_result = _X_input.copy() if hasattr(_X_input, 'copy') else _X_input")
+            lines.append(f"{indent}if _y_data is not None:")
+            lines.append(f"{indent}    _result.target = _y_data")
+            lines.append(f"{indent}results['{self.node_id}'] = _result")
+        else:
+            # numpy mode: copy _Result with target
+            lines.append(f"{indent}_X_data = np.array(")
+            lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
+            lines.append(f"{indent}    dtype=np.float64,")
+            lines.append(f"{indent})")
+            lines.append(f"{indent}results['{self.node_id}'] = _Result(")
+            lines.append(f"{indent}    _X_data,")
+            lines.append(f"{indent}    x=getattr(_X_input, 'x', None),")
+            lines.append(f"{indent}    target=_y_data,")
+            lines.append(f"{indent})")
+
+        lines.append(f'{indent}print(f"  Target attached: shape={{_y_data.shape if _y_data is not None else None}}")')
+
+        return lines
 
     async def execute(self, X=None, y=None, **kwargs):
         """Attach target to dataset."""

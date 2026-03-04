@@ -144,6 +144,115 @@ class PLSNode(Node):
         help_url="https://www.spectrochempy.fr/reference/generated/spectrochempy.PLSRegression.html",
     )
 
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python export code for PLS regression.
+
+        Emits code that fits a PLS model, computes in-sample predictions,
+        and reports R²/RMSE per target.  The result is stored as a dict
+        to support multi-port access by downstream nodes.
+        """
+        if not use_scp:
+            return [
+                f"{indent}# --- PLS Regression ({self.node_id}) ---",
+                f"{indent}# PLS requires SpectroChemPy (pip install spectra-sherpa[scp])",
+                f"{indent}raise ImportError('PLS requires spectrochempy')",
+            ]
+
+        params = self._resolve_params()
+        n_components = params.get("n_components", 3)
+        scale = params.get("scale", True)
+
+        X_expr = inputs.get("X", inputs.get("default", "input_data"))
+        y_expr = inputs.get("y")
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- PLS Regression ({self.node_id}) ---")
+
+        # Extract X data
+        lines.append(f"{indent}_X_input = {X_expr}")
+        lines.append(f"{indent}_X_data = np.array(")
+        lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
+        lines.append(f"{indent}    dtype=np.float64,")
+        lines.append(f"{indent})")
+
+        # Extract y data
+        if y_expr:
+            lines.append(f"{indent}_y_input = {y_expr}")
+            lines.append(f"{indent}_y_data = np.array(")
+            lines.append(f"{indent}    _y_input.data if hasattr(_y_input, 'data') else _y_input,")
+            lines.append(f"{indent}    dtype=np.float64,")
+            lines.append(f"{indent})")
+        else:
+            lines.append(f"{indent}# No explicit y port — extract embedded target from dataset")
+            lines.append(f"{indent}_y_data = np.array(")
+            lines.append(f"{indent}    _X_input.target if hasattr(_X_input, 'target') and _X_input.target is not None")
+            lines.append(f"{indent}    else _X_input.meta.get('target'),")
+            lines.append(f"{indent}    dtype=np.float64,")
+            lines.append(f"{indent})")
+
+        lines.append(f"{indent}if _y_data.ndim == 1:")
+        lines.append(f"{indent}    _y_data = _y_data.reshape(-1, 1)")
+
+        # Fit PLS
+        lines.append(f"{indent}_X_ndd = scp.NDDataset(_X_data)")
+        lines.append(f"{indent}_Y_ndd = scp.NDDataset(_y_data)")
+        scale_str = "True" if scale else "False"
+        lines.append(f"{indent}_pls = scp.PLSRegression(n_components={n_components}, scale={scale_str})")
+        lines.append(f"{indent}_pls.fit(_X_ndd, _Y_ndd)")
+
+        # Predict and compute metrics
+        lines.append(f"{indent}_y_pred = np.asarray(")
+        lines.append(f"{indent}    _pls.predict(_X_ndd).data, dtype=np.float64,")
+        lines.append(f"{indent})")
+        lines.append(f"{indent}# SCP may squeeze single-target predictions to 1D; reshape to match _y_data")
+        lines.append(f"{indent}if _y_pred.ndim == 1:")
+        lines.append(f"{indent}    _y_pred = _y_pred.reshape(-1, 1)")
+        lines.append(f"{indent}_ss_res = np.sum((_y_data - _y_pred) ** 2, axis=0)")
+        lines.append(f"{indent}_ss_tot = np.sum((_y_data - np.mean(_y_data, axis=0)) ** 2, axis=0)")
+        lines.append(f"{indent}_r2 = np.where(_ss_tot > 0, 1.0 - _ss_res / _ss_tot, np.nan)")
+        lines.append(f"{indent}_rmse = np.sqrt(np.mean((_y_data - _y_pred) ** 2, axis=0))")
+        lines.append(f'{indent}print(f"  PLS ({{_y_data.shape[1]}} target(s), {n_components} LVs, scale={scale_str}):")')
+        lines.append(f'{indent}for _i, (_r, _m) in enumerate(zip(_r2.flat, _rmse.flat)):')
+        lines.append(f'{indent}    print(f"    Target {{_i}}: R²={{_r:.6f}}  RMSE={{_m:.6f}}")')
+
+        # Extract model components for multi-port output
+        lines.append(f"{indent}# Extract scores and loadings")
+        lines.append(f"{indent}def _safe_extract(obj, *attrs):")
+        lines.append(f"{indent}    for a in attrs:")
+        lines.append(f"{indent}        try:")
+        lines.append(f"{indent}            v = getattr(obj, a)")
+        lines.append(f"{indent}            return np.asarray(v.data if hasattr(v, 'data') else v, dtype=np.float64)")
+        lines.append(f"{indent}        except Exception:")
+        lines.append(f"{indent}            pass")
+        lines.append(f"{indent}    return None")
+        lines.append(f"{indent}_x_scores = _safe_extract(_pls, 'x_scores', '_x_scores', 'x_scores_')")
+        lines.append(f"{indent}if _x_scores is None:")
+        lines.append(f"{indent}    _x_scores = np.asarray(_pls.transform(_X_ndd).data, dtype=np.float64)")
+        lines.append(f"{indent}_x_loadings = _safe_extract(_pls, 'x_loadings', '_x_loadings', 'x_loadings_')")
+        lines.append(f"{indent}_y_scores = _safe_extract(_pls, 'y_scores', '_y_scores', 'y_scores_')")
+        lines.append(f"{indent}_y_loadings = _safe_extract(_pls, 'y_loadings', '_y_loadings', 'y_loadings_')")
+
+        # Store multi-port output as dict
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'default': _x_scores,")
+        lines.append(f"{indent}    'X_scores': _x_scores,")
+        lines.append(f"{indent}    'X_loadings': _x_loadings,")
+        lines.append(f"{indent}    'Y_scores': _y_scores,")
+        lines.append(f"{indent}    'Y_loadings': _y_loadings,")
+        lines.append(f"{indent}    'model': _pls,")
+        lines.append(f"{indent}    'y_pred': _y_pred,")
+        lines.append(f"{indent}    'y_true': _y_data,")
+        lines.append(f"{indent}    'r2': _r2,")
+        lines.append(f"{indent}    'rmse': _rmse,")
+        lines.append(f"{indent}}}")
+
+        return lines
+
     async def execute(self, X: Any = None, y: Any = None, **kwargs) -> Any:
         """
         Execute PLS regression.
@@ -480,6 +589,49 @@ class PLSPredictNode(Node):
         input_types=["NDDataset", "dict"],
         output_type="array",
     )
+
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python export code for PLS prediction."""
+        X_expr = inputs.get("X_new", inputs.get("default", "input_data"))
+        model_expr = inputs.get("model", "model")
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- PLS Predict ({self.node_id}) ---")
+
+        # Extract X data
+        lines.append(f"{indent}_X_input = {X_expr}")
+        lines.append(f"{indent}_X_data = np.array(")
+        lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
+        lines.append(f"{indent}    dtype=np.float64,")
+        lines.append(f"{indent})")
+
+        # Get model
+        lines.append(f"{indent}_model_input = {model_expr}")
+        lines.append(f"{indent}_pls_model = _model_input.get('model') if isinstance(_model_input, dict) else _model_input")
+
+        if use_scp:
+            lines.append(f"{indent}_X_ndd = scp.NDDataset(_X_data)")
+            lines.append(f"{indent}_y_pred_raw = _pls_model.predict(_X_ndd)")
+            lines.append(f"{indent}_y_pred = np.asarray(")
+            lines.append(f"{indent}    _y_pred_raw.data if hasattr(_y_pred_raw, 'data') else _y_pred_raw,")
+            lines.append(f"{indent}    dtype=np.float64,")
+            lines.append(f"{indent})")
+        else:
+            lines.append(f"{indent}_y_pred = _pls_model.predict(_X_data)")
+            lines.append(f"{indent}_y_pred = np.asarray(_y_pred, dtype=np.float64)")
+
+        lines.append(f"{indent}if _y_pred.ndim == 2 and _y_pred.shape[1] == 1:")
+        lines.append(f"{indent}    _y_pred = _y_pred.ravel()")
+
+        lines.append(f"{indent}results['{self.node_id}'] = {{'y_pred': _y_pred}}")
+        lines.append(f'{indent}print(f"  PLS Predict: {{_y_pred.shape[0]}} samples predicted")')
+
+        return lines
 
     async def execute(self, X_new: Any = None, model: Any = None, **kwargs: Any) -> dict[str, Any]:
         """

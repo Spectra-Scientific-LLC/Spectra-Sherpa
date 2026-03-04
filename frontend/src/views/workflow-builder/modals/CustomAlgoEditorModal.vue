@@ -35,10 +35,15 @@ const editCode = ref("");
 const editMode = ref("simple");
 
 // Mode options for SelectButton
-const modeOptions = [
-  { label: "Simple (numpy)", value: "simple" },
-  { label: "Advanced (SherpaDataset)", value: "advanced" },
-];
+const modeOptions = computed(() => {
+  if (editMode.value === "loader") {
+    return [{ label: "Loader Node", value: "loader" }];
+  }
+  return [
+    { label: "Simple (numpy)", value: "simple" },
+    { label: "Advanced (SherpaDataset)", value: "advanced" },
+  ];
+});
 
 // Trial execution state
 const isRunning = ref(false);
@@ -109,6 +114,7 @@ async function save() {
 // Run Trial — save first, then execute via trial endpoint
 async function runTrial() {
   if (!currentAlgo.value) return;
+  if (editMode.value === "loader") return;
 
   // Auto-save if dirty
   if (isDirty.value) {
@@ -249,7 +255,13 @@ defineExpose({ openForAlgo, openForNew });
         </div>
         <div class="field">
           <label>Mode</label>
-          <SelectButton v-model="editMode" :options="modeOptions" optionLabel="label" optionValue="value" />
+          <SelectButton
+            v-model="editMode"
+            :options="modeOptions"
+            optionLabel="label"
+            optionValue="value"
+            :disabled="editMode === 'loader'"
+          />
         </div>
       </div>
       <div class="algo-actions">
@@ -259,7 +271,7 @@ defineExpose({ openForAlgo, openForNew });
           label="Run Trial"
           icon="pi pi-play"
           :loading="isRunning"
-          :disabled="!currentAlgo"
+          :disabled="!currentAlgo || editMode === 'loader'"
           class="p-button-success p-button-sm"
           @click="runTrial"
         />
@@ -312,7 +324,12 @@ defineExpose({ openForAlgo, openForNew });
       </template>
       <template v-else>
         <div class="empty-result">
-          Click <strong>Run Trial</strong> to preview the output of your algorithm.
+          <template v-if="editMode === 'loader'">
+            Loader nodes are source nodes. Save changes, then add the node from the Custom section in the workflow builder.
+          </template>
+          <template v-else>
+            Click <strong>Run Trial</strong> to preview the output of your algorithm.
+          </template>
         </div>
       </template>
     </div>

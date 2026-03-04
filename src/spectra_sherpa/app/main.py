@@ -188,8 +188,12 @@ def _normalize_router_mounts(extra_routers: list[RouterMount] | None) -> list[tu
     return normalized
 
 
-async def _load_custom_algo_plugins_or_raise() -> None:
-    """Load/regenerate custom algo plugins and fail-fast on any startup error."""
+async def _load_custom_algo_plugins() -> None:
+    """Load/regenerate custom algo plugins, skipping broken ones.
+
+    Broken plugins are logged but do NOT prevent startup — one user's
+    corrupted algo must never take down the service for everyone else.
+    """
     from sqlalchemy import select as _sa_select
 
     from spectra_sherpa.app.models.custom_algo import CustomAlgo as _CA
@@ -200,23 +204,23 @@ async def _load_custom_algo_plugins_or_raise() -> None:
     )
     from spectra_sherpa.app.services.dag.node_base import node_registry as _nr
 
-    errors: list[tuple[str, Exception]] = []
-
     try:
         get_plugin_dir()  # ensure directory exists
-    except Exception as exc:
+    except Exception:
         logger.exception("Failed to ensure custom algo plugin directory")
-        errors.append(("plugin_dir", exc))
+        return
 
     algos: list[_CA] = []
     try:
         async with async_session() as _ca_session:
             _result = await _ca_session.execute(_sa_select(_CA))
             algos = list(_result.scalars().all())
-    except Exception as exc:
+    except Exception:
         logger.exception("Failed to query custom algos at startup")
-        errors.append(("db_query", exc))
+        return
 
+    loaded = 0
+    skipped = 0
     for algo in algos:
         node_type = algo.node_type
         try:
@@ -224,22 +228,27 @@ async def _load_custom_algo_plugins_or_raise() -> None:
             if not plugin_path.exists():
                 logger.info("Regenerating missing plugin: %s", node_type)
                 reload_into_registry(algo)
+                loaded += 1
                 continue
             try:
                 _nr.get_metadata(node_type)
+                loaded += 1
             except KeyError:
                 logger.info("Loading unregistered custom algo: %s", node_type)
                 reload_into_registry(algo)
-        except Exception as exc:
-            logger.exception("Failed loading custom algo %s", node_type)
-            errors.append((node_type, exc))
+                loaded += 1
+        except Exception:
+            logger.exception("Skipping broken custom algo %s", node_type)
+            skipped += 1
 
-    if errors:
-        preview_items = errors[:8]
-        preview = "; ".join(f"{node}: {type(err).__name__}: {err}" for node, err in preview_items)
-        if len(errors) > len(preview_items):
-            preview = f"{preview}; ... (+{len(errors) - len(preview_items)} more)"
-        raise RuntimeError(f"Custom algo startup failed for {len(errors)} item(s): {preview}")
+    if skipped:
+        logger.warning(
+            "Custom algo startup: %d loaded, %d skipped (see errors above)",
+            loaded,
+            skipped,
+        )
+    elif loaded:
+        logger.info("Custom algo startup: %d loaded", loaded)
 
 
 # ---------------------------------------------------------------------------
@@ -330,7 +339,7 @@ def _make_lifespan(
             discover_plugins()
 
             # Ensure custom algo plugins are in sync with DB; fail-fast on any error.
-            await _load_custom_algo_plugins_or_raise()
+            await _load_custom_algo_plugins()
 
             # Start network health monitoring (HYBRID mode only)
             from spectra_sherpa.app.services.network_health import start_network_health_service
@@ -464,6 +473,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     from spectra_sherpa.app.api.v1.routes.llm import _llm_rate_limiter
     from spectra_sherpa.app.services.ws_handlers import (
         handle_llm_chat,
+        handle_llm_chat_with_tools,
         handle_sherpa_chat,
         handle_sherpa_chat_with_tools,
         handle_sherpa_decide,
@@ -523,6 +533,22 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
+    # Update last_active timestamp (fire-and-forget, non-blocking)
+    if ws_user is not None and ws_user.id is not None:
+        try:
+            async with async_session() as _activity_session:
+                from sqlalchemy import func as _sa_func
+                from sqlalchemy import update as _sa_update
+
+                from spectra_sherpa.app.models.user import User as _UserModel
+
+                await _activity_session.execute(
+                    _sa_update(_UserModel).where(_UserModel.id == ws_user.id).values(last_active=_sa_func.now())
+                )
+                await _activity_session.commit()
+        except Exception:
+            pass  # Non-critical — don't block WS connection
+
     job_channel = f"jobs:{ws_user.id}" if ws_user and ws_user.id is not None else None
 
     def _resolve_channel(requested: str | None) -> str | None:
@@ -557,6 +583,32 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 )
             elif action == "llm_chat":
                 await handle_llm_chat(websocket, payload, ws_user, _llm_rate_limiter)
+            elif action == "llm_data_import":
+                from spectra_sherpa.app.core.mode_policy import (
+                    allows_custom_code_execution as _allows_custom_code_execution,
+                )
+                from spectra_sherpa.app.core.mode_policy import (
+                    is_loopback as _is_loopback,
+                )
+
+                if not _allows_custom_code_execution() or not _is_loopback(ws_client_host):
+                    await websocket.send_json(
+                        {
+                            "type": "import_error",
+                            "detail": (
+                                "Data Import is available only for loopback clients "
+                                "when custom code execution is enabled."
+                            ),
+                        }
+                    )
+                else:
+                    await handle_llm_chat_with_tools(
+                        websocket,
+                        payload,
+                        ws_user,
+                        _llm_rate_limiter,
+                        event_prefix="import",
+                    )
             elif action == "sherpa_sync":
                 await handle_sherpa_sync(websocket, payload, ws_user, _llm_rate_limiter)
             elif action == "sherpa_decide":

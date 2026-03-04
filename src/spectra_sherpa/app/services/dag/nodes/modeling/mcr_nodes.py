@@ -158,6 +158,59 @@ class MCRNode(Node):
         help_url="https://www.spectrochempy.fr/reference/generated/spectrochempy.MCRALS.html",
     )
 
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python export code for MCR-ALS decomposition."""
+        if not use_scp:
+            return [
+                f"{indent}# --- MCR-ALS ({self.node_id}) ---",
+                f"{indent}# MCR-ALS requires SpectroChemPy (pip install spectra-sherpa[scp])",
+                f"{indent}raise ImportError('MCR-ALS requires spectrochempy')",
+            ]
+
+        params = self._resolve_params()
+        n_components = params.get("n_components", 3)
+        nn_C = "True" if params.get("non_negative_C", True) else "False"
+        nn_St = "True" if params.get("non_negative_St", True) else "False"
+        max_iter = params.get("max_iter", 50)
+        tol = params.get("tol", 0.1)
+
+        X_expr = inputs.get("default", inputs.get("X", "input_data"))
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- MCR-ALS ({self.node_id}) ---")
+        lines.append(f"{indent}_X_input = {X_expr}")
+        lines.append(f"{indent}_X_data = np.array(")
+        lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
+        lines.append(f"{indent}    dtype=np.float64,")
+        lines.append(f"{indent})")
+        lines.append(f"{indent}_X_ndd = scp.NDDataset(_X_data)")
+        lines.append(f"{indent}# Initialize C from SVD")
+        lines.append(f"{indent}_U, _S, _Vt = np.linalg.svd(_X_data, full_matrices=False)")
+        lines.append(f"{indent}_C0 = np.abs(_U[:, :{n_components}] * _S[:{n_components}])")
+        lines.append(f"{indent}_C0_ndd = scp.NDDataset(_C0)")
+        lines.append(f"{indent}_mcr = scp.MCRALS(")
+        lines.append(f"{indent}    _X_ndd, _C0_ndd,")
+        lines.append(f"{indent}    nonnegConc=[0, 1] if {nn_C} else [],")
+        lines.append(f"{indent}    nonnegSpec=[0, 1] if {nn_St} else [],")
+        lines.append(f"{indent}    maxdiv={max_iter}, tol={tol},")
+        lines.append(f"{indent})")
+        lines.append(f"{indent}_C = np.asarray(_mcr.C.data, dtype=np.float64)")
+        lines.append(f"{indent}_St = np.asarray(_mcr.St.data, dtype=np.float64)")
+        lines.append(f'{indent}print(f"  MCR-ALS ({n_components} components): C={{_C.shape}}, St={{_St.shape}}")')
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'model': _mcr,")
+        lines.append(f"{indent}    'C': _C,")
+        lines.append(f"{indent}    'St': _St,")
+        lines.append(f"{indent}    'residuals': _C @ _St - _X_data,")
+        lines.append(f"{indent}}}")
+
+        return lines
+
     async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         """
         Execute MCR-ALS decomposition on input dataset.

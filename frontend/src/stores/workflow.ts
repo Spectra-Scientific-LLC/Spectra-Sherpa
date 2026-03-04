@@ -1279,6 +1279,11 @@ export const useWorkflowStore = defineStore("workflow", () => {
       for (const nodeMetadata of response.data.nodes) {
         library.set(nodeMetadata.node_type, nodeMetadata);
       }
+      for (const [nodeType, nodeMetadata] of nodeLibrary.value.entries()) {
+        if (nodeType.startsWith("ualgo.")) {
+          library.set(nodeType, nodeMetadata);
+        }
+      }
 
       const newVersion = response.data.version || "1.0.0";
       const oldVersion = nodeLibraryVersion.value;
@@ -1329,6 +1334,19 @@ export const useWorkflowStore = defineStore("workflow", () => {
       // Silently fail - don't disrupt user experience
       console.debug("[WorkflowStore] Version check failed:", error);
     }
+  }
+
+  function replaceProjectScopedNodeMetadata(nodes: NodeTypeMetadata[]): void {
+    const library = new Map(nodeLibrary.value);
+    for (const nodeType of Array.from(library.keys())) {
+      if (nodeType.startsWith("ualgo.")) {
+        library.delete(nodeType);
+      }
+    }
+    for (const nodeMetadata of nodes) {
+      library.set(nodeMetadata.node_type, nodeMetadata);
+    }
+    nodeLibrary.value = library;
   }
 
   /**
@@ -1791,6 +1809,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
     fetchNodeLibrary,
     fetchTypeRegistry,
     checkAndRefreshNodeLibrary,
+    replaceProjectScopedNodeMetadata,
     getNodeMetadata,
     validateTypeRefs,
     validateNodeParams,

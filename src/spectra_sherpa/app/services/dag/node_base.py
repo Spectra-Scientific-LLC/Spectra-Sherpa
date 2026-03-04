@@ -271,6 +271,20 @@ class Node(ABC):
         # Check if the subclass overrides generate_python
         return type(self).generate_python is not Node.generate_python
 
+    def exported_output_ports(self) -> set[str] | None:
+        """Return port names emitted as dict keys by ``generate_python()``.
+
+        Returns ``None`` when the node emits a bare (non-dict) value.
+        Returns a ``set`` of port names when it emits a dict.
+
+        The default implementation infers from metadata: nodes that declare
+        more than one ``output_port`` always emit dicts in their export code.
+        Override in subclasses whose codegen shape differs from metadata.
+        """
+        if self.metadata and self.metadata.output_ports and len(self.metadata.output_ports) > 1:
+            return {p.name for p in self.metadata.output_ports}
+        return None
+
     def generate_python(
         self,
         inputs: Dict[str, str],

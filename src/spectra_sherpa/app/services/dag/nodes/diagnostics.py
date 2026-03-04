@@ -106,6 +106,60 @@ class OutlierDetectionNode(Node):
         ],
     )
 
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python export code for outlier detection.
+
+        Emits code that computes Hotelling T² and Q residuals from a PCA
+        model dict (scores + eigenvalues).  Both SCP and pure-numpy modes
+        use the same numpy-only path since the computation is independent of
+        the PCA backend.
+        """
+        params = self._resolve_params()
+        confidence_level = params.get("confidence_level", 0.95)
+
+        input_expr = inputs.get("default", "input_data")
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- Outlier Detection ({self.node_id}) ---")
+
+        # Extract scores and eigenvalues from PCA model dict
+        lines.append(f"{indent}_input = {input_expr}")
+        lines.append(f"{indent}_scores = _input.get('scores', _input.get('default'))")
+        lines.append(f"{indent}_scores = np.asarray(")
+        lines.append(f"{indent}    _scores.data if hasattr(_scores, 'data') else _scores,")
+        lines.append(f"{indent}    dtype=np.float64,")
+        lines.append(f"{indent})")
+        lines.append(f"{indent}_evr = _input.get('explained_variance', np.ones(_scores.shape[1]))")
+        lines.append(f"{indent}_evr = np.asarray(_evr, dtype=np.float64)")
+
+        # Hotelling T²
+        lines.append(f"{indent}# Hotelling T²")
+        lines.append(f"{indent}_eigenvalues = np.maximum(_evr, 1e-12)")
+        lines.append(f"{indent}_t2 = np.sum((_scores ** 2) / _eigenvalues, axis=1)")
+        lines.append(f"{indent}_t2_limit = np.percentile(_t2, {confidence_level * 100})")
+
+        # Q residuals placeholder (requires reconstruction which is model-dependent)
+        lines.append(f"{indent}# Q residuals require model reconstruction — not available in export")
+        lines.append(f"{indent}_flags = _t2 > _t2_limit")
+
+        # Print summary
+        lines.append(f'{indent}print(f"  Outliers: {{np.sum(_flags)}} of {{len(_flags)}} flagged (T² > {{_t2_limit:.4f}})")')
+
+        # Store multi-port output
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'flags': _flags,")
+        lines.append(f"{indent}    'T2': _t2,")
+        lines.append(f"{indent}    'Q': None,")
+        lines.append(f"{indent}    'model': _input,")
+        lines.append(f"{indent}}}")
+
+        return lines
+
     async def execute(self, pca_model: Any) -> Any:
         """
         Execute outlier detection on PCA model.
@@ -340,6 +394,60 @@ class CrossValidationNode(Node):
             ),
         ],
     )
+
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python export code for cross-validation metrics.
+
+        Emits code that computes R², RMSE, and related metrics from
+        y_true / y_pred arrays.  Both SCP and pure-numpy modes use the
+        same numpy-only path since no SCP dependency is needed.
+        """
+        params = self._resolve_params()
+        cv_folds = params.get("cv_folds", 5)
+
+        y_true_expr = inputs.get("y_true", "y_true")
+        y_pred_expr = inputs.get("y_pred", "y_pred")
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- Cross-Validation Metrics ({self.node_id}) ---")
+
+        # Extract y_true
+        lines.append(f"{indent}_y_true_raw = {y_true_expr}")
+        lines.append(f"{indent}_y_true = np.asarray(")
+        lines.append(f"{indent}    _y_true_raw.data if hasattr(_y_true_raw, 'data') else _y_true_raw,")
+        lines.append(f"{indent}    dtype=np.float64,")
+        lines.append(f"{indent}).ravel()")
+
+        # Extract y_pred
+        lines.append(f"{indent}_y_pred_raw = {y_pred_expr}")
+        lines.append(f"{indent}_y_pred = np.asarray(")
+        lines.append(f"{indent}    _y_pred_raw.data if hasattr(_y_pred_raw, 'data') else _y_pred_raw,")
+        lines.append(f"{indent}    dtype=np.float64,")
+        lines.append(f"{indent}).ravel()")
+
+        # Compute metrics
+        lines.append(f"{indent}_ss_res = np.sum((_y_true - _y_pred) ** 2)")
+        lines.append(f"{indent}_ss_tot = np.sum((_y_true - np.mean(_y_true)) ** 2)")
+        lines.append(f"{indent}_r2 = 1.0 - (_ss_res / _ss_tot) if _ss_tot > 0 else np.nan")
+        lines.append(f"{indent}_rmse = np.sqrt(np.mean((_y_true - _y_pred) ** 2))")
+
+        # Print summary
+        lines.append(f'{indent}print(f"  CV Metrics (folds={cv_folds}): R²={{_r2:.6f}}  RMSE={{_rmse:.6f}}")')
+
+        # Store multi-port output
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'model': None,")
+        lines.append(f"{indent}    'cv_metrics': {{'r2': _r2, 'rmse': _rmse, 'n_samples': len(_y_true)}},")
+        lines.append(f"{indent}    'predictions': _y_pred,")
+        lines.append(f"{indent}    'plots': {{'true_vs_pred': list(zip(_y_true.tolist(), _y_pred.tolist()))}},")
+        lines.append(f"{indent}}}")
+
+        return lines
 
     async def execute(self, y_true: Any = None, y_pred: Any = None, **kwargs) -> Any:
         """

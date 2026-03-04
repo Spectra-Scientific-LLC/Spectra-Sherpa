@@ -103,13 +103,18 @@ export const useLlmStore = defineStore("llm", () => {
           loading.value = false;
           streamingIndex.value = null;
           updateConversationSummary(payload.conversation_id);
-        } else if (payload.type === "error") {
+        } else if (payload.type === "error" || payload.type === "llm_error") {
           streaming.value = false;
           loading.value = false;
           messages.value.push({
             role: "assistant",
             content: payload.detail || "Streaming error.",
           });
+        } else if (payload.type?.startsWith("import_")) {
+          // Forward data-import messages to the dataImport store via event bus
+          window.dispatchEvent(
+            new CustomEvent("import-ws-message", { detail: payload })
+          );
         } else if (payload.type?.startsWith("sherpa_")) {
           // Forward Sherpa messages to the sherpa store via event bus
           window.dispatchEvent(

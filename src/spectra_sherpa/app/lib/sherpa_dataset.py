@@ -804,6 +804,24 @@ class SherpaDataset:
             self._target = None
 
     @property
+    def target_names(self) -> list[str] | None:
+        """Convenience accessor for target_context.target_names.
+
+        Used by export helpers (wrap_result_lines) and _Result compatibility.
+        """
+        tc = self._target_context
+        return tc.target_names if tc is not None else None
+
+    @property
+    def x(self) -> FeatureAxis | None:
+        """Convenience alias for feature_axis.
+
+        Provides compatibility with the SCP ``.x`` accessor convention and
+        with the ``_Result`` container used in exported Python scripts.
+        """
+        return self.feature_axis
+
+    @property
     def dataset_id(self) -> str:
         return self._dataset_id
 

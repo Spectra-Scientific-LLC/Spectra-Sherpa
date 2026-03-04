@@ -143,6 +143,56 @@ class NMFNode(Node):
         ],
     )
 
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python export code for NMF decomposition."""
+        params = self._resolve_params()
+        n_components = params.get("n_components", 3)
+        solver = params.get("solver", "mu")
+        max_iter = params.get("max_iter", 200)
+        tol = params.get("tol", 0.0001)
+
+        X_expr = inputs.get("default", inputs.get("X", "input_data"))
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- NMF ({self.node_id}) ---")
+
+        # Extract X
+        lines.append(f"{indent}_X_input = {X_expr}")
+        lines.append(f"{indent}_X_data = np.array(")
+        lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
+        lines.append(f"{indent}    dtype=np.float64,")
+        lines.append(f"{indent})")
+        lines.append(f"{indent}if np.any(_X_data < 0):")
+        lines.append(f"{indent}    _X_data = _X_data - _X_data.min()")
+
+        # NMF uses sklearn regardless of use_scp
+        lines.append(f"{indent}from sklearn.decomposition import NMF as _NMF")
+        lines.append(f"{indent}_nmf = _NMF(n_components={n_components}, solver='{solver}', max_iter={max_iter}, tol={tol})")
+        lines.append(f"{indent}_W = _nmf.fit_transform(_X_data)")
+        lines.append(f"{indent}_H = _nmf.components_")
+        lines.append(f"{indent}_err = _nmf.reconstruction_err_ if hasattr(_nmf, 'reconstruction_err_') else None")
+        lines.append(f'{indent}print(f"  NMF ({n_components} components): W={{_W.shape}}, H={{_H.shape}}")')
+        lines.append(f'{indent}if _err is not None:')
+        lines.append(f'{indent}    print(f"    Reconstruction error: {{_err:.6f}}")')
+
+        # Store result
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'default': _W,")
+        lines.append(f"{indent}    'concentrations': _W,")
+        lines.append(f"{indent}    'spectra': _H,")
+        lines.append(f"{indent}    'reconstruction_error': _err,")
+        lines.append(f"{indent}    'W': _W,")
+        lines.append(f"{indent}    'H': _H,")
+        lines.append(f"{indent}    'model': _nmf,")
+        lines.append(f"{indent}}}")
+
+        return lines
+
     async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         """
         Execute NMF decomposition on input dataset.
@@ -414,6 +464,53 @@ class FastICANode(Node):
             ),
         ],
     )
+
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python export code for FastICA decomposition."""
+        params = self._resolve_params()
+        n_components = params.get("n_components", 3)
+        algorithm = params.get("algorithm", "parallel")
+        fun = params.get("fun", "logcosh")
+        max_iter = params.get("max_iter", 200)
+        tol = params.get("tol", 0.0001)
+
+        X_expr = inputs.get("default", inputs.get("X", "input_data"))
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- FastICA ({self.node_id}) ---")
+
+        # Extract X
+        lines.append(f"{indent}_X_input = {X_expr}")
+        lines.append(f"{indent}_X_data = np.array(")
+        lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
+        lines.append(f"{indent}    dtype=np.float64,")
+        lines.append(f"{indent})")
+
+        # FastICA uses sklearn regardless of use_scp
+        lines.append(f"{indent}from sklearn.decomposition import FastICA as _FastICA")
+        lines.append(f"{indent}_ica = _FastICA(n_components={n_components}, algorithm='{algorithm}', fun='{fun}', max_iter={max_iter}, tol={tol})")
+        lines.append(f"{indent}_S = _ica.fit_transform(_X_data)")
+        lines.append(f"{indent}_St = _ica.components_ if hasattr(_ica, 'components_') else None")
+        lines.append(f"{indent}_A = _ica.mixing_ if hasattr(_ica, 'mixing_') else None")
+        lines.append(f'{indent}print(f"  FastICA ({n_components} components): sources={{_S.shape}}")')
+        lines.append(f'{indent}if _St is not None:')
+        lines.append(f'{indent}    print(f"    Spectral profiles: {{_St.shape}}")')
+
+        # Store result
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'default': _S,")
+        lines.append(f"{indent}    'sources': _S,")
+        lines.append(f"{indent}    'components': _St,")
+        lines.append(f"{indent}    'mixing_matrix': _A,")
+        lines.append(f"{indent}    'model': _ica,")
+        lines.append(f"{indent}}}")
+
+        return lines
 
     async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         """

@@ -45,11 +45,11 @@ def _assert_expected_source_table() -> None:
 
     actual = {col["name"] for col in inspector.get_columns("custom_algo")}
     expected = set(_CUSTOM_ALGO_COLUMNS)
-    if actual != expected:
-        missing = sorted(expected - actual)
-        extra = sorted(actual - expected)
+    missing = expected - actual
+    if missing:
         raise RuntimeError(
-            "Unexpected custom_algo schema; aborting fail-fast migration. " f"missing={missing}, extra={extra}"
+            f"custom_algo table missing required columns: {sorted(missing)}. "
+            "Cannot rebuild table safely."
         )
 
 
@@ -99,7 +99,27 @@ def _rebuild_custom_algo(*, user_ondelete: str | None) -> None:
     op.create_index("ix_custom_algo_user_id", "custom_algo", ["user_id"], unique=False)
 
 
+def _user_fk_has_cascade() -> bool:
+    """Check if user_id FK already has ON DELETE CASCADE."""
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if not inspector.has_table("custom_algo"):
+        return False
+    for fk in inspector.get_foreign_keys("custom_algo"):
+        if "user_id" in fk.get("constrained_columns", []):
+            ondelete = (fk.get("options", {}).get("ondelete") or "").upper()
+            if ondelete == "CASCADE":
+                return True
+    return False
+
+
 def upgrade() -> None:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if not inspector.has_table("custom_algo"):
+        return  # Table will be created with CASCADE by create_all() or k1f9g3h7i360
+    if _user_fk_has_cascade():
+        return  # Already correct (e.g. create_all() on fresh DB)
     _rebuild_custom_algo(user_ondelete="CASCADE")
 
 

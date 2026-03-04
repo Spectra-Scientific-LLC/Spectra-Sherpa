@@ -39,17 +39,39 @@ def wrap_result_lines(
 ) -> list[str]:
     """Generate result-wrapping code lines for Python export.
 
-    SCP mode:  ``scp.NDDataset(data) + coordinate copy``
+    SCP mode:  ``SherpaDataset(data, ...)`` to preserve embedded target metadata
     numpy mode: ``_Result(data, x=...)``
     """
     if use_scp:
         return [
-            f"{indent}results['{node_id}'] = scp.NDDataset({data_expr})",
-            f"{indent}if hasattr({input_expr}, 'x') and {input_expr}.x is not None:",
-            f"{indent}    results['{node_id}'].x = {input_expr}.x.copy()",
+            f"{indent}from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext",
+            f"{indent}_feature_axis = getattr({input_expr}, 'feature_axis', None)",
+            f"{indent}_sample_axis = getattr({input_expr}, 'sample_axis', None)",
+            f"{indent}_target = getattr({input_expr}, 'target', None)",
+            f"{indent}_target_context = getattr({input_expr}, 'target_context', None)",
+            f"{indent}if _target_context is None:",
+            f"{indent}    _target_names = getattr({input_expr}, 'target_names', None)",
+            f"{indent}    if _target_names is not None:",
+            f"{indent}        _target_context = TargetContext(target_names=list(_target_names))",
+            f"{indent}results['{node_id}'] = SherpaDataset(",
+            f"{indent}    {data_expr},",
+            f"{indent}    feature_axis=_feature_axis,",
+            f"{indent}    sample_axis=_sample_axis,",
+            f"{indent}    target=_target,",
+            f"{indent}    target_context=(",
+            f"{indent}        _target_context.model_copy(deep=True)",
+            f"{indent}        if hasattr(_target_context, 'model_copy')",
+            f"{indent}        else _target_context",
+            f"{indent}    ),",
+            f"{indent})",
         ]
     return [
-        f"{indent}results['{node_id}'] = _Result(" f"{data_expr}, x=getattr({input_expr}, 'x', None))",
+        f"{indent}results['{node_id}'] = _Result(",
+        f"{indent}    {data_expr},",
+        f"{indent}    x=getattr({input_expr}, 'x', None),",
+        f"{indent}    target=getattr({input_expr}, 'target', None),",
+        f"{indent}    target_names=getattr({input_expr}, 'target_names', None),",
+        f"{indent})",
     ]
 
 

@@ -99,6 +99,46 @@ class EFANode(Node):
         help_url="https://www.spectrochempy.fr/reference/generated/spectrochempy.EFA.html",
     )
 
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python export code for EFA."""
+        if not use_scp:
+            return [
+                f"{indent}# --- EFA ({self.node_id}) ---",
+                f"{indent}# EFA requires SpectroChemPy (pip install spectra-sherpa[scp])",
+                f"{indent}raise ImportError('EFA requires spectrochempy')",
+            ]
+
+        params = self._resolve_params()
+        n_components = params.get("n_components", 10)
+
+        X_expr = inputs.get("default", inputs.get("X", "input_data"))
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- EFA ({self.node_id}) ---")
+        lines.append(f"{indent}_X_input = {X_expr}")
+        lines.append(f"{indent}_X_data = np.array(")
+        lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
+        lines.append(f"{indent}    dtype=np.float64,")
+        lines.append(f"{indent})")
+        lines.append(f"{indent}_X_ndd = scp.NDDataset(_X_data)")
+        lines.append(f"{indent}_efa = scp.EFA(n_components={n_components})")
+        lines.append(f"{indent}_efa.fit(_X_ndd)")
+        lines.append(f"{indent}_fwd = np.asarray(_efa.f_ev.data, dtype=np.float64)")
+        lines.append(f"{indent}_bwd = np.asarray(_efa.b_ev.data, dtype=np.float64)")
+        lines.append(f'{indent}print(f"  EFA ({n_components} components): forward={{_fwd.shape}}, backward={{_bwd.shape}}")')
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'model': _efa,")
+        lines.append(f"{indent}    'forward_eigenvalues': _fwd,")
+        lines.append(f"{indent}    'backward_eigenvalues': _bwd,")
+        lines.append(f"{indent}}}")
+
+        return lines
+
     async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         """
         Execute EFA on input dataset.

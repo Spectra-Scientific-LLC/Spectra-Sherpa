@@ -6,6 +6,7 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import api from "@/api/client";
+import { useWorkflowStore } from "@/stores/workflow";
 import type { NodeTypeMetadata } from "@/types";
 
 export interface CustomAlgo {
@@ -71,11 +72,13 @@ export const useCustomAlgoStore = defineStore("customAlgo", () => {
   }
 
   async function fetchNodesForProject(projectId: number): Promise<void> {
+    const workflowStore = useWorkflowStore();
     try {
       const { data } = await api.get<NodeTypeMetadata[]>(
         `/projects/${projectId}/custom-algos/nodes`
       );
       nodeMetadata.value = data;
+      workflowStore.replaceProjectScopedNodeMetadata(data);
     } catch (e) {
       console.error("[CustomAlgoStore] Failed to fetch node metadata:", e);
     }
@@ -145,8 +148,10 @@ export const useCustomAlgoStore = defineStore("customAlgo", () => {
   }
 
   function $reset(): void {
+    const workflowStore = useWorkflowStore();
     algos.value = [];
     nodeMetadata.value = [];
+    workflowStore.replaceProjectScopedNodeMetadata([]);
     isLoading.value = false;
     error.value = null;
   }

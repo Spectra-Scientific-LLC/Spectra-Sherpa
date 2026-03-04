@@ -4,24 +4,27 @@ This reference lists the available processing nodes in the Workflow Builder, org
 
 Nodes marked with **[SCP]** require [SpectroChemPy](https://www.spectrochempy.fr/) (`pip install spectra-sherpa[scp]`). All other nodes run on NumPy/SciPy/scikit-learn.
 
+Nodes marked with **[Export]** support Python code export via the `/workflows/{id}/export/python` endpoint. The exported script reproduces the workflow as standalone Python code. Nodes without **[Export]** are either data I/O nodes (which become user-editable placeholders in the exported script), visualization/output nodes, or specialized algorithms not yet supported for export.
+
 **Consolidated nodes** use a `method` dropdown to select among multiple algorithms.
 
 ---
 
 ## Data Nodes
 
-#### Data Source
+#### Data Source **[Export]**
 *   **Node Type**: `data.source`
 *   **Description**: Generic data loader for single files or synthetic data.
 *   **Parameters**:
-    *   `source` (select): `spectrochempy`, `sklearn`, `experiment`, `file`, `library`, `synthetic`.
+    *   `source` (select): `spectrochempy`, `sklearn`, `eigenvector`, `file`.
     *   `example_dataset` (select): `irdata`, `ramandata`, `nmrdata`.
     *   `sklearn_dataset` (select): `iris`, `wine`, `breast_cancer`, `digits`.
+    *   `eigenvector_dataset` (select): Eigenvector Research benchmarks (`diesel_nir`, `corn_m5`, `nir_shootout_cal1`, etc.).
     *   `example_file` (text): Specific file within example dataset (e.g., `CO@Mo_Al2O3.SPG`).
-    *   `experiment_id` (number): ID (for experiment source).
     *   `file_path` (text): Absolute path (for file source).
     *   `transpose_on_load` (boolean): Swap rows/cols.
-*   **Notes**: Sklearn datasets include class labels on the y-axis, which supervised nodes can auto-extract. The node also exposes an optional `target` output port (labels) alongside the default dataset output.
+*   **Outputs**: `default` (Dataset), `target` (target/property values if available).
+*   **Notes**: Export is supported for `sklearn`, `eigenvector`, and `spectrochempy` source types. The exported code constructs a `SherpaDataset` with typed axes and embedded target values, making it a practical reference for the SherpaDataset API. Sklearn datasets include class labels; Eigenvector datasets include reference properties (e.g., Moisture, Protein). Other source types (`file`, `experiment`) produce user-editable placeholders in exports.
 
 #### Load Group **[SCP]**
 *   **Node Type**: `data.load_group`
@@ -58,7 +61,15 @@ Nodes marked with **[SCP]** require [SpectroChemPy](https://www.spectrochempy.fr
     *   `center` (number): Center position (0-1).
     *   `width` (number): Curve width.
 
-#### Train/Test Split
+#### Attach Target **[Export]**
+*   **Node Type**: `data.attach_target`
+*   **Description**: Attach target values to a dataset for supervised modeling.
+*   **Inputs**: `X` (Dataset), `y` (Target values).
+*   **Parameters**:
+    *   `target_type` (select, default: `continuous`): `continuous`, `categorical`.
+*   **Outputs**: Dataset with embedded target values.
+
+#### Train/Test Split **[Export]**
 *   **Node Type**: `data.train_test_split`
 *   **Description**: Split a dataset into training and test subsets.
 *   **Inputs**: `X` (Dataset), `y` (Targets - optional, used for stratified splits).
@@ -103,7 +114,7 @@ Nodes marked with **[SCP]** require [SpectroChemPy](https://www.spectrochempy.fr
 
 These nodes consolidate multiple related algorithms behind a single `method` dropdown. The Inspector panel hides irrelevant parameters automatically via conditional visibility (`visible_when`).
 
-#### Smooth
+#### Smooth **[Export]**
 *   **Node Type**: `preprocess.smooth`
 *   **Description**: Smoothing filters for noise reduction.
 *   **Method** (select): `savitzky_golay`, `whittaker`, `gaussian`.
@@ -114,7 +125,7 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
     *   `d` (number, default: `2`): Difference order. *Visible when: whittaker.*
     *   `sigma` (number, default: `2.0`): Gaussian standard deviation. *Visible when: gaussian.*
 
-#### Derivative
+#### Derivative **[Export]**
 *   **Node Type**: `preprocess.derivative`
 *   **Description**: Compute spectral derivatives.
 *   **Method** (select): `savitzky_golay`, `norris_williams`.
@@ -125,7 +136,7 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
     *   `gap` (number, default: `5`): Gap size. *Visible when: norris_williams.*
     *   `segment` (number, default: `5`): Segment size. *Visible when: norris_williams.*
 
-#### Normalize
+#### Normalize **[Export]**
 *   **Node Type**: `preprocess.normalize`
 *   **Description**: Normalize spectra using scatter correction or scaling methods.
 *   **Method** (select): `snv`, `msc`, `scale`.
@@ -134,7 +145,7 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
     *   `scale_method` (select, default: `max`): Scaling method (`max`, `area`, `minmax`). *Visible when: scale.*
 *   **Notes**: EMSC (Extended MSC) remains a separate node due to its dual input ports and polynomial baseline logic.
 
-#### Scale / Center
+#### Scale / Center **[Export]**
 *   **Node Type**: `preprocess.scale`
 *   **Description**: Scale or center spectra.
 *   **Method** (select): `mean_center`, `autoscale`, `pareto`, `scale_max`.
@@ -144,7 +155,7 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
 
 ### Baseline Correction
 
-#### Baseline (Penalized LS)
+#### Baseline (Penalized LS) **[Export]**
 *   **Node Type**: `baseline.penalized_ls`
 *   **Description**: Penalized least squares baseline correction.
 *   **Method** (select): `als`, `arpls`, `airpls`.
@@ -152,7 +163,7 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
     *   `lam` (number, default: `100000`): Smoothness parameter. Range: 1e2 – 1e9.
     *   `p` (number, default: `0.001`): Asymmetry parameter. *Visible when: als.* Range: 0.0001 – 0.1.
 
-#### Baseline (Rubberband) **[SCP]**
+#### Baseline (Rubberband) **[SCP]** **[Export]**
 *   **Node Type**: `baseline.rubberband`
 *   **Description**: Convex hull "rubberband" baseline correction.
 *   **Powered by**: [spectrochempy.basc](https://www.spectrochempy.fr/reference/generated/spectrochempy.basc.html)
@@ -161,14 +172,14 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
 
 ### Advanced Correction
 
-#### EMSC
+#### EMSC **[Export]**
 *   **Node Type**: `preprocess.emsc`
 *   **Description**: Extended MSC with polynomial baseline correction.
 *   **Parameters**:
     *   `reference` (select, default: `mean`): Reference spectrum (`mean`, `median`, `first`).
     *   `poly_order` (number, default: `2`): Order of polynomial baseline.
 
-#### OSC Filter **[SCP]**
+#### OSC Filter **[SCP]** **[Export]**
 *   **Node Type**: `preprocess.osc`
 *   **Description**: Orthogonal Signal Correction — removes variation uncorrelated with Y.
 *   **Powered by**: [spectrochempy.PLSRegression](https://www.spectrochempy.fr/reference/generated/spectrochempy.PLSRegression.html)
@@ -177,7 +188,7 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
     *   `tol` (number, default: `1e-6`): Convergence tolerance.
     *   `max_iter` (number, default: `100`): Maximum iterations.
 
-#### Cosmic Ray Removal
+#### Cosmic Ray Removal **[Export]**
 *   **Node Type**: `preprocess.cosmic_ray`
 *   **Description**: Removes spike-like outliers (cosmic rays) using local median statistics.
 *   **Parameters**:
@@ -186,20 +197,20 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
 
 ### Utilities
 
-#### Clip Range
+#### Clip Range **[Export]**
 *   **Node Type**: `preprocess.clip_range`
 *   **Description**: Crops data to a specific wavenumber region.
 *   **Parameters**:
     *   `min_wavenumber` (number, default: `400`): Lower bound.
     *   `max_wavenumber` (number, default: `4000`): Upper bound.
 
-#### Clip Floor
+#### Clip Floor **[Export]**
 *   **Node Type**: `preprocess.clip_floor`
 *   **Description**: Sets a minimum value floor (e.g., to remove negative absorbance).
 *   **Parameters**:
     *   `floor` (number, default: `0.0`): Minimum allowed value.
 
-#### Wavenumber Align
+#### Wavenumber Align **[Export]**
 *   **Node Type**: `preprocess.wavenumber_align`
 *   **Description**: Align spectra to a common wavenumber grid via interpolation.
 *   **Parameters**:
@@ -228,7 +239,7 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
 
 ## Exploratory Nodes
 
-#### PCA **[SCP]**
+#### PCA **[SCP]** **[Export]**
 *   **Node Type**: `model.pca`
 *   **Description**: Principal Component Analysis.
 *   **Powered by**: [spectrochempy.PCA](https://www.spectrochempy.fr/reference/generated/spectrochempy.PCA.html)
@@ -243,7 +254,7 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
 *   **Inputs**: `X_new` (Spectra), `model` (PCA model).
 *   **Outputs**: Scores in PCA space.
 
-#### MCR-ALS **[SCP]**
+#### MCR-ALS **[SCP]** **[Export]**
 *   **Node Type**: `model.mcr_als`
 *   **Description**: Multivariate Curve Resolution — Alternating Least Squares. Resolves mixtures into pure components.
 *   **Powered by**: [spectrochempy.MCRALS](https://www.spectrochempy.fr/reference/generated/spectrochempy.MCRALS.html)
@@ -254,7 +265,7 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
     *   `non_negative_C` (boolean, default: `True`): Enforce non-negative concentrations.
     *   `non_negative_St` (boolean, default: `True`): Enforce non-negative spectra.
 
-#### SIMPLISMA **[SCP]**
+#### SIMPLISMA **[SCP]** **[Export]**
 *   **Node Type**: `model.simplisma`
 *   **Description**: Self-modeling mixture analysis using purity maximization. Identifies pure variables in spectral mixtures.
 *   **Powered by**: [spectrochempy.SIMPLISMA](https://www.spectrochempy.fr/reference/generated/spectrochempy.SIMPLISMA.html)
@@ -264,21 +275,21 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
     *   `noise` (number, default: `3.0`): Noise level threshold.
 *   **Outputs**: `model`, `concentrations`, `spectra` (pure component spectra), `purity_values`.
 
-#### EFA **[SCP]**
+#### EFA **[SCP]** **[Export]**
 *   **Node Type**: `model.efa`
 *   **Description**: Evolving Factor Analysis. Determines chemical rank of evolving systems.
 *   **Powered by**: [spectrochempy.EFA](https://www.spectrochempy.fr/reference/generated/spectrochempy.EFA.html)
 *   **Parameters**:
     *   `n_components` (number, default: `10`): Number of eigenvalues to compute.
 
-#### NMF
+#### NMF **[Export]**
 *   **Node Type**: `model.nmf`
 *   **Description**: Non-negative Matrix Factorization.
 *   **Parameters**:
     *   `n_components` (number, default: `3`): Number of components.
     *   `max_iter` (number, default: `200`): Maximum iterations.
 
-#### ICA
+#### ICA **[Export]**
 *   **Node Type**: `model.ica`
 *   **Description**: Independent Component Analysis (FastICA).
 *   **Parameters**:
@@ -298,7 +309,7 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
 
 ## Regression Nodes
 
-#### PLS **[SCP]**
+#### PLS **[SCP]** **[Export]**
 *   **Node Type**: `model.pls`
 *   **Description**: Partial Least Squares Regression.
 *   **Powered by**: [spectrochempy.PLSRegression](https://www.spectrochempy.fr/reference/generated/spectrochempy.PLSRegression.html)
@@ -307,13 +318,13 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
     *   `n_components` (number, default: `3`): Number of latent variables.
     *   `scale` (boolean, default: `True`): Auto-scale data.
 
-#### Apply PLS **[SCP]**
+#### Apply PLS **[SCP]** **[Export]**
 *   **Node Type**: `model.pls_predict`
 *   **Description**: Predict using a trained PLS model.
 *   **Inputs**: `X_new` (Spectra), `model` (PLS model).
 *   **Outputs**: Predicted Y values.
 
-#### PCR
+#### PCR **[Export]**
 *   **Node Type**: `model.pcr`
 *   **Description**: Principal Component Regression (PCA + Linear Regression).
 *   **Inputs**: `X` (Spectra), `y` (Targets).
@@ -321,7 +332,7 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
     *   `n_components` (number, default: `3`): Number of PCA components.
     *   `scale` (boolean, default: `True`): Auto-scale data.
 
-#### SVR
+#### SVR **[Export]**
 *   **Node Type**: `model.svr`
 *   **Description**: Support Vector Regression.
 *   **Inputs**: `X` (Spectra), `y` (Targets).
@@ -334,13 +345,13 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
     *   `coef0` (number, default: `0.0`): Independent term.
     *   `scale` (boolean, default: `True`): Scale data.
 
-#### Linear Regression
+#### Linear Regression **[Export]**
 *   **Node Type**: `model.linear_regression`
 *   **Description**: Simple linear regression.
 *   **Parameters**:
     *   `fit_intercept` (boolean, default: `True`): Calculate intercept.
 
-#### Load & Apply Model
+#### Load & Apply Model **[Export]**
 *   **Node Type**: `model.load_apply`
 *   **Description**: Load a saved model artifact and apply it to new data. Supports all model types: PCA, PLS, MCR, SIMPLISMA (transform), PLS-DA, KNN, SIMCA (classify). EFA models cannot be applied (diagnostic only).
 *   **Inputs**: `X_new` (SpectralDataset), `model_ref` (ModelReference — optional, overrides parameter).
@@ -353,7 +364,7 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
 
 ## Classification Nodes
 
-#### PLS-DA **[SCP]**
+#### PLS-DA **[SCP]** **[Export]**
 *   **Node Type**: `classification.plsda`
 *   **Description**: Partial Least Squares Discriminant Analysis.
 *   **Powered by**: [spectrochempy.PLSRegression](https://www.spectrochempy.fr/reference/generated/spectrochempy.PLSRegression.html)
@@ -365,7 +376,7 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
 *   **Outputs**: Model dict with train/CV predictions, confusion matrices, and classification report.
 *   **Notes**: If `X` includes class labels in its y-axis, you can omit `y` to auto-extract. For train/test workflows, split data with `data.train_test_split`, train on `X_train`, then feed the model output into `classification.predict` along with `X_test`.
 
-#### KNN Classifier
+#### KNN Classifier **[Export]**
 *   **Node Type**: `classification.knn`
 *   **Description**: K-Nearest Neighbors classification.
 *   **Inputs**: `X` (Features), `y` (Classes — optional).
@@ -376,7 +387,7 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
     *   `cv_folds` (number, default: `5`): Cross-validation folds.
 *   **Outputs**: Model dict with train/CV predictions, confusion matrices, and classification report.
 
-#### SIMCA **[SCP]**
+#### SIMCA **[SCP]** **[Export]**
 *   **Node Type**: `classification.simca`
 *   **Description**: Soft Independent Modeling of Class Analogy. Builds per-class PCA models and classifies based on Hotelling T² and Q residual distances.
 *   **Inputs**: `X` (Features), `y` (Classes — optional).
@@ -385,7 +396,7 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
     *   `confidence_level` (number, default: `0.95`): For T² and Q limits.
 *   **Outputs**: Model dict with predictions, confusion matrix, and classification report.
 
-#### Apply Classifier
+#### Apply Classifier **[Export]**
 *   **Node Type**: `classification.predict`
 *   **Description**: Apply a trained classification model (PLS-DA, KNN, or SIMCA) to new samples. Auto-detects the model type from the input dict.
 *   **Inputs**: `X_new` (Spectra), `model` (Trained model dict from any classification training node).
@@ -396,7 +407,7 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
 
 ## Clustering Nodes
 
-#### K-Means
+#### K-Means **[Export]**
 *   **Node Type**: `model.kmeans`
 *   **Description**: K-Means clustering.
 *   **Parameters**:
@@ -405,7 +416,7 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
     *   `max_iter` (number, default: `300`): Max iterations.
     *   `random_state` (number, default: `42`): Random seed.
 
-#### DBSCAN
+#### DBSCAN **[Export]**
 *   **Node Type**: `model.dbscan`
 *   **Description**: Density-Based Spatial Clustering of Applications with Noise.
 *   **Parameters**:
@@ -413,7 +424,7 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
     *   `min_samples` (number, default: `5`): Minimum samples per cluster.
     *   `metric` (select, default: `euclidean`): Distance metric.
 
-#### HCA
+#### HCA **[Export]**
 *   **Node Type**: `model.hca`
 *   **Description**: Hierarchical Cluster Analysis (Agglomerative).
 *   **Parameters**:
@@ -426,7 +437,7 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
 
 ## Validation Nodes
 
-#### Cross-Validation
+#### Cross-Validation **[Export]**
 *   **Node Type**: `diagnostics.cross_validation`
 *   **Description**: Computes regression or classification metrics from paired `y_true` and `y_pred`.
 *   **Inputs**: `y_true`, `y_pred`.
@@ -434,7 +445,7 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
     *   `cv_folds` (number, default: `5`): Number of folds.
 *   **Outputs**: For classification, accuracy, confusion matrix, and a classification report. For regression, RMSE, MAE, R², Q², and residuals.
 
-#### Outlier Detection
+#### Outlier Detection **[Export]**
 *   **Node Type**: `diagnostics.outliers`
 *   **Description**: Hotelling T² and Q statistics for PCA models.
 *   **Inputs**: `PCAModel`.
@@ -491,13 +502,13 @@ These nodes consolidate multiple related algorithms behind a single `method` dro
 
 These nodes act as entry and exit points for headless prediction pipelines (batch prediction, folder watching, and the headless serve-model API).
 
-#### Deploy Input
+#### Deploy Input **[Export]**
 *   **Node Type**: `deploy.input`
 *   **Description**: Injects external data streams into prediction pipelines. In interactive (bench) mode, returns dummy data. In deploy mode, the execution engine injects the actual payload.
 *   **Parameters**:
     *   `stream_name` (text, default: `sample`): Unique identifier for the incoming data stream.
 
-#### Deploy Output
+#### Deploy Output **[Export]**
 *   **Node Type**: `deploy.output`
 *   **Description**: Formats results for the headless prediction server API.
 *   **Parameters**:

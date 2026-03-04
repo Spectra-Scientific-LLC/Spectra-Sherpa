@@ -95,11 +95,11 @@ class SIMCANode(Node):
         ],
         output_ports=[
             PortMetadata(
-                name="class_models",
+                name="model",
                 type_ref="spectrasherpa://types/ClassificationModel/1.0",
                 required=True,
-                label="Class Models",
-                description="Dictionary of PCA models (one per class)",
+                label="SIMCA Model",
+                description="Serialized SIMCA classification model for downstream prediction",
             ),
             PortMetadata(
                 name="predictions",
@@ -140,6 +140,110 @@ class SIMCANode(Node):
         requires_scp=True,
         help_url="https://www.spectrochempy.fr/reference/generated/spectrochempy.PCA.html",
     )
+
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python export code for SIMCA classification."""
+        if not use_scp:
+            return [
+                f"{indent}# --- SIMCA ({self.node_id}) ---",
+                f"{indent}# SIMCA requires SpectroChemPy (pip install spectra-sherpa[scp])",
+                f"{indent}raise ImportError('SIMCA requires spectrochempy')",
+            ]
+
+        params = self._resolve_params()
+        n_components = params.get("n_components", 3)
+        confidence_level = params.get("confidence_level", 0.95)
+
+        X_expr = inputs.get("X", inputs.get("default", "input_data"))
+        y_expr = inputs.get("y")
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- SIMCA ({self.node_id}) ---")
+
+        # Extract X
+        lines.append(f"{indent}_X_input = {X_expr}")
+        lines.append(f"{indent}_X_data = np.array(")
+        lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
+        lines.append(f"{indent}    dtype=np.float64,")
+        lines.append(f"{indent})")
+
+        # Extract y (class labels)
+        if y_expr:
+            lines.append(f"{indent}_y_raw = {y_expr}")
+            lines.append(f"{indent}_y_labels = np.asarray(_y_raw.data if hasattr(_y_raw, 'data') else _y_raw).ravel()")
+        else:
+            lines.append(f"{indent}_y_labels = np.asarray(")
+            lines.append(f"{indent}    _X_input.target if hasattr(_X_input, 'target') and _X_input.target is not None")
+            lines.append(f"{indent}    else _X_input.meta.get('target'),")
+            lines.append(f"{indent}).ravel()")
+
+        # Build per-class PCA models via SCP
+        lines.append(f"{indent}_classes = np.unique(_y_labels)")
+        lines.append(f"{indent}_class_models = {{}}")
+        lines.append(f"{indent}for _cls in _classes:")
+        lines.append(f"{indent}    _mask = _y_labels == _cls")
+        lines.append(f"{indent}    _X_cls = _X_data[_mask]")
+        lines.append(f"{indent}    _ndd = scp.NDDataset(_X_cls)")
+        lines.append(f"{indent}    _pca = scp.PCA(n_components={n_components}, standardized=False, scaled=True)")
+        lines.append(f"{indent}    _pca.fit(_ndd)")
+        lines.append(f"{indent}    _scores = np.asarray(_pca.transform().data, dtype=np.float64)")
+        lines.append(f"{indent}    _loadings = np.asarray(_pca.components.data, dtype=np.float64)")
+        lines.append(f"{indent}    _class_models[_cls] = {{'pca': _pca, 'scores': _scores, 'loadings': _loadings, 'mean': np.mean(_X_cls, axis=0)}}")
+
+        # Classify all samples
+        lines.append(f"{indent}_predictions = []")
+        lines.append(f"{indent}_distances = []")
+        lines.append(f"{indent}for _i in range(len(_X_data)):")
+        lines.append(f"{indent}    _sample = _X_data[_i]")
+        lines.append(f"{indent}    _best_cls, _best_dist = None, float('inf')")
+        lines.append(f"{indent}    _sample_distances = {{}}")
+        lines.append(f"{indent}    for _cls in _classes:")
+        lines.append(f"{indent}        _m = _class_models[_cls]")
+        lines.append(f"{indent}        _centered = _sample - _m['mean']")
+        lines.append(f"{indent}        _t = _centered @ _m['loadings'].T")
+        lines.append(f"{indent}        _recon = _t @ _m['loadings']")
+        lines.append(f"{indent}        _dist = np.sum((_centered - _recon) ** 2)")
+        lines.append(f"{indent}        _sample_distances[str(_cls)] = float(_dist)")
+        lines.append(f"{indent}        if _dist < _best_dist:")
+        lines.append(f"{indent}            _best_cls, _best_dist = _cls, _dist")
+        lines.append(f"{indent}    _predictions.append(_best_cls)")
+        lines.append(f"{indent}    _distances.append(_sample_distances)")
+        lines.append(f"{indent}_predictions = np.array(_predictions)")
+        lines.append(f"{indent}_accuracy = np.mean(_predictions == _y_labels)")
+        lines.append(f'{indent}print(f"  SIMCA ({n_components} PCs, conf={confidence_level}): accuracy={{_accuracy:.4f}} ({{len(_classes)}} classes)")')
+
+        # Store result — compute T²/Q limits for export (simplified)
+        lines.append(f"{indent}_T2_limits = {{}}")
+        lines.append(f"{indent}_Q_limits = {{}}")
+        lines.append(f"{indent}for _cls in _classes:")
+        lines.append(f"{indent}    _m = _class_models[_cls]")
+        lines.append(f"{indent}    _n = _m['scores'].shape[0]")
+        lines.append(f"{indent}    _eigvals = np.var(_m['scores'], axis=0) * _n")
+        lines.append(f"{indent}    _T2_limits[str(_cls)] = float(np.sum(_eigvals) * 3.0)")
+        lines.append(f"{indent}    _resid = _X_data[_y_labels == _cls] - np.mean(_X_data[_y_labels == _cls], axis=0)")
+        lines.append(f"{indent}    _recon = (_resid @ _m['loadings'].T) @ _m['loadings']")
+        lines.append(f"{indent}    _Q_limits[str(_cls)] = float(np.mean(np.sum((_resid - _recon) ** 2, axis=1)) * 3.0)")
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'model': {{")
+        lines.append(f"{indent}        'class_models': {{str(c): {{'loadings': _class_models[c]['loadings'], 'eigenvalues': np.var(_class_models[c]['scores'], axis=0) * _class_models[c]['scores'].shape[0], 'class_mean': _class_models[c]['mean'], 'n_samples': _class_models[c]['scores'].shape[0]}} for c in _classes}},")
+        lines.append(f"{indent}        'classes': [str(c) for c in _classes],")
+        lines.append(f"{indent}        'T2_limits': _T2_limits,")
+        lines.append(f"{indent}        'Q_limits': _Q_limits,")
+        lines.append(f"{indent}        'type': 'simca',")
+        lines.append(f"{indent}    }},")
+        lines.append(f"{indent}    'predictions': _predictions,")
+        lines.append(f"{indent}    'distances': _distances,")
+        lines.append(f"{indent}    'train_accuracy': float(_accuracy),")
+        lines.append(f"{indent}    'confusion_matrix': None,")
+        lines.append(f"{indent}    'plots': {{}},")
+        lines.append(f"{indent}}}")
+
+        return lines
 
     async def execute(self, X: Any = None, y: Any = None, **kwargs) -> Any:
         """
@@ -410,6 +514,16 @@ class SIMCANode(Node):
         # SherpaDataset-only return: one serialization boundary at API layer
         return {
             "default": scores_dataset,  # SherpaDataset: viz scores (n_samples, n_components)
-            "model": serializable_models,  # Model port: class models dict for SIMCA Predict
+            "model": {  # Wrapped model dict for ClassifierPredictNode
+                "class_models": serializable_models,
+                "classes": [str(c) for c in classes],
+                "T2_limits": {str(k): float(v) for k, v in T2_limits.items()},
+                "Q_limits": {str(k): float(v) for k, v in Q_limits.items()},
+                "type": "simca",
+            },
+            "predictions": predictions.tolist(),
+            "distances": distances,
+            "train_accuracy": float(train_accuracy),
+            "confusion_matrix": cm.tolist(),
             "plots": plots,  # Pre-built Plotly traces (legitimate visualization output)
         }

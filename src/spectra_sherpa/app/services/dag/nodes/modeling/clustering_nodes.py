@@ -118,6 +118,39 @@ class HCANode(Node):
         ],
     )
 
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python export code for HCA clustering."""
+        params = self._resolve_params()
+        n_clusters = params.get("n_clusters", 3)
+        linkage_method = params.get("linkage", "ward")
+        metric = params.get("metric", "euclidean")
+
+        X_expr = inputs.get("default", "input_data")
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- HCA ({self.node_id}) ---")
+        lines.append(f"{indent}from scipy.cluster.hierarchy import linkage, fcluster")
+        lines.append(f"{indent}_X_input = {X_expr}")
+        lines.append(f"{indent}_X_data = np.array(")
+        lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
+        lines.append(f"{indent}    dtype=np.float64,")
+        lines.append(f"{indent})")
+        lines.append(f"{indent}_Z = linkage(_X_data, method='{linkage_method}', metric='{metric}')")
+        lines.append(f"{indent}_labels = fcluster(_Z, t={n_clusters}, criterion='maxclust')")
+        lines.append(f'{indent}print(f"  HCA ({n_clusters} clusters, {linkage_method} linkage, {metric}): {{len(set(_labels))}} clusters found")')
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'labels': _labels.tolist(),")
+        lines.append(f"{indent}    'model': None,")
+        lines.append(f"{indent}    'linkage_matrix': _Z.tolist(),")
+        lines.append(f"{indent}}}")
+
+        return lines
+
     async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         """
         Execute hierarchical clustering.
@@ -430,6 +463,41 @@ class KMeansNode(Node):
         ],
     )
 
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python export code for KMeans clustering."""
+        params = self._resolve_params()
+        n_clusters = params.get("n_clusters", 3)
+        n_init = params.get("n_init", 10)
+        max_iter = params.get("max_iter", 300)
+        random_state = params.get("random_state", 42)
+
+        X_expr = inputs.get("default", "input_data")
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- KMeans ({self.node_id}) ---")
+        lines.append(f"{indent}from sklearn.cluster import KMeans")
+        lines.append(f"{indent}_X_input = {X_expr}")
+        lines.append(f"{indent}_X_data = np.array(")
+        lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
+        lines.append(f"{indent}    dtype=np.float64,")
+        lines.append(f"{indent})")
+        lines.append(f"{indent}_km = KMeans(n_clusters={n_clusters}, n_init={n_init}, max_iter={max_iter}, random_state={random_state})")
+        lines.append(f"{indent}_labels = _km.fit_predict(_X_data)")
+        lines.append(f"{indent}_centroids = _km.cluster_centers_")
+        lines.append(f'{indent}print(f"  KMeans ({n_clusters} clusters): inertia={{_km.inertia_:.4f}}")')
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'labels': _labels.tolist(),")
+        lines.append(f"{indent}    'model': _km,")
+        lines.append(f"{indent}    'centroids': _centroids.tolist(),")
+        lines.append(f"{indent}}}")
+
+        return lines
+
     async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         """
         Execute K-Means clustering.
@@ -590,6 +658,38 @@ class DBSCANNode(Node):
             ),
         ],
     )
+
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python export code for DBSCAN clustering."""
+        params = self._resolve_params()
+        eps = params.get("eps", 0.5)
+        min_samples = params.get("min_samples", 5)
+        metric = params.get("metric", "euclidean")
+
+        X_expr = inputs.get("default", "input_data")
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- DBSCAN ({self.node_id}) ---")
+        lines.append(f"{indent}from sklearn.cluster import DBSCAN")
+        lines.append(f"{indent}_X_input = {X_expr}")
+        lines.append(f"{indent}_X_data = np.array(")
+        lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
+        lines.append(f"{indent}    dtype=np.float64,")
+        lines.append(f"{indent})")
+        lines.append(f"{indent}_db = DBSCAN(eps={eps}, min_samples={min_samples}, metric='{metric}')")
+        lines.append(f"{indent}_labels = _db.fit_predict(_X_data)")
+        lines.append(f'{indent}print(f"  DBSCAN (eps={eps}, min_samples={min_samples}, {metric}): {{len(set(_labels) - {{-1}})}} clusters, {{(_labels == -1).sum()}} noise points")')
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'labels': _labels.tolist(),")
+        lines.append(f"{indent}    'model': _db,")
+        lines.append(f"{indent}}}")
+
+        return lines
 
     async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         """

@@ -150,6 +150,76 @@ class PCANode(Node):
         ),
     )
 
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python export code for PCA decomposition.
+
+        Emits code that fits PCA, extracts scores/loadings/explained variance,
+        and stores as a multi-port dict.
+        """
+        params = self._resolve_params()
+        n_components = params.get("n_components", 2)
+        standardized = params.get("standardized", False)
+        scaled = params.get("scaled", False)
+
+        X_expr = inputs.get("default", inputs.get("X", "input_data"))
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- PCA ({self.node_id}) ---")
+
+        if use_scp:
+            # Extract data
+            lines.append(f"{indent}_X_input = {X_expr}")
+            lines.append(f"{indent}_X_data = np.array(")
+            lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
+            lines.append(f"{indent}    dtype=np.float64,")
+            lines.append(f"{indent})")
+            # Fit PCA via SCP
+            std_str = "True" if standardized else "False"
+            scl_str = "True" if scaled else "False"
+            lines.append(f"{indent}_X_ndd = scp.NDDataset(_X_data)")
+            lines.append(f"{indent}_pca = scp.PCA(n_components={n_components}, standardized={std_str}, scaled={scl_str})")
+            lines.append(f"{indent}_pca.fit(_X_ndd)")
+            # Extract results
+            lines.append(f"{indent}_scores = np.asarray(_pca.transform().data, dtype=np.float64)")
+            lines.append(f"{indent}_loadings = np.asarray(_pca.components.data, dtype=np.float64)")
+            lines.append(f"{indent}_evr = np.asarray(_pca.explained_variance_ratio, dtype=np.float64).ravel()")
+            lines.append(f"{indent}if _evr.max() > 1.0:")
+            lines.append(f"{indent}    _evr = _evr / 100.0")
+        else:
+            # numpy mode via sklearn
+            lines.append(f"{indent}from sklearn.decomposition import PCA as _PCA")
+            lines.append(f"{indent}_X_input = {X_expr}")
+            lines.append(f"{indent}_X_data = np.array(")
+            lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
+            lines.append(f"{indent}    dtype=np.float64,")
+            lines.append(f"{indent})")
+            lines.append(f"{indent}_pca = _PCA(n_components={n_components})")
+            lines.append(f"{indent}_scores = _pca.fit_transform(_X_data)")
+            lines.append(f"{indent}_loadings = _pca.components_")
+            lines.append(f"{indent}_evr = _pca.explained_variance_ratio_")
+
+        # Print summary
+        lines.append(f'{indent}print(f"  PCA ({n_components} components):")')
+        lines.append(f'{indent}for _i, _v in enumerate(_evr):')
+        lines.append(f'{indent}    print(f"    PC{{_i+1}}: {{_v*100:.2f}}% variance")')
+        lines.append(f'{indent}print(f"    Cumulative: {{np.cumsum(_evr)[-1]*100:.2f}}%")')
+
+        # Store multi-port output
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'default': _scores,")
+        lines.append(f"{indent}    'scores': _scores,")
+        lines.append(f"{indent}    'loadings': _loadings,")
+        lines.append(f"{indent}    'model': _pca,")
+        lines.append(f"{indent}    'explained_variance': _evr,")
+        lines.append(f"{indent}}}")
+
+        return lines
+
     async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         """
         Execute PCA on input dataset.

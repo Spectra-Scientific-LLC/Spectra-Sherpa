@@ -16,6 +16,7 @@ This module handles:
 
 from __future__ import annotations
 
+import ast
 import logging
 import os
 import re
@@ -74,6 +75,9 @@ def make_node_type(project_id: int, slug: str) -> str:
 
 def generate_plugin_source(algo: CustomAlgo) -> str:
     """Generate a complete ``@register_node`` plugin module as a string."""
+    if algo.mode == "loader":
+        return algo.code.rstrip() + "\n"
+
     # Indent user code by 8 spaces (inside the execute method body)
     user_lines = algo.code.rstrip().split("\n")
     indented_code = "\n".join("        " + line for line in user_lines)
@@ -157,6 +161,59 @@ class {class_name}(Node):
         return lines
 '''
     return source
+
+
+def validate_loader_plugin_source(code: str, *, project_id: int, slug: str) -> dict[str, str]:
+    """Validate a raw loader module stored as a project-scoped custom algo."""
+    expected_node_type = make_node_type(project_id, slug)
+
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as exc:
+        raise SyntaxError(exc.msg, ("<custom_loader>", exc.lineno, exc.offset, exc.text)) from exc
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+
+        has_register = any(
+            (isinstance(d, ast.Name) and d.id == "register_node")
+            or (isinstance(d, ast.Attribute) and d.attr == "register_node")
+            for d in node.decorator_list
+        )
+        if not has_register:
+            continue
+
+        for item in node.body:
+            if not isinstance(item, ast.Assign):
+                continue
+            if not any(isinstance(target, ast.Name) and target.id == "metadata" for target in item.targets):
+                continue
+
+            if not isinstance(item.value, ast.Call):
+                raise ValueError("metadata must be assigned from a NodeMetadata(...) call")
+
+            metadata: dict[str, str] = {}
+            for kw in item.value.keywords:
+                if kw.arg in {"node_type", "category", "label", "description"} and isinstance(
+                    kw.value, ast.Constant
+                ):
+                    value = kw.value.value
+                    if isinstance(value, str):
+                        metadata[kw.arg] = value
+
+            node_type = metadata.get("node_type")
+            if node_type != expected_node_type:
+                raise ValueError(
+                    f"Loader node_type must be '{expected_node_type}' for this project/slug (got {node_type!r})"
+                )
+
+            if metadata.get("category") != "custom_algo":
+                raise ValueError("Loader plugins must use category='custom_algo' so they stay project-scoped")
+
+            return metadata
+
+    raise ValueError("No @register_node class with a metadata NodeMetadata(...) assignment was found")
 
 
 def _generate_simple_execute(indented_code: str, algo: CustomAlgo) -> str:

@@ -630,7 +630,8 @@ class TestExportHelpers:
 
     def test_wrap_result_lines_scp(self):
         lines = wrap_result_lines("n1", "_data", "inp", "    ", use_scp=True)
-        assert any("scp.NDDataset" in l for l in lines)
+        assert any("SherpaDataset" in l for l in lines)
+        assert any("target_context" in l for l in lines)
         assert any("results['n1']" in l for l in lines)
 
     def test_wrap_result_lines_numpy(self):
@@ -717,8 +718,8 @@ class TestTransformAutoExport:
         assert "np.array(results['src'].data" in code
         # Expression with substituted param
         assert "_result = np.maximum(_data, 0.5)" in code
-        # SCP wrapping
-        assert "scp.NDDataset" in code
+        # SCP export keeps SherpaDataset semantics so embedded target metadata survives
+        assert "SherpaDataset" in code
 
     def test_numpy_expr_generates_python_numpy(self):
         node = ClipFloorAutoExportNode("ae_3", {"floor": 0.5})

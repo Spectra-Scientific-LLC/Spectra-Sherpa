@@ -127,6 +127,73 @@ class PCRNode(Node):
         ],
     )
 
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python export code for PCR regression."""
+        params = self._resolve_params()
+        n_components = params.get("n_components", 3)
+        scale = params.get("scale", True)
+
+        X_expr = inputs.get("X", inputs.get("default", "input_data"))
+        y_expr = inputs.get("y")
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- PCR ({self.node_id}) ---")
+
+        # Extract X
+        lines.append(f"{indent}_X_input = {X_expr}")
+        lines.append(f"{indent}_X_data = np.array(")
+        lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
+        lines.append(f"{indent}    dtype=np.float64,")
+        lines.append(f"{indent})")
+
+        # Extract y
+        if y_expr:
+            lines.append(f"{indent}_y_raw = {y_expr}")
+            lines.append(f"{indent}_y = np.array(_y_raw.data if hasattr(_y_raw, 'data') else _y_raw, dtype=np.float64).ravel()")
+        else:
+            lines.append(f"{indent}_y = np.array(")
+            lines.append(f"{indent}    _X_input.target if hasattr(_X_input, 'target') and _X_input.target is not None")
+            lines.append(f"{indent}    else _X_input.meta.get('target'),")
+            lines.append(f"{indent}    dtype=np.float64,")
+            lines.append(f"{indent}).ravel()")
+
+        # Build PCR pipeline
+        scale_str = "True" if scale else "False"
+        lines.append(f"{indent}from sklearn.decomposition import PCA as _PCA")
+        lines.append(f"{indent}from sklearn.linear_model import LinearRegression as _LR")
+        lines.append(f"{indent}from sklearn.pipeline import Pipeline as _Pipeline")
+        lines.append(f"{indent}from sklearn.preprocessing import StandardScaler as _Scaler")
+        lines.append(f"{indent}from sklearn.metrics import r2_score as _r2_score, mean_squared_error as _mse")
+        lines.append(f"{indent}_pcr = _Pipeline([")
+        lines.append(f"{indent}    ('scaler', _Scaler(with_mean={scale_str}, with_std={scale_str})),")
+        lines.append(f"{indent}    ('pca', _PCA(n_components={n_components})),")
+        lines.append(f"{indent}    ('regressor', _LR()),")
+        lines.append(f"{indent}])")
+        lines.append(f"{indent}_pcr.fit(_X_data, _y)")
+        lines.append(f"{indent}_y_pred = _pcr.predict(_X_data)")
+        lines.append(f"{indent}_r2 = _r2_score(_y, _y_pred)")
+        lines.append(f"{indent}_rmse = float(np.sqrt(_mse(_y, _y_pred)))")
+        lines.append(f"{indent}_scores = _pcr.named_steps['pca'].transform(_pcr.named_steps['scaler'].transform(_X_data))")
+        lines.append(f"{indent}_loadings = _pcr.named_steps['pca'].components_")
+        lines.append(f'{indent}print(f"  PCR ({n_components} components): R²={{_r2:.4f}}, RMSE={{_rmse:.4f}}")')
+
+        # Store result
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'model': _pcr,")
+        lines.append(f"{indent}    'scores': _scores,")
+        lines.append(f"{indent}    'loadings': _loadings,")
+        lines.append(f"{indent}    'y_pred': _y_pred,")
+        lines.append(f"{indent}    'r2': _r2,")
+        lines.append(f"{indent}    'rmse': _rmse,")
+        lines.append(f"{indent}}}")
+
+        return lines
+
     async def execute(self, X: Any = None, y: Any = None, **kwargs) -> Any:
         """
         Execute PCR regression.

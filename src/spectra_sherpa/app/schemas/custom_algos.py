@@ -12,7 +12,7 @@ class CustomAlgoCreate(BaseModel):
     slug: str = Field(..., min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_]{0,63}$")
     description: str | None = None
     code: str = Field(default="result = data  # transform data here")
-    mode: str = Field(default="simple", pattern=r"^(simple|advanced)$")
+    mode: str = Field(default="simple", pattern=r"^(simple|advanced|loader)$")
     icon: str = Field(default="\U0001f9ea", max_length=10)
 
 
@@ -20,7 +20,7 @@ class CustomAlgoUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=255)
     description: str | None = None
     code: str | None = None
-    mode: str | None = Field(None, pattern=r"^(simple|advanced)$")
+    mode: str | None = Field(None, pattern=r"^(simple|advanced|loader)$")
     icon: str | None = Field(None, max_length=10)
 
 

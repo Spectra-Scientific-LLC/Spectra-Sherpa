@@ -4,7 +4,6 @@ import asyncio
 import logging
 
 from spectra_sherpa.app import models  # noqa: F401  # Ensure models are registered
-from spectra_sherpa.app.core.config import app_config
 from spectra_sherpa.app.db.base import Base
 from spectra_sherpa.app.db.session import engine
 
@@ -14,45 +13,74 @@ logger = logging.getLogger(__name__)
 async def init_db() -> None:
     """Initialise the database schema.
 
-    - **local mode**: Uses ``create_all`` for zero-config bootstrap (new tables
-      are added automatically; columns are never altered).
-    - **hybrid / demo modes**: Runs Alembic ``upgrade head`` so schema
-      migrations (column adds/renames, index changes) are applied correctly.
-      Startup fails if migrations cannot be applied.
+    Uses Alembic migrations in **all** modes to keep the schema in sync
+    with the codebase.
+
+    - **Fresh database** (no tables): ``create_all`` bootstraps the full
+      schema, then ``alembic upgrade head`` runs every migration to stamp
+      ``alembic_version``.  Most migrations are idempotent (guarded with
+      ``_table_exists`` / ``_column_exists``); structural migrations like
+      ``l2g4h6i8j471`` skip when their work is already done.
+    - **Legacy database** (tables but no ``alembic_version``): same as
+      fresh — ``create_all`` adds any new tables, then ``upgrade head``
+      runs all migrations, adding any missing columns.
+    - **Tracked database** (has ``alembic_version``): ``upgrade head``
+      applies only pending migrations.
     """
-    if app_config.mode == "local":
+    from sqlalchemy import inspect as sa_inspect
+
+    async with engine.connect() as conn:
+        table_names = await conn.run_sync(
+            lambda sync_conn: sa_inspect(sync_conn).get_table_names()
+        )
+
+    has_alembic = "alembic_version" in table_names
+
+    if not has_alembic:
+        # Fresh or legacy database — bootstrap tables first.
+        # create_all() is idempotent for existing tables so it safely
+        # creates any new tables without touching existing ones.
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-        return
+        label = "fresh" if not table_names else "legacy (untracked)"
+        logger.info("Bootstrapped %s database tables via create_all", label)
 
-    # Non-local modes: require Alembic migrations.
-    # Run the Alembic command in a worker thread because Alembic's env.py
-    # executes asyncio.run(...), which fails inside an active event loop.
+    # Run all migrations from base (untracked) or pending (tracked).
+    # Most migrations use idempotent guards (_table_exists / _column_exists);
+    # structural migrations (e.g. FK rebuilds) skip when already applied.
     try:
-        from alembic import command
-        from alembic.config import Config
-
-        from spectra_sherpa._paths import get_package_root
-
-        package_root = get_package_root()
-        alembic_dir = package_root / "alembic"
-        alembic_ini = package_root / "alembic.ini"
-
-        if not alembic_ini.exists() or not alembic_dir.exists():
-            raise RuntimeError(f"Alembic config missing (ini={alembic_ini}, dir={alembic_dir})")
-
-        cfg = Config(str(alembic_ini))
-        cfg.set_main_option("script_location", str(alembic_dir))
-        cfg.set_main_option("sqlalchemy.url", str(engine.url))
-        # Prevent Alembic env.py from reconfiguring logging (root→WARN)
-        cfg.set_main_option("_skip_logging_config", "true")
-        await asyncio.to_thread(command.upgrade, cfg, "head")
+        await _run_alembic("upgrade", "head")
         logger.info("Alembic migrations applied successfully")
     except Exception as exc:
         logger.error(
-            "Alembic migration failed in %s mode; refusing to continue: %s",
-            app_config.mode,
-            exc,
-            exc_info=True,
+            "Alembic migration failed: %s", exc, exc_info=True,
         )
         raise RuntimeError("Database migration failed; startup aborted.") from exc
+
+
+async def _run_alembic(cmd: str, revision: str) -> None:
+    """Run an Alembic command in a worker thread.
+
+    Alembic's ``env.py`` calls ``asyncio.run()`` which cannot nest inside
+    an active event loop, so we delegate to ``asyncio.to_thread``.
+    """
+    from alembic import command
+    from alembic.config import Config
+
+    from spectra_sherpa._paths import get_package_root
+
+    package_root = get_package_root()
+    alembic_dir = package_root / "alembic"
+    alembic_ini = package_root / "alembic.ini"
+
+    if not alembic_ini.exists() or not alembic_dir.exists():
+        raise RuntimeError(
+            f"Alembic config missing (ini={alembic_ini}, dir={alembic_dir})"
+        )
+
+    cfg = Config(str(alembic_ini))
+    cfg.set_main_option("script_location", str(alembic_dir))
+    cfg.set_main_option("sqlalchemy.url", str(engine.url))
+    # Prevent Alembic env.py from reconfiguring logging (root→WARN)
+    cfg.set_main_option("_skip_logging_config", "true")
+    await asyncio.to_thread(getattr(command, cmd), cfg, revision)

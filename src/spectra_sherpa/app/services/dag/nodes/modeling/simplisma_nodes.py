@@ -137,6 +137,50 @@ class SIMPLISMANode(Node):
         help_url="https://www.spectrochempy.fr/reference/generated/spectrochempy.SIMPLISMA.html",
     )
 
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python export code for SIMPLISMA decomposition."""
+        if not use_scp:
+            return [
+                f"{indent}# --- SIMPLISMA ({self.node_id}) ---",
+                f"{indent}# SIMPLISMA requires SpectroChemPy (pip install spectra-sherpa[scp])",
+                f"{indent}raise ImportError('SIMPLISMA requires spectrochempy')",
+            ]
+
+        params = self._resolve_params()
+        n_components = params.get("n_components", 3)
+        tol = params.get("tol", 0.1)
+        noise = params.get("noise", 3.0)
+
+        X_expr = inputs.get("default", inputs.get("X", "input_data"))
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- SIMPLISMA ({self.node_id}) ---")
+        lines.append(f"{indent}_X_input = {X_expr}")
+        lines.append(f"{indent}_X_data = np.array(")
+        lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
+        lines.append(f"{indent}    dtype=np.float64,")
+        lines.append(f"{indent})")
+        lines.append(f"{indent}_X_ndd = scp.NDDataset(_X_data)")
+        lines.append(f"{indent}_simplisma = scp.SIMPLISMA(n_components={n_components}, tol={tol}, noise={noise})")
+        lines.append(f"{indent}_simplisma.fit(_X_ndd)")
+        lines.append(f"{indent}_C = np.asarray(_simplisma.C.data, dtype=np.float64)")
+        lines.append(f"{indent}_St = np.asarray(_simplisma.St.data, dtype=np.float64)")
+        lines.append(f"{indent}_purity = np.asarray(_simplisma.Pur.data, dtype=np.float64).tolist() if hasattr(_simplisma, 'Pur') and _simplisma.Pur is not None else []")
+        lines.append(f'{indent}print(f"  SIMPLISMA ({n_components} components): C={{_C.shape}}, St={{_St.shape}}")')
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'model': _simplisma,")
+        lines.append(f"{indent}    'concentrations': _C,")
+        lines.append(f"{indent}    'spectra': _St,")
+        lines.append(f"{indent}    'purity_values': _purity,")
+        lines.append(f"{indent}}}")
+
+        return lines
+
     async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         """
         Execute SIMPLISMA decomposition on input dataset.

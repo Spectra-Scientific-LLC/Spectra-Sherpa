@@ -83,6 +83,93 @@ class ClassifierPredictNode(Node):
         output_type="dict",
     )
 
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python export code for classifier prediction."""
+        X_expr = inputs.get("X_new", inputs.get("default", "input_data"))
+        model_expr = inputs.get("model", "model")
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- Apply Classifier ({self.node_id}) ---")
+
+        # Extract X
+        lines.append(f"{indent}_X_input = {X_expr}")
+        lines.append(f"{indent}_X_data = np.array(")
+        lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
+        lines.append(f"{indent}    dtype=np.float64,")
+        lines.append(f"{indent})")
+
+        # Get model dict and dispatch by type
+        lines.append(f"{indent}_model_dict = {model_expr}")
+        lines.append(f"{indent}_model_type = _model_dict.get('type', '') if isinstance(_model_dict, dict) else ''")
+        lines.append(f"")
+        lines.append(f"{indent}if _model_type == 'knn':")
+        lines.append(f"{indent}    # KNN — sklearn predict + predict_proba")
+        lines.append(f"{indent}    _estimator = _model_dict['model']")
+        lines.append(f"{indent}    _y_pred = _estimator.predict(_X_data)")
+        lines.append(f"{indent}    _y_prob = _estimator.predict_proba(_X_data)")
+        lines.append(f"{indent}elif _model_type == 'plsda':")
+        lines.append(f"{indent}    # PLS-DA — softmax + class mapping")
+        lines.append(f"{indent}    _pls_model = _model_dict['model']")
+        lines.append(f"{indent}    _classes = _model_dict['classes']")
+        if use_scp:
+            lines.append(f"{indent}    _y_raw = np.asarray(_pls_model.predict(scp.NDDataset(_X_data)).data, dtype=np.float64)")
+        else:
+            lines.append(f"{indent}    _y_raw = np.asarray(_pls_model.predict(_X_data), dtype=np.float64)")
+        lines.append(f"{indent}    if _y_raw.ndim == 1:")
+        lines.append(f"{indent}        _y_raw = _y_raw.reshape(-1, len(_classes))")
+        lines.append(f"{indent}    _exp = np.exp(_y_raw - _y_raw.max(axis=1, keepdims=True))")
+        lines.append(f"{indent}    _y_prob = _exp / _exp.sum(axis=1, keepdims=True)")
+        lines.append(f"{indent}    _y_pred = np.array([_classes[i] for i in np.argmax(_y_prob, axis=1)])")
+        lines.append(f"{indent}elif _model_type == 'simca':")
+        lines.append(f"{indent}    # SIMCA — per-class distance classification")
+        lines.append(f"{indent}    _cm = _model_dict['class_models']")
+        lines.append(f"{indent}    _classes = _model_dict['classes']")
+        lines.append(f"{indent}    _T2_lim = _model_dict.get('T2_limits', {{}})")
+        lines.append(f"{indent}    _Q_lim = _model_dict.get('Q_limits', {{}})")
+        lines.append(f"{indent}    _y_pred, _y_prob = [], []")
+        lines.append(f"{indent}    for _i in range(len(_X_data)):")
+        lines.append(f"{indent}        _dists = {{}}")
+        lines.append(f"{indent}        for _cls in _classes:")
+        lines.append(f"{indent}            _m = _cm[_cls]")
+        lines.append(f"{indent}            _loadings = np.array(_m['loadings'])")
+        lines.append(f"{indent}            _eigvals = np.array(_m['eigenvalues'])")
+        lines.append(f"{indent}            _mean = np.array(_m['class_mean'])")
+        lines.append(f"{indent}            _c = _X_data[_i] - _mean")
+        lines.append(f"{indent}            _t = _c @ _loadings.T")
+        lines.append(f"{indent}            _T2 = np.sum(_t**2 / np.maximum(_eigvals, 1e-10))")
+        lines.append(f"{indent}            _Q = np.sum((_c - _t @ _loadings) ** 2)")
+        lines.append(f"{indent}            _t2l = float(_T2_lim.get(_cls, 1.0))")
+        lines.append(f"{indent}            _ql = float(_Q_lim.get(_cls, 1.0))")
+        lines.append(f"{indent}            _dists[_cls] = _T2 / max(_t2l, 1e-10) + _Q / max(_ql, 1e-10)")
+        lines.append(f"{indent}        _y_pred.append(min(_dists, key=_dists.get))")
+        lines.append(f"{indent}        _y_prob.append(_dists)")
+        lines.append(f"{indent}    _y_pred = np.array(_y_pred)")
+        lines.append(f"{indent}else:")
+        lines.append(f"{indent}    # Fallback: bare estimator with predict()")
+        lines.append(f"{indent}    _estimator = _model_dict.get('model', _model_dict) if isinstance(_model_dict, dict) else _model_dict")
+        lines.append(f"{indent}    if hasattr(_estimator, 'predict_proba'):")
+        lines.append(f"{indent}        _y_pred = _estimator.predict(_X_data)")
+        lines.append(f"{indent}        _y_prob = _estimator.predict_proba(_X_data)")
+        lines.append(f"{indent}    elif hasattr(_estimator, 'predict'):")
+        lines.append(f"{indent}        _y_pred = _estimator.predict(_X_data)")
+        lines.append(f"{indent}        _y_prob = None")
+        lines.append(f"{indent}    else:")
+        lines.append(f"{indent}        raise ValueError('Model does not support predict()')")
+        lines.append(f'{indent}print(f"  Classifier Predict: {{len(_y_pred)}} samples classified")')
+
+        # Store result
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'y_pred': _y_pred.tolist() if hasattr(_y_pred, 'tolist') else list(_y_pred),")
+        lines.append(f"{indent}    'y_prob': _y_prob if isinstance(_y_prob, list) else (_y_prob.tolist() if _y_prob is not None and hasattr(_y_prob, 'tolist') else _y_prob),")
+        lines.append(f"{indent}}}")
+
+        return lines
+
     async def execute(self, X_new: Any = None, model: Any = None, **kwargs: Any) -> dict[str, Any]:
         if X_new is None:
             raise ValueError("Missing required input: X_new (new spectra)")

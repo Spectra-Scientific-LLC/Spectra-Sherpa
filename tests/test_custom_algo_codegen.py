@@ -9,6 +9,7 @@ from spectra_sherpa.app.services.custom_algo_codegen import (
     generate_plugin_source,
     make_node_type,
     validate_code_syntax,
+    validate_loader_plugin_source,
     validate_slug,
     write_plugin_file,
 )
@@ -163,6 +164,61 @@ class TestGeneratePluginSource:
         ast.parse(source)  # Must be valid Python
         # The braces should be doubled in generate_python so they survive f-string interpolation
         assert "generate_python" in source
+
+    def test_loader_mode_keeps_raw_module(self):
+        code = """from spectra_sherpa.app.services.dag.node_base import Node, NodeMetadata, register_node
+
+@register_node
+class LoaderNode(Node):
+    metadata = NodeMetadata(
+        node_type="ualgo.1.test_algo",
+        category="custom_algo",
+        label="Loader",
+        description="Load data",
+        input_ports=[],
+        output_ports=[],
+        )
+"""
+        algo = _FakeAlgo(code=code, mode="loader")
+        source = generate_plugin_source(algo)
+        assert source == code.rstrip() + "\n"
+
+
+class TestValidateLoaderPluginSource:
+    def test_accepts_project_scoped_loader(self):
+        code = """from spectra_sherpa.app.services.dag.node_base import Node, NodeMetadata, register_node
+
+@register_node
+class LoaderNode(Node):
+    metadata = NodeMetadata(
+        node_type="ualgo.7.uv_csv_load",
+        category="custom_algo",
+        label="UV CSV Load",
+        description="Load UV CSV data",
+        input_ports=[],
+        output_ports=[],
+    )
+"""
+        metadata = validate_loader_plugin_source(code, project_id=7, slug="uv_csv_load")
+        assert metadata["node_type"] == "ualgo.7.uv_csv_load"
+        assert metadata["label"] == "UV CSV Load"
+
+    def test_rejects_wrong_category(self):
+        code = """from spectra_sherpa.app.services.dag.node_base import Node, NodeMetadata, register_node
+
+@register_node
+class LoaderNode(Node):
+    metadata = NodeMetadata(
+        node_type="ualgo.7.uv_csv_load",
+        category="data",
+        label="UV CSV Load",
+        description="Load UV CSV data",
+        input_ports=[],
+        output_ports=[],
+    )
+"""
+        with pytest.raises(ValueError, match="category='custom_algo'"):
+            validate_loader_plugin_source(code, project_id=7, slug="uv_csv_load")
 
 
 # ── Atomic file write ───────────────────────────────────────────────
