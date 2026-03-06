@@ -148,7 +148,7 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for deta
 
 ## License
 
-Copyright (C) 2024-2026 Spectra Scientific LLC.
+Copyright (C) 2026 Spectra Scientific LLC.
 
 SpectraSherpa is licensed under the AGPL-3.0. See [LICENSE](./LICENSE) for details.
 

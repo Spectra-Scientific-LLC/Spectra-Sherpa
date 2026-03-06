@@ -3,7 +3,7 @@ Multi-species spectral blending with calibration models.
 
 PRESERVED FROM project0/blend.py - DO NOT MODIFY formulas without scientific review.
 
-Copyright (c) 2025 Spectra Scientific LLC
+Copyright (c) 2026 Spectra Scientific LLC
 All rights reserved.
 
 Core Algorithm:
