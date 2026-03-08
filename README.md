@@ -1,4 +1,4 @@
-# SpectraSherpa by Spectra Scientific LLC
+# SpectraSherpa by [Spectra Scientific LLC](https://spectrascientific.ai)
 
 [![CI](https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/actions/workflows/ci.yml/badge.svg)](https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/badge/docs-spectrascientific.ai-blue)](https://docs.spectrascientific.ai)
@@ -148,13 +148,13 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for deta
 
 ## License
 
-Copyright (C) 2026 Spectra Scientific LLC.
+Copyright (C) 2026 [Spectra Scientific LLC](https://spectrascientific.ai).
 
 SpectraSherpa is licensed under the AGPL-3.0. See [LICENSE](./LICENSE) for details.
 
 You are free to use, modify, and distribute SpectraSherpa. If you distribute a modified version — including as a network service — you must make your modifications available under the same license.
 
 > [!WARNING]
-> This software is provided "AS IS" without warranty of any kind. Spectra Scientific LLC disclaims all liability for damages arising from use of this software, including reliance on analytical results. See [DISCLAIMER](./DISCLAIMER) for full terms.
+> This software is provided "AS IS" without warranty of any kind. [Spectra Scientific LLC](https://spectrascientific.ai) disclaims all liability for damages arising from use of this software, including reliance on analytical results. See [DISCLAIMER](./DISCLAIMER) for full terms.
 
-Enterprise features and commercial licensing are available from Spectra Scientific LLC.
+Enterprise features and commercial licensing are available from [Spectra Scientific LLC](https://spectrascientific.ai).
