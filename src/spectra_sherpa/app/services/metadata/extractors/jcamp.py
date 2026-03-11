@@ -102,7 +102,7 @@ class JCAMPExtractor(BaseMetadataExtractor):
 
     def _extract_instrument(self, meta: dict) -> dict:
         """Extract instrument-related metadata."""
-        instrument = {}
+        instrument: dict[str, Any] = {}
 
         for field, keys in self.INSTRUMENT_KEYS.items():
             value = self._safe_get(meta, keys)
@@ -117,7 +117,7 @@ class JCAMPExtractor(BaseMetadataExtractor):
 
     def _extract_acquisition(self, meta: dict, dataset: Any) -> dict:
         """Extract acquisition parameters."""
-        acquisition = {}
+        acquisition: dict[str, Any] = {}
 
         for field, keys in self.ACQUISITION_KEYS.items():
             value = self._safe_get(meta, keys)
@@ -156,7 +156,7 @@ class JCAMPExtractor(BaseMetadataExtractor):
 
     def _extract_sample(self, meta: dict) -> dict:
         """Extract sample-related metadata."""
-        sample = {}
+        sample: dict[str, Any] = {}
 
         for field, keys in self.SAMPLE_KEYS.items():
             value = self._safe_get(meta, keys)
@@ -170,7 +170,7 @@ class JCAMPExtractor(BaseMetadataExtractor):
 
     def _extract_provenance(self, meta: dict) -> dict:
         """Extract provenance/audit metadata."""
-        provenance = {}
+        provenance: dict[str, Any] = {}
 
         for field, keys in self.PROVENANCE_KEYS.items():
             value = self._safe_get(meta, keys)
@@ -181,7 +181,7 @@ class JCAMPExtractor(BaseMetadataExtractor):
 
     def _extract_extra(self, meta: dict) -> dict:
         """Extract unrecognized metadata (vendor extensions, etc.)."""
-        recognized = set()
+        recognized: set[str] = set()
         for key_map in [self.INSTRUMENT_KEYS, self.ACQUISITION_KEYS, self.SAMPLE_KEYS, self.PROVENANCE_KEYS]:
             for keys in key_map.values():
                 recognized.update(k.lower() for k in keys)
@@ -190,7 +190,7 @@ class JCAMPExtractor(BaseMetadataExtractor):
             ["processing_history", "provenance", "spectra", "_", "xydata", "xypoints", "peak table", "peak assignments"]
         )
 
-        extra = {}
+        extra: dict[str, Any] = {}
         for key, value in meta.items():
             if key.lower() not in recognized and not key.startswith("_"):
                 if value is not None and value != "":
@@ -200,7 +200,7 @@ class JCAMPExtractor(BaseMetadataExtractor):
 
     def _parse_manufacturer_model(self, origin: str) -> dict:
         """Parse manufacturer and model from ORIGIN field."""
-        result = {}
+        result: dict[str, Any] = {}
         origin_str = str(origin)
 
         known_manufacturers = {

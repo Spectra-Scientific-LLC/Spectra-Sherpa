@@ -64,7 +64,7 @@ class BaseMetadataExtractor(ABC):
         SpectroChemPy may store metadata in dataset.meta or dataset.params
         depending on the format. This helper checks both.
         """
-        meta = {}
+        meta: dict[str, Any] = {}
 
         # Primary: dataset.meta
         if hasattr(dataset, "meta") and dataset.meta:
@@ -112,7 +112,7 @@ class BaseMetadataExtractor(ABC):
 
         Returns dict with wavenumber_min, wavenumber_max, n_points.
         """
-        info = {}
+        info: dict[str, Any] = {}
 
         try:
             x_coord = dataset.x

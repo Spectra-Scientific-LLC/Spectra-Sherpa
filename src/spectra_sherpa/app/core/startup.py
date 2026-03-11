@@ -59,7 +59,7 @@ def _ensure_local_secret_key() -> None:
     if key_path.exists():
         persisted = key_path.read_text(encoding="ascii").strip()
         if persisted:
-            settings.secret_key = persisted
+            object.__setattr__(settings, "secret_key", persisted)
             logger.debug("Loaded persisted local SECRET_KEY from %s", key_path)
             return
 
@@ -71,7 +71,7 @@ def _ensure_local_secret_key() -> None:
         key_path.chmod(0o600)
     except OSError:
         pass  # Windows; best-effort
-    settings.secret_key = new_key
+    object.__setattr__(settings, "secret_key", new_key)
     logger.info(
         "Generated a new local SECRET_KEY and saved to %s. "
         "Set the SECRET_KEY environment variable to use a custom key.",

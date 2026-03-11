@@ -713,7 +713,8 @@ def get_spectra_meta(dataset: Any) -> Optional[SpectraMeta]:
         return None
 
     try:
-        return SpectraMeta.model_validate(meta_dict)
+        validated = SpectraMeta.model_validate(meta_dict)
+        return validated if isinstance(validated, SpectraMeta) else None
     except Exception:
         return None
 

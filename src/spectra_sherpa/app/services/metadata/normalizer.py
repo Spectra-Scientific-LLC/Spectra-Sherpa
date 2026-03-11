@@ -86,7 +86,7 @@ class MetadataNormalizer:
             serial_number -> serial_number
             firmware_version -> firmware_version
         """
-        info = {}
+        info: dict[str, Any] = {}
 
         # Manufacturer and model
         if "manufacturer" in raw:
@@ -148,7 +148,7 @@ class MetadataNormalizer:
             wavenumber_min/max -> wavenumber_min/max (float)
             n_points -> n_points (int)
         """
-        params = {}
+        params: dict[str, Any] = {}
 
         # Scan counts
         if "n_scans" in raw and raw["n_scans"] is not None:
@@ -236,7 +236,7 @@ class MetadataNormalizer:
             purge_gas -> purge_gas
             co2_level / h2o_level -> background_co2_ppm / background_h2o_ppm
         """
-        conditions = {}
+        conditions: dict[str, Any] = {}
 
         # Temperature (convert to Celsius)
         if "temperature_c" in raw:
@@ -289,7 +289,7 @@ class MetadataNormalizer:
             atr_bounces -> atr_n_bounces
             accessory -> sampling_technique (inferred)
         """
-        sample = {}
+        sample: dict[str, Any] = {}
 
         # Sample identifiers
         if "sample_name" in raw:
@@ -362,7 +362,7 @@ class MetadataNormalizer:
             organization -> organization
             + file path info
         """
-        provenance = {}
+        provenance: dict[str, Any] = {}
 
         # Operator/user
         if "operator" in raw:

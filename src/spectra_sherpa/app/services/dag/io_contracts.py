@@ -94,7 +94,7 @@ def _has_values(value: Any) -> bool:
         return False
     try:
         arr = np.asarray(value)
-        return arr.size > 0
+        return bool(arr.size > 0)
     except Exception:
         return False
 

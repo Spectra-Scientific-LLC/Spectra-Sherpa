@@ -65,7 +65,7 @@ class NodeParameter:
     min_value: Optional[float] = None
     max_value: Optional[float] = None
     step: Optional[float] = None
-    options: Optional[List[Dict[str, Any]]] = None
+    options: Optional[List[str] | List[Dict[str, Any]]] = None
     description: Optional[str] = None
     required: bool = True
     category: Optional[str] = "basic"  # "basic" or "advanced" - complexity level for UI
@@ -167,7 +167,7 @@ class Node(ABC):
     """
 
     # Class-level metadata (must be overridden in subclasses)
-    metadata: NodeMetadata = None
+    metadata: NodeMetadata | None = None
 
     # --- Python export support (override in subclasses) ---
     # SpectroChemPy method name for simple preprocessing nodes.

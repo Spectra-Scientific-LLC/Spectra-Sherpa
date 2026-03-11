@@ -112,10 +112,10 @@ class UserEgressDefaults(Base):
 
     def get_default_for_destination(self, destination: str) -> bool:
         """Get the default permission for a destination"""
-        mapping = {
-            EgressDestination.SPECTRASHERPA: self.allow_spectrasherpa_sync,
-            EgressDestination.LLM_CONTEXT: self.allow_llm_context,
-            EgressDestination.EXPORT: self.allow_export,
-            EgressDestination.NIST: self.allow_nist_queries,
+        mapping: dict[str, bool] = {
+            EgressDestination.SPECTRASHERPA: bool(self.allow_spectrasherpa_sync),
+            EgressDestination.LLM_CONTEXT: bool(self.allow_llm_context),
+            EgressDestination.EXPORT: bool(self.allow_export),
+            EgressDestination.NIST: bool(self.allow_nist_queries),
         }
         return mapping.get(destination, True)

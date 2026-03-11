@@ -4,7 +4,7 @@ import logging
 import os
 import time
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 import bcrypt
 import jwt
@@ -99,7 +99,7 @@ def _cache_invalid_api_key(api_key: str) -> None:
     if len(_invalid_api_key_cache) >= API_KEY_CACHE_MAX_SIZE:
         _evict_expired_cache_entries()
         if len(_invalid_api_key_cache) >= API_KEY_CACHE_MAX_SIZE:
-            oldest = min(_invalid_api_key_cache, key=_invalid_api_key_cache.get)
+            oldest = min(_invalid_api_key_cache, key=lambda k: _invalid_api_key_cache[k])
             del _invalid_api_key_cache[oldest]
     key_hash = _hash_api_key(api_key)
     _invalid_api_key_cache[key_hash] = time.time() + INVALID_API_KEY_CACHE_TTL
@@ -143,18 +143,21 @@ async def get_bearer_token_optional(
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against a hash."""
-    return bcrypt.checkpw(
-        plain_password.encode("utf-8"),
-        hashed_password.encode("utf-8"),
+    return bool(
+        bcrypt.checkpw(
+            plain_password.encode("utf-8"),
+            hashed_password.encode("utf-8"),
+        )
     )
 
 
 def get_password_hash(password: str) -> str:
     """Generate a password hash."""
-    return bcrypt.hashpw(
+    hashed = bcrypt.hashpw(
         password.encode("utf-8"),
         bcrypt.gensalt(),
-    ).decode("utf-8")
+    )
+    return hashed.decode("utf-8")
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -168,14 +171,14 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
     to_encode.update({"exp": expire, "iat": now})
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
-    return encoded_jwt
+    return cast(str, encoded_jwt)
 
 
 def decode_access_token(token: str) -> Optional[dict]:
     """Decode and validate a JWT access token."""
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-        return payload
+        return cast(dict[Any, Any], payload)
     except JWTError:
         return None
 

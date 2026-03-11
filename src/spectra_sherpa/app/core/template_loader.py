@@ -15,7 +15,7 @@ import importlib.resources
 import logging
 from typing import Any
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 from spectra_sherpa.app.schemas.template_schema import (
     TemplateCategoryFile,

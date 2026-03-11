@@ -8,13 +8,13 @@ import threading
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Deque
+from typing import Any, Deque
 
 import httpx
 
 from spectra_sherpa.app.core.config import app_config, settings
 
-log_buffer: Deque[dict] = deque(maxlen=settings.log_buffer_size)
+log_buffer: Deque[dict[str, Any]] = deque(maxlen=settings.log_buffer_size)
 
 REDACTION_RULES = [
     (re.compile(r"sk-[a-zA-Z0-9]{20,}"), "[REDACTED_API_KEY]"),
@@ -63,8 +63,8 @@ class RemoteAuditHandler(logging.Handler):
     def __init__(self, endpoint_url: str):
         super().__init__()
         self.endpoint_url = endpoint_url
-        self.queue: queue.Queue = queue.Queue()
-        self.offline_queue: Deque[dict] = deque(maxlen=self.MAX_OFFLINE_LOGS)
+        self.queue: queue.Queue[dict[str, Any]] = queue.Queue()
+        self.offline_queue: Deque[dict[str, Any]] = deque(maxlen=self.MAX_OFFLINE_LOGS)
         self._is_online = True
         self._last_retry = datetime.min
         self._lock = threading.Lock()
@@ -113,7 +113,7 @@ class RemoteAuditHandler(logging.Handler):
             self.handleError(record)
 
     def _worker(self):
-        batch: list[dict] = []
+        batch: list[dict[str, Any]] = []
 
         while True:
             try:
@@ -189,7 +189,7 @@ class RemoteAuditHandler(logging.Handler):
                 return
 
             # Try sending in batches
-            batch = []
+            batch: list[dict[str, Any]] = []
             synced_count = 0
 
             while self.offline_queue and len(batch) < self.BATCH_SIZE:

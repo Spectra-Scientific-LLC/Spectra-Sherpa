@@ -4,7 +4,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Literal, Optional
+from typing import Any, Dict, Literal, Optional
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -323,35 +323,84 @@ class AppConfig(BaseModel):
 
         # Import registry to get provider metadata
         try:
-            from spectra_sherpa.app.core.llm_registry import PROVIDERS
+            from spectra_sherpa.app.core.llm_registry import PROVIDERS, ProviderMetadata
         except ImportError:
             # Fallback if registry not available (shouldn't happen)
-            PROVIDERS = {
+            PROVIDERS: dict[str, ProviderMetadata] = {
                 "openai": {
+                    "id": "openai",
+                    "name": "OpenAI",
                     "default_model": "gpt-4o",
                     "base_url": "https://api.openai.com/v1",
                     "env_var": "OPENAI_API_KEY",
+                    "client_type": "openai",
+                    "supports_streaming": True,
+                    "cost_per_million_input": 0.0,
+                    "cost_per_million_output": 0.0,
+                    "max_tokens": 128000,
+                    "supports_vision": True,
+                    "supports_function_calling": True,
                 },
                 "anthropic": {
+                    "id": "anthropic",
+                    "name": "Anthropic",
                     "default_model": "claude-3-5-sonnet-20241022",
                     "base_url": "https://api.anthropic.com",
                     "env_var": "ANTHROPIC_API_KEY",
+                    "client_type": "anthropic",
+                    "supports_streaming": True,
+                    "cost_per_million_input": 0.0,
+                    "cost_per_million_output": 0.0,
+                    "max_tokens": 200000,
+                    "supports_vision": True,
+                    "supports_function_calling": True,
                 },
                 "deepseek": {
+                    "id": "deepseek",
+                    "name": "DeepSeek",
                     "default_model": "deepseek-chat",
                     "base_url": "https://api.deepseek.com",
                     "env_var": "DEEPSEEK_API_KEY",
+                    "client_type": "openai",
+                    "supports_streaming": True,
+                    "cost_per_million_input": 0.0,
+                    "cost_per_million_output": 0.0,
+                    "max_tokens": 64000,
+                    "supports_vision": False,
+                    "supports_function_calling": True,
                 },
                 "gemini": {
+                    "id": "gemini",
+                    "name": "Google Gemini",
                     "default_model": "gemini-1.5-pro",
                     "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
                     "env_var": "GEMINI_API_KEY",
+                    "client_type": "openai",
+                    "supports_streaming": True,
+                    "cost_per_million_input": 0.0,
+                    "cost_per_million_output": 0.0,
+                    "max_tokens": 2000000,
+                    "supports_vision": True,
+                    "supports_function_calling": True,
                 },
-                "custom_llm": {"default_model": "custom-model", "base_url": "", "env_var": "CUSTOM_LLM_API_KEY"},
+                "custom_llm": {
+                    "id": "custom_llm",
+                    "name": "Custom LLM",
+                    "default_model": "custom-model",
+                    "base_url": "",
+                    "env_var": "CUSTOM_LLM_API_KEY",
+                    "client_type": "openai",
+                    "supports_streaming": True,
+                    "cost_per_million_input": 0.0,
+                    "cost_per_million_output": 0.0,
+                    "max_tokens": 128000,
+                    "supports_vision": False,
+                    "supports_function_calling": True,
+                },
             }
 
         # Build LLM configs from registry
-        llm_configs = {}
+        llm_configs: dict[str, LLMConfig] = {}
         for provider_id, provider_meta in PROVIDERS.items():
             model_env = f"{provider_id.upper()}_MODEL"
             llm_configs[provider_id] = LLMConfig(
@@ -372,7 +421,7 @@ class AppConfig(BaseModel):
         session_expiry_hours = session_expiry_raw if session_expiry_raw else None
 
         # Demo contract overrides (only when SITE_PROFILE=demo)
-        demo_contract_kwargs: dict = {}
+        demo_contract_kwargs: dict[str, Any] = {}
         if site_profile == "demo":
             demo_max_exec = os.getenv("DEMO_MAX_EXECUTIONS")
             if demo_max_exec:
@@ -442,7 +491,7 @@ class AppConfig(BaseModel):
 
         # Limits: only present when rate_limit_executions or session_expiry_hours are set
         if self.rate_limit_executions or self.session_expiry_hours:
-            limits: dict | None = {"maxFileSizeMB": settings.max_file_size_mb}
+            limits: dict[str, int] | None = {"maxFileSizeMB": settings.max_file_size_mb}
             if self.rate_limit_executions:
                 limits["maxExecutions"] = self.rate_limit_executions
             if self.session_expiry_hours:

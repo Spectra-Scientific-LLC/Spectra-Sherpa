@@ -16,6 +16,7 @@ Usage:
 
 import logging
 import warnings
+from typing import Any
 
 from .extractor_base import BaseMetadataExtractor, ExtractorRegistry
 from .normalizer import MetadataNormalizer
@@ -26,12 +27,12 @@ logger = logging.getLogger(__name__)
 _registry = ExtractorRegistry()
 
 
-def get_extractor(file_path: str):
+def get_extractor(file_path: str) -> BaseMetadataExtractor | None:
     """Get the appropriate extractor for a file based on extension."""
     return _registry.get_extractor(file_path)
 
 
-def extract_metadata(dataset, file_path: str, debug: bool = False) -> dict:
+def extract_metadata(dataset: Any, file_path: str, debug: bool = False) -> dict[str, Any]:
     """
     Extract and normalize metadata from a loaded NDDataset.
 
@@ -50,7 +51,7 @@ def extract_metadata(dataset, file_path: str, debug: bool = False) -> dict:
 
     extractor = _registry.get_extractor(file_path)
     extractor_name = type(extractor).__name__ if extractor else "None"
-    extraction_info = {"extractor": extractor_name, "warnings": []}
+    extraction_info: dict[str, Any] = {"extractor": extractor_name, "warnings": []}
 
     ext = os.path.splitext(file_path)[1]
     filename = os.path.basename(file_path)

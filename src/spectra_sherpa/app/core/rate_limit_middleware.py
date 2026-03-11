@@ -172,7 +172,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         client_ip = get_client_host(request) or "unknown"
         return f"ip:{client_ip}"
 
-    def _error_response(self, status_code: int, message: str, details: dict = None) -> Response:
+    def _error_response(self, status_code: int, message: str, details: dict[str, object] | None = None) -> Response:
         """Create a JSON error response."""
         body = {"detail": message}
         if details:

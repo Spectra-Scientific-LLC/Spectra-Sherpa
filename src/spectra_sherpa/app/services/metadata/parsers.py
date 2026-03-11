@@ -14,7 +14,10 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional, overload
+
+UnitSource = Literal["explicit", "inferred", "default"]
+ParsedValueWithSource = tuple[float | None, UnitSource | None]
 
 # =============================================================================
 # UNIT PARSING
@@ -26,7 +29,21 @@ TEMPERATURE_PATTERN = re.compile(
 )
 
 
-def parse_temperature(value: Any, target_unit: str = "C", return_unit_source: bool = False) -> Optional[float]:
+@overload
+def parse_temperature(
+    value: Any, target_unit: str = "C", return_unit_source: Literal[False] = False
+) -> float | None: ...
+
+
+@overload
+def parse_temperature(
+    value: Any, target_unit: str = "C", return_unit_source: Literal[True] = True
+) -> ParsedValueWithSource: ...
+
+
+def parse_temperature(
+    value: Any, target_unit: str = "C", return_unit_source: bool = False
+) -> float | None | ParsedValueWithSource:
     """
     Parse temperature from various formats and convert to target unit.
 
@@ -175,7 +192,21 @@ PRESSURE_PATTERN = re.compile(
 )
 
 
-def parse_pressure(value: Any, target_unit: str = "mbar", return_unit_source: bool = False) -> Optional[float]:
+@overload
+def parse_pressure(
+    value: Any, target_unit: str = "mbar", return_unit_source: Literal[False] = False
+) -> float | None: ...
+
+
+@overload
+def parse_pressure(
+    value: Any, target_unit: str = "mbar", return_unit_source: Literal[True] = True
+) -> ParsedValueWithSource: ...
+
+
+def parse_pressure(
+    value: Any, target_unit: str = "mbar", return_unit_source: bool = False
+) -> float | None | ParsedValueWithSource:
     """
     Parse pressure from various formats and convert to target unit.
 
@@ -261,7 +292,19 @@ LENGTH_PATTERN = re.compile(
 )
 
 
-def parse_length(value: Any, target_unit: str = "mm", return_unit_source: bool = False) -> Optional[float]:
+@overload
+def parse_length(value: Any, target_unit: str = "mm", return_unit_source: Literal[False] = False) -> float | None: ...
+
+
+@overload
+def parse_length(
+    value: Any, target_unit: str = "mm", return_unit_source: Literal[True] = True
+) -> ParsedValueWithSource: ...
+
+
+def parse_length(
+    value: Any, target_unit: str = "mm", return_unit_source: bool = False
+) -> float | None | ParsedValueWithSource:
     """
     Parse length from various formats and convert to target unit.
 

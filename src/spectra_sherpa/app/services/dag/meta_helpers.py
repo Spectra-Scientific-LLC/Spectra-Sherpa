@@ -20,7 +20,7 @@ Usage in nodes:
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, cast
 
 import numpy as np
 
@@ -134,7 +134,7 @@ def get_processing_history(dataset: Any) -> List[Dict[str, Any]]:
 
     if not hasattr(dataset, "meta") or not dataset.meta:
         return []
-    return dataset.meta.get("processing_history", [])
+    return cast(List[Dict[str, Any]], dataset.meta.get("processing_history", []))
 
 
 def copy_processing_history(source: Any, target: Any) -> None:

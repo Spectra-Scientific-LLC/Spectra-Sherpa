@@ -14,9 +14,15 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Tuple
+from typing import Any, TypedDict, Tuple, cast
 
 from spectra_sherpa.app.core.config import app_config, settings
+
+
+class _DemoCounterState(TypedDict):
+    executions: int
+    sherpa_interactions: int
+    last_activity: str
 
 
 class DemoLimitTracker:
@@ -33,18 +39,19 @@ class DemoLimitTracker:
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         self._state = self._load_state()
 
-    def _load_state(self) -> dict:
+    def _load_state(self) -> dict[str, _DemoCounterState]:
         """Load state from disk or initialize empty."""
         if self.state_path.exists():
             try:
                 with open(self.state_path, "r") as f:
-                    data = json.load(f)
+                    data = cast(dict[str, dict[str, Any]], json.load(f))
                 # Clean expired sessions (older than session_expiry_hours)
                 cutoff = datetime.now() - timedelta(hours=app_config.demo_contract.session_expiry_hours)
-                cleaned = {
+                cleaned: dict[str, _DemoCounterState] = {
                     uid: counters
                     for uid, counters in data.items()
-                    if datetime.fromisoformat(counters.get("last_activity", "1970-01-01")) > cutoff
+                    if isinstance(counters, dict)
+                    and datetime.fromisoformat(str(counters.get("last_activity", "1970-01-01"))) > cutoff
                 }
                 return cleaned
             except (json.JSONDecodeError, OSError):
@@ -68,7 +75,7 @@ class DemoLimitTracker:
         # (In production, spectra-server uses IP-based tracking)
         return "anon:shared"
 
-    def _get_counters(self, user_id: int | None) -> dict:
+    def _get_counters(self, user_id: int | None) -> _DemoCounterState:
         """Get current counters for user, initializing if needed."""
         key = self._get_user_key(user_id)
         if key not in self._state:
