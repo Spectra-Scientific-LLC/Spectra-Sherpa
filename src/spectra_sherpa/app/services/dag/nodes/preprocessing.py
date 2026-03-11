@@ -351,7 +351,14 @@ class BaselineRubberbandNode(Node):
 def _savgol_smooth(data: np.ndarray, size: int = 11, order: int = 2) -> np.ndarray:
     from scipy.signal import savgol_filter
 
-    return np.apply_along_axis(savgol_filter, -1, data, window_length=int(size), polyorder=int(order))
+    n_features = data.shape[-1]
+    wl = min(int(size), n_features)
+    if wl % 2 == 0:
+        wl -= 1
+    wl = max(wl, int(order) + 1)
+    if wl % 2 == 0:
+        wl += 1
+    return np.apply_along_axis(savgol_filter, -1, data, window_length=wl, polyorder=int(order))
 
 
 def _savgol_smooth_export(params, inp, node_id, indent, use_scp):

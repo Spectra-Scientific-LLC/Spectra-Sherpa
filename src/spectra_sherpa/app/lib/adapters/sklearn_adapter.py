@@ -33,7 +33,7 @@ def from_sklearn(bunch: Any, name: str = "") -> SherpaDataset:
     n_samples, n_features = X.shape
 
     feature_names = list(getattr(bunch, "feature_names", []))
-    target_names = list(getattr(bunch, "target_names", []))
+    target_names = [str(n) for n in getattr(bunch, "target_names", [])]
 
     feature_axis = SpectralAxis(
         values=np.arange(n_features, dtype=np.float64),

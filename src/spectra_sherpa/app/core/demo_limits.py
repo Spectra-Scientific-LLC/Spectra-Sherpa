@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, TypedDict, Tuple, cast
+from typing import Any, Tuple, TypedDict, cast
 
 from spectra_sherpa.app.core.config import app_config, settings
 
