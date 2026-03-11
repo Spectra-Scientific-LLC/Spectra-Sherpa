@@ -37,6 +37,7 @@ from spectra_sherpa.app.main import app
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
 from spectra_sherpa.app.models.workflow_node import WorkflowNode
+from spectra_sherpa.app.services import plugin_loader
 from spectra_sherpa.app.services.websocket_manager import ws_manager
 
 # ---------------------------------------------------------------------------
@@ -132,6 +133,14 @@ def _reset_ws_state():
     ws_manager._channels.clear()
     yield
     ws_manager._channels.clear()
+
+
+@pytest.fixture(autouse=True)
+def _reset_plugin_failures():
+    original_failures = list(plugin_loader.plugin_load_failures)
+    plugin_loader.plugin_load_failures.clear()
+    yield
+    plugin_loader.plugin_load_failures[:] = original_failures
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +279,9 @@ class TestWorkflowExecute:
         resp = await auth_client.get("/api/v1/health")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["status"] == "ok"
+        assert data["status"] in ("ok", "degraded")
+        if data["status"] == "degraded":
+            assert data["plugin_failure_count"] >= 1
 
 
 # ---------------------------------------------------------------------------

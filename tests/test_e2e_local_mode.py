@@ -24,6 +24,7 @@ from httpx import AsyncClient
 
 import spectra_sherpa.app.api.deps as deps
 from spectra_sherpa.app.core.config import app_config
+from spectra_sherpa.app.services import plugin_loader
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -48,6 +49,14 @@ def _local_mode():
     app_config.site_profile = original_profile
     app_config.rate_limit_executions = original_rate
     deps._local_user_cache = None
+
+
+@pytest.fixture(autouse=True)
+def _reset_plugin_failures():
+    original_failures = list(plugin_loader.plugin_load_failures)
+    plugin_loader.plugin_load_failures.clear()
+    yield
+    plugin_loader.plugin_load_failures[:] = original_failures
 
 
 # ---------------------------------------------------------------------------

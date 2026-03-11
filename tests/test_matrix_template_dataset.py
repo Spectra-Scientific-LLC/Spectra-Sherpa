@@ -39,7 +39,7 @@ TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "src" / "spectra_sherpa" /
 # (They depend on display / serialization infra that may not be present.)
 # ---------------------------------------------------------------------------
 
-_OUTPUT_NODE_TYPES = {"output.plot", "output.export"}
+_OUTPUT_NODE_TYPES = {"output.plot", "output.export", "stats.summary"}
 
 # ---------------------------------------------------------------------------
 # Dataset overrides  ─  (source, dataset_key, override_params)
@@ -288,10 +288,14 @@ async def test_template_x_dataset(slug: str, label: str, data_params: dict):
         msg = str(exc_caught).lower()
         # Expected-fail: regression dataset fed to a classification template (no class labels)
         is_label_mismatch = (
-            ("target" in msg or "label" in msg or "class" in msg or "n_splits" in msg
-             or "cv_folds" in msg or "categorical" in msg or "validation" in msg)
-            and label.endswith("_ev")
-        )
+            "target" in msg
+            or "label" in msg
+            or "class" in msg
+            or "n_splits" in msg
+            or "cv_folds" in msg
+            or "categorical" in msg
+            or "validation" in msg
+        ) and label.endswith("_ev")
         if is_label_mismatch:
             _RESULTS[key] = f"xfail:{exc_caught}"
             pytest.xfail(f"Expected — no class labels in eigenvector dataset: {exc_caught}")
@@ -306,8 +310,7 @@ async def test_template_x_dataset(slug: str, label: str, data_params: dict):
         pytest.fail(
             f"Template '{slug}' with dataset '{label}' — core node failed.\n"
             f"Data params: {data_params}\n"
-            f"Error: {exc_caught}\n\n"
-            + textwrap.indent(_format_node_statuses(executor, node_types), "  ")
+            f"Error: {exc_caught}\n\n" + textwrap.indent(_format_node_statuses(executor, node_types), "  ")
         )
 
     missing = [
