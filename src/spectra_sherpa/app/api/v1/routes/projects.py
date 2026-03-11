@@ -45,7 +45,14 @@ router = APIRouter(prefix="/projects")
 # ── Helpers ──────────────────────────────────────────────────────────
 
 
-_get_project_for_user = require_project  # backward-compat alias
+def _safe_parse_metrics(metrics_json: str | None) -> dict | None:
+    """Parse a JSON metrics blob, returning None on missing or malformed input."""
+    if not metrics_json:
+        return None
+    try:
+        return json.loads(metrics_json)
+    except (json.JSONDecodeError, TypeError):
+        return None
 
 
 async def _project_to_summary(project: Project, session: AsyncSession) -> ProjectSummary:
@@ -138,12 +145,7 @@ async def _project_to_detail(project: Project, session: AsyncSession) -> Project
     )
     models = []
     for m in model_result.scalars().all():
-        metrics = None
-        if m.metrics_json:
-            try:
-                metrics = json.loads(m.metrics_json)
-            except (json.JSONDecodeError, TypeError):
-                pass
+        metrics = _safe_parse_metrics(m.metrics_json)
         models.append(
             ModelBrief(
                 artifact_uid=m.artifact_uid,
@@ -184,7 +186,7 @@ async def create_project(
 ) -> ProjectDetail:
     """Create a new project (optionally under a parent)."""
     if payload.parent_id is not None:
-        await _get_project_for_user(payload.parent_id, current_user.id, session)
+        await require_project(payload.parent_id, current_user.id, session)
 
     project = Project(
         user_id=current_user.id,
@@ -225,7 +227,7 @@ async def get_project(
     current_user: User = Depends(get_current_user),
 ) -> ProjectDetail:
     """Get full project detail (experiments, workflows, children)."""
-    project = await _get_project_for_user(project_id, current_user.id, session)
+    project = await require_project(project_id, current_user.id, session)
     return await _project_to_detail(project, session)
 
 
@@ -237,12 +239,12 @@ async def update_project(
     current_user: User = Depends(get_current_user),
 ) -> ProjectDetail:
     """Update project metadata."""
-    project = await _get_project_for_user(project_id, current_user.id, session)
+    project = await require_project(project_id, current_user.id, session)
 
     if payload.parent_id is not None and payload.parent_id != project.parent_id:
         if payload.parent_id == project.id:
             raise HTTPException(status_code=400, detail="Cannot set project as its own parent")
-        await _get_project_for_user(payload.parent_id, current_user.id, session)
+        await require_project(payload.parent_id, current_user.id, session)
 
     update_data = payload.model_dump(exclude_unset=True)
     if "metadata" in update_data:
@@ -263,12 +265,9 @@ async def delete_project(
     current_user: User = Depends(get_current_user),
 ) -> Response:
     """Delete project (CASCADE children + versions, SET NULL experiments/workflows)."""
-    project = await _get_project_for_user(project_id, current_user.id, session)
+    project = await require_project(project_id, current_user.id, session)
 
     # SET NULL on linked experiments, workflows, and models before cascade delete
-    await session.execute(
-        select(Experiment).where(Experiment.project_id == project_id).execution_options(synchronize_session="fetch")
-    )
     for exp in (await session.execute(select(Experiment).where(Experiment.project_id == project_id))).scalars().all():
         exp.project_id = None
 
@@ -297,7 +296,7 @@ async def link_experiment(
     current_user: User = Depends(get_current_user),
 ) -> ProjectDetail:
     """Link an experiment to this project."""
-    project = await _get_project_for_user(project_id, current_user.id, session)
+    project = await require_project(project_id, current_user.id, session)
     result = await session.execute(
         select(Experiment).where(Experiment.id == experiment_id, Experiment.user_id == current_user.id)
     )
@@ -319,7 +318,7 @@ async def unlink_experiment(
     current_user: User = Depends(get_current_user),
 ) -> ProjectDetail:
     """Unlink an experiment from this project."""
-    project = await _get_project_for_user(project_id, current_user.id, session)
+    project = await require_project(project_id, current_user.id, session)
     result = await session.execute(
         select(Experiment).where(
             Experiment.id == experiment_id,
@@ -345,7 +344,7 @@ async def link_workflow(
     current_user: User = Depends(get_current_user),
 ) -> ProjectDetail:
     """Link a workflow to this project."""
-    project = await _get_project_for_user(project_id, current_user.id, session)
+    project = await require_project(project_id, current_user.id, session)
     result = await session.execute(
         select(Workflow).where(Workflow.id == workflow_id, Workflow.user_id == current_user.id)
     )
@@ -367,7 +366,7 @@ async def unlink_workflow(
     current_user: User = Depends(get_current_user),
 ) -> ProjectDetail:
     """Unlink a workflow from this project."""
-    project = await _get_project_for_user(project_id, current_user.id, session)
+    project = await require_project(project_id, current_user.id, session)
     result = await session.execute(
         select(Workflow).where(
             Workflow.id == workflow_id,
@@ -393,7 +392,7 @@ async def link_model(
     current_user: User = Depends(get_current_user),
 ) -> ProjectDetail:
     """Link a model artifact to this project."""
-    project = await _get_project_for_user(project_id, current_user.id, session)
+    project = await require_project(project_id, current_user.id, session)
     result = await session.execute(
         select(ModelArtifact).where(
             ModelArtifact.artifact_uid == artifact_uid,
@@ -419,7 +418,7 @@ async def unlink_model(
     current_user: User = Depends(get_current_user),
 ) -> ProjectDetail:
     """Unlink a model artifact from this project."""
-    project = await _get_project_for_user(project_id, current_user.id, session)
+    project = await require_project(project_id, current_user.id, session)
     result = await session.execute(
         select(ModelArtifact).where(
             ModelArtifact.artifact_uid == artifact_uid,
@@ -527,12 +526,7 @@ async def _build_snapshot(project: Project, session: AsyncSession) -> dict:
     )
     models_snap = []
     for m in model_result.scalars().all():
-        metrics = None
-        if m.metrics_json:
-            try:
-                metrics = json.loads(m.metrics_json)
-            except (json.JSONDecodeError, TypeError):
-                pass
+        metrics = _safe_parse_metrics(m.metrics_json)
         models_snap.append(
             {
                 "artifact_uid": m.artifact_uid,
@@ -575,7 +569,7 @@ async def save_project(
     current_user: User = Depends(get_current_user),
 ) -> ProjectVersionSummary:
     """'Save All' — snapshot current project state as a new version."""
-    project = await _get_project_for_user(project_id, current_user.id, session)
+    project = await require_project(project_id, current_user.id, session)
 
     # Determine next version number
     max_ver = await session.scalar(
@@ -608,7 +602,7 @@ async def list_versions(
     current_user: User = Depends(get_current_user),
 ) -> ProjectVersionListResponse:
     """List version history for a project."""
-    await _get_project_for_user(project_id, current_user.id, session)
+    await require_project(project_id, current_user.id, session)
 
     query = (
         select(ProjectVersion)
@@ -632,7 +626,7 @@ async def get_version(
     current_user: User = Depends(get_current_user),
 ) -> ProjectVersionDetail:
     """Get a specific version with full snapshot."""
-    await _get_project_for_user(project_id, current_user.id, session)
+    await require_project(project_id, current_user.id, session)
 
     query = select(ProjectVersion).where(ProjectVersion.id == version_id, ProjectVersion.project_id == project_id)
     result = await session.execute(query)
@@ -654,7 +648,7 @@ async def export_project(
     current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
     """Download project as a .spectrapy archive (ZIP with project.json + model artifacts)."""
-    project = await _get_project_for_user(project_id, current_user.id, session)
+    project = await require_project(project_id, current_user.id, session)
 
     if version_id:
         query = select(ProjectVersion).where(ProjectVersion.id == version_id, ProjectVersion.project_id == project_id)
