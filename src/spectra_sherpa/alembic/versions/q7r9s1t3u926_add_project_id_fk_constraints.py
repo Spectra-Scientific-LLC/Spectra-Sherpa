@@ -57,6 +57,7 @@ def _has_target_ondelete(fk: dict | None, *, ondelete: str) -> bool:
 def upgrade() -> None:
     conn = op.get_bind()
     inspector = sa.inspect(conn)
+    sqlite = conn.dialect.name == "sqlite"
 
     for table in ("experiment", "workflow"):
         if table not in inspector.get_table_names():
@@ -68,15 +69,27 @@ def upgrade() -> None:
         if _has_target_ondelete(existing_fk, ondelete="SET NULL"):
             continue
 
-        with op.batch_alter_table(
-            table,
-            recreate="always",
-            naming_convention=_BATCH_NAMING_CONVENTION,
-        ) as batch_op:
+        if sqlite:
+            with op.batch_alter_table(
+                table,
+                recreate="always",
+                naming_convention=_BATCH_NAMING_CONVENTION,
+            ) as batch_op:
+                if existing_fk:
+                    batch_op.drop_constraint(_resolved_fk_name(existing_fk, table, "project_id"), type_="foreignkey")
+                batch_op.create_foreign_key(
+                    f"fk_{table}_project_id",
+                    "project",
+                    ["project_id"],
+                    ["id"],
+                    ondelete="SET NULL",
+                )
+        else:
             if existing_fk:
-                batch_op.drop_constraint(_resolved_fk_name(existing_fk, table, "project_id"), type_="foreignkey")
-            batch_op.create_foreign_key(
+                op.drop_constraint(_resolved_fk_name(existing_fk, table, "project_id"), table, type_="foreignkey")
+            op.create_foreign_key(
                 f"fk_{table}_project_id",
+                table,
                 "project",
                 ["project_id"],
                 ["id"],
@@ -87,6 +100,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     conn = op.get_bind()
     inspector = sa.inspect(conn)
+    sqlite = conn.dialect.name == "sqlite"
 
     for table in ("experiment", "workflow"):
         if table not in inspector.get_table_names():
@@ -98,9 +112,12 @@ def downgrade() -> None:
         if not existing_fk:
             continue
 
-        with op.batch_alter_table(
-            table,
-            recreate="always",
-            naming_convention=_BATCH_NAMING_CONVENTION,
-        ) as batch_op:
-            batch_op.drop_constraint(_resolved_fk_name(existing_fk, table, "project_id"), type_="foreignkey")
+        if sqlite:
+            with op.batch_alter_table(
+                table,
+                recreate="always",
+                naming_convention=_BATCH_NAMING_CONVENTION,
+            ) as batch_op:
+                batch_op.drop_constraint(_resolved_fk_name(existing_fk, table, "project_id"), type_="foreignkey")
+        else:
+            op.drop_constraint(_resolved_fk_name(existing_fk, table, "project_id"), table, type_="foreignkey")

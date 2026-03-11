@@ -76,24 +76,43 @@ def _reflect_and_find_fk(inspector, table: str, col: str):
     return None
 
 
+def _is_sqlite(conn) -> bool:
+    return conn.dialect.name == "sqlite"
+
+
 def upgrade() -> None:
     conn = op.get_bind()
     inspector = sa.inspect(conn)
+    sqlite = _is_sqlite(conn)
 
     for table, fk_list in _TABLE_FK_UPDATES.items():
         # Check the table exists (some tables may not exist in all deployments)
         if table not in inspector.get_table_names():
             continue
 
-        with op.batch_alter_table(table, recreate="always") as batch_op:
+        if sqlite:
+            # SQLite: FK constraints are immutable, must recreate the table.
+            with op.batch_alter_table(table, recreate="always") as batch_op:
+                for col, ref_table, ref_col, ondelete in fk_list:
+                    existing_name = _reflect_and_find_fk(inspector, table, col)
+                    if existing_name:
+                        batch_op.drop_constraint(existing_name, type_="foreignkey")
+                    batch_op.create_foreign_key(
+                        f"fk_{table}_{col}",
+                        ref_table,
+                        [col],
+                        [ref_col],
+                        ondelete=ondelete,
+                    )
+        else:
+            # PostgreSQL: drop and recreate FK constraints directly.
             for col, ref_table, ref_col, ondelete in fk_list:
-                # Find and drop existing FK by reflection
                 existing_name = _reflect_and_find_fk(inspector, table, col)
                 if existing_name:
-                    batch_op.drop_constraint(existing_name, type_="foreignkey")
-                # Create new FK with ondelete
-                batch_op.create_foreign_key(
+                    op.drop_constraint(existing_name, table, type_="foreignkey")
+                op.create_foreign_key(
                     f"fk_{table}_{col}",
+                    table,
                     ref_table,
                     [col],
                     [ref_col],
@@ -104,18 +123,32 @@ def upgrade() -> None:
 def downgrade() -> None:
     conn = op.get_bind()
     inspector = sa.inspect(conn)
+    sqlite = _is_sqlite(conn)
 
     for table, fk_list in _TABLE_FK_UPDATES.items():
         if table not in inspector.get_table_names():
             continue
 
-        with op.batch_alter_table(table, recreate="always") as batch_op:
+        if sqlite:
+            with op.batch_alter_table(table, recreate="always") as batch_op:
+                for col, ref_table, ref_col, _ondelete in fk_list:
+                    existing_name = _reflect_and_find_fk(inspector, table, col)
+                    if existing_name:
+                        batch_op.drop_constraint(existing_name, type_="foreignkey")
+                    batch_op.create_foreign_key(
+                        f"fk_{table}_{col}",
+                        ref_table,
+                        [col],
+                        [ref_col],
+                    )
+        else:
             for col, ref_table, ref_col, _ondelete in fk_list:
                 existing_name = _reflect_and_find_fk(inspector, table, col)
                 if existing_name:
-                    batch_op.drop_constraint(existing_name, type_="foreignkey")
-                batch_op.create_foreign_key(
+                    op.drop_constraint(existing_name, table, type_="foreignkey")
+                op.create_foreign_key(
                     f"fk_{table}_{col}",
+                    table,
                     ref_table,
                     [col],
                     [ref_col],

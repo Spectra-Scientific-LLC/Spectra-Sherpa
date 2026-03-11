@@ -115,6 +115,7 @@ class TestScpCatalog:
         assert info["technique"] == "Raman"
 
     def test_build_catalog_surfaces_nmr_examples(self):
+        pytest.importorskip("spectrochempy", reason="SpectroChemPy not installed")
         entries = build_scp_catalog(force=True)
         nmr_entries = [entry for entry in entries if entry.get("technique") == "NMR"]
         assert nmr_entries, "Expected at least one bundled NMR example entry in the SCP catalog"
