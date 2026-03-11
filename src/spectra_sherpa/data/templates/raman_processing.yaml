@@ -1,0 +1,91 @@
+schema_version: 1
+name: Raman Processing Pipeline
+slug: raman_processing
+description: Cosmic ray removal, fluorescence baseline correction, Whittaker smoothing,
+  and intensity normalization.
+category: spectroscopy
+is_active: true
+status: wip
+template_data:
+  nodes:
+  - node_id: data_1
+    node_type: data.source
+    label: Load Raman Data
+    parameters:
+      source: spectrochempy
+      example_dataset: ramandata
+    position_x: 175
+    position_y: 50
+  - node_id: preprocess_1
+    node_type: preprocess.cosmic_ray
+    label: Cosmic Ray Removal
+    parameters:
+      zscore: 5
+      window: 3
+    position_x: 425
+    position_y: 300
+  - node_id: preprocess_2
+    node_type: baseline.penalized_ls
+    label: Fluorescence Baseline
+    parameters:
+      method: als
+      lam: 1000000.0
+      p: 0.001
+    position_x: 175
+    position_y: 550
+  - node_id: preprocess_3
+    node_type: preprocess.smooth
+    label: Whittaker Smoothing
+    parameters:
+      method: whittaker
+      lam: 10
+    position_x: 425
+    position_y: 800
+  - node_id: preprocess_4
+    node_type: preprocess.scale
+    label: Mean Center
+    parameters:
+      method: mean_center
+    position_x: 175
+    position_y: 1050
+  - node_id: viz_1
+    node_type: output.plot
+    label: Processed Raman
+    parameters:
+      plot_type: spectra
+    position_x: 50
+    position_y: 1300
+  - node_id: export_1
+    node_type: output.export
+    label: Export
+    parameters:
+      filename: raman_processed.csv
+      format: csv
+    position_x: 450
+    position_y: 1300
+  edges:
+  - from_node_id: data_1
+    to_node_id: preprocess_1
+  - from_node_id: preprocess_1
+    to_node_id: preprocess_2
+  - from_node_id: preprocess_2
+    to_node_id: preprocess_3
+  - from_node_id: preprocess_3
+    to_node_id: preprocess_4
+  - from_node_id: preprocess_4
+    to_node_id: viz_1
+  - from_node_id: preprocess_4
+    to_node_id: export_1
+  canvas_state:
+    zoom: 1.0
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_spectra:
+      role_type: X_spectra
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      description: Raman spectral data
+      accepted_techniques:
+      - Raman

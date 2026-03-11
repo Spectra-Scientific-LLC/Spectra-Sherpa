@@ -21,6 +21,7 @@ from spectra_sherpa.app.services.serialization import serialize_result
 
 logger = logging.getLogger(__name__)
 
+from spectra_sherpa.app.models.execution_run import ExecutionRun
 from spectra_sherpa.app.models.workflow import Workflow
 from spectra_sherpa.app.models.workflow_edge import WorkflowEdge
 from spectra_sherpa.app.models.workflow_node import WorkflowNode
@@ -58,6 +59,97 @@ from spectra_sherpa.app.services.dag.integrity import compute_workflow_hash
 from spectra_sherpa.app.services.python_export import generate_python_code
 
 router = APIRouter(prefix="/workflows")
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+async def _auto_persist_run(
+    session: AsyncSession,
+    *,
+    workflow_id: int,
+    user_id: int,
+    workflow: Workflow,
+    wf_version_id: int | None,
+    serialized_results: dict[str, Any],
+    diagnostics_serialized: dict[str, Any],
+    node_statuses: dict[str, str],
+    final_status: str,
+    error_msg: str | None,
+    integrity_hash: str | None,
+    model_ids: list[str] | None,
+) -> None:
+    """Upsert an auto-saved ``ExecutionRun`` so results survive page refresh."""
+    try:
+        existing = (
+            await session.execute(
+                select(ExecutionRun).where(
+                    ExecutionRun.workflow_id == workflow_id,
+                    ExecutionRun.user_id == user_id,
+                    ExecutionRun.source_type == "auto",
+                )
+            )
+        ).scalar_one_or_none()
+
+        run_data = dict(
+            workflow_id=workflow_id,
+            workflow_version_id=wf_version_id,
+            user_id=user_id,
+            name="__latest__",
+            status=final_status,
+            params_snapshot={n.node_id: n.parameters for n in workflow.nodes if n.parameters},
+            results_summary=serialized_results,
+            diagnostics=diagnostics_serialized,
+            node_statuses=node_statuses,
+            error=error_msg,
+            integrity_hash=integrity_hash,
+            executed_at=datetime.utcnow(),
+            source_type="auto",
+            model_ids=model_ids or [],
+        )
+
+        if existing:
+            for k, v in run_data.items():
+                if k not in ("workflow_id", "user_id"):
+                    setattr(existing, k, v)
+        else:
+            session.add(ExecutionRun(**run_data))
+
+        await session.commit()
+    except Exception:
+        logger.warning("Failed to auto-persist execution run", exc_info=True)
+        try:
+            await session.rollback()
+        except Exception:
+            pass
+
+
+def _validate_edge_refs(
+    nodes: list,
+    edges: list,
+) -> None:
+    """Ensure all edge endpoints reference existing node IDs.
+
+    Also rejects self-loops and duplicate edges.
+    """
+    node_ids = {n.node_id for n in nodes}
+    errors: list[str] = []
+    seen: set[tuple] = set()
+    for i, e in enumerate(edges):
+        if e.from_node_id not in node_ids:
+            errors.append(f"Edge {i}: from_node_id '{e.from_node_id}' not in nodes")
+        if e.to_node_id not in node_ids:
+            errors.append(f"Edge {i}: to_node_id '{e.to_node_id}' not in nodes")
+        if e.from_node_id == e.to_node_id:
+            errors.append(f"Edge {i}: self-loop on '{e.from_node_id}'")
+        key = (e.from_node_id, e.to_node_id, e.from_output, e.to_input)
+        if key in seen:
+            errors.append(f"Edge {i}: duplicate edge")
+        seen.add(key)
+    if errors:
+        raise HTTPException(status_code=400, detail="; ".join(errors))
 
 
 @router.get("", response_model=list[WorkflowSummary])
@@ -401,6 +493,10 @@ async def create_workflow(
             status_code=400,
             detail=f"Unknown node type(s): {', '.join(unknown_types)}",
         )
+
+    # Validate edge references point to actual nodes
+    if payload.edges:
+        _validate_edge_refs(payload.nodes, payload.edges)
 
     # Create workflow
     workflow = Workflow(
@@ -752,6 +848,10 @@ async def update_workflow(
 
     # Update edges if provided
     if payload.edges is not None:
+        # Validate edge references against the node set (new or existing)
+        ref_nodes = payload.nodes if payload.nodes is not None else workflow.nodes
+        _validate_edge_refs(ref_nodes, payload.edges)
+
         # Clear via ORM relationship (delete-orphan cascade handles DB deletion)
         workflow.edges.clear()
 
@@ -1364,11 +1464,29 @@ async def execute_workflow(
         if error_msg:
             logger.debug("[Serialization] Errors: %s", error_msg)
 
+        diagnostics_serialized = serialize_result(getattr(executor, "diagnostics", {}), owner_user_id=user_id)
+
+        # Auto-persist results so they survive page refresh
+        await _auto_persist_run(
+            session,
+            workflow_id=workflow_id,
+            user_id=user_id,
+            workflow=workflow,
+            wf_version_id=wf_version_id,
+            serialized_results=serialized_results,
+            diagnostics_serialized=diagnostics_serialized,
+            node_statuses=node_statuses,
+            final_status=final_status,
+            error_msg=error_msg,
+            integrity_hash=wf_integrity_hash,
+            model_ids=[a.artifact_uid for a in (executor.saved_artifacts or [])],
+        )
+
         return WorkflowExecuteResponse(
             workflow_id=workflow_id,
             status=final_status,
             results=serialized_results,
-            diagnostics=serialize_result(getattr(executor, "diagnostics", {}), owner_user_id=user_id),
+            diagnostics=diagnostics_serialized,
             node_statuses=node_statuses,
             executed_at=datetime.utcnow(),
             error=error_msg,
@@ -1425,15 +1543,34 @@ async def execute_workflow(
         error_msg = " | ".join(part for part in error_parts if part)
         response_status = "partial" if partial_results else "error"
 
+        partial_diagnostics = serialize_result(
+            getattr(executor, "diagnostics", {}) if executor else {},
+            owner_user_id=user_id,
+        )
+        partial_node_statuses = executor.get_status()["node_statuses"] if executor else {}
+
+        # Auto-persist partial/error results too
+        await _auto_persist_run(
+            session,
+            workflow_id=workflow_id,
+            user_id=user_id,
+            workflow=workflow,
+            wf_version_id=wf_version_id,
+            serialized_results=partial_results,
+            diagnostics_serialized=partial_diagnostics,
+            node_statuses=partial_node_statuses,
+            final_status=response_status,
+            error_msg=error_msg,
+            integrity_hash=wf_integrity_hash,
+            model_ids=[a.artifact_uid for a in (getattr(executor, "saved_artifacts", None) or [])],
+        )
+
         return WorkflowExecuteResponse(
             workflow_id=workflow_id,
             status=response_status,
             results=partial_results,
-            diagnostics=serialize_result(
-                getattr(executor, "diagnostics", {}) if executor else {},
-                owner_user_id=user_id,
-            ),
-            node_statuses=executor.get_status()["node_statuses"] if executor else {},
+            diagnostics=partial_diagnostics,
+            node_statuses=partial_node_statuses,
             executed_at=datetime.utcnow(),
             error=error_msg,
             integrity_hash=wf_integrity_hash,

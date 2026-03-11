@@ -30,7 +30,7 @@ class WorkflowVersion(Base):
     workflow_id: Mapped[int] = mapped_column(ForeignKey("workflow.id", ondelete="CASCADE"), nullable=False, index=True)
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
-    created_by: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False, index=True)
+    created_by: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
     change_description: Mapped[str | None] = mapped_column(Text)  # Optional user-provided description of changes
     snapshot: Mapped[dict] = mapped_column(
         JSON, nullable=False

@@ -33,8 +33,18 @@
     <div v-else-if="!projectStore.projects.length" class="empty-state">
       <i class="pi pi-folder-open"></i>
       <h3>No projects yet</h3>
-      <p>Create your first project to organize experiments and workflows.</p>
+      <p>Create your first project to organize experiments, workflows, and reusable templates.</p>
       <Button label="Create Project" icon="pi pi-plus" @click="showNewProjectDialog" />
+
+      <div class="templates-panel empty-templates-panel">
+        <div class="templates-header">
+          <div>
+            <h3>Workflow Templates</h3>
+            <p>Create a project first, then launch one of the validated templates below into that project.</p>
+          </div>
+        </div>
+        <TemplateGallery :selected-template-id="selectedTemplateId" :show-header="false" @select="openTemplateWizard" />
+      </div>
     </div>
 
     <template v-else>
@@ -87,6 +97,18 @@
             />
           </div>
         </div>
+      </div>
+
+      <div class="projects-section templates-panel">
+        <div class="templates-header">
+          <div>
+            <h3 class="section-title">Workflow Templates</h3>
+            <p class="templates-subtitle">
+              Start common chemometric workflows from validated backend templates inside the active project.
+            </p>
+          </div>
+        </div>
+        <TemplateGallery :selected-template-id="selectedTemplateId" :show-header="false" @select="openTemplateWizard" />
       </div>
 
       <!-- Version History (when active project has versions) -->
@@ -215,6 +237,12 @@
       @update="onUpdateProject"
     />
 
+    <TemplateWizardModal
+      ref="templateWizardRef"
+      v-model="templateWizardVisible"
+      @instantiated="onTemplateInstantiated"
+    />
+
     <!-- Save Dialog -->
     <Dialog
       v-model:visible="saveDialogVisible"
@@ -261,19 +289,26 @@ import Checkbox from "primevue/checkbox";
 import ProgressSpinner from "primevue/progressspinner";
 import { useToast } from "primevue/usetoast";
 import { useProjectStore } from "@/stores/project";
+import { useWorkflowStore, type WorkflowTemplate } from "@/stores/workflow";
 import type { ProjectSummary } from "@/types";
 import ProjectDialog from "@/components/ProjectDialog.vue";
 import type { ProjectFormData } from "@/components/ProjectDialog.vue";
 import OnboardingBanner from "@/components/OnboardingBanner.vue";
+import TemplateGallery from "@/views/workflow-builder/TemplateGallery.vue";
+import TemplateWizardModal from "@/views/workflow-builder/modals/TemplateWizardModal.vue";
 
 const router = useRouter();
 const toast = useToast();
 const projectStore = useProjectStore();
+const workflowStore = useWorkflowStore();
 const menu = ref();
 const fileInput = ref<HTMLInputElement | null>(null);
 const dialogVisible = ref(false);
 const editingProject = ref<ProjectSummary | null>(null);
 const activeMenuProjectId = ref<number | null>(null);
+const templateWizardVisible = ref(false);
+const templateWizardRef = ref<InstanceType<typeof TemplateWizardModal> | null>(null);
+const selectedTemplateId = ref<number | null>(null);
 
 // Save dialog
 const saveDialogVisible = ref(false);
@@ -282,6 +317,11 @@ const saveIncludeRaw = ref(false);
 
 onMounted(async () => {
   await projectStore.fetchProjects();
+  try {
+    await workflowStore.fetchTemplates();
+  } catch {
+    // Gallery renders the store-owned error state.
+  }
   // If there's a current project, load its versions
   if (projectStore.currentProjectId) {
     await projectStore.fetchProject(projectStore.currentProjectId);
@@ -330,6 +370,45 @@ async function selectAndOpen(projectId: number) {
   await projectStore.selectProject(projectId);
   await projectStore.fetchVersions(projectId);
   router.push("/data");
+}
+
+function openTemplateWizard(template: WorkflowTemplate) {
+  if (!projectStore.projects.length) {
+    toast.add({
+      severity: "warn",
+      summary: "Create a Project First",
+      detail: "Templates now belong to Projects so workflows keep their analysis context.",
+      life: 4000,
+    });
+    return;
+  }
+
+  if (!projectStore.currentProjectId) {
+    toast.add({
+      severity: "warn",
+      summary: "Select an Active Project",
+      detail: "Choose the target project from the project context first, then launch the template.",
+      life: 4000,
+    });
+    return;
+  }
+
+  selectedTemplateId.value = template.id;
+  templateWizardVisible.value = true;
+  templateWizardRef.value?.open(template);
+}
+
+async function onTemplateInstantiated(result: { workflowId: number; projectId: number | null; slug?: string }) {
+  if (result.slug) {
+    const matchedTemplate = workflowStore.templates.find((template) => template.slug === result.slug);
+    if (matchedTemplate) {
+      selectedTemplateId.value = matchedTemplate.id;
+    }
+  }
+  if (result.projectId) {
+    await projectStore.selectProject(result.projectId);
+    await projectStore.fetchVersions(result.projectId);
+  }
 }
 
 function continueProject() {
@@ -510,6 +589,38 @@ function iconClass(project: ProjectSummary): string {
   display: flex;
   flex-direction: column;
   gap: 24px;
+}
+
+.templates-panel {
+  padding: 1.25rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 14px;
+  background: var(--surface-card);
+}
+
+.empty-templates-panel {
+  margin-top: 1.5rem;
+  width: 100%;
+  max-width: 980px;
+}
+
+.templates-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.templates-header h3 {
+  margin: 0 0 0.35rem;
+}
+
+.templates-subtitle,
+.templates-header p {
+  margin: 0;
+  color: var(--text-color-secondary);
+  line-height: 1.5;
 }
 
 .section-header {

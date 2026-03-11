@@ -61,6 +61,31 @@ async def list_runs(
     )
 
 
+@router.get("/latest", response_model=ExecutionRunOut | None)
+async def get_latest_run(
+    workflow_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> ExecutionRunOut | None:
+    """Return the most recent auto-saved execution run, or null if none exists."""
+    await _get_workflow_for_user(workflow_id, current_user.id, session)
+
+    query = (
+        select(ExecutionRun)
+        .where(
+            ExecutionRun.workflow_id == workflow_id,
+            ExecutionRun.source_type == "auto",
+        )
+        .order_by(ExecutionRun.executed_at.desc())
+        .limit(1)
+    )
+    result = await session.execute(query)
+    run = result.scalar_one_or_none()
+    if run is None:
+        return None
+    return ExecutionRunOut.model_validate(run)
+
+
 @router.get("/{run_id}", response_model=ExecutionRunOut)
 async def get_run(
     workflow_id: int,

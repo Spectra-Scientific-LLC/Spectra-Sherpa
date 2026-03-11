@@ -133,5 +133,9 @@ def serialize_result(obj: Any, *, owner_user_id: int | None = None) -> Any:
     if isinstance(obj, (np.integer, np.floating)):
         return obj.item()
 
-    # 8. Pass through (str, int, float, bool, None)
+    # 8. Sets / frozensets — convert to sorted lists for JSON
+    if isinstance(obj, (frozenset, set)):
+        return sorted(serialize_result(v, owner_user_id=owner_user_id) for v in obj)
+
+    # 9. Pass through (str, int, float, bool, None)
     return obj

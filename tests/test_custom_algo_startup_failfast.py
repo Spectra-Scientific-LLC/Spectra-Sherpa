@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 from spectra_sherpa.app import main
 
@@ -38,6 +39,17 @@ class _FakeSession:
 
     async def execute(self, stmt):  # noqa: ARG002
         return _FakeResult(self._algos)
+
+
+class _MissingTableSession:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def execute(self, stmt):  # noqa: ARG002
+        raise OperationalError("SELECT * FROM custom_algo", {}, Exception("no such table: custom_algo"))
 
 
 @pytest.mark.asyncio
@@ -100,3 +112,20 @@ async def test_custom_algo_startup_skips_broken_plugins(monkeypatch, tmp_path, c
     # Verify the error was logged
     assert any("Skipping broken custom algo" in r.message for r in caplog.records)
     assert any("ualgo.2.broken" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_custom_algo_startup_skips_when_legacy_table_missing(monkeypatch, tmp_path, caplog):
+    monkeypatch.setattr(main, "async_session", lambda: _MissingTableSession())
+    monkeypatch.setattr(
+        "spectra_sherpa.app.services.custom_algo_codegen.get_plugin_dir",
+        lambda: tmp_path,
+    )
+
+    import logging
+
+    with caplog.at_level(logging.INFO, logger="spectra_sherpa.app.main"):
+        await main._load_custom_algo_plugins()
+
+    assert any("Legacy custom_algo table not present" in r.message for r in caplog.records)
+    assert not any(r.levelname == "ERROR" for r in caplog.records)

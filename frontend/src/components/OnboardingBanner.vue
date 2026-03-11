@@ -31,8 +31,8 @@
       <div class="step" :class="{ completed: state?.steps.hasWorkflow }">
         <i :class="state?.steps.hasWorkflow ? 'pi pi-check-circle' : 'pi pi-circle'" class="step-icon"></i>
         <div class="step-content">
-          <strong>3. Build a Workflow</strong>
-          <p>Create your analysis pipeline</p>
+          <strong>3. Start From a Project Template</strong>
+          <p>Open Project to launch a validated workflow template or build your own pipeline</p>
         </div>
       </div>
     </div>

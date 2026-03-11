@@ -811,11 +811,25 @@ class DAGExecutor:
                 else:
                     named_inputs[port_name] = data
 
-            # Safety: reject lists on non-variadic ports (should be caught by validation)
-            for port_name, value in named_inputs.items():
-                if isinstance(value, list) and port_name not in variadic_ports:
+            # Safety: reject multiple edges feeding a non-variadic port.
+            # Note: a raw list value from a single edge is legitimate data
+            # (e.g. explained_variance), so we count edges per port rather
+            # than checking isinstance(value, list).
+            _edge_counts: dict[str, int] = {}
+            for edge in incoming_edges:
+                _pn = edge.to_input
+                if _pn == "default" and "default" not in actual_port_names:
+                    if (
+                        node.metadata
+                        and node.metadata.input_ports
+                        and _edge_counts.get("__legacy_idx", 0) < len(node.metadata.input_ports)
+                    ):
+                        _pn = node.metadata.input_ports[_edge_counts.get("__legacy_idx", 0)].name
+                _edge_counts[_pn] = _edge_counts.get(_pn, 0) + 1
+            for _pn, _count in _edge_counts.items():
+                if _count > 1 and _pn not in variadic_ports:
                     raise ValueError(
-                        f"Port '{port_name}' on node '{node_id}' received " f"{len(value)} inputs but is not variadic"
+                        f"Port '{_pn}' on node '{node_id}' received " f"{_count} edges but is not variadic"
                     )
 
             # Validate and normalize spectral units only for true spectral dataset ports.

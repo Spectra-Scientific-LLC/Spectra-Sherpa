@@ -12,7 +12,9 @@ class LLMConfig(Base):
     __tablename__ = "llm_config"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False, unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
+    )
     provider: Mapped[str] = mapped_column(String(50), nullable=False, default="deepseek")
     base_url: Mapped[str] = mapped_column(String(255), nullable=False, default="https://api.deepseek.com")
     model: Mapped[str] = mapped_column(String(100), nullable=False, default="deepseek-chat")

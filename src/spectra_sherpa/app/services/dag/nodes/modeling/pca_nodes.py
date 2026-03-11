@@ -297,10 +297,22 @@ class PCANode(Node):
         scores_dataset = pca.transform()
         loadings_dataset = pca.components
 
+        if scores_dataset is None:
+            raise ValueError("PCA transform() returned None — SCP model may not have fitted correctly")
+        if loadings_dataset is None:
+            raise ValueError("PCA components is None — SCP model may not have fitted correctly")
+
         scores_data = extracted.scores
         actual_n_components = extracted.n_components
         evr_ratio = extracted.explained_variance_ratio
         eigenvalues = extracted.explained_variance
+
+        # Defensive guard — protect against SCP versions where extraction
+        # silently yields None (manifests as "'NoneType' … 'tolist'").
+        if evr_ratio is None:
+            evr_ratio = np.zeros(actual_n_components, dtype=np.float64)
+        if eigenvalues is None:
+            eigenvalues = np.ones(actual_n_components, dtype=np.float64) * 1e-12
 
         pc_labels = [f"PC{i+1} ({evr_ratio[i] * 100:.1f}%)" for i in range(actual_n_components)]
 
@@ -435,6 +447,23 @@ class PCANode(Node):
         # Convert NDDataset outputs to SherpaDataset for DAG uniformity
         scores_dataset = from_nddataset(scores_dataset)
         loadings_dataset = from_nddataset(loadings_dataset)
+
+        # Fix feature axes that from_nddataset() may leave with values=None
+        # (SCP sometimes omits the component axis on PCA outputs).
+        from spectra_sherpa.app.lib.axes import FeatureAxis
+
+        if scores_dataset.feature_axis is None or scores_dataset.feature_axis.data is None:
+            scores_dataset.feature_axis = FeatureAxis(
+                values=np.arange(actual_n_components, dtype=np.float64),
+                labels=pc_labels,
+                title="Principal Component",
+            )
+        if loadings_dataset.feature_axis is None or loadings_dataset.feature_axis.data is None:
+            # Loadings rows = components, cols = features (wavenumbers)
+            loadings_dataset.feature_axis = FeatureAxis(
+                values=np.arange(n_features, dtype=np.float64),
+                title="Feature",
+            )
 
         # Defensive shape check — guard against future SCP API orientation changes.
         # SCP 0.8.1 returns scores=(n_samples, n_components), loadings=(n_components, n_features).

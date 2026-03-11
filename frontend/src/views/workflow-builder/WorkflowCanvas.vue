@@ -6,106 +6,107 @@
     @mouseup="handleMouseUp"
     @mouseleave="handleMouseUp"
   >
-    <!-- SVG layer for edges -->
-    <svg class="edges-layer">
-      <defs>
-        <!-- Valid edge arrowhead (green) -->
-        <marker
-          id="arrowhead-valid"
-          markerWidth="10"
-          markerHeight="10"
-          refX="9"
-          refY="3"
-          orient="auto"
-        >
-          <polygon points="0 0, 10 3, 0 6" fill="#4ade80" />
-        </marker>
-        <!-- Invalid edge arrowhead (red) -->
-        <marker
-          id="arrowhead-invalid"
-          markerWidth="10"
-          markerHeight="10"
-          refX="9"
-          refY="3"
-          orient="auto"
-        >
-          <polygon points="0 0, 10 3, 0 6" fill="#ef4444" />
-        </marker>
-      </defs>
+    <div class="canvas-surface">
+      <!-- SVG layer for edges -->
+      <svg class="edges-layer">
+        <defs>
+          <!-- Valid edge arrowhead (green) -->
+          <marker
+            id="arrowhead-valid"
+            markerWidth="10"
+            markerHeight="10"
+            refX="9"
+            refY="3"
+            orient="auto"
+          >
+            <polygon points="0 0, 10 3, 0 6" fill="#4ade80" />
+          </marker>
+          <!-- Invalid edge arrowhead (red) -->
+          <marker
+            id="arrowhead-invalid"
+            markerWidth="10"
+            markerHeight="10"
+            refX="9"
+            refY="3"
+            orient="auto"
+          >
+            <polygon points="0 0, 10 3, 0 6" fill="#ef4444" />
+          </marker>
+        </defs>
 
-      <!-- Edge lines with validation coloring -->
-      <g v-for="edge in edges" :key="getEdgeKey(edge)" class="edge-group">
-        <!-- Invisible thick line for easier clicking -->
-        <line
-          :x1="getNodeCenter(edge.from).x"
-          :y1="getNodeCenter(edge.from).y"
-          :x2="getNodeCenter(edge.to).x"
-          :y2="getNodeCenter(edge.to).y"
-          stroke="transparent"
-          stroke-width="20"
-          class="edge-hit-area"
-          @click="handleEdgeClick(edge)"
-          style="cursor: pointer;"
-        >
-          <title>Click to delete this connection</title>
-        </line>
+        <!-- Edge lines with validation coloring -->
+        <g v-for="edge in edges" :key="getEdgeKey(edge)" class="edge-group">
+          <!-- Invisible thick line for easier clicking -->
+          <line
+            :x1="getNodeCenter(edge.from).x"
+            :y1="getNodeCenter(edge.from).y"
+            :x2="getNodeCenter(edge.to).x"
+            :y2="getNodeCenter(edge.to).y"
+            stroke="transparent"
+            stroke-width="20"
+            class="edge-hit-area"
+            @click="handleEdgeClick(edge)"
+            style="cursor: pointer;"
+          >
+            <title>Click to delete this connection</title>
+          </line>
 
-        <!-- Visible edge line -->
-        <line
-          :x1="getNodeCenter(edge.from).x"
-          :y1="getNodeCenter(edge.from).y"
-          :x2="getNodeCenter(edge.to).x"
-          :y2="getNodeCenter(edge.to).y"
-          :stroke="edge.isValid === false ? '#ef4444' : '#4ade80'"
-          :stroke-width="edge.isValid === false ? 3 : 2"
-          :stroke-dasharray="edge.isValid === false ? '5,5' : 'none'"
-          :marker-end="edge.isValid === false ? 'url(#arrowhead-invalid)' : 'url(#arrowhead-valid)'"
-          class="edge-line"
-          style="pointer-events: none;"
-        >
-          <!-- Tooltip for invalid edges -->
-          <title v-if="edge.isValid === false && edge.validationError">
-            {{ edge.validationError }}
-          </title>
-        </line>
+          <!-- Visible edge line -->
+          <line
+            :x1="getNodeCenter(edge.from).x"
+            :y1="getNodeCenter(edge.from).y"
+            :x2="getNodeCenter(edge.to).x"
+            :y2="getNodeCenter(edge.to).y"
+            :stroke="edge.isValid === false ? '#ef4444' : '#4ade80'"
+            :stroke-width="edge.isValid === false ? 3 : 2"
+            :stroke-dasharray="edge.isValid === false ? '5,5' : 'none'"
+            :marker-end="edge.isValid === false ? 'url(#arrowhead-invalid)' : 'url(#arrowhead-valid)'"
+            class="edge-line"
+            style="pointer-events: none;"
+          >
+            <!-- Tooltip for invalid edges -->
+            <title v-if="edge.isValid === false && edge.validationError">
+              {{ edge.validationError }}
+            </title>
+          </line>
 
-        <!-- Edge type label -->
-        <text
-          v-if="edge.dataType"
-          :x="(getNodeCenter(edge.from).x + getNodeCenter(edge.to).x) / 2"
-          :y="(getNodeCenter(edge.from).y + getNodeCenter(edge.to).y) / 2 - 5"
-          class="edge-label"
-          :class="{ 'edge-label-invalid': edge.isValid === false }"
-          text-anchor="middle"
-        >
-          {{ edge.dataType }}
-        </text>
+          <!-- Edge type label -->
+          <text
+            v-if="edge.dataType"
+            :x="(getNodeCenter(edge.from).x + getNodeCenter(edge.to).x) / 2"
+            :y="(getNodeCenter(edge.from).y + getNodeCenter(edge.to).y) / 2 - 5"
+            class="edge-label"
+            :class="{ 'edge-label-invalid': edge.isValid === false }"
+            text-anchor="middle"
+          >
+            {{ edge.dataType }}
+          </text>
 
-        <!-- Warning icon for invalid edges -->
-        <g
-          v-if="edge.isValid === false"
-          :transform="`translate(${(getNodeCenter(edge.from).x + getNodeCenter(edge.to).x) / 2}, ${(getNodeCenter(edge.from).y + getNodeCenter(edge.to).y) / 2 + 12})`"
-          class="edge-warning-icon"
-        >
-          <circle cx="0" cy="0" r="10" fill="#ef4444" />
-          <text x="0" y="4" text-anchor="middle" fill="white" font-size="12" font-weight="bold">!</text>
-          <title>{{ edge.validationError }}</title>
+          <!-- Warning icon for invalid edges -->
+          <g
+            v-if="edge.isValid === false"
+            :transform="`translate(${(getNodeCenter(edge.from).x + getNodeCenter(edge.to).x) / 2}, ${(getNodeCenter(edge.from).y + getNodeCenter(edge.to).y) / 2 + 12})`"
+            class="edge-warning-icon"
+          >
+            <circle cx="0" cy="0" r="10" fill="#ef4444" />
+            <text x="0" y="4" text-anchor="middle" fill="white" font-size="12" font-weight="bold">!</text>
+            <title>{{ edge.validationError }}</title>
+          </g>
         </g>
-      </g>
 
-      <!-- Connecting line preview -->
-      <line
-        v-if="isConnecting && mousePos"
-        :x1="getNodeCenter(connecting).x"
-        :y1="getNodeCenter(connecting).y"
-        :x2="mousePos.x"
-        :y2="mousePos.y"
-        stroke="#4ade80"
-        stroke-width="2"
-        stroke-dasharray="5,5"
-        opacity="0.6"
-      />
-    </svg>
+        <!-- Connecting line preview -->
+        <line
+          v-if="isConnecting && mousePos"
+          :x1="getNodeCenter(connecting).x"
+          :y1="getNodeCenter(connecting).y"
+          :x2="mousePos.x"
+          :y2="mousePos.y"
+          stroke="#4ade80"
+          stroke-width="2"
+          stroke-dasharray="5,5"
+          opacity="0.6"
+        />
+      </svg>
 
     <!-- Context Menu -->
     <div
@@ -137,23 +138,23 @@
       </div>
     </div>
 
-    <!-- Nodes layer -->
-    <div
-      v-for="node in nodes"
-      :key="node.id"
-      class="workflow-node"
-      :class="{
-        'is-selected': selectedNodeId === node.id,
-        'is-dragging': dragging === node.id,
-        'is-connecting-source': connecting === node.id,
-        'is-compatible-target': isConnecting && connecting !== node.id && isNodeCompatibleTarget(node.id),
-        'is-incompatible-target': isConnecting && connecting !== node.id && !isNodeCompatibleTarget(node.id),
-        [`node-type-${getNodeCategory(node.type)}`]: true
-      }"
-      :style="{ left: `${node.x}px`, top: `${node.y}px` }"
-      @mousedown.stop="handleNodeMouseDown($event, node.id)"
-      @contextmenu.prevent="handleNodeContextMenu($event, node.id)"
-    >
+      <!-- Nodes layer -->
+      <div
+        v-for="node in nodes"
+        :key="node.id"
+        class="workflow-node"
+        :class="{
+          'is-selected': selectedNodeId === node.id,
+          'is-dragging': dragging === node.id,
+          'is-connecting-source': connecting === node.id,
+          'is-compatible-target': isConnecting && connecting !== node.id && isNodeCompatibleTarget(node.id),
+          'is-incompatible-target': isConnecting && connecting !== node.id && !isNodeCompatibleTarget(node.id),
+          [`node-type-${getNodeCategory(node.type)}`]: true
+        }"
+        :style="{ left: `${node.x}px`, top: `${node.y}px` }"
+        @mousedown.stop="handleNodeMouseDown($event, node.id)"
+        @contextmenu.prevent="handleNodeContextMenu($event, node.id)"
+      >
       <!-- Input ports (left side) -->
       <div class="input-ports">
         <div
@@ -327,12 +328,13 @@
           Connect
         </button>
       </div>
-    </div>
+      </div>
 
-    <!-- Empty state -->
-    <div v-if="nodes.length === 0" class="empty-state">
-      <div class="empty-icon">🔧</div>
-      <p>Add nodes from the toolbar to build your workflow</p>
+      <!-- Empty state -->
+      <div v-if="nodes.length === 0" class="empty-state">
+        <div class="empty-icon">🔧</div>
+        <p>Add nodes from the toolbar to build your workflow</p>
+      </div>
     </div>
   </div>
 </template>
@@ -347,7 +349,7 @@ import type { NodePortMetadata } from "@/types";
 interface Props {
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
-  nodeOutputs: Map<number, NodeOutput>;
+  nodeOutputs: Map<string, NodeOutput>;
 }
 
 const props = defineProps<Props>();
@@ -356,11 +358,11 @@ const emit = defineEmits<{
   (e: 'update:nodes', nodes: WorkflowNode[]): void;
   (e: 'update:edges', edges: WorkflowEdge[]): void;
   (e: 'node-select', node: WorkflowNode | null): void;
-  (e: 'node-connect', connection: { from: number; to: number; fromPort?: string; toPort?: string }): void;
+  (e: 'node-connect', connection: { from: string; to: string; fromPort?: string; toPort?: string }): void;
   (e: 'connection-error', error: string): void;
-  (e: 'run-node', nodeId: number): void;
-  (e: 'view-output', nodeId: number): void;
-  (e: 'copy-node', nodeId: number): void;
+  (e: 'run-node', nodeId: string): void;
+  (e: 'view-output', nodeId: string): void;
+  (e: 'copy-node', nodeId: string): void;
 }>();
 
 // Port color scheme by category
@@ -433,7 +435,7 @@ const getInputPorts = (nodeType: string): NodePortMetadata[] => {
 };
 
 // Get available (unconnected) ports for a multi-input node
-const getAvailablePorts = (nodeId: number, nodeType: string): NodePortMetadata[] => {
+const getAvailablePorts = (nodeId: string, nodeType: string): NodePortMetadata[] => {
   const allPorts = getInputPorts(nodeType);
   if (!allPorts || allPorts.length === 0) return [];
 
@@ -483,7 +485,7 @@ const NODE_LABELS: Record<string, string> = {
   'model.efa': 'EFA',
   'model.simplisma': 'SIMPLISMA',
   'stats.summary': 'Statistics',
-  'output.plot': 'Scatter Plot',
+  'output.plot': 'Plot',
   'output.contour': 'Contour Plot',
   'output.export': 'Export',
 };
@@ -554,10 +556,10 @@ const formatShape = (shape: number[]): string => {
 
 // Canvas state
 const canvasRef = ref<HTMLElement | null>(null);
-const selectedNodeId = ref<number | null>(null);
-const dragging = ref<number | null>(null);
+const selectedNodeId = ref<string | null>(null);
+const dragging = ref<string | null>(null);
 const dragOffset = ref({ x: 0, y: 0 });
-const connecting = ref<number | null>(null);
+const connecting = ref<string | null>(null);
 const connectingFromPort = ref<string | null>(null); // Track selected output port
 const mousePos = ref<{ x: number; y: number } | null>(null);
 
@@ -566,13 +568,13 @@ const contextMenu = ref({
   show: false,
   x: 0,
   y: 0,
-  nodeId: null as number | null,
+  nodeId: null as string | null,
 });
 
 // Connection compatibility tracking
 const isConnecting = computed(() => connecting.value !== null);
 
-const getEdgeValidation = (targetNodeId: number, targetPortName?: string) => {
+const getEdgeValidation = (targetNodeId: string, targetPortName?: string) => {
   if (connecting.value === null) {
     return { isValid: false, error: "No source selected" };
   }
@@ -588,18 +590,18 @@ const getEdgeValidation = (targetNodeId: number, targetPortName?: string) => {
 };
 
 // Check if a target node/port is compatible with current connection.
-const isPortCompatible = (targetNodeId: number, targetPortName?: string): boolean => {
+const isPortCompatible = (targetNodeId: string, targetPortName?: string): boolean => {
   const validation = getEdgeValidation(targetNodeId, targetPortName);
   return validation.isValid;
 };
 
-const getPortCompatibilityReason = (targetNodeId: number, targetPortName?: string): string => {
+const getPortCompatibilityReason = (targetNodeId: string, targetPortName?: string): string => {
   const validation = getEdgeValidation(targetNodeId, targetPortName);
   return validation.error || "";
 };
 
 // Check if node is a valid connection target
-const isNodeCompatibleTarget = (nodeId: number): boolean => {
+const isNodeCompatibleTarget = (nodeId: string): boolean => {
   if (connecting.value === null || connecting.value === nodeId) return false;
 
   const targetNode = props.nodes.find(n => n.id === nodeId);
@@ -614,7 +616,7 @@ const isNodeCompatibleTarget = (nodeId: number): boolean => {
 };
 
 // Get node center position for edge drawing
-const getNodeCenter = (nodeId: number | null) => {
+const getNodeCenter = (nodeId: string | null) => {
   const node = props.nodes.find(n => n.id === nodeId);
   if (!node) return { x: 0, y: 0 };
   return {
@@ -629,7 +631,7 @@ const dragStartPos = ref<{ x: number; y: number } | null>(null);
 const hasDragged = ref(false);
 const DRAG_THRESHOLD = 5; // Pixels before considering it a drag
 
-const handleNodeMouseDown = (event: MouseEvent, nodeId: number) => {
+const handleNodeMouseDown = (event: MouseEvent, nodeId: string) => {
   const node = props.nodes.find(n => n.id === nodeId);
   if (!node) return;
 
@@ -655,8 +657,8 @@ const handleMouseMove = (event: MouseEvent) => {
   if (!rect) return;
 
   mousePos.value = {
-    x: event.clientX - rect.left,
-    y: event.clientY - rect.top,
+    x: event.clientX - rect.left + (canvasRef.value?.scrollLeft || 0),
+    y: event.clientY - rect.top + (canvasRef.value?.scrollTop || 0),
   };
 
   if (dragging.value === null) return;
@@ -697,7 +699,7 @@ const handleMouseUp = () => {
 };
 
 // Connection handlers
-const startConnect = (nodeId: number, fromPort?: string) => {
+const startConnect = (nodeId: string, fromPort?: string) => {
   connecting.value = nodeId;
   connectingFromPort.value = fromPort || null;
 };
@@ -707,7 +709,7 @@ const cancelConnect = () => {
   connectingFromPort.value = null;
 };
 
-const completeConnect = (toNodeId: number, toPort?: string) => {
+const completeConnect = (toNodeId: string, toPort?: string) => {
   if (connecting.value !== null && connecting.value !== toNodeId) {
     const fromNodeId = connecting.value;
     const sourceNode = props.nodes.find((n) => n.id === fromNodeId);
@@ -745,7 +747,7 @@ const completeConnect = (toNodeId: number, toPort?: string) => {
   connectingFromPort.value = null;
 };
 
-const deleteNode = (nodeId: number) => {
+const deleteNode = (nodeId: string) => {
   const updatedNodes = props.nodes.filter(n => n.id !== nodeId);
   const updatedEdges = props.edges.filter(e => e.from !== nodeId && e.to !== nodeId);
 
@@ -778,14 +780,14 @@ const handleEdgeClick = (edge: WorkflowEdge) => {
 };
 
 // Context menu handlers
-const handleNodeContextMenu = (event: MouseEvent, nodeId: number) => {
+const handleNodeContextMenu = (event: MouseEvent, nodeId: string) => {
   const rect = canvasRef.value?.getBoundingClientRect();
   if (!rect) return;
 
   contextMenu.value = {
     show: true,
-    x: event.clientX - rect.left,
-    y: event.clientY - rect.top,
+    x: event.clientX - rect.left + (canvasRef.value?.scrollLeft || 0),
+    y: event.clientY - rect.top + (canvasRef.value?.scrollTop || 0),
     nodeId,
   };
 
@@ -797,7 +799,7 @@ const handleNodeContextMenu = (event: MouseEvent, nodeId: number) => {
   setTimeout(() => document.addEventListener('click', closeMenu), 0);
 };
 
-const hasOutput = (nodeId: number | null): boolean => {
+const hasOutput = (nodeId: string | null): boolean => {
   if (nodeId === null) return false;
   return props.nodeOutputs.has(nodeId);
 };
@@ -840,19 +842,48 @@ watch(() => props.nodes, () => {
     }
   }
 });
+
+const centerNode = (nodeId: string) => {
+  const node = props.nodes.find((entry) => entry.id === nodeId);
+  const canvas = canvasRef.value;
+  if (!node || !canvas) return;
+
+  const nodeCenterX = node.x + 80;
+  const nodeCenterY = node.y + 50;
+  const targetLeft = Math.max(0, nodeCenterX - canvas.clientWidth / 2);
+  const targetTop = Math.max(0, nodeCenterY - canvas.clientHeight / 2);
+
+  canvas.scrollTo({
+    left: targetLeft,
+    top: targetTop,
+    behavior: "smooth",
+  });
+};
+
+defineExpose({ centerNode });
 </script>
 
 <style scoped>
 .workflow-canvas {
   width: 100%;
   height: 100%;
+  min-height: 100%;
   position: relative;
   overflow: auto;
+  min-width: 0;
   background:
     linear-gradient(rgba(51, 65, 85, 0.5) 1px, transparent 1px),
     linear-gradient(90deg, rgba(51, 65, 85, 0.5) 1px, transparent 1px);
   background-size: 20px 20px;
   background-color: #1e293b;
+}
+
+.canvas-surface {
+  position: relative;
+  min-width: var(--workflow-workspace-min-height, 1500px);
+  min-height: var(--workflow-workspace-min-height, 1500px);
+  width: max(100%, var(--workflow-workspace-min-height, 1500px));
+  height: max(100%, var(--workflow-workspace-min-height, 1500px));
 }
 
 .edges-layer {

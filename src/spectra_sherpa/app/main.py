@@ -193,8 +193,10 @@ async def _load_custom_algo_plugins() -> None:
 
     Broken plugins are logged but do NOT prevent startup — one user's
     corrupted algo must never take down the service for everyone else.
+    If the legacy ``custom_algo`` table is absent, skip this step quietly.
     """
     from sqlalchemy import select as _sa_select
+    from sqlalchemy.exc import OperationalError as _OperationalError
 
     from spectra_sherpa.app.models.custom_algo import CustomAlgo as _CA
     from spectra_sherpa.app.services.custom_algo_codegen import (
@@ -215,6 +217,13 @@ async def _load_custom_algo_plugins() -> None:
         async with async_session() as _ca_session:
             _result = await _ca_session.execute(_sa_select(_CA))
             algos = list(_result.scalars().all())
+    except _OperationalError as exc:
+        error_text = str(exc).lower()
+        if "no such table: custom_algo" in error_text or 'relation "custom_algo" does not exist' in error_text:
+            logger.info("Legacy custom_algo table not present — skipping custom algo startup load.")
+            return
+        logger.exception("Failed to query custom algos at startup")
+        return
     except Exception:
         logger.exception("Failed to query custom algos at startup")
         return

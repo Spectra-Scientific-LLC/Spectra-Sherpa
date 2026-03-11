@@ -177,6 +177,7 @@ class WorkflowSummary(WorkflowBase):
 
     id: int
     user_id: int
+    project_id: int | None = Field(None, description="Project owning this workflow")
     folder_id: int | None
     created_at: datetime
     updated_at: datetime

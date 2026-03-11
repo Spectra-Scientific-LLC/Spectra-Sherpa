@@ -12,7 +12,9 @@ class FactorDefinition(Base):
     __tablename__ = "factor_definition"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    experiment_id: Mapped[int] = mapped_column(ForeignKey("experiment.id"), nullable=False, index=True)
+    experiment_id: Mapped[int] = mapped_column(
+        ForeignKey("experiment.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     scope: Mapped[str] = mapped_column(String(20), nullable=False)  # "sample" or "method"
     type: Mapped[str] = mapped_column(String(20), nullable=False)  # "categorical" or "numeric"

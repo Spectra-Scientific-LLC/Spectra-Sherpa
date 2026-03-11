@@ -14,79 +14,52 @@
       </div>
 
       <div class="header-actions">
-        <!-- Run controls -->
-        <Button
-          :label="isWorkflowStale ? 'Run (Modified)' : 'Run'"
-          icon="pi pi-play"
-          :class="['toolbar-btn', isWorkflowStale ? 'p-button-warning' : '']"
-          :loading="isExecuting"
-          :disabled="nodes.length === 0"
-          @click="executeWorkflow"
-          :title="isWorkflowStale ? 'Workflow has been modified since last execution' : 'Execute workflow'"
-        />
-        <ToggleButton
-          v-model="autoExecute"
-          onLabel="Auto"
-          offLabel="Auto"
-          onIcon="pi pi-bolt"
-          offIcon="pi pi-bolt"
-          class="toolbar-btn"
-          :title="autoExecute ? 'Auto-execute on connect/param change' : 'Manual execution mode'"
-          @change="onAutoExecuteChange"
-        />
-        <span class="toolbar-separator" />
+        <div class="toolbar-action-group">
+          <Button
+            :label="isWorkflowStale ? 'Run (Modified)' : 'Run'"
+            icon="pi pi-play"
+            class="toolbar-btn toolbar-action-btn"
+            :loading="isExecuting"
+            :disabled="nodes.length === 0"
+            @click="executeWorkflow"
+            :title="isWorkflowStale ? 'Workflow has been modified since last execution' : 'Execute workflow'"
+          />
+          <Button
+            label="New"
+            icon="pi pi-plus"
+            class="toolbar-btn toolbar-action-btn"
+            @click="createNewWorkflow"
+          />
+          <Button
+            :label="saveButtonLabel"
+            icon="pi pi-save"
+            class="toolbar-btn toolbar-action-btn"
+            :disabled="!hasChanges && autosaveStatus !== 'saving'"
+            @click="saveWorkflow"
+            title="Save workflow definition"
+          />
+          <SplitButton
+            label="Export"
+            icon="pi pi-download"
+            class="toolbar-btn toolbar-action-btn"
+            @click="exportToPython"
+            :model="exportMenuItems"
+          />
+        </div>
 
-        <!-- Workflow management -->
-        <Button
-          label="New"
-          icon="pi pi-plus"
-          class="toolbar-btn"
-          @click="createNewWorkflow"
-        />
-        <Button
-          label="Templates"
-          icon="pi pi-th-large"
-          class="toolbar-btn"
-          @click="templateDrawerVisible = true"
-        />
-        <Button
-          :label="saveButtonLabel"
-          icon="pi pi-save"
-          class="toolbar-btn"
-          :disabled="!hasChanges && autosaveStatus !== 'saving'"
-          @click="saveWorkflow"
-          title="Save workflow definition"
-        />
         <span v-if="autosaveStatus === 'saved'" class="autosave-indicator">
           <i class="pi pi-check"></i> Saved
         </span>
-        <span class="toolbar-separator" />
 
-        <!-- Export & results -->
-        <SplitButton
-          label="Export"
-          icon="pi pi-download"
-          class="toolbar-btn"
-          @click="exportToPython"
-          :model="exportMenuItems"
-        />
-        <Button
-          label="AI Code"
-          icon="pi pi-code"
-          class="toolbar-btn"
-          :loading="codeGenLoading"
-          :disabled="nodes.length === 0"
-          @click="onGenerateCode"
-          title="Generate AI-powered code from workflow"
-        />
-        <Button
-          label="Bookmark Run"
-          icon="pi pi-bookmark"
-          class="toolbar-btn"
-          :disabled="!workflowStore.lastExecutionResults"
-          title="Bookmark current execution results as a named run for comparison"
-          @click="openSaveRunDialog"
-        />
+        <label class="toolbar-state-control" :title="autoExecute ? 'Auto-execute on connect/param change' : 'Manual execution mode'">
+          <Checkbox
+            v-model="autoExecute"
+            binary
+            input-id="workflow-auto-update"
+            @change="onAutoExecuteChange"
+          />
+          <span>Auto Update</span>
+        </label>
       </div>
     </div>
 
@@ -100,7 +73,7 @@
     <!-- Three-column layout: Toolbar | Canvas | Inspector Sidebar -->
     <div class="workflow-workspace" :class="{ 'inspector-open': inspectorOpen }">
       <!-- Left Panel: Node Toolbar -->
-      <WorkflowToolbar @add-node="onAddNode" @create-custom-algo="onCreateCustomAlgo" />
+      <WorkflowToolbar @add-node="onAddNode" />
 
       <!-- Center: Canvas -->
       <div class="canvas-container">
@@ -130,123 +103,20 @@
       />
     </div>
 
-    <!-- Template Gallery Drawer -->
-    <Sidebar
-      v-model:visible="templateDrawerVisible"
-      position="right"
-      :style="{ width: '440px' }"
-      class="template-drawer"
-    >
-      <template #header>
-        <div class="drawer-header">
-          <i class="pi pi-th-large drawer-header-icon"></i>
-          <span class="drawer-header-title">Workflow Templates</span>
-        </div>
-      </template>
-      <TemplateGallery @select="onTemplateSelect" />
-    </Sidebar>
-
-    <!-- Save Run Dialog -->
-    <Dialog
-      v-model:visible="showSaveRunDialog"
-      header="Save Execution Run"
-      :modal="true"
-      :style="{ width: '450px' }"
-    >
-      <div class="save-run-form">
-        <div class="save-run-field">
-          <label for="builder-run-name">Run Name</label>
-          <InputText
-            id="builder-run-name"
-            v-model="saveRunName"
-            placeholder="e.g. Baseline - SNV + 3 comp"
-            style="width: 100%"
-          />
-        </div>
-        <div class="save-run-field">
-          <label for="builder-run-notes">Notes (optional)</label>
-          <Textarea
-            id="builder-run-notes"
-            v-model="saveRunNotes"
-            rows="3"
-            placeholder="Describe what you changed or why this run matters..."
-            style="width: 100%"
-          />
-        </div>
-      </div>
-      <template #footer>
-        <Button
-          label="Cancel"
-          class="p-button-text"
-          @click="showSaveRunDialog = false"
-        />
-        <Button
-          label="Save Run"
-          icon="pi pi-check"
-          :loading="savingRun"
-          :disabled="!saveRunName.trim()"
-          @click="handleSaveRun"
-        />
-      </template>
-    </Dialog>
-
-    <!-- AI Generated Code Dialog -->
-    <Dialog
-      v-model:visible="showCodeDialog"
-      header="AI Generated Code"
-      :modal="true"
-      :style="{ width: '640px' }"
-    >
-      <div class="codegen-result">
-        <pre class="codegen-block"><code>{{ generatedCode }}</code></pre>
-      </div>
-      <template #footer>
-        <Button
-          label="Copy"
-          icon="pi pi-copy"
-          class="p-button-outlined"
-          @click="copyGeneratedCode"
-        />
-        <Button
-          label="Close"
-          class="p-button-text"
-          @click="showCodeDialog = false"
-        />
-      </template>
-    </Dialog>
-
-    <!-- Custom Algo Editor Modal -->
-    <CustomAlgoEditorModal
-      ref="customAlgoEditorRef"
-      v-model="showCustomAlgoEditor"
-      :project-id="currentProjectId"
-    />
   </section>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, provide, watch, onMounted, onUnmounted } from "vue";
 import Button from "primevue/button";
+import Checkbox from "primevue/checkbox";
 import SplitButton from "primevue/splitbutton";
-import ToggleButton from "primevue/togglebutton";
-import Sidebar from "primevue/sidebar";
-import Dialog from "primevue/dialog";
-import InputText from "primevue/inputtext";
-import Textarea from "primevue/textarea";
 import { useToast } from "primevue/usetoast";
 import { useWorkflowStore, type WorkflowNode, type WorkflowEdge } from "@/stores/workflow";
 import { useExperimentStore } from "@/stores/experiment";
-import { useRunsStore } from "@/stores/runs";
-import { useSherpaStore, type CodeResult } from "@/stores/sherpa";
-import { useLlmStore } from "@/stores/llm";
-import { useSherpaUpgrade } from "@/composables/useSherpaUpgrade";
 import WorkflowToolbar from "./WorkflowToolbar.vue";
 import WorkflowCanvas from "./WorkflowCanvas.vue";
 import WorkflowInspector from "./WorkflowInspector.vue";
-import TemplateGallery from "./TemplateGallery.vue";
-import CustomAlgoEditorModal from "./modals/CustomAlgoEditorModal.vue";
-import { useCustomAlgoStore } from "@/stores/customAlgo";
-import { useProjectStore } from "@/stores/project";
 import { buildNodeOutput, type NodeOutput } from "@/utils/nodeOutput";
 import { downloadText } from "@/utils/download";
 import { getErrorMessage } from "@/utils/errors";
@@ -256,17 +126,7 @@ type ParamsMap = Record<string, unknown>;
 const toast = useToast();
 const workflowStore = useWorkflowStore();
 const experimentStore = useExperimentStore();
-const runsStore = useRunsStore();
-const sherpaStore = useSherpaStore();
-const llmStore = useLlmStore();
-const { requireFeature } = useSherpaUpgrade();
 const canvasRef = ref();
-
-// AI Code generation state
-const codeGenLoading = ref(false);
-const showCodeDialog = ref(false);
-const generatedCode = ref("");
-const generatedCodeLang = ref("python");
 
 // Use store for workflow state
 const nodes = computed({
@@ -282,34 +142,28 @@ const isWorkflowStale = computed(() => workflowStore.isWorkflowStale);
 
 // Local state
 const selectedNode = ref<WorkflowNode | null>(null);
-const nodeOutputs = ref<Map<number, NodeOutput>>(new Map());
-const nextNodeId = ref(2);
+const nodeOutputs = ref<Map<string, NodeOutput>>(new Map());
 const inspectorOpen = ref(false);
 const autoExecute = ref(false); // Auto-execute workflow when nodes connect or parameters change
-const templateDrawerVisible = ref(false);
-
-// Custom algo editor state
-const customAlgoStore = useCustomAlgoStore();
-const projectStore = useProjectStore();
-const showCustomAlgoEditor = ref(false);
-const customAlgoEditorRef = ref<InstanceType<typeof CustomAlgoEditorModal>>();
-const currentProjectId = computed(() => {
-  if (projectStore.currentProject) {
-    return projectStore.currentProject.id;
-  }
-  return 0;
-});
-
-// Save run state
-const showSaveRunDialog = ref(false);
-const saveRunName = ref("");
-const saveRunNotes = ref("");
-const savingRun = ref(false);
 
 // Autosave state
 const autosaveStatus = ref<'idle' | 'saving' | 'saved'>('idle');
 const autosaveTimer = ref<number | null>(null);
 const AUTOSAVE_DELAY = 30000; // 30 seconds
+
+const sanitizeNodeIdSeed = (nodeType: string): string =>
+  nodeType.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "node";
+
+const createNodeId = (nodeType: string): string => {
+  const seed = sanitizeNodeIdSeed(nodeType);
+  let counter = workflowStore.nodes.filter((node) => node.id.startsWith(`${seed}_`)).length + 1;
+  let candidate = `${seed}_${counter}`;
+  while (workflowStore.nodes.some((node) => node.id === candidate)) {
+    counter += 1;
+    candidate = `${seed}_${counter}`;
+  }
+  return candidate;
+};
 
 // Handle BroadcastChannel messages from NodeDetailView
 const handleBroadcastMessage = async (event: MessageEvent) => {
@@ -355,19 +209,14 @@ const handleBroadcastMessage = async (event: MessageEvent) => {
     // Execute the node
     try {
       const initialData = await buildInitialData();
-      const response = await workflowStore.executeNode(String(nodeId), initialData);
+      const response = await workflowStore.executeNode(nodeId, initialData);
 
       // Update outputs
       const newOutputs = new Map(nodeOutputs.value);
       let executedNodeOutput: NodeOutput | null = null;
 
       for (const [nId, result] of Object.entries(response.results)) {
-        const resolvedNodeId = workflowStore.resolveFrontendNodeId(nId);
-        if (resolvedNodeId === null) {
-          console.warn("[WorkflowBuilder] Could not resolve backend node ID:", nId);
-          continue;
-        }
-        const output = buildOutputForNode(resolvedNodeId, result);
+        const output = buildOutputForNode(nId, result);
         const diagnostics = response.diagnostics?.[nId];
         if (diagnostics && typeof diagnostics === "object") {
           output.metadata = {
@@ -375,11 +224,10 @@ const handleBroadcastMessage = async (event: MessageEvent) => {
             diagnostics,
           };
         }
-        newOutputs.set(resolvedNodeId, output);
+        newOutputs.set(nId, output);
 
         // Track the specific node's output for the broadcast response
-        // Use string comparison to handle type mismatches
-        if (String(resolvedNodeId) === String(nodeId)) {
+        if (nId === String(nodeId)) {
           console.log('[WorkflowBuilder] Found matching output for node:', nodeId);
           executedNodeOutput = output;
         }
@@ -448,13 +296,8 @@ const handleBroadcastMessage = async (event: MessageEvent) => {
   }
 };
 
-// Initialize nextNodeId based on existing nodes and load experiments
+// Load supporting data for the workflow bench
 onMounted(async () => {
-  if (workflowStore.nodes.length > 0) {
-    const maxId = Math.max(...workflowStore.nodes.map(n => n.id));
-    nextNodeId.value = maxId + 1;
-  }
-
   // Load experiments for DATA node selection
   if (experimentStore.experiments.length === 0) {
     try {
@@ -475,12 +318,6 @@ onMounted(async () => {
 
   // Autoload most recent workflow
   await autoloadMostRecentWorkflow();
-
-  // Fetch custom algo nodes for current project
-  if (currentProjectId.value) {
-    await customAlgoStore.fetchForProject(currentProjectId.value);
-    await customAlgoStore.fetchNodesForProject(currentProjectId.value);
-  }
 });
 
 // Clean up BroadcastChannel and autosave timer on unmount
@@ -498,10 +335,6 @@ onUnmounted(() => {
 // Watch for store changes - only react to node count changes (add/remove)
 // NOT param changes which would reset selection during editing
 watch(() => workflowStore.nodes.length, (newLength, oldLength) => {
-  if (newLength > 0) {
-    const maxId = Math.max(...workflowStore.nodes.map(n => n.id));
-    nextNodeId.value = maxId + 1;
-  }
   // Only clear selection if nodes were removed or workflow was cleared
   if (newLength < oldLength || newLength === 0) {
     nodeOutputs.value.clear();
@@ -553,7 +386,7 @@ const NODE_LABELS: Record<string, string> = {
   'model.pls': 'PLS',
   'model.mcr_als': 'MCR-ALS',
   'stats.summary': 'Statistics',
-  'output.plot': 'Scatter Plot',
+  'output.plot': 'Plot',
   'output.contour': 'Contour Plot',
   'output.export': 'Export',
 };
@@ -578,7 +411,7 @@ const saveButtonLabel = computed(() => {
   return 'Save';
 });
 
-const buildOutputForNode = (nodeId: number, result: unknown): NodeOutput => {
+const buildOutputForNode = (nodeId: string, result: unknown): NodeOutput => {
   const node = nodes.value.find(n => n.id === nodeId);
   const outputPorts = node ? workflowStore.getNodeMetadata(node.type)?.output_ports : undefined;
   return buildNodeOutput(result, outputPorts);
@@ -624,10 +457,8 @@ const createNewWorkflow = () => {
     }
   }
   workflowStore.clearWorkflow();
-  workflowStore.addNode({ id: 1, type: 'data.source', x: 50, y: 150, params: { source: 'experiment' } });
   selectedNode.value = null;
   nodeOutputs.value.clear();
-  nextNodeId.value = 2;
   executionCount.value = 0;
   toast.add({
     severity: "info",
@@ -635,36 +466,6 @@ const createNewWorkflow = () => {
     detail: "Created new workflow canvas",
     life: 2000,
   });
-};
-
-const onTemplateSelect = (templateId: string) => {
-  const success = workflowStore.loadTemplate(templateId);
-  templateDrawerVisible.value = false;
-
-  if (success) {
-    // Update nextNodeId based on loaded template nodes
-    if (workflowStore.nodes.length > 0) {
-      const maxId = Math.max(...workflowStore.nodes.map(n => n.id));
-      nextNodeId.value = maxId + 1;
-    }
-    selectedNode.value = null;
-    nodeOutputs.value.clear();
-    executionCount.value = 0;
-
-    toast.add({
-      severity: "success",
-      summary: "Template Loaded",
-      detail: `Loaded "${workflowStore.workflowName}" into Builder`,
-      life: 2000,
-    });
-  } else {
-    toast.add({
-      severity: "error",
-      summary: "Template Not Found",
-      detail: `Could not find template: ${templateId}`,
-      life: 3000,
-    });
-  }
 };
 
 const saveWorkflow = async () => {
@@ -745,12 +546,6 @@ const autoloadMostRecentWorkflow = async () => {
       }
     }
 
-    // Update nextNodeId based on loaded nodes
-    if (workflowStore.nodes.length > 0) {
-      const maxId = Math.max(...workflowStore.nodes.map(n => n.id));
-      nextNodeId.value = maxId + 1;
-    }
-
     toast.add({
       severity: "info",
       summary: "Workflow Loaded",
@@ -763,122 +558,17 @@ const autoloadMostRecentWorkflow = async () => {
   }
 };
 
-// --- Save Run ---
-const METRIC_KEYS = [
-  "r2", "rmsecv", "rmse", "mse", "accuracy", "n_components",
-  "n_samples", "n_features", "explained_variance", "n_clusters",
-  "inertia", "silhouette_score",
-];
-
-function extractMetrics(
-  results: Record<string, unknown>
-): Record<string, Record<string, unknown>> {
-  const summary: Record<string, Record<string, unknown>> = {};
-  for (const [nodeId, result] of Object.entries(results)) {
-    if (!result || typeof result !== "object") continue;
-    const r = result as Record<string, unknown>;
-    const primary =
-      r.default && typeof r.default === "object"
-        ? (r.default as Record<string, unknown>)
-        : r;
-    const metrics: Record<string, unknown> = {};
-    for (const key of METRIC_KEYS) {
-      if (key in primary) metrics[key] = primary[key];
-    }
-    if ("shape" in primary) metrics["output_shape"] = primary.shape;
-    if ("type" in primary) metrics["output_type"] = primary.type;
-    if (Object.keys(metrics).length > 0) {
-      summary[nodeId] = metrics;
-    }
-  }
-  return summary;
-}
-
-function extractModelIds(results: Record<string, unknown>): string[] {
-  const ids = new Set<string>();
-  for (const result of Object.values(results)) {
-    if (!result || typeof result !== "object") continue;
-    const modelId = (result as Record<string, unknown>).model_id;
-    if (typeof modelId === "string" && modelId.trim().length > 0) {
-      ids.add(modelId.trim());
-    }
-  }
-  return [...ids];
-}
-
-const openSaveRunDialog = () => {
-  const base = workflowStore.workflowName || "Workflow";
-  const count = runsStore.runs.length + 1;
-  saveRunName.value = `${base} - Run ${count}`;
-  saveRunNotes.value = "";
-  showSaveRunDialog.value = true;
-};
-
-const handleSaveRun = async () => {
-  if (!workflowStore.workflowId || !workflowStore.lastExecutionResults) return;
-  savingRun.value = true;
-  try {
-    const results = workflowStore.lastExecutionResults as Record<string, unknown>;
-    const diagnostics = workflowStore.lastExecutionDiagnostics as Record<string, Record<string, unknown>>;
-
-    const nodeStatuses: Record<string, string> = {};
-    for (const node of nodes.value) {
-      const state = workflowStore.getNodeExecutionState(node.id);
-      if (state) {
-        const backendId = workflowStore.resolveBackendNodeId(node.id);
-        nodeStatuses[backendId] = state.status;
-      }
-    }
-
-    const hasError = Object.values(nodeStatuses).some((s) => s === "error");
-    const allCompleted = Object.values(nodeStatuses).every((s) => s === "completed");
-    const status = hasError ? "error" : allCompleted ? "completed" : "partial";
-    const modelIds = extractModelIds(results);
-
-    await runsStore.saveRun(workflowStore.workflowId, {
-      name: saveRunName.value.trim(),
-      notes: saveRunNotes.value.trim() || undefined,
-      status,
-      results_summary: extractMetrics(results),
-      diagnostics: Object.keys(diagnostics).length > 0 ? diagnostics : undefined,
-      node_statuses: nodeStatuses,
-      integrity_hash: workflowStore.workflowHash || undefined,
-      executed_at: new Date().toISOString(),
-      model_ids: modelIds.length > 0 ? modelIds : undefined,
-    });
-
-    showSaveRunDialog.value = false;
-    toast.add({
-      severity: "success",
-      summary: "Run Saved",
-      detail: `"${saveRunName.value}" saved to experiment history`,
-      life: 3000,
-    });
-  } catch (err: unknown) {
-    toast.add({
-      severity: "error",
-      summary: "Save Failed",
-      detail: getErrorMessage(err, "Could not save run"),
-      life: 5000,
-    });
-  } finally {
-    savingRun.value = false;
-  }
-};
-
 const exportToPython = async () => {
   try {
     // Get Python code from backend API
     const pythonCode = await workflowStore.exportToPython();
 
     // Create download
-    const blob = new Blob([pythonCode], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${workflowStore.workflowName.replace(/\s+/g, '_').toLowerCase()}.py`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadText(
+      pythonCode,
+      `${workflowStore.workflowName.replace(/\s+/g, '_').toLowerCase()}.py`,
+      'text/plain',
+    );
 
     toast.add({
       severity: "success",
@@ -887,21 +577,13 @@ const exportToPython = async () => {
       life: 2000,
     });
   } catch (err: unknown) {
-    // Fallback to local generation if API fails
-    const pythonCode = generateLocalPythonCode();
-    const blob = new Blob([pythonCode], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'workflow.py';
-    a.click();
-    URL.revokeObjectURL(url);
-
+    const detail = err instanceof Error ? err.message
+      : (err as any)?.response?.data?.detail || "Export failed — check that the workflow is saved and the backend is running";
     toast.add({
-      severity: "info",
-      summary: "Exported (Local)",
-      detail: "Python script generated locally",
-      life: 2000,
+      severity: "error",
+      summary: "Export Failed",
+      detail,
+      life: 5000,
     });
   }
 };
@@ -942,102 +624,6 @@ const exportMenuItems = [
   },
 ];
 
-// Fallback local Python code generator
-const generateLocalPythonCode = (): string => {
-  const lines = [
-    '"""',
-    'Auto-generated workflow script',
-    'Generated by SpectraPy Workflow Builder',
-    '"""',
-    '',
-    'import spectrochempy as scp',
-    'import numpy as np',
-    '',
-  ];
-
-  const sortedNodes = topologicalSort();
-
-  for (const node of sortedNodes) {
-    lines.push(`# ${node.type}`);
-    lines.push(getNodePythonCode(node));
-    lines.push('');
-  }
-
-  return lines.join('\n');
-};
-
-const formatPythonValue = (value: unknown): string => {
-  // Format a value for Python code, adding quotes for strings
-  if (typeof value === 'string') {
-    return `"${value}"`;
-  }
-  return String(value);
-};
-
-const getStringParam = (params: ParamsMap, key: string, fallback: string): string => {
-  const value = params[key];
-  return typeof value === "string" ? value : fallback;
-};
-
-const getNumberParam = (params: ParamsMap, key: string, fallback: number): number => {
-  const value = params[key];
-  return typeof value === "number" ? value : fallback;
-};
-
-const getRangeParam = (params: ParamsMap, key: string, fallback: [number, number]): [number, number] => {
-  const value = params[key];
-  if (Array.isArray(value) && value.length >= 2 && typeof value[0] === "number" && typeof value[1] === "number") {
-    return [value[0], value[1]];
-  }
-  return fallback;
-};
-
-const getNodePythonCode = (node: WorkflowNode): string => {
-  const codeMap: Record<string, (params: ParamsMap) => string> = {
-    'data.source': (p) => `dataset = scp.read("${getStringParam(p, "source", "data.csv")}")`,
-    'preprocess.normalize': (p) => `dataset = dataset.normalize(method="${getStringParam(p, "method", "snv")}")`,
-    'preprocess.scale': (p) => {
-      const [rangeStart, rangeEnd] = getRangeParam(p, "range", [0, 1]);
-      return `dataset = dataset.scale(range=[${rangeStart}, ${rangeEnd}])`;
-    },
-    'baseline.penalized_ls': (p) => `dataset = dataset.baseline_als(lam=${getNumberParam(p, "lam", 100000)}, p=${getNumberParam(p, "p", 0.001)})`,
-    'preprocess.smooth': (p) => `dataset = dataset.savgol(size=${getNumberParam(p, "size", getNumberParam(p, "window", 15))}, order=${getNumberParam(p, "order", getNumberParam(p, "poly", 2))})`,
-    'model.pca': (p) => `pca_result = scp.PCA(n_components=${formatPythonValue(p.n_components ?? 2)}).fit(dataset)`,
-    'model.pls': (p) => `pls_result = scp.PLS(n_components=${formatPythonValue(p.n_components ?? 3)}).fit(dataset, y)`,
-    'model.mcr_als': (p) => `mcr_result = scp.MCR_ALS(n_components=${formatPythonValue(p.n_components ?? 3)}).fit(dataset)`,
-    'stats.summary': () => `stats = dataset.describe()`,
-    'output.plot': (p) => `dataset.plot(x_axis=${getNumberParam(p, "xAxis", 0)}, y_axis=${getNumberParam(p, "yAxis", 1)})`,
-    'output.export': (p) => `dataset.write("${getStringParam(p, "filename", "output.csv")}")`,
-  };
-  return codeMap[node.type]?.(node.params) || `# Unknown node type: ${node.type}`;
-};
-
-const topologicalSort = (): WorkflowNode[] => {
-  const sorted: WorkflowNode[] = [];
-  const visited = new Set<number>();
-
-  const visit = (nodeId: number) => {
-    if (visited.has(nodeId)) return;
-    visited.add(nodeId);
-
-    // Find edges leading to this node
-    const incomingEdges = edges.value.filter(e => e.to === nodeId);
-    for (const edge of incomingEdges) {
-      visit(edge.from);
-    }
-
-    const node = nodes.value.find(n => n.id === nodeId);
-    if (node) sorted.push(node);
-  };
-
-  // Visit all nodes
-  for (const node of nodes.value) {
-    visit(node.id);
-  }
-
-  return sorted;
-};
-
 // Auto-execute toggle handler
 const onAutoExecuteChange = () => {
   toast.add({
@@ -1065,14 +651,9 @@ const executeWorkflow = async () => {
     const response = await workflowStore.executeWorkflow(initialData);
 
     // Convert backend results to frontend node outputs format
-    const outputs = new Map<number, NodeOutput>();
+    const outputs = new Map<string, NodeOutput>();
     for (const [nodeId, result] of Object.entries(response.results)) {
-      const resolvedNodeId = workflowStore.resolveFrontendNodeId(nodeId);
-      if (resolvedNodeId === null) {
-        console.warn("[Workflow] Could not resolve backend node ID:", nodeId);
-        continue;
-      }
-      const output = buildOutputForNode(resolvedNodeId, result);
+      const output = buildOutputForNode(nodeId, result);
       const diagnostics = response.diagnostics?.[nodeId];
       if (diagnostics && typeof diagnostics === "object") {
         output.metadata = {
@@ -1088,7 +669,7 @@ const executeWorkflow = async () => {
         keys: Object.keys(result || {}),
       });
 
-      outputs.set(resolvedNodeId, output);
+      outputs.set(nodeId, output);
     }
 
     // Assign new Map for proper Vue reactivity
@@ -1170,33 +751,9 @@ const buildInitialData = async (): Promise<Record<string, unknown>> => {
 };
 
 // Event handlers
-// Custom algo handlers
-const onCreateCustomAlgo = async () => {
-  if (!currentProjectId.value) {
-    toast.add({
-      severity: "warn",
-      summary: "No Project",
-      detail: "Please open a project first to create custom algorithms.",
-      life: 3000,
-    });
-    return;
-  }
-  // Generate a unique slug
-  const slug = `algo_${Date.now().toString(36)}`;
-  const algo = await customAlgoStore.create(currentProjectId.value, {
-    name: "New Algorithm",
-    slug,
-    code: "result = data  # transform data here",
-    mode: "simple",
-  });
-  if (algo && customAlgoEditorRef.value) {
-    customAlgoEditorRef.value.openForNew(algo);
-  }
-};
-
 const onAddNode = (nodeType: string) => {
   const newNode: WorkflowNode = {
-    id: nextNodeId.value++,
+    id: createNodeId(nodeType),
     type: nodeType,
     x: 100 + (workflowStore.nodes.length * 40) % 400,
     y: 100 + Math.floor(workflowStore.nodes.length / 4) * 120,
@@ -1291,13 +848,6 @@ const onNodeSelect = (node: WorkflowNode | null) => {
   // Open inspector when a node is selected
   if (node) {
     inspectorOpen.value = true;
-    // Open custom algo editor for ualgo.* nodes
-    if (node.type.startsWith("ualgo.")) {
-      const algo = customAlgoStore.getAlgoByNodeType(node.type);
-      if (algo && customAlgoEditorRef.value) {
-        customAlgoEditorRef.value.openForAlgo(algo);
-      }
-    }
   }
 };
 
@@ -1305,7 +855,24 @@ const onCloseInspector = () => {
   inspectorOpen.value = false;
 };
 
-const onNodeConnect = (connection: { from: number; to: number; fromPort?: string; toPort?: string }) => {
+watch(
+  () => [selectedNode.value?.id || null, inspectorOpen.value] as const,
+  ([nodeId, isOpen]) => {
+    if (!nodeId || !isOpen) {
+      return;
+    }
+
+    setTimeout(() => {
+      canvasRef.value?.centerNode?.(nodeId);
+    }, 0);
+
+    setTimeout(() => {
+      canvasRef.value?.centerNode?.(nodeId);
+    }, 320);
+  }
+);
+
+const onNodeConnect = (connection: { from: string; to: string; fromPort?: string; toPort?: string }) => {
   workflowStore.addEdge(connection);
 
   // Auto-execute if enabled
@@ -1323,7 +890,7 @@ const onConnectionError = (errorMessage: string) => {
   });
 };
 
-const onUpdateParams = (nodeId: number, params: ParamsMap) => {
+const onUpdateParams = (nodeId: string, params: ParamsMap) => {
   workflowStore.updateNode(nodeId, { params });
 
   // Auto-execute if enabled (with longer debounce for parameter changes)
@@ -1332,7 +899,7 @@ const onUpdateParams = (nodeId: number, params: ParamsMap) => {
   }
 };
 
-const onExecuteNode = async (nodeId: number) => {
+const onExecuteNode = async (nodeId: string) => {
   const node = nodes.value.find(n => n.id === nodeId);
   if (!node) return;
 
@@ -1341,17 +908,12 @@ const onExecuteNode = async (nodeId: number) => {
     const initialData = await buildInitialData();
 
     // Execute single node via backend
-    const response = await workflowStore.executeNode(String(nodeId), initialData);
+    const response = await workflowStore.executeNode(nodeId, initialData);
 
     // Update outputs - create new Map for proper Vue reactivity
     const newOutputs = new Map(nodeOutputs.value);
     for (const [nId, result] of Object.entries(response.results)) {
-      const resolvedNodeId = workflowStore.resolveFrontendNodeId(nId);
-      if (resolvedNodeId === null) {
-        console.warn("[Workflow] Could not resolve backend node ID:", nId);
-        continue;
-      }
-      const output = buildOutputForNode(resolvedNodeId, result);
+      const output = buildOutputForNode(nId, result);
       const diagnostics = response.diagnostics?.[nId];
       if (diagnostics && typeof diagnostics === "object") {
         output.metadata = {
@@ -1367,7 +929,7 @@ const onExecuteNode = async (nodeId: number) => {
         firstRowType: Array.isArray(output.data) && output.data[0] ? (Array.isArray(output.data[0]) ? 'array' : typeof output.data[0]) : 'N/A',
         keys: Object.keys(result || {}),
       });
-      newOutputs.set(resolvedNodeId, output);
+      newOutputs.set(nId, output);
     }
     nodeOutputs.value = newOutputs;
 
@@ -1397,104 +959,7 @@ const onExecuteNode = async (nodeId: number) => {
   }
 };
 
-// --- AI Code Generation ---
-const onGenerateCode = async () => {
-  if (!requireFeature("sherpaCodeGen")) return;
-
-  codeGenLoading.value = true;
-  sherpaStore.lastCodeResult = null;
-
-  try {
-    await llmStore.connect();
-    const ws = llmStore.wsRef;
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      throw new Error("WebSocket not connected");
-    }
-
-    // Build context from workflow
-    const context = {
-      workflow_name: workflowStore.workflowName,
-      nodes: nodes.value.map((n) => ({
-        node_id: String(n.id),
-        node_type: n.type,
-        label: n.type,
-        parameters: n.params || {},
-      })),
-      edges: edges.value.map((e) => ({
-        from_node_id: String(e.from),
-        to_node_id: String(e.to),
-        from_output: e.fromPort || "default",
-        to_input: e.toPort || "default",
-      })),
-    };
-
-    ws.send(JSON.stringify({
-      action: "sherpa_generate_code",
-      payload: {
-        task_description: `Generate a complete Python script for the "${workflowStore.workflowName}" workflow`,
-        context,
-      },
-    }));
-
-    // Wait for result
-    await new Promise<void>((resolve, reject) => {
-      const timeout = window.setTimeout(() => {
-        cleanup();
-        reject(new Error("Code generation timed out"));
-      }, 60_000);
-
-      const unwatch = watch(
-        () => sherpaStore.lastCodeResult,
-        (val) => {
-          if (val) {
-            cleanup();
-            resolve();
-          }
-        }
-      );
-
-      const cleanup = () => {
-        clearTimeout(timeout);
-        unwatch();
-      };
-    });
-
-    const codeResult = sherpaStore.lastCodeResult as CodeResult | null;
-    generatedCode.value = codeResult?.code || "";
-    generatedCodeLang.value = codeResult?.language || "python";
-    showCodeDialog.value = true;
-  } catch (err: any) {
-    toast.add({
-      severity: "error",
-      summary: "Code Generation Failed",
-      detail: err?.message || "Failed to generate code",
-      life: 4000,
-    });
-  } finally {
-    codeGenLoading.value = false;
-  }
-};
-
-const copyGeneratedCode = async () => {
-  try {
-    await navigator.clipboard.writeText(generatedCode.value);
-    toast.add({
-      severity: "success",
-      summary: "Copied",
-      detail: "Code copied to clipboard",
-      life: 2000,
-    });
-  } catch {
-    toast.add({
-      severity: "error",
-      summary: "Copy Failed",
-      detail: "Could not copy to clipboard",
-      life: 2000,
-    });
-  }
-};
-
-const onDeleteNode = (nodeId: number) => {
+const onDeleteNode = (nodeId: string) => {
   workflowStore.removeNode(nodeId);
   if (selectedNode.value?.id === nodeId) {
     selectedNode.value = null;
@@ -1507,7 +972,6 @@ const onDeleteNode = (nodeId: number) => {
 .workflow-builder-content {
   display: flex;
   flex-direction: column;
-  height: 100%;
   gap: 16px;
   padding: 16px;
   background: #0f172a;
@@ -1555,16 +1019,15 @@ const onDeleteNode = (nodeId: number) => {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
-.toolbar-separator {
-  display: inline-block;
-  width: 1px;
-  height: 20px;
-  background: #475569;
-  margin: 0 4px;
+.toolbar-action-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 /* Uniform toolbar button styling */
@@ -1580,6 +1043,11 @@ const onDeleteNode = (nodeId: number) => {
   white-space: nowrap;
 }
 
+.header-actions :deep(.toolbar-action-btn) {
+  min-width: 92px;
+  justify-content: center;
+}
+
 .header-actions :deep(.toolbar-btn:hover:not(:disabled)) {
   background: #475569;
   border-color: #64748b;
@@ -1588,29 +1056,6 @@ const onDeleteNode = (nodeId: number) => {
 
 .header-actions :deep(.toolbar-btn:disabled) {
   opacity: 0.45;
-}
-
-.header-actions :deep(.toolbar-btn.p-button-warning) {
-  background: #92400e;
-  border-color: #b45309;
-  color: #fbbf24;
-}
-
-.header-actions :deep(.toolbar-btn.p-button-warning:hover:not(:disabled)) {
-  background: #b45309;
-  border-color: #d97706;
-}
-
-/* ToggleButton active state */
-.header-actions :deep(.toolbar-btn.p-highlight) {
-  background: #7c3aed;
-  border-color: #8b5cf6;
-  color: #f5f3ff;
-}
-
-.header-actions :deep(.toolbar-btn.p-highlight:hover) {
-  background: #6d28d9;
-  border-color: #7c3aed;
 }
 
 .autosave-indicator {
@@ -1624,6 +1069,38 @@ const onDeleteNode = (nodeId: number) => {
   color: #4ade80;
   font-size: 0.75rem;
   font-weight: 500;
+}
+
+.toolbar-state-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #334155;
+  background: rgba(15, 23, 42, 0.55);
+  color: #cbd5e1;
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.toolbar-state-control span {
+  user-select: none;
+}
+
+.toolbar-state-control :deep(.p-checkbox) {
+  width: 18px;
+  height: 18px;
+}
+
+.toolbar-state-control :deep(.p-checkbox-box) {
+  border-color: #64748b;
+  background: #0f172a;
+}
+
+.toolbar-state-control :deep(.p-checkbox-box.p-highlight) {
+  border-color: #60a5fa;
+  background: #2563eb;
 }
 
 .execution-banner {
@@ -1653,7 +1130,7 @@ const onDeleteNode = (nodeId: number) => {
   grid-template-columns: 200px 1fr;
   gap: 16px;
   flex: 1;
-  min-height: 0;
+  align-items: stretch;
   transition: grid-template-columns 0.3s ease;
 }
 
@@ -1668,7 +1145,13 @@ const onDeleteNode = (nodeId: number) => {
   border: 1px solid #334155;
   overflow: hidden;
   position: relative;
-  min-height: 400px;
+  display: flex;
+  min-width: 0;
+}
+
+.canvas-container > * {
+  flex: 1 1 auto;
+  min-height: 100%;
 }
 
 @media (max-width: 1200px) {
@@ -1704,40 +1187,4 @@ const onDeleteNode = (nodeId: number) => {
   color: #1e293b;
 }
 
-.save-run-form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.save-run-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.save-run-field label {
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: #475569;
-}
-
-/* AI Code Generation Dialog */
-.codegen-result {
-  max-height: 500px;
-  overflow: auto;
-}
-
-.codegen-block {
-  margin: 0;
-  padding: 16px;
-  background: #1e293b;
-  border-radius: 8px;
-  font-size: 0.85rem;
-  line-height: 1.5;
-  color: #e2e8f0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow-x: auto;
-}
 </style>

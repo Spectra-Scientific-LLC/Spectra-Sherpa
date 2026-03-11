@@ -142,7 +142,7 @@ spectra-sherpa
 
 You'll see output like:
 ```
-Starting SpectraSherpa v0.1.5
+Starting SpectraSherpa v0.1.6
   Mode:   local
   URL:    http://127.0.0.1:8000
   Press Ctrl+C to stop.

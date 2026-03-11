@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +20,7 @@ from spectra_sherpa.app.services.llm import LLMService, conversation_store
 from spectra_sherpa.app.services.rate_limiter import RateLimiter
 
 router = APIRouter(prefix="/llm")
+logger = logging.getLogger(__name__)
 
 # Per-user rate limiting for LLM requests
 # Configurable via MAX_LLM_REQUESTS_PER_HOUR environment variable (default: 100)
@@ -116,4 +119,7 @@ async def generate_data_story(
         response = await service.write_data_story(dataset_info=payload.dataset_info)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("data story generation failed for user=%s", current_user.id)
+        raise HTTPException(status_code=502, detail=f"Data story generation failed: {exc}") from exc
     return LLMTextResponse(response=response)

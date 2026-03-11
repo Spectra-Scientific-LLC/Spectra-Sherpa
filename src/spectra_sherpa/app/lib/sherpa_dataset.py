@@ -174,6 +174,7 @@ class TargetContext(BaseModel):
     target_units: str | None = None
     n_classes: int | None = None
     class_names: list[str] | None = None
+    selected_target: str | None = None  # explicit Y column selection for multi-target
 
 
 # ═══════════════════════════════════════════════════════════════════════════

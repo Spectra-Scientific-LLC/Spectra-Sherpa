@@ -12,7 +12,7 @@ class Calibration(Base):
     __tablename__ = "calibration"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
     compound_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     concentration_mode: Mapped[str] = mapped_column(String(50), nullable=False)
     x_unit: Mapped[str] = mapped_column(String(50), nullable=False)

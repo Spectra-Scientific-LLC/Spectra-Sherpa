@@ -9,114 +9,98 @@ pip install spectra-sherpa
 spectra-sherpa
 ```
 
-Your browser opens automatically to `http://localhost:8000`. No login required — SpectraSherpa runs as a local tool (like Jupyter). You're immediately on the Workspace page, ready to work.
+Your browser opens automatically to `http://localhost:8000`. No login required — SpectraSherpa runs as a local tool (like Jupyter). The default route opens the **Projects** page, which is the current starting point for template-first onboarding.
+
+If you want the SpectroChemPy-backed example datasets and workflows, install the optional extra:
+
+```bash
+pip install "spectra-sherpa[scp]"
+```
 
 > **Tip:** Use `spectra-sherpa --port 9000` to pick a different port, or `--no-browser` if you prefer to open the URL yourself.  
 > If you frequently hit port conflicts, set `KILL_PORT_ON_START=true` in `.env` to auto-clear the selected port.
 
 ---
 
-## 2. Load Your First Dataset
+## 2. Create a Project
 
-You have two options: use bundled example data or upload your own files.
+Projects are now the main entry point for starting work.
 
-### Option A: Upload Your Own Spectra
+1. On the **Projects** page, click **New Project**.
+2. Enter a name such as `My First Analysis`.
+3. Save the project.
 
-1. Go to the **Experiments** page (sidebar).
-2. Click **New Experiment** — give it a name (e.g., "My FTIR Data").
-3. Click **Upload Files** and select your spectral files.
-
-**Supported formats:** `.csv`, `.jdx`, `.dx`, `.spc`, `.spa`, `.spg`, `.txt`, `.wdf`, `.mat`, `.opus`
-
-### Option B: Use Bundled Example Data
-
-SpectraSherpa ships with access to SpectroChemPy's bundled example datasets. No downloads needed.
-
-| Dataset | Description |
-|---------|-------------|
-| `irdata` | FTIR spectra (e.g., NH4Y zeolite activation) |
-| `ramandata` | Raman concentration series |
-| `nmrdata` | 1D NMR spectra |
-
-To use example data in a workflow:
-
-1. Navigate to the **Analysis** tab (sidebar icon).
-2. Add a **Data Source** node to the canvas.
-3. Set **Source Type** to `SpectroChemPy Example`.
-4. Choose an **Example Dataset** (e.g., `irdata`).
-5. Pick a specific file from the **Example File** dropdown (e.g., `nh4y-activation.spg`).
+You can also stay on the same page and launch a validated workflow from the **Workflow Templates** gallery.
 
 ---
 
-## 3. Your First Workflow: Smoothing + PCA
+## 3. Launch Your First Workflow
 
-Build a simple pipeline: load data, smooth it, then run PCA.
+The fastest path is to start from a validated template rather than building the first workflow from scratch.
 
-### Add Nodes
+### Option A: Start from a Project Template
 
-Drag these from the Node Library onto the canvas:
+1. Stay on **Projects**.
+2. In **Workflow Templates**, pick a template such as PCA or preprocessing.
+3. Launch it into the active project.
+4. If the template uses example data, accept the default example binding or choose another supported example dataset.
+5. Open the generated workflow in the **Workflow** page.
 
-- **Data** > `Data Source` (if not already added)
-- **Preprocessing** > `Smooth (Savitzky-Golay)`
-- **Modeling** > `PCA`
+### Option B: Build One Manually
 
-### Connect Them
+If you prefer to build the workflow yourself:
 
-Click and drag from each node's output port to the next node's input port:
+1. Open the **Workflow** page.
+2. Add a `Data Source` node.
+3. Add `Smooth (Savitzky-Golay)` and `PCA`.
+4. Connect them as:
 
-```
-Data Source  →  Smooth  →  PCA
+```text
+Data Source -> Smooth -> PCA
 ```
 
-### Configure Parameters
-
-Click a node to edit it in the Inspector panel:
-
-| Node | Parameter | Value |
-|------|-----------|-------|
-| **Smooth** | Window Size | `11` |
-| **Smooth** | Polynomial Order | `2` |
-| **PCA** | Number of Components | `3` |
-| **PCA** | Standardize | `False` |
-
-### Execute
-
-Click **Execute Workflow**. Watch the status indicators:
-
-- Gray = Pending
-- Yellow = Processing
-- Green = Complete
-
-### View Results
-
-Select the **PCA** node — the Results panel shows the Score Plot and Explained Variance chart.
+5. Set a smoothing window such as `11`, polynomial order `2`, and PCA components `3`.
 
 ---
 
-## 4. Upload Your Own Data into a Workflow
+## 4. Load Your Own Data
 
-Once you've tried the example, load your own spectra:
+You can work either from uploaded experiment files or from bundled example sources.
 
-1. Change the **Data Source** node's **Source Type** to `Experiment File`.
-2. Select your experiment and file from the dropdowns.
-3. Re-execute the workflow.
+### Upload your own spectra
 
-The workflow remembers your parameter settings — only the data changes.
+1. Open **Experiments**.
+2. Create a new experiment.
+3. Upload your spectral files.
 
----
+Supported formats include `.csv`, `.jdx`, `.dx`, `.spc`, `.spa`, `.spg`, `.txt`, `.wdf`, `.mat`, and `.opus`.
 
-## 5. Export Results
+### Bind the workflow to your experiment
 
-After running a workflow, export your results:
-
-1. Select the output node (e.g., PCA).
-2. Click **Export** in the Results panel.
-3. Choose format: **CSV** or **Excel**.
-4. The file downloads to your browser.
+1. Return to **Workflow**.
+2. Select the `Data Source` node.
+3. Change the source to your experiment-backed data selection.
+4. Pick the experiment and file, then re-execute the workflow.
 
 ---
 
-## 6. Configure LLM API Keys (Optional)
+## 5. Execute and Review Results
+
+Click **Execute Workflow** from the workflow toolbar. After the run completes, select the output node to inspect plots, tables, and diagnostics in the results area.
+
+Typical first checks:
+
+- `PCA`: score plot and explained variance
+- `Output Plot`: processed spectra preview
+- `Export`: generated CSV artifact
+
+---
+
+## 6. Export Results
+
+You can export from the workflow toolbar or from export-oriented output nodes in the graph. Exported artifacts are attached to the workflow/project context rather than only shown as a transient browser download.
+
+## 7. Configure LLM API Keys (Optional)
 
 SpectraSherpa can use LLMs for AI-assisted workflow generation and a chat assistant. This is optional — all core spectroscopy features work without it.
 
@@ -149,13 +133,13 @@ Configure your preferred LLM provider in **Settings > API Keys**. Any OpenAI-com
 
 ---
 
-## 7. Enterprise Features
+## 8. Enterprise Features
 
 Enterprise features including advanced analytics and commercial support are available via licensing. Contact Spectra Scientific LLC for more information.
 
 ---
 
-## 8. What's Next
+## 9. What's Next
 
 - **Experiment Management**: Organize spectra with version tracking — see the [User Guide](experiments.md).
 - **NIST Search**: Download reference spectra from NIST WebBook directly in the app (requires `EGRESS_ENABLED=true`).

@@ -100,7 +100,8 @@ def get_chemometrics_node_template(class_name: str, node_type: str, category: st
 
 def get_transform_node_template(class_name: str, node_type: str, category: str, description: str) -> str:
     """Generate TransformSpecNode template (stateless transform)."""
-    return dedent(f'''\
+    return dedent(
+        f'''\
         """
         {class_name} - {description}
 
@@ -214,12 +215,14 @@ def get_transform_node_template(class_name: str, node_type: str, category: str, 
                 print(f"Transform applied: {{node.parameters}}")
 
             asyncio.run(test_{node_type}_node())
-    ''')
+    '''
+    )
 
 
 def get_estimator_node_template(class_name: str, node_type: str, category: str, description: str) -> str:
     """Generate EstimatorSpecNode template (sklearn-style fit/predict)."""
-    return dedent(f'''\
+    return dedent(
+        f'''\
         """
         {class_name} - {description}
 
@@ -410,12 +413,14 @@ def get_estimator_node_template(class_name: str, node_type: str, category: str, 
                 print(f"Predictions: {{predictions}}")
 
             asyncio.run(test_{node_type}_node())
-    ''')
+    '''
+    )
 
 
 def get_custom_node_template(class_name: str, node_type: str, category: str, description: str) -> str:
     """Generate custom Node template (full control)."""
-    return dedent(f'''\
+    return dedent(
+        f'''\
         """
         {class_name} - {description}
 
@@ -597,12 +602,14 @@ def get_custom_node_template(class_name: str, node_type: str, category: str, des
                 print(f"Diagnostics: {{result.diagnostics}}")
 
             asyncio.run(test_{node_type}_node())
-    ''')
+    '''
+    )
 
 
 def get_test_template(class_name: str, node_type: str, category: str) -> str:
     """Generate test file template."""
-    return dedent(f'''\
+    return dedent(
+        f'''\
         """
         Tests for {class_name}
 
@@ -673,12 +680,14 @@ def get_test_template(class_name: str, node_type: str, category: str) -> str:
         # - Metadata preservation
         # - Provenance tracking
         # - Python code generation
-    ''')
+    '''
+    )
 
 
 def get_docs_template(class_name: str, description: str, category: str, node_type: str) -> str:
     """Generate documentation template."""
-    return dedent(f'''\
+    return dedent(
+        f"""\
         # {class_name}
 
         ## Overview
@@ -776,7 +785,8 @@ def get_docs_template(class_name: str, description: str, category: str, node_typ
 
         - Related Node 1
         - Related Node 2
-    ''')
+    """
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -786,8 +796,8 @@ def get_docs_template(class_name: str, description: str, category: str, node_typ
 
 def _to_snake_case(name: str) -> str:
     """Convert CamelCase to snake_case."""
-    name = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
-    name = re.sub('([a-z0-9])([A-Z])', r'\1_\2', name)
+    name = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
+    name = re.sub("([a-z0-9])([A-Z])", r"\1_\2", name)
     return name.lower()
 
 
@@ -796,7 +806,7 @@ def _to_title_case(name: str) -> str:
     # First convert to snake_case
     snake = _to_snake_case(name)
     # Then title case with spaces
-    return ' '.join(word.capitalize() for word in snake.split('_'))
+    return " ".join(word.capitalize() for word in snake.split("_"))
 
 
 def _validate_class_name(name: str) -> str:
@@ -813,11 +823,8 @@ def _validate_class_name(name: str) -> str:
         name = name[0].upper() + name[1:]
 
     # Validate format
-    if not re.match(r'^[A-Z][a-zA-Z0-9]*Node$', name):
-        raise ValueError(
-            f"Invalid class name: {name}. "
-            "Must be PascalCase and end with 'Node' (e.g., MyCustomNode)"
-        )
+    if not re.match(r"^[A-Z][a-zA-Z0-9]*Node$", name):
+        raise ValueError(f"Invalid class name: {name}. " "Must be PascalCase and end with 'Node' (e.g., MyCustomNode)")
 
     return name
 
@@ -974,7 +981,8 @@ def main():
     parser = argparse.ArgumentParser(
         description="Generate boilerplate code for SpectraSherpa nodes",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=dedent('''
+        epilog=dedent(
+            """
             Examples:
               # Interactive mode:
               python scripts/scaffold_node.py
@@ -984,7 +992,8 @@ def main():
 
               # Create an estimator node:
               python scripts/scaffold_node.py --name RandomForestNode --type estimator --category modeling
-        ''')
+        """
+        ),
     )
 
     parser.add_argument("--name", help="Node class name (e.g., MedianFilterNode)")

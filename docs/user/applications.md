@@ -4,6 +4,44 @@ Chemometric methods were born in spectroscopy, but the same multivariate math �
 
 This guide maps specific analytical techniques to the SpectraSherpa nodes that support them.
 
+## Current Product Support
+
+There is an important distinction between:
+
+- algorithmic applicability: the math and node library can work for a technique
+- template-guided onboarding: the product ships a project template plus bundled example data that a new user can run immediately
+
+### Supported Today
+
+| Support Level | Techniques | Notes |
+|------|-----------|-------|
+| Template-guided example workflows | FTIR, NIR, OES | These technologies have bundled example datasets and runnable templates in the current product. Some example workflows also require the optional `spectra-sherpa[scp]` install. |
+| User-data workflows | FTIR, Raman, NIR, UV-Vis, OES | These technologies are explicitly recognized in the current template compatibility model. |
+
+### Partial Support
+
+- `UV-Vis` is accepted by several generic templates, but does not yet ship with a dedicated bundled UV-Vis template/data path.
+- `OES` is supported today through process-monitoring templates and bundled example data, but broader virtual-metrology and multi-sensor templates are still future work.
+- `Raman` remains supported for user-supplied datasets, but the dedicated Raman onboarding template is still marked work in progress.
+- `NMR` remains in the codebase as a work-in-progress template area rather than a supported onboarding path.
+
+### Future Plan
+
+- Terahertz (THz)
+- Fluorescence / EEM
+- LIBS
+- NMR
+- XRF / TXRF
+- XRD / HRXRD / CD-SAXS
+- XPS
+- GC-MS / LC-MS
+- TOF-SIMS
+- ICP-MS
+- ICP-OES
+- Hyperspectral imaging (HSI)
+- Electronic nose / tongue
+- Broad semiconductor virtual metrology workflows beyond OES process monitoring
+
 ---
 
 ## Analytical Chemistry
@@ -26,13 +64,19 @@ The backbone of chemometrics. Whether you are building a NIR moisture calibratio
 
 ### Terahertz (THz) Spectroscopy
 
+Future plan. The underlying preprocessing and calibration math is compatible, but there is not yet a dedicated template plus bundled THz example dataset in the shipped product.
+
 THz spectra exhibit the same Beer-Lambert linearity and scattering effects as mid-IR. The identical preprocessing (baseline correction, SNV) and modeling (PLS, PCA) pipeline applies. SpectraSherpa treats THz data as any other spectral matrix — load, preprocess, model.
 
 ### UV-Vis Spectroscopy
 
+Partial support today. The generic preprocessing, PCA, clustering, and decomposition templates can accept UV-Vis user datasets, but the product does not yet ship a dedicated UV-Vis onboarding template with a bundled example dataset under a UV-Vis label.
+
 UV-Vis measurements often have fewer spectral channels but the same calibration needs: quantitation via PLS/PCR, mixture unmixing via MCR-ALS, and sample screening via PCA. The preprocessing emphasis shifts to normalization and baseline correction rather than scatter correction.
 
 ### Fluorescence Spectroscopy (including EEM)
+
+Future plan. Two-way unfolded workflows are mathematically plausible, but there is not yet a dedicated EEM template or bundled example path.
 
 Excitation-Emission Matrix (EEM) data is inherently three-way (excitation × emission × samples). SpectraSherpa handles the unfolded two-way case today:
 
@@ -47,9 +91,13 @@ Three-way methods (PARAFAC, Tucker3, N-PLS) are planned for future releases.
 
 ### LIBS (Laser-Induced Breakdown Spectroscopy)
 
+Future plan. LIBS is closely aligned with the OES/OES-style pipeline, but it does not yet have a dedicated template and bundled example path.
+
 LIBS produces emission spectra virtually identical in structure to OES data. The main preprocessing challenge is shot-to-shot variability, addressed by normalization (area, L2, SNV) and averaging. After preprocessing, PCA for screening, PLS for elemental quantification, and PLS-DA / KNN for material classification follow the standard pipeline.
 
 ### X-ray Methods
+
+Future plan for shipped template-guided onboarding.
 
 **XRF / TXRF** — Elemental fluorescence spectra. PCA for sample fingerprinting, PLS/PCR for quantitative elemental analysis, HCA for provenance studies.
 
@@ -59,6 +107,8 @@ LIBS produces emission spectra virtually identical in structure to OES data. The
 
 ### Mass Spectrometry
 
+Future plan for shipped template-guided onboarding.
+
 **GC-MS / LC-MS** — Mass spectral matrices are treated the same as any spectral dataset. PCA and PLS-DA are the workhorses for metabolomics and biomarker discovery. MCR-ALS resolves co-eluting chromatographic peaks. HCA groups samples by spectral similarity.
 
 **TOF-SIMS** — Surface mass spectra and images. PCA for spatial composition mapping, NMF for component extraction (naturally non-negative), MCR-ALS for chemical phase identification, K-Means for pixel-wise segmentation.
@@ -67,9 +117,15 @@ LIBS produces emission spectra virtually identical in structure to OES data. The
 
 ### Atomic Emission Spectroscopy
 
-**ICP-OES** — Optical emission spectra from inductively coupled plasma. PCA for multi-element fingerprinting, PLS for quantitative elemental analysis, HCA and PLS-DA for provenance and classification studies. Shares its chemometric toolkit with other emission techniques (OES, LIBS) rather than with mass spectrometry.
+Partial support today.
+
+**OES / semiconductor process monitoring** — Supported today through a dedicated OES process-monitoring template and bundled example datasets. PCA-based monitoring and generic preprocessing workflows are available now.
+
+**ICP-OES** — Future plan. Optical emission spectra from inductively coupled plasma share their chemometric toolkit with OES and LIBS, but do not yet have a dedicated template and bundled example path.
 
 ### NMR Spectroscopy (Benchtop / Low-Field)
+
+Future plan. The product still contains exploratory NMR work, but the NMR template path is currently marked work in progress rather than production-ready onboarding.
 
 Low-field and benchtop NMR spectra respond well to PCA for mixture profiling, PLS/PLS-DA for quantification and classification, and MCR-ALS for deconvolution. Preprocessing emphasis is on baseline correction and smoothing.
 
@@ -77,9 +133,13 @@ Specialized NMR alignment methods (COW, icoshift) and statistical correlation me
 
 ### Hyperspectral Imaging (HSI)
 
+Future plan for shipped template-guided onboarding.
+
 Hyperspectral images unfold to (pixels × wavelengths) — a standard spectral matrix. SpectraSherpa's nD array support (`SherpaDataset` with inner spatial dimensions) handles the unfolding. PCA for dimensionality reduction, MCR-ALS for endmember extraction, K-Means/DBSCAN for pixel classification, and PLS for property prediction all apply directly.
 
 ### Sensor Arrays (Electronic Nose / Tongue)
+
+Future plan for shipped template-guided onboarding.
 
 Electronic nose and electronic tongue instruments produce sensor response matrices rather than continuous spectra, but the pattern recognition pipeline is identical: PCA for visualization, PLS for concentration prediction, KNN/PLS-DA for classification, and K-Means/HCA for unsupervised grouping.
 
@@ -88,6 +148,11 @@ Electronic nose and electronic tongue instruments produce sensor response matric
 ## Semiconductor Metrology
 
 SpectraSherpa's chemometric toolkit maps directly to semiconductor fab metrology. Spectral and multi-sensor data from process tools drive fault detection, process control, and virtual metrology — applications where data privacy, reproducibility, and inline deployment are non-negotiable.
+
+Current product status:
+
+- Supported today: OES process monitoring with bundled example data
+- Future plan: broader virtual metrology templates, multi-sensor workflows, and fuller semiconductor-specific onboarding
 
 ### Metrology Tools and Algorithms
 

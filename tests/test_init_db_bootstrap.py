@@ -74,13 +74,6 @@ class TestBootstrapFreshDB:
         # Verify tables exist
         inspector = sa_inspect(sync_engine)
         assert "user" in inspector.get_table_names()
-        assert "custom_algo" in inspector.get_table_names()
-
-        # Verify custom_algo has CASCADE from ORM model
-        fks = inspector.get_foreign_keys("custom_algo")
-        user_fk = [fk for fk in fks if "user_id" in fk.get("constrained_columns", [])]
-        assert len(user_fk) == 1
-        assert user_fk[0].get("options", {}).get("ondelete", "").upper() == "CASCADE"
 
         # Step 2: alembic upgrade head (should not crash)
         _run_upgrade_head(async_url)
@@ -89,11 +82,15 @@ class TestBootstrapFreshDB:
         inspector = sa_inspect(sync_engine)
         assert "alembic_version" in inspector.get_table_names()
 
-        # Verify custom_algo still has all columns
-        cols = {c["name"] for c in inspector.get_columns("custom_algo")}
-        assert "id" in cols
-        assert "node_type" in cols
-        assert "mode" in cols
+        # custom_algo is dropped by migration a76d82a816bf
+        assert "custom_algo" not in inspector.get_table_names()
+
+        # Verify project_id FK on experiment has ondelete SET NULL
+        # (added by q7r9s1t3u926)
+        fks = inspector.get_foreign_keys("experiment")
+        project_fk = [fk for fk in fks if "project_id" in fk.get("constrained_columns", [])]
+        assert len(project_fk) == 1
+        assert project_fk[0].get("options", {}).get("ondelete", "").upper() == "SET NULL"
 
         sync_engine.dispose()
 
@@ -121,11 +118,13 @@ class TestBootstrapLegacyUntracked:
         inspector = sa_inspect(sync_engine)
         assert "alembic_version" in inspector.get_table_names()
 
-        # Verify custom_algo still intact with CASCADE
-        fks = inspector.get_foreign_keys("custom_algo")
-        user_fk = [fk for fk in fks if "user_id" in fk.get("constrained_columns", [])]
-        assert len(user_fk) == 1
-        assert user_fk[0].get("options", {}).get("ondelete", "").upper() == "CASCADE"
+        # custom_algo is dropped by migration a76d82a816bf
+        assert "custom_algo" not in inspector.get_table_names()
+
+        # Verify core tables survived
+        assert "user" in inspector.get_table_names()
+        assert "workflow" in inspector.get_table_names()
+        assert "experiment" in inspector.get_table_names()
 
         sync_engine.dispose()
 
@@ -146,13 +145,15 @@ class TestBootstrapTracked:
         inspector = sa_inspect(sync_engine)
         assert "alembic_version" in inspector.get_table_names()
         assert "user" in inspector.get_table_names()
-        assert "custom_algo" in inspector.get_table_names()
 
-        # Verify custom_algo has CASCADE
-        fks = inspector.get_foreign_keys("custom_algo")
-        user_fk = [fk for fk in fks if "user_id" in fk.get("constrained_columns", [])]
-        assert len(user_fk) == 1
-        assert user_fk[0].get("options", {}).get("ondelete", "").upper() == "CASCADE"
+        # custom_algo is created then dropped during the migration chain
+        assert "custom_algo" not in inspector.get_table_names()
+
+        # Verify project_id FK on workflow has ondelete SET NULL
+        fks = inspector.get_foreign_keys("workflow")
+        project_fk = [fk for fk in fks if "project_id" in fk.get("constrained_columns", [])]
+        assert len(project_fk) == 1
+        assert project_fk[0].get("options", {}).get("ondelete", "").upper() == "SET NULL"
 
         # Run upgrade head again — should be a no-op
         _run_upgrade_head(async_url)
@@ -161,9 +162,12 @@ class TestBootstrapTracked:
 
 
 class TestBootstrapLegacyWithOldCustomAlgo:
-    """Scenario: legacy DB with custom_algo created without CASCADE on user_id."""
+    """Scenario: legacy DB with custom_algo created without CASCADE on user_id.
 
-    def test_legacy_custom_algo_gets_cascade(self, tmp_path):
+    After upgrade head, custom_algo should be dropped (migration a76d82a816bf).
+    """
+
+    def test_legacy_custom_algo_gets_dropped(self, tmp_path):
         db_path = tmp_path / "legacy_no_cascade.db"
         sync_url = _sync_url(db_path)
         async_url = _async_url(db_path)
@@ -221,22 +225,15 @@ class TestBootstrapLegacyWithOldCustomAlgo:
                 )
             )
 
-        # Verify no CASCADE on user_id
+        # Verify custom_algo exists before migration
         inspector = sa_inspect(sync_engine)
-        fks = inspector.get_foreign_keys("custom_algo")
-        user_fk = [fk for fk in fks if "user_id" in fk.get("constrained_columns", [])]
-        if user_fk:
-            ondelete = user_fk[0].get("options", {}).get("ondelete", "")
-            assert ondelete.upper() != "CASCADE"
+        assert "custom_algo" in inspector.get_table_names()
 
-        # Run upgrade head — l2g4h6i8j471 should rebuild the table
+        # Run upgrade head — a76d82a816bf should drop custom_algo
         _run_upgrade_head(async_url)
 
-        # Verify CASCADE is now in place
+        # Verify custom_algo has been dropped
         inspector = sa_inspect(sync_engine)
-        fks = inspector.get_foreign_keys("custom_algo")
-        user_fk = [fk for fk in fks if "user_id" in fk.get("constrained_columns", [])]
-        assert len(user_fk) == 1
-        assert user_fk[0].get("options", {}).get("ondelete", "").upper() == "CASCADE"
+        assert "custom_algo" not in inspector.get_table_names()
 
         sync_engine.dispose()

@@ -1,0 +1,43 @@
+schema_version: 1
+
+categories:
+  calibration:
+    label: "Calibration & Regression"
+    icon: "pi pi-chart-line"
+    display_order: 1
+    featured: true
+  classification:
+    label: "Classification"
+    icon: "pi pi-tags"
+    display_order: 2
+    featured: true
+  exploratory:
+    label: "Exploratory Analysis"
+    icon: "pi pi-th-large"
+    display_order: 3
+    featured: true
+  clustering:
+    label: "Clustering"
+    icon: "pi pi-sitemap"
+    display_order: 4
+    featured: false
+  curve_resolution:
+    label: "Curve Resolution"
+    icon: "pi pi-share-alt"
+    display_order: 5
+    featured: false
+  preprocessing:
+    label: "Preprocessing Pipelines"
+    icon: "pi pi-filter"
+    display_order: 6
+    featured: false
+  spectroscopy:
+    label: "Spectroscopy"
+    icon: "pi pi-wave-pulse"
+    display_order: 7
+    featured: false
+  quality_control:
+    label: "Quality Control"
+    icon: "pi pi-check-circle"
+    display_order: 8
+    featured: false

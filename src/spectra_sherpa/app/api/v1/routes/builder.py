@@ -410,6 +410,8 @@ async def list_reference_datasets() -> dict[str, list[dict[str, Any]]]:
                 "technique": v["technique"],
                 "description": v["description"],
                 "featured": v.get("featured", False),
+                "has_embedded_target": bool(v.get("prop_names")),
+                "target_type": "continuous" if v.get("prop_names") else None,
             }
             for k, v in DATASET_CATALOG.items()
         ],
@@ -421,6 +423,8 @@ async def list_reference_datasets() -> dict[str, list[dict[str, Any]]]:
                 "technique": v["technique"],
                 "description": v["description"],
                 "featured": v.get("featured", False),
+                "has_embedded_target": False,
+                "target_type": None,
             }
             for k, v in OES_CATALOG.items()
         ],
@@ -431,6 +435,9 @@ async def list_reference_datasets() -> dict[str, list[dict[str, Any]]]:
                 "label": v["label"],
                 "technique": "ML/Statistics",
                 "description": f"Scikit-learn {k} dataset",
+                "has_embedded_target": True,
+                "target_type": "categorical" if v.get("task_type") == "classification" else "continuous",
+                "task_type": v.get("task_type"),
             }
             for k, v in SKLEARN_CATALOG.items()
         ],
@@ -444,6 +451,8 @@ async def list_reference_datasets() -> dict[str, list[dict[str, Any]]]:
                 "category": entry["category"],
                 "file_count": entry["file_count"],
                 "entry_type": entry["entry_type"],
+                "has_embedded_target": False,
+                "target_type": None,
             }
             for entry in build_scp_catalog()
         ],

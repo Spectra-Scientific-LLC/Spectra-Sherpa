@@ -10,12 +10,14 @@ class ExperimentCreate(BaseModel):
     name: str = Field(..., min_length=1)
     description: Optional[str] = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    project_id: Optional[int] = Field(None, description="Link experiment to a project")
 
 
 class ExperimentUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     metadata: Optional[dict[str, Any]] = None
+    project_id: Optional[int] = Field(None, description="Move experiment to a project")
 
 
 class ExperimentSummary(BaseModel):

@@ -12,8 +12,12 @@ class RunLevel(Base):
     __tablename__ = "run_level"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    experiment_id: Mapped[int] = mapped_column(ForeignKey("experiment.id"), nullable=False, index=True)
-    factor_definition_id: Mapped[int] = mapped_column(ForeignKey("factor_definition.id"), nullable=False, index=True)
+    experiment_id: Mapped[int] = mapped_column(
+        ForeignKey("experiment.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    factor_definition_id: Mapped[int] = mapped_column(
+        ForeignKey("factor_definition.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     level_value: Mapped[str] = mapped_column(String(100), nullable=False)
     path: Mapped[str | None] = mapped_column(String(255))  # Folder path
     batch: Mapped[int | None] = mapped_column(Integer)

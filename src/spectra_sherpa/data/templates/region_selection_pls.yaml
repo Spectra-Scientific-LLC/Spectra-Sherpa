@@ -1,0 +1,77 @@
+schema_version: 1
+name: Spectral Region Selection + PLS
+slug: region_selection_pls
+description: Spectral region selection followed by PLS regression for targeted calibration.
+category: calibration
+is_active: true
+template_data:
+  nodes:
+  - node_id: data_1
+    node_type: data.source
+    label: Load Data
+    parameters:
+      source: eigenvector
+      eigenvector_dataset: corn_m5
+    position_x: 175
+    position_y: 50
+  - node_id: preprocess_1
+    node_type: preprocess.normalize
+    label: Normalize
+    parameters:
+      method: snv
+    position_x: 425
+    position_y: 300
+  - node_id: feature_1
+    node_type: preprocess.clip_range
+    label: Region Selection
+    parameters:
+      min_wavenumber: 400
+      max_wavenumber: 4000
+    position_x: 175
+    position_y: 550
+  - node_id: model_1
+    node_type: model.pls
+    label: PLS Regression
+    parameters:
+      n_components: 5
+    position_x: 425
+    position_y: 800
+  - node_id: viz_1
+    node_type: output.plot
+    label: Predictions
+    parameters:
+      plot_type: spectra
+    position_x: 175
+    position_y: 1050
+  edges:
+  - from_node_id: data_1
+    to_node_id: preprocess_1
+  - from_node_id: preprocess_1
+    to_node_id: feature_1
+  - from_node_id: feature_1
+    to_node_id: model_1
+  - from_node_id: model_1
+    to_node_id: viz_1
+    from_output: Y_scores
+  canvas_state:
+    zoom: 1.0
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_spectra:
+      role_type: X_spectra
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      description: Spectral data with target values for PLS
+      accepted_techniques:
+      - FTIR
+      - NIR
+      - Raman
+    Y_reference:
+      role_type: Y_reference
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      target_type: continuous
+      description: Reference/target values (column in spectral data file)

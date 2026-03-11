@@ -38,7 +38,7 @@ class Project(Base):
     __tablename__ = "project"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
     parent_id: Mapped[int | None] = mapped_column(
         ForeignKey("project.id", ondelete="CASCADE"), index=True, nullable=True
     )
@@ -111,7 +111,7 @@ class ProjectVersion(Base):
     project_id: Mapped[int] = mapped_column(ForeignKey("project.id", ondelete="CASCADE"), nullable=False, index=True)
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
-    created_by: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False, index=True)
+    created_by: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
     change_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
     include_raw_data: Mapped[bool] = mapped_column(Boolean, default=False)

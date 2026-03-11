@@ -16,7 +16,7 @@ from __future__ import annotations
 import pytest
 
 from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG, get_dataset_info
-from spectra_sherpa.app.lib.scp_catalog import SCP_CATALOG, get_scp_dataset_info
+from spectra_sherpa.app.lib.scp_catalog import SCP_CATALOG, build_scp_catalog, get_scp_dataset_info
 from spectra_sherpa.app.lib.sklearn_info import SKLEARN_CATALOG, get_sklearn_dataset_info
 
 # ---------------------------------------------------------------------------
@@ -113,6 +113,12 @@ class TestScpCatalog:
     def test_get_ramandata_info(self):
         info = get_scp_dataset_info("ramandata")
         assert info["technique"] == "Raman"
+
+    def test_build_catalog_surfaces_nmr_examples(self):
+        entries = build_scp_catalog(force=True)
+        nmr_entries = [entry for entry in entries if entry.get("technique") == "NMR"]
+        assert nmr_entries, "Expected at least one bundled NMR example entry in the SCP catalog"
+        assert any("nmrdata/" in entry["name"] for entry in nmr_entries)
 
     def test_invalid_name_raises(self):
         with pytest.raises(ValueError, match="Unknown SCP dataset"):

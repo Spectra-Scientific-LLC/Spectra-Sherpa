@@ -13,7 +13,9 @@ class CalModel(Base):
     __table_args__ = (UniqueConstraint("calibration_id", "version_name"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    calibration_id: Mapped[int] = mapped_column(ForeignKey("calibration.id"), nullable=False, index=True)
+    calibration_id: Mapped[int] = mapped_column(
+        ForeignKey("calibration.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     version_name: Mapped[str] = mapped_column(String(100), nullable=False)
     model_type: Mapped[str] = mapped_column(String(50), nullable=False)
     model_path: Mapped[str] = mapped_column(String(500), nullable=False)

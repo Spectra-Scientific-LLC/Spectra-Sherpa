@@ -12,7 +12,7 @@ class BackgroundJob(Base):
     __tablename__ = "background_job"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
     job_type: Mapped[str] = mapped_column(String(50), nullable=False)
     status: Mapped[str] = mapped_column(String(50), server_default="pending", nullable=False, index=True)
     progress: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)

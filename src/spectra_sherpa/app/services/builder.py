@@ -402,11 +402,16 @@ class BuilderService:
         # Handle stacked datasets (multiple spectra)
         datasets: List["NDDataset"] = []
         if dataset.ndim == 2 and dataset.shape[0] > 1:
+            from spectra_sherpa.app.lib.scp_compat import require_scp, scp
+
             try:
                 x_coord = dataset.x
             except (KeyError, AttributeError):
                 x_coord = None
             wavenumber = x_coord.data if x_coord is not None else np.arange(dataset.shape[1])
+            x_title = str(x_coord.title) if x_coord is not None and getattr(x_coord, "title", None) else None
+            x_units = str(x_coord.units) if x_coord is not None and getattr(x_coord, "units", None) else ""
+            is_generic_axis = not x_units or x_units == "dimensionless" or (x_title or "").strip().lower() == "index"
 
             for i in range(dataset.shape[0]):
                 label = f"{dataset.title}_{i + 1}" if dataset.title else f"Spectrum_{i + 1}"
@@ -414,16 +419,33 @@ class BuilderService:
                     y_coord = dataset.y
                 except (KeyError, AttributeError):
                     y_coord = None
-                if y_coord is not None and i < len(y_coord.data):
-                    label = str(y_coord.data[i])
+                if y_coord is not None:
+                    raw_labels = getattr(y_coord, "labels", None)
+                    if raw_labels is not None and i < len(raw_labels):
+                        label = str(raw_labels[i])
+                    elif i < len(y_coord.data):
+                        label = str(y_coord.data[i])
 
                 # Create individual NDDataset for each spectrum
-                ds = create_spectral_dataset(
-                    data=dataset.data[i, :].copy(),
-                    wavenumbers=wavenumber.copy(),
-                    units=SpectralUnit.ABSORBANCE,
-                    title=label,
-                )
+                if is_generic_axis:
+                    require_scp("Generic dataset slicing")
+                    ds = scp.NDDataset(np.asarray(dataset.data[i, :].copy(), dtype=float), title=label)
+                    ds.x = scp.Coord(
+                        np.asarray(wavenumber, dtype=float),
+                        title=x_title or "Index",
+                        units=x_units or None,
+                    )
+                    ds.units = SpectralUnit.DIMENSIONLESS.value
+                    ds.meta["x_label"] = x_title or "Index"
+                    ds.meta["x_unit"] = x_units or ""
+                    ds.meta["data_type"] = "generic"
+                else:
+                    ds = create_spectral_dataset(
+                        data=dataset.data[i, :].copy(),
+                        wavenumbers=wavenumber.copy(),
+                        units=SpectralUnit.ABSORBANCE,
+                        title=label,
+                    )
                 ds.meta["source_file"] = str(resolved)
                 ds.meta["source_type"] = dataset.meta.get("source_type", "csv") if hasattr(dataset, "meta") else "csv"
                 datasets.append(ds)

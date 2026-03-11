@@ -28,13 +28,22 @@ const emit = defineEmits<{
 }>();
 
 const containerRef = ref<HTMLDivElement>();
+const fallbackValue = ref(props.modelValue);
+const loadError = ref<string | null>(null);
 let editor: any = null;
 let monaco: any = null;
 
 onMounted(async () => {
-  // Lazy-load monaco via the loader
-  const loader = await import("@monaco-editor/loader");
-  monaco = await loader.default.init();
+  try {
+    // Lazy-load monaco via the loader when available.
+    const moduleName = "@monaco-editor/loader";
+    const loader = await import(/* @vite-ignore */ moduleName);
+    monaco = await loader.default.init();
+  } catch (error) {
+    console.warn("[MonacoEditor] Falling back to textarea editor:", error);
+    loadError.value = "Monaco editor is unavailable in this build. Using plain text fallback.";
+    return;
+  }
 
   if (!containerRef.value) return;
 
@@ -67,6 +76,7 @@ onMounted(async () => {
 watch(
   () => props.modelValue,
   (newVal) => {
+    fallbackValue.value = newVal;
     if (editor && editor.getValue() !== newVal) {
       editor.setValue(newVal);
     }
@@ -92,10 +102,27 @@ watch(
   const heightStyle = computed(() => {
     return typeof props.height === "number" ? `${props.height}px` : props.height;
   });
+
+  const onFallbackInput = (event: Event) => {
+    const target = event.target as HTMLTextAreaElement;
+    fallbackValue.value = target.value;
+    emit("update:modelValue", target.value);
+  };
   </script>
   
   <template>
+    <div v-if="loadError" class="monaco-fallback">
+      <small class="fallback-message">{{ loadError }}</small>
+      <textarea
+        class="fallback-textarea"
+        :style="{ height: heightStyle }"
+        :value="fallbackValue"
+        :readonly="readOnly"
+        @input="onFallbackInput"
+      />
+    </div>
     <div
+      v-else
       ref="containerRef"
       class="monaco-editor-container"
       :style="{ height: heightStyle }"
@@ -108,5 +135,28 @@ watch(
   border: 1px solid var(--surface-border, #333);
   border-radius: 6px;
   overflow: hidden;
+}
+
+.monaco-fallback {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.fallback-message {
+  color: var(--text-color-secondary, #94a3b8);
+}
+
+.fallback-textarea {
+  width: 100%;
+  border: 1px solid var(--surface-border, #333);
+  border-radius: 6px;
+  padding: 0.75rem;
+  background: var(--surface-ground, #0f172a);
+  color: var(--text-color, #f8fafc);
+  resize: vertical;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
 }
 </style>

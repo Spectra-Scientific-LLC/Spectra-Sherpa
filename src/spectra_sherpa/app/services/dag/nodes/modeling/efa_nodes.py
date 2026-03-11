@@ -170,22 +170,13 @@ class EFANode(Node):
         forward_ev = extracted.forward_ev
         backward_ev = extracted.backward_ev
 
-        # Defensive shape check — EFA eigenvalues should be (n_samples, n_components)
-        n_samples = input_ds.shape[0]
-        if forward_ev is not None and forward_ev.shape != (n_samples, n_components):
-            logger.warning(
-                "EFA forward_ev shape %s != expected (%s, %s)",
-                forward_ev.shape,
-                n_samples,
-                n_components,
-            )
-        if backward_ev is not None and backward_ev.shape != (n_samples, n_components):
-            logger.warning(
-                "EFA backward_ev shape %s != expected (%s, %s)",
-                backward_ev.shape,
-                n_samples,
-                n_components,
-            )
+        # SCP EFA returns all eigenvalues per window position — shape is
+        # (n_samples, min(n_samples, n_features)).  Truncate to the first
+        # n_components columns which correspond to the dominant factors.
+        if forward_ev is not None and forward_ev.shape[1] > n_components:
+            forward_ev = forward_ev[:, :n_components]
+        if backward_ev is not None and backward_ev.shape[1] > n_components:
+            backward_ev = backward_ev[:, :n_components]
 
         # Get input y_coord for sample labels
         _y_coord = input_ds.sample_axis

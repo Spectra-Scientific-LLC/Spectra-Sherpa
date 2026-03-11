@@ -22,7 +22,7 @@ export function useReportExport() {
   const workflowStore = useWorkflowStore();
 
   async function exportReport(
-    nodeOutputs: Map<number, NodeOutput>,
+    nodeOutputs: Map<string, NodeOutput>,
     plotRefs?: Map<string, HTMLElement>
   ): Promise<void> {
     // 1. Capture plot images from Plotly chart containers

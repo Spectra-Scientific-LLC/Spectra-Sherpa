@@ -157,9 +157,15 @@ def create_spectral_dataset(
     # Set spectral axis (x)
     dataset.x = Coord(wavenumbers, title="Wavenumber", units=x_units.value)
 
-    # Set sample axis (y) if labels provided
+    # SpectroChemPy Coord expects numeric coordinate data. For categorical
+    # sample names, store numeric row indices in .data and attach the human
+    # labels separately so multi-spectrum files can still carry names safely.
     if sample_labels is not None:
-        dataset.y = Coord(sample_labels, title="Samples")
+        dataset.y = Coord(
+            np.arange(data.shape[0]),
+            title="Samples",
+            labels=[str(label) for label in sample_labels],
+        )
     elif data.shape[0] > 1:
         # Auto-generate sample indices
         dataset.y = Coord(np.arange(data.shape[0]), title="Sample Index")

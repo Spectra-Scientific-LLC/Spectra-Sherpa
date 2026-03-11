@@ -32,7 +32,7 @@ class ExecutionRun(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     workflow_id: Mapped[int] = mapped_column(ForeignKey("workflow.id", ondelete="CASCADE"), nullable=False, index=True)
     workflow_version_id: Mapped[int | None] = mapped_column(ForeignKey("workflow_version.id", ondelete="SET NULL"))
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(50), nullable=False)  # "completed", "partial", "error"
     params_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)  # {node_id: {param: value}}

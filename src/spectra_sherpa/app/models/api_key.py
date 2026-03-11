@@ -22,7 +22,7 @@ class APIKey(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     # user_id is nullable to allow system-wide keys (user_id=None)
-    user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id", ondelete="SET NULL"), nullable=True, index=True)
     service_name: Mapped[str] = mapped_column(String(100), nullable=False)
     key_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

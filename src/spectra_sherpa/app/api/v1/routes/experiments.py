@@ -105,6 +105,7 @@ async def create_experiment_endpoint(
         name=payload.name,
         description=payload.description,
         metadata=payload.metadata,
+        project_id=payload.project_id,
     )
     metadata_path = resolve_data_path(experiment.metadata_path)
     metadata = read_metadata(metadata_path)
@@ -137,6 +138,7 @@ async def update_experiment_endpoint(
         name=payload.name,
         description=payload.description,
         metadata=payload.metadata,
+        project_id=payload.project_id,
     )
     metadata_path = resolve_data_path(updated.metadata_path)
     metadata = read_metadata(metadata_path)

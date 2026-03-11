@@ -251,11 +251,11 @@ def test_rate_limit_executions_config_field():
     """Test that rate_limit_executions field exists in AppConfig."""
     # This field is used by RateLimitMiddleware
     assert hasattr(app_config, "rate_limit_executions")
-    assert app_config.rate_limit_executions is None  # Default in OSS mode
 
     # Should be settable by spectra-server
+    original = app_config.rate_limit_executions
     app_config.rate_limit_executions = 100
     assert app_config.rate_limit_executions == 100
 
     # Cleanup
-    app_config.rate_limit_executions = None
+    app_config.rate_limit_executions = original

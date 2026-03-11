@@ -9,18 +9,15 @@ from typing import Any
 
 import numpy as np
 
-from spectra_sherpa.app.lib.scp_compat import scp
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
 
 from ...io_contracts import (
     bind_X,
     bind_y,
-    to_numpy_1d,
     to_numpy_2d,
 )
 from ...node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
 from ..modeling import create_spectral_dataset
-from ..modeling.core_utils import ensure_orientation as _ensure_orientation
 from ..visualization import generate_confusion_matrix_heatmap
 from .core_utils import (
     make_labeled_coord as _make_labeled_coord,
@@ -329,35 +326,26 @@ class SIMCANode(Node):
                     f"Class {cls} has {n_class_samples} samples but needs at least {n_components + 1} for SIMCA"
                 )
 
-            # Build PCA model for this class
-            X_class_dataset = scp.NDDataset(X_class)
-            pca = scp.PCA(n_components=n_components, standardized=False, scaled=True)
-            pca.fit(X_class_dataset)
+            # Build PCA model for this class using sklearn
+            # (SCP 0.8.x NDDataset auto-dims bug breaks scp.PCA here)
+            from sklearn.decomposition import PCA as SklearnPCA
+            from sklearn.preprocessing import StandardScaler
 
-            # Get scores and loadings with orientation guards
-            scores = pca.transform()
-            scores_data = _ensure_orientation(
-                to_numpy_2d(scores, name="scores", dtype=np.float64),
-                expected_rows=n_class_samples,
-                expected_cols=n_components,
-                name=f"SIMCA scores (class {cls})",
-            )
-            loadings_data = _ensure_orientation(
-                to_numpy_2d(pca.components, name="components", dtype=np.float64),
-                expected_rows=n_components,
-                expected_cols=X_data.shape[1],
-                name=f"SIMCA loadings (class {cls})",
-            )
+            scaler = StandardScaler()
+            X_class_scaled = scaler.fit_transform(X_class)
+
+            pca = SklearnPCA(n_components=n_components)
+            pca.fit(X_class_scaled)
+
+            scores_data = pca.transform(X_class_scaled).astype(np.float64)
+            loadings_data = pca.components_.astype(np.float64)
 
             # Get class mean for proper projection of new samples
-            # CRITICAL: PCA centers data, so we need the mean to project new samples correctly
             class_mean = np.mean(X_class, axis=0)
 
             # Calculate T² limit using CORRECT eigenvalues from PCA model
-            # CRITICAL: Use pca.explained_variance (eigenvalues), NOT score variance
             # Reference: Nomikos & MacGregor (1995), Technometrics
-            explained_var = to_numpy_1d(pca.explained_variance, name="explained_variance", dtype=np.float64)
-            eigenvalues = np.maximum(explained_var[:n_components], 1e-10)
+            eigenvalues = np.maximum(pca.explained_variance_[:n_components], 1e-10)
 
             alpha = 1 - confidence_level
             df2 = n_class_samples - n_components
@@ -370,9 +358,9 @@ class SIMCANode(Node):
             # Calculate Q limit using chi-squared distribution
             # Reference: Jackson & Mudholkar (1979), Technometrics
             # Q follows approximately chi-squared distribution
-            total_var = np.sum(explained_var)
-            # Estimate total variance from class data
-            data_var = np.var(X_class)
+            total_var = np.sum(pca.explained_variance_)
+            # Estimate total variance from scaled class data
+            data_var = np.var(X_class_scaled)
             remaining_var = max(0, data_var - total_var)
             # Estimate degrees of freedom for residual space
             n_residual_dims = max(1, X_class.shape[1] - n_components)
@@ -387,7 +375,8 @@ class SIMCANode(Node):
                 Q_limit = 1e-10
 
             class_models[cls] = {
-                "pca": pca,  # Keep for prediction during execution, removed from result
+                "pca": pca,  # sklearn PCA — kept for prediction during execution
+                "scaler": scaler,  # StandardScaler — needed for projecting new samples
                 "scores": scores_data,
                 "loadings": loadings_data,
                 "eigenvalues": eigenvalues,
@@ -408,21 +397,20 @@ class SIMCANode(Node):
             for cls in classes:
                 model = class_models[cls]
                 pca = model["pca"]
+                scaler = model["scaler"]
                 loadings = model["loadings"]
                 eigenvalues = model["eigenvalues"]
 
-                # Project sample onto class model
-                # scores = (sample - mean) @ loadings
-                sample_dataset = scp.NDDataset(sample)
-                sample_scores = pca.transform(sample_dataset)
-                t = to_numpy_1d(sample_scores, name="sample_scores", dtype=np.float64)
+                # Project sample onto class model using sklearn
+                sample_scaled = scaler.transform(sample)
+                t = pca.transform(sample_scaled).flatten().astype(np.float64)
 
                 # Calculate T² distance
                 T2 = np.sum((t**2) / eigenvalues)
 
-                # Calculate Q distance (simplified)
-                reconstructed = t @ loadings.T
-                Q = np.sum((sample.flatten() - reconstructed.flatten()) ** 2)
+                # Calculate Q distance (simplified) — in scaled space
+                reconstructed = t @ loadings
+                Q = np.sum((sample_scaled.flatten() - reconstructed.flatten()) ** 2)
 
                 # Combined distance (normalized by limits)
                 distance = (T2 / T2_limits[cls]) + (Q / Q_limits[cls])
@@ -451,8 +439,8 @@ class SIMCANode(Node):
         first_pca = first_model["pca"]
 
         # Project all samples into first class PC space for visualization
-        viz_scores = first_pca.transform(scp.NDDataset(X_data))
-        viz_scores_data = to_numpy_2d(viz_scores, name="viz_scores", dtype=np.float64)
+        first_scaler = first_model["scaler"]
+        viz_scores_data = first_pca.transform(first_scaler.transform(X_data)).astype(np.float64)
 
         logger.debug("Visualization: projecting all samples into class '%s' PC space", first_class)
 

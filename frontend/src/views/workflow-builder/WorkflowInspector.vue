@@ -1138,6 +1138,7 @@
     :node-output="nodeOutput"
     :node-type="selectedNode?.type || ''"
     :node-label="selectedNode ? getNodeLabel(selectedNode.type) : 'Node'"
+    :node-input="inputConnections.length > 0 ? inputConnections[0].data : undefined"
   />
 
   <!-- Data Table Modal (Raw data viewer) -->
@@ -1396,7 +1397,7 @@ interface InspectorMetadata extends Record<string, unknown> {
 }
 
 interface InputConnection {
-  nodeId: number;
+  nodeId: string;
   nodeType: string;
   nodeLabel: string;
   port: string;
@@ -1417,9 +1418,9 @@ const props = withDefaults(defineProps<Props>(), {
 });
 
 const emit = defineEmits<{
-  (e: 'update-params', nodeId: number, params: ParamsMap): void;
-  (e: 'execute-node', nodeId: number): void;
-  (e: 'delete-node', nodeId: number): void;
+  (e: 'update-params', nodeId: string, params: ParamsMap): void;
+  (e: 'execute-node', nodeId: string): void;
+  (e: 'delete-node', nodeId: string): void;
   (e: 'close'): void;
 }>();
 
@@ -2118,7 +2119,7 @@ const myDatasetExperimentOptions = computed(() => {
 });
 
 // Track current node ID to avoid resetting params on every update
-const currentNodeId = ref<number | null>(null);
+const currentNodeId = ref<string | null>(null);
 
 // Helper to get defaults for a node type
 const getDefaultsForNodeType = (nodeType: string): ParamsMap => {

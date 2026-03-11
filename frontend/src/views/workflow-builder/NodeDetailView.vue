@@ -1222,6 +1222,7 @@
       :nodeOutput="nodeOutput"
       :nodeType="nodeType"
       :nodeLabel="nodeLabel"
+      :nodeInput="inputData"
     />
     <DataTableModal
       v-model="showDataTableModal"
@@ -1290,15 +1291,15 @@ let executionTimeout: ReturnType<typeof setTimeout> | null = null;
 
 // Section collapse state
 const sections = ref({
-  input: true,
-  settings: true,
-  output: true,
-  plots: true,
-  log: true,
+  input: false,
+  settings: false,
+  output: false,
+  plots: false,
+  log: false,
 });
 
 const outputSubsections = ref({
-  coordinates: true,
+  coordinates: false,
   metadata: false,
   processing: false,
   provenance: false,
@@ -1341,28 +1342,28 @@ const getLogIcon = (type: LogEntry["type"]): string => {
 
 // Plot subsection collapse state
 const plotSections = ref<Record<string, boolean>>({
-  pcaScores: true,
+  pcaScores: false,
   pcaBiplot: false,
   pcaLoadings: false,
   pcaScree: false,
   pcaDiagnostics: false,
-  mcrConcentrations: true,
+  mcrConcentrations: false,
   mcrSpectra: false,
-  spectraOverview: true,
-  dataOverview: true, // For generic non-spectral data like Iris
-  statsDistribution: true,
-  plsScores: true,
+  spectraOverview: false,
+  dataOverview: false, // For generic non-spectral data like Iris
+  statsDistribution: false,
+  plsScores: false,
   plsLoadings: false,
-  classificationScores: true,
+  classificationScores: false,
   plsdaLoadings: false,
   plsdaVip: false,
   plsdaConfusionTrain: false,
   plsdaConfusionCV: false,
-  regressionCorrelation: true,
-  classificationAccuracy: true,
-  hcaDendrogram: true,
-  peakFinding: true,
-  plotVisualization: true,
+  regressionCorrelation: false,
+  classificationAccuracy: false,
+  hcaDendrogram: false,
+  peakFinding: false,
+  plotVisualization: false,
 });
 
 // PLS-DA loadings view mode (lines or biplot)

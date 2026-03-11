@@ -222,15 +222,21 @@ def generate(mode: str, node_type: str, class_name: str, category: str = "") -> 
     label = _label_from_class(class_name)
     if mode == "transform":
         return TRANSFORM_TEMPLATE.format(
-            node_type=node_type, class_name=class_name, label=label,
+            node_type=node_type,
+            class_name=class_name,
+            label=label,
         )
     elif mode == "estimator":
         return ESTIMATOR_TEMPLATE.format(
-            node_type=node_type, class_name=class_name, label=label,
+            node_type=node_type,
+            class_name=class_name,
+            label=label,
         )
     elif mode == "custom":
         return CUSTOM_TEMPLATE.format(
-            node_type=node_type, class_name=class_name, label=label,
+            node_type=node_type,
+            class_name=class_name,
+            label=label,
             category=category or "custom",
         )
     else:

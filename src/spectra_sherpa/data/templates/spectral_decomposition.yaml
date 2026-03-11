@@ -1,0 +1,82 @@
+schema_version: 1
+name: Spectral Decomposition (PCA)
+slug: spectral_decomposition
+description: Principal component decomposition for identifying spectral components
+  and variance structure.
+category: exploratory
+is_active: true
+template_data:
+  nodes:
+  - node_id: data_1
+    node_type: data.source
+    label: Load Data
+    parameters:
+      source: spectrochempy
+      example_dataset: irdata
+    position_x: 175
+    position_y: 50
+  - node_id: preprocess_1
+    node_type: preprocess.scale
+    label: Mean Center
+    parameters:
+      method: mean_center
+    position_x: 425
+    position_y: 300
+  - node_id: model_1
+    node_type: model.pca
+    label: PCA Decomposition
+    parameters:
+      n_components: '5'
+    position_x: 175
+    position_y: 550
+  - node_id: viz_1
+    node_type: output.plot
+    label: Scores
+    parameters:
+      plot_type: spectra
+    position_x: 50
+    position_y: 800
+  - node_id: viz_2
+    node_type: output.plot
+    label: Loadings
+    parameters:
+      plot_type: spectra
+    position_x: 450
+    position_y: 800
+  - node_id: export_1
+    node_type: output.export
+    label: Export Results
+    parameters:
+      filename: decomposition.csv
+      format: csv
+    position_x: 175
+    position_y: 1050
+  edges:
+  - from_node_id: data_1
+    to_node_id: preprocess_1
+  - from_node_id: preprocess_1
+    to_node_id: model_1
+  - from_node_id: model_1
+    to_node_id: viz_1
+    from_output: scores
+  - from_node_id: model_1
+    to_node_id: viz_2
+    from_output: loadings
+  - from_node_id: viz_1
+    to_node_id: export_1
+  canvas_state:
+    zoom: 1.0
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_spectra:
+      role_type: X_spectra
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      description: Spectral data for component decomposition
+      accepted_techniques:
+      - FTIR
+      - NIR
+      - Raman
+      - UV-Vis

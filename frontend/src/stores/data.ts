@@ -12,6 +12,61 @@ import type {
   ExperimentDataset,
 } from "@/stores/workflow";
 
+function summarizeForDataStory(datasetInfo: Record<string, any>): Record<string, any> {
+  const metadata = (datasetInfo.metadata as Record<string, any> | undefined) ?? {};
+  const xAxis = (datasetInfo.x_axis as Record<string, any> | undefined) ?? {};
+  const fileMetadata = (datasetInfo.file_metadata as Record<string, any> | undefined) ?? {};
+  const propertyStats = Array.isArray(datasetInfo.property_stats)
+    ? datasetInfo.property_stats.slice(0, 12)
+    : undefined;
+  const featureNames = Array.isArray(datasetInfo.feature_names)
+    ? datasetInfo.feature_names.slice(0, 20)
+    : undefined;
+  const targetNames = Array.isArray(datasetInfo.target_names)
+    ? datasetInfo.target_names.slice(0, 20)
+    : undefined;
+  const propNames = Array.isArray(metadata.prop_names)
+    ? metadata.prop_names.slice(0, 20)
+    : undefined;
+  const labels = Array.isArray(metadata.labels) ? metadata.labels.slice(0, 10) : undefined;
+  const xData = Array.isArray(xAxis.data) ? xAxis.data : [];
+
+  return {
+    label: datasetInfo.label ?? datasetInfo.title ?? fileMetadata.name ?? null,
+    source: datasetInfo.source ?? null,
+    technique: datasetInfo.technique ?? metadata.spectral_technique ?? null,
+    description: datasetInfo.description ?? null,
+    n_samples: datasetInfo.n_samples ?? null,
+    n_features: datasetInfo.n_features ?? null,
+    task_type: datasetInfo.task_type ?? null,
+    x_axis: {
+      title: xAxis.title ?? metadata.x_title ?? null,
+      units: xAxis.units ?? metadata.x_units ?? null,
+      min: xData.length ? xData[0] : datasetInfo.wavelength_min ?? null,
+      max: xData.length ? xData[xData.length - 1] : datasetInfo.wavelength_max ?? null,
+    },
+    y_axis: {
+      title: metadata.data_quantity ?? null,
+      units: metadata.value_units ?? null,
+    },
+    file_metadata: {
+      name: fileMetadata.name ?? datasetInfo.title ?? null,
+      author: fileMetadata.author ?? null,
+      date: fileMetadata.date ?? null,
+    },
+    feature_names: featureNames,
+    target_names: targetNames,
+    property_stats: propertyStats,
+    metadata_summary: {
+      spectral_technique: metadata.spectral_technique ?? null,
+      data_quantity: metadata.data_quantity ?? null,
+      value_units: metadata.value_units ?? null,
+      prop_names: propNames,
+      sample_labels: labels,
+    },
+  };
+}
+
 export const useDataStore = defineStore("data", () => {
   // Dataset catalog (from /datasets/available)
   const availableDatasets = ref<AvailableDatasets | null>(null);
@@ -93,11 +148,12 @@ export const useDataStore = defineStore("data", () => {
     }
   };
 
-  const createExperiment = async (name: string, description?: string) => {
+  const createExperiment = async (name: string, description?: string, projectId?: number | null) => {
     const response = await api.post("/experiments", {
       name,
       description: description || null,
       metadata: {},
+      project_id: projectId ?? null,
     });
     // Refresh both lists
     await Promise.all([fetchExperiments(), fetchCatalog()]);
@@ -105,13 +161,36 @@ export const useDataStore = defineStore("data", () => {
   };
 
   const deleteExperiment = async (experimentId: number) => {
-    await api.delete(`/experiments/${experimentId}`);
-    if (activeExperimentId.value === experimentId) {
-      activeExperimentId.value = null;
-      experimentFiles.value = [];
-      clearInspection();
+    const deletingActiveExperiment = activeExperimentId.value === experimentId;
+    let fallbackExperimentId: number | null = null;
+
+    if (deletingActiveExperiment) {
+      const currentIndex = experiments.value.findIndex((experiment) => experiment.id === experimentId);
+      if (currentIndex >= 0) {
+        fallbackExperimentId =
+          experiments.value[currentIndex + 1]?.id ??
+          experiments.value[currentIndex - 1]?.id ??
+          null;
+      }
     }
+
+    await api.delete(`/experiments/${experimentId}`);
     await Promise.all([fetchExperiments(), fetchCatalog()]);
+
+    if (deletingActiveExperiment) {
+      clearInspection();
+
+      const fallbackStillExists =
+        fallbackExperimentId != null &&
+        experiments.value.some((experiment) => experiment.id === fallbackExperimentId);
+
+      if (fallbackStillExists && fallbackExperimentId != null) {
+        await selectExperiment(fallbackExperimentId);
+      } else {
+        activeExperimentId.value = null;
+        experimentFiles.value = [];
+      }
+    }
   };
 
   const uploadFile = async (
@@ -145,6 +224,7 @@ export const useDataStore = defineStore("data", () => {
     fileInfoLoading.value = true;
     fileInfo.value = null;
     fileInfoError.value = null;
+    dataStoryText.value = null;
     try {
       const body: Record<string, unknown> = { file_path: filePath };
       if (experimentId != null) body.experiment_id = experimentId;
@@ -179,6 +259,7 @@ export const useDataStore = defineStore("data", () => {
     activeFilePath.value = null;
     fileInfo.value = null;
     fileInfoError.value = null;
+    dataStoryText.value = null;
   };
 
   // --- Reference dataset catalog actions ---
@@ -234,16 +315,27 @@ export const useDataStore = defineStore("data", () => {
   };
 
   const generateDataStory = async () => {
-    if (!catalogDatasetInfo.value) return;
+    const datasetInfo = catalogDatasetInfo.value || fileInfo.value;
+    if (!datasetInfo) return;
     dataStoryLoading.value = true;
     try {
-      const response = await api.post<{ response: string }>("/llm/data-story", {
-        dataset_info: catalogDatasetInfo.value,
+      const summarizedDataset = summarizeForDataStory(datasetInfo as Record<string, any>);
+      const prompt =
+        "Write a concise, informative data story for this spectroscopy dataset. " +
+        "Cover what the data measures, likely scientific context, typical applications, " +
+        "and any notable characteristics. Use 2-3 short professional paragraphs.\n\n" +
+        `Dataset summary:\n${JSON.stringify(summarizedDataset, null, 2)}`;
+      const response = await api.post<{ response: string }>("/llm/chat", {
+        message: prompt,
+        conversation_id: null,
+        metadata: {},
       });
       dataStoryText.value = response.data.response;
     } catch (error: any) {
       console.error("Failed to generate data story:", error);
       dataStoryText.value =
+        error?.response?.data?.detail ||
+        error?.message ||
         "Unable to generate data story. Check your LLM configuration.";
     } finally {
       dataStoryLoading.value = false;

@@ -31,24 +31,39 @@ spectra-sherpa
 ```
 
 Opens `http://localhost:8000` in your browser. No login required.
+Install `spectra-sherpa[scp]` as well if you want the SpectroChemPy-backed example datasets and workflows.
 
 ## Supported Techniques
 
-SpectraSherpa's chemometric toolkit applies to any technique that produces multivariate spectral or sensor data:
+SpectraSherpa's core math applies broadly to multivariate spectral and sensor data, but the template-guided onboarding path is narrower than that general claim. The table below reflects what is actually supported in the product today.
 
-| Domain | Techniques |
-|--------|------------|
-| Vibrational Spectroscopy | NIR, FTIR (mid-IR), Raman, Terahertz (THz) |
-| Optical Spectroscopy | UV-Vis, Fluorescence / EEM, LIBS |
-| X-ray Methods | XRF, TXRF, XRD, HRXRD, XPS, CD-SAXS |
-| Mass Spectrometry | GC-MS, LC-MS, TOF-SIMS, ICP-MS |
-| Atomic Emission | ICP-OES |
-| Magnetic Resonance | Benchtop NMR, low-field NMR |
-| Imaging | Hyperspectral imaging (HSI) |
-| Sensor Arrays | Electronic nose / tongue, inline process sensors |
-| Semiconductor Metrology | OES (plasma etch/deposition), virtual metrology |
+### Supported Today
 
-See the [Applications Guide](docs/user/applications.md) for detailed algorithm-to-technique mapping across analytical chemistry and semiconductor process control.
+| Support Level | Techniques | Notes |
+|---------------|------------|-------|
+| Template-guided example workflows | FTIR, NIR, OES | Shipped templates and bundled example datasets can be instantiated directly from Projects. Some example workflows also require the optional `spectra-sherpa[scp]` install. |
+| User-data workflows | FTIR, Raman, NIR, UV-Vis, OES | These techniques are accepted by the current template contracts and node library when the user binds their own compatible data. |
+
+### Future Plan
+
+The following domains are documented as algorithmically aligned with SpectraSherpa, but do not yet have equivalent template-guided onboarding and bundled example coverage:
+
+- Terahertz (THz)
+- Fluorescence / EEM
+- LIBS
+- NMR
+- XRF / TXRF
+- XRD / HRXRD / CD-SAXS
+- XPS
+- GC-MS / LC-MS
+- TOF-SIMS
+- ICP-MS
+- ICP-OES
+- Hyperspectral imaging (HSI)
+- Electronic nose / tongue
+- Broad virtual metrology and multi-sensor semiconductor workflows beyond OES process monitoring
+
+See the [Applications Guide](docs/user/applications.md) for the current support split between shipped templates, partial support, and future plan.
 
 ## Features
 

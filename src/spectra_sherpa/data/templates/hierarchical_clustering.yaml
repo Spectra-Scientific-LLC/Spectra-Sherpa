@@ -1,0 +1,63 @@
+schema_version: 1
+name: Hierarchical Clustering
+slug: hierarchical_clustering
+description: Unsupervised clustering workflow using hierarchical clustering to group
+  similar spectra.
+category: clustering
+is_active: true
+template_data:
+  nodes:
+  - node_id: data_1
+    node_type: data.source
+    label: Load Data
+    parameters:
+      source: sklearn
+      sklearn_dataset: wine
+    position_x: 175
+    position_y: 50
+  - node_id: preprocess_1
+    node_type: preprocess.normalize
+    label: Normalize
+    parameters:
+      method: snv
+    position_x: 425
+    position_y: 300
+  - node_id: model_1
+    node_type: model.hca
+    label: Hierarchical Clustering
+    parameters:
+      n_clusters: 3
+      linkage: ward
+    position_x: 175
+    position_y: 550
+  - node_id: viz_1
+    node_type: output.plot
+    label: Dendrogram
+    parameters:
+      plot_type: spectra
+    position_x: 425
+    position_y: 800
+  edges:
+  - from_node_id: data_1
+    to_node_id: preprocess_1
+  - from_node_id: preprocess_1
+    to_node_id: model_1
+  - from_node_id: model_1
+    to_node_id: viz_1
+    from_output: plots
+  canvas_state:
+    zoom: 1.0
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_spectra:
+      role_type: X_spectra
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      description: Spectral or multivariate data for clustering
+      accepted_techniques:
+      - FTIR
+      - NIR
+      - Raman
+      - UV-Vis

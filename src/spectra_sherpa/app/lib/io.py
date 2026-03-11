@@ -326,6 +326,7 @@ def read_mat_file(filepath: Path) -> List["NDDataset"]:
 
     mat_data = loadmat(str(filepath), squeeze_me=True, struct_as_record=False)
     label = _extract_label_from_filename(filepath.name)
+    uses_generic_feature_index = False
 
     # Look for wavenumber data
     wavenumber = None
@@ -370,7 +371,9 @@ def read_mat_file(filepath: Path) -> List["NDDataset"]:
                     break
 
     if absorbance is not None and wavenumber is None:
-        raise ValueError(f"No wavenumber axis found in {filepath}. " "Provide a wavenumber array or a 2-column matrix.")
+        feature_count = absorbance.shape[1] if absorbance.ndim == 2 else absorbance.size
+        wavenumber = np.arange(feature_count, dtype=float)
+        uses_generic_feature_index = True
 
     if wavenumber is None or absorbance is None:
         raise ValueError(
@@ -379,31 +382,44 @@ def read_mat_file(filepath: Path) -> List["NDDataset"]:
 
     datasets = []
 
+    def _build_dataset(data: np.ndarray, title: str) -> "NDDataset":
+        if not uses_generic_feature_index:
+            ds = create_spectral_dataset(
+                data=data,
+                wavenumbers=wavenumber,
+                units=SpectralUnit.ABSORBANCE,
+                title=title,
+            )
+        else:
+            require_scp("MATLAB dataset fallback")
+            ds = scp.NDDataset(np.asarray(data, dtype=float), title=title)
+            ds.x = scp.Coord(np.asarray(wavenumber, dtype=float), title="Index")
+            ds.units = SpectralUnit.DIMENSIONLESS.value
+            ds.meta["x_label"] = "Index"
+            ds.meta["x_unit"] = ""
+            ds.meta["data_type"] = "generic"
+
+        ds.meta["source_file"] = str(filepath)
+        ds.meta["source_type"] = "mat"
+        return ds
+
     # Handle 2D absorbance (multiple spectra)
     if absorbance.ndim == 2:
         if absorbance.shape[1] == len(wavenumber):
             # Rows are spectra
             for i in range(absorbance.shape[0]):
-                ds = create_spectral_dataset(
+                ds = _build_dataset(
                     data=absorbance[i, :],
-                    wavenumbers=wavenumber,
-                    units=SpectralUnit.ABSORBANCE,
                     title=f"{label}_{i + 1}" if absorbance.shape[0] > 1 else label,
                 )
-                ds.meta["source_file"] = str(filepath)
-                ds.meta["source_type"] = "mat"
                 datasets.append(ds)
         elif absorbance.shape[0] == len(wavenumber):
             # Columns are spectra
             for i in range(absorbance.shape[1]):
-                ds = create_spectral_dataset(
+                ds = _build_dataset(
                     data=absorbance[:, i],
-                    wavenumbers=wavenumber,
-                    units=SpectralUnit.ABSORBANCE,
                     title=f"{label}_{i + 1}" if absorbance.shape[1] > 1 else label,
                 )
-                ds.meta["source_file"] = str(filepath)
-                ds.meta["source_type"] = "mat"
                 datasets.append(ds)
     else:
         # Single spectrum
@@ -412,14 +428,7 @@ def read_mat_file(filepath: Path) -> List["NDDataset"]:
             raise ValueError(
                 f"Wavenumber/absorbance length mismatch in {filepath}: " f"{len(wavenumber)} vs {len(absorbance)}"
             )
-        ds = create_spectral_dataset(
-            data=absorbance,
-            wavenumbers=wavenumber,
-            units=SpectralUnit.ABSORBANCE,
-            title=label,
-        )
-        ds.meta["source_file"] = str(filepath)
-        ds.meta["source_type"] = "mat"
+        ds = _build_dataset(data=absorbance, title=label)
         datasets.append(ds)
 
     return datasets
@@ -455,9 +464,7 @@ def read_spectral_file(filepath: Path) -> "NDDataset":
         dataset = scp.read_jcamp(str(filepath))
     elif ext == ".spc":
         dataset = scp.read_spc(str(filepath))
-    elif ext == ".spa":
-        dataset = scp.read_omnic(str(filepath))
-    elif ext == ".spg":
+    elif ext in [".spa", ".spg", ".srs"]:
         dataset = scp.read_omnic(str(filepath))
     elif ext == ".opus":
         dataset = scp.read_opus(str(filepath))
@@ -488,7 +495,7 @@ def load_spectrum(filepath: Union[str, Path]) -> "NDDataset":
     - .csv - Two-column wavenumber/absorbance
     - .json - Calibration signature files
     - .mat - MATLAB files
-    - .jdx, .dx, .spc, .spa, .spg, .opus - SpectroChemPy native formats
+    - .jdx, .dx, .spc, .spa, .spg, .srs, .opus - SpectroChemPy native formats
 
     Parameters
     ----------
@@ -513,7 +520,7 @@ def load_spectrum(filepath: Union[str, Path]) -> "NDDataset":
             return datasets[0]
         # Stack multiple spectra
         return stack_datasets(datasets)
-    elif ext in [".jdx", ".dx", ".spc", ".spa", ".spg", ".opus"]:
+    elif ext in [".jdx", ".dx", ".spc", ".spa", ".spg", ".srs", ".opus"]:
         return read_spectral_file(filepath)
     else:
         raise ValueError(f"Unsupported file format: {ext}")
@@ -539,8 +546,9 @@ def stack_datasets(datasets: List["NDDataset"]) -> "NDDataset":
     if len(datasets) == 1:
         return datasets[0]
 
-    # Check wavenumber alignment
-    ref_wn = datasets[0].x.data
+    # Check feature-axis alignment
+    ref_coord = datasets[0].x
+    ref_wn = ref_coord.data
     for ds in datasets[1:]:
         if not np.allclose(ds.x.data, ref_wn, atol=1e-6):
             raise ValueError("Datasets must have aligned wavenumber grids to stack")
@@ -551,13 +559,35 @@ def stack_datasets(datasets: List["NDDataset"]) -> "NDDataset":
 
     from .spectral.dataset import SpectralUnit, create_spectral_dataset
 
-    result = create_spectral_dataset(
-        data=data,
-        wavenumbers=ref_wn,
-        sample_labels=labels,
-        units=SpectralUnit.ABSORBANCE,
-        title="Stacked Spectra",
-    )
+    ref_title = str(ref_coord.title) if getattr(ref_coord, "title", None) else None
+    ref_units = str(ref_coord.units) if getattr(ref_coord, "units", None) else ""
+    is_generic_axis = not ref_units or ref_units == "dimensionless" or (ref_title or "").strip().lower() == "index"
+
+    if is_generic_axis:
+        require_scp("Dataset stacking")
+        result = scp.NDDataset(data, title="Stacked Data")
+        result.x = scp.Coord(
+            np.asarray(ref_wn, dtype=float),
+            title=ref_title or "Index",
+            units=ref_units or None,
+        )
+        result.y = scp.Coord(
+            np.arange(len(labels), dtype=float),
+            title="Samples",
+            labels=[str(label) for label in labels],
+        )
+        result.units = SpectralUnit.DIMENSIONLESS.value
+        result.meta["x_label"] = ref_title or "Index"
+        result.meta["x_unit"] = ref_units or ""
+        result.meta["data_type"] = "generic"
+    else:
+        result = create_spectral_dataset(
+            data=data,
+            wavenumbers=ref_wn,
+            sample_labels=labels,
+            units=SpectralUnit.ABSORBANCE,
+            title="Stacked Spectra",
+        )
 
     return result
 
@@ -587,7 +617,7 @@ def load_csv_as_sherpa(filepath: Union[str, Path]) -> "SherpaDataset":
     SherpaDataset
     """
     from spectra_sherpa.app.lib.axes import FeatureAxis, SampleAxis, SpectralAxis
-    from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+    from spectra_sherpa.app.lib.sherpa_dataset import DomainContext, SherpaDataset, TargetContext
 
     filepath = Path(filepath)
     df = pd.read_csv(filepath)
@@ -639,21 +669,46 @@ def load_csv_as_sherpa(filepath: Union[str, Path]) -> "SherpaDataset":
         )
 
     # ── Tabular / properties path ──
-    # The first label column was used for sample labels — exclude it from features.
-    # Remaining columns with numeric data are the property features.
-    id_cols = [label_cols[0]] if label_cols else []
-    feature_df = df.drop(columns=id_cols, errors="ignore")
-    numeric_df = feature_df.select_dtypes(include="number")
+    # Named-column tables are generic multivariate data, not spectra.
+    # Preserve numeric columns as features and keep a single non-numeric
+    # column as an embedded categorical target when present.
+    numeric_df = df.select_dtypes(include="number")
     if numeric_df.empty:
         raise ValueError(f"No numeric columns in {filepath.name}")
 
     data = numeric_df.values.astype(np.float64)
     col_names = list(numeric_df.columns)
+    non_numeric_cols = [c for c in df.columns if not pd.api.types.is_numeric_dtype(df[c])]
+
+    target = None
+    target_context = None
+    extra: dict[str, Any] = {
+        "csv.feature_names": col_names,
+    }
+
+    if len(non_numeric_cols) == 1:
+        target_col = non_numeric_cols[0]
+        target = df[target_col].astype(str).to_numpy()
+        target_context = TargetContext(
+            target_type="categorical",
+            target_name=target_col,
+            n_classes=len(np.unique(target)),
+            class_names=sorted({str(label) for label in target}),
+        )
+        extra["csv.target_column"] = target_col
 
     return SherpaDataset(
         X=data,
         feature_axis=FeatureAxis(labels=col_names, title="Property"),
-        sample_axis=SampleAxis(labels=sample_labels) if sample_labels else None,
+        sample_axis=SampleAxis(values=np.arange(data.shape[0], dtype=np.float64), title="Sample"),
+        target=target,
+        target_context=target_context,
+        domain=DomainContext(
+            technique="generic",
+            sample_type=title,
+        ),
+        extra=extra,
+        backend="pandas",
         title=title,
     )
 

@@ -102,39 +102,19 @@
         </div>
 
         <div class="chat-main">
-          <Splitter layout="vertical" class="chat-splitter" :gutterSize="6">
-            <SplitterPanel class="message-panel" :size="85" :minSize="20" style="display: flex; flex-direction: column; overflow: hidden;">
-              <div ref="messageContainer" class="chat-messages">
-                <!-- LLM messages -->
-                <template v-if="activeTab === 'llm'">
-                  <!-- No BYOK key configured -->
-                  <div v-if="!llmChatEnabled" class="no-key-notice">
-                    <i class="pi pi-info-circle"></i>
-                    <span>Configure an LLM API key in Settings to enable chat.</span>
-                    <a class="setup-link" @click="router.push('/settings')">Setup</a>
-                  </div>
-                  <template v-else>
-                    <div
-                      v-for="(message, idx) in store.messages"
-                      :key="idx"
-                      class="chat-message"
-                      :class="message.role"
-                    >
-                      <div v-if="message.role === 'system'" class="system-notification">
-                        {{ message.content }}
-                      </div>
-                      <div v-else class="chat-bubble">{{ message.content }}</div>
-                    </div>
-                    <div v-if="store.loading" class="chat-message assistant">
-                      <div class="chat-bubble">Streaming...</div>
-                    </div>
-                  </template>
-                </template>
-
-                <!-- Data Import messages -->
-                <template v-else-if="activeTab === 'import'">
+          <div class="chat-layout">
+            <div ref="messageContainer" class="chat-messages">
+              <!-- LLM messages -->
+              <template v-if="activeTab === 'llm'">
+                <!-- No BYOK key configured -->
+                <div v-if="!llmChatEnabled" class="no-key-notice">
+                  <i class="pi pi-info-circle"></i>
+                  <span>Configure an LLM API key in Settings to enable chat.</span>
+                  <a class="setup-link" @click="router.push('/settings')">Setup</a>
+                </div>
+                <template v-else>
                   <div
-                    v-for="(message, idx) in importStore.messages"
+                    v-for="(message, idx) in store.messages"
                     :key="idx"
                     class="chat-message"
                     :class="message.role"
@@ -144,62 +124,78 @@
                     </div>
                     <div v-else class="chat-bubble">{{ message.content }}</div>
                   </div>
-                  <!-- Tool progress indicators -->
-                  <div
-                    v-for="(tool, tidx) in importStore.activeTools"
-                    :key="'import-tool-' + tidx"
-                    class="tool-progress"
-                  >
-                    <i
-                      :class="tool.status === 'running' ? 'pi pi-spin pi-spinner' : tool.status === 'done' ? 'pi pi-check-circle' : 'pi pi-times-circle'"
-                      :style="{ color: tool.status === 'running' ? '#3b82f6' : tool.status === 'done' ? '#22c55e' : '#ef4444' }"
-                    ></i>
-                    <span v-if="tool.status === 'running'">{{ toolDisplayName(tool.tool_name) }}...</span>
-                    <span v-else-if="tool.status === 'done'">{{ toolDisplayName(tool.tool_name) }} done</span>
-                    <span v-else>{{ toolDisplayName(tool.tool_name) }} failed</span>
-                  </div>
-                  <div v-if="importStore.loading && importStore.activeTools.length === 0" class="chat-message assistant">
-                    <div class="chat-bubble">Processing...</div>
+                  <div v-if="store.loading" class="chat-message assistant">
+                    <div class="chat-bubble">Streaming...</div>
                   </div>
                 </template>
+              </template>
 
-                <!-- Sherpa messages -->
-                <template v-else-if="activeTab === 'sherpa'">
-                  <div
-                    v-for="(message, idx) in sherpaStore.messages"
-                    :key="idx"
-                    class="chat-message"
-                    :class="message.role"
-                  >
-                    <div v-if="message.role === 'system'" class="system-notification">
-                      {{ message.content }}
-                    </div>
-                    <div v-else class="chat-bubble">{{ message.content }}</div>
+              <!-- Data Import messages -->
+              <template v-else-if="activeTab === 'import'">
+                <div
+                  v-for="(message, idx) in importStore.messages"
+                  :key="idx"
+                  class="chat-message"
+                  :class="message.role"
+                >
+                  <div v-if="message.role === 'system'" class="system-notification">
+                    {{ message.content }}
                   </div>
-                  <!-- Agentic tool progress -->
-                  <div
-                    v-for="(tool, tidx) in sherpaStore.activeTools"
-                    :key="'tool-' + tidx"
-                    class="tool-progress"
-                  >
-                    <i
-                      :class="tool.status === 'started' ? 'pi pi-spin pi-spinner' : 'pi pi-check-circle'"
-                      :style="{ color: tool.status === 'started' ? '#3b82f6' : '#22c55e' }"
-                    ></i>
-                    <span v-if="tool.status === 'started'">Using {{ tool.tool_name }}...</span>
-                    <span v-else>{{ tool.tool_name }} complete</span>
-                  </div>
-                  <div v-if="sherpaStore.state === 'syncing'" class="chat-message assistant">
-                    <div class="chat-bubble">Analyzing workflow...</div>
-                  </div>
-                  <div v-if="sherpaStore.state === 'chatting'" class="chat-message assistant">
-                    <div class="chat-bubble">Thinking...</div>
-                  </div>
-                </template>
-              </div>
-            </SplitterPanel>
+                  <div v-else class="chat-bubble">{{ message.content }}</div>
+                </div>
+                <div
+                  v-for="(tool, tidx) in importStore.activeTools"
+                  :key="'import-tool-' + tidx"
+                  class="tool-progress"
+                >
+                  <i
+                    :class="tool.status === 'running' ? 'pi pi-spin pi-spinner' : tool.status === 'done' ? 'pi pi-check-circle' : 'pi pi-times-circle'"
+                    :style="{ color: tool.status === 'running' ? '#3b82f6' : tool.status === 'done' ? '#22c55e' : '#ef4444' }"
+                  ></i>
+                  <span v-if="tool.status === 'running'">{{ toolDisplayName(tool.tool_name) }}...</span>
+                  <span v-else-if="tool.status === 'done'">{{ toolDisplayName(tool.tool_name) }} done</span>
+                  <span v-else>{{ toolDisplayName(tool.tool_name) }} failed</span>
+                </div>
+                <div v-if="importStore.loading && importStore.activeTools.length === 0" class="chat-message assistant">
+                  <div class="chat-bubble">Processing...</div>
+                </div>
+              </template>
 
-            <SplitterPanel class="input-panel" :size="15" :minSize="10" style="display: flex; flex-direction: column; overflow: hidden;">
+              <!-- Sherpa messages -->
+              <template v-else-if="activeTab === 'sherpa'">
+                <div
+                  v-for="(message, idx) in sherpaStore.messages"
+                  :key="idx"
+                  class="chat-message"
+                  :class="message.role"
+                >
+                  <div v-if="message.role === 'system'" class="system-notification">
+                    {{ message.content }}
+                  </div>
+                  <div v-else class="chat-bubble">{{ message.content }}</div>
+                </div>
+                <div
+                  v-for="(tool, tidx) in sherpaStore.activeTools"
+                  :key="'tool-' + tidx"
+                  class="tool-progress"
+                >
+                  <i
+                    :class="tool.status === 'started' ? 'pi pi-spin pi-spinner' : 'pi pi-check-circle'"
+                    :style="{ color: tool.status === 'started' ? '#3b82f6' : '#22c55e' }"
+                  ></i>
+                  <span v-if="tool.status === 'started'">Using {{ tool.tool_name }}...</span>
+                  <span v-else>{{ tool.tool_name }} complete</span>
+                </div>
+                <div v-if="sherpaStore.state === 'syncing'" class="chat-message assistant">
+                  <div class="chat-bubble">Analyzing workflow...</div>
+                </div>
+                <div v-if="sherpaStore.state === 'chatting'" class="chat-message assistant">
+                  <div class="chat-bubble">Thinking...</div>
+                </div>
+              </template>
+            </div>
+
+            <div class="chat-input-shell">
               <div class="chat-input">
                 <InputText
                   v-model="userMessage"
@@ -214,8 +210,8 @@
                   :disabled="!userMessage.trim() || inputDisabled"
                 />
               </div>
-            </SplitterPanel>
-          </Splitter>
+            </div>
+          </div>
         </div>
       </section>
     </div>
@@ -228,8 +224,6 @@ import { useRouter } from "vue-router";
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
 import Menu from "primevue/menu";
-import Splitter from "primevue/splitter";
-import SplitterPanel from "primevue/splitterpanel";
 import { useToast } from "primevue/usetoast";
 
 import { useLlmStore } from "@/stores/llm";
@@ -237,7 +231,7 @@ import { useDataImportStore } from "@/stores/dataImport";
 import { useSherpaStore } from "@/stores/sherpa";
 import { useExperimentStore } from "@/stores/experiment";
 import { useProjectStore } from "@/stores/project";
-import { useCustomAlgoStore } from "@/stores/customAlgo";
+import { useWorkflowStore } from "@/stores/workflow";
 import { useAuthStore } from "@/stores/auth";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useDemoMode } from "@/composables/useDemoMode";
@@ -265,7 +259,7 @@ const importStore = useDataImportStore();
 const sherpaStore = useSherpaStore();
 const experimentStore = useExperimentStore();
 const projectStore = useProjectStore();
-const customAlgoStore = useCustomAlgoStore();
+const workflowStore = useWorkflowStore();
 const authStore = useAuthStore();
 const toast = useToast();
 const { appMode, isFeatureEnabled } = useAppConfig();
@@ -275,6 +269,13 @@ const userMessage = ref("");
 const messageContainer = ref<HTMLDivElement | null>(null);
 const hadRealtime = ref(false);
 const toolsActive = ref(false);
+
+const scrollToBottom = async () => {
+  await nextTick();
+  if (messageContainer.value) {
+    messageContainer.value.scrollTop = messageContainer.value.scrollHeight;
+  }
+};
 
 // ── Tab toggle ───────────────────────────────────────────────
 
@@ -389,10 +390,16 @@ watch(
   () => store.messages.length,
   async () => {
     if (activeTab.value === "llm") {
-      await nextTick();
-      if (messageContainer.value) {
-        messageContainer.value.scrollTop = messageContainer.value.scrollHeight;
-      }
+      await scrollToBottom();
+    }
+  }
+);
+
+watch(
+  () => store.messages.map((message) => message.content).join("\n"),
+  async () => {
+    if (activeTab.value === "llm" && (store.streaming || store.loading)) {
+      await scrollToBottom();
     }
   }
 );
@@ -401,10 +408,7 @@ watch(
   () => sherpaStore.messages.length,
   async () => {
     if (activeTab.value === "sherpa") {
-      await nextTick();
-      if (messageContainer.value) {
-        messageContainer.value.scrollTop = messageContainer.value.scrollHeight;
-      }
+      await scrollToBottom();
     }
   }
 );
@@ -415,11 +419,15 @@ watch(
   () => importStore.messages.length,
   async () => {
     if (activeTab.value === "import") {
-      await nextTick();
-      if (messageContainer.value) {
-        messageContainer.value.scrollTop = messageContainer.value.scrollHeight;
-      }
+      await scrollToBottom();
     }
+  }
+);
+
+watch(
+  () => [activeTab.value, store.loading, store.streaming, sherpaStore.state, importStore.loading],
+  async () => {
+    await scrollToBottom();
   }
 );
 
@@ -444,12 +452,10 @@ watch(
     const pluginCreated = tools.find(
       (t) => t.tool_name === "generate_loader_plugin" && t.status === "done"
     );
-    const projectId = projectStore.currentProjectId;
-    if (!pluginCreated || !projectId) {
+    if (!pluginCreated) {
       return;
     }
-    await customAlgoStore.fetchForProject(projectId);
-    await customAlgoStore.fetchNodesForProject(projectId);
+    await workflowStore.fetchNodeLibrary();
   },
   { deep: true }
 );
@@ -898,36 +904,15 @@ const collapsed = computed(() => props.collapsed);
   gap: 8px;
   min-width: 0;
   height: 100%;
+  min-height: 0;
 }
 
-.chat-splitter {
-  height: 100%;
-  border: none;
-  background: transparent;
-}
-
-:deep(.message-panel),
-:deep(.input-panel) {
+.chat-layout {
   display: flex;
   flex-direction: column;
+  height: 100%;
+  background: transparent;
   overflow: hidden;
-}
-
-.chat-splitter :deep(.p-splitter) {
-  border: none;
-}
-
-.chat-splitter :deep(.p-splitter-gutter) {
-  background: #e2e8f0;
-  transition: background 0.2s;
-}
-
-.chat-splitter :deep(.p-splitter-gutter:hover) {
-  background: #cbd5e1;
-}
-
-.chat-splitter :deep(.p-splitter-gutter-handle) {
-  background: #94a3b8;
 }
 
 .chat-toolbar {
@@ -963,7 +948,6 @@ const collapsed = computed(() => props.collapsed);
 
 .chat-messages {
   flex: 1;
-  height: 100%;
   min-height: 0;
   overflow-y: auto;
   display: flex;
@@ -973,6 +957,12 @@ const collapsed = computed(() => props.collapsed);
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   background: #f8fafc;
+}
+
+.chat-input-shell {
+  flex-shrink: 0;
+  border-top: 1px solid #e2e8f0;
+  background: #ffffff;
 }
 
 .chat-message {
@@ -1000,8 +990,7 @@ const collapsed = computed(() => props.collapsed);
   display: flex;
   gap: 12px;
   align-items: center;
-  flex: 1;
-  min-height: 0;
+  flex-shrink: 0;
   padding: 8px;
 }
 

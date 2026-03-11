@@ -12,9 +12,11 @@ class PlateWell(Base):
     __tablename__ = "plate_well"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    experiment_id: Mapped[int] = mapped_column(ForeignKey("experiment.id"), nullable=False, index=True)
+    experiment_id: Mapped[int] = mapped_column(
+        ForeignKey("experiment.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     well_position: Mapped[str] = mapped_column(String(10), nullable=False)  # A1, A2, ..., H12
-    mixture_id: Mapped[int | None] = mapped_column(ForeignKey("mixture.id"))
+    mixture_id: Mapped[int | None] = mapped_column(ForeignKey("mixture.id", ondelete="SET NULL"))
 
     experiment = relationship("Experiment", back_populates="plate_wells")
     mixture = relationship("Mixture", back_populates="plate_wells")

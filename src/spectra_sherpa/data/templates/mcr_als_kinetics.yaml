@@ -1,0 +1,99 @@
+schema_version: 1
+name: MCR-ALS with Kinetics
+slug: mcr_als_kinetics
+description: Multivariate Curve Resolution with kinetic constraints for time-resolved
+  spectroscopy and reaction mechanism analysis.
+category: curve_resolution
+is_active: true
+template_data:
+  nodes:
+  - node_id: data_1
+    node_type: data.source
+    label: Load Time-Series Spectra
+    parameters:
+      source: spectrochempy
+      example_dataset: irdata
+    position_x: 175
+    position_y: 50
+  - node_id: preprocess_1
+    node_type: baseline.penalized_ls
+    label: ASLS Baseline
+    parameters:
+      method: als
+      lam: 50000
+      p: 0.01
+    position_x: 425
+    position_y: 300
+  - node_id: preprocess_2
+    node_type: preprocess.smooth
+    label: Smoothing
+    parameters:
+      method: savitzky_golay
+      size: 15
+      order: 2
+    position_x: 175
+    position_y: 550
+  - node_id: model_1
+    node_type: model.mcr_als
+    label: MCR-ALS
+    parameters:
+      n_components: 3
+      max_iter: 100
+      tol: 0.1
+      non_negative_C: true
+      non_negative_St: true
+    position_x: 425
+    position_y: 800
+  - node_id: viz_1
+    node_type: output.plot
+    label: Pure Spectra
+    parameters:
+      plot_type: spectra
+    position_x: 50
+    position_y: 1050
+  - node_id: viz_2
+    node_type: output.plot
+    label: Concentration Profiles
+    parameters:
+      plot_type: spectra
+    position_x: 450
+    position_y: 1050
+  - node_id: export_1
+    node_type: output.export
+    label: Export Results
+    parameters:
+      filename: mcr_results.csv
+      format: csv
+    position_x: 850
+    position_y: 1050
+  edges:
+  - from_node_id: data_1
+    to_node_id: preprocess_1
+  - from_node_id: preprocess_1
+    to_node_id: preprocess_2
+  - from_node_id: preprocess_2
+    to_node_id: model_1
+  - from_node_id: model_1
+    to_node_id: viz_1
+    from_output: St
+  - from_node_id: model_1
+    to_node_id: viz_2
+    from_output: C
+  - from_node_id: model_1
+    to_node_id: export_1
+  canvas_state:
+    zoom: 1.0
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_spectra:
+      role_type: X_spectra
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      description: Time-resolved spectral data
+      accepted_techniques:
+      - FTIR
+      - NIR
+      - Raman
+      - UV-Vis

@@ -55,12 +55,14 @@ async def create_experiment(
     name: str,
     description: str | None,
     metadata: dict[str, Any],
+    project_id: int | None = None,
 ) -> Experiment:
     experiment = Experiment(
         user_id=user_id,
         name=name,
         description=description,
         metadata_path="",
+        project_id=project_id,
     )
     session.add(experiment)
     await session.flush()
@@ -108,11 +110,14 @@ async def update_experiment(
     name: str | None,
     description: str | None,
     metadata: dict[str, Any] | None,
+    project_id: int | None = None,
 ) -> Experiment:
     if name is not None:
         experiment.name = name
     if description is not None:
         experiment.description = description
+    if project_id is not None:
+        experiment.project_id = project_id
     try:
         if metadata is not None:
             metadata_file = metadata_path_for(experiment.id)
@@ -430,6 +435,7 @@ class ExperimentService:
         name: str,
         description: str | None,
         metadata: dict[str, Any],
+        project_id: int | None = None,
     ) -> Experiment:
         return await create_experiment(
             self.session,
@@ -437,6 +443,7 @@ class ExperimentService:
             name=name,
             description=description,
             metadata=metadata,
+            project_id=project_id,
         )
 
     async def get_experiment(self, experiment_id: int) -> Experiment | None:

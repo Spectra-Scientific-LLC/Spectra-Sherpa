@@ -1,0 +1,77 @@
+schema_version: 1
+name: Preprocessing Pipeline
+slug: preprocessing
+description: 'Comprehensive spectral preprocessing workflow: baseline correction,
+  smoothing, normalization, and visualization.'
+category: preprocessing
+is_active: true
+template_data:
+  nodes:
+  - node_id: data_1
+    node_type: data.source
+    label: Load Raw Data
+    parameters:
+      source: spectrochempy
+      example_dataset: irdata
+    position_x: 175
+    position_y: 50
+  - node_id: preprocess_1
+    node_type: baseline.penalized_ls
+    label: ASLS Baseline
+    parameters:
+      method: als
+      lam: 100000
+      p: 0.001
+    position_x: 425
+    position_y: 300
+  - node_id: preprocess_2
+    node_type: preprocess.smooth
+    label: Savitzky-Golay
+    parameters:
+      method: savitzky_golay
+      size: 15
+      order: 2
+    position_x: 175
+    position_y: 550
+  - node_id: preprocess_3
+    node_type: preprocess.normalize
+    label: SNV Normalize
+    parameters:
+      method: snv
+    position_x: 425
+    position_y: 800
+  - node_id: export_1
+    node_type: output.export
+    label: Export Preprocessed
+    parameters:
+      filename: preprocessed.csv
+      format: csv
+    position_x: 175
+    position_y: 1050
+  edges:
+  - from_node_id: data_1
+    to_node_id: preprocess_1
+  - from_node_id: preprocess_1
+    to_node_id: preprocess_2
+  - from_node_id: preprocess_2
+    to_node_id: preprocess_3
+  - from_node_id: preprocess_3
+    to_node_id: export_1
+  canvas_state:
+    zoom: 1.0
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_spectra:
+      role_type: X_spectra
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      description: Raw spectral data for preprocessing
+      accepted_techniques:
+      - FTIR
+      - NIR
+      - Raman
+      - UV-Vis
+      - NMR
+      - OES

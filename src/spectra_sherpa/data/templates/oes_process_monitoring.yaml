@@ -1,0 +1,68 @@
+schema_version: 1
+name: OES Process Monitoring
+slug: oes_process_monitoring
+description: Monitor semiconductor process OES data with SNV normalization and PCA
+  to visualize drift, excursions, and fault separation.
+category: exploratory
+is_active: true
+template_data:
+  nodes:
+  - node_id: data_1
+    node_type: data.source
+    label: Load OES Data
+    parameters:
+      source: eigenvector
+      eigenvector_dataset: metal_etch_oes
+    position_x: 175
+    position_y: 50
+  - node_id: preprocess_1
+    node_type: preprocess.normalize
+    label: SNV Normalize
+    parameters:
+      method: snv
+    position_x: 425
+    position_y: 300
+  - node_id: model_1
+    node_type: model.pca
+    label: PCA
+    parameters:
+      n_components: '3'
+    position_x: 175
+    position_y: 550
+  - node_id: stats_1
+    node_type: stats.summary
+    label: Monitoring Summary
+    parameters: {}
+    position_x: 50
+    position_y: 800
+  - node_id: viz_1
+    node_type: output.plot
+    label: OES Scores Plot
+    parameters:
+      plot_type: spectra
+    position_x: 450
+    position_y: 800
+  edges:
+  - from_node_id: data_1
+    to_node_id: preprocess_1
+  - from_node_id: preprocess_1
+    to_node_id: model_1
+  - from_node_id: model_1
+    to_node_id: stats_1
+  - from_node_id: model_1
+    to_node_id: viz_1
+    from_output: scores
+  canvas_state:
+    zoom: 1.0
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_spectra:
+      role_type: X_spectra
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      description: OES emission spectra or other process-monitoring spectral matrices
+      accepted_techniques:
+      - OES
+      - UV-Vis

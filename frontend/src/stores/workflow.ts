@@ -4,12 +4,40 @@ import api from "@/api/client";
 import type { NodeTypeMetadata, NodeLibraryResponse, NodeExecutionState, NodeExecutionStatus } from "@/types";
 import { getErrorMessage } from "@/utils/errors";
 import { useJobStore } from "@/stores/job";
+import type { ExperimentStage } from "@/types";
 
 type ParamsMap = Record<string, unknown>;
 type UnknownRecord = Record<string, unknown>;
 
+export interface TemplateDataRole {
+  role_type: string;
+  node_binding: string;
+  required?: boolean;
+  binding_mode?: string;
+  target_type?: string | null;
+  connects_to_port?: string | null;
+  description?: string;
+  accepted_techniques?: string[] | null;
+}
+
+export interface TemplateDataBinding {
+  source?: "experiment";
+  experimentId: number;
+  fileId?: number | null;
+  stage?: ExperimentStage;
+  targetBinding?: TemplateDataBinding;
+  targetType?: string | null;
+}
+
+export type TemplateLaunchMode = "example" | "user";
+
+export interface TemplateExampleBinding {
+  source: ReferenceDatasetOption["source"];
+  datasetName: string;
+}
+
 export interface WorkflowNode {
-  id: number;
+  id: string;
   type: string;
   x: number;
   y: number;
@@ -19,8 +47,8 @@ export interface WorkflowNode {
 }
 
 export interface WorkflowEdge {
-  from: number;
-  to: number;
+  from: string;
+  to: string;
   fromPort?: string;  // Output port name (default: "default")
   toPort?: string;    // Input port name for multi-input nodes (e.g., "X", "y")
   // Validation fields
@@ -30,11 +58,42 @@ export interface WorkflowEdge {
 }
 
 export interface WorkflowTemplate {
-  id: string;
+  id: number;
+  slug: string;
   name: string;
   description: string;
-  nodes: WorkflowNode[];
-  edges: WorkflowEdge[];
+  category: string;
+  status: string;
+  template_data: {
+    nodes: BackendWorkflowNode[];
+    edges: BackendWorkflowEdge[];
+    canvas_state?: UnknownRecord;
+    data_roles?: Record<string, TemplateDataRole>;
+    status?: string;
+  };
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkflowTemplateCatalog {
+  templates: WorkflowTemplate[];
+  total: number;
+}
+
+export interface ReferenceDatasetOption {
+  name: string;
+  source: "eigenvector" | "sklearn" | "spectrochempy" | "oes";
+  label: string;
+  technique?: string | null;
+  description?: string | null;
+  featured?: boolean;
+  has_embedded_target?: boolean;
+  target_type?: string | null;
+  task_type?: string | null;
+  category?: string | null;
+  file_count?: number | null;
+  entry_type?: string | null;
 }
 
 interface TypeRegistryEntry {
@@ -139,274 +198,8 @@ export interface WorkflowListItem {
   status?: string;
 }
 
-// SpectrochemPy-based workflow templates
-const TEMPLATES: Record<string, WorkflowTemplate> = {
-  // === Core Project Templates ===
-  project1: {
-    id: "project1",
-    name: "Project 1: Absorption Calibration",
-    description: "Build wavenumber-specific absorption vs. concentration calibration models",
-    nodes: [
-      { id: 1, type: "data.source", x: 50, y: 100, params: { source: "experiment" } },
-      { id: 2, type: "data.source", x: 50, y: 250, params: { source: "spectrochempy", example_dataset: "irdata" } },
-      { id: 3, type: "baseline.penalized_ls", x: 250, y: 100, params: { method: "als", lam: 100000, p: 0.001 } },
-      { id: 4, type: "preprocess.normalize", x: 250, y: 250, params: { method: "snv" } },
-      { id: 5, type: "model.pls", x: 450, y: 175, params: { n_components: 5 } },
-      { id: 6, type: "stats.summary", x: 650, y: 100, params: {} },
-      { id: 7, type: "output.export", x: 650, y: 250, params: { filename: "calibration_model.csv", format: "csv" } },
-    ],
-    edges: [
-      { from: 1, to: 3 },
-      { from: 2, to: 4 },
-      { from: 3, to: 5 },
-      { from: 4, to: 5 },
-      { from: 5, to: 6 },
-      { from: 5, to: 7 },
-    ],
-  },
-  project2: {
-    id: "project2",
-    name: "Project 2: MCR-ALS with Kinetics",
-    description: "Multivariate Curve Resolution with kinetic constraints for time-resolved analysis",
-    nodes: [
-      { id: 1, type: "data.source", x: 50, y: 150, params: { source: "experiment" } },
-      { id: 2, type: "baseline.penalized_ls", x: 230, y: 100, params: { method: "als", lam: 50000, p: 0.01 } },
-      { id: 3, type: "preprocess.smooth", x: 230, y: 250, params: { method: "savitzky_golay", size: 15, order: 2 } },
-      { id: 4, type: "model.mcr_als", x: 430, y: 175, params: { n_components: 3, max_iter: 100, tol: 0.1, non_negative_C: true, non_negative_St: true } },
-      { id: 5, type: "output.plot", x: 630, y: 80, params: { plot_type: "spectra" } },
-      { id: 6, type: "output.plot", x: 630, y: 175, params: { plot_type: "spectra" } },
-      { id: 7, type: "output.export", x: 630, y: 280, params: { filename: "mcr_results.csv", format: "csv" } },
-    ],
-    edges: [
-      { from: 1, to: 2 },
-      { from: 2, to: 3 },
-      { from: 3, to: 4 },
-      { from: 4, to: 5 },
-      { from: 4, to: 6 },
-      { from: 4, to: 7 },
-    ],
-  },
-
-  // === SpectrochemPy Example-Based Templates ===
-  ir_opus_analysis: {
-    id: "ir_opus_analysis",
-    name: "IR OPUS Import & Analysis",
-    description: "Import Bruker OPUS files, preprocess IR spectra, and perform spectral analysis",
-    nodes: [
-      { id: 1, type: "data.source", x: 50, y: 150, params: { source: "file" } },
-      { id: 2, type: "preprocess.clip_range", x: 230, y: 150, params: { min_wavenumber: 400, max_wavenumber: 4000 } },
-      { id: 3, type: "baseline.rubberband", x: 410, y: 100, params: {} },
-      { id: 4, type: "preprocess.normalize", x: 410, y: 220, params: { method: "snv" } },
-      { id: 5, type: "analysis.peak_finding", x: 590, y: 150, params: {} },
-      { id: 6, type: "output.plot", x: 770, y: 80, params: { plot_type: "spectra" } },
-      { id: 7, type: "stats.summary", x: 770, y: 220, params: {} },
-    ],
-    edges: [
-      { from: 1, to: 2 },
-      { from: 2, to: 3 },
-      { from: 2, to: 4 },
-      { from: 3, to: 5 },
-      { from: 4, to: 5 },
-      { from: 5, to: 6 },
-      { from: 5, to: 7 },
-    ],
-  },
-  efa_analysis: {
-    id: "efa_analysis",
-    name: "Evolving Factor Analysis (EFA)",
-    description: "Determine the number of components in evolving mixtures using EFA",
-    nodes: [
-      { id: 1, type: "data.source", x: 50, y: 150, params: { source: "experiment" } },
-      { id: 2, type: "preprocess.scale", x: 230, y: 150, params: { method: "mean_center" } },
-      { id: 3, type: "model.efa", x: 430, y: 150, params: { n_components: 10 } },
-      { id: 4, type: "output.plot", x: 630, y: 80, params: { plot_type: "spectra" } },
-      { id: 5, type: "output.plot", x: 630, y: 220, params: { plot_type: "spectra" } },
-      { id: 6, type: "stats.summary", x: 810, y: 150, params: {} },
-    ],
-    edges: [
-      { from: 1, to: 2 },
-      { from: 2, to: 3 },
-      { from: 3, to: 4 },
-      { from: 3, to: 5 },
-      { from: 4, to: 6 },
-      { from: 5, to: 6 },
-    ],
-  },
-  pls_regression: {
-    id: "pls_regression",
-    name: "PLS Regression Analysis",
-    description: "Partial Least Squares regression for quantitative spectroscopy",
-    nodes: [
-      { id: 1, type: "data.source", x: 50, y: 100, params: { source: "experiment" } },
-      { id: 2, type: "data.source", x: 50, y: 250, params: { source: "experiment" } },
-      { id: 3, type: "baseline.penalized_ls", x: 250, y: 100, params: { method: "arpls", lam: 100000 } },
-      { id: 4, type: "preprocess.normalize", x: 250, y: 250, params: { method: "snv" } },
-      { id: 5, type: "model.pls", x: 450, y: 175, params: { n_components: 10 } },
-      { id: 6, type: "output.plot", x: 650, y: 80, params: { plot_type: "spectra" } },
-      { id: 7, type: "output.plot", x: 650, y: 175, params: { plot_type: "spectra" } },
-      { id: 8, type: "stats.summary", x: 650, y: 280, params: {} },
-    ],
-    edges: [
-      { from: 1, to: 3 },
-      { from: 2, to: 4 },
-      { from: 3, to: 5 },
-      { from: 4, to: 5 },
-      { from: 5, to: 6 },
-      { from: 5, to: 7 },
-      { from: 5, to: 8 },
-    ],
-  },
-  raman_processing: {
-    id: "raman_processing",
-    name: "Raman Processing Pipeline",
-    description: "Denoise Raman spectra with cosmic ray removal and fluorescence correction",
-    nodes: [
-      { id: 1, type: "data.source", x: 50, y: 150, params: { source: "experiment" } },
-      { id: 2, type: "preprocess.cosmic_ray", x: 230, y: 150, params: { zscore: 5, window: 3 } },
-      { id: 3, type: "baseline.penalized_ls", x: 410, y: 100, params: { method: "als", lam: 1e6, p: 0.001 } },
-      { id: 4, type: "preprocess.smooth", x: 410, y: 220, params: { method: "whittaker", lam: 10 } },
-      { id: 5, type: "preprocess.scale", x: 590, y: 150, params: { method: "mean_center" } },
-      { id: 6, type: "output.plot", x: 770, y: 80, params: { plot_type: "spectra" } },
-      { id: 7, type: "output.export", x: 770, y: 220, params: { filename: "raman_processed.csv", format: "csv" } },
-    ],
-    edges: [
-      { from: 1, to: 2 },
-      { from: 2, to: 3 },
-      { from: 2, to: 4 },
-      { from: 3, to: 5 },
-      { from: 4, to: 5 },
-      { from: 5, to: 6 },
-      { from: 5, to: 7 },
-    ],
-  },
-  nmr_processing: {
-    id: "nmr_processing",
-    name: "NMR Processing Workflow",
-    description: "Process NMR spectra with smoothing, baseline correction, and peak picking",
-    nodes: [
-      { id: 1, type: "data.source", x: 50, y: 150, params: { source: "experiment" } },
-      { id: 2, type: "preprocess.smooth", x: 230, y: 150, params: { method: "savitzky_golay", size: 11, order: 2 } },
-      { id: 3, type: "baseline.penalized_ls", x: 410, y: 100, params: { method: "als", lam: 100000, p: 0.001 } },
-      { id: 4, type: "preprocess.clip_range", x: 410, y: 220, params: { min_wavenumber: -2, max_wavenumber: 12 } },
-      { id: 5, type: "analysis.peak_finding", x: 590, y: 150, params: {} },
-      { id: 6, type: "output.plot", x: 770, y: 100, params: { plot_type: "spectra" } },
-      { id: 7, type: "stats.summary", x: 770, y: 220, params: {} },
-    ],
-    edges: [
-      { from: 1, to: 2 },
-      { from: 2, to: 3 },
-      { from: 2, to: 4 },
-      { from: 3, to: 5 },
-      { from: 4, to: 5 },
-      { from: 5, to: 6 },
-      { from: 5, to: 7 },
-    ],
-  },
-  spectral_decomposition: {
-    id: "spectral_decomposition",
-    name: "Spectral Decomposition (PCA)",
-    description: "Principal component decomposition for identifying spectral components and variance structure",
-    nodes: [
-      { id: 1, type: "data.source", x: 50, y: 150, params: { source: "experiment" } },
-      { id: 2, type: "preprocess.scale", x: 230, y: 150, params: { method: "mean_center" } },
-      { id: 3, type: "model.pca", x: 430, y: 150, params: { n_components: "5" } },
-      { id: 4, type: "output.plot", x: 630, y: 80, params: { plot_type: "spectra" } },
-      { id: 5, type: "output.plot", x: 630, y: 220, params: { plot_type: "spectra" } },
-      { id: 6, type: "output.export", x: 810, y: 150, params: { filename: "decomposition.csv", format: "csv" } },
-    ],
-    edges: [
-      { from: 1, to: 2 },
-      { from: 2, to: 3 },
-      { from: 3, to: 4 },
-      { from: 3, to: 5 },
-      { from: 4, to: 6 },
-    ],
-  },
-
-  // === Basic Templates ===
-  preprocessing: {
-    id: "preprocessing",
-    name: "Standard Preprocessing",
-    description: "Basic preprocessing pipeline: baseline, smoothing, normalization",
-    nodes: [
-      { id: 1, type: "data.source", x: 50, y: 150, params: { source: "experiment" } },
-      { id: 2, type: "baseline.penalized_ls", x: 230, y: 150, params: { method: "als", lam: 100000, p: 0.001 } },
-      { id: 3, type: "preprocess.smooth", x: 410, y: 150, params: { method: "savitzky_golay", size: 15, order: 2 } },
-      { id: 4, type: "preprocess.normalize", x: 590, y: 150, params: { method: "snv" } },
-      { id: 5, type: "output.export", x: 770, y: 150, params: { filename: "preprocessed.csv", format: "csv" } },
-    ],
-    edges: [
-      { from: 1, to: 2 },
-      { from: 2, to: 3 },
-      { from: 3, to: 4 },
-      { from: 4, to: 5 },
-    ],
-  },
-  pca: {
-    id: "pca",
-    name: "PCA Exploration",
-    description: "Exploratory data analysis with PCA visualization and outlier detection",
-    nodes: [
-      { id: 1, type: "data.source", x: 50, y: 150, params: { source: "experiment" } },
-      { id: 2, type: "preprocess.scale", x: 230, y: 150, params: { method: "mean_center" } },
-      { id: 3, type: "model.pca", x: 430, y: 150, params: { n_components: "5" } },
-      { id: 4, type: "output.plot", x: 630, y: 60, params: { plot_type: "spectra" } },
-      { id: 5, type: "output.plot", x: 630, y: 160, params: { plot_type: "spectra" } },
-      { id: 6, type: "output.plot", x: 630, y: 260, params: { plot_type: "spectra" } },
-      { id: 7, type: "stats.summary", x: 810, y: 150, params: {} },
-    ],
-    edges: [
-      { from: 1, to: 2 },
-      { from: 2, to: 3 },
-      { from: 3, to: 4 },
-      { from: 3, to: 5 },
-      { from: 3, to: 6 },
-      { from: 3, to: 7 },
-    ],
-  },
-  peaks: {
-    id: "peaks",
-    name: "Peak Detection & Analysis",
-    description: "Automated peak detection and quantification workflow",
-    nodes: [
-      { id: 1, type: "data.source", x: 50, y: 150, params: { source: "experiment" } },
-      { id: 2, type: "baseline.penalized_ls", x: 230, y: 150, params: { method: "als", lam: 100000, p: 0.001 } },
-      { id: 3, type: "preprocess.smooth", x: 410, y: 150, params: { method: "savitzky_golay", size: 11, order: 3 } },
-      { id: 4, type: "analysis.peak_finding", x: 590, y: 100, params: {} },
-      { id: 5, type: "output.plot", x: 590, y: 220, params: { plot_type: "spectra" } },
-      { id: 6, type: "stats.summary", x: 770, y: 100, params: {} },
-      { id: 7, type: "output.plot", x: 770, y: 220, params: { plot_type: "spectra" } },
-    ],
-    edges: [
-      { from: 1, to: 2 },
-      { from: 2, to: 3 },
-      { from: 3, to: 4 },
-      { from: 3, to: 5 },
-      { from: 4, to: 6 },
-      { from: 5, to: 7 },
-    ],
-  },
-  simplisma: {
-    id: "simplisma",
-    name: "SIMPLISMA Pure Variable Selection",
-    description: "SIMPLe-to-use Interactive Self-modeling Mixture Analysis for initial estimates",
-    nodes: [
-      { id: 1, type: "data.source", x: 50, y: 150, params: { source: "experiment" } },
-      { id: 2, type: "preprocess.scale", x: 230, y: 150, params: { method: "mean_center" } },
-      { id: 3, type: "model.simplisma", x: 430, y: 150, params: { n_components: 3, noise: 3 } },
-      { id: 4, type: "output.plot", x: 630, y: 80, params: { plot_type: "spectra" } },
-      { id: 5, type: "output.plot", x: 630, y: 220, params: { plot_type: "spectra" } },
-      { id: 6, type: "output.export", x: 810, y: 150, params: { filename: "initial_estimates.csv", format: "csv" } },
-    ],
-    edges: [
-      { from: 1, to: 2 },
-      { from: 2, to: 3 },
-      { from: 3, to: 4 },
-      { from: 3, to: 5 },
-      { from: 5, to: 6 },
-    ],
-  },
-};
+// Templates are served by the backend API. The frontend must not keep a
+// parallel hardcoded catalog here.
 
 export const useWorkflowStore = defineStore("workflow", () => {
   // State
@@ -423,10 +216,9 @@ export const useWorkflowStore = defineStore("workflow", () => {
   const lastExecutionDiagnostics = ref<Record<string, UnknownRecord>>({});
   const workflowWarnings = ref<string[]>([]);
   const availableDatasets = ref<AvailableDatasets | null>(null);
-  // Maps frontend canvas node IDs <-> backend workflow node_id strings.
-  // Needed to correctly correlate status/result payloads when backend IDs are non-numeric.
-  const frontendToBackendNodeIds = ref<Map<number, string>>(new Map());
-  const backendToFrontendNodeIds = ref<Map<string, number>>(new Map());
+  const templates = ref<WorkflowTemplate[]>([]);
+  const templatesLoading = ref(false);
+  const templatesError = ref<string | null>(null);
 
   // Node library metadata (validation schemas, parameters, etc.)
   const nodeLibrary = ref<Map<string, NodeTypeMetadata>>(new Map());
@@ -443,7 +235,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   // Getters
   const nodeCount = computed(() => nodes.value.length);
   const edgeCount = computed(() => edges.value.length);
-  const availableTemplates = computed(() => Object.values(TEMPLATES));
+  const availableTemplates = computed(() => templates.value);
 
   const normalizeBackendExecutionStatus = (status: unknown): NodeExecutionStatus | null => {
     if (typeof status !== "string") {
@@ -586,38 +378,10 @@ export const useWorkflowStore = defineStore("workflow", () => {
     };
   };
 
-  function resolveBackendNodeId(frontendNodeId: number): string {
-    const existing = frontendToBackendNodeIds.value.get(frontendNodeId);
-    if (existing) {
-      return existing;
-    }
-    const generated = String(frontendNodeId);
-    frontendToBackendNodeIds.value.set(frontendNodeId, generated);
-    backendToFrontendNodeIds.value.set(generated, frontendNodeId);
-    return generated;
-  }
-
-  function resolveFrontendNodeId(backendNodeId: string): number | null {
-    const key = String(backendNodeId);
-    if (backendToFrontendNodeIds.value.has(key)) {
-      return backendToFrontendNodeIds.value.get(key) ?? null;
-    }
-    const parsed = Number.parseInt(key, 10);
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
-    return null;
-  }
-
-  function clearNodeIdMappings(): void {
-    frontendToBackendNodeIds.value.clear();
-    backendToFrontendNodeIds.value.clear();
-  }
-
   // Helper: Convert frontend nodes/edges to backend format
   function toBackendFormat(): { nodes: BackendWorkflowNode[]; edges: BackendWorkflowEdge[] } {
     const backendNodes: BackendWorkflowNode[] = nodes.value.map((n) => ({
-      node_id: resolveBackendNodeId(n.id),
+      node_id: n.id,
       node_type: n.type,
       label: n.type,
       parameters: n.params,
@@ -626,8 +390,8 @@ export const useWorkflowStore = defineStore("workflow", () => {
     }));
 
     const backendEdges: BackendWorkflowEdge[] = edges.value.map((e) => ({
-      from_node_id: resolveBackendNodeId(e.from),
-      to_node_id: resolveBackendNodeId(e.to),
+      from_node_id: e.from,
+      to_node_id: e.to,
       from_output: e.fromPort || "default",
       to_input: e.toPort || "default",
     }));
@@ -640,41 +404,10 @@ export const useWorkflowStore = defineStore("workflow", () => {
     backendNodes: BackendWorkflowNode[],
     backendEdges: BackendWorkflowEdge[]
   ): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
-    clearNodeIdMappings();
-    const usedIds = new Set<number>();
-    let fallbackId = -1;
-    const nodeIdMap = new Map<string, number>();
-
-    const resolveNodeId = (rawId: unknown): number => {
-      const key = rawId === undefined || rawId === null ? "" : String(rawId);
-      if (nodeIdMap.has(key)) {
-        return nodeIdMap.get(key) as number;
-      }
-
-      const parsed = Number.parseInt(key, 10);
-      let resolved = Number.isFinite(parsed) ? parsed : NaN;
-
-      if (!Number.isFinite(resolved) || usedIds.has(resolved)) {
-        while (usedIds.has(fallbackId)) {
-          fallbackId -= 1;
-        }
-        resolved = fallbackId;
-        fallbackId -= 1;
-      }
-
-      usedIds.add(resolved);
-      nodeIdMap.set(key, resolved);
-      if (key) {
-        frontendToBackendNodeIds.value.set(resolved, key);
-        backendToFrontendNodeIds.value.set(key, resolved);
-      }
-      return resolved;
-    };
-
     const frontendNodes: WorkflowNode[] = backendNodes.map((n) => {
       const frontendType = n.node_type;
       return {
-        id: resolveNodeId(n.node_id),
+        id: n.node_id,
         type: frontendType,
         x: n.position_x || 100,
         y: n.position_y || 100,
@@ -683,8 +416,8 @@ export const useWorkflowStore = defineStore("workflow", () => {
     });
 
     const frontendEdges: WorkflowEdge[] = backendEdges.map((e) => ({
-      from: resolveNodeId(e.from_node_id),
-      to: resolveNodeId(e.to_node_id),
+      from: e.from_node_id,
+      to: e.to_node_id,
       fromPort: e.from_output !== "default" ? e.from_output : undefined,
       toPort: e.to_input !== "default" ? e.to_input : undefined,
     }));
@@ -693,26 +426,23 @@ export const useWorkflowStore = defineStore("workflow", () => {
   }
 
   // Actions
-  function loadTemplate(templateId: string) {
-    const template = TEMPLATES[templateId];
+  function loadTemplate(templateId: number) {
+    const template = templates.value.find((item) => item.id === templateId);
     if (!template) {
       console.warn(`Template not found: ${templateId}`);
       return false;
     }
 
-    // Deep copy the template data
-    nodes.value = JSON.parse(JSON.stringify(template.nodes)).map((node: WorkflowNode) => ({
-      ...node,
-      type: node.type,
-    }));
-    clearNodeIdMappings();
-    for (const node of nodes.value) {
-      resolveBackendNodeId(node.id);
-    }
-    edges.value = JSON.parse(JSON.stringify(template.edges));
+    const converted = fromBackendFormat(
+      template.template_data.nodes || [],
+      template.template_data.edges || []
+    );
+    nodes.value = converted.nodes;
+    edges.value = converted.edges;
     validateAllEdges();
-    currentTemplateId.value = templateId;
+    currentTemplateId.value = String(templateId);
     workflowName.value = template.name;
+    workflowDescription.value = template.description;
     hasUnsavedChanges.value = false;
 
     return true;
@@ -721,7 +451,6 @@ export const useWorkflowStore = defineStore("workflow", () => {
   function clearWorkflow() {
     nodes.value = [];
     edges.value = [];
-    clearNodeIdMappings();
     currentTemplateId.value = null;
     workflowName.value = "Untitled Workflow";
     workflowId.value = null;
@@ -792,6 +521,28 @@ export const useWorkflowStore = defineStore("workflow", () => {
 
       currentTemplateId.value = null;
       hasUnsavedChanges.value = false;
+
+      // Load latest auto-saved execution results (survives page refresh)
+      try {
+        const runResp = await api.get(`/workflows/${id}/runs/latest`);
+        if (runResp.data) {
+          lastExecutionResults.value = runResp.data.results_summary;
+          lastExecutionDiagnostics.value = runResp.data.diagnostics || {};
+          // Mark stale if workflow changed since last execution
+          if (
+            data.integrity_hash &&
+            runResp.data.integrity_hash &&
+            data.integrity_hash !== runResp.data.integrity_hash
+          ) {
+            workflowWarnings.value = [
+              ...workflowWarnings.value,
+              "Workflow was modified since last execution — results may be stale.",
+            ];
+          }
+        }
+      } catch {
+        // No latest run — OK, nothing to restore
+      }
     } finally {
       isLoading.value = false;
     }
@@ -800,6 +551,88 @@ export const useWorkflowStore = defineStore("workflow", () => {
   async function listWorkflows(): Promise<WorkflowListItem[]> {
     const response = await api.get<WorkflowListItem[]>("/workflows");
     return response.data;
+  }
+
+  async function fetchTemplates(category?: string): Promise<WorkflowTemplate[]> {
+    templatesLoading.value = true;
+    templatesError.value = null;
+    try {
+      const response = await api.get<WorkflowTemplateCatalog>("/workflow-templates", {
+        params: category ? { category } : undefined,
+      });
+      const fetched = response.data.templates;
+      templates.value = fetched;
+      return templates.value;
+    } catch (error: unknown) {
+      templatesError.value = getErrorMessage(error, "Failed to load workflow templates");
+      throw error;
+    } finally {
+      templatesLoading.value = false;
+    }
+  }
+
+  async function fetchTemplate(templateId: number): Promise<WorkflowTemplate> {
+    const response = await api.get<WorkflowTemplate>(`/workflow-templates/${templateId}`);
+    // Update the cached copy in the templates list too
+    const idx = templates.value.findIndex((t) => t.id === templateId);
+    if (idx >= 0) {
+      templates.value[idx] = response.data;
+    }
+    return response.data;
+  }
+
+  async function instantiateTemplate(
+    templateId: number,
+    payload: {
+      workflowName: string;
+      workflowDescription?: string;
+      projectId?: number | null;
+      launchMode?: TemplateLaunchMode;
+      dataBindings?: Record<string, TemplateDataBinding>;
+      exampleBindings?: Record<string, TemplateExampleBinding>;
+    }
+  ): Promise<{ workflowId: number; projectId: number | null; slug: string }> {
+    const response = await api.post(`/workflow-templates/${templateId}/instantiate`, {
+      workflow_name: payload.workflowName,
+      workflow_description: payload.workflowDescription,
+      project_id: payload.projectId ?? null,
+      launch_mode: payload.launchMode ?? "user",
+      data_bindings: Object.fromEntries(
+        Object.entries(payload.dataBindings || {}).map(([key, binding]) => [
+          key,
+          {
+            source: binding.source ?? "experiment",
+            experiment_id: binding.experimentId,
+            file_id: binding.fileId ?? null,
+            stage: binding.stage ?? "raw",
+            target_binding: binding.targetBinding
+              ? {
+                  source: binding.targetBinding.source ?? "experiment",
+                  experiment_id: binding.targetBinding.experimentId,
+                  file_id: binding.targetBinding.fileId ?? null,
+                  stage: binding.targetBinding.stage ?? "raw",
+                }
+              : null,
+            target_type: binding.targetType ?? null,
+          },
+        ])
+      ),
+      example_bindings: Object.fromEntries(
+        Object.entries(payload.exampleBindings || {}).map(([key, binding]) => [
+          key,
+          {
+            source: binding.source,
+            dataset_name: binding.datasetName,
+          },
+        ])
+      ),
+    });
+
+    return {
+      workflowId: response.data.id,
+      projectId: response.data.project_id ?? null,
+      slug: response.data.source_template_slug || String(templateId),
+    };
   }
 
   async function deleteWorkflow(id: number): Promise<void> {
@@ -838,8 +671,8 @@ export const useWorkflowStore = defineStore("workflow", () => {
     const _onNodeStatus = (ev: Event) => {
       const detail = (ev as CustomEvent).detail;
       if (!detail?.node_id || !detail?.status) return;
-      const frontendId = resolveFrontendNodeId(detail.node_id);
-      if (frontendId !== null) {
+      const frontendId = String(detail.node_id);
+      if (nodes.value.some((node) => node.id === frontendId)) {
         setNodeExecutionState(frontendId, {
           status: detail.status as NodeExecutionStatus,
           error_message: detail.error || null,
@@ -863,9 +696,9 @@ export const useWorkflowStore = defineStore("workflow", () => {
       // Process node statuses from backend response
       const nodeStatuses = response.data.node_statuses || {};
       for (const node of nodes.value) {
-        const backendNodeId = resolveBackendNodeId(node.id);
-        const status = nodeStatuses[backendNodeId] ?? nodeStatuses[String(node.id)];
-        const result = response.data.results?.[backendNodeId] ?? response.data.results?.[String(node.id)];
+        const backendNodeId = node.id;
+        const status = nodeStatuses[backendNodeId];
+        const result = response.data.results?.[backendNodeId];
         const normalizedStatus = normalizeBackendExecutionStatus(status);
         const hasResult = result !== undefined;
 
@@ -953,11 +786,9 @@ export const useWorkflowStore = defineStore("workflow", () => {
     }
 
     // Mark target node and its dependencies as running
-    const parsedNodeId = typeof nodeId === "string" ? Number.parseInt(nodeId, 10) : nodeId;
-    const nodeIdNum = Number.isFinite(parsedNodeId) ? parsedNodeId : resolveFrontendNodeId(nodeId);
-    const backendNodeId = nodeIdNum !== null ? resolveBackendNodeId(nodeIdNum) : String(nodeId);
-    if (nodeIdNum !== null) {
-      setNodeExecutionState(nodeIdNum, { status: "running" });
+    const backendNodeId = nodeId;
+    if (nodes.value.some((node) => node.id === nodeId)) {
+      setNodeExecutionState(nodeId, { status: "running" });
     }
 
     isLoading.value = true;
@@ -982,9 +813,9 @@ export const useWorkflowStore = defineStore("workflow", () => {
       // Process node statuses from backend response
       const nodeStatuses = response.data.node_statuses || {};
       for (const node of nodes.value) {
-        const currentBackendNodeId = resolveBackendNodeId(node.id);
-        const status = nodeStatuses[currentBackendNodeId] ?? nodeStatuses[String(node.id)];
-        const result = response.data.results?.[currentBackendNodeId] ?? response.data.results?.[String(node.id)];
+        const currentBackendNodeId = node.id;
+        const status = nodeStatuses[currentBackendNodeId];
+        const result = response.data.results?.[currentBackendNodeId];
         const normalizedStatus = normalizeBackendExecutionStatus(status);
         const hasResult = result !== undefined;
 
@@ -1035,8 +866,8 @@ export const useWorkflowStore = defineStore("workflow", () => {
     } catch (error: unknown) {
       // Mark node as error
       const errorMsg = getErrorMessage(error, "Execution failed");
-      if (nodeIdNum !== null) {
-        setNodeExecutionState(nodeIdNum, {
+      if (nodes.value.some((node) => node.id === nodeId)) {
+        setNodeExecutionState(nodeId, {
           status: "error",
           error_message: errorMsg,
           error_details: errorMsg,
@@ -1065,22 +896,19 @@ export const useWorkflowStore = defineStore("workflow", () => {
     trialParams: ParamsMap,
     initialData?: ParamsMap
   ): Promise<TrialExecuteResponse> {
-    const targetFrontendId = Number.parseInt(targetNodeId, 10);
-    const resolvedTargetNodeId = Number.isFinite(targetFrontendId)
-      ? resolveBackendNodeId(targetFrontendId)
-      : targetNodeId;
+    const resolvedTargetNodeId = targetNodeId;
 
     // Build nodes list from current workflow (using backend format)
     const trialNodes = nodes.value.map((node) => ({
-      node_id: resolveBackendNodeId(node.id),
+      node_id: node.id,
       node_type: node.type,
       parameters: node.params || {},
     }));
 
     // Build edges list from current workflow
     const trialEdges = edges.value.map((edge) => ({
-      from_node_id: resolveBackendNodeId(edge.from),
-      to_node_id: resolveBackendNodeId(edge.to),
+      from_node_id: edge.from,
+      to_node_id: edge.to,
       from_output: edge.fromPort || "default",
       to_input: edge.toPort || "default",
     }));
@@ -1203,8 +1031,10 @@ export const useWorkflowStore = defineStore("workflow", () => {
 
   /**
    * Caches for reference dataset options (fetched from /builder/reference-datasets API).
-   * A single API call populates both eigenvector and sklearn caches.
+   * Keep the full source-indexed catalog for template example selection, while
+   * preserving the legacy per-source option arrays used elsewhere in the builder.
    */
+  const referenceDatasetCache = ref<Record<string, ReferenceDatasetOption[]>>({});
   const eigenvectorDatasetCache = ref<Array<{label: string; value: string}>>([]);
   const sklearnDatasetCache = ref<Array<{label: string; value: string}>>([]);
 
@@ -1213,18 +1043,27 @@ export const useWorkflowStore = defineStore("workflow", () => {
    * Populates both eigenvector and sklearn caches from one call.
    */
   async function fetchReferenceDatasets(): Promise<void> {
-    if (eigenvectorDatasetCache.value.length > 0 && sklearnDatasetCache.value.length > 0) {
+    if (
+      Object.keys(referenceDatasetCache.value).length > 0 &&
+      eigenvectorDatasetCache.value.length > 0 &&
+      sklearnDatasetCache.value.length > 0
+    ) {
       return;
     }
     try {
-      const response = await api.get("/builder/reference-datasets");
+      const response = await api.get<Record<string, ReferenceDatasetOption[]>>("/builder/reference-datasets");
+      referenceDatasetCache.value = response.data;
       const toOptions = (arr: Array<{name: string; label: string}>) =>
-        arr.map(d => ({ label: d.label, value: d.name }));
+        arr.map((d) => ({ label: d.label, value: d.name }));
       eigenvectorDatasetCache.value = toOptions(response.data.eigenvector || []);
       sklearnDatasetCache.value = toOptions(response.data.sklearn || []);
     } catch (error: unknown) {
       console.error("[fetchReferenceDatasets] Failed:", getErrorMessage(error));
     }
+  }
+
+  function getReferenceDatasetOptions(source: string): ReferenceDatasetOption[] {
+    return referenceDatasetCache.value[source] || [];
   }
 
   // Backward-compatible alias
@@ -1470,7 +1309,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   /**
    * Set node execution state.
    */
-  function setNodeExecutionState(nodeId: number, state: Partial<NodeExecutionState>) {
+  function setNodeExecutionState(nodeId: string, state: Partial<NodeExecutionState>) {
     const node = nodes.value.find((n) => n.id === nodeId);
     if (node) {
       node.executionState = { ...(node.executionState || { status: "pending" }), ...state };
@@ -1480,7 +1319,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   /**
    * Get node execution state.
    */
-  function getNodeExecutionState(nodeId: number): NodeExecutionState | null {
+  function getNodeExecutionState(nodeId: string): NodeExecutionState | null {
     const node = nodes.value.find((n) => n.id === nodeId);
     return node?.executionState || null;
   }
@@ -1503,24 +1342,18 @@ export const useWorkflowStore = defineStore("workflow", () => {
     // Initialize execution state
     node.executionState = { status: "pending" };
     nodes.value.push(node);
-    resolveBackendNodeId(node.id);
     hasUnsavedChanges.value = true;
     markWorkflowStale();
   }
 
-  function removeNode(nodeId: number) {
-    const backendNodeId = frontendToBackendNodeIds.value.get(nodeId);
-    if (backendNodeId) {
-      backendToFrontendNodeIds.value.delete(backendNodeId);
-    }
-    frontendToBackendNodeIds.value.delete(nodeId);
+  function removeNode(nodeId: string) {
     nodes.value = nodes.value.filter((n) => n.id !== nodeId);
     edges.value = edges.value.filter((e) => e.from !== nodeId && e.to !== nodeId);
     hasUnsavedChanges.value = true;
     markWorkflowStale();
   }
 
-  function updateNode(nodeId: number, updates: Partial<WorkflowNode>) {
+  function updateNode(nodeId: string, updates: Partial<WorkflowNode>) {
     const node = nodes.value.find((n) => n.id === nodeId);
     if (node) {
       Object.assign(node, updates);
@@ -1720,7 +1553,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
     }
   }
 
-  function removeEdge(from: number, to: number) {
+  function removeEdge(from: string, to: string) {
     edges.value = edges.value.filter(
       (e) => !(e.from === from && e.to === to)
     );
@@ -1735,17 +1568,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
         node.executionState = { status: "pending" };
       }
     }
-    const nextNodeIds = new Set(newNodes.map((node) => node.id));
-    for (const [frontendId, backendId] of frontendToBackendNodeIds.value.entries()) {
-      if (!nextNodeIds.has(frontendId)) {
-        frontendToBackendNodeIds.value.delete(frontendId);
-        backendToFrontendNodeIds.value.delete(backendId);
-      }
-    }
     nodes.value = newNodes;
-    for (const node of newNodes) {
-      resolveBackendNodeId(node.id);
-    }
     hasUnsavedChanges.value = true;
     markWorkflowStale();
   }
@@ -1779,6 +1602,9 @@ export const useWorkflowStore = defineStore("workflow", () => {
     lastExecutionDiagnostics,
     workflowWarnings,
     availableDatasets,
+    templates,
+    templatesLoading,
+    templatesError,
 
     // Node library state
     nodeLibrary,
@@ -1815,8 +1641,6 @@ export const useWorkflowStore = defineStore("workflow", () => {
     validateNodeParams,
     validateEdge,
     validateAllEdges,
-    resolveFrontendNodeId,
-    resolveBackendNodeId,
     setNodeExecutionState,
     getNodeExecutionState,
     markWorkflowStale,
@@ -1826,6 +1650,9 @@ export const useWorkflowStore = defineStore("workflow", () => {
     saveWorkflow,
     loadWorkflow,
     listWorkflows,
+    fetchTemplates,
+    fetchTemplate,
+    instantiateTemplate,
     deleteWorkflow,
     executeWorkflow,
     executeNode,
@@ -1836,6 +1663,8 @@ export const useWorkflowStore = defineStore("workflow", () => {
     fetchSpectroChemPyFiles,
     availableSpectroChemPyDatasets,
     clearSpectroChemPyFileCache,
+    referenceDatasetCache,
+    getReferenceDatasetOptions,
     eigenvectorDatasetCache,
     sklearnDatasetCache,
     fetchReferenceDatasets,

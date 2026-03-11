@@ -26,7 +26,7 @@ class Workflow(Base):
     __tablename__ = "workflow"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
     folder_id: Mapped[int | None] = mapped_column(ForeignKey("workflow_folder.id", ondelete="SET NULL"), index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)

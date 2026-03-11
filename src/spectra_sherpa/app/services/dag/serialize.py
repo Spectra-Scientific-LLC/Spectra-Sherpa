@@ -46,6 +46,8 @@ def _json_safe(obj: Any) -> Any:
         return float(obj)
     if isinstance(obj, np.ndarray):
         return obj.tolist()
+    if isinstance(obj, (frozenset, set)):
+        return sorted(_json_safe(v) for v in obj)
     if isinstance(obj, dict):
         return {k: _json_safe(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
@@ -262,6 +264,8 @@ def _serialize_sherpa_dataset(
         metadata["wavenumbers"] = x_ax.get("data", [])
         metadata["x_title"] = x_ax.get("title") or "Feature"
         metadata["x_units"] = x_units
+        if x_ax.get("labels"):
+            metadata["feature_names"] = x_ax["labels"]
 
     if result.get("y_axis"):
         y_ax = result["y_axis"]

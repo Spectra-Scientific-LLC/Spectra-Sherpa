@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pandas as pd
 
 from spectra_sherpa.app.lib.adapters.sklearn_adapter import from_sklearn as from_sklearn_bunch
 from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG
@@ -216,6 +217,18 @@ class DataSourceNode(Node):
                 required=False,
                 category="advanced",
             ),
+            NodeParameter(
+                name="y_column",
+                label="Target Column",
+                param_type="text",
+                default="",
+                description=(
+                    "Explicit Y column name for multi-target datasets "
+                    "(e.g. 'moisture'). Leave blank for auto-detect."
+                ),
+                required=False,
+                category="advanced",
+            ),
         ],
         input_types=[],  # No inputs - this is a source node
         input_ports=[],
@@ -401,6 +414,8 @@ class DataSourceNode(Node):
         example_dataset = self.parameters.get("example_dataset", "irdata")
         example_file = self.parameters.get("example_file", "")
         sklearn_dataset = self.parameters.get("sklearn_dataset", "iris")
+        self._embedded_target_data = None
+        self._embedded_target_names = None
 
         # Load data based on source
         if source == "spectrochempy":
@@ -478,6 +493,8 @@ class DataSourceNode(Node):
                 target = self._extract_target_labels(dataset)
             elif source == "eigenvector" and hasattr(self, "_eigenvector_properties"):
                 target = self._eigenvector_properties
+            elif source in {"experiment", "file"} and getattr(self, "_embedded_target_data", None) is not None:
+                target = self._embedded_target_data
             else:
                 target = None
             # Convert NDDataset -> SherpaDataset (lossless)
@@ -511,6 +528,23 @@ class DataSourceNode(Node):
                     target_type="continuous",
                     target_names=prop_names or None,
                 )
+            elif source in {"experiment", "file"} and getattr(self, "_embedded_target_names", None):
+                # Infer target type from data: string arrays or low-cardinality
+                # integers are categorical (class labels); everything else is continuous.
+                _is_cat = target_arr.dtype.kind in ("U", "S", "O") or (  # string/object
+                    np.issubdtype(target_arr.dtype, np.integer) and len(np.unique(target_arr)) <= 30
+                )
+                if _is_cat:
+                    dataset.target_context = TargetContext(
+                        target_type="categorical",
+                        target_name=self._embedded_target_names[0] if self._embedded_target_names else None,
+                        n_classes=len(np.unique(target_arr)),
+                    )
+                else:
+                    dataset.target_context = TargetContext(
+                        target_type="continuous",
+                        target_names=self._embedded_target_names or None,
+                    )
             elif source == "sklearn":
                 # SCP path: infer target context from extracted values
                 n_unique = len(np.unique(target_arr))
@@ -546,6 +580,11 @@ class DataSourceNode(Node):
             node_id=self.node_id,
             input_shape=None,
         )
+
+        # ----- Explicit Y column selection (for multi-target datasets) -----
+        y_column = (self.parameters.get("y_column") or "").strip()
+        if y_column and dataset.target_context is not None:
+            dataset.target_context = dataset.target_context.model_copy(update={"selected_target": y_column})
 
         return {
             "default": dataset,
@@ -1551,7 +1590,13 @@ class DataSourceNode(Node):
         ext = os.path.splitext(file_path)[1]
 
         try:
-            # Use centralized reader mapping
+            # For CSV files, prefer pandas loader which correctly handles
+            # named columns (feature names) and non-numeric target columns
+            # (class labels).  SCP's read_csv may silently drop string columns.
+            if ext.lower() == ".csv":
+                return self._load_csv_pandas(file_path)
+
+            # Use centralized reader mapping for non-CSV formats
             from spectra_sherpa.app.core.config import get_reader_for_extension
 
             reader_name = get_reader_for_extension(ext)
@@ -1561,8 +1606,6 @@ class DataSourceNode(Node):
             # Post-processing for specific formats
             if ext.lower() == ".mat":
                 dataset = extract_dataset_from_result(dataset, file_path)
-                dataset = remove_index_columns(dataset)
-            elif ext.lower() == ".csv":
                 dataset = remove_index_columns(dataset)
 
             # CRITICAL: Extract and normalize instrument metadata from file headers
@@ -1609,11 +1652,105 @@ class DataSourceNode(Node):
             return dataset
 
         except Exception as e:
+            if ext.lower() == ".csv":
+                try:
+                    return self._load_csv_pandas(file_path)
+                except Exception:
+                    pass
             raise ValueError(
                 f"Failed to load spectral data from {file_path}: {str(e)}. "
                 f"File format: {ext or 'unknown'}. "
                 f"Please verify the file is a valid spectral data file."
             ) from e
+
+    def _load_csv_pandas(self, file_path: str) -> NDDataset | SherpaDataset:
+        """Load CSV files via pandas, preserving embedded target/property columns."""
+        df = pd.read_csv(file_path)
+
+        spectral_cols: list[str] = []
+        x_vals: list[float] = []
+        label_cols: list[str] = []
+        for col in df.columns:
+            try:
+                x_vals.append(float(col))
+                spectral_cols.append(col)
+            except (ValueError, TypeError):
+                label_cols.append(col)
+
+        if not spectral_cols:
+            # Named-column CSV (e.g., sklearn datasets with feature names like
+            # "alcohol", "malic_acid", ..., "target").  Separate numeric feature
+            # columns from non-numeric label/target columns.
+            numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+            non_numeric_cols = [c for c in df.columns if not pd.api.types.is_numeric_dtype(df[c])]
+            if not numeric_cols:
+                raise ValueError(f"No numeric columns in {file_path}")
+            data = df[numeric_cols].values.astype(np.float64)
+            y_labels = df[non_numeric_cols[0]].astype(str).tolist() if non_numeric_cols else None
+            target = np.array(y_labels) if y_labels is not None else None
+
+            return SherpaDataset(
+                X=data,
+                feature_axis=SpectralAxis(
+                    values=np.arange(len(numeric_cols), dtype=np.float64),
+                    labels=list(numeric_cols),
+                    title="Feature",
+                ),
+                sample_axis=SampleAxis(
+                    values=np.arange(data.shape[0], dtype=np.float64),
+                    title="Sample",
+                ),
+                target=target,
+                target_context=(
+                    TargetContext(
+                        target_type="categorical",
+                        target_name=non_numeric_cols[0],
+                        n_classes=len(np.unique(target)),
+                        class_names=sorted({str(label) for label in target}),
+                    )
+                    if target is not None
+                    else None
+                ),
+                domain=DomainContext(
+                    technique="generic",
+                    sample_type=Path(file_path).stem,
+                ),
+                backend="pandas",
+                title=Path(file_path).stem,
+                extra={
+                    "csv.feature_names": list(numeric_cols),
+                    "csv.label_column": non_numeric_cols[0] if non_numeric_cols else None,
+                },
+            )
+
+        data = df[spectral_cols].values.astype(np.float64)
+        dataset = scp.NDDataset(data)
+        dataset.title = Path(file_path).stem
+
+        y_labels = df[label_cols[0]].astype(str).tolist() if label_cols else None
+        dataset.set_coordset(
+            y=scp.Coord(
+                np.arange(data.shape[0]),
+                title="Sample",
+                labels=y_labels,
+            ),
+            x=scp.Coord(
+                np.array(x_vals),
+                title="Feature",
+            ),
+        )
+
+        prop_label_cols = label_cols[1:] if y_labels is not None else label_cols
+        if prop_label_cols:
+            prop_cols = [c for c in prop_label_cols if pd.api.types.is_numeric_dtype(df[c])]
+            if prop_cols:
+                self._embedded_target_names = prop_cols
+                self._embedded_target_data = df[prop_cols].values.astype(np.float64)
+
+        if not hasattr(dataset, "meta") or dataset.meta is None:
+            dataset.meta = {}
+
+        return dataset
 
     def _generate_synthetic(self):
         """Generate synthetic spectral data for testing.

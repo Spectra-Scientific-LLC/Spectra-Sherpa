@@ -49,7 +49,7 @@ APP_API_KEY = os.getenv("APP_API_KEY", "default-local-key")
 @dataclass(frozen=True)
 class Settings:
     app_name: str = "Spectra Scientific Platform"
-    app_version: str = "0.1.5"  # Increment when node definitions change
+    app_version: str = "0.1.6"  # Increment when node definitions change
     project_root: Path = PROJECT_ROOT
     backend_root: Path = BACKEND_ROOT
     data_dir: Path = DATA_DIR
@@ -92,6 +92,7 @@ class Settings:
         ".spc",
         ".spa",
         ".spg",
+        ".srs",
         ".txt",
         ".wdf",  # Renishaw WiRE Data Format (Raman)
         ".dat",  # Kept for backward compatibility (will warn if no explicit reader)
@@ -114,6 +115,7 @@ EXTENSION_READER_MAP = {
     # OMNIC formats (both use read_omnic, NOT read_spa/read_spg)
     ".spa": "read_omnic",  # OMNIC single file
     ".spg": "read_omnic",  # OMNIC series file
+    ".srs": "read_omnic",  # OMNIC time series file
     # Text-based and proprietary formats (use generic reader)
     ".txt": "read",
     ".wdf": "read",  # Renishaw WiRE Data Format
@@ -491,8 +493,10 @@ class AppConfig(BaseModel):
                 "maxSherpaInteractions": self.demo_contract.max_sherpa_interactions,
                 "sessionExpiryHours": self.demo_contract.session_expiry_hours,
                 "featuredDatasets": self.demo_contract.featured_datasets,
+                "featuredTemplates": self.demo_contract.featured_templates,
                 "availablePlans": self.demo_contract.available_plans,
                 "upgradeUrl": self.demo_contract.upgrade_url,
+                "upgradeMessage": self.demo_contract.upgrade_message,
                 "disabledCapabilities": self.demo_contract.disabled_capabilities,
             }
         else:

@@ -1,0 +1,78 @@
+schema_version: 1
+name: KNN Classification
+slug: knn_classification
+description: K-Nearest Neighbors classification for supervised learning. Scale features,
+  train a KNN classifier, and review predictions and class assignments.
+category: classification
+is_active: true
+template_data:
+  nodes:
+  - node_id: data_1
+    node_type: data.source
+    label: Load Training Data
+    parameters:
+      source: sklearn
+      sklearn_dataset: wine
+    position_x: 175
+    position_y: 50
+  - node_id: preprocess_1
+    node_type: preprocess.scale
+    label: Mean Center
+    parameters:
+      method: mean_center
+    position_x: 425
+    position_y: 300
+  - node_id: model_1
+    node_type: classification.knn
+    label: KNN Classifier
+    parameters:
+      n_neighbors: 5
+      metric: euclidean
+    position_x: 175
+    position_y: 550
+  - node_id: stats_1
+    node_type: stats.summary
+    label: Results Summary
+    parameters: {}
+    position_x: 50
+    position_y: 800
+  - node_id: viz_1
+    node_type: output.plot
+    label: Confusion Matrix
+    parameters:
+      plot_type: heatmap
+    position_x: 450
+    position_y: 800
+  edges:
+  - from_node_id: data_1
+    to_node_id: preprocess_1
+  - from_node_id: preprocess_1
+    to_node_id: model_1
+  - from_node_id: model_1
+    to_node_id: stats_1
+  - from_node_id: model_1
+    to_node_id: viz_1
+    from_output: default
+  canvas_state:
+    zoom: 1.0
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_spectra:
+      role_type: X_spectra
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      description: Feature data with class labels for classification
+      accepted_techniques:
+      - FTIR
+      - NIR
+      - Raman
+      - UV-Vis
+    class_labels:
+      role_type: class_labels
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      target_type: categorical
+      description: Classification labels (column in dataset)

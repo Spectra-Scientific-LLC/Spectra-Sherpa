@@ -39,8 +39,10 @@ def _category_from_type_ref(type_ref: str) -> str:
     """Derive the visual category from a type_ref URI.
 
     Resolves through the loaded type registry when available, otherwise
-    falls back to ``"dataset"``.
+    falls back to ``"dataset"``.  ``Any`` ports skip validation entirely.
     """
+    if "Any" in type_ref:
+        return "any"  # Not in type_checks → validation skipped
     try:
         from spectra_sherpa.app.types import type_registry
 

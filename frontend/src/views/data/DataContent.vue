@@ -20,7 +20,7 @@
 
     <TabView v-model:activeIndex="activeTab">
       <!-- ======================== LOAD TAB ======================== -->
-      <TabPanel header="Load">
+      <TabPanel header="Load" :disabled="isGuidedExampleSession">
         <!-- ============ REFERENCE DATASETS (top, prominent) ============ -->
         <div class="ref-catalog-section">
           <h3 class="ref-catalog-title">
@@ -407,6 +407,7 @@
           <i class="pi pi-exclamation-triangle"></i>
           <span>{{ dataStore.fileInfoError }}</span>
           <Button
+            v-if="!isGuidedExampleSession"
             label="Back to Load"
             icon="pi pi-arrow-left"
             class="p-button-sm p-button-outlined"
@@ -423,6 +424,7 @@
           <i class="pi pi-exclamation-triangle"></i>
           <span>{{ dataStore.catalogDatasetError }}</span>
           <Button
+            v-if="!isGuidedExampleSession"
             label="Back to Load"
             icon="pi pi-arrow-left"
             class="p-button-sm p-button-outlined"
@@ -442,12 +444,22 @@
                 severity="info"
               />
             </div>
-            <Button
-              label="Back to Load"
-              icon="pi pi-arrow-left"
-              class="p-button-text p-button-sm"
-              @click="activeTab = 0; dataStore.clearCatalogExploration()"
-            />
+            <div class="explore-actions">
+              <Button
+                v-if="!isGuidedExampleSession"
+                label="Back to Load"
+                icon="pi pi-arrow-left"
+                class="p-button-text p-button-sm"
+                @click="activeTab = 0; dataStore.clearCatalogExploration()"
+              />
+              <Button
+                label="Next: Workflow"
+                icon="pi pi-arrow-right"
+                iconPos="right"
+                class="p-button-sm"
+                @click="goToWorkflow"
+              />
+            </div>
           </div>
 
           <div class="explore-panels">
@@ -551,14 +563,16 @@
                 <i class="pi pi-book"></i>
                 Data Story
               </h4>
-              <Button
-                v-if="!dataStore.dataStoryText"
-                label="Generate Data Story"
-                icon="pi pi-sparkles"
-                class="p-button-sm p-button-outlined"
-                :loading="dataStore.dataStoryLoading"
-                @click="dataStore.generateDataStory()"
-              />
+              <div class="data-story-actions">
+                <span class="ai-feature-note">AI Feature</span>
+                <Button
+                  :label="dataStoryButtonLabel"
+                  icon="pi pi-sparkles"
+                  class="p-button-sm p-button-outlined"
+                  :loading="dataStore.dataStoryLoading"
+                  @click="dataStore.generateDataStory()"
+                />
+              </div>
             </div>
             <div v-if="dataStore.dataStoryLoading" class="data-story-loading">
               <ProgressSpinner style="width: 24px; height: 24px" />
@@ -583,6 +597,7 @@
             on any file, or select a reference dataset from the catalog.
           </p>
           <Button
+            v-if="!isGuidedExampleSession"
             label="Go to Load"
             icon="pi pi-arrow-left"
             class="p-button-sm p-button-outlined"
@@ -596,12 +611,22 @@
               <i class="pi pi-file"></i>
               <span>{{ extractFileName(dataStore.activeFilePath || '') }}</span>
             </div>
-            <Button
-              label="Back to Load"
-              icon="pi pi-arrow-left"
-              class="p-button-text p-button-sm"
-              @click="activeTab = 0"
-            />
+            <div class="explore-actions">
+              <Button
+                v-if="!isGuidedExampleSession"
+                label="Back to Load"
+                icon="pi pi-arrow-left"
+                class="p-button-text p-button-sm"
+                @click="activeTab = 0"
+              />
+              <Button
+                label="Next: Workflow"
+                icon="pi pi-arrow-right"
+                iconPos="right"
+                class="p-button-sm"
+                @click="goToWorkflow"
+              />
+            </div>
           </div>
 
           <!-- ── Box plots (tabular data with string labels on feature axis) ── -->
@@ -693,11 +718,40 @@
               :loading="dataStore.fileInfoLoading"
             />
           </div>
+
+          <div class="data-story-panel">
+            <div class="data-story-header">
+              <h4 class="panel-title">
+                <i class="pi pi-book"></i>
+                Data Story
+              </h4>
+              <div class="data-story-actions">
+                <span class="ai-feature-note">AI Feature</span>
+                <Button
+                  :label="dataStoryButtonLabel"
+                  icon="pi pi-sparkles"
+                  class="p-button-sm p-button-outlined"
+                  :loading="dataStore.dataStoryLoading"
+                  @click="dataStore.generateDataStory()"
+                />
+              </div>
+            </div>
+            <div v-if="dataStore.dataStoryLoading" class="data-story-loading">
+              <ProgressSpinner style="width: 24px; height: 24px" />
+              <span>Generating narrative...</span>
+            </div>
+            <div v-else-if="dataStore.dataStoryText" class="data-story-text">
+              {{ dataStore.dataStoryText }}
+            </div>
+            <p v-else class="data-story-hint">
+              Generate a narrative summary for this imported dataset before moving on to the workflow.
+            </p>
+          </div>
         </div>
       </TabPanel>
 
       <!-- ======================== SYNTHESIS TAB ======================== -->
-      <TabPanel header="Synthesis">
+      <TabPanel header="Synthesis" :disabled="isGuidedExampleSession">
         <div class="synthesis-info">
           <i class="pi pi-info-circle"></i>
           <span>
@@ -867,6 +921,7 @@
       header="Delete File"
       :modal="true"
       :style="{ width: '380px' }"
+      @keydown.enter.capture.prevent="onDeleteFile"
     >
       <p>
         Are you sure you want to delete
@@ -882,6 +937,7 @@
           label="Delete"
           icon="pi pi-trash"
           class="p-button-danger"
+          autofocus
           :loading="deleting"
           @click="onDeleteFile"
         />
@@ -894,6 +950,7 @@
       header="Delete Dataset"
       :modal="true"
       :style="{ width: '380px' }"
+      @keydown.enter.capture.prevent="onDeleteExperiment"
     >
       <p>
         Are you sure you want to delete
@@ -910,6 +967,7 @@
           label="Delete"
           icon="pi pi-trash"
           class="p-button-danger"
+          autofocus
           :loading="deletingExp"
           @click="onDeleteExperiment"
         />
@@ -919,7 +977,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from "vue";
+import { ref, reactive, computed, onMounted, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import TabView from "primevue/tabview";
 import TabPanel from "primevue/tabpanel";
 import Button from "primevue/button";
@@ -935,14 +994,22 @@ import Panel from "primevue/panel";
 import ProgressSpinner from "primevue/progressspinner";
 import Tag from "primevue/tag";
 import { useDataStore } from "@/stores/data";
+import { useProjectStore } from "@/stores/project";
 import { useToast } from "primevue/usetoast";
 import type { ExperimentFile, ExperimentSummary } from "@/types";
 import DataQualityPanel from "./DataQualityPanel.vue";
 import PlotlyChart from "@/components/PlotlyChart.vue";
 
+const DATA_ENTRY_MODE_KEY = "sherpa:data-entry-mode";
+const DATA_ENTRY_PROJECT_KEY = "sherpa:data-entry-project-id";
+
 const dataStore = useDataStore();
+const projectStore = useProjectStore();
 const toast = useToast();
+const route = useRoute();
+const router = useRouter();
 const activeTab = ref(0);
+const isGuidedExampleSession = ref(false);
 
 // --- Load tab state ---
 const libraryCollapsed = ref(true);
@@ -1224,6 +1291,132 @@ const boxPlotLayout = computed(() => {
   };
 });
 
+const dataStoryButtonLabel = computed(() =>
+  dataStore.dataStoryText ? "Regenerate Data Story" : "Generate Data Story"
+);
+
+function queryNumber(value: unknown): number | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function syncGuidedExampleSession() {
+  const mode = window.sessionStorage.getItem(DATA_ENTRY_MODE_KEY);
+  const projectId = window.sessionStorage.getItem(DATA_ENTRY_PROJECT_KEY);
+  isGuidedExampleSession.value =
+    mode === "template-example" &&
+    projectId === String(projectStore.currentProjectId ?? "");
+}
+
+function sortFilesNewestFirst(items: ExperimentFile[]): ExperimentFile[] {
+  return [...items].sort(
+    (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
+  );
+}
+
+async function inspectExperimentFile(experimentId: number, fileId: number | null): Promise<boolean> {
+  await dataStore.selectExperiment(experimentId);
+  if (fileId == null) {
+    return false;
+  }
+
+  const file = dataStore.experimentFiles.find((entry) => entry.id === fileId);
+  if (!file) {
+    return false;
+  }
+
+  dataStore.clearCatalogExploration();
+  await dataStore.inspectFile(file.id, file.file_path, experimentId);
+  activeTab.value = 1;
+  return true;
+}
+
+async function inspectLatestProjectFile(): Promise<boolean> {
+  if (
+    projectStore.currentProjectId != null &&
+    (!projectStore.currentProject || projectStore.currentProject.id !== projectStore.currentProjectId)
+  ) {
+    await projectStore.fetchProject(projectStore.currentProjectId);
+  }
+
+  const experiments = [...(projectStore.currentProject?.experiments || [])].sort(
+    (left, right) => right.id - left.id
+  );
+  for (const experiment of experiments) {
+    await dataStore.selectExperiment(experiment.id);
+    const latestFile = sortFilesNewestFirst(dataStore.experimentFiles)[0];
+    if (!latestFile) {
+      continue;
+    }
+
+    dataStore.clearCatalogExploration();
+    await dataStore.inspectFile(latestFile.id, latestFile.file_path, experiment.id);
+    activeTab.value = 1;
+    return true;
+  }
+
+  return false;
+}
+
+async function inspectLatestExperimentFile(experimentId: number): Promise<boolean> {
+  await dataStore.selectExperiment(experimentId);
+  const latestFile = sortFilesNewestFirst(dataStore.experimentFiles)[0];
+  if (!latestFile) {
+    return false;
+  }
+
+  dataStore.clearCatalogExploration();
+  await dataStore.inspectFile(latestFile.id, latestFile.file_path, experimentId);
+  activeTab.value = 1;
+  return true;
+}
+
+async function applyRouteExploreState() {
+  syncGuidedExampleSession();
+  const wantsExplore =
+    route.query.tab === "explore" ||
+    route.query.fromTemplate === "1" ||
+    isGuidedExampleSession.value;
+  if (!wantsExplore) {
+    return;
+  }
+
+  const experimentId = queryNumber(route.query.experimentId);
+  const fileId = queryNumber(route.query.fileId);
+
+  try {
+    if (experimentId != null && fileId != null) {
+      const inspected = await inspectExperimentFile(experimentId, fileId);
+      if (inspected) {
+        return;
+      }
+    }
+
+    if (experimentId != null) {
+      const inspected = await inspectLatestExperimentFile(experimentId);
+      if (inspected) {
+        return;
+      }
+    }
+
+    if (route.query.focus === "latest-project" || isGuidedExampleSession.value) {
+      const inspected = await inspectLatestProjectFile();
+      if (inspected) {
+        return;
+      }
+    }
+  } catch {
+    // Errors are surfaced by the existing Explore tab states.
+  }
+
+  activeTab.value = 1;
+}
+
+function goToWorkflow() {
+  router.push("/workflow");
+}
+
 // --- Lifecycle ---
 
 onMounted(async () => {
@@ -1232,6 +1425,14 @@ onMounted(async () => {
     dataStore.fetchExperiments(),
     dataStore.fetchReferenceCatalog(),
   ]);
+  syncGuidedExampleSession();
+  await applyRouteExploreState();
+});
+
+watch(activeTab, (tabIndex) => {
+  if (isGuidedExampleSession.value && tabIndex !== 1) {
+    activeTab.value = 1;
+  }
 });
 
 async function refresh() {
@@ -1261,7 +1462,8 @@ async function onCreateExperiment() {
   try {
     const created = await dataStore.createExperiment(
       newExpName.value.trim(),
-      newExpDescription.value.trim() || undefined
+      newExpDescription.value.trim() || undefined,
+      projectStore.currentProjectId,
     );
     showCreateDialog.value = false;
     newExpName.value = "";
@@ -1588,6 +1790,12 @@ function formatDate(dateStr: string): string {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.explore-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .explore-title {
@@ -1920,11 +2128,24 @@ function formatDate(dateStr: string): string {
   margin-bottom: 12px;
 }
 
+.data-story-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .data-story-header .panel-title {
   margin: 0;
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.ai-feature-note {
+  color: #dc2626;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
 }
 
 .data-story-loading {

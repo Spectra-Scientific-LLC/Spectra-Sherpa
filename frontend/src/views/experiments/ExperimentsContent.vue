@@ -331,8 +331,7 @@ async function handleSaveRun() {
     for (const node of workflowStore.nodes) {
       const state = workflowStore.getNodeExecutionState(node.id);
       if (state) {
-        const backendId = workflowStore.resolveBackendNodeId(node.id);
-        nodeStatuses[backendId] = state.status;
+        nodeStatuses[node.id] = state.status;
       }
     }
 

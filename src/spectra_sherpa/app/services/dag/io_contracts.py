@@ -99,17 +99,48 @@ def _has_values(value: Any) -> bool:
         return False
 
 
+def _apply_selected_target(dataset: Any, target: Any) -> Any:
+    """Slice a multi-column target down to the ``selected_target`` column.
+
+    Returns *target* unchanged if no selection is active or if the
+    target is not multi-column.
+    """
+    tc = getattr(dataset, "target_context", None)
+    if tc is None:
+        return target
+    selected = getattr(tc, "selected_target", None)
+    if not selected:
+        return target
+
+    target_arr = np.asarray(target)
+    if target_arr.ndim < 2:
+        return target  # 1D — nothing to slice
+
+    # Match by name from target_names
+    names = getattr(tc, "target_names", None)
+    if names and selected in names:
+        idx = list(names).index(selected)
+        return target_arr[:, idx]
+
+    return target  # name not found — return all columns
+
+
 def extract_target_like(dataset: Any) -> Any | None:
     """
     Extract target/label vector from a dataset.
 
+    If ``target_context.selected_target`` is set, extract only that
+    column from a multi-target array instead of returning all columns.
+
     Priority:
-    1. dataset.target
+    1. dataset.target (optionally sliced by selected_target)
     2. dataset.y.labels
     3. dataset.y.data
     """
     target = getattr(dataset, "target", None)
     if _has_values(target):
+        # Honor explicit Y column selection for multi-target datasets
+        target = _apply_selected_target(dataset, target)
         return target
 
     if isinstance(dataset, SherpaDataset):

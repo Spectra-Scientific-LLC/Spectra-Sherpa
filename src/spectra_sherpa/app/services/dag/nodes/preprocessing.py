@@ -451,7 +451,7 @@ def _cosmic_ray_transform(data: np.ndarray, window: int = 7, zscore: float = 3.0
         window += 1
     result = data.copy()
     for i in range(result.shape[0]):
-        result[i] = remove_cosmic_rays(result[i], window=window, zscore_threshold=zscore)
+        result[i] = remove_cosmic_rays(result[i], window_size=window, zscore_threshold=zscore)
     return result
 
 

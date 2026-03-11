@@ -67,7 +67,7 @@ const routes = [
   { path: "/workspace", redirect: "/project" },
   { path: "/workspace/node/:nodeId", redirect: (to: RouteLocation) => `/workflow/node/${to.params.nodeId}` },
   { path: "/operations/:rest(.*)", redirect: "/workflow" },
-  { path: "/templates", redirect: "/workflow" },
+  { path: "/templates", redirect: "/project" },
   { path: "/workflows/:pathMatch(.*)*", redirect: "/workflow" },
 ];
 

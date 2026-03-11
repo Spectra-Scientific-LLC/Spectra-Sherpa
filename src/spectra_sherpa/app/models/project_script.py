@@ -36,7 +36,7 @@ class ProjectScript(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("project.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
     source_workflow_id: Mapped[int | None] = mapped_column(
         ForeignKey("workflow.id", ondelete="SET NULL"), nullable=True, index=True
     )

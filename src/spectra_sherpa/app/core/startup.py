@@ -557,42 +557,106 @@ async def ensure_workflow_templates() -> None:
     """
     Seed or update the database with common workflow templates.
 
-    Uses upsert-by-name so that new templates added to WORKFLOW_TEMPLATES
-    are propagated to existing databases on the next startup, and existing
-    templates have their definition and metadata refreshed.
+    Uses the declarative YAML template set as the canonical source of truth.
+    Existing records are upserted by slug/name, and templates removed from YAML
+    are deactivated rather than deleted so historical workflow provenance
+    remains intact.
     """
     try:
-        from spectra_sherpa.app.core.workflow_templates import WORKFLOW_TEMPLATES
+        from spectra_sherpa.app.core.template_loader import TemplateLoader
+
+        loader = TemplateLoader()
+        validation_errors = loader.validate_all()
+        if validation_errors:
+            raise RuntimeError("Template validation failed:\n" + "\n".join(f"  • {err}" for err in validation_errors))
+
+        workflow_templates = loader.load_all()
 
         async with async_session() as session:
-            # Build lookup of existing templates by name
             result = await session.execute(select(WorkflowTemplate))
-            existing_by_name = {t.name: t for t in result.scalars().all()}
+            existing_templates = list(result.scalars().all())
 
             inserted = 0
             updated = 0
-            for template_data in WORKFLOW_TEMPLATES:
+            deactivated = 0
+            seen_slugs: set[str] = set()
+            seen_names: set[str] = set()
+            chosen_existing_ids: set[int] = set()
+
+            def _match_priority(template: WorkflowTemplate, *, slug: str, name: str) -> tuple[int, int, int]:
+                exact_slug = getattr(template, "slug", None) == slug
+                exact_name = getattr(template, "name", None) == name
+                score = 3 if exact_slug and exact_name else 2 if exact_slug else 1 if exact_name else 0
+                return (score, 1 if getattr(template, "is_active", False) else 0, int(getattr(template, "id", 0) or 0))
+
+            for template_data in workflow_templates:
+                slug = template_data["slug"]
                 name = template_data["name"]
-                existing = existing_by_name.get(name)
+                seen_slugs.add(slug)
+                seen_names.add(name)
+
+                candidates = [
+                    template
+                    for template in existing_templates
+                    if getattr(template, "slug", None) == slug or getattr(template, "name", None) == name
+                ]
+
+                existing = (
+                    max(candidates, key=lambda template: _match_priority(template, slug=slug, name=name))
+                    if candidates
+                    else None
+                )
                 if existing is None:
                     session.add(WorkflowTemplate(**template_data))
                     inserted += 1
                 else:
-                    # Refresh mutable fields (description, category, template_data, is_active)
+                    chosen_existing_ids.add(existing.id)
+                    # Refresh mutable fields (name, description, category, template_data, is_active, slug)
                     changed = False
-                    for key in ("description", "category", "template_data", "is_active"):
+                    for key in ("slug", "name", "description", "category", "template_data", "is_active"):
                         if key in template_data and getattr(existing, key) != template_data[key]:
                             setattr(existing, key, template_data[key])
+                            changed = True
+
+                    for duplicate in candidates:
+                        if duplicate.id == existing.id:
+                            continue
+                        if duplicate.is_active:
+                            duplicate.is_active = False
+                            deactivated += 1
                             changed = True
                     if changed:
                         updated += 1
 
-            if inserted or updated:
+            for existing in existing_templates:
+                if not existing.is_active:
+                    continue
+
+                if existing.id in chosen_existing_ids:
+                    continue
+
+                should_deactivate = (
+                    not existing.slug or existing.slug not in seen_slugs or existing.name not in seen_names
+                )
+
+                if should_deactivate:
+                    existing.is_active = False
+                    deactivated += 1
+
+            if inserted or updated or deactivated:
                 await session.commit()
 
             total = await session.scalar(select(func.count(WorkflowTemplate.id)))
-            logger.info(f"Workflow templates: {total} total, {inserted} new, {updated} updated")
+            logger.info(
+                "Workflow templates: %s total, %s new, %s updated, %s deactivated",
+                total,
+                inserted,
+                updated,
+                deactivated,
+            )
 
+    except RuntimeError:
+        raise
     except OperationalError:
         logger.warning("Skipping workflow template seeding; database not initialized.")
     except Exception as e:
