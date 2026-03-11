@@ -6,6 +6,8 @@ import pytest
 from spectra_sherpa.app.lib.io import load_csv_as_sherpa, stack_datasets
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
+from spectra_sherpa.app.lib.scp_compat import HAS_SCP
+
 try:
     from spectra_sherpa.app.lib.spectral.dataset import SpectralUnit, create_spectral_dataset
 except ImportError:
@@ -33,7 +35,7 @@ def test_load_csv_as_sherpa_named_feature_columns_preserves_target(tmp_path):
     assert dataset.target_context.target_name == "target"
 
 
-@pytest.mark.skipif(create_spectral_dataset is None, reason="SpectroChemPy not installed")
+@pytest.mark.skipif(not HAS_SCP, reason="SpectroChemPy not installed")
 def test_stack_datasets_preserves_string_sample_labels_for_multispectrum_files():
     wavenumbers = np.array([1000.0, 1001.0, 1002.0])
     ds1 = create_spectral_dataset(
