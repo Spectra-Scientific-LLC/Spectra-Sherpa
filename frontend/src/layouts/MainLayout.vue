@@ -14,6 +14,14 @@
       </button>
     </div>
 
+    <div v-else-if="backendDegraded" class="backend-warning-banner">
+      <i class="pi pi-exclamation-circle"></i>
+      <span>
+        Some plugins failed to load{{ pluginFailureCount ? ` (${pluginFailureCount})` : "" }}.
+        Workflow nodes from those plugins may be unavailable until the backend is fixed.
+      </span>
+    </div>
+
     <!-- Offline Mode Badge (local mode only) -->
     <div v-if="appMode === 'local' && backendConnected" class="offline-mode-badge">
       <i class="pi pi-wifi-off"></i>
@@ -72,7 +80,15 @@ const chatWidth = ref(360);
 const isResizing = ref(false);
 
 // Backend connection status
-const { backendConnected, checkingStatus, checkBackendStatus, startHealthCheck, stopHealthCheck } = useBackendStatus();
+const {
+  backendConnected,
+  backendDegraded,
+  checkingStatus,
+  pluginFailureCount,
+  checkBackendStatus,
+  startHealthCheck,
+  stopHealthCheck,
+} = useBackendStatus();
 
 const clampChatWidth = (value: number) => {
   const minWidth = 280;
@@ -187,6 +203,23 @@ watch(
   animation: slideDown 0.3s ease-out;
 }
 
+.backend-warning-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10000;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  animation: slideDown 0.3s ease-out;
+}
+
 @keyframes slideDown {
   from {
     transform: translateY(-100%);
@@ -211,6 +244,11 @@ watch(
 }
 
 .backend-status-banner span {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.backend-warning-banner span {
   font-size: 14px;
   font-weight: 500;
 }
@@ -262,7 +300,8 @@ watch(
 }
 
 /* Adjust app layout when banners are shown */
-.app-shell:has(.backend-status-banner) {
+.app-shell:has(.backend-status-banner),
+.app-shell:has(.backend-warning-banner) {
   padding-top: 48px;
 }
 

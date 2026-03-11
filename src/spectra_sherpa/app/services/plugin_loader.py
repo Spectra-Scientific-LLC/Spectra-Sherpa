@@ -56,6 +56,18 @@ _reload_lock = threading.Lock()
 
 ENTRY_POINT_GROUP = "spectrasherpa.plugins"
 
+# Startup/plugin-discovery failures exposed via /health.
+plugin_load_failures: list[dict[str, str]] = []
+
+
+def _record_plugin_failure(name: str, exc: Exception) -> None:
+    plugin_load_failures.append(
+        {
+            "plugin": name,
+            "reason": str(exc) or type(exc).__name__,
+        }
+    )
+
 
 def _get_plugin_dirs() -> list[Path]:
     """Return directories to scan for plugin packages."""
@@ -104,7 +116,8 @@ def _load_directory_plugins(plugin_dir: Path) -> int:
                     importlib.import_module(module_name)
                     logger.info("Loaded plugin package: %s (from %s)", module_name, plugin_dir)
                     loaded += 1
-                except Exception:
+                except Exception as exc:
+                    _record_plugin_failure(module_name, exc)
                     logger.exception("Failed to load plugin package: %s", module_name)
 
             elif item.is_file() and item.suffix == ".py":
@@ -114,7 +127,8 @@ def _load_directory_plugins(plugin_dir: Path) -> int:
                     importlib.import_module(module_name)
                     logger.info("Loaded plugin module: %s (from %s)", module_name, plugin_dir)
                     loaded += 1
-                except Exception:
+                except Exception as exc:
+                    _record_plugin_failure(module_name, exc)
                     logger.exception("Failed to load plugin module: %s", module_name)
     finally:
         # Clean up sys.path to avoid pollution
@@ -150,9 +164,11 @@ def _load_entrypoint_plugins() -> int:
                 ep.load()
                 logger.info("Loaded entry-point plugin: %s", ep.name)
                 loaded += 1
-            except Exception:
+            except Exception as exc:
+                _record_plugin_failure(ep.name, exc)
                 logger.exception("Failed to load entry-point plugin: %s", ep.name)
-    except Exception:
+    except Exception as exc:
+        _record_plugin_failure(ENTRY_POINT_GROUP, exc)
         logger.exception("Error scanning for entry-point plugins")
 
     return loaded
@@ -171,7 +187,7 @@ def reload_plugin_by_path(file_path: Path) -> bool:
         logger.error("reload_plugin_by_path: file does not exist: %s", file_path)
         return False
 
-    module_name = f"_custom_algo_{file_path.stem}"
+    module_name = f"_spectra_plugin_{file_path.stem}"
 
     with _reload_lock:
         try:
@@ -203,6 +219,7 @@ def discover_plugins() -> int:
     but never crash the application.
     """
     total = 0
+    plugin_load_failures.clear()
 
     # All plugin imports run inside plugin_context() so that any tool
     # registered (via @register_tool or direct register()) automatically

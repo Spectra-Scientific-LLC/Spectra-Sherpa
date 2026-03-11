@@ -96,19 +96,6 @@ def allows_registration() -> bool:
     return hasattr(_auth_mod, "router")
 
 
-def allows_custom_code_execution() -> bool:
-    """Whether user-authored custom algo code (ualgo.*) is allowed.
-
-    Controlled by ``CUSTOM_CODE_EXECUTION_ENABLED`` and forced off in demo
-    site profile unless explicitly overridden.
-    """
-    if not app_config.custom_code_execution_enabled:
-        return False
-    if app_config.site_profile == "demo":
-        return False
-    return True
-
-
 # ── API key validation ───────────────────────────────────────────
 
 

@@ -15,6 +15,17 @@ import "./assets/main.css";
 
 const app = createApp(App);
 
+// Global error boundary — catches unhandled errors in component lifecycle hooks,
+// watchers, and render functions.  Without this, async errors silently swallow
+// stack traces in production and leave the UI in an unknown state.
+app.config.errorHandler = (err, _instance, info) => {
+  console.error("[Spectra] Unhandled Vue error —", info, err);
+  // In development, re-throw so Vue DevTools shows the overlay.
+  if (import.meta.env.DEV) {
+    throw err;
+  }
+};
+
 if (import.meta.env.DEV) {
   const apiBase =
     import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1";

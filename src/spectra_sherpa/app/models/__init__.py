@@ -4,7 +4,6 @@ from spectra_sherpa.app.models.batch_prediction import BatchPrediction
 from spectra_sherpa.app.models.cal_model import CalModel
 from spectra_sherpa.app.models.calibration import Calibration
 from spectra_sherpa.app.models.calibration_file import CalibrationFile
-from spectra_sherpa.app.models.custom_algo import CustomAlgo
 from spectra_sherpa.app.models.data_egress import DataEgressPermission, UserEgressDefaults
 from spectra_sherpa.app.models.doe_config import DOEConfig
 from spectra_sherpa.app.models.execution_run import ExecutionRun
@@ -39,7 +38,6 @@ __all__ = [
     "BatchPrediction",
     "CalModel",
     "Calibration",
-    "CustomAlgo",
     "CalibrationFile",
     "DataEgressPermission",
     "DOEConfig",

@@ -37,6 +37,43 @@ EIGENVECTOR_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / 
 
 FEATURED_DATASETS = {"diesel_nir", "corn_m5", "nir_shootout_cal1", "nir_shootout_test1", "metal_etch_oes"}
 
+
+# ---------------------------------------------------------------------------
+# Axis validation
+# ---------------------------------------------------------------------------
+
+
+def _validate_axis_monotonic(axis: np.ndarray, source: str = "") -> None:
+    """Raise ValueError if axis values are not strictly monotonic.
+
+    Spectral axes must be monotonically increasing or decreasing for
+    interpolation and peak-finding to behave correctly.  Reversed axes
+    (e.g. some JCAMP-DX exports) and axes with duplicate values both
+    cause silent errors downstream.
+
+    Args:
+        axis: 1-D array of axis values.
+        source: Descriptor used in the error message (file path, key, etc.)
+    """
+    if axis is None or len(axis) < 2:
+        return
+    diffs = np.diff(axis)
+    if np.all(diffs > 0) or np.all(diffs < 0):
+        return  # strictly monotonic — OK
+    src_label = f" in {source}" if source else ""
+    if np.any(diffs == 0):
+        raise ValueError(
+            f"Axis values{src_label} contain duplicate entries "
+            f"(first duplicate near index {int(np.argmax(diffs == 0))}). "
+            "Each axis point must be unique for reliable interpolation."
+        )
+    raise ValueError(
+        f"Axis values{src_label} are not monotonic (neither strictly increasing nor decreasing). "
+        f"Non-monotonic axes cause incorrect interpolation and peak assignments. "
+        f"First sign change near index {int(np.argmax(diffs[:-1] * diffs[1:] < 0))}."
+    )
+
+
 DATASET_CATALOG: dict[str, dict[str, Any]] = {
     # --- SWRI Diesel NIR (CSV format) ---
     "diesel_nir": {
@@ -306,6 +343,7 @@ def parse_eigenvector_csv(
             if v:
                 axis_vals.append(float(v))
         axis_values = np.array(axis_vals)
+        _validate_axis_monotonic(axis_values, source=str(path))
         if n_columns is None:
             n_columns = len(axis_vals)
         data_start_row = 10
@@ -411,6 +449,7 @@ def parse_eigenvector_mat(
             col_axis = axisscale[1, 0].flatten()
             if col_axis.size == spec_data.shape[1] and col_axis.dtype.kind in ("f", "i", "u"):
                 axis_values = col_axis.astype(float)
+                _validate_axis_monotonic(axis_values, source=f"{path.name}[{spec_key}]")
     except (IndexError, KeyError, ValueError):
         pass
 
@@ -493,6 +532,7 @@ def parse_metal_etch_mat(
         ax_raw = ds[axis_key][0, 0]
         if ax_raw.dtype.kind in ("f", "i", "u"):
             axis_values = ax_raw.flatten().astype(float)
+            _validate_axis_monotonic(axis_values, source=f"{path.name}[{axis_key}]")
         # For "variables" key, values are strings — not a numeric axis
     except (IndexError, KeyError, ValueError):
         pass

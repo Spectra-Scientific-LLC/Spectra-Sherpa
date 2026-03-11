@@ -274,10 +274,6 @@ class AppConfig(BaseModel):
     mode: Literal["local", "hybrid", "enterprise"] = Field(
         default="local", description="Application mode: local, hybrid, or enterprise"
     )
-    custom_code_execution_enabled: bool = Field(
-        default=True,
-        description="Allow execution of user-authored custom algo code (ualgo.*).",
-    )
     egress_enabled: bool = Field(
         default=False, description="Enable network egress (external API calls). Defaults to False in local mode."
     )
@@ -370,10 +366,6 @@ class AppConfig(BaseModel):
 
         # Enterprise/hybrid integration fields
         site_profile = os.getenv("SITE_PROFILE", "").strip() or None
-        custom_code_execution_enabled = _get_bool(
-            "CUSTOM_CODE_EXECUTION_ENABLED",
-            site_profile != "demo",
-        )
         rate_limit_raw = _get_int("RATE_LIMIT_EXECUTIONS", 0) if mode != "local" else 0
         rate_limit_executions = rate_limit_raw if rate_limit_raw else None
         session_expiry_raw = _get_int("SESSION_EXPIRY_HOURS", 0) if mode != "local" else 0
@@ -394,7 +386,6 @@ class AppConfig(BaseModel):
 
         return cls(
             mode=mode,
-            custom_code_execution_enabled=custom_code_execution_enabled,
             egress_enabled=egress_enabled,
             api_base_url=os.getenv("API_BASE_URL", "http://localhost:8000"),
             site_profile=site_profile,
@@ -429,13 +420,9 @@ class AppConfig(BaseModel):
         has_llm = len(self.get_configured_llms()) > 0
 
         # Single source of truth for registration visibility across distributions/modes.
-        from spectra_sherpa.app.core.mode_policy import (
-            allows_custom_code_execution,
-            allows_registration,
-        )
+        from spectra_sherpa.app.core.mode_policy import allows_registration
 
         registration_enabled = allows_registration()
-        custom_code_execution = allows_custom_code_execution()
 
         # Enterprise password gating — only in enterprise mode with password set
         registration_requires_code = False
@@ -477,7 +464,6 @@ class AppConfig(BaseModel):
                 "nistDownloads": self.egress_enabled,
                 "sherpaAdvisor": sherpa_advisor,
                 "pluginSystem": True,
-                "customCodeExecution": custom_code_execution,
             },
             "llms": {
                 name: {"provider": llm.provider, "model": llm.model, "enabled": llm.is_configured}

@@ -53,7 +53,9 @@ def validate_encryption_env() -> List[str]:
 
     master_key = os.getenv("MASTER_ENCRYPTION_KEY")
     if master_key is not None:
-        # Key is set - validate it
+        # Accept either a raw Fernet key or a normal high-entropy secret.
+        # The runtime derives a Fernet key from non-Fernet values, so the
+        # main requirement here is sufficient entropy/length.
         if len(master_key) < 32:
             errors.append("MASTER_ENCRYPTION_KEY must be at least 32 characters for security")
         elif len(master_key) < 64:

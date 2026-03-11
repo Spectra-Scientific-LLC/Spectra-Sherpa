@@ -63,7 +63,6 @@ APPROVED_NDDATASET_MODULES = {
     "services/python_export.py",
     "services/builder.py",
     "services/cache.py",
-    "services/llm_prompts.py",
     "services/metadata/__init__.py",
     "services/metadata/extractor_base.py",
     # API layer

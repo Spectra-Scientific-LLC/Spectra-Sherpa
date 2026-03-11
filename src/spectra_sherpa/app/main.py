@@ -1,17 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from collections.abc import Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from typing import Any, TypeAlias
-
-# ---------------------------------------------------------------------------
-# Plugin health registry — populated during startup, read by /health endpoint
-# ---------------------------------------------------------------------------
-
-#: node_type strings that failed to load at startup
-startup_plugin_failures: list[dict[str, str]] = []
 
 # Force non-interactive matplotlib backend before SpectroChemPy imports it.
 # The macOS backend requires the main thread, but FastAPI runs handlers
@@ -26,8 +20,9 @@ except (ImportError, AttributeError):
 
 from fastapi import APIRouter, FastAPI, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 from spectra_sherpa.app.api.deps import get_user_from_credentials
 from spectra_sherpa.app.api.v1.api import build_api_router
@@ -195,81 +190,6 @@ def _normalize_router_mounts(extra_routers: list[RouterMount] | None) -> list[tu
     return normalized
 
 
-async def _load_custom_algo_plugins() -> None:
-    """Load/regenerate custom algo plugins, skipping broken ones.
-
-    Broken plugins are logged but do NOT prevent startup — one user's
-    corrupted algo must never take down the service for everyone else.
-    If the legacy ``custom_algo`` table is absent, skip this step quietly.
-    """
-    from sqlalchemy import select as _sa_select
-    from sqlalchemy.exc import OperationalError as _OperationalError
-
-    from spectra_sherpa.app.models.custom_algo import CustomAlgo as _CA
-    from spectra_sherpa.app.services.custom_algo_codegen import (
-        get_plugin_dir,
-        get_plugin_path,
-        reload_into_registry,
-    )
-    from spectra_sherpa.app.services.dag.node_base import node_registry as _nr
-
-    try:
-        get_plugin_dir()  # ensure directory exists
-    except Exception:
-        logger.exception("Failed to ensure custom algo plugin directory")
-        return
-
-    algos: list[_CA] = []
-    try:
-        async with async_session() as _ca_session:
-            _result = await _ca_session.execute(_sa_select(_CA))
-            algos = list(_result.scalars().all())
-    except _OperationalError as exc:
-        error_text = str(exc).lower()
-        if "no such table: custom_algo" in error_text or 'relation "custom_algo" does not exist' in error_text:
-            logger.info("Legacy custom_algo table not present — skipping custom algo startup load.")
-            return
-        logger.exception("Failed to query custom algos at startup")
-        return
-    except Exception:
-        logger.exception("Failed to query custom algos at startup")
-        return
-
-    loaded = 0
-    skipped = 0
-    for algo in algos:
-        node_type = algo.node_type
-        try:
-            plugin_path = get_plugin_path(algo)
-            if not plugin_path.exists():
-                logger.info("Regenerating missing plugin: %s", node_type)
-                reload_into_registry(algo)
-                loaded += 1
-                continue
-            try:
-                _nr.get_metadata(node_type)
-                loaded += 1
-            except KeyError:
-                logger.info("Loading unregistered custom algo: %s", node_type)
-                reload_into_registry(algo)
-                loaded += 1
-        except Exception as exc:
-            logger.exception("Skipping broken custom algo %s", node_type)
-            startup_plugin_failures.append(
-                {"node_type": node_type, "reason": str(exc) or type(exc).__name__}
-            )
-            skipped += 1
-
-    if skipped:
-        logger.warning(
-            "Custom algo startup: %d loaded, %d skipped (see errors above)",
-            loaded,
-            skipped,
-        )
-    elif loaded:
-        logger.info("Custom algo startup: %d loaded", loaded)
-
-
 # ---------------------------------------------------------------------------
 # Lifespan factory
 # ---------------------------------------------------------------------------
@@ -356,9 +276,6 @@ def _make_lifespan(
             from spectra_sherpa.app.services.plugin_loader import discover_plugins
 
             discover_plugins()
-
-            # Ensure custom algo plugins are in sync with DB; fail-fast on any error.
-            await _load_custom_algo_plugins()
 
             # Start network health monitoring (HYBRID mode only)
             from spectra_sherpa.app.services.network_health import start_network_health_service
@@ -492,7 +409,6 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     from spectra_sherpa.app.api.v1.routes.llm import _llm_rate_limiter
     from spectra_sherpa.app.services.ws_handlers import (
         handle_llm_chat,
-        handle_llm_chat_with_tools,
         handle_sherpa_chat,
         handle_sherpa_chat_with_tools,
         handle_sherpa_decide,
@@ -587,12 +503,32 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         return requested
 
     # ---- Action dispatcher ----
+    # Send a server-side ping when the connection is idle for this many seconds.
+    # Clients may respond with {"action": "pong"} (or simply send any message).
+    # If the write fails the connection is broken and we clean up immediately.
+    _WS_IDLE_TIMEOUT = 120.0
+
     await ws_manager.connect(websocket)
     try:
         while True:
-            payload = await websocket.receive_json()
+            try:
+                payload = await asyncio.wait_for(websocket.receive_json(), timeout=_WS_IDLE_TIMEOUT)
+            except asyncio.TimeoutError:
+                # Connection has been idle — probe it before assuming it is alive.
+                try:
+                    await websocket.send_json({"type": "ping"})
+                except Exception:
+                    break  # Write failed: socket is gone, fall through to disconnect
+                continue
+
             action = payload.get("action")
             logger.info("WS action received: %s", action)
+
+            if action == "ping":
+                await websocket.send_json({"type": "pong"})
+                continue
+            if action == "pong":
+                continue
 
             if action == "subscribe":
                 await handle_subscribe(websocket, payload, ws_user, _llm_rate_limiter, resolve_channel=_resolve_channel)
@@ -602,32 +538,6 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 )
             elif action == "llm_chat":
                 await handle_llm_chat(websocket, payload, ws_user, _llm_rate_limiter)
-            elif action == "llm_data_import":
-                from spectra_sherpa.app.core.mode_policy import (
-                    allows_custom_code_execution as _allows_custom_code_execution,
-                )
-                from spectra_sherpa.app.core.mode_policy import (
-                    is_loopback as _is_loopback,
-                )
-
-                if not _allows_custom_code_execution() or not _is_loopback(ws_client_host):
-                    await websocket.send_json(
-                        {
-                            "type": "import_error",
-                            "detail": (
-                                "Data Import is available only for loopback clients "
-                                "when custom code execution is enabled."
-                            ),
-                        }
-                    )
-                else:
-                    await handle_llm_chat_with_tools(
-                        websocket,
-                        payload,
-                        ws_user,
-                        _llm_rate_limiter,
-                        event_prefix="import",
-                    )
             elif action == "sherpa_sync":
                 await handle_sherpa_sync(websocket, payload, ws_user, _llm_rate_limiter)
             elif action == "sherpa_decide":
@@ -709,6 +619,33 @@ def create_app(
     @_app.get("/api/health")
     async def root() -> dict:
         return {"status": "ok"}
+
+    @_app.get("/api/ready")
+    async def ready() -> JSONResponse:
+        from spectra_sherpa.app.services.plugin_loader import plugin_load_failures
+
+        try:
+            async with async_session() as session:
+                await session.execute(text("SELECT 1"))
+        except Exception:
+            logger.warning("Readiness check failed: database unavailable", exc_info=True)
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={
+                    "status": "unready",
+                    "database": "unavailable",
+                },
+            )
+
+        content: dict[str, Any] = {
+            "status": "ok",
+            "database": "ok",
+        }
+        if plugin_load_failures:
+            content["status"] = "degraded"
+            content["plugin_failure_count"] = len(plugin_load_failures)
+
+        return JSONResponse(status_code=status.HTTP_200_OK, content=content)
 
     # --- WebSocket ---
     _app.add_api_websocket_route("/ws", websocket_endpoint)

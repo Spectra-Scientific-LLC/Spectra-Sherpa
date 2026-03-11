@@ -4589,14 +4589,6 @@ const handleRunTrial = async () => {
     // Map trial params from frontend names to backend names
     // E.g., "components" -> "n_components" for PCA
     const mappedTrialParams = { ...localParams.value };
-    let inferredUalgoProjectId: number | null = null;
-    if (typeof nodeData.value.type === "string" && nodeData.value.type.startsWith("ualgo.")) {
-      const pid = Number.parseInt(nodeData.value.type.split(".")[1] || "", 10);
-      if (Number.isFinite(pid)) {
-        inferredUalgoProjectId = pid;
-      }
-    }
-    const trialProjectId = projectStore.currentProject?.id ?? inferredUalgoProjectId;
 
     // Build trial execution request payload
     const trialPayload = {
@@ -4605,7 +4597,6 @@ const handleRunTrial = async () => {
       nodes: trialNodes,
       edges: trialEdges,
       initial_data: Object.keys(initialData).length > 0 ? initialData : null,
-      project_id: trialProjectId,
     };
 
     const targetNodeInList = trialNodes.find((n: any) => n.node_id === String(nodeData.value.id));

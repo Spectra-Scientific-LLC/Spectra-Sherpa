@@ -325,7 +325,6 @@ class TrialExecuteRequest(BaseModel):
     nodes: list[TrialNodeDefinition] = Field(..., description="All workflow nodes")
     edges: list[TrialEdgeDefinition] = Field(default_factory=list, description="Workflow edges")
     initial_data: dict[str, Any] | None = Field(None, description="Initial data for source nodes (node_id -> data)")
-    project_id: int | None = Field(None, description="Project ID for validating custom algo (ualgo.*) ownership")
 
 
 class TrialExecuteResponse(BaseModel):

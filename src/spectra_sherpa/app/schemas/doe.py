@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # ==================== Sample Database ====================
 
@@ -23,12 +23,11 @@ class SampleCreate(SampleBase):
 
 
 class Sample(SampleBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     experiment_id: int
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class SampleImportRequest(BaseModel):
@@ -51,11 +50,10 @@ class MixtureComponentCreate(MixtureComponentBase):
 
 
 class MixtureComponent(MixtureComponentBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     mixture_id: int
-
-    class Config:
-        from_attributes = True
 
 
 class MixtureBase(BaseModel):
@@ -70,13 +68,12 @@ class MixtureCreate(MixtureBase):
 
 
 class Mixture(MixtureBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     experiment_id: int
     created_at: datetime
     components: list[MixtureComponent] = []
-
-    class Config:
-        from_attributes = True
 
 
 # ==================== Factor Definition ====================
@@ -95,11 +92,10 @@ class FactorDefinitionCreate(FactorDefinitionBase):
 
 
 class FactorDefinition(FactorDefinitionBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     experiment_id: int
-
-    class Config:
-        from_attributes = True
 
 
 # ==================== Plate Well ====================
@@ -115,11 +111,10 @@ class PlateWellCreate(PlateWellBase):
 
 
 class PlateWell(PlateWellBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     experiment_id: int
-
-    class Config:
-        from_attributes = True
 
 
 class PlateMapRequest(BaseModel):
@@ -145,11 +140,10 @@ class RunLevelCreate(RunLevelBase):
 
 
 class RunLevel(RunLevelBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     experiment_id: int
-
-    class Config:
-        from_attributes = True
 
 
 class RunSequenceRequest(BaseModel):
@@ -179,11 +173,10 @@ class MatchedAcquisitionCreate(MatchedAcquisitionBase):
 
 
 class MatchedAcquisition(MatchedAcquisitionBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     experiment_id: int
-
-    class Config:
-        from_attributes = True
 
 
 class FolderBatch(BaseModel):

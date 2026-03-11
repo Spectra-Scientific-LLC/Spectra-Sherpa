@@ -49,7 +49,13 @@ class OutlierDetectionNode(Node):
         node_type="diagnostics.outliers",
         category="validation",
         label="Outlier Detection",
-        description="Hotelling T² and Q statistics for outlier detection",
+        description=(
+            "Identifies samples that deviate from the PCA model using Hotelling T² (distance within "
+            "model space) and Q/SPE residuals (distance to model). "
+            "Connect directly to a PCA node output — eigenvalues from the PCA model are required to "
+            "compute correct T² control limits (Nomikos & MacGregor 1995). "
+            "Samples flagged by either statistic at the chosen confidence level are marked as outliers."
+        ),
         parameters=[
             NodeParameter(
                 name="confidence_level",
@@ -204,13 +210,16 @@ class OutlierDetectionNode(Node):
             ev = model.explained_variance
             eigenvalues = to_numpy_1d(_unwrap_data(ev), name="explained_variance", dtype=np.float64)
 
-        # Fallback to score variance (less accurate but functional)
+        # No fallback: using score variance instead of true eigenvalues is a known
+        # error (Nomikos & MacGregor 1995).  The upstream PCA node always populates
+        # explained_variance, so a missing value indicates a broken workflow connection.
         if eigenvalues is None:
-            logger.warning(
-                "PCA eigenvalues not available, falling back to score variance for T² calculation. "
-                "This may give slightly different results than using true eigenvalues."
+            raise ValueError(
+                "PCA eigenvalues (explained_variance) not found in the upstream PCA model output. "
+                "Ensure the Outlier Detection node is connected directly to a PCA node output. "
+                "Using score variance as a substitute produces incorrect T² control limits "
+                "(see Nomikos & MacGregor, Technometrics 1995)."
             )
-            eigenvalues = np.var(scores, axis=0)
 
         # Ensure eigenvalues are positive and match component count
         eigenvalues = np.maximum(eigenvalues[:n_components], 1e-10)
@@ -333,7 +342,13 @@ class CrossValidationNode(Node):
         node_type="diagnostics.cross_validation",
         category="validation",
         label="Cross-Validation",
-        description="Calculate cross-validation metrics for model assessment",
+        description=(
+            "Computes RMSECV, Q², R², SEP, RER, and bias from cross-validated predictions. "
+            "For NIR calibration reporting: SEP (bias-corrected RMSECV) and RER ≥ 10 are the key "
+            "acceptance criteria (ASTM E1655). "
+            "'Auto' CV method applies LOOCV when n ≤ 50 (chemometrics standard for small datasets) "
+            "and k-fold otherwise."
+        ),
         parameters=[
             NodeParameter(
                 name="cv_folds",
@@ -343,8 +358,21 @@ class CrossValidationNode(Node):
                 min_value=2,
                 max_value=20,
                 step=1,
-                description="Number of cross-validation folds",
+                description="Number of cross-validation folds (ignored when cv_method is 'loocv' or 'auto')",
                 required=True,
+            ),
+            NodeParameter(
+                name="cv_method",
+                label="CV Method",
+                param_type="select",
+                default="auto",
+                options=["auto", "k_fold", "loocv"],
+                description=(
+                    "Cross-validation strategy: 'auto' uses LOOCV when n ≤ 50 "
+                    "(chemometrics standard for small datasets) and k-fold otherwise; "
+                    "'loocv' forces Leave-One-Out CV; 'k_fold' uses the CV Folds setting."
+                ),
+                required=False,
             ),
         ],
         input_types=["array", "array"],
@@ -477,13 +505,27 @@ class CrossValidationNode(Node):
         y_true = to_numpy_1d(_unwrap_data(y_true), name="y_true")
         y_pred = to_numpy_1d(_unwrap_data(y_pred), name="y_pred", expected_length=y_true.shape[0])
 
+        n_samples = len(y_true)
+        cv_folds = self.parameters.get("cv_folds", 5)
+        cv_method = self.parameters.get("cv_method", "auto")
+
+        # Resolve effective CV method: LOOCV is the chemometrics standard for n ≤ 50
+        if cv_method == "auto":
+            effective_cv = "loocv" if n_samples <= 50 else "k_fold"
+        else:
+            effective_cv = cv_method  # "loocv" or "k_fold"
+
+        effective_folds = n_samples if effective_cv == "loocv" else int(cv_folds)
+
         # Determine if regression or classification
         unique_true = np.unique(y_true)
         is_classification = len(unique_true) < min(20, len(y_true) * 0.1)  # Heuristic
 
-        result = {
-            "n_samples": len(y_true),
+        result: dict = {
+            "n_samples": n_samples,
             "is_classification": is_classification,
+            "cv_method": effective_cv,
+            "cv_folds_used": effective_folds,
         }
 
         if is_classification:
@@ -524,6 +566,18 @@ class CrossValidationNode(Node):
             PRESS = np.sum((y_true - y_pred) ** 2)
             Q2 = 1 - (PRESS / TSS) if TSS > 0 else 0
 
+            # SEP (Standard Error of Prediction) = RMSECV when bias-corrected
+            # Bias = mean(y_true - y_pred)
+            bias = float(np.mean(y_true - y_pred))
+            # SEP = sqrt(RMSECV² - bias²)  (Ref: ASTM E1655, ISO 12099)
+            sep_sq = max(0.0, rmse**2 - bias**2)
+            sep = float(np.sqrt(sep_sq))
+
+            # RER (Range/Error Ratio) = (y_max - y_min) / RMSECV
+            # RER ≥ 10 considered acceptable for screening; ≥ 25 for QC (NIR conventions)
+            y_range = float(np.ptp(y_true))  # max - min
+            rer = float(y_range / rmse) if rmse > 1e-12 else float("inf")
+
             result.update(
                 {
                     "RMSE": rmse,
@@ -532,17 +586,26 @@ class CrossValidationNode(Node):
                     "R2": r2,
                     "Q2": Q2,
                     "PRESS": PRESS,
+                    "bias": bias,
+                    "SEP": sep,
+                    "RER": rer,
                     "residuals": (y_true - y_pred).tolist(),
                     "metadata": {
                         "type": "RegressionCV",
                         "RMSECV": rmse,
+                        "SEP": sep,
+                        "RER": rer,
+                        "bias": bias,
                         "Q2": Q2,
                         "R2": r2,
                     },
                 }
             )
 
-            logger.debug(f"[Cross-Validation] RMSECV: {rmse:.4f}, Q²: {Q2:.4f}, R²: {r2:.4f}")
+            logger.debug(
+                f"[Cross-Validation] RMSECV: {rmse:.4f}, SEP: {sep:.4f}, "
+                f"RER: {rer:.1f}, bias: {bias:.4f}, Q²: {Q2:.4f}, R²: {r2:.4f}"
+            )
 
         # Build scoped EvaluationResult
         import uuid
@@ -565,7 +628,9 @@ class CrossValidationNode(Node):
         # Ensure explicit ports are populated
         result["model"] = None
         result["cv_metrics"] = {
-            k: v for k, v in result.items() if k not in ["model", "predictions", "plots", "data", "metadata"]
+            k: v
+            for k, v in result.items()
+            if k not in ["model", "predictions", "plots", "data", "metadata", "residuals", "evaluation"]
         }
         result["predictions"] = y_pred.tolist()
         result["plots"] = {"true_vs_pred": result["data"]}

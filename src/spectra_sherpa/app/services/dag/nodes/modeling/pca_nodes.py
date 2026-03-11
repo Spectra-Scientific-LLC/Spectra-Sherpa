@@ -57,7 +57,14 @@ class PCANode(Node):
         node_type="model.pca",
         category="exploratory",
         label="PCA",
-        description="Principal Component Analysis for dimensionality reduction",
+        description=(
+            "Reduces spectral data to a small set of orthogonal principal components that capture "
+            "the most variance, enabling visualisation, outlier detection, and feature compression. "
+            "For most spectral datasets leave both scaling options off — SpectroChemPy mean-centers "
+            "by default, which is the correct preprocessing for spectroscopy. "
+            "Use '0.95' as n_components to automatically retain enough PCs for 95% variance, "
+            "or check the Explained Variance output to choose the elbow point."
+        ),
         parameters=[
             NodeParameter(
                 name="n_components",
@@ -71,22 +78,35 @@ class PCANode(Node):
                 ),
                 required=True,
                 category="basic",
+                hint=(
+                    "Must be ≤ min(n_samples, n_features). "
+                    "This is checked at execution time — a value that is too large will raise an error. "
+                    "Use '0.95' to automatically retain enough components for 95% explained variance."
+                ),
             ),
             NodeParameter(
                 name="standardized",
-                label="Standardize Data",
+                label="Mean Center + Unit Variance",
                 param_type="boolean",
                 default=False,
-                description="Apply standardization (mean centering + unit variance) before PCA",
+                description=(
+                    "Subtract the column mean AND divide by column standard deviation before PCA "
+                    "(full standardization). Use when variables have different units or scales, "
+                    "e.g. mixing spectral and non-spectral predictors."
+                ),
                 required=False,
                 category="basic",
             ),
             NodeParameter(
                 name="scaled",
-                label="Scale Data",
+                label="Unit Variance Only (No Mean Centering)",
                 param_type="boolean",
                 default=False,
-                description="Apply scaling (unit variance) before PCA",
+                description=(
+                    "Divide each variable by its standard deviation WITHOUT subtracting the mean. "
+                    "Rarely appropriate for spectral data — prefer 'Mean Center + Unit Variance' "
+                    "or leave both off to use mean-centering only (the spectroscopy default)."
+                ),
                 required=False,
                 category="advanced",
             ),

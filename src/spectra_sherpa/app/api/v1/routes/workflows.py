@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session
-from spectra_sherpa.app.core.mode_policy import allows_custom_code_execution
 from spectra_sherpa.app.core.security import check_export_allowed
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.services.serialization import serialize_result
@@ -297,20 +296,6 @@ async def execute_trial(
 
     This is completely independent of any stored workflow state.
     """
-    node_types = [n.node_type for n in payload.nodes]
-    ualgo_types, resolved_project_id = _validate_ualgo_node_types(
-        node_types,
-        project_id=payload.project_id,
-        require_project_id=True,
-    )
-    if ualgo_types:
-        await _validate_ualgo_db_ownership(
-            session=session,
-            user_id=current_user.id,
-            ualgo_types=ualgo_types,
-            project_id=resolved_project_id,
-        )
-
     try:
         # Build a fresh DAG executor for this trial (no caching)
         executor = DAGExecutor()
@@ -380,88 +365,6 @@ async def execute_trial(
         )
 
 
-def _parse_ualgo_project_id(node_type: str) -> int | None:
-    """Extract ``project_id`` from ``ualgo.{project_id}.{slug}`` node type."""
-    if not node_type.startswith("ualgo."):
-        return None
-    parts = node_type.split(".", 2)
-    if len(parts) < 3:
-        raise HTTPException(status_code=400, detail=f"Malformed custom algo node type: {node_type}")
-    try:
-        return int(parts[1])
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=f"Malformed custom algo node type: {node_type}") from exc
-
-
-def _validate_ualgo_node_types(
-    node_types: list[str],
-    *,
-    project_id: int | None,
-    require_project_id: bool,
-) -> tuple[list[str], int | None]:
-    """Validate ualgo node types and resolve effective project_id."""
-    ualgo_types = [nt for nt in node_types if nt.startswith("ualgo.")]
-    if not ualgo_types:
-        return [], project_id
-
-    if not allows_custom_code_execution():
-        raise HTTPException(status_code=403, detail="Custom code execution is disabled by server policy")
-
-    parsed_project_ids = {_parse_ualgo_project_id(nt) for nt in ualgo_types}
-    if len(parsed_project_ids) != 1:
-        raise HTTPException(
-            status_code=403,
-            detail="Custom algo nodes from multiple projects are not allowed in one workflow",
-        )
-
-    resolved_project_id = next(iter(parsed_project_ids))
-    if project_id is None:
-        if require_project_id:
-            raise HTTPException(
-                status_code=400,
-                detail="project_id is required when using custom algo nodes",
-            )
-        return ualgo_types, resolved_project_id
-
-    if project_id != resolved_project_id:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Custom algo {ualgo_types[0]} belongs to a different project",
-        )
-    return ualgo_types, project_id
-
-
-async def _validate_ualgo_db_ownership(
-    *,
-    session: AsyncSession,
-    user_id: int,
-    ualgo_types: list[str],
-    project_id: int | None,
-) -> None:
-    """Verify each ualgo type exists and belongs to the requesting user."""
-    if not ualgo_types:
-        return
-    if project_id is None:
-        raise HTTPException(status_code=400, detail="project_id is required when using custom algo nodes")
-
-    from spectra_sherpa.app.models.custom_algo import CustomAlgo
-
-    result = await session.execute(
-        select(CustomAlgo.node_type).where(
-            CustomAlgo.node_type.in_(ualgo_types),
-            CustomAlgo.user_id == user_id,
-            CustomAlgo.project_id == project_id,
-        )
-    )
-    owned = set(result.scalars().all())
-    for nt in ualgo_types:
-        if nt not in owned:
-            raise HTTPException(
-                status_code=403,
-                detail=f"Custom algo {nt} not found or not owned by you",
-            )
-
-
 @router.post("", response_model=WorkflowDetail, status_code=201)
 async def create_workflow(
     payload: WorkflowCreate,
@@ -470,24 +373,9 @@ async def create_workflow(
 ) -> WorkflowDetail:
     """Create a new workflow for the authenticated user."""
     user_id = current_user.id
-    node_types = [n.node_type for n in payload.nodes]
-    ualgo_types, inferred_project_id = _validate_ualgo_node_types(
-        node_types,
-        project_id=None,
-        require_project_id=False,
-    )
-    if ualgo_types:
-        await _validate_ualgo_db_ownership(
-            session=session,
-            user_id=user_id,
-            ualgo_types=ualgo_types,
-            project_id=inferred_project_id,
-        )
 
     # Validate all node types exist in the registry
-    unknown_types = [
-        n.node_type for n in payload.nodes if not n.node_type.startswith("ualgo.") and n.node_type not in node_registry
-    ]
+    unknown_types = [n.node_type for n in payload.nodes if n.node_type not in node_registry]
     if unknown_types:
         raise HTTPException(
             status_code=400,
@@ -501,7 +389,6 @@ async def create_workflow(
     # Create workflow
     workflow = Workflow(
         user_id=user_id,
-        project_id=inferred_project_id,
         name=payload.name,
         description=payload.description,
         status=payload.status,
@@ -779,20 +666,12 @@ async def update_workflow(
 
     if payload.nodes is not None:
         node_types = [n.node_type for n in payload.nodes]
-        ualgo_types, resolved_project_id = _validate_ualgo_node_types(
-            node_types,
-            project_id=workflow.project_id,
-            require_project_id=False,
-        )
-        if ualgo_types:
-            await _validate_ualgo_db_ownership(
-                session=session,
-                user_id=user_id,
-                ualgo_types=ualgo_types,
-                project_id=resolved_project_id,
+        unknown_types = [node_type for node_type in node_types if node_type not in node_registry]
+        if unknown_types:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown node type(s): {', '.join(unknown_types)}",
             )
-            if workflow.project_id is None:
-                workflow.project_id = resolved_project_id
 
     # Update workflow fields
     if payload.name is not None:
@@ -1335,19 +1214,6 @@ async def execute_workflow(
                     detail=f"Node type '{nt}' is not available in demo mode.",
                 )
 
-    ualgo_types, resolved_project_id = _validate_ualgo_node_types(
-        node_types,
-        project_id=workflow.project_id,
-        require_project_id=False,
-    )
-    if ualgo_types:
-        await _validate_ualgo_db_ownership(
-            session=session,
-            user_id=user_id,
-            ualgo_types=ualgo_types,
-            project_id=resolved_project_id,
-        )
-
     # Snapshot ORM attributes while session is clean (before execution may
     # dirty or expire them, making lazy loads fail in the error handler).
     wf_integrity_hash = workflow.integrity_hash
@@ -1588,8 +1454,7 @@ async def get_node_library(
     """
     from spectra_sherpa.app.core.config import settings
 
-    # Exclude custom_algo nodes — those are served via the project-scoped endpoint.
-    nodes = [n for n in node_registry.list_nodes() if n.category != "custom_algo"]
+    nodes = list(node_registry.list_nodes())
 
     # In demo mode, hide nodes associated with disabled capabilities.
     from spectra_sherpa.app.core.config import CAPABILITY_HIDDEN_NODE_TYPES, app_config

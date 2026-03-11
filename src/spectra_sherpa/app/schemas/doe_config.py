@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DOEConfigBase(BaseModel):
@@ -75,13 +75,12 @@ class DOEConfigUpdate(BaseModel):
 class DOEConfig(DOEConfigBase):
     """Schema for DOE config profile response"""
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     user_id: int
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class DOEConfigList(BaseModel):

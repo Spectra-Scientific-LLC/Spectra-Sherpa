@@ -8,11 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Security
-- **Custom algo AST safety check** — User-supplied code is now validated with an AST walker before being written to disk or imported. Blocked constructs include all `import` statements, dangerous built-in calls (`exec`, `eval`, `open`, `__import__`, `compile`, `breakpoint`, `input`, `memoryview`), access to dunder attributes that expose the class hierarchy (`__builtins__`, `__globals__`, `__subclasses__`, etc.), and `global`/`nonlocal` scope declarations. This is a defence-in-depth measure; see `custom_algo_codegen.py` for the full security model and deployment recommendations.
 - **Auto-generated local SECRET_KEY** — In local mode, if `SECRET_KEY` is not set, a cryptographically random key is generated on first startup and persisted to `~/.spectra_sherpa/.secret_key` (mode 0600). This prevents JWT tokens from being invalidated on every restart without requiring manual configuration.
 
 ### Added
-- **Health endpoint degraded state** — `GET /api/health` now returns `{"status": "degraded", "plugin_failures": [...]}` when one or more custom algo plugins failed to load at startup, making operational issues visible to monitoring.
+- **Health endpoint degraded state** — `GET /api/v1/health` now returns `{"status": "degraded", "plugin_failure_count": N}` when one or more filesystem or entry-point plugins failed to load at startup, making operational issues visible without exposing internal exception details.
 
 ### Fixed
 - **Hybrid mode implicit identity logging** — Rejections of credential-free requests from non-loopback hosts in hybrid mode are now logged at `WARNING` level. Grants of implicit loopback identity are logged at `DEBUG`.

@@ -88,7 +88,11 @@ export const useLlmStore = defineStore("llm", () => {
     wsRef.value.addEventListener("message", (event) => {
       try {
         const payload = JSON.parse(event.data);
-        if (payload.type === "llm_start") {
+        if (payload.type === "ping") {
+          wsRef.value?.send(JSON.stringify({ action: "pong" }));
+        } else if (payload.type === "pong") {
+          return;
+        } else if (payload.type === "llm_start") {
           currentConversationId.value = payload.conversation_id;
           streamingIndex.value = messages.value.length;
           messages.value.push({ role: "assistant", content: "" });
@@ -110,11 +114,6 @@ export const useLlmStore = defineStore("llm", () => {
             role: "assistant",
             content: payload.detail || "Streaming error.",
           });
-        } else if (payload.type?.startsWith("import_")) {
-          // Forward data-import messages to the dataImport store via event bus
-          window.dispatchEvent(
-            new CustomEvent("import-ws-message", { detail: payload })
-          );
         } else if (payload.type?.startsWith("sherpa_")) {
           // Forward Sherpa messages to the sherpa store via event bus
           window.dispatchEvent(

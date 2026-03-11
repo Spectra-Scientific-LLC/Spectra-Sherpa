@@ -51,7 +51,15 @@ class NMFNode(Node):
         node_type="model.nmf",
         category="exploratory",
         label="NMF",
-        description="Non-negative Matrix Factorization for mixture analysis",
+        description=(
+            "Decomposes a spectral dataset into W (concentration profiles) × H (pure spectra) "
+            "with non-negativity constraints, making components physically interpretable as "
+            "mixture fractions. "
+            "Input data must be strictly non-negative — add a Clip Floor node (floor=0) or apply "
+            "baseline correction before NMF if your spectra contain negative values. "
+            "Choose n_components based on the expected number of chemical species; "
+            "'mu' solver is more robust, 'cd' converges faster on large datasets."
+        ),
         parameters=[
             NodeParameter(
                 name="n_components",
@@ -168,7 +176,10 @@ class NMFNode(Node):
         lines.append(f"{indent}    dtype=np.float64,")
         lines.append(f"{indent})")
         lines.append(f"{indent}if np.any(_X_data < 0):")
-        lines.append(f"{indent}    _X_data = _X_data - _X_data.min()")
+        lines.append(f"{indent}    raise ValueError(")
+        lines.append(f"{indent}        f'NMF requires non-negative input data. Minimum value: {{_X_data.min():.4g}}. '")
+        lines.append(f"{indent}        'Add a Clip Floor (floor=0) or baseline correction step before NMF.'")
+        lines.append(f"{indent}    )")
 
         # NMF uses sklearn regardless of use_scp
         lines.append(f"{indent}from sklearn.decomposition import NMF as _NMF")
@@ -232,11 +243,18 @@ class NMFNode(Node):
                 f"n_components ({n_components}) cannot exceed min(n_samples, n_features) = {min(n_samples, n_features)}"
             )
 
-        # Check for negative values (NMF requires non-negative data)
+        # Check for negative values (NMF requires non-negative data).
+        # Silently shifting data (data - data.min()) can invert spectral meaning
+        # (e.g. absorbance → offset transmission) and must never happen without
+        # explicit user intent.  Raise so the workflow is fixed at the source.
         data_array = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
         if np.any(data_array < 0):
-            logger.warning("[NMF Node] Input contains negative values, shifting to non-negative range")
-            data_array = data_array - data_array.min()
+            neg_min = float(data_array.min())
+            raise ValueError(
+                f"NMF requires non-negative input data, but found minimum value {neg_min:.4g}. "
+                "Add a 'Clip Floor' node (floor=0) or a baseline correction step before NMF "
+                "to ensure all spectral intensities are ≥ 0."
+            )
 
         logger.debug("[NMF Node] Executing with:")
         logger.debug("  - n_components: %s", n_components)

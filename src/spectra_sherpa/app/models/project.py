@@ -21,7 +21,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from spectra_sherpa.app.db.base import Base
 
 if TYPE_CHECKING:
-    from spectra_sherpa.app.models.custom_algo import CustomAlgo
     from spectra_sherpa.app.models.experiment import Experiment
     from spectra_sherpa.app.models.model_artifact import ModelArtifact
     from spectra_sherpa.app.models.project_script import ProjectScript
@@ -66,11 +65,6 @@ class Project(Base):
         back_populates="project",
         cascade="all, delete-orphan",
         order_by="ProjectScript.priority",
-    )
-    custom_algos: Mapped[list[CustomAlgo]] = relationship(
-        "CustomAlgo",
-        back_populates="project",
-        cascade="all, delete-orphan",
     )
     versions: Mapped[list[ProjectVersion]] = relationship(
         "ProjectVersion",

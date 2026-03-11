@@ -18,6 +18,42 @@ SpectraSherpa brings transparent, reproducible multivariate analysis to spectros
 - **Modern metadata management** — Versioned projects, experiments, workflows, and model artifacts with full provenance tracking and audit trails.
 - **AI-assisted analysis** — Integrated LLM chat with bring-your-own-key (BYOK) support for OpenAI, Anthropic, Google, DeepSeek, and Qwen. Agentic AI features in progressive development.
 
+## For Python data analysts and chemometricians
+
+If you already analyze spectra in Python — whether using scikit-learn, pandas, or your own scripts — SpectraSherpa is built to match your methods, not replace them.
+
+**The math matches what you already know.**
+PCA, PLS, MCR-ALS, and classification nodes produce results validated side-by-side against scikit-learn reference outputs. The [PCA reproduction study](docs/user/case_study_pca.md) shows the exact numerical comparison on a standard dataset — same parameters, same results, verified to five decimal places.
+
+**Your NumPy arrays work without conversion.**
+The internal data container is a thin wrapper over NumPy: a `(n_samples, n_features)` array with labeled wavelength and sample axes. Your existing code works directly:
+
+```python
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, SpectralAxis, SampleAxis
+
+dataset = SherpaDataset(
+    X=your_array,                                        # shape: (n_samples, n_features)
+    feature_axis=SpectralAxis(values=wavenumbers, units="cm-1"),
+    sample_axis=SampleAxis(values=sample_ids),
+)
+X = dataset.data      # get the NumPy array back at any time
+y = dataset.target    # labels, if any
+```
+
+**Export any workflow to a standalone Python script or Jupyter notebook.**
+The visual builder is for exploration and reproducibility. The notebook is the artifact you publish, share, or hand off — it runs with no SpectraSherpa dependency.
+
+**Add your own algorithm as a processing step.**
+If you have a working function in a notebook, one command generates the wrapper and registers it in the toolbar:
+
+```bash
+make node-scaffold
+```
+
+See the **[Scientist Contributor Guide](docs/contributing/scientist-guide.md)** — notebook to node to pull request, with no web development knowledge required.
+
+---
+
 ## Try It
 
 **Free online demo** — Register and explore SpectraSherpa as a sandbox at [demo.spectrascientific.ai](https://demo.spectrascientific.ai/register) with all features including the LLM assistant enabled.
@@ -67,22 +103,22 @@ See the [Applications Guide](docs/user/applications.md) for the current support 
 
 ## Features
 
-- **Workflow Builder** — Visually design reproducible analysis pipelines (DAGs) with 11 toolbar sections: Data, Synthesis, Preprocessing, Exploratory, Regression, Classification, Clustering, Validation, Custom, Output, and Deployment
+- **Workflow Builder** — Visually design reproducible analysis pipelines by connecting processing steps (nodes) in a drag-and-drop canvas. 11 categories: Data, Synthesis, Preprocessing, Exploratory, Regression, Classification, Clustering, Validation, Custom, Output, and Deployment
 - **Model Artifacts** — Train, persist, and reload models (PCA, PLS, MCR, PLSDA, KNN, SIMCA) with a generic Load & Apply node
-- **Type System** — Typed port connections with registry-driven validation prevent incompatible node wiring
+- **Type System** — Node connections are validated automatically; incompatible connections (e.g. feeding a model into a raw-data input) are blocked before execution
 - **Python & Notebook Export** — Generate standalone `.py` scripts or Jupyter notebooks from any workflow
 - **Project Management** — Organize experiments, workflows, scripts, and models with versioned snapshots
 - **Experiment Tracking** — DOE support with 96-well plate layouts, samples, mixtures, and factor definitions
 - **Deploy** — Batch prediction, folder watching, and execution run tracking with model provenance
 - **LLM Chat** — BYOK AI assistant (OpenAI, Anthropic, Google, DeepSeek, Qwen) for spectral analysis and workflow guidance
-- **Plugin System** — Extend the node library via Python entry points or drop-in modules
+- **Plugin System** — Add your own processing nodes by dropping a Python file into a folder or installing a package
 - **Privacy Controls** — Fine-grained egress permissions; "deny all" network policy by default; local-first architecture for IP-sensitive labs
 
-| Mode | Auth | Use Case |
-|------|------|----------|
-| `local` | None (single-user) | Desktop analysis, privacy-first |
-| `hybrid` | JWT + API key | Local processing, optional cloud features |
-| `enterprise` | Full multi-user auth | Shared lab environments |
+| Mode | Login required? | Use Case |
+|------|-----------------|----------|
+| `local` | No — single user, opens straight to the app | Desktop analysis, privacy-first |
+| `hybrid` | No for local network; yes for remote access | Local processing, optional cloud features |
+| `enterprise` | Yes — full accounts with roles | Shared lab environments, multiple users |
 
 ## Algorithm Library
 
@@ -113,24 +149,24 @@ Project
 
 ## Installation
 
-**Requirements:** Python 3.11+ (Node.js 22+ for frontend development only)
+**Requirements:** Python 3.11+. That is all you need to install and run SpectraSherpa. [Node.js](https://nodejs.org) is only needed if you want to modify the browser interface itself.
 
 ```bash
-# User install
+# Install and run (all you need as a user)
 pip install spectra-sherpa
 spectra-sherpa
 
-# From source (development)
+# From source (for contributors — see CONTRIBUTING.md for a full walkthrough)
 git clone https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa.git
 cd Spectra-Sherpa
+pip install poetry                              # Poetry manages Python dependencies
 poetry install --with dev --extras "scp sherpa"
 
-# Frontend development
-cd frontend && npm install && npm run dev
+# Only needed to change the browser interface
+cd frontend && npm install && npm run dev       # npm is the JavaScript package manager
 
-# Run tests
+# Run the Python test suite
 poetry run pytest tests/ -v --no-cov
-cd frontend && npx vue-tsc --noEmit && npm run build
 ```
 
 | Extra | Install | Description |

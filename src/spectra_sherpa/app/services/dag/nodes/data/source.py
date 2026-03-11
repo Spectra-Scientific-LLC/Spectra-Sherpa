@@ -612,9 +612,24 @@ class DataSourceNode(Node):
             if x_units and not domain.expected_units:
                 domain.expected_units = str(x_units)
         elif source == "sklearn":
-            domain.technique = "generic"
+            # sklearn datasets are tabular (non-spectroscopic).  Mark them
+            # explicitly so downstream nodes can surface warnings.
+            from spectra_sherpa.app.lib.sklearn_info import _SKLEARN_NON_SPECTROSCOPIC_WARNING, SKLEARN_CATALOG
+
+            domain.technique = "non-spectroscopic"
             if sklearn_dataset:
                 domain.sample_type = sklearn_dataset
+            catalog_entry = SKLEARN_CATALOG.get(sklearn_dataset or "", {})
+            if not catalog_entry.get("is_spectroscopic", True):
+                # Inject the warning into dataset.meta so the Inspector and
+                # result serialiser can surface it to the user.
+                if isinstance(dataset.meta, dict):
+                    dataset.meta["non_spectroscopic_warning"] = _SKLEARN_NON_SPECTROSCOPIC_WARNING
+                else:
+                    try:
+                        dataset.meta["non_spectroscopic_warning"] = _SKLEARN_NON_SPECTROSCOPIC_WARNING
+                    except Exception:
+                        pass
 
         # Promote extracted instrument/sample metadata from the metadata dict.
         meta = dataset.meta if isinstance(dataset.meta, dict) else {}

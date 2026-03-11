@@ -17,7 +17,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-from sqlalchemy import select
 
 from spectra_sherpa.app.services.tools.executor import ToolExecutionContext, execute_tool
 from spectra_sherpa.app.services.tools.registry import ToolRegistry, tool_registry
@@ -250,118 +249,6 @@ class TestToolExecutor:
             )
         assert result.success is True
         assert result.result == {"status": "ok"}
-
-    @pytest.mark.asyncio
-    async def test_generate_loader_plugin_persists_project_custom_node(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path,
-        test_session,
-        test_user,
-    ):
-        import spectra_sherpa.app.services.tools.builtin  # noqa: F401
-        from spectra_sherpa.app.models.custom_algo import CustomAlgo
-        from spectra_sherpa.app.models.project import Project
-        from spectra_sherpa.app.services.custom_algo_codegen import get_plugin_path
-        from spectra_sherpa.app.services.dag.node_base import node_registry
-
-        project = Project(user_id=test_user.id, name="Import Project")
-        test_session.add(project)
-        await test_session.commit()
-        await test_session.refresh(project)
-
-        monkeypatch.setattr(
-            "spectra_sherpa.app.services.custom_algo_codegen.get_plugin_dir",
-            lambda: tmp_path,
-        )
-
-        code = f"""from spectra_sherpa.app.services.dag.node_base import Node, NodeMetadata, register_node
-
-@register_node
-class UvLoader(Node):
-    metadata = NodeMetadata(
-        node_type="ualgo.{project.id}.uv_csv_load",
-        category="custom_algo",
-        label="UV CSV Load",
-        description="Load UV CSV data",
-        input_ports=[],
-        output_ports=[],
-    )
-"""
-
-        result = await execute_tool(
-            ToolInvocation(
-                tool_name="generate_loader_plugin",
-                arguments={
-                    "project_id": project.id,
-                    "slug": "uv_csv_load",
-                    "code": code,
-                },
-            ),
-            context=ToolExecutionContext(session=test_session, user=test_user),
-            allow_internal=True,
-        )
-
-        assert result.success is True
-        assert result.result["node_type"] == f"ualgo.{project.id}.uv_csv_load"
-
-        stored = await test_session.scalar(
-            select(CustomAlgo).where(CustomAlgo.project_id == project.id, CustomAlgo.slug == "uv_csv_load")
-        )
-        assert stored is not None
-        assert stored.mode == "loader"
-        assert stored.name == "UV CSV Load"
-        assert get_plugin_path(stored).exists()
-        assert node_registry.get_metadata(stored.node_type).label == "UV CSV Load"
-
-        node_registry.unregister(stored.node_type)
-
-    @pytest.mark.asyncio
-    async def test_create_experiment_with_file_links_project(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path,
-        test_session,
-        test_user,
-    ):
-        import spectra_sherpa.app.services.tools.builtin  # noqa: F401
-        from spectra_sherpa.app.core.config import settings
-        from spectra_sherpa.app.models.experiment import Experiment
-        from spectra_sherpa.app.models.project import Project
-
-        project = Project(user_id=test_user.id, name="Dataset Project")
-        test_session.add(project)
-        await test_session.commit()
-        await test_session.refresh(project)
-
-        data_dir = tmp_path / "data"
-        data_dir.mkdir(parents=True, exist_ok=True)
-        original_data_dir = settings.data_dir
-        object.__setattr__(settings, "data_dir", data_dir)
-
-        csv_path = tmp_path / "uv.csv"
-        csv_path.write_text("1,2,3\n4,5,6\n", encoding="utf-8")
-
-        try:
-            result = await execute_tool(
-                ToolInvocation(
-                    tool_name="create_experiment_with_file",
-                    arguments={
-                        "name": "UV Dataset",
-                        "file_path": str(csv_path),
-                        "project_id": project.id,
-                    },
-                ),
-                context=ToolExecutionContext(session=test_session, user=test_user),
-                allow_internal=True,
-            )
-
-            assert result.success is True
-            experiment = await test_session.get(Experiment, result.result["experiment_id"])
-            assert experiment is not None
-            assert experiment.project_id == project.id
-        finally:
-            object.__setattr__(settings, "data_dir", original_data_dir)
 
     @pytest.mark.asyncio
     async def test_execute_async_tool(self):

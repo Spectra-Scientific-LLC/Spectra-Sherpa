@@ -423,4 +423,3 @@ async def get_version_by_name(session: AsyncSession, experiment_id: int, version
         .where(ExpVersion.version_name == version_name)
     )
     return result.scalar_one_or_none()
-

@@ -42,6 +42,12 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      // REST API — used when VITE_API_BASE_URL is set to a relative path (e.g. /api/v1)
+      // instead of the default absolute http://127.0.0.1:8000/api/v1 in client.ts.
+      "/api": {
+        target: "http://127.0.0.1:8000",
+        changeOrigin: true,
+      },
       "/ws": {
         target: "http://127.0.0.1:8000",
         ws: true,

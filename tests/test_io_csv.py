@@ -4,9 +4,8 @@ import numpy as np
 import pytest
 
 from spectra_sherpa.app.lib.io import load_csv_as_sherpa, stack_datasets
-from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
 try:
     from spectra_sherpa.app.lib.spectral.dataset import SpectralUnit, create_spectral_dataset

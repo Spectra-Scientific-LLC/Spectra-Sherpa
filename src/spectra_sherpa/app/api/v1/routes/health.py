@@ -16,12 +16,12 @@ router = APIRouter()
 
 @router.get("/health")
 async def health_check() -> dict:
-    from spectra_sherpa.app.main import startup_plugin_failures
+    from spectra_sherpa.app.services.plugin_loader import plugin_load_failures
 
     result: dict = {"status": "ok"}
-    if startup_plugin_failures:
+    if plugin_load_failures:
         result["status"] = "degraded"
-        result["plugin_failures"] = startup_plugin_failures
+        result["plugin_failure_count"] = len(plugin_load_failures)
     return result
 
 

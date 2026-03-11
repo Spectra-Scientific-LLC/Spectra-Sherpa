@@ -12,14 +12,6 @@
             LLM Chat
           </button>
           <button
-            v-if="llmChatEnabled && isFeatureEnabled('customCodeExecution')"
-            class="tab-btn"
-            :class="{ active: activeTab === 'import' }"
-            @click="switchToImport"
-          >
-            Data Import
-          </button>
-          <button
             v-if="sherpaEnabled"
             class="tab-btn"
             :class="{ active: activeTab === 'sherpa' }"
@@ -130,39 +122,8 @@
                 </template>
               </template>
 
-              <!-- Data Import messages -->
-              <template v-else-if="activeTab === 'import'">
-                <div
-                  v-for="(message, idx) in importStore.messages"
-                  :key="idx"
-                  class="chat-message"
-                  :class="message.role"
-                >
-                  <div v-if="message.role === 'system'" class="system-notification">
-                    {{ message.content }}
-                  </div>
-                  <div v-else class="chat-bubble">{{ message.content }}</div>
-                </div>
-                <div
-                  v-for="(tool, tidx) in importStore.activeTools"
-                  :key="'import-tool-' + tidx"
-                  class="tool-progress"
-                >
-                  <i
-                    :class="tool.status === 'running' ? 'pi pi-spin pi-spinner' : tool.status === 'done' ? 'pi pi-check-circle' : 'pi pi-times-circle'"
-                    :style="{ color: tool.status === 'running' ? '#3b82f6' : tool.status === 'done' ? '#22c55e' : '#ef4444' }"
-                  ></i>
-                  <span v-if="tool.status === 'running'">{{ toolDisplayName(tool.tool_name) }}...</span>
-                  <span v-else-if="tool.status === 'done'">{{ toolDisplayName(tool.tool_name) }} done</span>
-                  <span v-else>{{ toolDisplayName(tool.tool_name) }} failed</span>
-                </div>
-                <div v-if="importStore.loading && importStore.activeTools.length === 0" class="chat-message assistant">
-                  <div class="chat-bubble">Processing...</div>
-                </div>
-              </template>
-
               <!-- Sherpa messages -->
-              <template v-else-if="activeTab === 'sherpa'">
+              <template v-else>
                 <div
                   v-for="(message, idx) in sherpaStore.messages"
                   :key="idx"
@@ -227,11 +188,8 @@ import Menu from "primevue/menu";
 import { useToast } from "primevue/usetoast";
 
 import { useLlmStore } from "@/stores/llm";
-import { useDataImportStore } from "@/stores/dataImport";
 import { useSherpaStore } from "@/stores/sherpa";
 import { useExperimentStore } from "@/stores/experiment";
-import { useProjectStore } from "@/stores/project";
-import { useWorkflowStore } from "@/stores/workflow";
 import { useAuthStore } from "@/stores/auth";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useDemoMode } from "@/composables/useDemoMode";
@@ -249,17 +207,10 @@ const props = withDefaults(
   }
 );
 
-const emit = defineEmits<{
-  (event: "toggle"): void;
-}>();
-
 const router = useRouter();
 const store = useLlmStore();
-const importStore = useDataImportStore();
 const sherpaStore = useSherpaStore();
 const experimentStore = useExperimentStore();
-const projectStore = useProjectStore();
-const workflowStore = useWorkflowStore();
 const authStore = useAuthStore();
 const toast = useToast();
 const { appMode, isFeatureEnabled } = useAppConfig();
@@ -279,14 +230,9 @@ const scrollToBottom = async () => {
 
 // ── Tab toggle ───────────────────────────────────────────────
 
-const activeTab = ref<"llm" | "import" | "sherpa">("llm");
+const activeTab = ref<"llm" | "sherpa">("llm");
 const sherpaEnabled = computed(() => isFeatureEnabled("sherpaAdvisor"));
 const llmChatEnabled = computed(() => isFeatureEnabled("chatAssistant"));
-
-const switchToImport = () => {
-  activeTab.value = "import";
-  importStore.resetSession();
-};
 
 const switchToSherpa = () => {
   activeTab.value = "sherpa";
@@ -305,13 +251,11 @@ const switchToSherpa = () => {
 
 const inputPlaceholder = computed(() => {
   if (activeTab.value === "sherpa") return "Ask Sherpa about your workflow...";
-  if (activeTab.value === "import") return "Describe your data file and import needs...";
   return "Ask about spectra, exports, or processing... (Type '/' to clear chat)";
 });
 
 const inputDisabled = computed(() => {
   if (activeTab.value === "llm") return !llmChatEnabled.value;
-  if (activeTab.value === "import") return importStore.sessionComplete || importStore.loading;
   return false;
 });
 
@@ -369,7 +313,6 @@ onMounted(async () => {
     store.connect();
     experimentStore.fetchExperiments();
     sherpaStore.init();
-    importStore.init();
     // Fetch initial config only when authenticated (requires /llm/debug/config)
     await store.checkConfigChange();
   }
@@ -381,7 +324,6 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener("llm-config-changed", handleConfigChange);
   sherpaStore.dispose();
-  importStore.dispose();
 });
 
 // ── Auto-scroll ──────────────────────────────────────────────
@@ -413,51 +355,13 @@ watch(
   }
 );
 
-// ── Auto-scroll for import messages ───────────────────────────
+// ── Auto-scroll for active tab messages ───────────────────────
 
 watch(
-  () => importStore.messages.length,
-  async () => {
-    if (activeTab.value === "import") {
-      await scrollToBottom();
-    }
-  }
-);
-
-watch(
-  () => [activeTab.value, store.loading, store.streaming, sherpaStore.state, importStore.loading],
+  () => [activeTab.value, store.loading, store.streaming, sherpaStore.state],
   async () => {
     await scrollToBottom();
   }
-);
-
-// ── Refresh experiments when import tools create datasets ─────
-
-watch(
-  () => importStore.activeTools,
-  (tools) => {
-    const justCreated = tools.find(
-      (t) => t.tool_name === "create_experiment_with_file" && t.status === "done"
-    );
-    if (justCreated) {
-      experimentStore.fetchExperiments();
-    }
-  },
-  { deep: true }
-);
-
-watch(
-  () => importStore.activeTools,
-  async (tools) => {
-    const pluginCreated = tools.find(
-      (t) => t.tool_name === "generate_loader_plugin" && t.status === "done"
-    );
-    if (!pluginCreated) {
-      return;
-    }
-    await workflowStore.fetchNodeLibrary();
-  },
-  { deep: true }
 );
 
 // ── Connection status toasts ─────────────────────────────────
@@ -491,29 +395,6 @@ watch(
 
 const sendMessage = async () => {
   if (!userMessage.value.trim()) {
-    return;
-  }
-
-  // Data Import tab
-  if (activeTab.value === "import") {
-    if (importStore.sessionComplete) return;
-    if (!projectStore.currentProject) {
-      importStore.messages.push({
-        role: "system",
-        content: "Select or create a project first. Data Import parsers are managed as project-scoped Custom Nodes.",
-      });
-      return;
-    }
-    const metadata = projectStore.currentProject
-      ? {
-          project: {
-            id: projectStore.currentProject.id,
-            name: projectStore.currentProject.name,
-          },
-        }
-      : undefined;
-    await importStore.sendMessage(userMessage.value, metadata);
-    userMessage.value = "";
     return;
   }
 
@@ -663,15 +544,6 @@ const onProviderChange = async () => {
       selectedProvider.value = store.currentConfig.provider;
     }
   }
-};
-
-const toolDisplayName = (name: string): string => {
-  const names: Record<string, string> = {
-    inspect_file: "Inspecting file",
-    generate_loader_plugin: "Generating plugin",
-    create_experiment_with_file: "Creating dataset",
-  };
-  return names[name] || name;
 };
 
 const compact = computed(() => props.compact);

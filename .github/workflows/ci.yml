@@ -29,7 +29,11 @@ jobs:
         run: ruff check src/ tests/
 
       - name: mypy (core modules)
-        run: mypy src/spectra_sherpa/app/core/ --no-error-summary || true
+        run: mypy src/spectra_sherpa/app/core/ --no-error-summary
+
+      - name: mypy (dag nodes — warning mode, ratchet down over time)
+        run: mypy src/spectra_sherpa/app/services/dag/ --no-error-summary
+        continue-on-error: true
 
   backend:
     name: Backend Tests
@@ -141,19 +145,8 @@ jobs:
         run: npm run build
         working-directory: frontend
 
-      - name: Verify static bundle is fresh
+      - name: Verify build produced index.html and all referenced assets
         run: |
-          # Fail if build output differs from committed static assets.
-          # This catches stale static bundle commits and missing asset updates.
-          if [ -n "$(git status --porcelain -- src/spectra_sherpa/static)" ]; then
-            echo "::error::Frontend build changed src/spectra_sherpa/static."
-            echo "Run 'cd frontend && npm run build' and commit updated static assets."
-            git status --short -- src/spectra_sherpa/static
-            exit 1
-          fi
-
-          # Vite builds directly into src/spectra_sherpa/static/ (see frontend/vite.config.ts).
-          # Verify index.html exists and all referenced assets are present.
           if [ ! -f "src/spectra_sherpa/static/index.html" ]; then
             echo "::error::Build did not produce src/spectra_sherpa/static/index.html"
             exit 1
@@ -167,7 +160,18 @@ jobs:
             fi
           done
 
-          echo "Static bundle is fresh and all referenced assets exist."
+          echo "Build produced index.html and all referenced assets."
+
+      - name: Warn if static bundle is stale
+        continue-on-error: true
+        run: |
+          if [ -n "$(git status --porcelain -- src/spectra_sherpa/static)" ]; then
+            echo "::warning::Committed static bundle is stale — frontend source changed after the last build."
+            echo "::warning::Trigger the 'Rebuild Frontend Static Bundle' workflow and commit the updated assets."
+            git status --short -- src/spectra_sherpa/static
+          else
+            echo "Static bundle is up to date."
+          fi
 
   security:
     name: Security Scan

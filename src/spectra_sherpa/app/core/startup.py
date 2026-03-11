@@ -5,6 +5,7 @@ import logging
 import os
 import secrets
 import sys
+import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -174,6 +175,17 @@ def _validate_security() -> list[ConfigIssue]:
                 "will be lost on container restart. Set this env var explicitly.",
             )
         )
+    else:
+        from spectra_sherpa.app.core.env_validation import EnvValidationWarning, validate_encryption_env
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", EnvValidationWarning)
+            encryption_errors = validate_encryption_env()
+
+        for error in encryption_errors:
+            issues.append(ConfigIssue("error", "security", error))
+        for warning_item in caught:
+            issues.append(ConfigIssue("warning", "security", str(warning_item.message)))
 
     if app_config.mode == "hybrid":
         bind_host = os.getenv("HOST", "127.0.0.1")

@@ -113,6 +113,13 @@ export const useJobStore = defineStore("job", () => {
     socket.addEventListener("message", async (event) => {
       try {
         const payload = JSON.parse(event.data);
+        if (payload?.type === "ping") {
+          socket.send(JSON.stringify({ action: "pong" }));
+          return;
+        }
+        if (payload?.type === "pong") {
+          return;
+        }
         if (payload?.job_id) {
           const jobId = Number(payload.job_id);
           if (!jobMap.value.has(jobId)) {

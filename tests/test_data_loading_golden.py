@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 pytest.importorskip("spectrochempy")
+import spectrochempy as scp
 
 from spectra_sherpa.app.services.dag.nodes.data import DataSourceNode
 

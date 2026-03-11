@@ -12,9 +12,36 @@ All nodes:
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Technology-aware baseline lambda defaults
+# ---------------------------------------------------------------------------
+# The ALS/ArPLS/AirPLS smoothness penalty λ is scale-dependent.  The table
+# below gives recommended starting values by spectroscopic technique.
+# Rationale:
+#   NIR (broad, gentle baselines; 700 channels, A≈0–3):      λ = 1e6
+#   Raman (fluorescence backdrop, sharp peaks; counts/AU):    λ = 1e5
+#   FTIR (many points, slow baselines; A≈0–3):               λ = 1e7
+#   OES (emission, minimal baseline; counts):                 λ = 1e4
+#   Generic/unrecognised:                                     λ = 1e5
+_BASELINE_LAMBDA_DEFAULT = 1e5  # node metadata default — "no technique set"
+
+_LAMBDA_BY_TECHNIQUE: dict[str, float] = {
+    "NIR": 1e6,
+    "NEAR_INFRARED": 1e6,
+    "RAMAN": 1e5,
+    "FTIR": 1e7,
+    "IR": 1e7,
+    "MIR": 1e7,
+    "OES": 1e4,
+    "OPTICAL_EMISSION": 1e4,
+}
 
 from spectra_sherpa.app.lib.adapters.scp_adapter import scp_roundtrip
 from spectra_sherpa.app.lib.preprocessing import (
@@ -100,7 +127,13 @@ class BaselinePenalizedLSNode(TransformSpecNode):
         node_type="baseline.penalized_ls",
         category="preprocessing",
         label="Baseline (Penalized LS)",
-        description="Penalized Least Squares baseline correction (ALS / ArPLS / AirPLS)",
+        description=(
+            "Estimates and subtracts a smooth baseline using Asymmetric Least Squares (ALS), "
+            "Asymmetrically Reweighted PLS (ArPLS), or Adaptive Iteratively Reweighted PLS (AirPLS). "
+            "Lambda is auto-selected by spectroscopic technique when left at default: "
+            "NIR → 1×10⁶, FTIR/IR → 1×10⁷, Raman → 1×10⁵, OES → 1×10⁴. "
+            "ArPLS and AirPLS are more robust than ALS for spectra with many or broad peaks."
+        ),
         parameters=[
             NodeParameter(
                 name="method",
@@ -119,9 +152,19 @@ class BaselinePenalizedLSNode(TransformSpecNode):
                 default=1e5,
                 min_value=1e2,
                 max_value=1e9,
-                description="Smoothness parameter (larger = smoother baseline)",
+                description=(
+                    "Smoothness penalty — larger values produce a smoother (flatter) baseline. "
+                    "When left at the default (1×10⁵), the value is auto-selected by technique "
+                    "(NIR: 1×10⁶, FTIR/IR: 1×10⁷, Raman: 1×10⁵, OES: 1×10⁴). "
+                    "Set explicitly to override the auto-selected value."
+                ),
                 required=False,
                 category="basic",
+                hint=(
+                    "If the corrected baseline still curves under peaks, increase λ. "
+                    "If signal peaks are suppressed or flattened, decrease λ. "
+                    "A factor of 10× change is a good starting step."
+                ),
             ),
             NodeParameter(
                 name="p",
@@ -179,6 +222,63 @@ class BaselinePenalizedLSNode(TransformSpecNode):
         extra_imports=["import numpy as np", "from scipy import sparse"],
         state_effects=[EFFECT_BASELINE_CORRECTED],
     )
+
+    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
+        """Override TransformSpecNode to apply technology-aware lambda defaults.
+
+        When the user has not explicitly overridden the lambda parameter (i.e.
+        it still equals the node's built-in default of 1e5), we substitute a
+        technique-specific starting value read from ``_LAMBDA_BY_TECHNIQUE``.
+        An explicit user value — even if it happens to equal a table entry —
+        always takes precedence over the auto-selected value.
+        """
+        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
+        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
+
+        params = self._resolve_params()
+        user_lam = params.get("lam", _BASELINE_LAMBDA_DEFAULT)
+
+        # Auto-select lambda when the user hasn't changed it from the node default
+        effective_lam = user_lam
+        technique_used: str | None = None
+        if user_lam == _BASELINE_LAMBDA_DEFAULT:
+            technique = None
+            if isinstance(input_ds, SherpaDataset) and input_ds.domain is not None:
+                technique = input_ds.domain.technique
+            if technique:
+                lookup = _LAMBDA_BY_TECHNIQUE.get(technique.upper().replace(" ", "_"))
+                if lookup is not None:
+                    effective_lam = lookup
+                    technique_used = technique
+                    logger.info(
+                        "[Baseline] Auto-selected λ=%g for technique '%s'. "
+                        "Set the Lambda parameter explicitly to override.",
+                        effective_lam,
+                        technique,
+                    )
+
+        result_data = baseline_penalized_ls(
+            data,
+            method=params.get("method", "als"),
+            lam=effective_lam,
+            p=params.get("p", 0.001),
+            max_iter=params.get("max_iter", 50),
+            tol=params.get("tol", 1e-6),
+        )
+
+        result = build_dataset_like(result_data, input_ds, units=None)
+        recorded_params = dict(params)
+        recorded_params["lam"] = effective_lam
+        if technique_used:
+            recorded_params["_lam_auto_technique"] = technique_used
+        add_processing_step(
+            result,
+            self.metadata.node_type,
+            recorded_params,
+            node_id=self.node_id,
+            state_effects=[EFFECT_BASELINE_CORRECTED],
+        )
+        return result
 
 
 @register_node

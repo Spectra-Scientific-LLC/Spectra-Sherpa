@@ -97,18 +97,14 @@ async def _resolve_user(
         # Check cache first (avoids expensive bcrypt on every request)
         cached_user_id = security._get_cached_user_id(api_key)
         if cached_user_id is not None:
-            result = await session.execute(
-                select(User).where(User.id == cached_user_id, User.is_active.is_(True))
-            )
+            result = await session.execute(select(User).where(User.id == cached_user_id, User.is_active.is_(True)))
             user = result.scalar_one_or_none()
             if user:
                 return user
 
         # Cache miss — do expensive bcrypt verification against active users only.
         # We iterate rather than query by hash because bcrypt salts are random.
-        result = await session.execute(
-            select(User).where(User.api_key_hash.isnot(None), User.is_active.is_(True))
-        )
+        result = await session.execute(select(User).where(User.api_key_hash.isnot(None), User.is_active.is_(True)))
         for user in result.scalars():
             if security.verify_password(api_key, user.api_key_hash):
                 security._cache_api_key(api_key, user.id)

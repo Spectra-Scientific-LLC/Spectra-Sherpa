@@ -26,3 +26,12 @@ repos:
         language: system
         files: ^frontend/src/.*\.(ts|vue|css)$
         pass_filenames: true
+
+      - id: rebuild-frontend-static
+        name: Rebuild frontend static bundle
+        # Keeps src/spectra_sherpa/static/ in sync when frontend source changes.
+        # The rebuilt assets are staged automatically so the commit includes them.
+        entry: bash -c 'cd frontend && npm run build && git add ../src/spectra_sherpa/static/'
+        language: system
+        files: ^frontend/(src|public)/.*\.(ts|vue|css|js|html)$|^frontend/(vite\.config\.ts|index\.html|package\.json)$
+        pass_filenames: false

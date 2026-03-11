@@ -5,13 +5,16 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
-from typing import AsyncGenerator
+from typing import TYPE_CHECKING, AsyncGenerator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+
+if TYPE_CHECKING:
+    from spectra_sherpa.app.models.user import User
 
 
 def _configure_writable_runtime_dirs() -> None:
@@ -50,15 +53,43 @@ logging.getLogger().setLevel(logging.CRITICAL)
 
 from starlette.testclient import TestClient
 
-from spectra_sherpa.app.api.deps import get_current_user, get_session
-from spectra_sherpa.app.db.base import Base
-from spectra_sherpa.app.main import app
-from spectra_sherpa.app.models.user import User
+
+def _get_app():
+    """Import the FastAPI app lazily.
+
+    Importing ``spectra_sherpa.app.main`` pulls in the full router graph,
+    which in turn imports optional SpectroChemPy-backed modules. Keeping this
+    lazy avoids that startup cost for tests that never touch the HTTP app.
+    """
+    from spectra_sherpa.app.main import app
+
+    return app
+
+
+def _get_test_deps():
+    from spectra_sherpa.app.api.deps import get_current_user, get_session
+
+    return get_current_user, get_session
+
+
+def _get_base():
+    # Import models before metadata creation so SQLAlchemy registers tables.
+    import spectra_sherpa.app.models  # noqa: F401
+    from spectra_sherpa.app.db.base import Base
+
+    return Base
+
+
+def _get_user_model():
+    from spectra_sherpa.app.models.user import User
+
+    return User
 
 
 @pytest.fixture
 async def test_engine():
     """Create a test database engine"""
+    Base = _get_base()
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -88,6 +119,7 @@ async def test_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
 @pytest.fixture
 async def test_user(test_session: AsyncSession) -> User:
     """Create a test user"""
+    User = _get_user_model()
     user = User(username="testuser", password_hash="testhash")
     test_session.add(user)
     await test_session.commit()
@@ -98,6 +130,8 @@ async def test_user(test_session: AsyncSession) -> User:
 @pytest.fixture
 async def client(test_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     """Create a test HTTP client"""
+    app = _get_app()
+    _, get_session = _get_test_deps()
 
     async def override_get_session():
         yield test_session
@@ -113,6 +147,8 @@ async def client(test_session: AsyncSession) -> AsyncGenerator[AsyncClient, None
 @pytest.fixture
 async def auth_client(test_session: AsyncSession, test_user: User) -> AsyncGenerator[AsyncClient, None]:
     """HTTP client authenticated as test_user."""
+    app = _get_app()
+    get_current_user, get_session = _get_test_deps()
 
     async def override_get_session():
         yield test_session
@@ -132,6 +168,8 @@ async def auth_client(test_session: AsyncSession, test_user: User) -> AsyncGener
 @pytest.fixture
 def swap_user(test_session: AsyncSession):
     """Context helper to temporarily swap the authenticated user for ownership tests."""
+    app = _get_app()
+    get_current_user, get_session = _get_test_deps()
 
     class _Swapper:
         def __call__(self, user: User):
@@ -150,6 +188,7 @@ def swap_user(test_session: AsyncSession):
 @pytest.fixture
 def ws_client():
     """Synchronous TestClient for WebSocket testing."""
+    app = _get_app()
     tc = TestClient(app)
     try:
         yield tc

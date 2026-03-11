@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 # Shared properties
@@ -28,14 +28,13 @@ class UserStatusUpdate(BaseModel):
 
 
 class UserInDBBase(UserBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: Optional[int] = None
     last_login_at: Optional[datetime] = None
     login_count: int = 0
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
 
 
 # Additional properties to return via API

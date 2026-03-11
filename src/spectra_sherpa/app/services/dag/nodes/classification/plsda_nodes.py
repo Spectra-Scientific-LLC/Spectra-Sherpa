@@ -50,7 +50,13 @@ class PLSDANode(Node):
         node_type="classification.plsda",
         category="classification",
         label="PLS-DA",
-        description="Partial Least Squares Discriminant Analysis for classification",
+        description=(
+            "Partial Least Squares Discriminant Analysis for classification. "
+            "⚠ Class probabilities are derived via softmax on raw PLS regression outputs "
+            "and are NOT calibrated — they indicate relative confidence only. "
+            "For reliable probability estimates apply Platt scaling or isotonic regression "
+            "to the CV predictions after training."
+        ),
         parameters=[
             NodeParameter(
                 name="n_components",
@@ -63,13 +69,21 @@ class PLSDANode(Node):
                 description="Number of PLS components (latent variables)",
                 required=True,
                 category="basic",
+                hint=(
+                    "Must be ≤ min(n_samples − 1, n_features, n_classes). "
+                    "Typical chemometrics range: 2–10 LVs. "
+                    "Use cross-validation to select the optimal number — the model node reports CV accuracy per LV."
+                ),
             ),
             NodeParameter(
                 name="scale",
-                label="Scale Data",
+                label="Mean Center + Unit Variance",
                 param_type="boolean",
                 default=True,
-                description="Apply mean centering and scaling",
+                description=(
+                    "Apply mean centering and unit-variance scaling before PLS-DA. "
+                    "Recommended for spectral data — leave enabled unless spectra are already pre-scaled."
+                ),
                 required=False,
                 category="basic",
             ),
@@ -81,9 +95,14 @@ class PLSDANode(Node):
                 min_value=2,
                 max_value=20,
                 step=1,
-                description="Number of folds for cross-validation",
+                description="Number of folds for cross-validation (must be ≤ smallest class count)",
                 required=False,
                 category="advanced",
+                hint=(
+                    "For datasets with n < 50 samples, consider using LOOCV (n folds) via the "
+                    "Cross-Validation node. "
+                    "Minimum: cv_folds ≤ smallest class count — an error is raised if this is violated."
+                ),
             ),
         ],
         input_types=["NDDataset", "array"],
@@ -452,6 +471,13 @@ class PLSDANode(Node):
             {
                 "type": "PLS_DA",
                 "n_components": n_components,
+                "probabilities_calibrated": False,
+                "probabilities_warning": (
+                    "Class probabilities are softmax-transformed raw PLS regression outputs. "
+                    "They are NOT statistically calibrated — do not interpret as true posterior "
+                    "probabilities. Apply Platt scaling or isotonic regression on the CV "
+                    "predictions for calibrated confidence estimates (Platt 1999)."
+                ),
                 "label_categories": label_categories,
                 "lv_labels": lv_labels,
                 "accuracy": cv_accuracy,

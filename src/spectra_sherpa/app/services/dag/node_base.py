@@ -73,6 +73,10 @@ class NodeParameter:
     # When set, this parameter is only shown when the controlling param has one of the listed values.
     # Example: visible_when={"method": ["whittaker"]} → only show when method is "whittaker"
     visible_when: Optional[Dict[str, List[str]]] = None
+    # Static advisory hint rendered by the Inspector (e.g. info-icon tooltip).
+    # Use for constraints that depend on runtime data and cannot be checked at
+    # parameter-edit time (e.g. n_components <= min(n_samples, n_features)).
+    hint: Optional[str] = None
 
 
 @dataclass
@@ -110,7 +114,7 @@ class NodePolicy:
     safe_for_auto_apply: bool = False
     requires_human_review: bool = True
     data_egress_risk: str = "none"  # "none", "metadata", "full_data"
-    offload_to_pool: bool = True  # False for custom algo nodes (not in worker registry)
+    offload_to_pool: bool = True  # False for dynamically loaded plugin nodes not present in the worker registry.
 
 
 @dataclass

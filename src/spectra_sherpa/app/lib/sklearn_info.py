@@ -6,22 +6,42 @@ from typing import Any
 
 import numpy as np
 
+# NOTE: sklearn datasets are NOT spectroscopic data.  They are tabular
+# morphological / clinical measurements and lack physical axis scales (no
+# wavenumber, wavelength, or m/z axis).  Spectral preprocessing nodes
+# (baseline correction, smoothing, normalisation, derivative) produce
+# physically meaningless results on these datasets.  They are provided for
+# algorithm exploration and workflow testing only.
+_SKLEARN_NON_SPECTROSCOPIC_WARNING = (
+    "⚠ This is a non-spectroscopic dataset (tabular measurements, no wavelength/wavenumber axis). "
+    "Spectral preprocessing nodes (baseline correction, smoothing, derivatives, scatter correction) "
+    "are not physically meaningful on this data. Suitable for testing classification and regression nodes only."
+)
+
 SKLEARN_CATALOG: dict[str, dict[str, Any]] = {
     "iris": {
-        "label": "Iris (3 species, 4 features, 150 samples)",
+        "label": "Iris — non-spectroscopic (3 species, 4 features, 150 samples)",
         "task_type": "classification",
+        "is_spectroscopic": False,
+        "warning": _SKLEARN_NON_SPECTROSCOPIC_WARNING,
     },
     "wine": {
-        "label": "Wine (3 classes, 13 features, 178 samples)",
+        "label": "Wine — non-spectroscopic (3 classes, 13 features, 178 samples)",
         "task_type": "classification",
+        "is_spectroscopic": False,
+        "warning": _SKLEARN_NON_SPECTROSCOPIC_WARNING,
     },
     "breast_cancer": {
-        "label": "Breast Cancer (2 classes, 30 features, 569 samples)",
+        "label": "Breast Cancer — non-spectroscopic (2 classes, 30 features, 569 samples)",
         "task_type": "classification",
+        "is_spectroscopic": False,
+        "warning": _SKLEARN_NON_SPECTROSCOPIC_WARNING,
     },
     "digits": {
-        "label": "Digits (10 classes, 64 features, 1797 samples)",
+        "label": "Digits — non-spectroscopic (10 classes, 64 features, 1797 samples)",
         "task_type": "classification",
+        "is_spectroscopic": False,
+        "warning": _SKLEARN_NON_SPECTROSCOPIC_WARNING,
     },
 }
 
@@ -48,7 +68,9 @@ def get_sklearn_dataset_info(name: str) -> dict[str, Any]:
         "name": name,
         "source": "sklearn",
         "label": catalog["label"],
-        "technique": "ML/Statistics",
+        "technique": "Non-spectroscopic (tabular)",
+        "is_spectroscopic": catalog.get("is_spectroscopic", False),
+        "warning": catalog.get("warning"),
         "description": bunch.DESCR,
         "task_type": catalog["task_type"],
         "n_samples": int(bunch.data.shape[0]),

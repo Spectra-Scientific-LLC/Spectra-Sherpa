@@ -4,8 +4,10 @@ from concurrent.futures import TimeoutError as FutureTimeout
 from types import SimpleNamespace
 
 import pytest
+from cryptography.fernet import Fernet
 
 import spectra_sherpa.app.core.startup as startup
+from spectra_sherpa.app.services.encryption import get_master_key
 
 
 def _patch_runtime(
@@ -106,6 +108,29 @@ def test_hybrid_security_warns_on_default_api_key_when_system_auth_enabled(
 
     assert "APP_API_KEY is set to the default value" in caplog.text
     assert "MASTER_ENCRYPTION_KEY not set" in caplog.text
+
+
+def test_hybrid_security_rejects_short_master_encryption_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_runtime(
+        monkeypatch,
+        mode="hybrid",
+        secret_key="safe-secret",
+        api_key="safe-api-key",
+    )
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", "too-short")
+
+    with pytest.raises(SystemExit) as exc_info:
+        startup.validate_security_settings()
+
+    assert exc_info.value.code == 1
+
+
+def test_master_encryption_secret_is_normalized_to_valid_fernet_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", "x" * 32)
+
+    key = get_master_key()
+
+    Fernet(key)
 
 
 # ===========================================================================

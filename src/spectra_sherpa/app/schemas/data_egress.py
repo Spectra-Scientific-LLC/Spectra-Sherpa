@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DataEgressPermissionBase(BaseModel):
@@ -35,13 +35,12 @@ class DataEgressPermissionUpdate(BaseModel):
 class DataEgressPermission(DataEgressPermissionBase):
     """Schema for permission response"""
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     user_id: int
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class UserEgressDefaultsBase(BaseModel):
@@ -71,23 +70,21 @@ class UserEgressDefaultsUpdate(BaseModel):
 class UserEgressDefaults(UserEgressDefaultsBase):
     """Schema for defaults response"""
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     user_id: int
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
-
 
 class EgressSettingsSummary(BaseModel):
     """Summary of all egress settings for a user"""
 
+    model_config = ConfigDict(from_attributes=True)
+
     defaults: Optional[UserEgressDefaults] = None
     permissions: list[DataEgressPermission] = []
-
-    class Config:
-        from_attributes = True
 
 
 class BulkPermissionUpdate(BaseModel):

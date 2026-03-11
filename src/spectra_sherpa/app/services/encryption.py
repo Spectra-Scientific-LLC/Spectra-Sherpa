@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import os
 from pathlib import Path
 from typing import Optional
@@ -24,16 +26,31 @@ def _read_env_key(env_path: Path) -> Optional[str]:
     return None
 
 
+def _looks_like_fernet_key(value: str) -> bool:
+    try:
+        decoded = base64.urlsafe_b64decode(value.encode())
+    except Exception:
+        return False
+    return len(decoded) == 32
+
+
+def _normalize_master_key(value: str) -> bytes:
+    """Return a Fernet-compatible key from either a raw Fernet key or a secret."""
+    if _looks_like_fernet_key(value):
+        return value.encode()
+    return base64.urlsafe_b64encode(hashlib.sha256(value.encode()).digest())
+
+
 def get_master_key() -> bytes:
     key = os.getenv("MASTER_ENCRYPTION_KEY")
     if key:
-        return key.encode()
+        return _normalize_master_key(key)
 
     data = _data_dir()
     env_path = data / ENV_FILENAME
     key = _read_env_key(env_path)
     if key:
-        return key.encode()
+        return _normalize_master_key(key)
 
     generated_key = Fernet.generate_key()
     try:

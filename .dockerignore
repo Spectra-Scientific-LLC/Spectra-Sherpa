@@ -1,63 +1,12 @@
-# Python
+.git
 __pycache__/
 *.py[cod]
-*.so
-.venv/
-venv/
-*.egg-info/
-dist/
-build/
-
-# Node
-node_modules/
-frontend/node_modules/
-
-# Environment files
-.env
-.env.local
-.env.*.local
-
-# Data / databases
-data/
-*.db
-*.db-wal
-*.db-shm
-*.sqlite3
-
-# Rate limiter state
-rate_limits.json
-execution_rate_limits.json
-
-# Logs
-logs/
-*.log
-
-# OS
-.DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
-.cursor/
-
-# Test / coverage
 .pytest_cache/
-htmlcov/
-.coverage
-.coverage.*
-coverage.xml
-
-# Git
-.git/
-.gitignore
-
-# Docs build
-site/
-
-# Docker
-deploy/
-
-# Legacy
-backend/
-spectrasherpa-server/
+.mypy_cache/
+.ruff_cache/
+.venv/
+frontend/node_modules/
+frontend/.vite/
+frontend/dist/
+frontend/coverage/
+docs/site/

@@ -84,6 +84,7 @@ def test_create_app_accepts_extra_router_prefix_string():
     )
     assert "/x/ping" in _paths(app.routes)
     assert "/ws" in _paths(app.routes)
+    assert "/api/ready" in _paths(app.routes)
 
 
 def test_create_app_accepts_extra_router_mapping():
@@ -138,7 +139,6 @@ async def test_lifespan_runs_extra_shutdown_before_core_teardown(monkeypatch: py
     monkeypatch.setattr(
         "spectra_sherpa.app.services.plugin_loader.discover_plugins", _sync_event(events, "discover_plugins")
     )
-    monkeypatch.setattr(app_main, "_load_custom_algo_plugins", _async_event(events, "_load_custom_algo_plugins"))
     monkeypatch.setattr(
         "spectra_sherpa.app.services.network_health.start_network_health_service",
         _async_event(events, "start_network_health_service"),

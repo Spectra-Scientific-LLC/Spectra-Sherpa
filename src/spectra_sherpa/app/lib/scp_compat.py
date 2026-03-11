@@ -32,13 +32,28 @@ class _CoordMissing:
     """Sentinel type for Coord when SpectroChemPy is not installed."""
 
 
+class _ScpMissing:
+    """Proxy for the ``scp`` module when SpectroChemPy is not installed.
+
+    Any attribute access (e.g. ``scp.read(...)``) raises an ``ImportError``
+    with the exact pip command needed, instead of the opaque
+    ``AttributeError: 'NoneType' object has no attribute '...'`` that
+    ``scp = None`` would produce.
+    """
+
+    def __getattr__(self, name: str) -> None:  # type: ignore[return]
+        raise ImportError(
+            f"spectrochempy.{name} requires SpectroChemPy. " "Install with: pip install spectra-sherpa[scp]"
+        )
+
+
 try:
     import spectrochempy as scp
     from spectrochempy import Coord, NDDataset
 
     HAS_SCP = True
 except ImportError:
-    scp = None  # type: ignore[assignment]
+    scp = _ScpMissing()  # type: ignore[assignment]
     NDDataset = _NDDatasetMissing  # type: ignore[assignment,misc]
     Coord = _CoordMissing  # type: ignore[assignment,misc]
     HAS_SCP = False

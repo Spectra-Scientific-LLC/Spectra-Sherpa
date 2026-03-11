@@ -19,10 +19,14 @@ nav:
           - PCA (Side-by-Side): user/case_study_pca.md
           - Methodology: user/reproduction_methodology.md
       - User Manual: user/manual.md
-  - Developer Guide:
-      - Setup & Contributing: dev/setup.md
+  - Contributing:
+      - Scientist Guide: contributing/scientist-guide.md
+      - Developer Guide: contributing/developer-guide.md
+  - Developer Reference:
+      - Setup: dev/setup.md
       - Architecture: dev/architecture.md
       - Your First Node: dev/first_plugin.md
+      - Node Scaffold Generator: dev/node_scaffold_generator.md
   - Examples:
       - 00. Case Study Notebook: user/examples/00_case_study_notebook.ipynb
       - 01. Loading Data: user/examples/01_loading_data.md

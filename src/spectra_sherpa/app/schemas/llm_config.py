@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class LLMConfigCreate(BaseModel):
@@ -16,10 +16,9 @@ class LLMConfigUpdate(BaseModel):
 
 
 class LLMConfigResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     provider: str
     base_url: str
     model: str
     verbose: bool
-
-    class Config:
-        from_attributes = True
