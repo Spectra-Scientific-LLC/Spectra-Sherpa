@@ -67,7 +67,7 @@ def from_sklearn(bunch: Any, name: str = "") -> SherpaDataset:
                 target_name=name or None,
             )
 
-    extra = {}
+    extra: dict[str, Any] = {}
     if target_names:
         extra["sklearn.target_names"] = target_names
     if name:
