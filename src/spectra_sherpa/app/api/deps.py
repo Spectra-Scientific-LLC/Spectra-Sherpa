@@ -76,13 +76,12 @@ async def _resolve_user(
     if is_local():
         return await _get_or_create_local_user(session)
 
-    has_credentials = bool(api_key or token)
     # If system-key auth is disabled, ignore APP_API_KEY for dependency auth.
     # This preserves hybrid loopback fallback behavior when stale keys are present
     # in local storage, while gateway auth still blocks non-loopback requests.
     if api_key == settings.api_key and not security.is_system_api_key_auth_enabled():
         api_key = None
-        has_credentials = bool(token)
+    has_credentials = bool(api_key or token)
 
     # 1. API Key Auth (Machine-to-Machine / Cloud Node)
     if api_key:
@@ -98,20 +97,19 @@ async def _resolve_user(
         # Check cache first (avoids expensive bcrypt on every request)
         cached_user_id = security._get_cached_user_id(api_key)
         if cached_user_id is not None:
-            result = await session.execute(select(User).where(User.id == cached_user_id))
+            result = await session.execute(
+                select(User).where(User.id == cached_user_id, User.is_active.is_(True))
+            )
             user = result.scalar_one_or_none()
-            if user and getattr(user, "is_active", True):
+            if user:
                 return user
 
-        # Cache miss - do expensive bcrypt verification
-        # We need to iterate over users with API keys and verify each one
-        # because bcrypt hashes include random salts
-        result = await session.execute(select(User).where(User.api_key_hash.isnot(None)))
-        users_with_keys = result.scalars().all()
-
-        for user in users_with_keys:
-            if hasattr(user, "is_active") and not user.is_active:
-                continue
+        # Cache miss — do expensive bcrypt verification against active users only.
+        # We iterate rather than query by hash because bcrypt salts are random.
+        result = await session.execute(
+            select(User).where(User.api_key_hash.isnot(None), User.is_active.is_(True))
+        )
+        for user in result.scalars():
             if security.verify_password(api_key, user.api_key_hash):
                 security._cache_api_key(api_key, user.id)
                 return user

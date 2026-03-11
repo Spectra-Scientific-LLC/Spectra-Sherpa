@@ -432,11 +432,9 @@ def reload_into_registry(algo: CustomAlgo) -> None:
     from spectra_sherpa.app.services.dag.node_base import node_registry
     from spectra_sherpa.app.services.plugin_loader import reload_plugin_by_path
 
-    # Unregister old version (best-effort, may not exist yet)
-    try:
-        node_registry.unregister(algo.node_type)
-    except ValueError:
-        pass  # Built-in type — should never happen for ualgo.*
+    # Unregister old version if present. unregister() returns False (not raises)
+    # when the node_type is absent, so no try/except needed here.
+    node_registry.unregister(algo.node_type)
 
     # Write the plugin file
     plugin_path = write_plugin_file(algo)
@@ -450,9 +448,5 @@ def unregister_and_remove(algo: CustomAlgo) -> None:
     """Unregister from node registry and remove plugin file."""
     from spectra_sherpa.app.services.dag.node_base import node_registry
 
-    try:
-        node_registry.unregister(algo.node_type)
-    except ValueError:
-        pass
-
+    node_registry.unregister(algo.node_type)
     remove_plugin_file(algo)
