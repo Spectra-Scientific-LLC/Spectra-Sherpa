@@ -6,6 +6,13 @@ from collections.abc import Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from typing import Any, TypeAlias
 
+# ---------------------------------------------------------------------------
+# Plugin health registry — populated during startup, read by /health endpoint
+# ---------------------------------------------------------------------------
+
+#: node_type strings that failed to load at startup
+startup_plugin_failures: list[dict[str, str]] = []
+
 # Force non-interactive matplotlib backend before SpectroChemPy imports it.
 # The macOS backend requires the main thread, but FastAPI runs handlers
 # in worker threads — 'agg' works everywhere without a display.
@@ -246,8 +253,11 @@ async def _load_custom_algo_plugins() -> None:
                 logger.info("Loading unregistered custom algo: %s", node_type)
                 reload_into_registry(algo)
                 loaded += 1
-        except Exception:
+        except Exception as exc:
             logger.exception("Skipping broken custom algo %s", node_type)
+            startup_plugin_failures.append(
+                {"node_type": node_type, "reason": str(exc) or type(exc).__name__}
+            )
             skipped += 1
 
     if skipped:

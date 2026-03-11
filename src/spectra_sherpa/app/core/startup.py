@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import secrets
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -31,6 +32,50 @@ logger = logging.getLogger(__name__)
 # Default secret key that should NOT be used in production
 DEFAULT_SECRET_KEY = "your-super-secret-key-change-in-production"
 DEFAULT_API_KEY = "default-local-key"
+
+# Filename where the auto-generated local secret key is persisted
+_LOCAL_KEY_FILENAME = ".secret_key"
+
+
+def _ensure_local_secret_key() -> None:
+    """Auto-generate and persist a SECRET_KEY for local mode deployments.
+
+    If the user has not set SECRET_KEY in their environment and the default
+    placeholder is still in use, we generate a cryptographically random key
+    and store it in the Sherpa data directory so it survives restarts.
+
+    This keeps JWTs and session cookies stable across server restarts without
+    requiring manual configuration for local-first users.
+
+    No-op when SECRET_KEY has already been set explicitly.
+    """
+    if settings.secret_key != DEFAULT_SECRET_KEY:
+        return  # Explicitly set — nothing to do.
+
+    from spectra_sherpa._paths import get_default_data_dir
+
+    key_path = get_default_data_dir() / _LOCAL_KEY_FILENAME
+    if key_path.exists():
+        persisted = key_path.read_text(encoding="ascii").strip()
+        if persisted:
+            settings.secret_key = persisted
+            logger.debug("Loaded persisted local SECRET_KEY from %s", key_path)
+            return
+
+    new_key = secrets.token_hex(32)
+    key_path.parent.mkdir(parents=True, exist_ok=True)
+    key_path.write_text(new_key, encoding="ascii")
+    # Restrict read permissions to owner only
+    try:
+        key_path.chmod(0o600)
+    except OSError:
+        pass  # Windows; best-effort
+    settings.secret_key = new_key
+    logger.info(
+        "Generated a new local SECRET_KEY and saved to %s. "
+        "Set the SECRET_KEY environment variable to use a custom key.",
+        key_path,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -238,6 +283,9 @@ def validate_config() -> ConfigValidationResult:
     Returns structured results. Errors should prevent startup; warnings are logged.
     Called from lifespan Phase 1 (before DB initialization).
     """
+    if app_config.mode == "local":
+        _ensure_local_secret_key()
+
     issues: list[ConfigIssue] = []
     issues.extend(_validate_security())
     issues.extend(_validate_concurrency())

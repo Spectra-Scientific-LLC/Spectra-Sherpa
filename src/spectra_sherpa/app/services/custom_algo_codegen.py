@@ -8,10 +8,42 @@ Each CustomAlgo record maps to:
 This module handles:
 - Slug validation
 - Code syntax checking
+- Code safety validation (AST-based, see ``validate_code_safety``)
 - Plugin file generation (deterministic template)
 - Atomic file writes (write to ``.tmp``, then ``os.replace``)
 - Registry reload (unregister old → import new)
 - Three-phase commit with compensation for CRUD operations
+
+Security model — custom algo code execution
+-------------------------------------------
+Custom algorithm code is **user-supplied Python** that runs inside the
+Sherpa server process with the same privileges as the server itself.
+We apply a best-effort AST safety check (``validate_code_safety``) that
+blocks the most common escape vectors:
+
+* ``import`` / ``from … import`` — all imports are blocked; the helpers
+  ``np``, ``coerce_to_sherpa``, ``to_numpy_2d``, ``build_dataset_like``,
+  and ``add_processing_step`` are pre-imported in the generated wrapper.
+* Dangerous built-in calls: ``exec``, ``eval``, ``__import__``,
+  ``compile``, ``open``, ``breakpoint``, ``input``, ``memoryview``.
+* Access to dunder attributes that expose the class hierarchy or builtins
+  (``__builtins__``, ``__globals__``, ``__subclasses__``, etc.).
+* ``global`` / ``nonlocal`` scope declarations.
+
+**This is a defence-in-depth measure, not a full sandbox.**  A determined
+attacker with write access to the database can craft code that bypasses
+AST-level checks (e.g. through string-based attribute lookups).  Treat
+custom algo execution as equivalent to granting shell access to the user
+who created the algo.
+
+Deployment recommendations
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+* In multi-user (enterprise/hybrid) deployments, restrict who can create
+  or edit custom algos at the application-level RBAC layer.
+* Consider running the DAG worker pool in a subprocess or container with
+  reduced OS-level privileges (seccomp, namespaces) for stronger isolation.
+* Audit the plugin directory (``~/.spectra_sherpa/plugins/custom_algos/``)
+  regularly; each ``.py`` file there represents code that will be imported.
 """
 
 from __future__ import annotations
@@ -54,6 +86,88 @@ def validate_code_syntax(code: str) -> None:
     Raises SyntaxError with line info on failure.
     """
     compile(code, "<custom_algo>", "exec")
+
+
+# Names that must never appear as bare calls in user code.
+_BLOCKED_CALLS: frozenset[str] = frozenset(
+    {
+        "exec",
+        "eval",
+        "__import__",
+        "compile",
+        "open",
+        "breakpoint",
+        "input",
+        "memoryview",
+    }
+)
+
+# Dunder attribute names that could reach the class hierarchy / builtins.
+_BLOCKED_ATTRS: frozenset[str] = frozenset(
+    {
+        "__class__",
+        "__bases__",
+        "__subclasses__",
+        "__globals__",
+        "__builtins__",
+        "__code__",
+        "__closure__",
+        "__dict__",
+        "__import__",
+    }
+)
+
+
+def validate_code_safety(code: str) -> None:
+    """Walk the AST and reject constructs that could escape the sandbox.
+
+    Blocks:
+    - ``import`` / ``from … import`` statements
+    - Calls to dangerous built-ins (exec, eval, open, …)
+    - Access to dunder attributes that expose the class hierarchy or builtins
+    - ``global`` / ``nonlocal`` declarations (scope escape)
+
+    Raises ``ValueError`` with a descriptive message on the first violation.
+    Call this *after* ``validate_code_syntax`` so that the tree is well-formed.
+    """
+    try:
+        tree = ast.parse(code, "<custom_algo>", "exec")
+    except SyntaxError:
+        # Syntax errors are reported by validate_code_syntax; skip here.
+        return
+
+    for node in ast.walk(tree):
+        # Disallow all import statements
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            raise ValueError(
+                "import statements are not allowed in custom algo code. "
+                "NumPy (np) and SherpaDataset helpers are pre-imported for you."
+            )
+
+        # Disallow global / nonlocal (scope-escape)
+        if isinstance(node, ast.Global):
+            raise ValueError("'global' declarations are not allowed in custom algo code.")
+        if isinstance(node, ast.Nonlocal):
+            raise ValueError("'nonlocal' declarations are not allowed in custom algo code.")
+
+        # Disallow calls to dangerous built-ins
+        if isinstance(node, ast.Call):
+            func = node.func
+            name = None
+            if isinstance(func, ast.Name):
+                name = func.id
+            elif isinstance(func, ast.Attribute):
+                name = func.attr
+            if name in _BLOCKED_CALLS:
+                raise ValueError(
+                    f"'{name}' is not allowed in custom algo code."
+                )
+
+        # Disallow access to dangerous dunder attributes
+        if isinstance(node, ast.Attribute) and node.attr in _BLOCKED_ATTRS:
+            raise ValueError(
+                f"Access to '{node.attr}' is not allowed in custom algo code."
+            )
 
 
 def get_plugin_dir() -> Path:
@@ -285,8 +399,13 @@ def _generate_python_export_lines(user_lines: list[str]) -> str:
 def write_plugin_file(algo: CustomAlgo) -> Path:
     """Atomic write: write to ``.tmp``, then ``os.replace()``.
 
+    Safety check runs before any file I/O — loader plugins use their own
+    ``validate_loader_plugin_source`` path, so only validate non-loader code here.
+
     Returns the final plugin file path.
     """
+    if algo.mode != "loader":
+        validate_code_safety(algo.code)
     source = generate_plugin_source(algo)
     final_path = get_plugin_path(algo)
     tmp_path = final_path.with_suffix(".py.tmp")

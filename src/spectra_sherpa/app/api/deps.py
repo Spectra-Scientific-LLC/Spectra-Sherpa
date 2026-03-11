@@ -18,6 +18,8 @@ from spectra_sherpa.app import schemas
 from spectra_sherpa.app.core import security
 from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.core.mode_policy import is_hybrid, is_local, is_loopback
+
+logger = __import__("logging").getLogger(__name__)
 from spectra_sherpa.app.db.session import async_session
 from spectra_sherpa.app.models.user import User
 
@@ -132,7 +134,15 @@ async def _resolve_user(
     # gateway middleware already enforces this, but we double-check here).
     if is_hybrid() and not has_credentials:
         if client_host is not None and not is_loopback(client_host):
+            logger.warning(
+                "Hybrid mode: rejected credential-free request from non-loopback host %r",
+                client_host,
+            )
             return None
+        logger.debug(
+            "Hybrid mode: granting implicit local identity to loopback client %r",
+            client_host,
+        )
         return await _get_or_create_local_user(session)
 
     return None
