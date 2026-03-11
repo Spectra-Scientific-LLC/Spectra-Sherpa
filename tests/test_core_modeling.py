@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-scp = pytest.importorskip("spectrochempy")
+pytest.importorskip("spectrochempy")
 
 from spectra_sherpa.app.services.dag.nodes.modeling import MCRNode, PCRNode, PLSNode
 
