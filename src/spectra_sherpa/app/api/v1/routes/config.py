@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 logger = logging.getLogger(__name__)
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session, get_user_from_credentials
+from spectra_sherpa.app.core.app_paths import get_app_data_paths
 from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.core.llm_registry import PROVIDERS, get_provider
 from spectra_sherpa.app.core.security import get_bearer_token_optional
@@ -175,7 +176,7 @@ async def get_demo_analytics(
 
     # Count active demo sessions from the file-backed rate limiter state
     active_sessions = 0
-    state_path = settings.data_dir / "demo_limits.json"
+    state_path = get_app_data_paths(settings.data_dir).demo_limits_state
     if state_path.exists():
         try:
             state = json.loads(state_path.read_text())

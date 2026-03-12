@@ -26,6 +26,7 @@ from sqlalchemy import text
 
 from spectra_sherpa.app.api.deps import get_user_from_credentials
 from spectra_sherpa.app.api.v1.api import build_api_router
+from spectra_sherpa.app.core.app_paths import get_app_data_paths
 from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.core.logging import configure_logging
 from spectra_sherpa.app.core.rate_limit_middleware import RateLimitMiddleware
@@ -119,7 +120,7 @@ def _try_leader_lock() -> bool:
     except ImportError:
         return True
 
-    lock_path = settings.data_dir / ".startup.lock"
+    lock_path = get_app_data_paths(settings.data_dir).startup_lock
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     fd = -1
     try:

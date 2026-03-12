@@ -18,6 +18,7 @@ from typing import Any
 from fastapi import Request, Response, status
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from spectra_sherpa.app.core.app_paths import get_app_data_paths
 from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.core.demo_limits import check_demo_execution, demo_limit_error_detail
 from spectra_sherpa.app.core.mode_policy import has_rate_limits
@@ -54,17 +55,18 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         # Use file-backed rate limiter: survives restarts, shared across workers
         limit = app_config.rate_limit_executions or 100
+        app_paths = get_app_data_paths(settings.data_dir)
         self._rate_limiter = RateLimiter(
             max_calls=limit,
             period_sec=3600,
-            state_path=settings.data_dir / "execution_rate_limits.json",
+            state_path=app_paths.execution_rate_limits_state,
         )
         # Separate rate limiters for auth endpoints (per-IP, tighter)
         self._auth_limiters = {
             path: RateLimiter(
                 max_calls=max_calls,
                 period_sec=period,
-                state_path=settings.data_dir / f"auth_rate_{path.rsplit('/', 1)[-1]}.json",
+                state_path=app_paths.auth_rate_limit_state(path.rsplit("/", 1)[-1]),
             )
             for path, (max_calls, period) in self.AUTH_RATE_LIMITS.items()
         }

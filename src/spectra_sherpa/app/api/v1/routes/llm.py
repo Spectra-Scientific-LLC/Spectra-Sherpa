@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session
+from spectra_sherpa.app.core.app_paths import get_app_data_paths
 from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.schemas.llm import (
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 _llm_rate_limiter = RateLimiter(
     max_calls=settings.max_llm_requests_per_hour,
     period_sec=3600,
-    state_path=settings.data_dir / "llm_rate_limits.json",
+    state_path=get_app_data_paths(settings.data_dir).llm_rate_limits_state,
 )
 
 

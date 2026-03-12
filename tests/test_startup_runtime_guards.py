@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import TimeoutError as FutureTimeout
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -385,3 +386,22 @@ def test_scp_reference_file_detection_matches_real_world_tree() -> None:
     assert startup._is_scp_testdata_file(Path("background.0")) is True
     assert startup._is_scp_testdata_file(Path("1")) is True
     assert startup._is_scp_testdata_file(Path("README.md")) is False
+
+
+def test_scp_reference_pdf_is_migrated_to_app_data_dir(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    app_data_dir = tmp_path / "app-data"
+    scp_dir = tmp_path / "scp-home" / "testdata"
+    scp_dir.mkdir(parents=True)
+    legacy_pdf = scp_dir.parent / "spectrochempy_testdata_reference.pdf"
+    legacy_pdf.write_text("legacy pdf", encoding="utf-8")
+
+    monkeypatch.setattr(startup, "settings", SimpleNamespace(data_dir=app_data_dir))
+
+    resolved = startup._resolve_scp_reference_pdf_path(scp_dir)
+
+    expected = app_data_dir / "references" / "spectrochempy_testdata_reference.pdf"
+    assert resolved == expected
+    assert expected.read_text(encoding="utf-8") == "legacy pdf"

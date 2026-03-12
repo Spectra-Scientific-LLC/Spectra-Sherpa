@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Tuple, TypedDict, cast
 
+from spectra_sherpa.app.core.app_paths import get_app_data_paths
 from spectra_sherpa.app.core.config import app_config, settings
 
 
@@ -173,7 +174,7 @@ class DemoLimitTracker:
 
 
 # Global tracker instance
-_tracker = DemoLimitTracker(settings.data_dir / "demo_limits.json")
+_tracker = DemoLimitTracker(get_app_data_paths(settings.data_dir).demo_limits_state)
 
 
 def check_demo_execution(user_id: int | None) -> Tuple[bool, int]:

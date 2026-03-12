@@ -205,106 +205,100 @@ def build_scp_catalog(force: bool = False) -> list[dict[str, Any]]:
     if _catalog_cache is not None and not force:
         return _catalog_cache
 
-    from spectra_sherpa.app.lib.scp_compat import get_scp_datadirs
+    from spectra_sherpa.app.lib.scp_compat import get_preferred_scp_datadir
 
     entries: list[dict[str, Any]] = []
-    scanned = False
+    datadir = get_preferred_scp_datadir()
 
-    for datadir in get_scp_datadirs():
-        if not datadir.exists():
-            continue
-        scanned = True
-
-        for category_dir in sorted(datadir.iterdir()):
-            if not category_dir.is_dir():
-                continue
-            cat_name = category_dir.name
-            if cat_name in _SKIP_CATEGORIES or cat_name.startswith((".", "_")):
-                continue
-
-            meta = _CATEGORY_META.get(cat_name, {"technique": "Various", "technique_label": cat_name})
-            technique = meta["technique"]
-
-            # Scan root-level files in the category
-            root_files = []
-            subdirs = []
-            for item in sorted(category_dir.iterdir()):
-                if item.name in _IGNORE_NAMES or item.name.startswith("."):
-                    continue
-                if item.is_file() and _is_spectral_file(item):
-                    root_files.append(item)
-                elif item.is_dir():
-                    subdirs.append(item)
-
-            # Add individual root files as entries
-            for f in root_files:
-                rel = f"{cat_name}/{f.name}"
-                entries.append(
-                    {
-                        "name": rel,
-                        "label": _label_for(rel, is_dir=False),
-                        "technique": _TECHNIQUE_OVERRIDES.get(rel, technique),
-                        "category": cat_name,
-                        "file_path": rel,
-                        "file_count": 1,
-                        "entry_type": "single",
-                        "description": f"{f.suffix.lstrip('.').upper() or 'data'} file from {meta['technique_label']}",
-                    }
-                )
-
-            # Add subdirectories as group entries (or expand to individual files)
-            for d in subdirs:
-                fc = _count_data_files(d)
-                if cat_name == "nmrdata" and fc == 0 and _contains_nested_nmr_dataset(d):
-                    entries.extend(_find_nested_nmr_entries(category_dir, cat_name, meta["technique_label"]))
-                    continue
-                if fc == 0:
-                    continue
-                rel = f"{cat_name}/{d.name}"
-
-                # Expand directories whose files are standalone datasets
-                if rel in _EXPAND_AS_INDIVIDUAL:
-                    for child in sorted(d.iterdir()):
-                        if not child.is_file() or child.name in _IGNORE_NAMES or child.name.startswith("."):
-                            continue
-                        if not _is_spectral_file(child):
-                            continue
-                        child_rel = f"{rel}/{child.name}"
-                        entries.append(
-                            {
-                                "name": child_rel,
-                                "label": _label_for(child_rel, is_dir=False),
-                                "technique": _TECHNIQUE_OVERRIDES.get(child_rel, technique),
-                                "category": cat_name,
-                                "file_path": child_rel,
-                                "file_count": 1,
-                                "entry_type": "single",
-                                "description": (
-                                    f"{child.suffix.lstrip('.').upper()} time-series file "
-                                    f"from {meta['technique_label']}"
-                                ),
-                            }
-                        )
-                    continue
-
-                entries.append(
-                    {
-                        "name": rel,
-                        "label": _label_for(rel, is_dir=True, file_count=fc),
-                        "technique": technique,
-                        "category": cat_name,
-                        "file_path": rel + "/",
-                        "file_count": fc,
-                        "entry_type": "group",
-                        "description": f"Folder with {fc} files from {meta['technique_label']}",
-                    }
-                )
-
-        # Only scan the first valid datadir (avoid duplicates)
-        break
-
-    if not scanned:
+    if datadir is None:
         logger.warning("No SpectroChemPy testdata directory found; using empty SCP catalog")
+        _catalog_cache = entries
+        return entries
+
+    for category_dir in sorted(datadir.iterdir()):
+        if not category_dir.is_dir():
+            continue
+        cat_name = category_dir.name
+        if cat_name in _SKIP_CATEGORIES or cat_name.startswith((".", "_")):
+            continue
+
+        meta = _CATEGORY_META.get(cat_name, {"technique": "Various", "technique_label": cat_name})
+        technique = meta["technique"]
+
+        # Scan root-level files in the category
+        root_files = []
+        subdirs = []
+        for item in sorted(category_dir.iterdir()):
+            if item.name in _IGNORE_NAMES or item.name.startswith("."):
+                continue
+            if item.is_file() and _is_spectral_file(item):
+                root_files.append(item)
+            elif item.is_dir():
+                subdirs.append(item)
+
+        # Add individual root files as entries
+        for f in root_files:
+            rel = f"{cat_name}/{f.name}"
+            entries.append(
+                {
+                    "name": rel,
+                    "label": _label_for(rel, is_dir=False),
+                    "technique": _TECHNIQUE_OVERRIDES.get(rel, technique),
+                    "category": cat_name,
+                    "file_path": rel,
+                    "file_count": 1,
+                    "entry_type": "single",
+                    "description": f"{f.suffix.lstrip('.').upper() or 'data'} file from {meta['technique_label']}",
+                }
+            )
+
+        # Add subdirectories as group entries (or expand to individual files)
+        for d in subdirs:
+            fc = _count_data_files(d)
+            if cat_name == "nmrdata" and fc == 0 and _contains_nested_nmr_dataset(d):
+                entries.extend(_find_nested_nmr_entries(category_dir, cat_name, meta["technique_label"]))
+                continue
+            if fc == 0:
+                continue
+            rel = f"{cat_name}/{d.name}"
+
+            # Expand directories whose files are standalone datasets
+            if rel in _EXPAND_AS_INDIVIDUAL:
+                for child in sorted(d.iterdir()):
+                    if not child.is_file() or child.name in _IGNORE_NAMES or child.name.startswith("."):
+                        continue
+                    if not _is_spectral_file(child):
+                        continue
+                    child_rel = f"{rel}/{child.name}"
+                    entries.append(
+                        {
+                            "name": child_rel,
+                            "label": _label_for(child_rel, is_dir=False),
+                            "technique": _TECHNIQUE_OVERRIDES.get(child_rel, technique),
+                            "category": cat_name,
+                            "file_path": child_rel,
+                            "file_count": 1,
+                            "entry_type": "single",
+                            "description": (
+                                f"{child.suffix.lstrip('.').upper()} time-series file "
+                                f"from {meta['technique_label']}"
+                            ),
+                        }
+                    )
+                continue
+
+            entries.append(
+                {
+                    "name": rel,
+                    "label": _label_for(rel, is_dir=True, file_count=fc),
+                    "technique": technique,
+                    "category": cat_name,
+                    "file_path": rel + "/",
+                    "file_count": fc,
+                    "entry_type": "group",
+                    "description": f"Folder with {fc} files from {meta['technique_label']}",
+                }
+            )
 
     _catalog_cache = entries
     return entries

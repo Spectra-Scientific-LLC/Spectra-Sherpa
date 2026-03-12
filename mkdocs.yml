@@ -8,6 +8,7 @@ nav:
   - User Guide:
       - Installation: user/installation.md
       - Configuration: user/configuration.md
+      - App Data Directory: user/data-directory.md
       - Quickstart: user/quickstart.md
       - Applications: user/applications.md
       - Experiments: user/experiments.md

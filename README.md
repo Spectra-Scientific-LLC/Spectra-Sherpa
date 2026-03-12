@@ -180,6 +180,7 @@ Full documentation at [docs.spectrascientific.ai](https://docs.spectrascientific
 - [Installation](docs/user/installation.md)
 - [Quickstart](docs/user/quickstart.md)
 - [Configuration](docs/user/configuration.md)
+- [App Data Directory](docs/user/data-directory.md)
 - [Applications Guide](docs/user/applications.md)
 - [Node Reference](docs/user/reference/nodes.md)
 - [Architecture](docs/dev/architecture.md)

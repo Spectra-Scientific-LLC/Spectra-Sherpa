@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import sys
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import numpy as np
@@ -94,6 +97,50 @@ class TestSummarizeMetadata:
         assert "node_types" in parsed["experiments"][0]
         # Parameters should be stripped
         assert "nodes" not in parsed["experiments"][0]
+
+
+class TestLlmStorage:
+    def test_conversation_store_uses_llm_dialog_subdirectory(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        import spectra_sherpa.app.core.config as config_mod
+        from spectra_sherpa.app.services.llm import ConversationStore
+
+        monkeypatch.setattr(config_mod, "settings", SimpleNamespace(data_dir=tmp_path))
+
+        store = ConversationStore()
+
+        assert store._state_path == tmp_path / "llm_dialogs" / "conversations.json"
+
+    def test_load_reference_pdf_uses_explicit_path(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        import spectra_sherpa.app.services.llm as llm_mod
+        from spectra_sherpa.app.services.llm import LLMService
+
+        class _FakePage:
+            def extract_text(self) -> str:
+                return "Reference content"
+
+        class _FakeReader:
+            def __init__(self, _fh) -> None:
+                self.pages = [_FakePage()]
+
+        pdf_path = tmp_path / "references" / "example.pdf"
+        pdf_path.parent.mkdir(parents=True, exist_ok=True)
+        pdf_path.write_bytes(b"%PDF-1.4\n%fake\n")
+
+        monkeypatch.setattr(llm_mod, "_reference_pdf_cache", {})
+        monkeypatch.setitem(sys.modules, "pypdf", SimpleNamespace(PdfReader=_FakeReader))
+
+        with patch.object(LLMService, "__init__", return_value=None):
+            svc = LLMService.__new__(LLMService)
+
+        assert svc._load_reference_pdf(pdf_path) == "Reference content"
 
 
 # ---------------------------------------------------------------------------

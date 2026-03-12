@@ -121,6 +121,73 @@ def resolve_scp_path(relative_path: str) -> Path | None:
     return None
 
 
+def is_scp_testdata_file(path: Path) -> bool:
+    """Return True when *path* looks like a valid SCP example data artifact."""
+    suffix = path.suffix.lower()
+    if suffix in {
+        ".csv",
+        ".jdx",
+        ".dx",
+        ".spc",
+        ".spa",
+        ".spg",
+        ".srs",
+        ".wdf",
+        ".txt",
+        ".mat",
+        ".asc",
+        ".dat",
+        ".opus",
+        ".0",
+    }:
+        return True
+    return not suffix and path.name.isdigit()
+
+
+def scp_testdata_looks_complete(datadir: Path) -> bool:
+    """Heuristic completeness check for a SpectroChemPy testdata root."""
+    if not datadir.exists():
+        return False
+
+    required_dirs = ("irdata", "ramandata", "nmrdata")
+    if any(not (datadir / name).is_dir() for name in required_dirs):
+        return False
+
+    visible_dirs = [item for item in datadir.iterdir() if item.is_dir() and not item.name.startswith(".")]
+    if len(visible_dirs) < 5:
+        return False
+
+    recursive_files = 0
+    for path in datadir.rglob("*"):
+        if path.name.startswith(".") or not path.is_file():
+            continue
+        if is_scp_testdata_file(path):
+            recursive_files += 1
+            if recursive_files >= 25:
+                break
+    if recursive_files < 25:
+        return False
+
+    required_anchors = (
+        datadir / "irdata" / "nh4y-activation.spg",
+        datadir / "ramandata" / "wire",
+        datadir / "nmrdata" / "bruker" / "tests" / "nmr" / "topspin_1d" / "1",
+    )
+    return all(path.exists() for path in required_anchors)
+
+
+def get_preferred_scp_datadir() -> Path | None:
+    """Return the best available SCP datadir for listing/import operations."""
+    fallback: Path | None = None
+    for datadir in get_scp_datadirs():
+        if not datadir.exists():
+            continue
+        fallback = datadir
+        if scp_testdata_looks_complete(datadir):
+            return datadir
+    return fallback
+
+
 def download_testdata() -> None:
     """Download SpectroChemPy test data to ``scp.preferences.datadir``.
 
@@ -153,7 +220,10 @@ __all__ = [
     "HAS_SCP",
     "require_scp",
     "get_scp_datadirs",
+    "get_preferred_scp_datadir",
+    "is_scp_testdata_file",
     "resolve_scp_path",
+    "scp_testdata_looks_complete",
     "download_testdata",
 ]
 

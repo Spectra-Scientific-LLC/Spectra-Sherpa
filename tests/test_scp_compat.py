@@ -38,7 +38,10 @@ class TestScpCompatExports:
         assert hasattr(scp_compat, "HAS_SCP")
         assert hasattr(scp_compat, "require_scp")
         assert hasattr(scp_compat, "get_scp_datadirs")
+        assert hasattr(scp_compat, "get_preferred_scp_datadir")
+        assert hasattr(scp_compat, "is_scp_testdata_file")
         assert hasattr(scp_compat, "resolve_scp_path")
+        assert hasattr(scp_compat, "scp_testdata_looks_complete")
         assert hasattr(scp_compat, "download_testdata")
 
     @pytest.mark.skipif(not HAS_SCP, reason="spectrochempy not installed")
@@ -113,6 +116,32 @@ class TestScpCompatExports:
         monkeypatch.setenv("SCP_DATADIR", str(tmp_path))
         resolved = scp_compat.resolve_scp_path("irdata/sample.spg")
         assert resolved == target
+
+    def test_get_preferred_scp_datadir_prefers_complete_tree(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ):
+        from spectra_sherpa.app.lib import scp_compat
+
+        partial = tmp_path / "partial"
+        complete = tmp_path / "complete"
+
+        (partial / "irdata").mkdir(parents=True)
+
+        for dirname in ("irdata", "ramandata", "nmrdata", "galacticdata", "agirdata"):
+            (complete / dirname).mkdir(parents=True, exist_ok=True)
+        (complete / "irdata" / "nh4y-activation.spg").write_text("x")
+        (complete / "ramandata" / "wire").mkdir(parents=True)
+        nmr = complete / "nmrdata" / "bruker" / "tests" / "nmr" / "topspin_1d" / "1"
+        nmr.mkdir(parents=True)
+        (nmr / "fid").write_text("x")
+        for idx in range(30):
+            (complete / "irdata" / f"sample_{idx}.SPA").write_text("x")
+
+        monkeypatch.setattr(scp_compat, "get_scp_datadirs", lambda: [partial, complete])
+
+        assert scp_compat.get_preferred_scp_datadir() == complete
 
 
 class TestNoDirectScpImports:

@@ -9,8 +9,13 @@ By default, all your data is stored in your home directory:
 ├── spectra_platform.db    # Your local database
 ├── experiments/           # Uploaded files and results
 ├── calibrations/          # Saved models
+├── exports/               # Saved Python and Jupyter workflow exports
+├── llm_dialogs/           # Saved LLM dialog state
+├── references/            # App-managed reference assets
 └── nist_library/          # Downloaded reference spectra
 ```
+
+See [App Data Directory](data-directory.md) for the complete layout and the distinction between app-owned output and external source data such as SpectroChemPy testdata.
 
 To use a different location (e.g., an external drive), use the `--data-dir` flag:
 ```bash

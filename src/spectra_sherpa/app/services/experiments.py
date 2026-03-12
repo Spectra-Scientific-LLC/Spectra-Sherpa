@@ -188,21 +188,15 @@ async def add_experiment_file(
 
 def _resolve_scp_path(name: str) -> Path:
     """Resolve a SCP dataset name to its filesystem path, with boundary checks."""
-    from spectra_sherpa.app.lib.scp_compat import get_scp_datadirs
+    from spectra_sherpa.app.lib.scp_compat import resolve_scp_path
 
     # Reject obvious traversal attempts
     if ".." in name or name.startswith("/"):
         raise ValueError(f"Invalid SCP dataset name: {name}")
 
-    for datadir in get_scp_datadirs():
-        candidate = (datadir / name.rstrip("/")).resolve()
-        # Ensure resolved path stays within the datadir
-        try:
-            candidate.relative_to(datadir.resolve())
-        except ValueError:
-            raise ValueError(f"Invalid SCP dataset name: {name}")
-        if candidate.exists():
-            return candidate
+    resolved = resolve_scp_path(name.rstrip("/"))
+    if resolved is not None:
+        return resolved.resolve()
 
     raise FileNotFoundError(f"SCP dataset not found: {name}")
 

@@ -121,6 +121,33 @@ class TestScpCatalog:
         assert nmr_entries, "Expected at least one bundled NMR example entry in the SCP catalog"
         assert any("nmrdata/" in entry["name"] for entry in nmr_entries)
 
+    def test_build_catalog_uses_preferred_complete_datadir(self, monkeypatch, tmp_path):
+        partial = tmp_path / "partial"
+        complete = tmp_path / "complete"
+
+        (partial / "irdata").mkdir(parents=True)
+
+        for dirname in ("irdata", "ramandata", "nmrdata", "galacticdata", "agirdata"):
+            (complete / dirname).mkdir(parents=True, exist_ok=True)
+        (complete / "irdata" / "nh4y-activation.spg").write_text("x")
+        (complete / "ramandata" / "wire").mkdir(parents=True)
+        (complete / "ramandata" / "wire" / "sp.wdf").write_text("x")
+        nested_nmr = complete / "nmrdata" / "bruker" / "tests" / "nmr" / "topspin_1d" / "1"
+        nested_nmr.mkdir(parents=True)
+        (nested_nmr / "fid").write_text("x")
+        for idx in range(30):
+            (complete / "irdata" / f"sample_{idx}.SPA").write_text("x")
+
+        monkeypatch.setattr(
+            "spectra_sherpa.app.lib.scp_compat.get_preferred_scp_datadir",
+            lambda: complete,
+        )
+
+        entries = build_scp_catalog(force=True)
+
+        assert any(entry["name"] == "irdata/nh4y-activation.spg" for entry in entries)
+        assert any(entry["name"] == "nmrdata/bruker/tests/nmr/topspin_1d/1" for entry in entries)
+
     def test_invalid_name_raises(self):
         with pytest.raises(ValueError, match="Unknown SCP dataset"):
             get_scp_dataset_info("nonexistent")

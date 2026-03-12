@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import secrets
+import shutil
 import sys
 import warnings
 from dataclasses import dataclass, field
@@ -13,6 +14,7 @@ from pathlib import Path
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import OperationalError
 
+from spectra_sherpa.app.core.app_paths import get_app_data_paths
 from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.db.init_db import init_db
 from spectra_sherpa.app.db.seeder import seed_data
@@ -55,7 +57,7 @@ def _ensure_local_secret_key() -> None:
 
     from spectra_sherpa._paths import get_default_data_dir
 
-    key_path = get_default_data_dir() / _LOCAL_KEY_FILENAME
+    key_path = get_app_data_paths(get_default_data_dir()).secret_key
     if key_path.exists():
         persisted = key_path.read_text(encoding="ascii").strip()
         if persisted:
@@ -362,10 +364,17 @@ def validate_security_settings() -> None:
 
 
 def ensure_data_dirs() -> None:
-    (settings.data_dir / "experiments").mkdir(parents=True, exist_ok=True)
-    (settings.data_dir / "calibrations").mkdir(parents=True, exist_ok=True)
-    (settings.data_dir / "nist_library" / "downloaded").mkdir(parents=True, exist_ok=True)
-    (settings.data_dir / "user").mkdir(parents=True, exist_ok=True)
+    paths = get_app_data_paths(settings.data_dir)
+    paths.experiments_dir.mkdir(parents=True, exist_ok=True)
+    paths.calibrations_dir.mkdir(parents=True, exist_ok=True)
+    paths.nist_downloads_dir.mkdir(parents=True, exist_ok=True)
+    paths.user_dir.mkdir(parents=True, exist_ok=True)
+    paths.references_dir.mkdir(parents=True, exist_ok=True)
+    paths.python_exports_dir.mkdir(parents=True, exist_ok=True)
+    paths.jupyter_exports_dir.mkdir(parents=True, exist_ok=True)
+    paths.llm_dialogs_dir.mkdir(parents=True, exist_ok=True)
+    paths.rate_limits_dir.mkdir(parents=True, exist_ok=True)
+    paths.demo_dir.mkdir(parents=True, exist_ok=True)
 
 
 async def ensure_database_ready(*, include_seed: bool = True) -> None:
@@ -541,83 +550,44 @@ def ensure_spectrochempy_data() -> None:
 
 
 def _scp_testdata_looks_complete(datadir: Path) -> bool:
-    """Return True when *datadir* appears to contain the full SCP testdata set.
+    """Compatibility wrapper around the shared SCP completeness check."""
+    from spectra_sherpa.app.lib.scp_compat import scp_testdata_looks_complete
 
-    A partially populated directory must not suppress bootstrap, otherwise
-    interrupted downloads leave the app stuck in a degraded state forever.
-    """
-    if not datadir.exists():
-        return False
-
-    required_dirs = ("irdata", "ramandata", "nmrdata")
-    if any(not (datadir / name).is_dir() for name in required_dirs):
-        return False
-
-    # Guard against tiny partial trees that happen to contain one or two
-    # directories. A healthy download contains several top-level categories.
-    visible_dirs = [item for item in datadir.iterdir() if item.is_dir() and not item.name.startswith(".")]
-    if len(visible_dirs) < 5:
-        return False
-
-    # Traverse into the nested SCP directory tree. Some critical examples only
-    # exist several levels down (notably Bruker NMR directories), so a shallow
-    # top-level directory check is not sufficient.
-    recursive_files = 0
-    spectral_suffixes = {".spg", ".spa", ".spc", ".csv", ".jdx", ".dx", ".srs", ".wdf", ".txt", ".dat", ".0"}
-    for path in datadir.rglob("*"):
-        if path.name.startswith(".") or not path.is_file():
-            continue
-        suffix = path.suffix.lower()
-        if suffix in spectral_suffixes or (not suffix and path.name.isdigit()):
-            recursive_files += 1
-            if recursive_files >= 25:
-                break
-    if recursive_files < 25:
-        return False
-
-    required_anchors = (
-        datadir / "irdata" / "nh4y-activation.spg",
-        datadir / "ramandata" / "wire",
-        datadir / "nmrdata" / "bruker" / "tests" / "nmr" / "topspin_1d" / "1",
-    )
-    return all(path.exists() for path in required_anchors)
+    return scp_testdata_looks_complete(datadir)
 
 
 def _is_scp_testdata_file(path: Path) -> bool:
-    """Return True for files that represent SCP example data artifacts."""
-    suffix = path.suffix.lower()
-    if suffix in {
-        ".csv",
-        ".jdx",
-        ".dx",
-        ".spc",
-        ".spa",
-        ".spg",
-        ".srs",
-        ".wdf",
-        ".txt",
-        ".mat",
-        ".asc",
-        ".dat",
-        ".opus",
-        ".0",
-    }:
-        return True
-    return not suffix and path.name.isdigit()
+    """Compatibility wrapper around the shared SCP file classifier."""
+    from spectra_sherpa.app.lib.scp_compat import is_scp_testdata_file
+
+    return is_scp_testdata_file(path)
 
 
 def _get_scp_reference_root() -> Path | None:
     """Return the most useful SCP data root for metadata/reference scanning."""
-    from spectra_sherpa.app.lib.scp_compat import get_scp_datadirs
+    from spectra_sherpa.app.lib.scp_compat import get_preferred_scp_datadir
 
-    fallback: Path | None = None
-    for datadir in get_scp_datadirs():
-        if not datadir.exists():
-            continue
-        fallback = datadir
-        if _scp_testdata_looks_complete(datadir):
-            return datadir
-    return fallback
+    return get_preferred_scp_datadir()
+
+
+def _resolve_scp_reference_pdf_path(spectrochempy_dir: Path) -> Path | None:
+    """Return the app-owned SCP reference PDF path, migrating legacy storage."""
+    app_pdf = get_app_data_paths(settings.data_dir).spectrochempy_reference_pdf
+    if app_pdf.exists():
+        return app_pdf
+
+    legacy_pdf = spectrochempy_dir.parent / app_pdf.name
+    if not legacy_pdf.exists():
+        return None
+
+    try:
+        app_pdf.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(legacy_pdf, app_pdf)
+        logger.info("Copied legacy SpectroChemPy reference PDF to %s", app_pdf)
+        return app_pdf
+    except OSError as exc:
+        logger.warning("Could not copy legacy SpectroChemPy reference PDF into app data dir: %s", exc)
+        return legacy_pdf
 
 
 async def ensure_spectrochempy_testdata() -> None:
@@ -650,9 +620,10 @@ async def ensure_spectrochempy_testdata() -> None:
             subdirs = [d for d in spectrochempy_dir.iterdir() if d.is_dir() and not d.name.startswith(".")]
             test_files = [f for f in spectrochempy_dir.rglob("*") if f.is_file() and _is_scp_testdata_file(f)]
 
-            # Check for reference PDF
-            pdf_ref = spectrochempy_dir.parent / "spectrochempy_testdata_reference.pdf"
-            has_pdf = pdf_ref.exists()
+            # Keep reference assets under the app data root, not inside the
+            # SpectroChemPy home directory. Migrate legacy placement if needed.
+            pdf_ref = _resolve_scp_reference_pdf_path(spectrochempy_dir)
+            has_pdf = pdf_ref is not None and pdf_ref.exists()
 
             metadata = {
                 "source": "spectrochempy",
@@ -660,8 +631,8 @@ async def ensure_spectrochempy_testdata() -> None:
                 "base_path": str(spectrochempy_dir),
                 "subdirectories": [d.name for d in subdirs],
                 "file_count": len(test_files),
-                "reference_pdf": str(pdf_ref) if has_pdf else None,
-                "instructions": "Files are accessible from ~/.spectrochempy/. Do not load all files into database.",
+                "reference_pdf": str(pdf_ref) if pdf_ref is not None else None,
+                "instructions": f"Files are accessible from {spectrochempy_dir}. Do not load all files into database.",
             }
 
             # Create or update experiment
@@ -672,7 +643,7 @@ async def ensure_spectrochempy_testdata() -> None:
                     user_id=user.id,
                     name="SpectrochemPy Test Data",
                     description=(
-                        f"Reference to test datasets in ~/.spectrochempy/ "
+                        f"Reference to test datasets in {spectrochempy_dir} "
                         f"({len(test_files)} files in {len(subdirs)} subdirectories)"
                     ),
                     metadata=metadata,
