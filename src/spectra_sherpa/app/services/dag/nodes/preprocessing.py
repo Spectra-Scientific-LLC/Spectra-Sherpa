@@ -556,9 +556,22 @@ def _cosmic_ray_transform(data: np.ndarray, window: int = 7, zscore: float = 3.0
     window = int(window)
     if window % 2 == 0:
         window += 1
+    half_window = window // 2
     result = data.copy()
-    for i in range(result.shape[0]):
-        result[i] = remove_cosmic_rays(result[i], window_size=window, zscore_threshold=zscore)
+    n_samples, n_points = result.shape
+    for i in range(n_samples):
+        spectrum = result[i].copy()
+        for j in range(n_points):
+            start = max(0, j - half_window)
+            end = min(n_points, j + half_window + 1)
+            win = spectrum[start:end]
+            median_val = float(np.median(win))
+            mad = float(np.median(np.abs(win - median_val)))
+            if mad < 1e-10:
+                continue
+            z = (spectrum[j] - median_val) / (mad * 1.4826)
+            if abs(z) > zscore:
+                result[i, j] = median_val
     return result
 
 

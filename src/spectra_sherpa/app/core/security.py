@@ -348,6 +348,7 @@ async def api_key_middleware(request: Request, call_next) -> Response:
         "/",
         "/health",
         "/api/health",
+        "/api/ready",
         "/api/v1/health",
         "/api/v1/auth/login",
         "/api/v1/auth/register",

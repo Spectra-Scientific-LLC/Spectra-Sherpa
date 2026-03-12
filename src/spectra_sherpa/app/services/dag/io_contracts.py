@@ -204,6 +204,7 @@ def bind_y(
     required: bool = False,
     infer_from_X: bool = True,
     dataset_as_data: bool = False,
+    target_type: str | None = None,
     missing_message: str = "Missing required input: y",
     dataset_missing_message: str = (
         "Dataset passed to y port has no embedded labels. " "Use target or y-axis labels/data."
@@ -216,7 +217,33 @@ def bind_y(
     - If y is a dataset and dataset_as_data=True, returns y.data.
     - If y is a dataset and dataset_as_data=False, extracts target/labels.
     - Otherwise returns y unchanged.
+
+    target_type: optional contract declaration — "categorical" or "continuous".
+        When set, the target_context on X is checked and a clear error is raised
+        if the dataset carries an incompatible target type.
+        E.g. pass target_type="categorical" in classification nodes so that
+        regression datasets (Corn M5, Diesel NIR) are rejected early.
     """
+
+    # Validate target type contract against the source dataset's declared context
+    if target_type is not None and X is not None:
+        tc = getattr(X, "target_context", None)
+        actual_type = getattr(tc, "target_type", None) if tc is not None else None
+        if actual_type is not None and actual_type != target_type:
+            names = getattr(tc, "target_names", None) or []
+            names_str = ", ".join(str(n) for n in names) if names else "unknown"
+            if target_type == "categorical":
+                raise ValueError(
+                    f"Dataset has {actual_type} targets [{names_str}] — "
+                    "classification nodes require categorical class labels. "
+                    "Use a dataset with discrete class assignments (e.g. wine, iris, breast_cancer) "
+                    "or attach a class-label column before connecting to this node."
+                )
+            else:
+                raise ValueError(
+                    f"Dataset has {actual_type} targets [{names_str}] — "
+                    f"this node requires {target_type} targets."
+                )
 
     if y is None and infer_from_X and X is not None:
         inferred = extract_target_like(X)

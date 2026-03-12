@@ -504,7 +504,7 @@ def ensure_spectrochempy_data() -> None:
 
     for datadir in get_scp_datadirs():
         try:
-            if datadir.exists() and any(d.is_dir() for d in datadir.iterdir() if not d.name.startswith(".")):
+            if _scp_testdata_looks_complete(datadir):
                 logger.info("SCP test data present at %s", datadir)
                 return
         except OSError:
@@ -538,6 +538,54 @@ def ensure_spectrochempy_data() -> None:
     finally:
         if executor is not None:
             executor.shutdown(wait=True, cancel_futures=False)
+
+
+def _scp_testdata_looks_complete(datadir: Path) -> bool:
+    """Return True when *datadir* appears to contain the full SCP testdata set.
+
+    A partially populated directory must not suppress bootstrap, otherwise
+    interrupted downloads leave the app stuck in a degraded state forever.
+    """
+    if not datadir.exists():
+        return False
+
+    # SpectroChemPy commonly drops a marker once the bulk testdata archive has
+    # been downloaded successfully. Prefer that signal when available.
+    if (datadir / "__downloaded__").exists():
+        return True
+
+    required_dirs = ("irdata", "ramandata", "nmrdata")
+    if any(not (datadir / name).is_dir() for name in required_dirs):
+        return False
+
+    # Guard against tiny partial trees that happen to contain one or two
+    # directories. A healthy download contains several top-level categories.
+    visible_dirs = [item for item in datadir.iterdir() if item.is_dir() and not item.name.startswith(".")]
+    if len(visible_dirs) < 5:
+        return False
+
+    # Traverse into the nested SCP directory tree. Some critical examples only
+    # exist several levels down (notably Bruker NMR directories), so a shallow
+    # top-level directory check is not sufficient.
+    recursive_files = 0
+    spectral_suffixes = {".spg", ".spa", ".spc", ".csv", ".jdx", ".dx", ".srs", ".wdf", ".txt", ".dat", ".0"}
+    for path in datadir.rglob("*"):
+        if path.name.startswith(".") or not path.is_file():
+            continue
+        suffix = path.suffix.lower()
+        if suffix in spectral_suffixes or (not suffix and path.name.isdigit()):
+            recursive_files += 1
+            if recursive_files >= 25:
+                break
+    if recursive_files < 25:
+        return False
+
+    required_anchors = (
+        datadir / "irdata" / "nh4y-activation.spg",
+        datadir / "ramandata" / "wire",
+        datadir / "nmrdata" / "bruker" / "tests" / "nmr" / "topspin_1d" / "1",
+    )
+    return all(path.exists() for path in required_anchors)
 
 
 async def ensure_spectrochempy_testdata() -> None:

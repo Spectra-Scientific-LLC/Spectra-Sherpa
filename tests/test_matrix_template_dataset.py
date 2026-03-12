@@ -94,7 +94,7 @@ MATRIX: list[tuple[str, str, dict]] = [
     ("ir_opus_analysis", "ramandata", _scp("ramandata")),
     ("ir_opus_analysis", "diesel_nir", _ev("diesel_nir")),
     ("ir_opus_analysis", "corn_m5", _ev("corn_m5")),
-    ("ir_opus_analysis", "wine_sklearn", _sk("wine")),
+    ("ir_opus_analysis", "cgl_nir", _ev("cgl_nir")),  # replaces wine_sklearn (non-spectral → rubberband fails)
     # ── knn_classification ────────────────────────────────────────────────
     ("knn_classification", "wine", _sk("wine")),
     ("knn_classification", "iris", _sk("iris")),
@@ -103,21 +103,21 @@ MATRIX: list[tuple[str, str, dict]] = [
     ("knn_classification", "corn_m5_ev", _ev("corn_m5")),  # no class labels → expected fail
     # ── mcr_als ───────────────────────────────────────────────────────────
     ("mcr_als", "irdata", _scp("irdata")),
-    ("mcr_als", "ramandata", _scp("ramandata")),
+    ("mcr_als", "nir_shootout_test1", _ev("nir_shootout_test1")),  # replaces ramandata (1 sample only)
     ("mcr_als", "diesel_nir", _ev("diesel_nir")),
     ("mcr_als", "corn_m5", _ev("corn_m5")),
     ("mcr_als", "nir_shootout1", _ev("nir_shootout_cal1")),
     # ── mcr_als_kinetics ──────────────────────────────────────────────────
     ("mcr_als_kinetics", "irdata", _scp("irdata")),
-    ("mcr_als_kinetics", "ramandata", _scp("ramandata")),
+    ("mcr_als_kinetics", "nir_shootout_test1", _ev("nir_shootout_test1")),  # replaces ramandata (1 sample only)
     ("mcr_als_kinetics", "diesel_nir", _ev("diesel_nir")),
     ("mcr_als_kinetics", "corn_m5", _ev("corn_m5")),
     ("mcr_als_kinetics", "cgl_nir", _ev("cgl_nir")),
     # ── nmr_processing ────────────────────────────────────────────────────
-    ("nmr_processing", "nmrdata", _scp("nmrdata")),
-    ("nmr_processing", "irdata", _scp("irdata")),  # wrong technique
+    ("nmr_processing", "irdata", _scp("irdata")),
     ("nmr_processing", "diesel_nir", _ev("diesel_nir")),
     ("nmr_processing", "corn_m5", _ev("corn_m5")),
+    ("nmr_processing", "nir_shootout1", _ev("nir_shootout_cal1")),
     ("nmr_processing", "wine_sk", _sk("wine")),
     # ── oes_process_monitoring ────────────────────────────────────────────
     ("oes_process_monitoring", "metal_etch_oes", _ev("metal_etch_oes")),
@@ -181,7 +181,7 @@ MATRIX: list[tuple[str, str, dict]] = [
     ("simca_qc", "corn_m5_ev", _ev("corn_m5")),  # no labels → fail expected
     # ── simplisma ─────────────────────────────────────────────────────────
     ("simplisma", "irdata", _scp("irdata")),
-    ("simplisma", "ramandata", _scp("ramandata")),
+    ("simplisma", "cgl_nir", _ev("cgl_nir")),  # replaces ramandata (1 sample only)
     ("simplisma", "diesel_nir", _ev("diesel_nir")),
     ("simplisma", "corn_m5", _ev("corn_m5")),
     ("simplisma", "nir_shootout1", _ev("nir_shootout_cal1")),

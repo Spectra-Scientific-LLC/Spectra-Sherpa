@@ -12,6 +12,7 @@ import numpy as np
 
 from spectra_sherpa.app.lib.sherpa_dataset import (
     EvaluationResult,
+    SherpaDataset,
 )
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
 
@@ -289,11 +290,22 @@ class PLSNode(Node):
             ),
         )
 
-        X_ndd = to_nddataset(X_ds)
         y_array = to_numpy_y(y_value, name="y", expected_samples=X_ds.shape[0], dtype=np.float64)
         # PLS expects 2D y: (n_samples, n_targets)
         y_2d = y_array.reshape(-1, 1) if y_array.ndim == 1 else y_array
         n_targets = y_2d.shape[1]
+
+        # Drop rows where the target contains NaN (e.g. diesel_nir partial properties)
+        nan_mask = np.isnan(y_2d).any(axis=1)
+        if nan_mask.any():
+            valid = ~nan_mask
+            n_dropped = int(nan_mask.sum())
+            logger.debug("[PLS Node] Dropping %d/%d samples with NaN target values", n_dropped, y_2d.shape[0])
+            y_2d = y_2d[valid]
+            # Rebuild X_ds with valid rows so sample_axis stays consistent with scores shape
+            X_ds = SherpaDataset(X=X_ds.X[valid], feature_axis=X_ds.get_feature_axis())
+
+        X_ndd = to_nddataset(X_ds)
         y_dataset = scp.NDDataset(y_2d)
 
         n_components = self.parameters.get("n_components", 3)

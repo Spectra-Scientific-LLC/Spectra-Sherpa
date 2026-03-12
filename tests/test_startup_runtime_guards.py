@@ -329,3 +329,47 @@ def test_scp_bootstrap_timeout_required_raises_runtime_error(
 
     assert fake_executor.future.cancel_called is True
     assert fake_executor.shutdown_calls == [(False, True)]
+
+
+def test_scp_completeness_check_requires_nested_anchor_paths(tmp_path) -> None:
+    datadir = tmp_path / "testdata"
+    (datadir / "irdata").mkdir(parents=True)
+    (datadir / "ramandata").mkdir(parents=True)
+    (datadir / "nmrdata").mkdir(parents=True)
+    (datadir / "galacticdata").mkdir(parents=True)
+    (datadir / "agirdata").mkdir(parents=True)
+
+    (datadir / "irdata" / "nh4y-activation.spg").write_text("x")
+    (datadir / "ramandata" / "wire").mkdir(parents=True)
+
+    for idx in range(30):
+        (datadir / "irdata" / f"sample_{idx}.spa").write_text("x")
+
+    assert startup._scp_testdata_looks_complete(datadir) is False
+
+    nested_nmr = datadir / "nmrdata" / "bruker" / "tests" / "nmr" / "topspin_1d" / "1"
+    nested_nmr.mkdir(parents=True)
+    (nested_nmr / "fid").write_text("x")
+
+    assert startup._scp_testdata_looks_complete(datadir) is True
+
+
+def test_scp_bootstrap_redownloads_when_partial_tree_exists(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    datadir = tmp_path / "testdata"
+    (datadir / "irdata").mkdir(parents=True)
+    (datadir / "ramandata").mkdir(parents=True)
+    (datadir / "irdata" / "nh4y-activation.spg").write_text("x")
+
+    download_calls: list[str] = []
+
+    monkeypatch.setenv("SCP_DATA_BOOTSTRAP", "auto")
+    monkeypatch.setattr("spectra_sherpa.app.lib.scp_compat.HAS_SCP", True)
+    monkeypatch.setattr("spectra_sherpa.app.lib.scp_compat.get_scp_datadirs", lambda: [datadir])
+    monkeypatch.setattr(
+        "spectra_sherpa.app.lib.scp_compat.download_testdata",
+        lambda: download_calls.append("downloaded"),
+    )
+
+    startup.ensure_spectrochempy_data()
+
+    assert download_calls == ["downloaded"]

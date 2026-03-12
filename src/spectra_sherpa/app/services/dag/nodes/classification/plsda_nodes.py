@@ -253,6 +253,7 @@ class PLSDANode(Node):
             X=X_ds,
             required=True,
             infer_from_X=True,
+            target_type="categorical",
             missing_message=(
                 "Missing required input: y (class labels)\n"
                 "Either provide labels via the 'y' input port, or use a dataset with labels in X.y"
@@ -272,9 +273,11 @@ class PLSDANode(Node):
 
         max_components = min(X_data.shape[0] - 1, X_data.shape[1])
         if n_components > max_components:
-            raise ValueError(
-                f"n_components must be <= min(n_samples - 1, n_features). Got {n_components} with max {max_components}."
+            logger.debug(
+                "[PLS-DA] Clamping n_components from %d to %d (min(n_samples-1, n_features))",
+                n_components, max_components,
             )
+            n_components = max_components
 
         # Get unique classes
         classes = np.unique(y_array)

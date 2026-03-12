@@ -219,6 +219,7 @@ class KNNNode(Node):
             X=X,
             required=True,
             infer_from_X=True,
+            target_type="categorical",
             missing_message=(
                 "Missing required input: y (class labels)\n"
                 "Either provide labels via the 'y' input port, or use an NDDataset with labels in X.y"

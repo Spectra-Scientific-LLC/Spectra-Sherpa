@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 from fastapi import APIRouter, FastAPI
+from fastapi.testclient import TestClient
 
 import spectra_sherpa.app.main as app_main
 from spectra_sherpa.app.api.v1 import api as api_v1
@@ -99,6 +100,34 @@ def test_create_app_accepts_extra_router_mapping():
         extra_routers=[(extra, {"prefix": "/svc", "tags": ["svc"]})],
     )
     assert "/svc/status" in _paths(app.routes)
+
+
+def test_ready_endpoint_is_public_when_http_auth_required(monkeypatch: pytest.MonkeyPatch):
+    class _FakeSession:
+        async def execute(self, *_args: Any, **_kwargs: Any) -> None:
+            return None
+
+    class _FakeSessionManager:
+        async def __aenter__(self) -> _FakeSession:
+            return _FakeSession()
+
+        async def __aexit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    monkeypatch.setattr("spectra_sherpa.app.core.security.requires_http_auth", lambda _host: True)
+    monkeypatch.setattr(app_main, "async_session", lambda: _FakeSessionManager())
+    monkeypatch.setattr(
+        "spectra_sherpa.app.services.plugin_loader.plugin_load_failures",
+        [],
+    )
+
+    app = app_main.create_app(include_server_routers=False)
+    client = TestClient(app)
+
+    response = client.get("/api/ready")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "database": "ok"}
 
 
 def test_create_app_rejects_invalid_extra_router_config():
