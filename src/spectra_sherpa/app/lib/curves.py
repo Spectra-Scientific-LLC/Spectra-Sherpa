@@ -9,7 +9,7 @@ smooth concentration profiles in synthetic data generation.
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, cast
 
 import numpy as np
 
@@ -125,9 +125,9 @@ def evaluate_catmull_rom(
         for seg in segments:
             if seg["startX"] <= x <= seg["endX"]:
                 # Compute parameter t in [0, 1]
-                t = (x - seg["startX"]) / (seg["endX"] - seg["startX"] + 1e-10)
+                t = (x - float(cast(float, seg["startX"]))) / (float(cast(float, seg["endX"])) - float(cast(float, seg["startX"])) + 1e-10)
                 # Evaluate cubic polynomial
-                coeffs = seg["yCoeffs"]
+                coeffs: list[float] = cast(list, seg["yCoeffs"])
                 y_out[i] = coeffs[0] + coeffs[1] * t + coeffs[2] * t**2 + coeffs[3] * t**3
                 break
         else:

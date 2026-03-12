@@ -236,7 +236,7 @@ class LoadApplyModelNode(Node):
             raise ValueError(f"Feature count mismatch: model expects {n_features} features, " f"got {X_data.shape[1]}")
 
         # --- Reconstruct extract and apply ---
-        extract = extract_cls.from_artifact(manifest, arrays)
+        extract = extract_cls.from_artifact(manifest, arrays)  # type: ignore[attr-defined]
 
         result: dict[str, Any] = {"model_id": model_id}
         meta: dict[str, Any] = {
@@ -270,11 +270,11 @@ class LoadApplyModelNode(Node):
             if isinstance(model_ref, str) and model_ref:
                 return model_ref
             if isinstance(model_ref, dict) and model_ref.get("model_id"):
-                return model_ref["model_id"]
+                return str(model_ref["model_id"])
 
         # Fall back to parameter
         param_id = self.parameters.get("model_id", "")
         if param_id:
-            return param_id
+            return str(param_id)
 
         raise ValueError("No model specified — provide a model_id parameter or connect a model_ref input")

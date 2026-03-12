@@ -38,7 +38,7 @@ def write_metadata(metadata_path: Path, metadata: dict[str, Any]) -> None:
 def read_metadata(metadata_path: Path) -> dict[str, Any]:
     if not metadata_path.exists():
         return {}
-    return json.loads(metadata_path.read_text())
+    return dict(json.loads(metadata_path.read_text()))
 
 
 def relative_to_data_dir(path: Path) -> str:
@@ -90,7 +90,7 @@ async def get_experiment(session: AsyncSession, experiment_id: int) -> Experimen
             selectinload(Experiment.samples),
         )
     )
-    return result.scalar_one_or_none()
+    return result.scalar_one_or_none()  # type: ignore[return-value]
 
 
 async def list_experiments(
@@ -408,7 +408,7 @@ async def get_experiment_file(session: AsyncSession, experiment_id: int, file_id
     result = await session.execute(
         select(ExperimentFile).where(ExperimentFile.experiment_id == experiment_id).where(ExperimentFile.id == file_id)
     )
-    return result.scalar_one_or_none()
+    return result.scalar_one_or_none()  # type: ignore[return-value]
 
 
 async def delete_experiment_file(session: AsyncSession, experiment_file: ExperimentFile) -> None:
@@ -422,4 +422,4 @@ async def get_version_by_name(session: AsyncSession, experiment_id: int, version
         .where(ExpVersion.experiment_id == experiment_id)
         .where(ExpVersion.version_name == version_name)
     )
-    return result.scalar_one_or_none()
+    return result.scalar_one_or_none()  # type: ignore[return-value]

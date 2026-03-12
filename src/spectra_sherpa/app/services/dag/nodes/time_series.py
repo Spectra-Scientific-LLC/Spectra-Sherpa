@@ -130,7 +130,7 @@ class MovingWindowNode(Node):
 
         result = build_dataset_like(windowed_data, input_ds)
         # Windowing changes sample cardinality: clear sample-coupled fields.
-        result.y = None
+        result.sample_axis = None  # type: ignore[assignment]
         result.target = None
         add_processing_step(
             result,

@@ -86,7 +86,7 @@ def normalize_class_label_value(value: Any) -> str:
         if trimmed.startswith("[") or trimmed.startswith("("):
             quoted = re.findall(r"'([^']+)'|\"([^\"]+)\"", trimmed)
             if quoted:
-                return quoted[-1][0] or quoted[-1][1]
+                return str(quoted[-1][0] or quoted[-1][1])
         return trimmed
 
     return str(value)

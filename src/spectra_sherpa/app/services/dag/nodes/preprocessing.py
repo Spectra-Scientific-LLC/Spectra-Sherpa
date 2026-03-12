@@ -933,7 +933,7 @@ class WavenumberAlignNode(Node):
             node_id=self.node_id,
         )
 
-        return result
+        return result  # type: ignore[no-any-return]
 
 
 def _scale_max_transform(data: np.ndarray, target_max: float = 1.0) -> np.ndarray:
@@ -1403,21 +1403,21 @@ class EMSCNode(Node):
             for k in range(n_constituents):
                 X_design.append(const_data[k])
 
-        X_design = np.column_stack(X_design)
+        X_design_arr: np.ndarray = np.column_stack(X_design)
         corrected_data = np.zeros_like(data)
         EMSC_COEF_THRESHOLD = 1e-8
 
         # Mask for non-reference columns (polynomial + constituent terms = baseline)
-        n_cols = X_design.shape[1]
+        n_cols = X_design_arr.shape[1]
         baseline_cols = [j for j in range(n_cols) if j != ref_col_idx]
 
         for i in range(n_samples):
             spectrum = data[i]
-            coef, _, _, _ = np.linalg.lstsq(X_design, spectrum, rcond=None)
+            coef, _, _, _ = np.linalg.lstsq(X_design_arr, spectrum, rcond=None)
 
             # Baseline = polynomial + constituent contributions (everything except reference)
             if baseline_cols:
-                baseline = X_design[:, baseline_cols] @ coef[baseline_cols]
+                baseline = X_design_arr[:, baseline_cols] @ coef[baseline_cols]
                 if np.abs(coef[ref_col_idx]) > EMSC_COEF_THRESHOLD:
                     corrected_data[i] = (spectrum - baseline) / coef[ref_col_idx]
                 else:

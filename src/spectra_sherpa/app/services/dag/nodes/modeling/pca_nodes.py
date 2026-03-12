@@ -400,7 +400,7 @@ class PCANode(Node):
                         return _label_to_string(label.tolist())
                     if hasattr(label, "isoformat"):
                         try:
-                            return label.isoformat()
+                            return str(label.isoformat())
                         except Exception:
                             pass
                     return str(label)
@@ -627,6 +627,7 @@ class PCATransformNode(Node):
         X_array = to_numpy_2d(X_new_ds, name="X_new", dtype=np.float64)
 
         # Transform data
+        assert pca_model is not None
         try:
             try:
                 scores = pca_model.transform(to_nddataset(X_new_ds))

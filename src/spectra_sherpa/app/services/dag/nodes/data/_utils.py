@@ -455,9 +455,9 @@ def _minimal_metadata_extraction(dataset: NDDataset, file_path: str) -> dict:
             x_data = np.array(mme_x_coord.data) if hasattr(mme_x_coord, "data") else np.array(mme_x_coord)
             if len(x_data) > 0:
                 metadata["acquisition_params"] = {
-                    "wavenumber_min": float(np.min(x_data)),
-                    "wavenumber_max": float(np.max(x_data)),
-                    "n_points": len(x_data),
+                    "wavenumber_min": str(float(np.min(x_data))),
+                    "wavenumber_max": str(float(np.max(x_data))),
+                    "n_points": str(len(x_data)),
                 }
         except Exception:
             pass

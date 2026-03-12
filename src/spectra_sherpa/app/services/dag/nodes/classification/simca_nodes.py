@@ -417,7 +417,7 @@ class SIMCANode(Node):
                 sample_distances[cls] = distance
 
             # Classify to closest class (minimum distance)
-            closest_class = min(sample_distances, key=sample_distances.get)
+            closest_class = min(sample_distances, key=lambda k: sample_distances[k])
             predictions.append(closest_class)
             distances.append(sample_distances)
 

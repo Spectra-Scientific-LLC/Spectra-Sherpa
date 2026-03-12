@@ -129,7 +129,7 @@ def parse_temperature(
             source_unit = "K"
 
         result = _convert_temperature(num_value, source_unit, target_unit)
-        return (result, unit_source) if return_unit_source else result
+        return (result, unit_source) if return_unit_source else result  # type: ignore[return-value]
 
     # Parse string
     match = TEMPERATURE_PATTERN.search(str(value))
@@ -160,7 +160,7 @@ def parse_temperature(
             unit_source = "default"
 
         result = _convert_temperature(num_value, source_unit, target_unit)
-        return (result, unit_source) if return_unit_source else result
+        return (result, unit_source) if return_unit_source else result  # type: ignore[return-value]
 
     except (ValueError, TypeError):
         return (None, None) if return_unit_source else None
@@ -254,7 +254,7 @@ def parse_pressure(
             unit_source = "default"
 
         result = _convert_pressure(num_value, unit_str, target_unit)
-        return (result, unit_source) if return_unit_source else result
+        return (result, unit_source) if return_unit_source else result  # type: ignore[return-value]
 
     except (ValueError, TypeError):
         return (None, None) if return_unit_source else None
@@ -355,7 +355,7 @@ def parse_length(
             unit_str = "um"
 
         result = _convert_length(num_value, unit_str, target_unit)
-        return (result, unit_source) if return_unit_source else result
+        return (result, unit_source) if return_unit_source else result  # type: ignore[return-value]
 
     except (ValueError, TypeError):
         return (None, None) if return_unit_source else None

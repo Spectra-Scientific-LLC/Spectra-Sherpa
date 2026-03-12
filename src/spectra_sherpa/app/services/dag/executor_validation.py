@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import Any, List
+from typing import Any, Callable, List, Optional
 
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
@@ -22,7 +22,7 @@ try:
 
     HAS_UNIT_VALIDATION = True
 except ImportError:
-    validate_and_normalize_units = None
+    validate_and_normalize_units: Optional[Callable[[list[Any], str], list[Any]]] = None  # type: ignore[no-redef]
     HAS_UNIT_VALIDATION = False
 
 

@@ -6,7 +6,7 @@ Registered as ``data.train_test_split``.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -296,8 +296,12 @@ class TrainTestSplitNode(Node):
         # Slice sample-axis metadata to match train/test rows.
         tts_y_coord = X_ds.sample_axis
         if tts_y_coord is not None and len(tts_y_coord) > 1:
-            X_train.sample_axis = slice_axis_for_indices(tts_y_coord, train_idx)
-            X_test.sample_axis = slice_axis_for_indices(tts_y_coord, test_idx)
+            _train_ax = slice_axis_for_indices(tts_y_coord, train_idx)
+            _test_ax = slice_axis_for_indices(tts_y_coord, test_idx)
+            if _train_ax is not None:
+                X_train.sample_axis = cast(Any, _train_ax)
+            if _test_ax is not None:
+                X_test.sample_axis = cast(Any, _test_ax)
 
         # Keep dataset.target aligned after row splitting.
         target = getattr(X_ds, "target", None)

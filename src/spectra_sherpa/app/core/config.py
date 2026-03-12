@@ -326,7 +326,7 @@ class AppConfig(BaseModel):
             from spectra_sherpa.app.core.llm_registry import PROVIDERS, ProviderMetadata
         except ImportError:
             # Fallback if registry not available (shouldn't happen)
-            PROVIDERS: dict[str, ProviderMetadata] = {
+            PROVIDERS: dict[str, ProviderMetadata] = {  # type: ignore[no-redef]
                 "openai": {
                     "id": "openai",
                     "name": "OpenAI",
@@ -491,15 +491,16 @@ class AppConfig(BaseModel):
 
         # Limits: only present when rate_limit_executions or session_expiry_hours are set
         if self.rate_limit_executions or self.session_expiry_hours:
-            limits: dict[str, int] | None = {"maxFileSizeMB": settings.max_file_size_mb}
+            _limits: dict[str, int] = {"maxFileSizeMB": settings.max_file_size_mb}
             if self.rate_limit_executions:
-                limits["maxExecutions"] = self.rate_limit_executions
+                _limits["maxExecutions"] = self.rate_limit_executions
             if self.session_expiry_hours:
-                limits["sessionExpiryHours"] = self.session_expiry_hours
+                _limits["sessionExpiryHours"] = self.session_expiry_hours
+            limits: dict[str, int] | None = _limits
         else:
             limits = None
 
-        result = {
+        result: dict[str, Any] = {
             "mode": self.mode,
             "egressEnabled": self.egress_enabled,
             "apiBaseUrl": self.api_base_url,

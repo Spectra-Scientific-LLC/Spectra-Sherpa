@@ -157,7 +157,7 @@ def _load_entrypoint_plugins() -> int:
         if hasattr(eps, "select"):
             plugin_eps = eps.select(group=ENTRY_POINT_GROUP)
         else:
-            plugin_eps = eps.get(ENTRY_POINT_GROUP, ())
+            plugin_eps = eps.get(ENTRY_POINT_GROUP, ())  # type: ignore[arg-type]
 
         for ep in plugin_eps:
             try:

@@ -388,7 +388,7 @@ def build_dataset_like(
         target = None
 
     # Propagate inner axes from source if shapes match
-    inner_axes = None
+    inner_axes: dict[int, Any] | None = None
     if arr.ndim > 2 and src.ndim > 2:
         inner_axes = {}
         for dim, ax in src.inner_axes.items():

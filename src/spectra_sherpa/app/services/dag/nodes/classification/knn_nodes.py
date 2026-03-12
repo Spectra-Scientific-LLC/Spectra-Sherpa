@@ -411,7 +411,7 @@ class KNNNode(Node):
         if limit_k < 2:
             return {}
 
-        results = {"k": [], "accuracy": [], "std": []}
+        results: dict[str, Any] = {"k": [], "accuracy": [], "std": []}
 
         # Use stratified folds
         cv = StratifiedKFold(n_splits=min(folds, n_samples // 2), shuffle=True, random_state=42)

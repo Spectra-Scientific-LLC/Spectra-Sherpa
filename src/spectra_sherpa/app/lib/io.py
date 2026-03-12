@@ -682,7 +682,7 @@ def load_csv_as_sherpa(filepath: Union[str, Path]) -> "SherpaDataset":
 
     target = None
     target_context = None
-    extra: dict[str, Any] = {
+    extra2: dict[str, Any] = {
         "csv.feature_names": col_names,
     }
 
@@ -695,7 +695,7 @@ def load_csv_as_sherpa(filepath: Union[str, Path]) -> "SherpaDataset":
             n_classes=len(np.unique(target)),
             class_names=sorted({str(label) for label in target}),
         )
-        extra["csv.target_column"] = target_col
+        extra2["csv.target_column"] = target_col
 
     return SherpaDataset(
         X=data,
@@ -707,7 +707,7 @@ def load_csv_as_sherpa(filepath: Union[str, Path]) -> "SherpaDataset":
             technique="generic",
             sample_type=title,
         ),
-        extra=extra,
+        extra=extra2,
         backend="pandas",
         title=title,
     )

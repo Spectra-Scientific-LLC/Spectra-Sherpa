@@ -201,8 +201,8 @@ class LinearCalibrationNode(Node):
             units="absorbance",
             title=f"{spectrum_ds.title}_linear",
         )
-        result.x = spec_x_coord.copy()
-        result.y = SampleAxis(values=np.arange(len(concentrations_array)), title="Sample Index")
+        result.feature_axis = spec_x_coord.copy()
+        result.sample_axis = SampleAxis(values=np.arange(len(concentrations_array)), title="Sample Index")
 
         result.meta["calibration_model"] = "linear"
         result.meta["concentrations"] = concentrations_array.tolist()
@@ -395,8 +395,8 @@ class SaturationModelNode(Node):
             units="absorbance",
             title=f"{spectrum_ds.title}_saturation",
         )
-        result.x = spec_x_coord.copy()
-        result.y = SampleAxis(values=np.arange(len(concentrations_array)), title="Sample Index")
+        result.feature_axis = spec_x_coord.copy()
+        result.sample_axis = SampleAxis(values=np.arange(len(concentrations_array)), title="Sample Index")
 
         result.meta["calibration_model"] = "saturation"
         result.meta["concentrations"] = concentrations_array.tolist()

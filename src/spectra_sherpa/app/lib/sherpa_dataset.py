@@ -227,7 +227,7 @@ class ProvenanceEntry(BaseModel):
         """Coerce list → tuple for true immutability."""
         if isinstance(v, (list, tuple, frozenset, set)):
             return tuple(v)
-        return v
+        return v  # type: ignore[no-any-return]
 
     @classmethod
     def _freeze_mapping(cls, data: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -747,26 +747,26 @@ class SherpaDataset:
 
     @property
     def shape(self) -> tuple:
-        return self._X.shape
+        return self._X.shape  # type: ignore[return-value]
 
     @property
     def ndim(self) -> int:
-        return self._X.ndim
+        return int(self._X.ndim)
 
     @property
     def n_samples(self) -> int:
         """Number of samples (first dimension)."""
-        return self._X.shape[0]
+        return int(self._X.shape[0])
 
     @property
     def n_features(self) -> int:
         """Number of features (last dimension)."""
-        return self._X.shape[-1]
+        return int(self._X.shape[-1])
 
     @property
     def inner_shape(self) -> tuple[int, ...]:
         """Shape of inner dimensions (empty tuple for 2D data)."""
-        return self._X.shape[1:-1]
+        return tuple(int(x) for x in self._X.shape[1:-1])
 
     @property
     def inner_axes(self) -> dict[int, AxisInfo]:
@@ -1417,7 +1417,7 @@ class SherpaDataset:
             if not isinstance(feature_axis, FeatureAxis):
                 feature_axis = None  # safety: must be a FeatureAxis subclass
 
-        sample_axis = _deserialize_sample_axis(d.get("sample_axis")) if d.get("sample_axis") else None
+        sample_axis = _deserialize_sample_axis(dict(d["sample_axis"])) if d.get("sample_axis") else None
         target = np.asarray(d["target"]) if d.get("target") is not None else None
 
         # Inner axes (v2+)

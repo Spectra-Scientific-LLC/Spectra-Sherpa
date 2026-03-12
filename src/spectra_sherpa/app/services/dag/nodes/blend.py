@@ -209,7 +209,7 @@ class BlendNode(Node):
         first_matrix = to_numpy_2d(first_spectrum, name="input_data[0]")
         wavenumbers = first_x_coord.data if first_x_coord is not None else np.arange(first_matrix.shape[-1])
 
-        n_wavenumbers = len(wavenumbers)
+        n_wavenumbers = len(wavenumbers)  # type: ignore[arg-type]
 
         # Build species matrix (each column is a pure spectrum)
         S = np.zeros((n_wavenumbers, len(spectra)))
@@ -263,7 +263,7 @@ class BlendNode(Node):
         dataset.target = None
         dataset.meta["processing_history"] = dataset.provenance
         fa_title = getattr(first_x_coord, "title", None) or "Feature"
-        fa_units = str(first_x_coord.units) if getattr(first_x_coord, "units", None) else None
+        fa_units = str(first_x_coord.units) if first_x_coord is not None and getattr(first_x_coord, "units", None) else None
         dataset.feature_axis = SpectralAxis(values=wavenumbers, title=fa_title, units=fa_units)
         dataset.sample_axis = SampleAxis(values=np.arange(n_timepoints), title="Time")
 
@@ -599,7 +599,7 @@ class MergeSpectraNode(Node):
         dataset.meta["processing_history"] = dataset.provenance
         ref_fa = datasets[0].feature_axis
         fa_title = getattr(ref_fa, "title", None) or "Feature"
-        fa_units = str(ref_fa.units) if getattr(ref_fa, "units", None) else None
+        fa_units = str(ref_fa.units) if ref_fa is not None and getattr(ref_fa, "units", None) else None
         dataset.feature_axis = SpectralAxis(values=ref_wn, title=fa_title, units=fa_units)
         dataset.sample_axis = SampleAxis(values=np.arange(len(spectra)), title="Sample")
 

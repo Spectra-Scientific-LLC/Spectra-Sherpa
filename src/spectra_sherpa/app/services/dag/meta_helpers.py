@@ -216,7 +216,7 @@ def ensure_samples_meta(dataset: Any) -> Dict[str, Any]:
             "labels": [f"Sample_{i+1}" for i in range(n_samples)],
         }
 
-    return dataset.meta["samples"]
+    return dict(dataset.meta["samples"])  # type: ignore[return-value]
 
 
 def exclude_samples(

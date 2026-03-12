@@ -48,7 +48,7 @@ class DemoLimitTracker:
                 # Clean expired sessions (older than session_expiry_hours)
                 cutoff = datetime.now() - timedelta(hours=app_config.demo_contract.session_expiry_hours)
                 cleaned: dict[str, _DemoCounterState] = {
-                    uid: counters
+                    uid: counters  # type: ignore[misc]
                     for uid, counters in data.items()
                     if isinstance(counters, dict)
                     and datetime.fromisoformat(str(counters.get("last_activity", "1970-01-01"))) > cutoff

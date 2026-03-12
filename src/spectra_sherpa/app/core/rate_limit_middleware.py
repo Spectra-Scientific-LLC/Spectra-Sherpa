@@ -13,6 +13,7 @@ validation) lives in spectra-server and is injected via create_app() hooks.
 """
 
 import json
+from typing import Any
 
 from fastapi import Request, Response, status
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -174,7 +175,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     def _error_response(self, status_code: int, message: str, details: dict[str, object] | None = None) -> Response:
         """Create a JSON error response."""
-        body = {"detail": message}
+        body: dict[str, Any] = {"detail": message}
         if details:
-            body.update(details)
+            body.update(details)  # type: ignore[arg-type]
         return Response(content=json.dumps(body), status_code=status_code, media_type="application/json")

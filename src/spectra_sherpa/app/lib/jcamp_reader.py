@@ -181,9 +181,9 @@ def parse_jcamp(text: str) -> JCAMPData:
     yfactor = _safe_float(headers.get("YFACTOR", "1.0"), 1.0)
 
     if data_format == "XYDATA":
-        x, y = _parse_xydata(data_lines, headers, xfactor, yfactor)
+        x, y = _parse_xydata(data_lines, headers, xfactor or 1.0, yfactor or 1.0)
     elif data_format in ("XYPOINTS", "PEAK TABLE"):
-        x, y = _parse_xypoints(data_lines, xfactor, yfactor)
+        x, y = _parse_xypoints(data_lines, xfactor or 1.0, yfactor or 1.0)
     else:
         raise ValueError(f"Unsupported JCAMP-DX data format: {data_format}")
 

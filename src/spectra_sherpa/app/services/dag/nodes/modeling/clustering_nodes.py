@@ -5,7 +5,7 @@ Clustering nodes: HCA, KMeans, DBSCAN.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -337,7 +337,7 @@ class HCANode(Node):
             # leaves contains the original sample indices in dendrogram order
             leaves = dend["leaves"]
             leaf_labels = [str(sample_labels[i]) for i in leaves]
-            layout["yaxis"]["ticktext"] = leaf_labels
+            cast(dict, layout["yaxis"])["ticktext"] = leaf_labels
             # Extract actual Y-positions from icoord (leaf positions are at the bottom of links)
             # scipy dendrogram places leaves at y = 5, 15, 25, ... (spacing of 10, starting at 5)
             # We use the icoord values which represent actual positions
@@ -352,7 +352,7 @@ class HCANode(Node):
             # If we can't extract positions reliably, fall back to standard spacing
             if len(leaf_positions) != len(leaves):
                 leaf_positions = list(range(5, len(leaves) * 10 + 5, 10))
-            layout["yaxis"]["tickvals"] = leaf_positions
+            cast(dict, layout["yaxis"])["tickvals"] = leaf_positions
 
         if n_samples:
             min_height_per_sample = 15  # pixels per sample for readability
@@ -360,7 +360,7 @@ class HCANode(Node):
             layout["height"] = total_height
             layout["margin"] = {"l": 50, "r": 150}  # Right margin for labels
             # Tight y-axis range: scipy uses 10 units per leaf, starting at 5
-            layout["yaxis"]["range"] = [0, n_samples * 10]
+            cast(dict, layout["yaxis"])["range"] = [0, n_samples * 10]
 
         return {
             "data": traces,

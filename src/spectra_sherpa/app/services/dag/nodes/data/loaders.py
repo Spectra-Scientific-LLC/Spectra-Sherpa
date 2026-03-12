@@ -779,7 +779,7 @@ class LoadGroupNode(Node):
             # Try relative to SpectroChemPy datadir
             candidate_paths = [datadir / folder_path for datadir in get_scp_datadirs()]
 
-            folder = next((p for p in candidate_paths if p.exists()), None)
+            folder = next((p for p in candidate_paths if p.exists()), None)  # type: ignore[assignment]
 
             if folder is None:
                 attempted = "\n".join(f"  - {p}" for p in candidate_paths)

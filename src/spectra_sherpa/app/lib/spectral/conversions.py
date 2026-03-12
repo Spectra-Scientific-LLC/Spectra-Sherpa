@@ -58,7 +58,7 @@ def check_reference_applied(dataset: "NDDataset", operation: str) -> bool:
         if isinstance(chem, dict) and "reference" in chem:
             ref = chem["reference"]
             if isinstance(ref, dict):
-                return ref.get("applied", False)
+                return bool(ref.get("applied", False))
 
     # Check for simple reference_applied flag
     if "reference_applied" in meta:

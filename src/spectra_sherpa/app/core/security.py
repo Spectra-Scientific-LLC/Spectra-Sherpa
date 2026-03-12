@@ -157,7 +157,7 @@ def get_password_hash(password: str) -> str:
         password.encode("utf-8"),
         bcrypt.gensalt(),
     )
-    return hashed.decode("utf-8")
+    return str(hashed.decode("utf-8"))
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:

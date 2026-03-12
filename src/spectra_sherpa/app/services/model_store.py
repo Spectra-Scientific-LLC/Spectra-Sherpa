@@ -127,7 +127,7 @@ class ModelStore:
         if not manifest_path.exists():
             raise FileNotFoundError(f"Model artifact not found: {artifact_uid}")
         with open(manifest_path) as f:
-            return json.load(f)
+            return dict(json.load(f))
 
     def load_arrays(self, artifact_uid: str) -> dict[str, np.ndarray]:
         """Load arrays.npz → dict of numpy arrays."""
@@ -151,7 +151,7 @@ class ModelStore:
         if not npz_path.exists():
             return False
         actual = _sha256_file(npz_path)
-        return actual == expected
+        return bool(actual == expected)
 
     # ── Delete ───────────────────────────────────────────────────────
 

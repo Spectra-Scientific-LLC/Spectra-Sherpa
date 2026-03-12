@@ -328,13 +328,13 @@ class ClassifierPredictNode(Node):
                 distance = (T2 / T2_limit) + (Q / Q_limit)
                 sample_distances[cls_str] = distance
 
-            closest_class = min(sample_distances, key=sample_distances.get)
+            closest_class = min(sample_distances, key=lambda k: sample_distances[k])
             predictions.append(closest_class)
             all_distances.append(sample_distances)
 
         try:
             if all(isinstance(c, (int, np.integer)) for c in classes):
-                predictions = [int(p) for p in predictions]
+                predictions = [str(int(p)) for p in predictions]
         except (ValueError, TypeError):
             pass
 

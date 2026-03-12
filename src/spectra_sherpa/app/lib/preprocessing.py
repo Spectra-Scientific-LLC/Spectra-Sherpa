@@ -10,7 +10,7 @@ MIGRATED FROM: project0/preprocess.py
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, List, Optional, Tuple
 
 import numpy as np
 
@@ -825,7 +825,7 @@ def baseline_penalized_ls(
     if method not in funcs:
         raise ValueError(f"method must be one of {list(funcs.keys())}, got '{method}'")
 
-    func = funcs[method]
+    func: Any = funcs[method]
     kwargs = {"lam": lam, "max_iter": max_iter, "tol": tol}
     if method == "als":
         kwargs["p"] = p

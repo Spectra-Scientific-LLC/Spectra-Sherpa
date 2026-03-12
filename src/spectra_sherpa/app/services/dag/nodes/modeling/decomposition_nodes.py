@@ -633,7 +633,7 @@ class FastICANode(Node):
                 species_list = spectra_meta.get("species", [])
                 if species_list and len(species_list) >= n_components:
                     try:
-                        names = []
+                        names: list[str] = []
                         for spec in species_list[:n_components]:
                             if isinstance(spec, dict):
                                 names.append(spec.get("name", f"IC {len(names)+1}"))

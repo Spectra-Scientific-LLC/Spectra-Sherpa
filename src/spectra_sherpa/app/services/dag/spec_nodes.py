@@ -149,6 +149,7 @@ class TransformSpecNode(Node):
         result = build_dataset_like(result_data, input_ds, units=self.spec.output_units)
 
         # Record provenance
+        assert self.metadata is not None
         add_processing_step(
             result,
             self.metadata.node_type,
@@ -196,6 +197,7 @@ class TransformSpecNode(Node):
             # Substitute resolved param values into the expression
             fmt_params = {k: format_value(v) for k, v in params.items()}
             formatted = self.spec.numpy_expr.format(**fmt_params)
+            assert self.metadata is not None
             lines: List[str] = [header_line(self.metadata.label, self.node_id, indent)]
             lines += extract_data_lines(inp, indent)
             lines.append(f"{indent}_result = {formatted}")
@@ -297,6 +299,7 @@ class EstimatorSpecNode(Node):
 
         from sklearn.metrics import mean_squared_error, r2_score
 
+        assert self.metadata is not None
         # Bind inputs
         X_ds = bind_X(
             X,
@@ -445,6 +448,7 @@ class EstimatorSpecNode(Node):
         params = self._resolve_params()
         cls_name = self.spec.estimator_class.__name__
 
+        assert self.metadata is not None
         lines: List[str] = [header_line(self.metadata.label, self.node_id, indent)]
         lines.append(f"{indent}{self.spec.estimator_import}")
 

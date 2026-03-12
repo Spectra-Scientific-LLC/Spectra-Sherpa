@@ -327,7 +327,8 @@ class DAGExecutor:
         """
         incoming = {e.to_node for e in self.edges}
         return [
-            nid for nid in self.nodes if nid not in incoming or self.nodes[nid].metadata.node_type.startswith("data.")
+            nid for nid in self.nodes
+            if nid not in incoming or (self.nodes[nid].metadata is not None and self.nodes[nid].metadata.node_type.startswith("data."))  # type: ignore[union-attr]
         ]
 
     def find_exit_nodes(self) -> List[str]:
@@ -385,7 +386,7 @@ class DAGExecutor:
         """Check that multi-input nodes have all required inputs connected."""
         issues: List[ValidationIssue] = []
         for node_id, node in self.nodes.items():
-            if node.uses_named_ports() and node.metadata.input_ports:
+            if node.uses_named_ports() and node.metadata is not None and node.metadata.input_ports:
                 incoming_edges = [e for e in self.edges if e.to_node == node_id]
                 connected_ports: Set[str] = set()
 
@@ -436,11 +437,13 @@ class DAGExecutor:
         for node_id, dep_list in deps.items():
             node = self.nodes[node_id]
             is_source = (
-                not node.metadata.input_types
+                node.metadata is None
+                or not node.metadata.input_types
                 or node.metadata.input_types == [""]
                 or node.metadata.node_type.startswith("data.")
             )
             if not is_source and len(dep_list) == 0:
+                assert node.metadata is not None
                 issues.append(
                     ValidationIssue(
                         "error",
@@ -676,6 +679,7 @@ class DAGExecutor:
                 safe_pos = tuple(self._sanitize_for_pool(v) for v in positional_inputs) if not named_inputs else ()
                 safe_named = {k: self._sanitize_for_pool(v) for k, v in named_inputs.items()} if named_inputs else {}
 
+                assert node.metadata is not None
                 future = loop.run_in_executor(
                     self._process_pool,
                     _run_node_in_worker,
@@ -766,7 +770,7 @@ class DAGExecutor:
                 port_name = edge.to_input
                 if port_name == "default" and "default" not in actual_port_names:
                     # Legacy edge without explicit port — infer from port order
-                    if node.metadata.input_ports and _legacy_port_counter < len(node.metadata.input_ports):
+                    if node.metadata is not None and node.metadata.input_ports and _legacy_port_counter < len(node.metadata.input_ports):
                         port_name = node.metadata.input_ports[_legacy_port_counter].name
                     else:
                         port_name = f"input_{_legacy_port_counter}"
@@ -977,7 +981,7 @@ class DAGExecutor:
 
                 # Check if we can use cached result
                 if self._is_node_cached(node_id):
-                    logger.debug("Using cached result: %s (%s)", node_id, node.metadata.label)
+                    logger.debug("Using cached result: %s (%s)", node_id, node.metadata.label if node.metadata else node_id)
                     await _emit(node_id, "completed")
                     continue
 
@@ -1069,7 +1073,7 @@ class DAGExecutor:
 
             # Check if we can use cached result
             if self._is_node_cached(dep_node_id):
-                logger.debug("Using cached result: %s (%s)", dep_node_id, node.metadata.label)
+                logger.debug("Using cached result: %s (%s)", dep_node_id, node.metadata.label if node.metadata else dep_node_id)
                 # Still include in results even if cached
                 if dep_node_id not in executed_in_this_run:
                     executed_in_this_run.append(dep_node_id)
@@ -1078,7 +1082,7 @@ class DAGExecutor:
             # Execute the node (offloaded to process pool when available)
             positional_inputs, named_inputs = self._get_node_inputs(dep_node_id)
             node_timeout = settings.max_job_duration_sec
-            logger.debug("Executing node: %s (%s)", dep_node_id, node.metadata.label)
+            logger.debug("Executing node: %s (%s)", dep_node_id, node.metadata.label if node.metadata else dep_node_id)
             try:
                 result = await self._run_one_node(node, positional_inputs, named_inputs, node_timeout)
             except asyncio.TimeoutError:

@@ -317,6 +317,7 @@ class Node(ABC):
             List of Python code lines (already indented)
         """
         if self.scp_method is None:
+            assert self.metadata is not None
             return [
                 f"{indent}# TODO: {self.metadata.node_type} does not support Python export yet",
                 f"{indent}raise NotImplementedError(" f"'{self.metadata.node_type} export not implemented')",
@@ -330,6 +331,7 @@ class Node(ABC):
                 f"{indent}raise ImportError(" f"'{self.metadata.label} requires spectrochempy')",
             ]
 
+        assert self.metadata is not None
         lines: List[str] = []
         lines.append(f"{indent}# --- {self.metadata.label} ({self.node_id}) ---")
 
