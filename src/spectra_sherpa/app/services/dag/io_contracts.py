@@ -241,8 +241,7 @@ def bind_y(
                 )
             else:
                 raise ValueError(
-                    f"Dataset has {actual_type} targets [{names_str}] — "
-                    f"this node requires {target_type} targets."
+                    f"Dataset has {actual_type} targets [{names_str}] — " f"this node requires {target_type} targets."
                 )
 
     if y is None and infer_from_X and X is not None:

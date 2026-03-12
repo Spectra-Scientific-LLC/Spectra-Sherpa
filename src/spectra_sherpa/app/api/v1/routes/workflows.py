@@ -14,13 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session
+from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.core.security import check_export_allowed
-from spectra_sherpa.app.models.user import User
-from spectra_sherpa.app.services.serialization import serialize_result
-
-logger = logging.getLogger(__name__)
-
 from spectra_sherpa.app.models.execution_run import ExecutionRun
+from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
 from spectra_sherpa.app.models.workflow_edge import WorkflowEdge
 from spectra_sherpa.app.models.workflow_node import WorkflowNode
@@ -44,18 +41,15 @@ from spectra_sherpa.app.schemas.workflows import (
     WorkflowVersionListResponse,
     WorkflowVersionSummary,
 )
-from spectra_sherpa.app.services.dag import (
-    DAGExecutor,
-    node_registry,
-)
-from spectra_sherpa.app.services.dag import (
-    WorkflowEdge as DAGEdge,
-)
-from spectra_sherpa.app.services.dag import (
-    WorkflowNode as DAGNode,
-)
+from spectra_sherpa.app.services.dag import DAGExecutor, node_registry
+from spectra_sherpa.app.services.dag import WorkflowEdge as DAGEdge
+from spectra_sherpa.app.services.dag import WorkflowNode as DAGNode
 from spectra_sherpa.app.services.dag.integrity import compute_workflow_hash
+from spectra_sherpa.app.services.export_store import save_jupyter_workflow_export, save_python_workflow_export
 from spectra_sherpa.app.services.python_export import generate_python_code
+from spectra_sherpa.app.services.serialization import serialize_result
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/workflows")
 
@@ -469,7 +463,8 @@ async def list_spectrochempy_examples(
     """
     from pathlib import Path
 
-    from spectra_sherpa.app.lib.scp_compat import HAS_SCP, get_scp_datadirs, scp
+    from spectra_sherpa.app.lib.scp_catalog import build_scp_catalog
+    from spectra_sherpa.app.lib.scp_compat import HAS_SCP, get_preferred_scp_datadir, scp
 
     if not HAS_SCP:
         raise HTTPException(
@@ -482,126 +477,29 @@ async def list_spectrochempy_examples(
         )
 
     try:
-        # Scan multiple data directories
-        primary_datadir = Path(scp.preferences.datadir)
-        primary_resolved = primary_datadir.expanduser().resolve(strict=False)
-        data_dirs = [d for d in get_scp_datadirs() if d.exists()]
+        preferred_datadir = get_preferred_scp_datadir()
+        primary_datadir = scp.preferences.datadir
+        primary_resolved = Path(primary_datadir).expanduser().resolve(strict=False)
+        selected_resolved = preferred_datadir.expanduser().resolve(strict=False) if preferred_datadir else None
+        source_kind = "primary" if selected_resolved == primary_resolved else "fallback"
 
-        spectral_extensions = {
-            ".spg",
-            ".spa",
-            ".csv",
-            ".jdx",
-            ".dx",
-            ".spc",
-            ".txt",
-            ".wdf",
-            ".mat",
-            ".asc",
-        }
-        scp_labels = {
-            "irdata": "IR: Infrared Spectroscopy",
-            "ramandata": "Raman Spectroscopy",
-            "nmrdata": "NMR: Nuclear Magnetic Resonance",
-            "galacticdata": "Galactic SPC Files",
-            "agirdata": "Agilent IR (AGIR)",
-            "dscdata": "DSC (Calorimetry)",
-            "matlabdata": "MATLAB Datasets",
-            "msdata": "Mass Spectrometry",
-        }
+        result: dict[str, list[dict[str, str]]] = {}
+        for entry in build_scp_catalog(force=True):
+            dataset_name = entry["category"]
+            path = entry["file_path"].rstrip("/")
+            format_name = "dir" if entry["entry_type"] == "group" else Path(path).suffix.lower()
+            result.setdefault(dataset_name, []).append(
+                {
+                    "label": entry["label"],
+                    "value": path,
+                    "path": path,
+                    "format": format_name,
+                    "source": source_kind,
+                }
+            )
 
-        # Auto-discover SCP categories from available datadirs.
-        datasets: dict[str, dict[str, Any]] = {}
-        for datadir in data_dirs:
-            for subdir in sorted(datadir.iterdir()):
-                if not subdir.is_dir() or subdir.name.startswith((".", "_")):
-                    continue
-                name = subdir.name
-                if name in datasets:
-                    continue
-
-                label = scp_labels.get(name, name.replace("data", " Data").title().strip())
-                if name == "nmrdata":
-                    datasets[name] = {"label": label, "dirs": True}
-                else:
-                    datasets[name] = {
-                        "label": label,
-                        "extensions": list(spectral_extensions),
-                        "allow_numeric_ext": True,
-                    }
-
-        result = {}
-
-        for dataset_name, config in datasets.items():
-            # Use dict to deduplicate by relative path
-            files_dict = {}
-
-            for datadir in data_dirs:
-                folder_path = datadir / dataset_name
-                if not folder_path.exists():
-                    continue
-
-                # For NMR data, list directories (Bruker format uses directories)
-                if config.get("dirs"):
-                    # Find directories that contain 'fid' or 'ser' files (Bruker format)
-                    for item in sorted(folder_path.rglob("*")):
-                        if item.is_dir():
-                            # Check if this directory contains Bruker NMR data
-                            if (item / "fid").exists() or (item / "ser").exists():
-                                rel_path = item.relative_to(datadir)
-                                label = str(rel_path).replace(f"{dataset_name}/", "")
-                                source_kind = (
-                                    "primary"
-                                    if datadir.expanduser().resolve(strict=False) == primary_resolved
-                                    else "fallback"
-                                )
-
-                                # Deduplicate: only add if not already seen
-                                if label not in files_dict:
-                                    files_dict[label] = {
-                                        "label": label,
-                                        "value": str(rel_path),
-                                        "path": str(rel_path),
-                                        "source": source_kind,
-                                    }
-                else:
-                    # For other datasets, list files by extension (case-insensitive)
-                    # Create set of lowercase extensions for O(1) lookup
-                    extensions_set = {ext.lower() for ext in config.get("extensions", [])}
-                    allow_numeric_ext = config.get("allow_numeric_ext", False)
-
-                    # Scan once, filter by extension set (more efficient than nested loops)
-                    for file_path in sorted(folder_path.rglob("*")):
-                        if not file_path.is_file():
-                            continue
-                        if file_path.name.startswith(("__", ".")):
-                            continue
-
-                        suffix_lower = file_path.suffix.lower()
-                        is_numeric_ext = suffix_lower.lstrip(".").isdigit()
-                        if suffix_lower not in extensions_set and not (allow_numeric_ext and is_numeric_ext):
-                            continue
-
-                        rel_path = file_path.relative_to(datadir)
-                        label = str(rel_path).replace(f"{dataset_name}/", "")
-                        source_kind = (
-                            "primary" if datadir.expanduser().resolve(strict=False) == primary_resolved else "fallback"
-                        )
-
-                        # Deduplicate: only add if not already seen
-                        if label not in files_dict:
-                            files_dict[label] = {
-                                "label": label,
-                                "value": str(rel_path),
-                                "path": str(rel_path),
-                                "format": file_path.suffix.lower(),
-                                "source": source_kind,
-                            }
-
-            if files_dict:
-                # DataSourceNode is for single files only
-                # For loading multiple files, users should use LoadGroupNode
-                result[dataset_name] = list(files_dict.values())
+        for dataset_name, files in result.items():
+            files.sort(key=lambda item: item["label"].lower())
 
         return result
 
@@ -1582,11 +1480,13 @@ async def export_workflow_to_python(
 
     try:
         python_code = generate_python_code(workflow)
+        saved_path = save_python_workflow_export(workflow.id, workflow.name, python_code)
         return {
             "workflow_id": workflow_id,
             "workflow_name": workflow.name,
             "python_code": python_code,
             "filename": f"{workflow.name.lower().replace(' ', '_')}_workflow.py",
+            "saved_path": str(saved_path.relative_to(settings.data_dir)),
         }
     except ValueError as e:
         # Unsupported node types or cycles — client-actionable error
@@ -1629,12 +1529,14 @@ async def export_workflow_to_notebook(
         from spectra_sherpa.app.services.notebook_export import generate_notebook
 
         notebook = generate_notebook(workflow)
+        saved_path = save_jupyter_workflow_export(workflow.id, workflow.name, notebook)
         safe_name = workflow.name.lower().replace(" ", "_")
         return {
             "workflow_id": workflow_id,
             "workflow_name": workflow.name,
             "notebook": notebook,
             "filename": f"{safe_name}_workflow.ipynb",
+            "saved_path": str(saved_path.relative_to(settings.data_dir)),
         }
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

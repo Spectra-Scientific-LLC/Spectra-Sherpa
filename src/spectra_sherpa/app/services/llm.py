@@ -12,6 +12,7 @@ from typing import Any, AsyncIterator, Optional, Union
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from spectra_sherpa.app.core.app_paths import get_app_data_paths
 from spectra_sherpa.app.core.llm_registry import get_default_provider, get_provider
 from spectra_sherpa.app.core.security import check_egress_permission
 from spectra_sherpa.app.models.api_key import APIKey
@@ -44,9 +45,8 @@ DEFAULT_BASE_URL = "https://api.deepseek.com"
 
 MAX_HISTORY_MESSAGES = 40
 
-# Cache for PDF reference content (loaded once)
-_spectrochempy_pdf_cache: Optional[str] = None
-_pdf_cache_loaded = False
+# Cache for reference PDF content by path
+_reference_pdf_cache: dict[str, Optional[str]] = {}
 
 
 class ConversationStore:
@@ -68,7 +68,7 @@ class ConversationStore:
     def __init__(self, state_path: Optional[Path] = None) -> None:
         from spectra_sherpa.app.core.config import settings
 
-        self._state_path = state_path or (settings.data_dir / "conversations.json")
+        self._state_path = state_path or get_app_data_paths(settings.data_dir).llm_conversations_state
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
 
     def _load(self) -> dict[str, dict[str, Any]]:
@@ -600,24 +600,21 @@ class LLMService:
         messages.extend(history[-MAX_HISTORY_MESSAGES:])
         return messages
 
-    def _load_spectrochempy_reference(self) -> Optional[str]:
-        """Load the SpectrochemPy reference PDF if it exists (cached)."""
-        global _spectrochempy_pdf_cache, _pdf_cache_loaded
-
-        # Return cached content if already loaded
-        if _pdf_cache_loaded:
-            return _spectrochempy_pdf_cache
-
-        # Mark as loaded to prevent repeated attempts
-        _pdf_cache_loaded = True
+    def _load_reference_pdf(self, pdf_path: str | Path | None) -> Optional[str]:
+        """Load a reference PDF from an explicit path."""
+        if not pdf_path:
+            return None
 
         try:
-            pdf_path = Path.home() / ".spectrochempy" / "spectrochempy_testdata_reference.pdf"
-            if not pdf_path.exists():
-                _spectrochempy_pdf_cache = None
+            path = Path(pdf_path)
+            cache_key = str(path)
+            if cache_key in _reference_pdf_cache:
+                return _reference_pdf_cache[cache_key]
+
+            if not path.exists():
+                _reference_pdf_cache[cache_key] = None
                 return None
 
-            # Try to extract text from PDF
             try:
                 import logging
 
@@ -625,32 +622,31 @@ class LLMService:
 
                 logger = logging.getLogger(__name__)
 
-                logger.info(f"Loading SpectrochemPy reference PDF from {pdf_path}")
-                with open(pdf_path, "rb") as pdf_file:
+                logger.info("Loading reference PDF from %s", path)
+                with open(path, "rb") as pdf_file:
                     reader = PdfReader(pdf_file)
                     text_parts = []
                     for page in reader.pages:
                         text_parts.append(page.extract_text())
-                    _spectrochempy_pdf_cache = "\n\n".join(text_parts)
-                    logger.info(f"PDF loaded successfully ({len(_spectrochempy_pdf_cache)} chars)")
-                    return _spectrochempy_pdf_cache
+                    _reference_pdf_cache[cache_key] = "\n\n".join(text_parts)
+                    char_count = len(_reference_pdf_cache[cache_key] or "")
+                    logger.info("Reference PDF loaded successfully (%s chars)", char_count)
+                    return _reference_pdf_cache[cache_key]
             except ImportError:
-                # pypdf not available, provide file path instead
-                _spectrochempy_pdf_cache = (
-                    f"Reference PDF available at: {pdf_path}\n(PDF extraction not available - install pypdf)"
+                _reference_pdf_cache[cache_key] = (
+                    f"Reference PDF available at: {path}\n(PDF extraction not available - install pypdf)"
                 )
-                return _spectrochempy_pdf_cache
+                return _reference_pdf_cache[cache_key]
             except Exception as e:
                 import logging
 
-                logging.getLogger(__name__).warning(f"Failed to extract PDF content: {e}")
-                _spectrochempy_pdf_cache = f"Reference PDF available at: {pdf_path}\n(PDF extraction failed)"
-                return _spectrochempy_pdf_cache
+                logging.getLogger(__name__).warning("Failed to extract PDF content: %s", e)
+                _reference_pdf_cache[cache_key] = f"Reference PDF available at: {path}\n(PDF extraction failed)"
+                return _reference_pdf_cache[cache_key]
         except Exception as e:
             import logging
 
-            logging.getLogger(__name__).debug(f"Could not load spectrochempy reference: {e}")
-            _spectrochempy_pdf_cache = None
+            logging.getLogger(__name__).debug("Could not load reference PDF: %s", e)
             return None
 
     def _is_local_provider(self, provider: str) -> bool:

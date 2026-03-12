@@ -48,7 +48,6 @@ from spectra_sherpa.app.lib.preprocessing import (
     baseline_penalized_ls,
     gaussian_smooth,
     norris_williams,
-    remove_cosmic_rays,
     whittaker_smooth,
 )
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset, scp

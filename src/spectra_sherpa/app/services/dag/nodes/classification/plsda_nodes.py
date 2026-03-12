@@ -275,7 +275,8 @@ class PLSDANode(Node):
         if n_components > max_components:
             logger.debug(
                 "[PLS-DA] Clamping n_components from %d to %d (min(n_samples-1, n_features))",
-                n_components, max_components,
+                n_components,
+                max_components,
             )
             n_components = max_components
 

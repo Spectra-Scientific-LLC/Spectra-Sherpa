@@ -15,6 +15,7 @@ from spectra_sherpa._paths import (
     get_package_root,
     get_project_root,
 )
+from spectra_sherpa.app.core.app_paths import AppDataPaths, get_app_data_paths
 
 
 def _get_int(name: str, default: int) -> int:
@@ -41,8 +42,9 @@ for _env_candidate in get_env_file_search_paths():
         break
 
 DATA_DIR = get_default_data_dir()
+APP_DATA_PATHS = get_app_data_paths(DATA_DIR)
 
-DATABASE_URL = os.getenv("DATABASE_URL") or f"sqlite+aiosqlite:///{DATA_DIR / 'spectra_platform.db'}"
+DATABASE_URL = os.getenv("DATABASE_URL") or f"sqlite+aiosqlite:///{APP_DATA_PATHS.database}"
 APP_API_KEY = os.getenv("APP_API_KEY", "default-local-key")
 
 
@@ -53,6 +55,7 @@ class Settings:
     project_root: Path = PROJECT_ROOT
     backend_root: Path = BACKEND_ROOT
     data_dir: Path = DATA_DIR
+    app_data_paths: AppDataPaths = APP_DATA_PATHS
     database_url: str = DATABASE_URL
     api_key: str = APP_API_KEY
 
