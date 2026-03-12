@@ -549,11 +549,6 @@ def _scp_testdata_looks_complete(datadir: Path) -> bool:
     if not datadir.exists():
         return False
 
-    # SpectroChemPy commonly drops a marker once the bulk testdata archive has
-    # been downloaded successfully. Prefer that signal when available.
-    if (datadir / "__downloaded__").exists():
-        return True
-
     required_dirs = ("irdata", "ramandata", "nmrdata")
     if any(not (datadir / name).is_dir() for name in required_dirs):
         return False
@@ -588,16 +583,53 @@ def _scp_testdata_looks_complete(datadir: Path) -> bool:
     return all(path.exists() for path in required_anchors)
 
 
+def _is_scp_testdata_file(path: Path) -> bool:
+    """Return True for files that represent SCP example data artifacts."""
+    suffix = path.suffix.lower()
+    if suffix in {
+        ".csv",
+        ".jdx",
+        ".dx",
+        ".spc",
+        ".spa",
+        ".spg",
+        ".srs",
+        ".wdf",
+        ".txt",
+        ".mat",
+        ".asc",
+        ".dat",
+        ".opus",
+        ".0",
+    }:
+        return True
+    return not suffix and path.name.isdigit()
+
+
+def _get_scp_reference_root() -> Path | None:
+    """Return the most useful SCP data root for metadata/reference scanning."""
+    from spectra_sherpa.app.lib.scp_compat import get_scp_datadirs
+
+    fallback: Path | None = None
+    for datadir in get_scp_datadirs():
+        if not datadir.exists():
+            continue
+        fallback = datadir
+        if _scp_testdata_looks_complete(datadir):
+            return datadir
+    return fallback
+
+
 async def ensure_spectrochempy_testdata() -> None:
     """
     Ensure SpectrochemPy test data directory is accessible for LLM.
-    Scans ~/.spectrochempy/ and creates a reference experiment with directory info.
+    Scans the resolved SpectroChemPy testdata root and creates a reference
+    experiment with directory info.
     """
     try:
-        # Define the spectrochempy directory in user home
-        spectrochempy_dir = Path.home() / ".spectrochempy"
-        if not spectrochempy_dir.exists():
-            logger.info("SpectrochemPy directory ~/.spectrochempy not found, skipping")
+        spectrochempy_dir = _get_scp_reference_root()
+        if spectrochempy_dir is None:
+            logger.info("SpectroChemPy testdata directory not found, skipping")
             return
 
         async with async_session() as session:
@@ -612,13 +644,14 @@ async def ensure_spectrochempy_testdata() -> None:
             result = await session.execute(select(Experiment).where(Experiment.name == "SpectrochemPy Test Data"))
             experiment = result.scalar_one_or_none()
 
-            # Count available test files and subdirectories (optimized single pass)
-            subdirs = [d for d in spectrochempy_dir.iterdir() if d.is_dir()]
-            allowed_extensions = {".csv", ".jdx", ".dx", ".spc", ".spa", ".spg"}
-            test_files = [f for f in spectrochempy_dir.rglob("*") if f.is_file() and f.suffix in allowed_extensions]
+            # Count available test files and subdirectories from the actual
+            # testdata root. Use case-insensitive extension handling so SCP's
+            # uppercase demo files (e.g. .SPA, .SPC, .CSV) are not dropped.
+            subdirs = [d for d in spectrochempy_dir.iterdir() if d.is_dir() and not d.name.startswith(".")]
+            test_files = [f for f in spectrochempy_dir.rglob("*") if f.is_file() and _is_scp_testdata_file(f)]
 
             # Check for reference PDF
-            pdf_ref = spectrochempy_dir / "spectrochempy_testdata_reference.pdf"
+            pdf_ref = spectrochempy_dir.parent / "spectrochempy_testdata_reference.pdf"
             has_pdf = pdf_ref.exists()
 
             metadata = {

@@ -373,3 +373,15 @@ def test_scp_bootstrap_redownloads_when_partial_tree_exists(monkeypatch: pytest.
     startup.ensure_spectrochempy_data()
 
     assert download_calls == ["downloaded"]
+
+
+def test_scp_reference_file_detection_matches_real_world_tree() -> None:
+    assert startup._is_scp_testdata_file(Path("sample.SPA")) is True
+    assert startup._is_scp_testdata_file(Path("sample.SPC")) is True
+    assert startup._is_scp_testdata_file(Path("sample.CSV")) is True
+    assert startup._is_scp_testdata_file(Path("mapping.wdf")) is True
+    assert startup._is_scp_testdata_file(Path("GC_Demo.srs")) is True
+    assert startup._is_scp_testdata_file(Path("als2004dataset.MAT")) is True
+    assert startup._is_scp_testdata_file(Path("background.0")) is True
+    assert startup._is_scp_testdata_file(Path("1")) is True
+    assert startup._is_scp_testdata_file(Path("README.md")) is False
