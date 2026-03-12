@@ -72,7 +72,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         # Only active in multi-user modes (Hybrid and Enterprise)
         if not has_rate_limits():
-            return await call_next(request)
+            return await call_next(request)  # type: ignore[no-any-return]
 
         path = request.url.path
 
@@ -90,7 +90,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         # Skip public paths after auth limiter checks
         if path in self.PUBLIC_PATHS or path.startswith("/docs"):
-            return await call_next(request)
+            return await call_next(request)  # type: ignore[no-any-return]
 
         # === DEMO EXECUTION LIMIT (tighter per-session cap) ===
         # Only actual execution endpoints consume demo quota — not workflow
@@ -126,9 +126,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 response = await call_next(request)
                 response.headers["X-RateLimit-Limit"] = str(app_config.rate_limit_executions)
                 response.headers["X-RateLimit-Remaining"] = str(remaining)
-                return response
+                return response  # type: ignore[no-any-return]
 
-        return await call_next(request)
+        return await call_next(request)  # type: ignore[no-any-return]
 
     # Paths where a POST actually triggers compute.
     # Both demo quota and general rate limiting use _is_execution_path().

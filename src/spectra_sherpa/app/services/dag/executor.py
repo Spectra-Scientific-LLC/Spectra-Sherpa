@@ -330,8 +330,9 @@ class DAGExecutor:
             nid
             for nid in self.nodes
             if nid not in incoming
-            or (  # type: ignore[union-attr]
-                self.nodes[nid].metadata is not None and self.nodes[nid].metadata.node_type.startswith("data.")
+            or (
+                self.nodes[nid].metadata is not None
+                and self.nodes[nid].metadata.node_type.startswith("data.")  # type: ignore[union-attr]
             )
         ]
 

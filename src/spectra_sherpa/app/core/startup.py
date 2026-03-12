@@ -586,7 +586,7 @@ async def ensure_spectrochempy_testdata() -> None:
             # Create or update experiment
             if not experiment:
                 logger.info("Creating SpectrochemPy Test Data reference")
-                experiment = await create_experiment(
+                experiment = await create_experiment(  # type: ignore[assignment]
                     session=session,
                     user_id=user.id,
                     name="SpectrochemPy Test Data",

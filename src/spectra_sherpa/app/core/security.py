@@ -241,7 +241,7 @@ async def is_valid_api_key(api_key: Optional[str]) -> bool:
             )
             users_with_keys = result.scalars().all()
             for user in users_with_keys:
-                if verify_password(api_key, user.api_key_hash):
+                if user.api_key_hash and verify_password(api_key, user.api_key_hash):
                     _cache_api_key(api_key, user.id)
                     return True
     except Exception:
@@ -365,11 +365,11 @@ async def api_key_middleware(request: Request, call_next) -> Response:
     # contain no sensitive data. Actual data is protected by /api/ auth.
     is_frontend_path = not path.startswith("/api/") and not path.startswith("/ws")
     if path in public_paths or is_frontend_path or path.startswith("/docs") or path.startswith("/redoc"):
-        return await call_next(request)
+        return await call_next(request)  # type: ignore[no-any-return]
 
     # Mode-based auth bypass: local always passes, hybrid loopback passes.
     if not requires_http_auth(get_client_host(request)):
-        return await call_next(request)
+        return await call_next(request)  # type: ignore[no-any-return]
 
     # Check for API key or Bearer token
     api_key = request.headers.get("X-API-Key")
@@ -393,7 +393,7 @@ async def api_key_middleware(request: Request, call_next) -> Response:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return await call_next(request)
+    return await call_next(request)  # type: ignore[no-any-return]
 
 
 def is_egress_enabled() -> bool:

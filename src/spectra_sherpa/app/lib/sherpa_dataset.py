@@ -747,7 +747,7 @@ class SherpaDataset:
 
     @property
     def shape(self) -> tuple:
-        return self._X.shape  # type: ignore[return-value]
+        return self._X.shape  # type: ignore[no-any-return]
 
     @property
     def ndim(self) -> int:

@@ -608,7 +608,7 @@ def preprocess_pipeline(
     if golden_grid is None and processed:
         golden_grid = processed[0].x.data
 
-    return processed, golden_grid
+    return processed, golden_grid  # type: ignore[return-value]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -668,11 +668,11 @@ def baseline_als(
         z_new = sparse.linalg.spsolve(W + DTD, w * y)
         w_new = np.where(y > z_new, p, 1 - p)
         if np.linalg.norm(w_new - w) / (np.linalg.norm(w) + 1e-12) < tol:
-            return z_new
+            return z_new  # type: ignore[no-any-return]
         w = w_new
         z = z_new
 
-    return z
+    return z  # type: ignore[no-any-return]
 
 
 def baseline_arpls(
@@ -722,10 +722,10 @@ def baseline_arpls(
         exponent = np.clip(exponent, -709, 709)  # prevent overflow in exp()
         w_new = 1.0 / (1.0 + np.exp(exponent))
         if np.linalg.norm(w_new - w) / (np.linalg.norm(w) + 1e-12) < tol:
-            return z
+            return z  # type: ignore[no-any-return]
         w = w_new
 
-    return z
+    return z  # type: ignore[no-any-return]
 
 
 def baseline_airpls(
@@ -777,7 +777,7 @@ def baseline_airpls(
             w[0] = np.exp(iteration * np.abs(d[neg_mask]).max() / sum_neg)
             w[-1] = w[0]
 
-    return z
+    return z  # type: ignore[no-any-return]
 
 
 def baseline_penalized_ls(
@@ -839,7 +839,7 @@ def baseline_penalized_ls(
         for i in range(n_samples):
             corrected[i] = data[i] - func(data[i], **kwargs)
 
-    return corrected[0] if was_1d else corrected
+    return corrected[0] if was_1d else corrected  # type: ignore[no-any-return]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -997,7 +997,7 @@ def gaussian_smooth(
         raise ImportError("SciPy is required for Gaussian smoothing")
 
     if data.ndim == 1:
-        return scipy_gaussian_filter1d(data, sigma=sigma)
+        return scipy_gaussian_filter1d(data, sigma=sigma)  # type: ignore[no-any-return]
 
     if HAS_JOBLIB and data.shape[0] >= _get_parallel_threshold():
         rows = Parallel(n_jobs=-2, prefer="threads")(

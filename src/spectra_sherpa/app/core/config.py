@@ -404,7 +404,7 @@ class AppConfig(BaseModel):
         for provider_id, provider_meta in PROVIDERS.items():
             model_env = f"{provider_id.upper()}_MODEL"
             llm_configs[provider_id] = LLMConfig(
-                provider=provider_id,
+                provider=provider_id,  # type: ignore[arg-type]
                 api_key=os.getenv(provider_meta.get("env_var", f"{provider_id.upper()}_API_KEY")),
                 model=os.getenv(model_env, provider_meta["default_model"]),
                 base_url=provider_meta.get("base_url"),
@@ -434,7 +434,7 @@ class AppConfig(BaseModel):
                 demo_contract_kwargs["upgrade_url"] = upgrade_url
 
         return cls(
-            mode=mode,
+            mode=mode,  # type: ignore[arg-type]
             egress_enabled=egress_enabled,
             api_base_url=os.getenv("API_BASE_URL", "http://localhost:8000"),
             site_profile=site_profile,
