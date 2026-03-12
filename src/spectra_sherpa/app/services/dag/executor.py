@@ -327,7 +327,8 @@ class DAGExecutor:
         """
         incoming = {e.to_node for e in self.edges}
         return [
-            nid for nid in self.nodes
+            nid
+            for nid in self.nodes
             if nid not in incoming or (self.nodes[nid].metadata is not None and self.nodes[nid].metadata.node_type.startswith("data."))  # type: ignore[union-attr]
         ]
 
@@ -770,7 +771,11 @@ class DAGExecutor:
                 port_name = edge.to_input
                 if port_name == "default" and "default" not in actual_port_names:
                     # Legacy edge without explicit port — infer from port order
-                    if node.metadata is not None and node.metadata.input_ports and _legacy_port_counter < len(node.metadata.input_ports):
+                    if (
+                        node.metadata is not None
+                        and node.metadata.input_ports
+                        and _legacy_port_counter < len(node.metadata.input_ports)
+                    ):
                         port_name = node.metadata.input_ports[_legacy_port_counter].name
                     else:
                         port_name = f"input_{_legacy_port_counter}"
@@ -981,7 +986,9 @@ class DAGExecutor:
 
                 # Check if we can use cached result
                 if self._is_node_cached(node_id):
-                    logger.debug("Using cached result: %s (%s)", node_id, node.metadata.label if node.metadata else node_id)
+                    logger.debug(
+                        "Using cached result: %s (%s)", node_id, node.metadata.label if node.metadata else node_id
+                    )
                     await _emit(node_id, "completed")
                     continue
 
@@ -1073,7 +1080,9 @@ class DAGExecutor:
 
             # Check if we can use cached result
             if self._is_node_cached(dep_node_id):
-                logger.debug("Using cached result: %s (%s)", dep_node_id, node.metadata.label if node.metadata else dep_node_id)
+                logger.debug(
+                    "Using cached result: %s (%s)", dep_node_id, node.metadata.label if node.metadata else dep_node_id
+                )
                 # Still include in results even if cached
                 if dep_node_id not in executed_in_this_run:
                     executed_in_this_run.append(dep_node_id)

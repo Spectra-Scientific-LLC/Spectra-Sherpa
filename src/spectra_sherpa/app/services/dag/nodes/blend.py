@@ -263,7 +263,9 @@ class BlendNode(Node):
         dataset.target = None
         dataset.meta["processing_history"] = dataset.provenance
         fa_title = getattr(first_x_coord, "title", None) or "Feature"
-        fa_units = str(first_x_coord.units) if first_x_coord is not None and getattr(first_x_coord, "units", None) else None
+        fa_units = (
+            str(first_x_coord.units) if first_x_coord is not None and getattr(first_x_coord, "units", None) else None
+        )
         dataset.feature_axis = SpectralAxis(values=wavenumbers, title=fa_title, units=fa_units)
         dataset.sample_axis = SampleAxis(values=np.arange(n_timepoints), title="Time")
 
