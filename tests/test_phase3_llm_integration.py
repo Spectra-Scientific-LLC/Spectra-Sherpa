@@ -439,6 +439,142 @@ class TestChatContextRouting:
             call({"type": "llm_done", "conversation_id": "conv-1"}),
         ]
 
+    @pytest.mark.asyncio
+    async def test_handle_sherpa_chat_uses_llm_chat_gate_not_sync_gate(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from spectra_sherpa.app.services import ws_handlers
+
+        class _Advisor:
+            is_available = True
+
+            async def chat_followup(self, **_kwargs):
+                yield "Sherpa reply"
+
+        ws = SimpleNamespace(send_json=AsyncMock())
+        user = SimpleNamespace(id=7)
+        rate_limiter = SimpleNamespace(allow=lambda _key: True)
+        permission_calls: list[str] = []
+
+        async def _check_permission(_user, permission: str, **_kwargs):
+            permission_calls.append(permission)
+            if permission == "allow_llm_chat":
+                return True
+            if permission == "allow_llm_context":
+                return True
+            raise AssertionError(f"Unexpected permission check: {permission}")
+
+        monkeypatch.setattr(ws_handlers, "check_egress_permission", _check_permission)
+        monkeypatch.setattr(ws_handlers, "_check_demo_sherpa_limit", AsyncMock(return_value=True))
+        monkeypatch.setattr(
+            "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
+            lambda: _Advisor(),
+        )
+
+        await ws_handlers.handle_sherpa_chat(
+            ws,
+            {
+                "payload": {
+                    "message": "Explain this workflow",
+                    "workflow_context": {"nodes": [{"node_id": "n1"}]},
+                }
+            },
+            user,
+            rate_limiter,
+        )
+
+        assert permission_calls == ["allow_llm_chat", "allow_llm_context"]
+        assert ws.send_json.await_args_list == [
+            call({"type": "sherpa_chat_start"}),
+            call({"type": "sherpa_chat_chunk", "chunk": "Sherpa reply"}),
+            call({"type": "sherpa_chat_done"}),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_handle_sherpa_chat_strips_context_when_llm_context_disabled(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from spectra_sherpa.app.services import ws_handlers
+
+        captured: dict[str, object] = {}
+
+        class _Advisor:
+            is_available = True
+
+            async def chat_followup(self, **kwargs):
+                captured.update(kwargs)
+                yield "Sherpa reply"
+
+        ws = SimpleNamespace(send_json=AsyncMock())
+        user = SimpleNamespace(id=7)
+        rate_limiter = SimpleNamespace(allow=lambda _key: True)
+
+        async def _check_permission(_user, permission: str, **_kwargs):
+            if permission == "allow_llm_chat":
+                return True
+            if permission == "allow_llm_context":
+                return False
+            raise AssertionError(f"Unexpected permission check: {permission}")
+
+        monkeypatch.setattr(ws_handlers, "check_egress_permission", _check_permission)
+        monkeypatch.setattr(ws_handlers, "_check_demo_sherpa_limit", AsyncMock(return_value=True))
+        monkeypatch.setattr(
+            "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
+            lambda: _Advisor(),
+        )
+
+        await ws_handlers.handle_sherpa_chat(
+            ws,
+            {
+                "payload": {
+                    "message": "Explain this workflow",
+                    "workflow_context": {"nodes": [{"node_id": "n1"}]},
+                }
+            },
+            user,
+            rate_limiter,
+        )
+
+        assert captured["workflow_context"] is None
+
+    @pytest.mark.asyncio
+    async def test_handle_sherpa_chat_with_tools_blocks_when_llm_chat_disabled(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from spectra_sherpa.app.services import ws_handlers
+
+        ws = SimpleNamespace(send_json=AsyncMock())
+        user = SimpleNamespace(id=7)
+        rate_limiter = SimpleNamespace(allow=lambda _key: True)
+
+        async def _check_permission(_user, permission: str, **_kwargs):
+            assert permission == "allow_llm_chat"
+            return False
+
+        monkeypatch.setattr(ws_handlers, "check_egress_permission", _check_permission)
+        monkeypatch.setattr(ws_handlers, "_check_demo_sherpa_limit", AsyncMock(return_value=True))
+        monkeypatch.setattr(
+            "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
+            lambda: SimpleNamespace(is_available=True),
+        )
+
+        await ws_handlers.handle_sherpa_chat_with_tools(
+            ws,
+            {"payload": {"message": "help"}},
+            user,
+            rate_limiter,
+        )
+
+        ws.send_json.assert_awaited_once_with(
+            {
+                "type": "sherpa_error",
+                "detail": "Sherpa AI features are disabled in user privacy settings.",
+            }
+        )
+
 
 # ---------------------------------------------------------------------------
 # Slice 2: Dataset tool registration

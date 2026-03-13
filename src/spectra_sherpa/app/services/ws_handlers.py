@@ -353,37 +353,23 @@ async def handle_sherpa_chat(
     rate_limiter: RateLimiter,
 ) -> None:
     try:
-        if not await _check_demo_sherpa_limit(ws, user):
+        if not await _sherpa_proxy_preamble(ws, user):
             return
 
         chat_data = payload.get("payload", {})
         message = chat_data.get("message", "")
         history = chat_data.get("history", [])
 
-        # Cloud proxy
         from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
 
         advisor = get_sherpa_advisor()
-        if not advisor.is_available:
-            await ws.send_json({"type": "sherpa_status", "payload": {"connected": False, "reason": "not_configured"}})
-            return
-
-        # Cloud proxy sends chat to SpectraSherpa — gate by allow_spectrasherpa_sync
-        async with async_session() as permission_session:
-            allowed = await check_egress_permission(
-                user,
-                "allow_spectrasherpa_sync",
-                data_type="chat",
-                destination="spectrasherpa",
-                session=permission_session,
-            )
-        if not allowed:
-            await ws.send_json({"type": "sherpa_error", "detail": "Sherpa chat not permitted for this user"})
-            return
 
         workflow_id = chat_data.get("workflow_id")
         # Forward workflow_context so server-side engine has graph for follow-up
-        workflow_context_raw = chat_data.get("workflow_context")
+        workflow_context_raw = await _filter_sherpa_workflow_context(
+            user,
+            chat_data.get("workflow_context"),
+        )
 
         await ws.send_json({"type": "sherpa_chat_start"})
         async for chunk in advisor.chat_followup(
@@ -428,20 +414,38 @@ async def _sherpa_proxy_preamble(ws: WebSocket, user: Any) -> bool:
     async with async_session() as permission_session:
         allowed = await check_egress_permission(
             user,
-            "allow_spectrasherpa_sync",
-            data_type="analysis",
-            destination="spectrasherpa",
+            "allow_llm_chat",
             session=permission_session,
+            skip_global_check=True,
         )
     if not allowed:
         await ws.send_json(
             {
                 "type": "sherpa_error",
-                "detail": "Sherpa features not permitted. Enable cloud sync in Settings > Data & Privacy.",
+                "detail": "Sherpa AI features are disabled in user privacy settings.",
             }
         )
         return False
     return True
+
+
+async def _filter_sherpa_workflow_context(user: Any, workflow_context: Any) -> Any:
+    """Apply the workflow-context privacy gate for server-backed Sherpa chat."""
+    if workflow_context is None:
+        return None
+
+    async with async_session() as permission_session:
+        include_context = await check_egress_permission(
+            user,
+            "allow_llm_context",
+            data_type="metadata",
+            destination="llm_context",
+            session=permission_session,
+            skip_global_check=True,
+        )
+    if not include_context:
+        return None
+    return workflow_context
 
 
 async def handle_sherpa_identify_peaks(
@@ -556,7 +560,10 @@ async def handle_sherpa_chat_with_tools(
         data = payload.get("payload", {})
         message = data.get("message", "")
         history = data.get("history", [])
-        workflow_context = data.get("workflow_context", data.get("context"))
+        workflow_context = await _filter_sherpa_workflow_context(
+            user,
+            data.get("workflow_context", data.get("context")),
+        )
 
         await ws.send_json({"type": "sherpa_chat_start"})
         async for event in advisor.chat_with_tools(

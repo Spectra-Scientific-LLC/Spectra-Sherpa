@@ -394,4 +394,18 @@ describe("ChatPanel", () => {
     expect(wrapper.text()).toContain("AI chat is disabled in Settings > Data & Privacy.");
     expect(wrapper.text()).not.toContain("Configure an LLM API key in Settings to enable chat.");
   });
+
+  it("shows only Sherpa Advisor in demo mode when Sherpa is available", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.isDemoMode.value = true;
+    mocks.appConfig.value = { subscription: { plan: "demo" } };
+    mocks.featureFlags.chatAssistant = true;
+    mocks.featureFlags.sherpaAdvisor = true;
+
+    const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("Sherpa Advisor");
+    expect(wrapper.text()).not.toContain("LLM Chat");
+  });
 });

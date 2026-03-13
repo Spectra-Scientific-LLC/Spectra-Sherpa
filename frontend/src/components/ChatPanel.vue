@@ -3,8 +3,9 @@
     <div class="chat-panel__inner">
       <!-- Panel Top Bar with Tab Toggle -->
       <div class="panel-topbar">
-        <div class="tab-toggle">
+        <div v-if="showTabToggle" class="tab-toggle">
           <button
+            v-if="showLlmTab"
             class="tab-btn"
             :class="{ active: activeTab === 'llm' }"
             @click="activeTab = 'llm'"
@@ -19,6 +20,9 @@
           >
             Sherpa Advisor
           </button>
+        </div>
+        <div v-else class="tab-toggle tab-toggle--static">
+          <span class="tab-label">{{ activeTabLabel }}</span>
         </div>
         <div class="panel-topbar-actions">
           <!-- LLM settings (only on LLM tab, local mode only — server owns model selection) -->
@@ -248,6 +252,9 @@ const scrollToBottom = async () => {
 const activeTab = ref<"llm" | "sherpa">("llm");
 const sherpaEnabled = computed(() => isFeatureEnabled("sherpaAdvisor"));
 const llmChatEnabled = computed(() => isFeatureEnabled("chatAssistant"));
+const showLlmTab = computed(() => !(isDemoMode.value && sherpaEnabled.value));
+const showTabToggle = computed(() => showLlmTab.value && sherpaEnabled.value);
+const activeTabLabel = computed(() => (activeTab.value === "sherpa" ? "Sherpa Advisor" : "LLM Chat"));
 const hasSherpaSubscription = computed(
   () => (appConfig.value?.subscription?.plan || "none") !== "none"
 );
@@ -307,6 +314,16 @@ const switchProvider = async (provider: string) => {
 };
 
 // Sync with current config
+watch(
+  () => [showLlmTab.value, sherpaEnabled.value] as const,
+  ([llmVisible, sherpaVisible]) => {
+    if (!llmVisible && sherpaVisible && activeTab.value !== "sherpa") {
+      switchToSherpa();
+    }
+  },
+  { immediate: true }
+);
+
 watch(
   () => store.currentConfig,
   (config) => {
