@@ -81,9 +81,7 @@ async def test_ensure_egress_defaults_normalizes_demo_rows(
 
     await startup_mod.ensure_egress_defaults()
 
-    refreshed = await test_session.scalar(
-        select(UserEgressDefaults).where(UserEgressDefaults.user_id == test_user.id)
-    )
+    refreshed = await test_session.scalar(select(UserEgressDefaults).where(UserEgressDefaults.user_id == test_user.id))
     assert refreshed is not None
     assert refreshed.allow_llm_chat is True
     assert refreshed.allow_llm_context is True
@@ -115,9 +113,7 @@ async def test_ensure_egress_defaults_normalizes_invalid_non_demo_rows(
 
     await startup_mod.ensure_egress_defaults()
 
-    refreshed = await test_session.scalar(
-        select(UserEgressDefaults).where(UserEgressDefaults.user_id == test_user.id)
-    )
+    refreshed = await test_session.scalar(select(UserEgressDefaults).where(UserEgressDefaults.user_id == test_user.id))
     assert refreshed is not None
     assert refreshed.allow_llm_chat is False
     assert refreshed.allow_llm_context is False
