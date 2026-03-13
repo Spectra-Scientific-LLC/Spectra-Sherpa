@@ -63,23 +63,24 @@ async def update_egress_defaults(
     current_user: User = Depends(get_current_user),
 ):
     """Update the current user's default egress settings (creates if not exists)"""
+    from spectra_sherpa.app.core.config import app_config
+
+    is_demo = app_config.site_profile == "demo"
     result = await session.execute(
         select(UserEgressDefaultsModel).where(UserEgressDefaultsModel.user_id == current_user.id)
     )
     defaults = result.scalar_one_or_none()
 
     if defaults is None:
-        # Create new defaults — demo mode enables LLM context by default
-        from spectra_sherpa.app.core.config import app_config
-
-        is_demo = app_config.site_profile == "demo"
+        allow_llm_chat = True if is_demo else bool(defaults_update.allow_llm_chat)
+        allow_llm_context = True if is_demo else bool(defaults_update.allow_llm_context)
+        if not allow_llm_chat:
+            allow_llm_context = False
         defaults = UserEgressDefaultsModel(
             user_id=current_user.id,
             allow_spectrasherpa_sync=defaults_update.allow_spectrasherpa_sync or False,
-            allow_llm_chat=defaults_update.allow_llm_chat if defaults_update.allow_llm_chat is not None else is_demo,
-            allow_llm_context=(
-                defaults_update.allow_llm_context if defaults_update.allow_llm_context is not None else is_demo
-            ),
+            allow_llm_chat=allow_llm_chat,
+            allow_llm_context=allow_llm_context,
             allow_export=defaults_update.allow_export if defaults_update.allow_export is not None else False,
             allow_nist_queries=(
                 defaults_update.allow_nist_queries if defaults_update.allow_nist_queries is not None else False
@@ -90,10 +91,16 @@ async def update_egress_defaults(
         # Update existing
         if defaults_update.allow_spectrasherpa_sync is not None:
             defaults.allow_spectrasherpa_sync = defaults_update.allow_spectrasherpa_sync
-        if defaults_update.allow_llm_chat is not None:
-            defaults.allow_llm_chat = defaults_update.allow_llm_chat
-        if defaults_update.allow_llm_context is not None:
-            defaults.allow_llm_context = defaults_update.allow_llm_context
+        if is_demo:
+            defaults.allow_llm_chat = True
+            defaults.allow_llm_context = True
+        else:
+            if defaults_update.allow_llm_chat is not None:
+                defaults.allow_llm_chat = defaults_update.allow_llm_chat
+            if defaults_update.allow_llm_context is not None:
+                defaults.allow_llm_context = defaults_update.allow_llm_context
+            if not defaults.allow_llm_chat:
+                defaults.allow_llm_context = False
         if defaults_update.allow_export is not None:
             defaults.allow_export = defaults_update.allow_export
         if defaults_update.allow_nist_queries is not None:

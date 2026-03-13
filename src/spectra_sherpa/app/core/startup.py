@@ -420,19 +420,19 @@ async def ensure_egress_defaults() -> None:
     """
     Ensure all users have default egress settings.
 
-    Local mode: everything disabled by default (privacy-first).
-    Existing explicit preferences are never overridden.
+    Local/non-demo: missing rows default to privacy-first conservative values.
+    Demo mode: AI chat + Sherpa workflow context are forced on for all users.
+    Non-demo rows are also normalized so workflow context cannot remain enabled
+    when AI chat itself is disabled.
     """
     try:
         async with async_session() as session:
+            is_demo = app_config.site_profile == "demo"
             result = await session.execute(
                 select(User).outerjoin(UserEgressDefaults).where(UserEgressDefaults.user_id.is_(None))
             )
             users_missing = result.scalars().all()
-            if not users_missing:
-                return
 
-            is_demo = app_config.site_profile == "demo"
             for user in users_missing:
                 session.add(
                     UserEgressDefaults(
@@ -443,8 +443,25 @@ async def ensure_egress_defaults() -> None:
                         allow_llm_context=is_demo,  # On by default in demo mode
                     )
                 )
-            await session.commit()
-            logger.info(f"Created egress defaults for {len(users_missing)} user(s).")
+
+            normalized_users = 0
+            defaults_rows = (await session.execute(select(UserEgressDefaults))).scalars().all()
+            for defaults in defaults_rows:
+                if is_demo:
+                    if not defaults.allow_llm_chat or not defaults.allow_llm_context:
+                        defaults.allow_llm_chat = True
+                        defaults.allow_llm_context = True
+                        normalized_users += 1
+                elif not defaults.allow_llm_chat and defaults.allow_llm_context:
+                    defaults.allow_llm_context = False
+                    normalized_users += 1
+
+            if users_missing or normalized_users:
+                await session.commit()
+            if users_missing:
+                logger.info("Created egress defaults for %d user(s).", len(users_missing))
+            if normalized_users:
+                logger.info("Normalized LLM egress defaults for %d user(s).", normalized_users)
     except OperationalError:
         logger.warning("Skipping egress defaults backfill; database not initialized.")
 

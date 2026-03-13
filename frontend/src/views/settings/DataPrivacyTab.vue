@@ -20,9 +20,14 @@
         <div class="toggle-row">
           <div class="toggle-info">
             <strong>Enable AI Chat</strong>
-            <p>Allow Spectra Sherpa to call an LLM for chat and assistant features.</p>
+            <p v-if="chatToggleReason">{{ chatToggleReason }}</p>
+            <p v-else>Allow Spectra Sherpa to call an LLM for chat and assistant features.</p>
           </div>
-          <InputSwitch v-model="form.allow_llm_chat" @change="save" />
+          <InputSwitch
+            v-model="form.allow_llm_chat"
+            :disabled="!chatToggleEnabled"
+            @change="save"
+          />
         </div>
 
         <div class="toggle-row">
@@ -81,9 +86,11 @@ import { computed, onMounted, reactive, ref } from "vue";
 import InputSwitch from "primevue/inputswitch";
 import api from "@/api/client";
 import { useAppConfig } from "@/composables/useAppConfig";
+import { useDemoMode } from "@/composables/useDemoMode";
 import { getErrorMessage } from "@/utils/errors";
 
 const { appMode, isFeatureEnabled } = useAppConfig();
+const { isDemoMode } = useDemoMode();
 
 const loading = ref(true);
 const loadError = ref("");
@@ -100,14 +107,31 @@ const form = reactive({
   allow_spectrasherpa_sync: false,
 });
 
+const chatToggleEnabled = computed(() => !isDemoMode.value);
+
+const chatToggleReason = computed(() => {
+  if (isDemoMode.value) {
+    return "AI Chat is always enabled in the Sherpa demo.";
+  }
+  return "";
+});
+
 const contextToggleEnabled = computed(() => {
+  if (isDemoMode.value) return false;
   if (appMode.value === "local") return false;
+  if (!form.allow_llm_chat) return false;
   return isFeatureEnabled("chatAssistant");
 });
 
 const contextToggleReason = computed(() => {
+  if (isDemoMode.value) {
+    return "Workflow context sharing is always enabled in the Sherpa demo.";
+  }
   if (appMode.value === "local") {
     return "Context-aware chat requires a Sherpa subscription.";
+  }
+  if (!form.allow_llm_chat) {
+    return "Enable AI Chat to share workflow context with Sherpa.";
   }
   if (!isFeatureEnabled("chatAssistant")) {
     return "Context-aware chat requires a Sherpa subscription.";
@@ -117,11 +141,19 @@ const contextToggleReason = computed(() => {
 
 onMounted(async () => {
   showSyncOption.value = appMode.value !== "local";
+  if (isDemoMode.value) {
+    form.allow_llm_chat = true;
+    form.allow_llm_context = true;
+  }
   try {
     const { data } = await api.get("/egress/defaults");
     if (data) {
-      form.allow_llm_chat = data.allow_llm_chat ?? false;
-      form.allow_llm_context = appMode.value === "local" ? false : (data.allow_llm_context ?? false);
+      form.allow_llm_chat = isDemoMode.value ? true : (data.allow_llm_chat ?? false);
+      form.allow_llm_context = isDemoMode.value
+        ? true
+        : (appMode.value === "local" || !(data.allow_llm_chat ?? false)
+            ? false
+            : (data.allow_llm_context ?? false));
       form.allow_nist_queries = data.allow_nist_queries ?? false;
       form.allow_export = data.allow_export ?? false;
       form.allow_spectrasherpa_sync = data.allow_spectrasherpa_sync ?? false;
@@ -142,12 +174,22 @@ async function save() {
   saveError.value = "";
   saveMessage.value = "";
   try {
-    if (!contextToggleEnabled.value) {
-      form.allow_llm_context = false;
+    if (isDemoMode.value) {
+      form.allow_llm_chat = true;
+      form.allow_llm_context = true;
+    } else {
+      if (!contextToggleEnabled.value) {
+        form.allow_llm_context = false;
+      }
+      if (!form.allow_llm_chat) {
+        form.allow_llm_context = false;
+      }
     }
     await api.put("/egress/defaults", {
-      allow_llm_chat: form.allow_llm_chat,
-      allow_llm_context: contextToggleEnabled.value ? form.allow_llm_context : false,
+      allow_llm_chat: isDemoMode.value ? true : form.allow_llm_chat,
+      allow_llm_context: isDemoMode.value
+        ? true
+        : (contextToggleEnabled.value ? form.allow_llm_context : false),
       allow_nist_queries: form.allow_nist_queries,
       allow_export: form.allow_export,
       allow_spectrasherpa_sync: form.allow_spectrasherpa_sync,
