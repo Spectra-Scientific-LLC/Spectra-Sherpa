@@ -117,7 +117,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { reactive, onMounted } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 import Button from 'primevue/button'
@@ -129,6 +129,7 @@ import Divider from 'primevue/divider'
 
 import { useAppConfig } from '@/composables/useAppConfig'
 import type { LLMProvider } from '@/types/config'
+import { getErrorMessage } from '@/utils/errors'
 import {
   saveToken as saveTokenToStorage,
   loadToken as loadTokenFromStorage,
@@ -205,11 +206,11 @@ function saveToken(provider: string) {
       severity: 'success',
       text: 'Token saved to browser storage. Click "Send to Backend" to use it.',
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     toast.add({
       severity: 'error',
       summary: 'Save Failed',
-      detail: error.message,
+      detail: getErrorMessage(error, 'Failed to save token'),
       life: 5000,
     })
   }
@@ -264,17 +265,18 @@ async function sendToBackend(provider: string) {
       severity: 'success',
       text: 'Token configured on backend. You can now use this LLM provider.',
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = getErrorMessage(error, 'Failed to send token')
     toast.add({
       severity: 'error',
       summary: 'Send Failed',
-      detail: error.response?.data?.detail || error.message,
+      detail: errorMessage,
       life: 5000,
     })
 
     statusMessages[provider] = {
       severity: 'error',
-      text: `Failed to send token: ${error.response?.data?.detail || error.message}`,
+      text: `Failed to send token: ${errorMessage}`,
     }
   } finally {
     sending[provider] = false
@@ -299,17 +301,18 @@ async function testConnection(provider: string) {
       severity: 'success',
       text: 'Connection test passed!',
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = getErrorMessage(error, 'Check your API key and try again')
     toast.add({
       severity: 'error',
       summary: 'Connection Failed',
-      detail: error.response?.data?.detail || 'Check your API key and try again',
+      detail: errorMessage,
       life: 5000,
     })
 
     statusMessages[provider] = {
       severity: 'error',
-      text: `Connection test failed: ${error.response?.data?.detail || 'Invalid API key or network error'}`,
+      text: `Connection test failed: ${errorMessage}`,
     }
   } finally {
     testing[provider] = false

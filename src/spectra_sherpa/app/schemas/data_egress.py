@@ -47,6 +47,7 @@ class UserEgressDefaultsBase(BaseModel):
     """Base schema for user egress defaults"""
 
     allow_spectrasherpa_sync: bool = Field(default=False, description="Allow syncing data to SpectraSherpa cloud")
+    allow_llm_chat: bool = Field(default=False, description="Allow AI chat features to call an LLM")
     allow_llm_context: bool = Field(default=False, description="Allow sending data as context to LLM providers")
     allow_export: bool = Field(default=False, description="Allow exporting data to files")
     allow_nist_queries: bool = Field(default=False, description="Allow NIST WebBook queries")
@@ -62,6 +63,7 @@ class UserEgressDefaultsUpdate(BaseModel):
     """Schema for partial update of defaults"""
 
     allow_spectrasherpa_sync: Optional[bool] = None
+    allow_llm_chat: Optional[bool] = None
     allow_llm_context: Optional[bool] = None
     allow_export: Optional[bool] = None
     allow_nist_queries: Optional[bool] = None

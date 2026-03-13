@@ -441,6 +441,7 @@ async def check_egress_permission(
     Args:
         user: The user to check permissions for (can be None for system operations)
         permission: The permission to check. Valid values:
+            - "allow_llm_chat": Can call AI chat features at all
             - "allow_llm_context": Can send data to LLM providers
             - "allow_nist_queries": Can query NIST WebBook
             - "allow_spectrasherpa_sync": Can sync to SpectraSherpa cloud
@@ -528,8 +529,11 @@ async def check_egress_permission(
     # No explicit permission set - apply sensible defaults.
     # These are intentionally conservative: new users are created with
     # allow_spectrasherpa_sync=False, so the default here must match.
+    # Demo mode: allow_llm_context defaults to True so users can chat immediately.
+    is_demo = app_config.site_profile == "demo"
     DEFAULT_PERMISSIONS = {
-        "allow_llm_context": False,  # Explicit opt-in required
+        "allow_llm_chat": is_demo,  # On by default in demo mode
+        "allow_llm_context": is_demo,  # On by default in demo mode
         "allow_nist_queries": False,  # Explicit opt-in required
         "allow_export": False,  # Explicit opt-in required
         "allow_spectrasherpa_sync": False,

@@ -139,6 +139,56 @@ class WorkflowStateSync(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
+# ── Contextual Chat Context (v2) ──────────────────────────────────
+
+
+class ParamDescription(BaseModel):
+    """Typed parameter description from the node library."""
+
+    name: str
+    label: str
+    description: str | None = None
+
+
+class WorkflowContextNodeV2(WorkflowContextNode):
+    """Extended node context with execution results and library metadata.
+
+    Adds node-type description, parameter documentation, and execution
+    output info on top of the base ``WorkflowContextNode``.
+    """
+
+    description: str | None = None  # node type description from library
+    param_descriptions: list[ParamDescription] | None = None
+    output_type: str | None = None  # e.g. "PCA", "Dataset"
+    execution_status: str | None = None  # "completed", "error", "pending"
+
+
+class WorkflowChatContext(BaseModel):
+    """Rich workflow context for contextual LLM chat.
+
+    Assembled by the frontend, proxied by spectra-sherpa, and consumed by
+    spectra-server's context builder.  This is a **data contract** — it
+    carries structured facts, not prompt text.
+    """
+
+    # Identity
+    workflow_id: int | None = None
+    workflow_name: str | None = None
+    workflow_description: str | None = None
+    template_id: str | None = None
+    template_slug: str | None = None
+    # Structure
+    nodes: list[WorkflowContextNodeV2] = Field(default_factory=list)
+    edges: list[WorkflowContextEdge] = Field(default_factory=list)
+    # Data dimensions
+    spectral_technique: str | None = None  # "IR", "NIR", "Raman", "UV-Vis"
+    n_samples: int | None = None
+    n_features: int | None = None
+    # Execution results (per-node, keyed by node_id)
+    diagnostics: dict[str, dict[str, Any]] | None = None
+    results_summary: dict[str, dict[str, Any]] | None = None
+
+
 class UserDecision(BaseModel):
     """User accepts or rejects a Sherpa suggestion."""
 

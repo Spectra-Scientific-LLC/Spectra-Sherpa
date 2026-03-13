@@ -5,6 +5,7 @@
  */
 
 import { ref, computed, readonly } from 'vue'
+import axios from 'axios'
 import type { AppConfig } from '@/types/config'
 import { api } from '@/api'
 
@@ -26,8 +27,8 @@ async function loadConfig(force = false): Promise<void> {
   try {
     const response = await api.get<AppConfig>('/config')
     config.value = response.data
-  } catch (err: any) {
-    error.value = err.message || 'Failed to load configuration'
+  } catch (err: unknown) {
+    error.value = axios.isAxiosError(err) ? err.message : 'Failed to load configuration'
     console.error('Config load error:', err)
 
     // Fallback to default local config

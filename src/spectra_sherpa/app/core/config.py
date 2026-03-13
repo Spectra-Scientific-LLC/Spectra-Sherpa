@@ -51,7 +51,7 @@ APP_API_KEY = os.getenv("APP_API_KEY", "default-local-key")
 @dataclass(frozen=True)
 class Settings:
     app_name: str = "Spectra Scientific Platform"
-    app_version: str = "0.1.6"  # Increment when node definitions change
+    app_version: str = "0.2.0"  # Increment when node definitions change
     project_root: Path = PROJECT_ROOT
     backend_root: Path = BACKEND_ROOT
     data_dir: Path = DATA_DIR

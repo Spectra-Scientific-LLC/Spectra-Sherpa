@@ -21,9 +21,9 @@
           </button>
         </div>
         <div class="panel-topbar-actions">
-          <!-- LLM settings (only on LLM tab) -->
+          <!-- LLM settings (only on LLM tab, local mode only — server owns model selection) -->
           <Button
-            v-if="activeTab === 'llm'"
+            v-if="activeTab === 'llm' && appMode === 'local'"
             icon="pi pi-cog"
             class="p-button-text p-button-sm llm-settings-btn"
             aria-label="LLM Settings"
@@ -98,11 +98,20 @@
             <div ref="messageContainer" class="chat-messages">
               <!-- LLM messages -->
               <template v-if="activeTab === 'llm'">
-                <!-- No BYOK key configured -->
-                <div v-if="!llmChatEnabled" class="no-key-notice">
+                <!-- No LLM configured -->
+                <div v-if="!llmChatAllowed" class="no-key-notice">
+                  <i class="pi pi-info-circle"></i>
+                  <span>AI chat is disabled in Settings &gt; Data &amp; Privacy.</span>
+                  <a class="setup-link" @click="router.push('/settings')">Enable</a>
+                </div>
+                <div v-else-if="!llmChatEnabled && appMode === 'local'" class="no-key-notice">
                   <i class="pi pi-info-circle"></i>
                   <span>Configure an LLM API key in Settings to enable chat.</span>
                   <a class="setup-link" @click="router.push('/settings')">Setup</a>
+                </div>
+                <div v-else-if="!llmChatEnabled" class="no-key-notice">
+                  <i class="pi pi-info-circle"></i>
+                  <span>{{ hasSherpaSubscription ? "Chat is unavailable for this deployment." : "Chat requires a Sherpa subscription." }}</span>
                 </div>
                 <template v-else>
                   <div
@@ -190,10 +199,13 @@ import { useToast } from "primevue/usetoast";
 import { useLlmStore } from "@/stores/llm";
 import { useSherpaStore } from "@/stores/sherpa";
 import { useExperimentStore } from "@/stores/experiment";
+import { useWorkflowStore } from "@/stores/workflow";
+import { useProjectStore } from "@/stores/project";
 import { useAuthStore } from "@/stores/auth";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useDemoMode } from "@/composables/useDemoMode";
 import { formatDateTime } from "@/utils/format";
+import { getErrorMessage } from "@/utils/errors";
 import api from "@/api/client";
 
 const props = withDefaults(
@@ -211,15 +223,18 @@ const router = useRouter();
 const store = useLlmStore();
 const sherpaStore = useSherpaStore();
 const experimentStore = useExperimentStore();
+const workflowStore = useWorkflowStore();
+const projectStore = useProjectStore();
 const authStore = useAuthStore();
 const toast = useToast();
-const { appMode, isFeatureEnabled } = useAppConfig();
+const { appMode, appConfig, isFeatureEnabled } = useAppConfig();
 const { isDemoMode } = useDemoMode();
 
 const userMessage = ref("");
 const messageContainer = ref<HTMLDivElement | null>(null);
 const hadRealtime = ref(false);
 const toolsActive = ref(false);
+const llmChatAllowed = ref(true);
 
 const scrollToBottom = async () => {
   await nextTick();
@@ -233,6 +248,9 @@ const scrollToBottom = async () => {
 const activeTab = ref<"llm" | "sherpa">("llm");
 const sherpaEnabled = computed(() => isFeatureEnabled("sherpaAdvisor"));
 const llmChatEnabled = computed(() => isFeatureEnabled("chatAssistant"));
+const hasSherpaSubscription = computed(
+  () => (appConfig.value?.subscription?.plan || "none") !== "none"
+);
 
 const switchToSherpa = () => {
   activeTab.value = "sherpa";
@@ -255,7 +273,7 @@ const inputPlaceholder = computed(() => {
 });
 
 const inputDisabled = computed(() => {
-  if (activeTab.value === "llm") return !llmChatEnabled.value;
+  if (activeTab.value === "llm") return !llmChatEnabled.value || !llmChatAllowed.value;
   return false;
 });
 
@@ -300,7 +318,17 @@ watch(
 );
 
 const handleConfigChange = async () => {
+  if (appMode.value !== "local") return;
   await store.checkConfigChange();
+};
+
+const loadEgressDefaults = async () => {
+  try {
+    const { data } = await api.get("/egress/defaults");
+    llmChatAllowed.value = data?.allow_llm_chat ?? false;
+  } catch {
+    llmChatAllowed.value = false;
+  }
 };
 
 // ── Lifecycle ────────────────────────────────────────────────
@@ -313,16 +341,23 @@ onMounted(async () => {
     store.connect();
     experimentStore.fetchExperiments();
     sherpaStore.init();
-    // Fetch initial config only when authenticated (requires /llm/debug/config)
-    await store.checkConfigChange();
+    await loadEgressDefaults();
+    if (appMode.value === "local") {
+      // Fetch initial config only when authenticated (requires /llm/debug/config)
+      await store.checkConfigChange();
+    } else {
+      await store.refreshConversations(projectStore.currentProjectId);
+    }
   }
 
   // Listen for config change notifications
   window.addEventListener("llm-config-changed", handleConfigChange);
+  window.addEventListener("egress-defaults-changed", loadEgressDefaults);
 });
 
 onUnmounted(() => {
   window.removeEventListener("llm-config-changed", handleConfigChange);
+  window.removeEventListener("egress-defaults-changed", loadEgressDefaults);
   sherpaStore.dispose();
 });
 
@@ -364,6 +399,15 @@ watch(
   }
 );
 
+watch(
+  () => projectStore.currentProjectId,
+  async (projectId) => {
+    if (appMode.value !== "local") {
+      await store.refreshConversations(projectId);
+    }
+  }
+);
+
 // ── Connection status toasts ─────────────────────────────────
 
 watch(
@@ -390,6 +434,112 @@ watch(
     }
   }
 );
+
+// ── Build typed workflow context for server-side LLM ──────────
+
+function buildWorkflowChatContext(): Record<string, unknown> | null {
+  const { nodes, edges, workflowName, workflowDescription, currentTemplateId,
+    lastExecutionResults, lastExecutionDiagnostics, getNodeMetadata, workflowId } = workflowStore;
+
+  if (nodes.length === 0) return null;
+
+  // Build V2 node list with library metadata
+  const contextNodes = nodes.map((n) => {
+    const meta = getNodeMetadata(n.type);
+    const execState = n.executionState;
+
+    // Filter param_descriptions to params actually set on this node
+    const setParamNames = new Set(Object.keys(n.params || {}));
+    const paramDescriptions = meta?.parameters
+      ?.filter((p) => setParamNames.has(p.name))
+      .map((p) => ({ name: p.name, label: p.label, description: p.description || null }))
+      ?? null;
+
+    // Result summary for this node (strip raw arrays, keep scalars + shapes)
+    const resultShape = execState?.output_shape ?? null;
+    const resultStatistics: Record<string, number> | null = null;
+
+    return {
+      node_id: n.id,
+      node_type: n.type,
+      label: meta?.label ?? n.type,
+      parameters: n.params || {},
+      result_shape: resultShape,
+      result_statistics: resultStatistics,
+      // V2 fields
+      description: meta?.description ?? null,
+      param_descriptions: paramDescriptions,
+      output_type: execState?.output_type ?? meta?.output_type ?? null,
+      execution_status: execState?.status ?? null,
+    };
+  });
+
+  const contextEdges = edges.map((e) => ({
+    from_node_id: e.from,
+    to_node_id: e.to,
+    from_output: e.fromPort || "default",
+    to_input: e.toPort || "default",
+  }));
+
+  // Derive n_samples/n_features from DATA-type node results
+  let nSamples: number | null = null;
+  let nFeatures: number | null = null;
+  if (lastExecutionResults) {
+    for (const node of nodes) {
+      if (node.type.startsWith("data.")) {
+        const res = lastExecutionResults[node.id] as Record<string, unknown> | undefined;
+        if (res?.n_samples != null) nSamples = res.n_samples as number;
+        if (res?.n_features != null) nFeatures = res.n_features as number;
+        if (nSamples != null) break;
+      }
+    }
+  }
+
+  // Build results_summary: per-node, keeping scalars and shapes but not raw arrays
+  let resultsSummary: Record<string, Record<string, unknown>> | null = null;
+  if (lastExecutionResults) {
+    resultsSummary = {};
+    for (const [nodeId, rawResult] of Object.entries(lastExecutionResults)) {
+      if (!rawResult || typeof rawResult !== "object") continue;
+      const result = rawResult as Record<string, unknown>;
+      const metadata = result.metadata;
+      const summary: Record<string, unknown> = {
+        type: result.type ?? null,
+        shape: result.shape ?? null,
+        n_samples: result.n_samples ?? null,
+        n_features: result.n_features ?? null,
+        metadata:
+          metadata && typeof metadata === "object"
+            ? Object.fromEntries(
+                Object.entries(metadata as Record<string, unknown>).filter(
+                  ([, value]) =>
+                    value == null ||
+                    typeof value === "string" ||
+                    typeof value === "number" ||
+                    typeof value === "boolean"
+                )
+              )
+            : null,
+      };
+      resultsSummary[nodeId] = summary;
+    }
+  }
+
+  return {
+    workflow_id: workflowId ?? null,
+    workflow_name: workflowName,
+    workflow_description: workflowDescription || null,
+    template_id: currentTemplateId ?? null,
+    nodes: contextNodes,
+    edges: contextEdges,
+    n_samples: nSamples,
+    n_features: nFeatures,
+    diagnostics: Object.keys(lastExecutionDiagnostics).length > 0
+      ? lastExecutionDiagnostics
+      : null,
+    results_summary: resultsSummary,
+  };
+}
 
 // ── Send message (dispatches to active tab's store) ──────────
 
@@ -430,11 +580,22 @@ const sendMessage = async () => {
     return;
   }
 
-  const metadata = experimentStore.experiments.length > 0
-    ? { experiments: experimentStore.experiments }
-    : undefined;
+  const metadata: Record<string, unknown> = {};
+  if (experimentStore.experiments.length > 0) {
+    metadata.experiments = experimentStore.experiments;
+  }
+  if (projectStore.currentProjectId != null) {
+    metadata.project_id = projectStore.currentProjectId;
+  }
+  const wfCtx = buildWorkflowChatContext();
+  if (wfCtx) {
+    metadata.workflow_context = wfCtx;
+  }
 
-  await store.sendMessage(userMessage.value, metadata);
+  await store.sendMessage(
+    userMessage.value,
+    Object.keys(metadata).length > 0 ? metadata : undefined,
+  );
   userMessage.value = "";
 };
 
@@ -449,13 +610,12 @@ const loadConversation = async (conversationId: string) => {
       detail: "Previous conversation restored",
       life: 2000,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Failed to load conversation:', error);
-    const errorMessage = error?.response?.data?.detail || error?.message || 'Unknown error';
     toast.add({
       severity: "error",
       summary: "Load Failed",
-      detail: errorMessage,
+      detail: getErrorMessage(error, "Unknown error"),
       life: 3000,
     });
   }
@@ -470,13 +630,12 @@ const deleteConversation = async (conversationId: string) => {
       detail: "Conversation removed",
       life: 2000,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Failed to delete conversation:', error);
-    const errorMessage = error?.response?.data?.detail || error?.message || 'Unknown error';
     toast.add({
       severity: "error",
       summary: "Delete Failed",
-      detail: errorMessage,
+      detail: getErrorMessage(error, "Unknown error"),
       life: 3000,
     });
   }
@@ -531,13 +690,12 @@ const onProviderChange = async () => {
       detail: `Now using ${providerNames[newProvider]} (${defaults.model})`,
       life: 3000,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to change provider:", error);
-    const errorMessage = error?.response?.data?.detail || error?.message || 'Unknown error';
     toast.add({
       severity: "error",
       summary: "Provider Change Failed",
-      detail: errorMessage,
+      detail: getErrorMessage(error, "Unknown error"),
       life: 3000,
     });
     if (store.currentConfig) {

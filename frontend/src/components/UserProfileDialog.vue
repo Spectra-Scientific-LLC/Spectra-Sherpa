@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import axios from 'axios'
 import { ref, watch, computed } from 'vue'
 import Dialog from 'primevue/dialog'
 import ProgressBar from 'primevue/progressbar'
@@ -50,8 +51,10 @@ const fetchProfile = async () => {
   try {
     const response = await api.get('/auth/profile')
     profile.value = response.data
-  } catch (err: any) {
-    error.value = err.response?.data?.detail || 'Failed to load profile'
+  } catch (err: unknown) {
+    error.value = axios.isAxiosError(err)
+      ? (err.response?.data?.detail as string | undefined) || 'Failed to load profile'
+      : 'Failed to load profile'
   } finally {
     loading.value = false
   }
@@ -80,8 +83,13 @@ const saveEmail = async () => {
     editingEmail.value = false
     emailMessage.value = { text: 'Email updated', type: 'success' }
     setTimeout(() => { emailMessage.value = null }, 2000)
-  } catch (err: any) {
-    emailMessage.value = { text: err.response?.data?.detail || 'Failed to update email', type: 'error' }
+  } catch (err: unknown) {
+    emailMessage.value = {
+      text: axios.isAxiosError(err)
+        ? (err.response?.data?.detail as string | undefined) || 'Failed to update email'
+        : 'Failed to update email',
+      type: 'error',
+    }
   } finally {
     emailSaving.value = false
   }

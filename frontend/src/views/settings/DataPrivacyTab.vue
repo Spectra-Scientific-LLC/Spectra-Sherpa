@@ -19,10 +19,23 @@
       <template v-else>
         <div class="toggle-row">
           <div class="toggle-info">
-            <strong>LLM Context Sharing</strong>
-            <p>Allow spectral data and metadata to be sent to LLM providers (OpenAI, Anthropic, DeepSeek, etc.) for AI assistant features.</p>
+            <strong>Enable AI Chat</strong>
+            <p>Allow Spectra Sherpa to call an LLM for chat and assistant features.</p>
           </div>
-          <InputSwitch v-model="form.allow_llm_context" @change="save" />
+          <InputSwitch v-model="form.allow_llm_chat" @change="save" />
+        </div>
+
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <strong>Share Workflow Context with Sherpa</strong>
+            <p v-if="contextToggleReason">{{ contextToggleReason }}</p>
+            <p v-else>Allow workflow structure, parameters, and execution summaries to be sent to Sherpa for context-aware chat.</p>
+          </div>
+          <InputSwitch
+            v-model="form.allow_llm_context"
+            :disabled="!contextToggleEnabled"
+            @change="save"
+          />
         </div>
 
         <div class="toggle-row">
@@ -63,12 +76,14 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import axios from "axios";
+import { computed, onMounted, reactive, ref } from "vue";
 import InputSwitch from "primevue/inputswitch";
 import api from "@/api/client";
 import { useAppConfig } from "@/composables/useAppConfig";
+import { getErrorMessage } from "@/utils/errors";
 
-const { appMode } = useAppConfig();
+const { appMode, isFeatureEnabled } = useAppConfig();
 
 const loading = ref(true);
 const loadError = ref("");
@@ -78,10 +93,26 @@ const saveError = ref("");
 const showSyncOption = ref(false);
 
 const form = reactive({
+  allow_llm_chat: false,
   allow_llm_context: false,
   allow_nist_queries: false,
   allow_export: false,
   allow_spectrasherpa_sync: false,
+});
+
+const contextToggleEnabled = computed(() => {
+  if (appMode.value === "local") return false;
+  return isFeatureEnabled("chatAssistant");
+});
+
+const contextToggleReason = computed(() => {
+  if (appMode.value === "local") {
+    return "Context-aware chat requires a Sherpa subscription.";
+  }
+  if (!isFeatureEnabled("chatAssistant")) {
+    return "Context-aware chat requires a Sherpa subscription.";
+  }
+  return "";
 });
 
 onMounted(async () => {
@@ -89,15 +120,16 @@ onMounted(async () => {
   try {
     const { data } = await api.get("/egress/defaults");
     if (data) {
-      form.allow_llm_context = data.allow_llm_context ?? false;
+      form.allow_llm_chat = data.allow_llm_chat ?? false;
+      form.allow_llm_context = appMode.value === "local" ? false : (data.allow_llm_context ?? false);
       form.allow_nist_queries = data.allow_nist_queries ?? false;
       form.allow_export = data.allow_export ?? false;
       form.allow_spectrasherpa_sync = data.allow_spectrasherpa_sync ?? false;
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     // 404 or no defaults yet — use form defaults (all conservative)
-    if (err.response?.status !== 404) {
-      loadError.value = err.response?.data?.detail || "Failed to load privacy settings";
+    if (!axios.isAxiosError(err) || err.response?.status !== 404) {
+      loadError.value = getErrorMessage(err, "Failed to load privacy settings");
     }
   } finally {
     loading.value = false;
@@ -110,17 +142,22 @@ async function save() {
   saveError.value = "";
   saveMessage.value = "";
   try {
+    if (!contextToggleEnabled.value) {
+      form.allow_llm_context = false;
+    }
     await api.put("/egress/defaults", {
-      allow_llm_context: form.allow_llm_context,
+      allow_llm_chat: form.allow_llm_chat,
+      allow_llm_context: contextToggleEnabled.value ? form.allow_llm_context : false,
       allow_nist_queries: form.allow_nist_queries,
       allow_export: form.allow_export,
       allow_spectrasherpa_sync: form.allow_spectrasherpa_sync,
     });
+    window.dispatchEvent(new CustomEvent("egress-defaults-changed"));
     saveMessage.value = "Privacy settings updated.";
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => { saveMessage.value = ""; }, 3000);
-  } catch (err: any) {
-    saveError.value = err.response?.data?.detail || "Failed to save privacy settings";
+  } catch (err: unknown) {
+    saveError.value = getErrorMessage(err, "Failed to save privacy settings");
   }
 }
 </script>

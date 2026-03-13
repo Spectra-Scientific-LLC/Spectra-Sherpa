@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, call, patch
 
 import numpy as np
 import pytest
@@ -141,6 +141,303 @@ class TestLlmStorage:
             svc = LLMService.__new__(LLMService)
 
         assert svc._load_reference_pdf(pdf_path) == "Reference content"
+
+
+# ---------------------------------------------------------------------------
+# Slice 1b: local BYOK vs server contextual channel
+# ---------------------------------------------------------------------------
+
+
+class TestChatContextRouting:
+    def test_prepare_metadata_for_local_chat_drops_context_in_local_mode(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import spectra_sherpa.app.core.config as config_mod
+        from spectra_sherpa.app.services.llm import LLMService
+
+        monkeypatch.setattr(config_mod, "app_config", SimpleNamespace(mode="local"))
+
+        metadata = {
+            "workflow_context": {"nodes": [{"node_id": "n1"}]},
+            "project_id": 42,
+        }
+
+        assert LLMService._prepare_metadata_for_local_chat(metadata) is None
+
+    def test_prepare_metadata_for_local_chat_preserves_metadata_in_non_local_mode(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import spectra_sherpa.app.core.config as config_mod
+        from spectra_sherpa.app.services.llm import LLMService
+
+        monkeypatch.setattr(config_mod, "app_config", SimpleNamespace(mode="hybrid"))
+
+        metadata = {
+            "workflow_context": {"nodes": [{"node_id": "n1"}]},
+            "project_id": 42,
+        }
+
+        assert LLMService._prepare_metadata_for_local_chat(metadata) == metadata
+
+    @pytest.mark.asyncio
+    async def test_handle_llm_chat_local_route_keeps_metadata_and_skips_context_gate(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from spectra_sherpa.app.services import ws_handlers
+
+        ws = SimpleNamespace(send_json=AsyncMock())
+        user = SimpleNamespace(id=7)
+        rate_limiter = SimpleNamespace(allow=lambda _key: True)
+        local_chat = AsyncMock()
+        permission_calls: list[str] = []
+
+        async def _check_permission(_user, permission: str, **_kwargs):
+            permission_calls.append(permission)
+            return True
+
+        monkeypatch.setattr(ws_handlers, "_should_use_server_chat", lambda: False)
+        monkeypatch.setattr(ws_handlers, "_local_llm_chat", local_chat)
+        monkeypatch.setattr(ws_handlers, "check_egress_permission", _check_permission)
+
+        payload = {
+            "message": "hello",
+            "metadata": {
+                "workflow_context": {"nodes": [{"node_id": "n1"}]},
+                "project_id": 42,
+            },
+        }
+
+        await ws_handlers.handle_llm_chat(ws, payload, user, rate_limiter)
+
+        local_chat.assert_awaited_once()
+        metadata = local_chat.await_args.args[3]
+        assert metadata["project_id"] == 42
+        assert metadata["workflow_context"]["nodes"][0]["node_id"] == "n1"
+        assert permission_calls == ["allow_llm_chat"]
+
+    @pytest.mark.asyncio
+    async def test_handle_llm_chat_blocks_when_ai_chat_disabled(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from spectra_sherpa.app.services import ws_handlers
+
+        ws = SimpleNamespace(send_json=AsyncMock())
+        user = SimpleNamespace(id=7)
+        rate_limiter = SimpleNamespace(allow=lambda _key: True)
+        local_chat = AsyncMock()
+
+        async def _check_permission(_user, permission: str, **_kwargs):
+            assert permission == "allow_llm_chat"
+            return False
+
+        monkeypatch.setattr(ws_handlers, "_should_use_server_chat", lambda: False)
+        monkeypatch.setattr(ws_handlers, "_local_llm_chat", local_chat)
+        monkeypatch.setattr(ws_handlers, "check_egress_permission", _check_permission)
+
+        await ws_handlers.handle_llm_chat(ws, {"message": "hello"}, user, rate_limiter)
+
+        local_chat.assert_not_awaited()
+        ws.send_json.assert_awaited_once_with(
+            {
+                "type": "error",
+                "detail": "AI chat is disabled in user privacy settings.",
+            }
+        )
+
+    @pytest.mark.asyncio
+    async def test_handle_llm_chat_server_route_applies_context_gate(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from spectra_sherpa.app.services import ws_handlers
+
+        ws = SimpleNamespace(send_json=AsyncMock())
+        user = SimpleNamespace(id=7)
+        rate_limiter = SimpleNamespace(allow=lambda _key: True)
+        server_chat = AsyncMock()
+        permission_calls: list[str] = []
+
+        async def _check_permission(_user, permission: str, **_kwargs):
+            permission_calls.append(permission)
+            if permission == "allow_llm_chat":
+                return True
+            if permission == "allow_llm_context":
+                return False
+            raise AssertionError(f"Unexpected permission check: {permission}")
+
+        monkeypatch.setattr(ws_handlers, "_should_use_server_chat", lambda: True)
+        monkeypatch.setattr(ws_handlers, "_proxy_server_chat", server_chat)
+        monkeypatch.setattr(ws_handlers, "check_egress_permission", _check_permission)
+
+        payload = {
+            "message": "hello",
+            "metadata": {
+                "workflow_context": {"nodes": [{"node_id": "n1"}]},
+                "project_id": 42,
+                "experiments": [{"name": "Corn"}],
+            },
+        }
+
+        await ws_handlers.handle_llm_chat(ws, payload, user, rate_limiter)
+
+        server_chat.assert_awaited_once()
+        metadata = server_chat.await_args.args[3]
+        assert metadata["project_id"] == 42
+        assert metadata["experiments"][0]["name"] == "Corn"
+        assert "workflow_context" not in metadata
+        assert permission_calls == ["allow_llm_chat", "allow_llm_context"]
+
+    @pytest.mark.asyncio
+    async def test_handle_llm_chat_server_route_keeps_context_when_allowed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from spectra_sherpa.app.services import ws_handlers
+
+        ws = SimpleNamespace(send_json=AsyncMock())
+        user = SimpleNamespace(id=7)
+        rate_limiter = SimpleNamespace(allow=lambda _key: True)
+        server_chat = AsyncMock()
+        permission_calls: list[str] = []
+
+        async def _check_permission(_user, permission: str, **_kwargs):
+            permission_calls.append(permission)
+            return True
+
+        monkeypatch.setattr(ws_handlers, "_should_use_server_chat", lambda: True)
+        monkeypatch.setattr(ws_handlers, "_proxy_server_chat", server_chat)
+        monkeypatch.setattr(ws_handlers, "check_egress_permission", _check_permission)
+
+        payload = {
+            "message": "hello",
+            "metadata": {
+                "workflow_context": {"nodes": [{"node_id": "n1"}]},
+                "project_id": 42,
+            },
+        }
+
+        await ws_handlers.handle_llm_chat(ws, payload, user, rate_limiter)
+
+        server_chat.assert_awaited_once()
+        metadata = server_chat.await_args.args[3]
+        assert metadata["workflow_context"]["nodes"][0]["node_id"] == "n1"
+        assert permission_calls == ["allow_llm_chat", "allow_llm_context"]
+
+    @pytest.mark.asyncio
+    async def test_handle_llm_chat_server_route_skips_context_gate_without_workflow_context(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from spectra_sherpa.app.services import ws_handlers
+
+        ws = SimpleNamespace(send_json=AsyncMock())
+        user = SimpleNamespace(id=7)
+        rate_limiter = SimpleNamespace(allow=lambda _key: True)
+        server_chat = AsyncMock()
+        permission_calls: list[str] = []
+
+        async def _check_permission(_user, permission: str, **_kwargs):
+            permission_calls.append(permission)
+            return True
+
+        monkeypatch.setattr(ws_handlers, "_should_use_server_chat", lambda: True)
+        monkeypatch.setattr(ws_handlers, "_proxy_server_chat", server_chat)
+        monkeypatch.setattr(ws_handlers, "check_egress_permission", _check_permission)
+
+        payload = {
+            "message": "hello",
+            "metadata": {
+                "project_id": 42,
+                "experiments": [{"name": "Corn"}],
+            },
+        }
+
+        await ws_handlers.handle_llm_chat(ws, payload, user, rate_limiter)
+
+        server_chat.assert_awaited_once()
+        metadata = server_chat.await_args.args[3]
+        assert metadata["project_id"] == 42
+        assert metadata["experiments"][0]["name"] == "Corn"
+        assert permission_calls == ["allow_llm_chat"]
+
+    @pytest.mark.asyncio
+    async def test_proxy_server_chat_forwards_project_context_and_translates_sse(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import httpx
+
+        from spectra_sherpa.app.services import spectrasherpa as sherpa_cfg_mod
+        from spectra_sherpa.app.services import ws_handlers
+
+        ws = SimpleNamespace(send_json=AsyncMock())
+        captured: dict[str, object] = {}
+
+        class _FakeResponse:
+            status_code = 200
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def aiter_lines(self):
+                yield 'data: {"type":"start","conversation_id":"conv-1"}'
+                yield 'data: {"type":"chunk","conversation_id":"conv-1","text":"Hello"}'
+                yield 'data: {"type":"done","conversation_id":"conv-1"}'
+
+        class _FakeClient:
+            def __init__(self, *args, **kwargs):
+                captured["timeout"] = kwargs.get("timeout")
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            def stream(self, method, url, json, headers):
+                captured["method"] = method
+                captured["url"] = url
+                captured["json"] = json
+                captured["headers"] = headers
+                return _FakeResponse()
+
+        monkeypatch.setattr(httpx, "AsyncClient", _FakeClient)
+        monkeypatch.setattr(
+            sherpa_cfg_mod,
+            "spectrasherpa_config",
+            SimpleNamespace(api_base_url="https://sherpa.example.com", api_key="deploy-key"),
+        )
+
+        metadata = {
+            "project_id": 42,
+            "workflow_context": {"nodes": [{"node_id": "n1"}]},
+        }
+        user = SimpleNamespace(id=7)
+
+        await ws_handlers._proxy_server_chat(ws, "hello", "conv-1", metadata, user)
+
+        assert captured["method"] == "POST"
+        assert captured["url"] == "https://sherpa.example.com/api/v1/sherpa/chat"
+        assert captured["headers"] == {"X-Deployment-Key": "deploy-key"}
+        assert captured["json"] == {
+            "message": "hello",
+            "conversation_id": "conv-1",
+            "workflow_context": {"nodes": [{"node_id": "n1"}]},
+            "local_user_id": 7,
+            "project_id": 42,
+        }
+        assert ws.send_json.await_args_list == [
+            call({"type": "llm_start", "conversation_id": "conv-1"}),
+            call({"type": "llm_chunk", "conversation_id": "conv-1", "chunk": "Hello"}),
+            call({"type": "llm_done", "conversation_id": "conv-1"}),
+        ]
 
 
 # ---------------------------------------------------------------------------

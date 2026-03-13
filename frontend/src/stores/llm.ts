@@ -1,7 +1,11 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import axios from "axios";
+import { computed, ref } from "vue";
 import api from "@/api/client";
 import type { ConversationSummary, LlmMessage } from "@/types";
+import { useAppConfig } from "@/composables/useAppConfig";
+import { useAuthStore } from "@/stores/auth";
+import { useProjectStore } from "@/stores/project";
 import { buildWsUrl, withCredentials } from "@/utils/ws";
 
 const STORAGE_KEY = "llm_conversations";
@@ -31,8 +35,14 @@ interface LlmConfig {
 }
 
 export const useLlmStore = defineStore("llm", () => {
+  const { appMode } = useAppConfig();
+  const authStore = useAuthStore();
+  const projectStore = useProjectStore();
+  const isServerBacked = computed(() => appMode.value !== "local");
   const messages = ref<LlmMessage[]>([]);
-  const conversations = ref<ConversationSummary[]>(loadConversations());
+  const conversations = ref<ConversationSummary[]>(
+    isServerBacked.value ? [] : loadConversations()
+  );
   const currentConversationId = ref<string | null>(null);
   const loading = ref(false);
   const streaming = ref(false);
@@ -188,6 +198,10 @@ export const useLlmStore = defineStore("llm", () => {
   };
 
   const updateConversationSummary = (conversationId: string) => {
+    if (isServerBacked.value) {
+      void refreshConversations();
+      return;
+    }
     const firstUser = messages.value.find((msg) => msg.role === "user");
     const title =
       firstUser?.content.slice(0, 60) || `Conversation ${conversations.value.length + 1}`;
@@ -200,6 +214,35 @@ export const useLlmStore = defineStore("llm", () => {
       conversations.value.unshift({ id: conversationId, title, updatedAt });
     }
     persistConversations(conversations.value);
+  };
+
+  const refreshConversations = async (projectId = projectStore.currentProjectId) => {
+    if (!isServerBacked.value) {
+      conversations.value = loadConversations();
+      return;
+    }
+    if (!projectId || !authStore.user?.id) {
+      conversations.value = [];
+      currentConversationId.value = null;
+      messages.value = [];
+      return;
+    }
+
+    const response = await api.get("/llm/conversations", {
+      params: { project_id: projectId },
+    });
+    conversations.value = (response.data as Array<Record<string, unknown>>).map((item) => ({
+      id: String(item.id),
+      title: String(item.title || "Untitled conversation"),
+      updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
+    }));
+    if (
+      currentConversationId.value
+      && !conversations.value.some((item) => item.id === currentConversationId.value)
+    ) {
+      currentConversationId.value = null;
+      messages.value = [];
+    }
   };
 
   const sendMessage = async (message: string, metadata?: Record<string, unknown>) => {
@@ -230,20 +273,41 @@ export const useLlmStore = defineStore("llm", () => {
   };
 
   const loadConversation = async (conversationId: string) => {
-    const response = await api.get(`/llm/conversation/${conversationId}`);
+    if (isServerBacked.value && projectStore.currentProjectId == null) {
+      throw new Error("Select a project before loading a server-backed conversation.");
+    }
+    const params = isServerBacked.value
+      ? { project_id: projectStore.currentProjectId }
+      : undefined;
+    const response = await api.get(`/llm/conversation/${conversationId}`, { params });
     currentConversationId.value = response.data.conversation_id;
     messages.value = response.data.messages;
   };
 
   const deleteConversation = async (conversationId: string) => {
+    if (isServerBacked.value) {
+      if (projectStore.currentProjectId == null) {
+        throw new Error("Select a project before deleting a server-backed conversation.");
+      }
+      await api.delete(`/llm/conversation/${conversationId}`, {
+        params: { project_id: projectStore.currentProjectId },
+      });
+      conversations.value = conversations.value.filter(
+        (item) => item.id !== conversationId
+      );
+      if (currentConversationId.value === conversationId) {
+        currentConversationId.value = null;
+        messages.value = [];
+      }
+      return;
+    }
+
     try {
       await api.delete(`/llm/conversation/${conversationId}`);
-    } catch (error: any) {
-      // If conversation not found in backend (404), that's okay - we still want to remove it from frontend
-      if (error?.response?.status !== 404) {
-        throw error; // Re-throw if it's not a 404
+    } catch (error: unknown) {
+      if (!axios.isAxiosError(error) || error.response?.status !== 404) {
+        throw error;
       }
-      // If it's a 404, continue to remove from frontend localStorage
     }
 
     conversations.value = conversations.value.filter(
@@ -343,6 +407,7 @@ export const useLlmStore = defineStore("llm", () => {
   };
 
   const startConfigPolling = (intervalMs = 60_000) => {
+    if (appMode.value !== "local") return;
     checkConfigChange();
     if (configPollTimer !== null) return;
     configPollTimer = setInterval(() => {
@@ -372,6 +437,7 @@ export const useLlmStore = defineStore("llm", () => {
     disconnect,
     reconnect,
     sendMessage,
+    refreshConversations,
     loadConversation,
     deleteConversation,
     startNewConversation,

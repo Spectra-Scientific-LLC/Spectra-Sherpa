@@ -12,8 +12,10 @@ import json
 import logging
 import os
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import APIKeyHeader
+from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,6 +32,7 @@ from spectra_sherpa.app.models.user import User
 
 router = APIRouter(prefix="/config", tags=["config"])
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+_subscription_overlay_cache: dict[str, dict] = {}
 
 
 async def get_optional_current_user(
@@ -86,6 +89,35 @@ async def _check_provider_availability(
     return result.scalar_one_or_none() is not None
 
 
+async def _load_subscription_overlay() -> dict | None:
+    """Fetch subscription-backed config from the Sherpa server when configured."""
+    from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
+
+    api_key = spectrasherpa_config.api_key
+    if not api_key:
+        return None
+
+    base_url = spectrasherpa_config.api_base_url.rstrip("/")
+    if not base_url.endswith("/api/v1"):
+        base_url = f"{base_url}/api/v1"
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(
+                f"{base_url}/config/subscription",
+                headers={"X-Deployment-Key": api_key},
+            )
+        if response.status_code != 200:
+            logger.warning("Subscription config fetch returned %s", response.status_code)
+            return _subscription_overlay_cache.get(api_key)
+        payload = response.json()
+        _subscription_overlay_cache[api_key] = payload
+        return payload
+    except Exception:
+        logger.warning("Failed to fetch subscription config overlay", exc_info=True)
+        return _subscription_overlay_cache.get(api_key)
+
+
 @router.get("")
 async def get_config(
     session: AsyncSession = Depends(get_session),
@@ -110,9 +142,24 @@ async def get_config(
         if provider_id in config["llms"]:
             config["llms"][provider_id]["enabled"] = is_available
 
-    # Recalculate feature flags with true provider availability.
-    has_llm = any(llm["enabled"] for llm in config["llms"].values())
-    config["features"]["chatAssistant"] = has_llm
+    if app_config.mode == "local":
+        # Recalculate feature flags with true provider availability.
+        has_llm = any(llm["enabled"] for llm in config["llms"].values())
+        config["features"]["chatAssistant"] = has_llm
+    else:
+        # Server-backed modes use subscription entitlements, not local BYOK keys.
+        for provider_config in config["llms"].values():
+            provider_config["enabled"] = False
+
+        config["features"]["chatAssistant"] = False
+        config["subscription"] = {"plan": "none", "status": None, "upgrade_url": ""}
+
+        overlay = await _load_subscription_overlay()
+        if overlay:
+            config["features"].update(overlay.get("features", {}))
+            config["subscription"] = overlay.get("subscription")
+            if overlay.get("limits") is not None:
+                config["limits"] = overlay["limits"]
 
     return config
 
@@ -296,9 +343,6 @@ async def get_unit_options():
 # ============================================================================
 # SpectraSherpa Configuration Endpoints
 # ============================================================================
-
-import httpx
-from pydantic import BaseModel
 
 
 class SpectraSherpaTestRequest(BaseModel):

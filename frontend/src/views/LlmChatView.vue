@@ -8,6 +8,7 @@
       </div>
       <div class="llm-chat-header-actions">
         <Button
+          v-if="appMode === 'local'"
           icon="pi pi-cog"
           class="p-button-text llm-settings-btn"
           aria-label="LLM Settings"
@@ -47,11 +48,14 @@ import Menu from "primevue/menu";
 import { useToast } from "primevue/usetoast";
 import ChatPanel from "@/components/ChatPanel.vue";
 import { useLlmStore } from "@/stores/llm";
+import { useAppConfig } from "@/composables/useAppConfig";
+import { getErrorMessage } from "@/utils/errors";
 import api from "@/api/client";
 
 const router = useRouter();
 const store = useLlmStore();
 const toast = useToast();
+const { appMode } = useAppConfig();
 
 const goBack = () => {
   router.push("/workflow");
@@ -97,6 +101,7 @@ watch(
 );
 
 const onProviderChange = async () => {
+  if (appMode.value !== "local") return;
   if (!store.currentConfig) return;
 
   const newProvider = selectedProvider.value;
@@ -141,13 +146,12 @@ const onProviderChange = async () => {
       detail: `Now using ${providerNames[newProvider]} (${defaults.model})`,
       life: 3000,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to change provider:", error);
-    const errorMessage = error?.response?.data?.detail || error?.message || 'Unknown error';
     toast.add({
       severity: "error",
       summary: "Provider Change Failed",
-      detail: errorMessage,
+      detail: getErrorMessage(error, "Unknown error"),
       life: 3000,
     });
     if (store.currentConfig) {

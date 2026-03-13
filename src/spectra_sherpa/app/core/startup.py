@@ -432,12 +432,15 @@ async def ensure_egress_defaults() -> None:
             if not users_missing:
                 return
 
+            is_demo = app_config.site_profile == "demo"
             for user in users_missing:
                 session.add(
                     UserEgressDefaults(
                         user_id=user.id,
+                        allow_llm_chat=is_demo,  # On by default in demo mode
                         allow_export=False,  # Local file export disabled by default
                         allow_nist_queries=False,  # NIST queries disabled by default
+                        allow_llm_context=is_demo,  # On by default in demo mode
                     )
                 )
             await session.commit()

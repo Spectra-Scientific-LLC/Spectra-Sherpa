@@ -298,7 +298,10 @@ const llmStatus = computed(() => {
 });
 
 onMounted(() => {
-  llmStore.startConfigPolling();
+  // Only poll LLM config in local mode — server owns model selection in hybrid/enterprise
+  if (appMode.value === "local") {
+    llmStore.startConfigPolling();
+  }
 });
 
 onUnmounted(() => {

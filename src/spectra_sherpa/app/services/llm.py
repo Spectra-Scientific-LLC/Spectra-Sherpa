@@ -37,7 +37,10 @@ except ImportError:
     ANTHROPIC_AVAILABLE = False
     AsyncAnthropic = None  # type: ignore
 
-DEFAULT_SYSTEM_PROMPT = "You are a master of all things spectral data analysis."
+DEFAULT_SYSTEM_PROMPT = (
+    "You are an expert of chemometrics. Your sole purpose is to support user "
+    "in their model development and scientific research."
+)
 
 DEFAULT_PROVIDER = "deepseek"
 DEFAULT_MODEL = "deepseek-chat"
@@ -186,6 +189,44 @@ class LLMService:
         self.session = session
         self.user = user
 
+    @staticmethod
+    def _prepare_metadata_for_local_chat(metadata: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
+        """Local BYOK chat is intentionally naive and does not consume contextual metadata."""
+        if metadata is None:
+            return None
+
+        from spectra_sherpa.app.core.config import app_config
+
+        if app_config.mode == "local":
+            return None
+        return metadata
+
+    async def _ensure_llm_chat_allowed(self) -> None:
+        """Enforce the user-level AI chat toggle independently of context sharing."""
+        if not await check_egress_permission(
+            self.user,
+            "allow_llm_chat",
+            session=self.session,
+            skip_global_check=True,
+        ):
+            raise ValueError("AI chat is disabled in user privacy settings.")
+
+    async def _ensure_context_egress_allowed(self, config: dict[str, Any], metadata: Optional[dict[str, Any]]) -> None:
+        """Gate workflow/data context separately from generic chat access."""
+        if metadata is None or not metadata.get("workflow_context"):
+            return
+        if self._is_local_provider(config["provider"]):
+            return
+        if not await check_egress_permission(
+            self.user,
+            "allow_llm_context",
+            data_type="metadata",
+            destination="llm_context",
+            session=self.session,
+            skip_global_check=True,
+        ):
+            raise ValueError("LLM context sharing is disabled in user privacy settings.")
+
     async def chat(
         self,
         message: str,
@@ -193,20 +234,10 @@ class LLMService:
         metadata: Optional[dict[str, Any]] = None,
     ) -> tuple[str, str]:
         """Send chat message and get response (non-streaming)"""
-        # Egress check for external LLM providers.
-        # User-initiated BYOK chat bypasses the global egress flag — the user
-        # explicitly provided their API key and typed a message, which is consent.
+        await self._ensure_llm_chat_allowed()
+        metadata = self._prepare_metadata_for_local_chat(metadata)
         config = await self._get_llm_config()
-        if not self._is_local_provider(config["provider"]):
-            if not await check_egress_permission(
-                self.user,
-                "allow_llm_context",
-                data_type="metadata",
-                destination="llm_context",
-                session=self.session,
-                skip_global_check=True,
-            ):
-                raise ValueError("LLM context sharing is disabled in user privacy settings.")
+        await self._ensure_context_egress_allowed(config, metadata)
 
         user_id = self.user.id
         conversation_id, history = conversation_store.get_or_create(conversation_id, user_id)
@@ -248,19 +279,10 @@ class LLMService:
         metadata: Optional[dict[str, Any]] = None,
     ) -> tuple[str, AsyncIterator[str]]:
         """Stream chat response"""
-        # Egress check for external LLM providers.
-        # User-initiated BYOK chat bypasses the global egress flag.
+        await self._ensure_llm_chat_allowed()
+        metadata = self._prepare_metadata_for_local_chat(metadata)
         config = await self._get_llm_config()
-        if not self._is_local_provider(config["provider"]):
-            if not await check_egress_permission(
-                self.user,
-                "allow_llm_context",
-                data_type="metadata",
-                destination="llm_context",
-                session=self.session,
-                skip_global_check=True,
-            ):
-                raise ValueError("LLM context sharing is disabled in user privacy settings.")
+        await self._ensure_context_egress_allowed(config, metadata)
 
         user_id = self.user.id
         conversation_id, history = conversation_store.get_or_create(conversation_id, user_id)
@@ -341,19 +363,8 @@ class LLMService:
 
     async def _single_turn(self, prompt: str, bypass_egress: bool = False) -> str:
         """Single-turn LLM request (used for utility functions)"""
-        # Egress check for external LLM providers.
-        # User-initiated BYOK chat bypasses the global egress flag.
+        await self._ensure_llm_chat_allowed()
         config = await self._get_llm_config()
-        if not bypass_egress and not self._is_local_provider(config["provider"]):
-            if not await check_egress_permission(
-                self.user,
-                "allow_llm_context",
-                data_type="metadata",
-                destination="llm_context",
-                session=self.session,
-                skip_global_check=True,
-            ):
-                raise ValueError("LLM context sharing is disabled in user privacy settings.")
 
         client = await self._client(config)
 

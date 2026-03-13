@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import logging
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session
 from spectra_sherpa.app.core.app_paths import get_app_data_paths
-from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.schemas.llm import (
     LLMChatRequest,
@@ -30,6 +31,48 @@ _llm_rate_limiter = RateLimiter(
     period_sec=3600,
     state_path=get_app_data_paths(settings.data_dir).llm_rate_limits_state,
 )
+
+
+def _should_proxy_server_conversations() -> bool:
+    return app_config.mode in ("hybrid", "enterprise") or app_config.site_profile == "demo"
+
+
+def _server_proxy_target() -> tuple[str, dict[str, str]]:
+    from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
+
+    if not spectrasherpa_config.api_key:
+        raise HTTPException(status_code=503, detail="Sherpa subscription service is not configured.")
+
+    base_url = spectrasherpa_config.api_base_url.rstrip("/")
+    if not base_url.endswith("/api/v1"):
+        base_url = f"{base_url}/api/v1"
+    return base_url, {"X-Deployment-Key": spectrasherpa_config.api_key}
+
+
+async def _proxy_server_request(
+    method: str,
+    path: str,
+    *,
+    params: dict[str, int | str] | None = None,
+) -> httpx.Response:
+    base_url, headers = _server_proxy_target()
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.request(method, f"{base_url}{path}", params=params, headers=headers)
+    except httpx.ConnectError as exc:
+        raise HTTPException(status_code=502, detail="Cannot connect to Sherpa subscription service.") from exc
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=504, detail="Sherpa subscription service timed out.") from exc
+
+    if response.status_code >= 400:
+        detail = response.text
+        try:
+            detail = response.json().get("detail", detail)
+        except Exception:
+            pass
+        raise HTTPException(status_code=response.status_code, detail=detail)
+
+    return response
 
 
 def _check_llm_rate_limit(user: User) -> None:
@@ -79,11 +122,44 @@ async def chat(
     return LLMChatResponse(conversation_id=conversation_id, response=response)
 
 
+@router.get("/conversations")
+async def list_conversations(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+) -> list[dict]:
+    if not _should_proxy_server_conversations():
+        return []
+
+    response = await _proxy_server_request(
+        "GET",
+        "/conversations",
+        params={"local_user_id": current_user.id, "project_id": project_id},
+    )
+    return response.json()
+
+
 @router.get("/conversation/{conversation_id}", response_model=LLMConversation)
 async def get_conversation(
     conversation_id: str,
+    project_id: int | None = None,
     current_user: User = Depends(get_current_user),
 ) -> LLMConversation:
+    if _should_proxy_server_conversations():
+        if project_id is None:
+            raise HTTPException(status_code=400, detail="project_id is required for server-backed conversations")
+        response = await _proxy_server_request(
+            "GET",
+            f"/conversations/{conversation_id}",
+            params={"local_user_id": current_user.id, "project_id": project_id},
+        )
+        data = response.json()
+        return LLMConversation(
+            conversation_id=conversation_id,
+            messages=[
+                LLMMessage(role=message["role"], content=message["content"]) for message in data.get("messages", [])
+            ],
+        )
+
     # Pass user_id to enforce ownership check
     user_id = current_user.id if current_user.id else 0
     messages = conversation_store.get(conversation_id, user_id=user_id)
@@ -98,8 +174,19 @@ async def get_conversation(
 @router.delete("/conversation/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_conversation(
     conversation_id: str,
+    project_id: int | None = None,
     current_user: User = Depends(get_current_user),
 ):
+    if _should_proxy_server_conversations():
+        if project_id is None:
+            raise HTTPException(status_code=400, detail="project_id is required for server-backed conversations")
+        await _proxy_server_request(
+            "DELETE",
+            f"/conversations/{conversation_id}",
+            params={"local_user_id": current_user.id, "project_id": project_id},
+        )
+        return
+
     # Pass user_id to enforce ownership check
     user_id = current_user.id if current_user.id else 0
     removed = conversation_store.delete(conversation_id, user_id=user_id)

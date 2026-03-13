@@ -76,6 +76,121 @@ async def handle_unsubscribe(
 # ---------------------------------------------------------------------------
 
 
+def _should_use_server_chat() -> bool:
+    """Return True when LLM chat should be routed to the server engine."""
+    from spectra_sherpa.app.core.config import app_config
+
+    return app_config.mode in ("hybrid", "enterprise") or app_config.site_profile == "demo"
+
+
+def _is_contextual_server_channel(use_server_chat: bool) -> bool:
+    """Only the server-backed Sherpa channel is allowed to consume workflow context."""
+    return use_server_chat
+
+
+async def _proxy_server_chat(
+    ws: WebSocket,
+    message: str,
+    conversation_id: str | None,
+    metadata: dict | None,
+    user: Any,
+) -> None:
+    """Proxy LLM chat to the server's /sherpa/chat endpoint via SSE."""
+    import json
+
+    workflow_context = metadata.get("workflow_context") if metadata else None
+    user_id = user.id if user else None
+
+    # ── Remote proxy path (httpx SSE to remote spectra-server) ──
+    import httpx
+
+    from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
+
+    base_url = spectrasherpa_config.api_base_url.rstrip("/")
+    if not base_url.endswith("/api/v1"):
+        base_url = f"{base_url}/api/v1"
+    api_key = spectrasherpa_config.api_key
+
+    if not api_key:
+        await ws.send_json({"type": "error", "detail": "Server chat not configured (no deployment key)"})
+        return
+
+    body = {
+        "message": message,
+        "conversation_id": conversation_id,
+        "workflow_context": workflow_context,
+        "local_user_id": user_id,
+        "project_id": metadata.get("project_id") if metadata else None,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            async with client.stream(
+                "POST",
+                f"{base_url}/sherpa/chat",
+                json=body,
+                headers={"X-Deployment-Key": api_key},
+            ) as response:
+                if response.status_code != 200:
+                    detail = f"Server returned {response.status_code}"
+                    await ws.send_json({"type": "error", "detail": detail})
+                    return
+                async for line in response.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    try:
+                        event = json.loads(line[6:])
+                    except json.JSONDecodeError:
+                        continue
+                    etype = event.get("type")
+                    if etype == "start":
+                        await ws.send_json({"type": "llm_start", "conversation_id": event.get("conversation_id")})
+                    elif etype == "chunk":
+                        await ws.send_json(
+                            {
+                                "type": "llm_chunk",
+                                "conversation_id": event.get("conversation_id"),
+                                "chunk": event.get("text", ""),
+                            }
+                        )
+                    elif etype == "done":
+                        await ws.send_json({"type": "llm_done", "conversation_id": event.get("conversation_id")})
+                    elif etype == "error":
+                        await ws.send_json({"type": "error", "detail": event.get("detail", "")})
+    except httpx.ConnectError:
+        await ws.send_json({"type": "error", "detail": "Cannot connect to SpectraSherpa server"})
+    except httpx.TimeoutException:
+        await ws.send_json({"type": "error", "detail": "Server chat request timed out"})
+    except Exception as exc:
+        logger.exception("Server chat proxy failed: %s", exc)
+        await ws.send_json({"type": "error", "detail": "Server chat proxy failed"})
+
+
+async def _local_llm_chat(
+    ws: WebSocket,
+    message: str,
+    conversation_id: str | None,
+    metadata: dict | None,
+    user: Any,
+) -> None:
+    """Local LLM chat via BYOK provider (OSS / local mode)."""
+    async with async_session() as session:
+        service = LLMService(session, user=user)
+        try:
+            convo_id, stream = await service.stream_chat(
+                message=message,
+                conversation_id=conversation_id,
+                metadata=metadata,
+            )
+        except ValueError as exc:
+            await ws.send_json({"type": "error", "detail": str(exc)})
+            return
+        await ws.send_json({"type": "llm_start", "conversation_id": convo_id})
+        async for chunk in stream:
+            await ws.send_json({"type": "llm_chunk", "conversation_id": convo_id, "chunk": chunk})
+        await ws.send_json({"type": "llm_done", "conversation_id": convo_id})
+
+
 async def handle_llm_chat(
     ws: WebSocket,
     payload: dict,
@@ -88,20 +203,6 @@ async def handle_llm_chat(
             await ws.send_json({"type": "error", "detail": "Missing message"})
             return
 
-        # Per-user permission check (skip global egress flag — BYOK is user-initiated consent)
-        async with async_session() as permission_session:
-            allowed = await check_egress_permission(
-                user,
-                "allow_llm_context",
-                data_type="metadata",
-                destination="llm_context",
-                session=permission_session,
-                skip_global_check=True,
-            )
-        if not allowed:
-            await ws.send_json({"type": "error", "detail": "LLM access is disabled for this user"})
-            return
-
         # Rate limit
         user_key = f"user_{user.id}" if user and user.id else "anonymous"
         if not rate_limiter.allow(user_key):
@@ -110,23 +211,37 @@ async def handle_llm_chat(
 
         conversation_id = payload.get("conversation_id")
         metadata = payload.get("metadata")
+        use_server_chat = _should_use_server_chat()
 
-        async with async_session() as session:
-            service = LLMService(session, user=user)
-
-            try:
-                convo_id, stream = await service.stream_chat(
-                    message=message,
-                    conversation_id=conversation_id,
-                    metadata=metadata,
-                )
-            except ValueError as exc:
-                await ws.send_json({"type": "error", "detail": str(exc)})
+        async with async_session() as permission_session:
+            if not await check_egress_permission(
+                user,
+                "allow_llm_chat",
+                session=permission_session,
+                skip_global_check=True,
+            ):
+                await ws.send_json({"type": "error", "detail": "AI chat is disabled in user privacy settings."})
                 return
-            await ws.send_json({"type": "llm_start", "conversation_id": convo_id})
-            async for chunk in stream:
-                await ws.send_json({"type": "llm_chunk", "conversation_id": convo_id, "chunk": chunk})
-            await ws.send_json({"type": "llm_done", "conversation_id": convo_id})
+
+        # Only the server-backed Sherpa channel consumes workflow context.
+        if _is_contextual_server_channel(use_server_chat) and metadata and metadata.get("workflow_context"):
+            async with async_session() as permission_session:
+                include_context = await check_egress_permission(
+                    user,
+                    "allow_llm_context",
+                    data_type="metadata",
+                    destination="llm_context",
+                    session=permission_session,
+                    skip_global_check=True,
+                )
+            if not include_context:
+                metadata = {k: v for k, v in metadata.items() if k != "workflow_context"}
+
+        # Route: server-backed (hybrid/enterprise/demo) vs local BYOK
+        if use_server_chat:
+            await _proxy_server_chat(ws, message, conversation_id, metadata, user)
+        else:
+            await _local_llm_chat(ws, message, conversation_id, metadata, user)
     except Exception as exc:
         logger.exception("llm_chat failed: %s", exc)
         await ws.send_json({"type": "error", "detail": "LLM request failed. Check server logs for details."})

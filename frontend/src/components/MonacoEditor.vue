@@ -5,7 +5,7 @@
  * Usage:
  *   <MonacoEditor v-model="code" language="python" :height="400" />
  */
-import { ref, watch, onMounted, onBeforeUnmount, nextTick, computed } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 const props = withDefaults(
   defineProps<{
@@ -27,11 +27,28 @@ const emit = defineEmits<{
   "update:modelValue": [value: string];
 }>();
 
-const containerRef = ref<HTMLDivElement>();
+interface MonacoEditorInstance {
+  getValue: () => string;
+  setValue: (value: string) => void;
+  onDidChangeModelContent: (listener: () => void) => void;
+  updateOptions: (options: { readOnly: boolean }) => void;
+  dispose: () => void;
+}
+
+interface MonacoNamespace {
+  editor: {
+    create: (
+      element: HTMLElement,
+      options: Record<string, unknown>,
+    ) => MonacoEditorInstance;
+  };
+}
+
+const containerRef = ref<HTMLDivElement | null>(null);
 const fallbackValue = ref(props.modelValue);
 const loadError = ref<string | null>(null);
-let editor: any = null;
-let monaco: any = null;
+let editor: MonacoEditorInstance | null = null;
+let monaco: MonacoNamespace | null = null;
 
 onMounted(async () => {
   try {
@@ -46,8 +63,9 @@ onMounted(async () => {
   }
 
   if (!containerRef.value) return;
+  if (!monaco) return;
 
-  editor = monaco.editor.create(containerRef.value, {
+  const monacoEditor = monaco.editor.create(containerRef.value, {
     value: props.modelValue,
     language: props.language,
     theme: props.theme,
@@ -62,10 +80,11 @@ onMounted(async () => {
     wordWrap: "on",
     padding: { top: 8, bottom: 8 },
   });
+  editor = monacoEditor;
 
   // Emit changes
-  editor.onDidChangeModelContent(() => {
-    const value = editor.getValue();
+  monacoEditor.onDidChangeModelContent(() => {
+    const value = monacoEditor.getValue();
     if (value !== props.modelValue) {
       emit("update:modelValue", value);
     }

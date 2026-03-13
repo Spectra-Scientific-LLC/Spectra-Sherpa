@@ -69,12 +69,16 @@ async def update_egress_defaults(
     defaults = result.scalar_one_or_none()
 
     if defaults is None:
-        # Create new defaults
+        # Create new defaults — demo mode enables LLM context by default
+        from spectra_sherpa.app.core.config import app_config
+
+        is_demo = app_config.site_profile == "demo"
         defaults = UserEgressDefaultsModel(
             user_id=current_user.id,
             allow_spectrasherpa_sync=defaults_update.allow_spectrasherpa_sync or False,
+            allow_llm_chat=defaults_update.allow_llm_chat if defaults_update.allow_llm_chat is not None else is_demo,
             allow_llm_context=(
-                defaults_update.allow_llm_context if defaults_update.allow_llm_context is not None else False
+                defaults_update.allow_llm_context if defaults_update.allow_llm_context is not None else is_demo
             ),
             allow_export=defaults_update.allow_export if defaults_update.allow_export is not None else False,
             allow_nist_queries=(
@@ -86,6 +90,8 @@ async def update_egress_defaults(
         # Update existing
         if defaults_update.allow_spectrasherpa_sync is not None:
             defaults.allow_spectrasherpa_sync = defaults_update.allow_spectrasherpa_sync
+        if defaults_update.allow_llm_chat is not None:
+            defaults.allow_llm_chat = defaults_update.allow_llm_chat
         if defaults_update.allow_llm_context is not None:
             defaults.allow_llm_context = defaults_update.allow_llm_context
         if defaults_update.allow_export is not None:
