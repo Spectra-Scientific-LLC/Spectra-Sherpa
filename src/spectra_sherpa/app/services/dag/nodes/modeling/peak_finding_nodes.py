@@ -154,12 +154,11 @@ class PeakFindingNode(Node):
         all_heights: list[float],
         tolerance: float,
         n_samples: int,
-    ) -> list[list[Any]]:
+    ) -> list[dict[str, Any]]:
         """Group nearby peak positions into consensus bins via proximity sweep.
 
-        Returns a list of rows, one per consensus peak:
-        [median_pos, mean_pos, std_pos, min_pos, max_pos,
-         count, fraction_str, median_height, q1_height, q3_height]
+        Returns a list of dict rows, one per consensus peak, with keys such as
+        ``median_pos``, ``std_pos``, ``count``, and height quartiles.
         """
         if not all_positions:
             return []

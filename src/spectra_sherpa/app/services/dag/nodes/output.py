@@ -1160,8 +1160,8 @@ class StatsSummaryNode(Node):
 
         # Global summary
         if n_peaks > 0:
-            heights = [v["median_height"] for v in vertical_stats]
-            pos_stds = [h["std_pos"] for h in horizontal_stats]
+            heights = [float(v["median_height"]) for v in vertical_stats]
+            pos_stds = [float(h["std_pos"]) for h in horizontal_stats]
             summary = {
                 "n_peaks": n_peaks,
                 "n_samples": n_samples,
