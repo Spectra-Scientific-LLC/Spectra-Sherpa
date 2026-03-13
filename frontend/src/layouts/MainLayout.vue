@@ -34,6 +34,7 @@
         <Topbar
           :nav-collapsed="navCollapsed"
           :chat-collapsed="chatCollapsed"
+          :show-chat-toggle="!isPublicRoute"
           @toggle-nav="toggleNav"
           @toggle-chat="toggleChat"
         />
@@ -42,12 +43,13 @@
         </main>
       </div>
       <div
-        v-show="!chatCollapsed"
+        v-show="!chatCollapsed && !isPublicRoute"
         class="chat-resize-handle"
         :class="{ active: isResizing }"
         @mousedown="startResize"
       ></div>
       <ChatPanel
+        v-if="!isPublicRoute"
         :compact="true"
         :collapsed="chatCollapsed"
         @toggle="toggleChat"
@@ -58,6 +60,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import ChatPanel from "@/components/ChatPanel.vue";
 import SherpaUpgradeModal from "@/components/SherpaUpgradeModal.vue";
 import DemoUpgradeModal from "@/components/DemoUpgradeModal.vue";
@@ -73,11 +76,13 @@ import { useJobStore } from "@/stores/job";
 const { appMode } = useAppConfig();
 const authStore = useAuthStore();
 const jobStore = useJobStore();
+const route = useRoute();
 
 const navCollapsed = ref(localStorage.getItem("navCollapsed") === "true");
 const chatCollapsed = ref(localStorage.getItem("chatCollapsed") !== "false");
 const chatWidth = ref(360);
 const isResizing = ref(false);
+const isPublicRoute = computed(() => Boolean(route.meta.public));
 
 // Backend connection status
 const {

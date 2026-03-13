@@ -160,6 +160,27 @@ async def get_config(
             config["subscription"] = overlay.get("subscription")
             if overlay.get("limits") is not None:
                 config["limits"] = overlay["limits"]
+        elif app_config.site_profile == "demo":
+            config["features"].update(
+                {
+                    "chatAssistant": True,
+                    "sherpaAdvisor": True,
+                    "sherpaPeakId": True,
+                    "sherpaCodeGen": True,
+                    "sherpaWriteReport": True,
+                    "sherpaAgenticTools": True,
+                    "sherpaFullContext": True,
+                }
+            )
+            config["subscription"] = {
+                "plan": "demo",
+                "status": "active",
+                "upgrade_url": app_config.demo_contract.upgrade_url,
+            }
+            config["limits"] = {
+                **config.get("limits", {}),
+                "maxSherpaRequestsHour": 100,
+            }
 
     return config
 

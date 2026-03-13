@@ -98,6 +98,7 @@
         @click="exportCurrentProject"
       />
       <Button
+        v-if="showChatToggle !== false"
         icon="pi pi-comments"
         class="p-button-text p-button-rounded"
         aria-label="Toggle chat panel"
@@ -186,6 +187,7 @@ import NotificationCenterDrawer from "./NotificationCenterDrawer.vue";
 defineProps<{
   navCollapsed: boolean;
   chatCollapsed: boolean;
+  showChatToggle?: boolean;
 }>();
 
 const emit = defineEmits<{
