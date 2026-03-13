@@ -6,7 +6,7 @@ These nodes handle visualization and export of spectral data.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import numpy as np
 
@@ -1160,8 +1160,8 @@ class StatsSummaryNode(Node):
 
         # Global summary
         if n_peaks > 0:
-            heights = [float(v["median_height"]) for v in vertical_stats]
-            pos_stds = [float(h["std_pos"]) for h in horizontal_stats]
+            heights = [cast(float, v["median_height"]) for v in vertical_stats]
+            pos_stds = [cast(float, h["std_pos"]) for h in horizontal_stats]
             summary = {
                 "n_peaks": n_peaks,
                 "n_samples": n_samples,
