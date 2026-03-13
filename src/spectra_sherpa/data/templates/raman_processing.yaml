@@ -89,3 +89,6 @@ template_data:
       description: Raman spectral data
       accepted_techniques:
       - Raman
+  certified_datasets:
+  - source: spectrochempy
+    name: ramandata

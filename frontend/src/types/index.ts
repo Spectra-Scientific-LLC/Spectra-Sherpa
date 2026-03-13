@@ -76,6 +76,7 @@ export interface SherpaDatasetDict {
     title?: string;
     units?: string;
   };
+  is_time_series?: boolean;
   metadata?: Record<string, unknown>;
 }
 

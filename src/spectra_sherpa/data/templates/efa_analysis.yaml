@@ -5,7 +5,7 @@ description: Determine the number of components in evolving mixtures with forwar
   EFA and eigenvalue plots.
 category: curve_resolution
 is_active: true
-status: wip
+status: ready
 template_data:
   nodes:
   - node_id: data_1
@@ -44,18 +44,6 @@ template_data:
       plot_type: spectra
     position_x: 450
     position_y: 800
-  - node_id: stats_1
-    node_type: stats.summary
-    label: Forward Summary
-    parameters: {}
-    position_x: 100
-    position_y: 1050
-  - node_id: stats_2
-    node_type: stats.summary
-    label: Backward Summary
-    parameters: {}
-    position_x: 500
-    position_y: 1050
   edges:
   - from_node_id: data_1
     to_node_id: preprocess_1
@@ -67,10 +55,6 @@ template_data:
   - from_node_id: model_1
     to_node_id: viz_2
     from_output: backward_eigenvalues
-  - from_node_id: viz_1
-    to_node_id: stats_1
-  - from_node_id: viz_2
-    to_node_id: stats_2
   canvas_state:
     zoom: 1.0
     pan_x: 0
@@ -82,8 +66,16 @@ template_data:
       required: true
       binding_mode: embedded
       description: Evolving mixture spectral data
+      is_time_series: true
       accepted_techniques:
       - FTIR
       - NIR
       - Raman
       - UV-Vis
+  certified_datasets:
+  - source: spectrochempy
+    name: irdata
+  - source: spectrochempy
+    name: ramandata
+  - source: spectrochempy
+    name: matlabdata/als2004dataset.MAT

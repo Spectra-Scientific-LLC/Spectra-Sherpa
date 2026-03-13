@@ -620,6 +620,7 @@ class SherpaDataset:
         units: str | None = None,
         extra: dict[str, Any] | None = None,
         dataset_id: str | None = None,
+        is_time_series: bool = False,
     ) -> None:
         # Core data — accept nD arrays (dim 0 = samples, dim -1 = features)
         arr = np.asarray(X, dtype=np.float64)
@@ -727,6 +728,9 @@ class SherpaDataset:
         self.title = title
         self.units = units
         self._dataset_id = dataset_id or str(uuid.uuid4())
+
+        # Time-series flag — opt-in marker for kinetic / evolving data
+        self.is_time_series: bool = is_time_series
 
         # Extra metadata (namespaced) — deep-copy to isolate from caller
         self._extra: dict[str, Any] = copy.deepcopy(extra) if extra is not None else {}
@@ -1140,6 +1144,7 @@ class SherpaDataset:
             title=self.title,
             units=self.units,
             extra=copy.deepcopy(self._extra),
+            is_time_series=self.is_time_series,
         )
 
         if dim0_ax is not None and not isinstance(dim0_ax, SampleAxis):
@@ -1393,11 +1398,15 @@ class SherpaDataset:
         if self._branch:
             result["branch"] = self._branch.model_dump()
 
+        # Time-series flag
+        result["is_time_series"] = self.is_time_series
+
         # Frontend compatibility: metadata block
         result["metadata"] = {
             "processing_history": self._provenance.to_list(),
             "data_type": self._domain.technique or "generic",
             "is_spectra": self._domain.technique not in (None, "generic"),
+            "is_time_series": self.is_time_series,
         }
 
         return result
@@ -1449,6 +1458,7 @@ class SherpaDataset:
             units=d.get("units"),
             extra=d.get("extra", {}),
             dataset_id=d.get("dataset_id"),
+            is_time_series=bool(d.get("is_time_series", False)),
         )
 
         if d.get("branch"):

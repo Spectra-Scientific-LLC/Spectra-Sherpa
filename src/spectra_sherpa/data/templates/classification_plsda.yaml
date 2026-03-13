@@ -65,3 +65,12 @@ template_data:
       binding_mode: embedded
       target_type: categorical
       description: Classification labels (column in spectral data file)
+  certified_datasets:
+  - source: sklearn
+    name: wine
+  - source: sklearn
+    name: iris
+  - source: sklearn
+    name: breast_cancer
+  - source: sklearn
+    name: digits

@@ -92,8 +92,22 @@ template_data:
       required: true
       binding_mode: embedded
       description: Time-resolved spectral data
+      is_time_series: true
       accepted_techniques:
       - FTIR
       - NIR
       - Raman
       - UV-Vis
+  certified_datasets:
+  - source: spectrochempy
+    name: irdata
+  - source: eigenvector
+    name: nir_shootout_test1
+  - source: eigenvector
+    name: diesel_nir
+  - source: eigenvector
+    name: corn_m5
+  - source: eigenvector
+    name: cgl_nir
+  - source: spectrochempy
+    name: matlabdata/als2004dataset.MAT

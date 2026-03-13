@@ -229,6 +229,18 @@ class DataSourceNode(Node):
                 required=False,
                 category="advanced",
             ),
+            NodeParameter(
+                name="is_time_series",
+                label="Time Series",
+                param_type="boolean",
+                default=False,
+                description=(
+                    "Mark this dataset as time-series / kinetic data. "
+                    "Enables contour view by default and labels the sample axis as Scan / Time Index."
+                ),
+                required=False,
+                category="basic",
+            ),
         ],
         input_types=[],  # No inputs - this is a source node
         input_ports=[],
@@ -585,6 +597,10 @@ class DataSourceNode(Node):
         y_column = (self.parameters.get("y_column") or "").strip()
         if y_column and dataset.target_context is not None:
             dataset.target_context = dataset.target_context.model_copy(update={"selected_target": y_column})
+
+        # ----- Time-series flag (user toggle) -----
+        if self.parameters.get("is_time_series", False):
+            dataset.is_time_series = True
 
         return {
             "default": dataset,
@@ -1521,6 +1537,7 @@ class DataSourceNode(Node):
         from spectra_sherpa.app.core.config import settings
         from spectra_sherpa.app.db.session import async_session
         from spectra_sherpa.app.models.experiment_file import ExperimentFile
+        from spectra_sherpa.app.services.dag.nodes.data.loaders import MyDatasetNode
 
         async with async_session() as session:
             # Find experiment files for the specified stage
@@ -1543,19 +1560,85 @@ class DataSourceNode(Node):
                     f"Please upload spectral data files to this experiment before loading."
                 )
 
-            # Load the first matching file (or the specific file if file_id was provided)
-            file = files[0]
+            # A specific file binding preserves the historical single-file behavior.
+            if file_id is not None or len(files) == 1:
+                file = files[0]
 
-            # Build absolute path: file_path already includes stage subdirectory (e.g., "raw/filename.csv")
+                # Build absolute path: file_path already includes stage subdirectory
+                # (e.g., "raw/filename.csv")
+                exp_dir = f"exp_{str(experiment_id).zfill(3)}"
+                full_path = settings.data_dir / "experiments" / exp_dir / file.file_path
+
+                if not full_path.exists():
+                    raise FileNotFoundError(
+                        f"File not found: {full_path}. " f"File record exists in database but file is missing on disk."
+                    )
+
+                return self._load_from_file(str(full_path))
+
             exp_dir = f"exp_{str(experiment_id).zfill(3)}"
-            full_path = settings.data_dir / "experiments" / exp_dir / file.file_path
+            base_dir = settings.data_dir / "experiments" / exp_dir
+            helper = MyDatasetNode(f"{self.node_id}__experiment_group", {"dataset_id": experiment_id})
+            loaded = []
 
-            if not full_path.exists():
-                raise FileNotFoundError(
-                    f"File not found: {full_path}. " f"File record exists in database but file is missing on disk."
+            for file in files:
+                full_path = base_dir / file.file_path
+                if not full_path.exists():
+                    logger.warning(
+                        "[DATA_SOURCE] Skipping missing experiment file %s for experiment %s",
+                        file.file_path,
+                        experiment_id,
+                    )
+                    continue
+                try:
+                    loaded.append(helper._load_file(str(full_path), file_name=file.file_path))
+                except Exception as exc:
+                    logger.warning(
+                        "[DATA_SOURCE] Skipping unreadable experiment file %s for experiment %s: %s",
+                        file.file_path,
+                        experiment_id,
+                        exc,
+                    )
+
+            if not loaded:
+                raise ValueError(
+                    f"All {stage} files for experiment {experiment_id} failed to load. "
+                    "Please verify the imported example files are valid."
                 )
 
-            return self._load_from_file(str(full_path))
+            groups = helper._group_by_x_axis(loaded)
+            groups.sort(key=lambda group: helper._x_length(group[0].dataset), reverse=True)
+            spectra_group = groups[0]
+            prop_groups = groups[1:]
+            embedded_target = helper._combine_embedded_targets(spectra_group)
+
+            spectra_datasets = [item.dataset for item in spectra_group]
+            spectra_names = [item.file_name for item in spectra_group]
+            dataset = (
+                helper._concatenate(spectra_datasets, spectra_names)
+                if len(spectra_datasets) > 1
+                else spectra_datasets[0]
+            )
+            dataset.title = f"Experiment {experiment_id} ({len(spectra_datasets)} files)"
+
+            if embedded_target is not None:
+                self._embedded_target_data, self._embedded_target_names = embedded_target
+            elif prop_groups:
+                prop_datasets = []
+                prop_names = []
+                for group in prop_groups:
+                    for item in group:
+                        prop_datasets.append(item.dataset)
+                        prop_names.append(item.file_name)
+                prop_dataset = (
+                    helper._concatenate(prop_datasets, prop_names) if len(prop_datasets) > 1 else prop_datasets[0]
+                )
+                self._embedded_target_data = np.asarray(prop_dataset.data, dtype=np.float64)
+                prop_x = safe_get_coord(prop_dataset, "x")
+                labels = getattr(prop_x, "labels", None) if prop_x is not None else None
+                self._embedded_target_names = list(labels) if labels is not None else None
+
+            return dataset
 
     async def _load_from_library(self, library_id: int) -> NDDataset:
         """

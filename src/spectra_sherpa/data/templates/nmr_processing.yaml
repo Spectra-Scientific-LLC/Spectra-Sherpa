@@ -87,3 +87,4 @@ template_data:
       description: NMR spectral data
       accepted_techniques:
       - NMR
+  certified_datasets: []

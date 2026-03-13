@@ -234,20 +234,15 @@ class TemplateLoader:
         does ``WorkflowTemplate(**template_data)`` which expects the
         flat dict with ``name``, ``slug``, ``category``, ``template_data``, etc.
         """
-        td = template.template_data
+        td = template.template_data.model_dump(exclude_none=True)
+        td["status"] = template.status
         return {
             "name": template.name,
             "slug": template.slug,
             "description": template.description,
             "category": template.category,
             "is_active": template.is_active,
-            "template_data": {
-                "nodes": [n.model_dump() for n in td.nodes],
-                "edges": [e.model_dump() for e in td.edges],
-                "canvas_state": td.canvas_state,
-                "data_roles": {k: v.model_dump(exclude_none=True) for k, v in td.data_roles.items()},
-                "status": template.status,
-            },
+            "template_data": td,
         }
 
 

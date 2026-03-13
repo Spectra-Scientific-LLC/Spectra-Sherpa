@@ -75,3 +75,14 @@ template_data:
       binding_mode: embedded
       target_type: continuous
       description: Reference/target values (column in spectral data file)
+  certified_datasets:
+  - source: eigenvector
+    name: corn_m5
+  - source: eigenvector
+    name: diesel_nir
+  - source: eigenvector
+    name: nir_shootout_cal1
+  - source: eigenvector
+    name: cgl_nir
+  - source: eigenvector
+    name: diesel_nir_mat

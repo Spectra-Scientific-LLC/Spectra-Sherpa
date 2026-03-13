@@ -205,6 +205,7 @@ def scp_roundtrip(
     backend = ds.backend
     title_snapshot = ds.title
     units_snapshot = ds.units
+    is_time_series_snapshot = ds.is_time_series
 
     # ── 2. Convert → call SCP → convert back ──────────────────────
     ndd = to_nddataset(ds)
@@ -231,6 +232,7 @@ def scp_roundtrip(
         result.title = title_snapshot
     if units_snapshot is not None:
         result.units = units_snapshot
+    result.is_time_series = is_time_series_snapshot
 
     # Restore inner axes that NDDataset may not carry fully
     for dim, ax in inner_axes_snapshot.items():

@@ -289,6 +289,7 @@ def extract_dataset_from_result(result: Any, file_path: str) -> NDDataset:
 _SCP_KNOWN_DEFAULTS: dict[str, tuple[str, str]] = {
     # category: (relative_path, explicit reader name)
     "irdata": ("irdata/nh4y-activation.spg", "read_omnic"),
+    "matlabdata/als2004dataset.MAT": ("matlabdata/als2004dataset.MAT", "read_matlab"),
 }
 
 
@@ -296,37 +297,50 @@ def _normalize_scp_read_output(result: Any) -> NDDataset | None:
     """Normalize SpectroChemPy reader outputs across versions.
 
     SCP-internal: recursively unwraps dicts, lists, and iterables returned
-    by various SCP reader functions to find the first NDDataset.
+    by various SCP reader functions to find the best NDDataset.
+
+    When multiple NDDatasets are found at the same nesting level (e.g. MAT
+    files with several arrays), the largest (by total element count) is
+    returned — this is almost always the spectral data matrix.
 
     Returns:
-        The first NDDataset found in the result, or None.
+        The best NDDataset found in the result, or None.
     """
     if result is None:
         return None
     if isinstance(result, NDDataset):
         return result
 
+    def _size(ds: NDDataset) -> int:
+        try:
+            return int(np.prod(ds.shape))
+        except Exception:
+            return 0
+
+    # Collect all NDDatasets from a flat iterable and return the largest.
+    def _best_from_iterable(items: Any) -> NDDataset | None:
+        candidates: list[NDDataset] = []
+        for item in items:
+            if isinstance(item, NDDataset):
+                candidates.append(item)
+            else:
+                nested = _normalize_scp_read_output(item)
+                if nested is not None:
+                    candidates.append(nested)
+        if not candidates:
+            return None
+        return max(candidates, key=_size)
+
     if isinstance(result, dict):
-        for value in result.values():
-            candidate = _normalize_scp_read_output(value)
-            if candidate is not None:
-                return candidate
-        return None
+        return _best_from_iterable(result.values())
 
     if isinstance(result, (list, tuple)):
-        for item in result:
-            candidate = _normalize_scp_read_output(item)
-            if candidate is not None:
-                return candidate
-        return None
+        return _best_from_iterable(result)
 
-    # Some SCP objects are iterable but not list/tuple.
+    # Some SCP objects are iterable but not list/tuple (e.g. ScpObjectList).
     if hasattr(result, "__iter__") and not isinstance(result, (str, bytes)):
         try:
-            for item in result:
-                candidate = _normalize_scp_read_output(item)
-                if candidate is not None:
-                    return candidate
+            return _best_from_iterable(result)
         except Exception:
             return None
 

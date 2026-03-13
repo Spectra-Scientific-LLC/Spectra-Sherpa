@@ -57,6 +57,7 @@ class TemplateDataRole(BaseModel):
     connects_to_port: str | None = Field(None, description="Specific input port name (e.g. 'y', 'X')")
     description: str = ""
     accepted_techniques: list[str] | None = None
+    is_time_series: bool | None = None
 
 
 class TemplateNode(BaseModel):
@@ -79,6 +80,13 @@ class TemplateEdge(BaseModel):
     to_input: str = "default"
 
 
+class CertifiedDataset(BaseModel):
+    """A (source, name) pair that has been end-to-end tested for this template."""
+
+    source: str = Field(..., description="Dataset source: eigenvector | sklearn | spectrochempy | oes")
+    name: str = Field(..., description="Dataset name within that source catalog")
+
+
 class TemplateData(BaseModel):
     """The inner ``template_data`` payload of a workflow template."""
 
@@ -86,6 +94,13 @@ class TemplateData(BaseModel):
     edges: list[TemplateEdge]
     canvas_state: dict[str, Any] = Field(default_factory=dict)
     data_roles: dict[str, TemplateDataRole] = Field(default_factory=dict)
+    certified_datasets: list[CertifiedDataset] = Field(
+        default_factory=list,
+        description=(
+            "Datasets that have passed end-to-end execution tests for this template. "
+            "When non-empty, the wizard dropdown is restricted to these entries."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

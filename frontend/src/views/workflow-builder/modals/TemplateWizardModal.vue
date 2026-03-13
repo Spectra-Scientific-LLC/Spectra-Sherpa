@@ -337,7 +337,7 @@ function compatibleExampleDatasetsForNode(nodeId: string): ExampleDatasetChoice[
       entryType: option.entry_type,
     }));
 
-  // Sort by backend match score (descending) then alphabetically
+  // Build score lookup from backend matching-datasets response
   const roleKeys = (group?.roles || []).map((r) => r.key);
   const scoreLookup = roleKeys.reduce<Record<string, number>>((acc, key) => {
     const scores = datasetMatchScores.value[key];
@@ -345,7 +345,13 @@ function compatibleExampleDatasetsForNode(nodeId: string): ExampleDatasetChoice[
     return acc;
   }, {});
 
-  return allOptions.sort((left, right) => {
+  // When backend returned certified matches, restrict dropdown to only those datasets
+  const hasCertifiedFilter = Object.keys(scoreLookup).length > 0;
+  const filtered = hasCertifiedFilter
+    ? allOptions.filter((opt) => `${opt.source}:${opt.datasetName}` in scoreLookup)
+    : allOptions;
+
+  return filtered.sort((left, right) => {
     const scoreLeft = scoreLookup[`${left.source}:${left.datasetName}`] || 0;
     const scoreRight = scoreLookup[`${right.source}:${right.datasetName}`] || 0;
     if (scoreRight !== scoreLeft) return scoreRight - scoreLeft;

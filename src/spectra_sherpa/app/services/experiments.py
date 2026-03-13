@@ -300,14 +300,15 @@ async def import_reference_dataset(
 
         elif source == "spectrochempy":
             resolved = _resolve_scp_path(name)
-            # Namespace prefix to avoid collisions between datasets
-            scp_prefix = "scp_" + name.replace("/", "_") + "_"
+            # Namespace imported SCP artifacts under a dataset-specific folder
+            # so nested example directories remain launchable after materialization.
+            scp_root = raw_dir / ("scp_" + name.replace("/", "_"))
 
             if resolved.is_file():
-                dest_name = scp_prefix + resolved.name
-                dest = raw_dir / dest_name
+                dest = scp_root / resolved.name
                 if dest.exists():
-                    raise ValueError(f"File already exists: {dest_name}")
+                    raise ValueError(f"File already exists: {dest.relative_to(raw_dir).as_posix()}")
+                dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(resolved, dest)
                 written_files.append(dest)
                 rel = dest.relative_to(exp_dir).as_posix()
@@ -323,26 +324,29 @@ async def import_reference_dataset(
                     )
                 )
             elif resolved.is_dir():
-                for child in sorted(resolved.iterdir()):
-                    if child.is_file() and not child.name.startswith((".", "_")):
-                        dest_name = scp_prefix + child.name
-                        dest = raw_dir / dest_name
-                        if dest.exists():
-                            raise ValueError(f"File already exists: {dest_name}")
-                        shutil.copy2(child, dest)
-                        written_files.append(dest)
-                        rel = dest.relative_to(exp_dir).as_posix()
-                        created.append(
-                            await add_experiment_file(
-                                session,
-                                experiment_id,
-                                "raw",
-                                rel,
-                                dest.stat().st_size,
-                                child.suffix.lstrip(".") or None,
-                                flush_only=True,
-                            )
+                for child in sorted(resolved.rglob("*")):
+                    if not child.is_file():
+                        continue
+                    if any(part.startswith((".", "_")) for part in child.relative_to(resolved).parts):
+                        continue
+                    dest = scp_root / child.relative_to(resolved)
+                    if dest.exists():
+                        raise ValueError(f"File already exists: {dest.relative_to(raw_dir).as_posix()}")
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(child, dest)
+                    written_files.append(dest)
+                    rel = dest.relative_to(exp_dir).as_posix()
+                    created.append(
+                        await add_experiment_file(
+                            session,
+                            experiment_id,
+                            "raw",
+                            rel,
+                            dest.stat().st_size,
+                            child.suffix.lstrip(".") or None,
+                            flush_only=True,
                         )
+                    )
         elif source == "oes":
             from spectra_sherpa.app.lib.oes_datasets import OES_CATALOG, load_oes_dataset
 

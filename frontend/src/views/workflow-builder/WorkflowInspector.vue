@@ -758,27 +758,49 @@
 
           <!-- Statistics output (compact inline) -->
           <template v-if="selectedNodeType === 'stats.summary' && Array.isArray(nodeOutput.data)">
-            <div class="stats-table" style="max-height: 200px; overflow-y: auto;">
-              <div
-                v-for="(stat, index) in outputStatsRows"
-                :key="index"
-                class="stat-row"
-              >
-                <span class="stat-sample">Sample {{ stat.sample }}</span>
-                <span class="stat-value">μ: {{ typeof stat.mean === 'number' ? stat.mean.toFixed(4) : '—' }}</span>
-                <span class="stat-value">σ: {{ typeof stat.std === 'number' ? stat.std.toFixed(4) : '—' }}</span>
-                <span class="stat-value">min: {{ typeof stat.min === 'number' ? stat.min.toFixed(4) : '—' }}</span>
-                <span class="stat-value">max: {{ typeof stat.max === 'number' ? stat.max.toFixed(4) : '—' }}</span>
+            <!-- PeakFinding stats -->
+            <template v-if="isPeakFindingStats">
+              <div class="stats-table" style="max-height: 200px; overflow-y: auto;">
+                <div
+                  v-for="(stat, index) in outputStatsRows"
+                  :key="index"
+                  class="stat-row"
+                >
+                  <span class="stat-sample">Peak {{ stat.peak }}</span>
+                  <span class="stat-value">pos: {{ typeof stat.position === 'number' ? stat.position.toFixed(1) : '—' }}</span>
+                  <span class="stat-value">σ: {{ typeof stat.pos_std === 'number' ? stat.pos_std.toFixed(2) : '—' }}</span>
+                  <span class="stat-value">h: {{ typeof stat.height === 'number' ? stat.height.toFixed(4) : '—' }}</span>
+                  <span class="stat-value">{{ stat.detected || '—' }}</span>
+                </div>
               </div>
-              <span v-if="nodeOutput.data.length > 5" class="stats-more">
-                +{{ nodeOutput.data.length - 5 }} more samples
-              </span>
-            </div>
-            <!-- Overall summary -->
-            <div v-if="outputMetadata.summary" class="stats-summary">
-              <span class="summary-label">Overall:</span>
-              <span>{{ outputMetadata.summary.n_samples ?? 0 }} samples × {{ outputMetadata.summary.n_features ?? 0 }} features</span>
-            </div>
+              <div v-if="outputMetadata.summary" class="stats-summary">
+                <span class="summary-label">Peaks:</span>
+                <span>{{ outputMetadata.summary?.n_peaks ?? 0 }} consensus peaks from {{ outputMetadata.summary?.n_samples ?? 0 }} spectra</span>
+              </div>
+            </template>
+            <!-- Standard spectral/array stats -->
+            <template v-else>
+              <div class="stats-table" style="max-height: 200px; overflow-y: auto;">
+                <div
+                  v-for="(stat, index) in outputStatsRows"
+                  :key="index"
+                  class="stat-row"
+                >
+                  <span class="stat-sample">Sample {{ stat.sample }}</span>
+                  <span class="stat-value">μ: {{ typeof stat.mean === 'number' ? stat.mean.toFixed(4) : '—' }}</span>
+                  <span class="stat-value">σ: {{ typeof stat.std === 'number' ? stat.std.toFixed(4) : '—' }}</span>
+                  <span class="stat-value">min: {{ typeof stat.min === 'number' ? stat.min.toFixed(4) : '—' }}</span>
+                  <span class="stat-value">max: {{ typeof stat.max === 'number' ? stat.max.toFixed(4) : '—' }}</span>
+                </div>
+                <span v-if="nodeOutput.data.length > 5" class="stats-more">
+                  +{{ nodeOutput.data.length - 5 }} more samples
+                </span>
+              </div>
+              <div v-if="outputMetadata.summary" class="stats-summary">
+                <span class="summary-label">Overall:</span>
+                <span>{{ outputMetadata.summary.n_samples ?? 0 }} samples × {{ outputMetadata.summary.n_features ?? 0 }} features</span>
+              </div>
+            </template>
           </template>
         </div>
       </div>
@@ -1360,11 +1382,18 @@ interface StatsRow extends Record<string, unknown> {
   std?: number;
   min?: number;
   max?: number;
+  // PeakFinding stats fields
+  peak?: number;
+  position?: number;
+  pos_std?: number;
+  height?: number;
+  detected?: string;
 }
 
 interface MetadataSummary {
   n_samples?: number;
   n_features?: number;
+  n_peaks?: number;
 }
 
 interface MetadataProvenance {
@@ -1389,6 +1418,7 @@ interface InspectorMetadata extends Record<string, unknown> {
   acquisition_params?: Record<string, unknown>;
   isPCA?: boolean;
   type?: string;
+  input_type?: string;
   loadings?: unknown;
   wavenumbers?: unknown;
   St?: unknown;
@@ -1453,6 +1483,12 @@ const getStringArray = (value: unknown): string[] => {
 const outputMetadata = computed<InspectorMetadata>(() => {
   const metadata = asObject(props.nodeOutput?.metadata);
   return (metadata as InspectorMetadata) ?? {};
+});
+
+const isPeakFindingStats = computed(() => {
+  if (selectedNodeType.value !== "stats.summary") return false;
+  const meta = outputMetadata.value;
+  return meta.type === "PeakFinding" || meta.input_type === "PeakFinding";
 });
 
 const diagnosticEntries = computed<Array<{ key: string; value: unknown }>>(() => {

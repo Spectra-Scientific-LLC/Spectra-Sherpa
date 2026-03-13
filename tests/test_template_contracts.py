@@ -272,6 +272,45 @@ class TestDataRoles:
         assert not errors, "Templates without data_roles:\n" + "\n".join(errors)
 
 
+class TestCertifiedDatasets:
+    """Certified example templates must keep their default launch path curated."""
+
+    @staticmethod
+    def _default_example_refs(template_data: dict) -> list[tuple[str, str]]:
+        refs: list[tuple[str, str]] = []
+        for node in template_data.get("nodes", []):
+            if node.get("node_type") != "data.source":
+                continue
+            params = node.get("parameters", {}) or {}
+            source = params.get("source")
+            if source == "eigenvector" and params.get("eigenvector_dataset"):
+                refs.append(("eigenvector", params["eigenvector_dataset"]))
+            elif source == "sklearn" and params.get("sklearn_dataset"):
+                refs.append(("sklearn", params["sklearn_dataset"]))
+            elif source == "spectrochempy":
+                dataset_name = params.get("example_dataset") or params.get("example_file")
+                if dataset_name:
+                    refs.append(("spectrochempy", dataset_name))
+            elif source == "oes" and params.get("oes_dataset"):
+                refs.append(("oes", params["oes_dataset"]))
+        return refs
+
+    def test_default_example_bindings_are_certified(self, all_templates: list[dict]) -> None:
+        errors = []
+        for template in all_templates:
+            certified = template["template_data"].get("certified_datasets") or []
+            if not certified:
+                continue
+            certified_pairs = {(entry["source"], entry["name"]) for entry in certified}
+            for example_ref in self._default_example_refs(template["template_data"]):
+                if example_ref not in certified_pairs:
+                    errors.append(
+                        f"{template['slug']}: default example "
+                        f"'{example_ref[0]}:{example_ref[1]}' missing from certified_datasets"
+                    )
+        assert not errors, "Default examples must remain certified:\n" + "\n".join(errors)
+
+
 # ---------------------------------------------------------------------------
 # 9. importlib.resources discoverability
 # ---------------------------------------------------------------------------

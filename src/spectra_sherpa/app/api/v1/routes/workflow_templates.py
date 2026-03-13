@@ -179,6 +179,53 @@ def _resolve_example_reference(
     return _extract_example_reference(source_node)
 
 
+def _certified_example_references(template: WorkflowTemplate) -> set[tuple[str, str]]:
+    template_data = template.template_data if isinstance(template.template_data, dict) else {}
+    certified = template_data.get("certified_datasets") or []
+    if not isinstance(certified, list):
+        return set()
+
+    pairs: set[tuple[str, str]] = set()
+    for entry in certified:
+        if not isinstance(entry, dict):
+            continue
+        source = entry.get("source")
+        name = entry.get("name")
+        if isinstance(source, str) and isinstance(name, str) and name:
+            pairs.add((source, name))
+    return pairs
+
+
+def _assert_certified_example_reference(
+    template: WorkflowTemplate,
+    *,
+    node_id: str,
+    example_ref: tuple[str, str],
+) -> None:
+    # Only enforce certification gate for production-ready templates;
+    # WIP templates allow any dataset for development/testing.
+    template_data = template.template_data if isinstance(template.template_data, dict) else {}
+    status = template_data.get("status", "wip")
+    if status != "ready":
+        return
+
+    certified_pairs = _certified_example_references(template)
+    if not certified_pairs:
+        return
+
+    if example_ref in certified_pairs:
+        return
+
+    source, dataset_name = example_ref
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            f"Template '{template.name}' only allows certified example launches. "
+            f"Node '{node_id}' requested '{source}:{dataset_name}', which is not in certified_datasets."
+        ),
+    )
+
+
 def _supports_example_mode(template_data: dict) -> bool:
     for node in template_data.get("nodes", []):
         if isinstance(node, dict) and node.get("node_type") == "data.source" and _extract_example_reference(node):
@@ -249,6 +296,7 @@ async def _materialize_example_bindings(
         example_ref = _resolve_example_reference(node, (example_bindings or {}).get(node_id))
         if example_ref is None:
             continue
+        _assert_certified_example_reference(template, node_id=node_id, example_ref=example_ref)
 
         if example_ref not in cached_bindings:
             source, dataset_name = example_ref
@@ -599,8 +647,18 @@ async def get_template(
 def _compute_dataset_matches(
     data_roles: dict[str, dict],
     catalog: list[dict[str, Any]],
+    certified_datasets: list[dict[str, Any]] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
-    """For each data role, return reference datasets sorted by match score."""
+    """For each data role, return reference datasets sorted by match score.
+
+    When *certified_datasets* is provided and non-empty, the catalog is
+    pre-filtered to only those (source, name) pairs so the wizard dropdown
+    is restricted to end-to-end tested combinations.
+    """
+    if certified_datasets:
+        certified_set = {(c["source"], c["name"]) for c in certified_datasets}
+        catalog = [ds for ds in catalog if (ds["source"], ds["name"]) in certified_set]
+
     matches: dict[str, list[dict[str, Any]]] = {}
 
     for role_key, role in data_roles.items():
@@ -608,7 +666,9 @@ def _compute_dataset_matches(
         scored: list[dict[str, Any]] = []
 
         for ds in catalog:
-            score = 0
+            # Certified datasets always pass the score > 0 gate regardless of
+            # technique match — they have been end-to-end tested for this template.
+            score = 1 if certified_datasets else 0
             tech = (ds.get("technique") or "").upper()
 
             # Technique match (primary signal)
@@ -703,6 +763,33 @@ def _build_flat_catalog() -> list[dict[str, Any]]:
             }
         )
 
+    # Add top-level SCP dataset directory entries (e.g. "irdata", "ramandata").
+    # These are the names used by the data source node's example_dataset parameter
+    # and by certified_datasets in template YAMLs.
+    from spectra_sherpa.app.lib.scp_catalog import _CATEGORY_META
+
+    _SCP_TOP_LEVEL_LABELS = {
+        "irdata": "IR Spectra (irdata)",
+        "ramandata": "Raman Spectra (ramandata)",
+        "nmrdata": "NMR Data (nmrdata)",
+        "agirdata": "Agilent IR (agirdata)",
+    }
+    existing_names = {(e["source"], e["name"]) for e in flat}
+    for ds_name, meta in _CATEGORY_META.items():
+        key = ("spectrochempy", ds_name)
+        if key not in existing_names:
+            flat.append(
+                {
+                    "name": ds_name,
+                    "source": "spectrochempy",
+                    "label": _SCP_TOP_LEVEL_LABELS.get(ds_name, ds_name),
+                    "technique": meta["technique"],
+                    "description": meta["technique_label"],
+                    "has_embedded_target": False,
+                    "target_type": None,
+                }
+            )
+
     return flat
 
 
@@ -727,7 +814,11 @@ async def get_matching_datasets(
         return {}
 
     catalog = _build_flat_catalog()
-    return _compute_dataset_matches(data_roles, catalog)
+    # Only restrict to certified datasets for production-ready templates;
+    # WIP templates show the full catalog so developers can test freely.
+    status = template_data.get("status", "wip")
+    certified = template_data.get("certified_datasets") or [] if status == "ready" else []
+    return _compute_dataset_matches(data_roles, catalog, certified_datasets=certified)
 
 
 @router.post("/{template_id}/instantiate", response_model=WorkflowDetail, status_code=201)
@@ -897,6 +988,13 @@ async def instantiate_template(
                     f"{', '.join(missing_target_bindings)}."
                 ),
             )
+
+        # Propagate is_time_series from template data_roles → data.source node params
+        for role in data_roles.values():
+            if isinstance(role, dict) and role.get("is_time_series"):
+                bound_node_id = str(role.get("node_binding", ""))
+                if bound_node_id in nodes_by_id:
+                    nodes_by_id[bound_node_id].setdefault("parameters", {})["is_time_series"] = True
 
         workflow = Workflow(
             user_id=user_id,

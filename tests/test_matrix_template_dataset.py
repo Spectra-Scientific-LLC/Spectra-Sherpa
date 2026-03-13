@@ -1,5 +1,5 @@
 """
-Combinatorial coverage: all 20 templates × up to 5 datasets each.
+Combinatorial coverage: all 17 ready templates × up to 6 datasets each (WIP excluded).
 
 For every (template, source, dataset_name) combination:
   1. Build a DAGExecutor from the template YAML, overriding the data node
@@ -39,7 +39,7 @@ TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "src" / "spectra_sherpa" /
 # (They depend on display / serialization infra that may not be present.)
 # ---------------------------------------------------------------------------
 
-_OUTPUT_NODE_TYPES = {"output.plot", "output.export", "stats.summary"}
+_OUTPUT_NODE_TYPES = {"output.plot", "output.export"}
 
 # ---------------------------------------------------------------------------
 # Dataset overrides  ─  (source, dataset_key, override_params)
@@ -83,18 +83,13 @@ MATRIX: list[tuple[str, str, dict]] = [
     ("efa_analysis", "diesel_nir", _ev("diesel_nir")),
     ("efa_analysis", "corn_m5", _ev("corn_m5")),
     ("efa_analysis", "nir_shootout1", _ev("nir_shootout_cal1")),
+    ("efa_analysis", "als2004", _scp("matlabdata/als2004dataset.MAT")),
     # ── hierarchical_clustering ───────────────────────────────────────────
     ("hierarchical_clustering", "wine", _sk("wine")),
     ("hierarchical_clustering", "iris", _sk("iris")),
     ("hierarchical_clustering", "breast_cancer", _sk("breast_cancer")),
     ("hierarchical_clustering", "diesel_nir", _ev("diesel_nir")),
     ("hierarchical_clustering", "corn_m5", _ev("corn_m5")),
-    # ── ir_opus_analysis ─────────────────────────────────────────────────
-    ("ir_opus_analysis", "irdata", _scp("irdata")),
-    ("ir_opus_analysis", "ramandata", _scp("ramandata")),
-    ("ir_opus_analysis", "diesel_nir", _ev("diesel_nir")),
-    ("ir_opus_analysis", "corn_m5", _ev("corn_m5")),
-    ("ir_opus_analysis", "cgl_nir", _ev("cgl_nir")),  # replaces wine_sklearn (non-spectral → rubberband fails)
     # ── knn_classification ────────────────────────────────────────────────
     ("knn_classification", "wine", _sk("wine")),
     ("knn_classification", "iris", _sk("iris")),
@@ -107,18 +102,14 @@ MATRIX: list[tuple[str, str, dict]] = [
     ("mcr_als", "diesel_nir", _ev("diesel_nir")),
     ("mcr_als", "corn_m5", _ev("corn_m5")),
     ("mcr_als", "nir_shootout1", _ev("nir_shootout_cal1")),
+    ("mcr_als", "als2004", _scp("matlabdata/als2004dataset.MAT")),
     # ── mcr_als_kinetics ──────────────────────────────────────────────────
     ("mcr_als_kinetics", "irdata", _scp("irdata")),
     ("mcr_als_kinetics", "nir_shootout_test1", _ev("nir_shootout_test1")),  # replaces ramandata (1 sample only)
     ("mcr_als_kinetics", "diesel_nir", _ev("diesel_nir")),
     ("mcr_als_kinetics", "corn_m5", _ev("corn_m5")),
     ("mcr_als_kinetics", "cgl_nir", _ev("cgl_nir")),
-    # ── nmr_processing ────────────────────────────────────────────────────
-    ("nmr_processing", "irdata", _scp("irdata")),
-    ("nmr_processing", "diesel_nir", _ev("diesel_nir")),
-    ("nmr_processing", "corn_m5", _ev("corn_m5")),
-    ("nmr_processing", "nir_shootout1", _ev("nir_shootout_cal1")),
-    ("nmr_processing", "wine_sk", _sk("wine")),
+    ("mcr_als_kinetics", "als2004", _scp("matlabdata/als2004dataset.MAT")),
     # ── oes_process_monitoring ────────────────────────────────────────────
     ("oes_process_monitoring", "metal_etch_oes", _ev("metal_etch_oes")),
     ("oes_process_monitoring", "diesel_nir", _ev("diesel_nir")),
@@ -140,9 +131,14 @@ MATRIX: list[tuple[str, str, dict]] = [
     # ── peaks ─────────────────────────────────────────────────────────────
     ("peaks", "irdata", _scp("irdata")),
     ("peaks", "ramandata", _scp("ramandata")),
+    ("peaks", "als2004", _scp("matlabdata/als2004dataset.MAT")),
     ("peaks", "diesel_nir", _ev("diesel_nir")),
+    ("peaks", "diesel_nir_mat", _ev("diesel_nir_mat")),
     ("peaks", "corn_m5", _ev("corn_m5")),
+    ("peaks", "cgl_nir", _ev("cgl_nir")),
     ("peaks", "nir_shootout1", _ev("nir_shootout_cal1")),
+    ("peaks", "nir_shootout_test1", _ev("nir_shootout_test1")),
+    ("peaks", "metal_etch_oes", _ev("metal_etch_oes")),
     # ── pls_calibration ───────────────────────────────────────────────────
     ("pls_calibration", "corn_m5", _ev("corn_m5")),
     ("pls_calibration", "diesel_nir", _ev("diesel_nir")),
@@ -155,12 +151,6 @@ MATRIX: list[tuple[str, str, dict]] = [
     ("preprocessing", "corn_m5", _ev("corn_m5")),
     ("preprocessing", "wine", _sk("wine")),
     ("preprocessing", "ramandata", _scp("ramandata")),
-    # ── raman_processing ──────────────────────────────────────────────────
-    ("raman_processing", "ramandata", _scp("ramandata")),
-    ("raman_processing", "irdata", _scp("irdata")),  # wrong technique
-    ("raman_processing", "diesel_nir", _ev("diesel_nir")),
-    ("raman_processing", "corn_m5", _ev("corn_m5")),
-    ("raman_processing", "wine", _sk("wine")),
     # ── region_selection_pls ──────────────────────────────────────────────
     ("region_selection_pls", "corn_m5", _ev("corn_m5")),
     ("region_selection_pls", "diesel_nir", _ev("diesel_nir")),
@@ -185,6 +175,7 @@ MATRIX: list[tuple[str, str, dict]] = [
     ("simplisma", "diesel_nir", _ev("diesel_nir")),
     ("simplisma", "corn_m5", _ev("corn_m5")),
     ("simplisma", "nir_shootout1", _ev("nir_shootout_cal1")),
+    ("simplisma", "als2004", _scp("matlabdata/als2004dataset.MAT")),
     # ── spectral_decomposition ────────────────────────────────────────────
     ("spectral_decomposition", "irdata", _scp("irdata")),
     ("spectral_decomposition", "diesel_nir", _ev("diesel_nir")),

@@ -739,7 +739,7 @@
             </template>
 
             <!-- MCR-ALS Plots -->
-            <template v-if="nodeTypeKey === 'model.mcr_als'">
+            <template v-if="nodeTypeKey === 'model.mcr_als' || nodeTypeKey === 'model.simplisma'">
               <!-- Concentration Profiles -->
               <div class="plot-subsection">
                 <div class="plot-subsection-header" @click="togglePlot('mcrConcentrations')">
@@ -762,6 +762,21 @@
                 <Transition name="collapse">
                   <div v-if="plotSections.mcrSpectra" class="plot-container">
                     <PlotlyChart :data="mcrSpectraData" :layout="mcrSpectraLayout" />
+                  </div>
+                </Transition>
+              </div>
+            </template>
+
+            <!-- EFA Eigenvalue Plot -->
+            <template v-if="nodeTypeKey === 'model.efa'">
+              <div class="plot-subsection">
+                <div class="plot-subsection-header" @click="togglePlot('efaEigenvalues')">
+                  <i :class="plotSections.efaEigenvalues ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                  <span>Eigenvalue Plot</span>
+                </div>
+                <Transition name="collapse">
+                  <div v-if="plotSections.efaEigenvalues" class="plot-container">
+                    <PlotlyChart :data="efaEigenvalueData" :layout="efaEigenvalueLayout" />
                   </div>
                 </Transition>
               </div>
@@ -1129,11 +1144,11 @@
               <div class="plot-subsection">
                 <div class="plot-subsection-header" @click="togglePlot('statsDistribution')">
                   <i :class="plotSections.statsDistribution ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Distribution Plot</span>
+                  <span>Summary Plot</span>
                 </div>
                 <Transition name="collapse">
                   <div v-if="plotSections.statsDistribution" class="plot-container">
-                    <PlotlyChart :data="statsDistributionData" :layout="statsDistributionLayout" />
+                    <PlotlyChart :data="statsPlotData" :layout="statsPlotLayout" />
                   </div>
                 </Transition>
               </div>
@@ -1364,6 +1379,7 @@ const plotSections = ref<Record<string, boolean>>({
   hcaDendrogram: false,
   peakFinding: false,
   plotVisualization: false,
+  efaEigenvalues: false,
 });
 
 // PLS-DA loadings view mode (lines or biplot)
@@ -1476,6 +1492,12 @@ const isSpectraData = computed(() => {
   const xTitle = (metadata.x_title || "").toLowerCase();
   const spectralKeywords = ['wavenumber', 'wavelength', 'raman', 'cm-1', 'cm⁻¹', 'nm', 'shift', 'frequency'];
   return spectralKeywords.some(kw => xTitle.includes(kw));
+});
+
+// Detect if data is time-series (kinetic / evolving)
+const isTimeSeriesData = computed(() => {
+  const metadata = nodeOutput.value?.metadata || {};
+  return !!metadata.is_time_series;
 });
 
 // Detect if this is a generic dataset (like Iris) with feature names
@@ -1665,18 +1687,19 @@ const datasetInfo = computed(() => {
     };
   }
 
-  // Y-axis
+  // Y-axis — override title for time-series data
+  const defaultSampleTitle = metadata.is_time_series ? "Scan / Time Index" : "Sample";
   const yAxis = portValue?.y_axis;
   if (yAxis) {
     info.yAxis = {
-      title: yAxis.title || metadata.y_title || "Sample",
+      title: yAxis.title || metadata.y_title || defaultSampleTitle,
       units: yAxis.units || metadata.y_units || "",
       labels: yAxis.labels,
       nSamples: yAxis.data?.length,
     };
   } else if (metadata.sample_labels?.length) {
     info.yAxis = {
-      title: metadata.y_title || "Sample",
+      title: metadata.y_title || defaultSampleTitle,
       units: metadata.y_units || "",
       labels: metadata.sample_labels,
       nSamples: metadata.sample_labels.length,
@@ -1961,6 +1984,11 @@ const outputPreview = computed(() => {
       row.slice(0, 10).forEach((val: any, j: number) => {
         obj[`col_${j}`] = typeof val === "number" ? val.toFixed(4) : val;
       });
+    } else if (typeof row === "object" && row !== null) {
+      // Dict rows (e.g. PeakFinding stats output)
+      for (const [k, v] of Object.entries(row)) {
+        obj[k] = typeof v === "number" ? Number(v).toFixed(4) : v;
+      }
     } else {
       obj.value = typeof row === "number" ? row.toFixed(4) : row;
     }
@@ -2117,7 +2145,11 @@ const availablePlots = computed(() => {
   }
   switch (nodeTypeKey.value) {
     case "model.mcr_als":
+    case "model.simplisma":
       plots.push("Concentration Profiles", "Pure Spectra");
+      break;
+    case "model.efa":
+      plots.push("Eigenvalue Plot");
       break;
     case "model.pls":
       plots.push("Scores Plot", "Loadings Plot", "Predicted vs Actual");
@@ -2139,7 +2171,7 @@ const availablePlots = computed(() => {
       plots.push("Dendrogram");
       break;
     case "stats.summary":
-      plots.push("Distribution Plot");
+      plots.push("Summary Plot");
       break;
     case "analysis.peak_finding":
       plots.push("Spectra with Peaks");
@@ -2151,7 +2183,10 @@ const availablePlots = computed(() => {
     case "data.source":
     case "preprocess.normalize":
     case "preprocess.scale":
+    case "preprocess.clip_range":
+    case "preprocess.cosmic_ray":
     case "baseline.penalized_ls":
+    case "baseline.rubberband":
     case "preprocess.smooth":
       // Show appropriate overview based on data type
       if (isGenericDataNode.value) {
@@ -2994,7 +3029,7 @@ const pcaDiagnosticsLayout = computed(() => {
 // ============================================================================
 
 const mcrConcentrationData = computed(() => {
-  if (nodeTypeKey.value !== "model.mcr_als" || !hasOutput.value) return [];
+  if ((nodeTypeKey.value !== "model.mcr_als" && nodeTypeKey.value !== "model.simplisma") || !hasOutput.value) return [];
   const data = nodeOutput.value?.data || [];
   const metadata = nodeOutput.value?.metadata || {};
   const labels = metadata.labels || Array.from({ length: data[0]?.length || 0 }, (_, i) => `Component ${i + 1}`);
@@ -3028,7 +3063,7 @@ const mcrConcentrationLayout = computed(() => {
 });
 
 const mcrSpectraData = computed(() => {
-  if (nodeTypeKey.value !== "model.mcr_als" || !hasOutput.value) return [];
+  if ((nodeTypeKey.value !== "model.mcr_als" && nodeTypeKey.value !== "model.simplisma") || !hasOutput.value) return [];
   const metadata = nodeOutput.value?.metadata || {};
   const St = metadata.St || [];
   if (!St.length) return [];
@@ -3849,12 +3884,13 @@ const spectraContourLayout = computed(() => {
   const xUnits = metadata.x_units || "";
   const xLabel = xUnits ? `${xTitle} (${xUnits})` : xTitle;
   const shouldReverse = xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber");
+  const yLabel = metadata.is_time_series ? "Scan / Time Index" : "Sample Index";
 
   return {
     ...basePlotLayout,
     height: 400,
     xaxis: { ...basePlotLayout.xaxis, title: xLabel, autorange: shouldReverse ? "reversed" : true },
-    yaxis: { ...basePlotLayout.yaxis, title: "Sample Index" },
+    yaxis: { ...basePlotLayout.yaxis, title: yLabel },
   };
 });
 
@@ -4142,14 +4178,68 @@ const verticalSliceLayout = computed(() => ({
 }));
 
 // ============================================================================
-// STATS Plots
+// STATS Plots (adaptive: PeakFinding → bar chart, otherwise → histogram)
 // ============================================================================
 
-const statsDistributionData = computed(() => {
+const statsPlotData = computed(() => {
   if (nodeTypeKey.value !== "stats.summary" || !hasOutput.value) return [];
-  const data = nodeOutput.value?.data || [];
+  const portValue = nodeOutput.value?.ports?.statistics?.value as Record<string, unknown> | undefined;
+  const metadata = nodeOutput.value?.metadata || {};
+  const inputType = (portValue?.input_type as string) || (metadata.type as string) || "";
 
-  // Flatten 2D data for histogram
+  // PeakFinding: two-axis plot
+  //   - Vertical axis: median height with IQR error bars (intensity variation)
+  //   - Horizontal axis: position with std error bars (positional scatter)
+  if (inputType === "PeakFinding") {
+    const horiz = (portValue?.horizontal || []) as Array<Record<string, number | string>>;
+    const vert = (portValue?.vertical || []) as Array<Record<string, number | string>>;
+    if (!horiz.length) return [];
+
+    const positions = horiz.map((h) => Number(h.median_pos));
+    const heights = vert.map((v) => Number(v.median_height));
+    const q1 = vert.map((v) => Number(v.q1_height));
+    const q3 = vert.map((v) => Number(v.q3_height));
+    const posStd = horiz.map((h) => Number(h.std_pos));
+    const labels = horiz.map((h, i) => {
+      const v = vert[i];
+      return `<b>${h.label}</b><br>` +
+        `Position: ${Number(h.median_pos).toFixed(1)} ± ${Number(h.std_pos).toFixed(1)}<br>` +
+        `Range: ${Number(h.min_pos).toFixed(1)}–${Number(h.max_pos).toFixed(1)}<br>` +
+        `Height: ${Number(v.median_height).toFixed(4)}<br>` +
+        `IQR: ${Number(v.q1_height).toFixed(4)}–${Number(v.q3_height).toFixed(4)}`;
+    });
+
+    return [{
+      type: "scatter",
+      mode: "markers",
+      x: positions,
+      y: heights,
+      text: labels,
+      hovertemplate: "%{text}<extra></extra>",
+      marker: { color: "#3b82f6", size: 10 },
+      name: "Median Height",
+      error_y: {
+        type: "data",
+        symmetric: false,
+        array: q3.map((q, i) => q - heights[i]),       // upper = q3 - median
+        arrayminus: heights.map((h, i) => h - q1[i]),   // lower = median - q1
+        color: "#60a5fa",
+        thickness: 2,
+        width: 6,
+      },
+      error_x: {
+        type: "data",
+        array: posStd,
+        arrayminus: posStd,
+        color: "#94a3b8",
+        thickness: 1.5,
+        width: 4,
+      },
+    }];
+  }
+
+  // Default: histogram of flattened numeric data
+  const data = nodeOutput.value?.data || [];
   const values: number[] = [];
   for (const row of data) {
     if (Array.isArray(row)) {
@@ -4158,9 +4248,12 @@ const statsDistributionData = computed(() => {
       }
     } else if (typeof row === "number") {
       values.push(row);
+    } else if (typeof row === "object" && row !== null) {
+      for (const val of Object.values(row)) {
+        if (typeof val === "number" && !isNaN(val)) values.push(val);
+      }
     }
   }
-
   return [{
     type: "histogram",
     x: values,
@@ -4170,15 +4263,93 @@ const statsDistributionData = computed(() => {
   }];
 });
 
-const statsDistributionLayout = computed(() => ({
-  ...basePlotLayout,
-  height: 350,
-  xaxis: { ...basePlotLayout.xaxis, title: "Value" },
-  yaxis: { ...basePlotLayout.yaxis, title: "Count" },
-  bargap: 0.05,
-}));
+const statsPlotLayout = computed(() => {
+  const portValue = nodeOutput.value?.ports?.statistics?.value as Record<string, unknown> | undefined;
+  const metadata = nodeOutput.value?.metadata || {};
+  const inputType = (portValue?.input_type as string) || (metadata.type as string) || "";
+
+  if (inputType === "PeakFinding") {
+    const summary = (portValue?.summary || {}) as Record<string, unknown>;
+    const xLabel = (summary.x_label as string) || "Position";
+    return {
+      ...basePlotLayout,
+      height: 450,
+      title: { text: "Peak Consensus: Position ± σ (horizontal) · Height ± IQR (vertical)", font: { size: 13, color: "#94a3b8" } },
+      xaxis: { ...basePlotLayout.xaxis, title: xLabel },
+      yaxis: { ...basePlotLayout.yaxis, title: "Peak Height (absorbance)" },
+      showlegend: false,
+    };
+  }
+  return {
+    ...basePlotLayout,
+    height: 350,
+    xaxis: { ...basePlotLayout.xaxis, title: "Value" },
+    yaxis: { ...basePlotLayout.yaxis, title: "Count" },
+    bargap: 0.05,
+  };
+});
 
 
+
+// ============================================================================
+// EFA Eigenvalue Plot
+// ============================================================================
+
+const efaEigenvalueData = computed(() => {
+  if (nodeTypeKey.value !== "model.efa" || !hasOutput.value) return [];
+  // EFA primary output is forward eigenvalues as a SherpaDataset
+  const data = nodeOutput.value?.data || [];
+  const metadata = nodeOutput.value?.metadata || {};
+  if (!data.length || !Array.isArray(data[0])) return [];
+
+  const nSamples = data.length;
+  const nComponents = data[0].length;
+  const x = Array.from({ length: nSamples }, (_, i) => i + 1);
+
+  // Forward eigenvalues from primary output
+  const traces: Record<string, unknown>[] = [];
+  for (let c = 0; c < nComponents; c++) {
+    traces.push({
+      type: "scatter",
+      mode: "lines",
+      x,
+      y: data.map((row: number[]) => row[c]),
+      name: `Forward EV ${c + 1}`,
+      line: { width: 2 },
+    });
+  }
+
+  // Backward eigenvalues from ports if available
+  const bwPort = nodeOutput.value?.ports?.backward_eigenvalues;
+  const bwData = bwPort?.data || bwPort?.value?.data;
+  if (bwData && Array.isArray(bwData) && bwData.length > 0) {
+    const bwComponents = bwData[0]?.length || 0;
+    for (let c = 0; c < bwComponents; c++) {
+      traces.push({
+        type: "scatter",
+        mode: "lines",
+        x,
+        y: bwData.map((row: number[]) => row[c]),
+        name: `Backward EV ${c + 1}`,
+        line: { width: 2, dash: "dash" },
+      });
+    }
+  }
+
+  return traces;
+});
+
+const efaEigenvalueLayout = computed(() => {
+  const metadata = nodeOutput.value?.metadata || {};
+  return {
+    ...basePlotLayout,
+    height: 450,
+    showlegend: true,
+    legend: { x: 1, xanchor: "right", y: 1, bgcolor: "rgba(0,0,0,0)" },
+    xaxis: { ...basePlotLayout.xaxis, title: metadata.x_title || "Sample Index" },
+    yaxis: { ...basePlotLayout.yaxis, title: "Eigenvalue (log scale)", type: "log" },
+  };
+});
 
 // ============================================================================
 // Regression: Predicted vs Actual correlation plot

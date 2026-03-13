@@ -300,7 +300,13 @@ class PLSNode(Node):
         if nan_mask.any():
             valid = ~nan_mask
             n_dropped = int(nan_mask.sum())
-            logger.debug("[PLS Node] Dropping %d/%d samples with NaN target values", n_dropped, y_2d.shape[0])
+            logger.warning(
+                "[PLS Node] Dropped %d/%d samples with NaN target values. "
+                "If your dataset has multiple property columns, consider selecting a specific "
+                "y_column to avoid partial data loss.",
+                n_dropped,
+                y_2d.shape[0],
+            )
             y_2d = y_2d[valid]
             # Rebuild X_ds with valid rows so sample_axis stays consistent with scores shape
             X_ds = SherpaDataset(X=X_ds.X[valid], feature_axis=X_ds.get_feature_axis())

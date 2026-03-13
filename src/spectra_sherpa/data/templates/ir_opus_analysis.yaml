@@ -43,13 +43,6 @@ template_data:
     parameters: {}
     position_x: 175
     position_y: 1050
-  - node_id: viz_1
-    node_type: output.plot
-    label: Spectra Plot
-    parameters:
-      plot_type: spectra
-    position_x: 50
-    position_y: 1300
   - node_id: stats_1
     node_type: stats.summary
     label: Peak Summary
@@ -66,9 +59,6 @@ template_data:
   - from_node_id: preprocess_3
     to_node_id: analysis_1
   - from_node_id: analysis_1
-    to_node_id: viz_1
-    from_output: annotated_spectrum
-  - from_node_id: analysis_1
     to_node_id: stats_1
     from_output: peaks
   canvas_state:
@@ -84,3 +74,6 @@ template_data:
       description: IR spectral data (OPUS, JCAMP, or CSV)
       accepted_techniques:
       - FTIR
+  certified_datasets:
+  - source: spectrochempy
+    name: irdata

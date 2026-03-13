@@ -76,8 +76,22 @@ template_data:
       required: true
       binding_mode: embedded
       description: Multi-component mixture spectral data
+      is_time_series: true
       accepted_techniques:
       - FTIR
       - NIR
       - Raman
       - UV-Vis
+  certified_datasets:
+  - source: spectrochempy
+    name: irdata
+  - source: eigenvector
+    name: cgl_nir
+  - source: eigenvector
+    name: diesel_nir
+  - source: eigenvector
+    name: corn_m5
+  - source: eigenvector
+    name: nir_shootout_cal1
+  - source: spectrochempy
+    name: matlabdata/als2004dataset.MAT

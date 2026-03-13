@@ -177,29 +177,29 @@ class PeakFindingNode(Node):
             else:
                 bins[-1].append(i)
 
-        rows: list[list[Any]] = []
+        rows: list[dict[str, Any]] = []
         for indices in bins:
             pos_arr = sorted_pos[indices]
             h_arr = sorted_h[indices]
             count = len(indices)
             q1_h, med_h, q3_h = np.percentile(h_arr, [25, 50, 75]).tolist()
             rows.append(
-                [
-                    float(np.median(pos_arr)),
-                    float(np.mean(pos_arr)),
-                    float(np.std(pos_arr)) if count > 1 else 0.0,
-                    float(pos_arr.min()),
-                    float(pos_arr.max()),
-                    count,
-                    f"{count}/{n_samples}",
-                    med_h,
-                    q1_h,
-                    q3_h,
-                ]
+                {
+                    "median_pos": float(np.median(pos_arr)),
+                    "mean_pos": float(np.mean(pos_arr)),
+                    "std_pos": float(np.std(pos_arr)) if count > 1 else 0.0,
+                    "min_pos": float(pos_arr.min()),
+                    "max_pos": float(pos_arr.max()),
+                    "count": count,
+                    "detected": f"{count}/{n_samples}",
+                    "median_height": med_h,
+                    "q1_height": q1_h,
+                    "q3_height": q3_h,
+                }
             )
 
         # Sort consensus rows by median position
-        rows.sort(key=lambda r: r[0])
+        rows.sort(key=lambda r: r["median_pos"])
         return rows
 
     async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
@@ -393,7 +393,7 @@ class PeakFindingNode(Node):
 
         # Add consensus peak markers to plot (white dashed full-height lines)
         for row in consensus_rows:
-            median_pos = row[0]
+            median_pos = row["median_pos"]
             plotly_shapes.append(
                 {
                     "type": "line",
@@ -448,18 +448,6 @@ class PeakFindingNode(Node):
                     "n_samples": n_samples,
                     "x_title": x_title,
                     "x_units": x_units,
-                    "column_names": [
-                        "Median Pos",
-                        "Mean Pos",
-                        "Std",
-                        "Min Pos",
-                        "Max Pos",
-                        "Count",
-                        "Detected",
-                        "Median Height",
-                        "Q1 Height",
-                        "Q3 Height",
-                    ],
                 },
             },
             "spectrum": all_spectra,

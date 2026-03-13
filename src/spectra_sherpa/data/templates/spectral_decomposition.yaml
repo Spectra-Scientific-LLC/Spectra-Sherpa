@@ -80,3 +80,14 @@ template_data:
       - NIR
       - Raman
       - UV-Vis
+  certified_datasets:
+  - source: spectrochempy
+    name: irdata
+  - source: eigenvector
+    name: diesel_nir
+  - source: eigenvector
+    name: corn_m5
+  - source: sklearn
+    name: wine
+  - source: eigenvector
+    name: cgl_nir

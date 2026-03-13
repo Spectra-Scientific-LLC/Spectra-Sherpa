@@ -511,6 +511,10 @@
                   <span class="meta-key">Classes</span>
                   <span class="meta-val">{{ dataStore.catalogDatasetInfo.target_names.join(', ') }}</span>
                 </div>
+                <div class="meta-row">
+                  <span class="meta-key">Time Series</span>
+                  <span class="meta-val">{{ isTimeSeriesToggle ? 'Yes' : 'No' }}</span>
+                </div>
               </div>
             </div>
 
@@ -709,6 +713,10 @@
                 <div v-if="sdMeta.data_quantity" class="meta-row">
                   <span class="meta-key">Y-Axis</span>
                   <span class="meta-val">{{ sdMeta.data_quantity }}</span>
+                </div>
+                <div class="meta-row">
+                  <span class="meta-key">Time Series</span>
+                  <span class="meta-val">{{ isTimeSeriesToggle ? 'Yes' : 'No' }}</span>
                 </div>
               </div>
             </div>
@@ -993,6 +1001,7 @@ import FileUpload from "primevue/fileupload";
 import Panel from "primevue/panel";
 import ProgressSpinner from "primevue/progressspinner";
 import Tag from "primevue/tag";
+import InputSwitch from "primevue/inputswitch";
 import { useDataStore } from "@/stores/data";
 import { useProjectStore } from "@/stores/project";
 import { useToast } from "primevue/usetoast";
@@ -1034,6 +1043,32 @@ const deleting = ref(false);
 const uploadStage = ref("raw");
 const selectedFile = ref<File | null>(null);
 const deleteTarget = ref<ExperimentFile | null>(null);
+
+// Time-series toggle — persisted into fileInfo/catalogDatasetInfo metadata
+const isTimeSeriesToggle = ref(false);
+
+// Reset toggle when a new file or catalog dataset is loaded
+watch(
+  () => dataStore.fileInfo,
+  (fi) => {
+    isTimeSeriesToggle.value = !!(fi?.metadata as Record<string, unknown> | undefined)?.is_time_series;
+  },
+);
+watch(
+  () => dataStore.catalogDatasetInfo,
+  (info) => {
+    isTimeSeriesToggle.value = !!(info?.metadata as Record<string, unknown> | undefined)?.is_time_series;
+  },
+);
+// When the toggle changes, update the metadata in-place so the workflow builder picks it up
+watch(isTimeSeriesToggle, (val) => {
+  if (dataStore.fileInfo?.metadata) {
+    (dataStore.fileInfo.metadata as Record<string, unknown>).is_time_series = val;
+  }
+  if (dataStore.catalogDatasetInfo?.metadata) {
+    (dataStore.catalogDatasetInfo.metadata as Record<string, unknown>).is_time_series = val;
+  }
+});
 
 const fileStages = [
   { key: "raw", label: "Raw", icon: "pi pi-file" },

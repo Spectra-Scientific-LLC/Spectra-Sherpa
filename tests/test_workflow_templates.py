@@ -514,6 +514,37 @@ async def test_list_templates_excludes_wip_by_default(
 
 
 @pytest.mark.asyncio
+async def test_matching_datasets_returns_only_certified_entries(
+    auth_client: AsyncClient,
+    test_session: AsyncSession,
+):
+    template = WorkflowTemplate(
+        slug="certified_matching_template",
+        name="Certified Matching Template",
+        description="Only curated examples should be returned",
+        category="calibration",
+        template_data={
+            **_make_template_data(),
+            "status": "ready",
+            "certified_datasets": [
+                {"source": "eigenvector", "name": "corn_m5"},
+                {"source": "sklearn", "name": "wine"},
+            ],
+        },
+        is_active=True,
+    )
+    test_session.add(template)
+    await test_session.commit()
+
+    response = await auth_client.get(f"/api/v1/workflow-templates/{template.id}/matching-datasets")
+
+    assert response.status_code == 200
+    payload = response.json()
+    returned_pairs = {(entry["source"], entry["name"]) for matches in payload.values() for entry in matches}
+    assert returned_pairs == {("eigenvector", "corn_m5"), ("sklearn", "wine")}
+
+
+@pytest.mark.asyncio
 async def test_instantiate_requires_explicit_data_bindings(
     auth_client: AsyncClient,
     test_session: AsyncSession,
@@ -659,6 +690,10 @@ async def test_instantiate_example_mode_honors_selected_example_dataset(
                         "target_type": "categorical",
                     },
                 },
+                certified_datasets=[
+                    {"source": "eigenvector", "name": "corn_m5"},
+                    {"source": "sklearn", "name": "wine"},
+                ],
             ),
             "status": "ready",
         },
@@ -729,6 +764,94 @@ async def test_instantiate_example_mode_honors_selected_example_dataset(
     args = mock_import_ref.await_args.args
     assert args[2] == "sklearn"
     assert args[3] == "wine"
+
+
+@pytest.mark.asyncio
+async def test_instantiate_example_mode_rejects_uncertified_example_dataset(
+    auth_client: AsyncClient,
+    test_session: AsyncSession,
+    test_user: User,
+):
+    template = WorkflowTemplate(
+        slug="example_certified_template",
+        name="Example Certified Template",
+        description="Bundled example data",
+        category="classification",
+        template_data={
+            **_make_template_data(
+                nodes=[
+                    {
+                        "node_id": "data_1",
+                        "node_type": "data.source",
+                        "label": "Load Data",
+                        "parameters": {"source": "eigenvector", "eigenvector_dataset": "corn_m5"},
+                        "position_x": 120,
+                        "position_y": 180,
+                    },
+                    {
+                        "node_id": "model_1",
+                        "node_type": "classification.knn",
+                        "label": "KNN",
+                        "parameters": {"n_neighbors": 3},
+                        "position_x": 360,
+                        "position_y": 180,
+                    },
+                ],
+                data_roles={
+                    "X_spectra": {
+                        "role_type": "X_spectra",
+                        "node_binding": "data_1",
+                        "required": True,
+                        "binding_mode": "embedded",
+                        "accepted_techniques": ["FTIR", "NIR", "Raman", "UV-Vis"],
+                    },
+                    "class_labels": {
+                        "role_type": "class_labels",
+                        "node_binding": "data_1",
+                        "required": True,
+                        "binding_mode": "embedded",
+                        "target_type": "categorical",
+                    },
+                },
+                certified_datasets=[
+                    {"source": "eigenvector", "name": "corn_m5"},
+                ],
+            ),
+            "status": "ready",
+        },
+        is_active=True,
+    )
+    project = Project(user_id=test_user.id, name="Example Certified Project", description="")
+    test_session.add_all([template, project])
+    await test_session.commit()
+
+    with (
+        patch(
+            "spectra_sherpa.app.api.v1.routes.workflow_templates._create_example_experiment",
+            new=AsyncMock(side_effect=AssertionError("uncertified examples must be rejected before import")),
+        ),
+        patch(
+            "spectra_sherpa.app.api.v1.routes.workflow_templates.import_reference_dataset",
+            new=AsyncMock(side_effect=AssertionError("uncertified examples must be rejected before import")),
+        ),
+    ):
+        response = await auth_client.post(
+            f"/api/v1/workflow-templates/{template.id}/instantiate",
+            json={
+                "workflow_name": "Rejected Workflow",
+                "project_id": project.id,
+                "launch_mode": "example",
+                "example_bindings": {
+                    "data_1": {
+                        "source": "sklearn",
+                        "dataset_name": "wine",
+                    }
+                },
+            },
+        )
+
+    assert response.status_code == 400
+    assert "not in certified_datasets" in response.json()["detail"]
 
 
 @pytest.mark.asyncio

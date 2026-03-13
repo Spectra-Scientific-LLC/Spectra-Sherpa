@@ -75,3 +75,12 @@ template_data:
       - UV-Vis
       - NMR
       - OES
+  certified_datasets:
+  - source: spectrochempy
+    name: irdata
+  - source: eigenvector
+    name: diesel_nir
+  - source: eigenvector
+    name: corn_m5
+  - source: spectrochempy
+    name: ramandata

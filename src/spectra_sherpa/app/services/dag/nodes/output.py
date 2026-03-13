@@ -816,7 +816,10 @@ class StatsSummaryNode(Node):
             elif "C" in input_data or "St" in input_data:
                 return await self._stats_mcr(input_data)
             elif "data" in input_data:
-                return await self._stats_array(input_data["data"], input_data.get("metadata"))
+                meta = input_data.get("metadata") or {}
+                if meta.get("type") == "PeakFinding":
+                    return await self._stats_peaks(input_data["data"], meta)
+                return await self._stats_array(input_data["data"], meta)
 
         # Coerce NDDataset → SherpaDataset so all dataset paths work
         if isinstance(input_data, NDDataset):
@@ -1079,6 +1082,109 @@ class StatsSummaryNode(Node):
                     "type": "MCR",
                     "shape": [n_obs, n_comp],
                 },
+            }
+        }
+
+    async def _stats_peaks(self, rows: list, metadata: dict) -> Dict[str, Any]:
+        """Compute statistics for peak-finding consensus results.
+
+        Each row is a dict with keys: median_pos, mean_pos, std_pos, min_pos,
+        max_pos, count, detected, median_height, q1_height, q3_height.
+
+        Two axes of variation are reported:
+        - **Horizontal (positional)**: within each cluster, how much do
+          detected positions scatter across samples (std_pos, min–max range).
+        - **Vertical (intensity)**: across clusters, how do median heights
+          compare and how tight is the IQR (q1–q3).
+        """
+        n_peaks = len(rows)
+        n_samples = metadata.get("n_samples", 0)
+        x_title = metadata.get("x_title", "Position")
+        x_units = metadata.get("x_units", "")
+        unit_suffix = f" ({x_units})" if x_units else ""
+
+        # Build per-peak table rows for DataTable display
+        table_rows = []
+        horizontal_stats = []  # positional scatter per cluster
+        vertical_stats = []  # intensity variation per cluster
+
+        for i, row in enumerate(rows):
+            median_pos = float(row.get("median_pos", 0))
+            std_pos = float(row.get("std_pos", 0))
+            min_pos = float(row.get("min_pos", median_pos))
+            max_pos = float(row.get("max_pos", median_pos))
+            count = int(row.get("count", 0))
+            fraction = row.get("detected", f"{count}/{n_samples}")
+            med_h = float(row.get("median_height", 0))
+            q1_h = float(row.get("q1_height", med_h))
+            q3_h = float(row.get("q3_height", med_h))
+
+            label = f"Peak {i + 1}"
+
+            table_rows.append(
+                {
+                    "peak": i + 1,
+                    "position": median_pos,
+                    "pos_std": std_pos,
+                    "pos_range": f"{min_pos:.1f}–{max_pos:.1f}",
+                    "height": med_h,
+                    "height_iqr": f"{q1_h:.4f}–{q3_h:.4f}",
+                    "detected": fraction,
+                    "detection_rate": f"{count / n_samples * 100:.0f}%" if n_samples else "–",
+                }
+            )
+
+            # Horizontal: positional scatter within this cluster
+            horizontal_stats.append(
+                {
+                    "label": label,
+                    "median_pos": median_pos,
+                    "std_pos": std_pos,
+                    "min_pos": min_pos,
+                    "max_pos": max_pos,
+                    "range": max_pos - min_pos,
+                }
+            )
+
+            # Vertical: intensity variation within this cluster
+            vertical_stats.append(
+                {
+                    "label": label,
+                    "median_pos": median_pos,
+                    "median_height": med_h,
+                    "q1_height": q1_h,
+                    "q3_height": q3_h,
+                    "iqr": q3_h - q1_h,
+                }
+            )
+
+        # Global summary
+        if n_peaks > 0:
+            heights = [v["median_height"] for v in vertical_stats]
+            pos_stds = [h["std_pos"] for h in horizontal_stats]
+            summary = {
+                "n_peaks": n_peaks,
+                "n_samples": n_samples,
+                "n_total_detections": metadata.get("n_total_detections", 0),
+                "position_range": [horizontal_stats[0]["median_pos"], horizontal_stats[-1]["median_pos"]],
+                "mean_height": float(np.mean(heights)),
+                "std_height": float(np.std(heights)),
+                "max_positional_std": float(max(pos_stds)),
+                "mean_positional_std": float(np.mean(pos_stds)),
+            }
+        else:
+            summary = {"n_peaks": 0}
+
+        summary["x_label"] = f"{x_title}{unit_suffix}"
+
+        return {
+            "statistics": {
+                "input_type": "PeakFinding",
+                "summary": summary,
+                "data": table_rows,
+                "horizontal": horizontal_stats,
+                "vertical": vertical_stats,
+                "metadata": metadata,
             }
         }
 

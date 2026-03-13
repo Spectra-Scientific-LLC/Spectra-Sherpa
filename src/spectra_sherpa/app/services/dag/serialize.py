@@ -251,6 +251,7 @@ def _serialize_sherpa_dataset(
     metadata = result.setdefault("metadata", {})
     metadata["data_type"] = "spectra" if is_spectra else "generic"
     metadata["is_spectra"] = is_spectra
+    metadata["is_time_series"] = dataset.is_time_series
     metadata["spectral_technique"] = technique
     metadata["data_quantity"] = data_quantity
 

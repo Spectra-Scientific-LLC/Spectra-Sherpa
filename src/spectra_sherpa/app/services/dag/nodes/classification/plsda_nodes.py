@@ -273,9 +273,13 @@ class PLSDANode(Node):
 
         max_components = min(X_data.shape[0] - 1, X_data.shape[1])
         if n_components > max_components:
-            logger.debug(
-                "[PLS-DA] Clamping n_components from %d to %d (min(n_samples-1, n_features))",
+            logger.warning(
+                "[PLS-DA] n_components=%d exceeds max allowed (%d = min(n_samples-1=%d, n_features=%d)). "
+                "Clamping to %d. Consider reducing n_components in the node parameters.",
                 n_components,
+                max_components,
+                X_data.shape[0] - 1,
+                X_data.shape[1],
                 max_components,
             )
             n_components = max_components
