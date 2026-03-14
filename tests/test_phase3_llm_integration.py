@@ -441,6 +441,60 @@ class TestChatContextRouting:
         ]
 
     @pytest.mark.asyncio
+    async def test_proxy_server_chat_surfaces_upstream_error_detail(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import httpx
+
+        from spectra_sherpa.app.services import spectrasherpa as sherpa_cfg_mod
+        from spectra_sherpa.app.services import ws_handlers
+
+        ws = SimpleNamespace(send_json=AsyncMock())
+
+        class _FakeResponse:
+            status_code = 401
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def aread(self):
+                return b'{"detail":"Invalid deployment key"}'
+
+            def json(self):
+                return {"detail": "Invalid deployment key"}
+
+        class _FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            def stream(self, *args, **kwargs):
+                return _FakeResponse()
+
+        monkeypatch.setattr(httpx, "AsyncClient", lambda *args, **kwargs: _FakeClient())
+        monkeypatch.setattr(
+            sherpa_cfg_mod,
+            "spectrasherpa_config",
+            SimpleNamespace(api_base_url="https://sherpa.example.com", api_key="deploy-key"),
+        )
+
+        await ws_handlers._proxy_server_chat(
+            ws,
+            "hello",
+            "conv-1",
+            {"project_id": 42},
+            SimpleNamespace(id=7),
+        )
+
+        ws.send_json.assert_awaited_once_with({"type": "error", "detail": "Invalid deployment key"})
+
+    @pytest.mark.asyncio
     async def test_llm_server_proxy_maps_upstream_auth_failure_to_service_error(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -583,6 +637,54 @@ class TestChatContextRouting:
         )
 
         assert captured["workflow_context"] is None
+
+    @pytest.mark.asyncio
+    async def test_handle_sherpa_chat_forwards_subscription_required_detail(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from spectra_sherpa.app.services import ws_handlers
+        from spectra_sherpa.app.services.sherpa_advisor import SubscriptionRequiredError
+
+        class _Advisor:
+            is_available = True
+
+            async def chat_followup(self, **_kwargs):
+                raise SubscriptionRequiredError("Invalid deployment key")
+                yield  # pragma: no cover
+
+        ws = SimpleNamespace(send_json=AsyncMock())
+        user = SimpleNamespace(id=7)
+        rate_limiter = SimpleNamespace(allow=lambda _key: True)
+
+        async def _check_permission(_user, permission: str, **_kwargs):
+            if permission in {"allow_llm_chat", "allow_llm_context"}:
+                return True
+            raise AssertionError(f"Unexpected permission check: {permission}")
+
+        monkeypatch.setattr(ws_handlers, "check_egress_permission", _check_permission)
+        monkeypatch.setattr(ws_handlers, "_check_demo_sherpa_limit", AsyncMock(return_value=True))
+        monkeypatch.setattr(
+            "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
+            lambda: _Advisor(),
+        )
+
+        await ws_handlers.handle_sherpa_chat(
+            ws,
+            {
+                "payload": {
+                    "message": "Explain this workflow",
+                    "workflow_context": {"nodes": [{"node_id": "n1"}]},
+                }
+            },
+            user,
+            rate_limiter,
+        )
+
+        assert ws.send_json.await_args_list == [
+            call({"type": "sherpa_chat_start"}),
+            call({"type": "sherpa_subscription_required", "detail": "Invalid deployment key"}),
+        ]
 
     @pytest.mark.asyncio
     async def test_handle_sherpa_chat_with_tools_blocks_when_llm_chat_disabled(

@@ -67,8 +67,8 @@ class SherpaAdvisor:
     def _extract_detail(response: httpx.Response) -> str:
         try:
             payload = response.json()
-        except ValueError:
-            text = response.text.strip()
+        except (ValueError, httpx.ResponseNotRead):
+            text = response.text.strip() if response.is_closed else ""
             return text or f"Server returned {response.status_code}"
 
         detail = payload.get("detail") if isinstance(payload, dict) else None
@@ -134,8 +134,10 @@ class SherpaAdvisor:
                     headers=self._headers,
                 ) as response:
                     if response.status_code in {401, 402, 403}:
+                        await response.aread()
                         raise SubscriptionRequiredError(self._extract_detail(response))
                     if response.status_code >= 400:
+                        await response.aread()
                         raise RuntimeError(self._extract_detail(response))
 
                     async for line in response.aiter_lines():

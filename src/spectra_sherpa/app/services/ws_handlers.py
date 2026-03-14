@@ -20,9 +20,11 @@ exceptions are caught and turned into error messages.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Callable
 
+import httpx
 from fastapi import WebSocket
 
 from spectra_sherpa.app.core.security import check_egress_permission
@@ -88,6 +90,25 @@ def _is_contextual_server_channel(use_server_chat: bool) -> bool:
     return use_server_chat
 
 
+def _extract_upstream_error_detail(response: httpx.Response) -> str:
+    """Best-effort detail extraction for proxied HTTP failures."""
+    try:
+        payload = response.json()
+    except ValueError:
+        text = response.text.strip()
+        return text or f"Server returned {response.status_code}"
+
+    detail = payload.get("detail") if isinstance(payload, dict) else None
+    if isinstance(detail, dict):
+        message = detail.get("message")
+        if isinstance(message, str) and message.strip():
+            return message
+        return json.dumps(detail)
+    if isinstance(detail, str) and detail.strip():
+        return detail
+    return f"Server returned {response.status_code}"
+
+
 async def _proxy_server_chat(
     ws: WebSocket,
     message: str,
@@ -102,8 +123,6 @@ async def _proxy_server_chat(
     user_id = user.id if user else None
 
     # ── Remote proxy path (httpx SSE to remote spectra-server) ──
-    import httpx
-
     from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
 
     base_url = spectrasherpa_config.api_base_url.rstrip("/")
@@ -132,7 +151,8 @@ async def _proxy_server_chat(
                 headers={"X-Deployment-Key": api_key},
             ) as response:
                 if response.status_code != 200:
-                    detail = f"Server returned {response.status_code}"
+                    await response.aread()
+                    detail = _extract_upstream_error_detail(response)
                     await ws.send_json({"type": "error", "detail": detail})
                     return
                 async for line in response.aiter_lines():
@@ -358,6 +378,8 @@ async def handle_sherpa_chat(
     user: Any,
     rate_limiter: RateLimiter,
 ) -> None:
+    from spectra_sherpa.app.services.sherpa_advisor import SubscriptionRequiredError
+
     try:
         if not await _sherpa_proxy_preamble(ws, user):
             return
@@ -386,6 +408,8 @@ async def handle_sherpa_chat(
         ):
             await ws.send_json({"type": "sherpa_chat_chunk", "chunk": chunk})
         await ws.send_json({"type": "sherpa_chat_done"})
+    except SubscriptionRequiredError as exc:
+        await ws.send_json({"type": "sherpa_subscription_required", "detail": exc.detail})
     except Exception as exc:
         logger.exception("sherpa_chat failed: %s", exc)
         await ws.send_json({"type": "sherpa_error", "detail": "Sherpa chat failed. Check server logs for details."})
