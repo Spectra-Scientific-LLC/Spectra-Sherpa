@@ -621,6 +621,167 @@ class TestChatContextRouting:
         )
 
 
+class TestSherpaAdvisorProxy:
+    @pytest.mark.asyncio
+    async def test_chat_followup_streams_chunks_from_server(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import httpx
+
+        from spectra_sherpa.app.services import spectrasherpa as sherpa_cfg_mod
+        from spectra_sherpa.app.services.sherpa_advisor import SherpaAdvisor
+
+        captured: dict[str, object] = {}
+
+        class _FakeResponse:
+            status_code = 200
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def aiter_lines(self):
+                yield 'data: {"type":"start","conversation_id":"conv-1"}'
+                yield 'data: {"type":"chunk","text":"Hello"}'
+                yield 'data: {"type":"chunk","text":" world"}'
+                yield 'data: {"type":"done","conversation_id":"conv-1"}'
+
+        class _FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            def stream(self, method, url, json, headers):
+                captured["method"] = method
+                captured["url"] = url
+                captured["json"] = json
+                captured["headers"] = headers
+                return _FakeResponse()
+
+        monkeypatch.setattr(httpx, "AsyncClient", lambda *args, **kwargs: _FakeClient())
+        monkeypatch.setattr(
+            sherpa_cfg_mod,
+            "spectrasherpa_config",
+            SimpleNamespace(api_base_url="https://sherpa.example.com", api_key="deploy-key"),
+        )
+
+        advisor = SherpaAdvisor()
+        chunks = [
+            chunk
+            async for chunk in advisor.chat_followup(
+                message="What does this show?",
+                workflow_id=14,
+                history=[{"role": "user", "content": "Earlier"}],
+                workflow_context={"nodes": [{"node_id": "n1"}]},
+            )
+        ]
+
+        assert chunks == ["Hello", " world"]
+        assert captured["method"] == "POST"
+        assert captured["url"] == "https://sherpa.example.com/api/v1/sherpa/chat"
+        assert captured["headers"] == {"X-Deployment-Key": "deploy-key"}
+        assert captured["json"] == {
+            "message": "What does this show?",
+            "workflow_id": 14,
+            "history": [{"role": "user", "content": "Earlier"}],
+            "workflow_context": {"nodes": [{"node_id": "n1"}]},
+        }
+
+    @pytest.mark.asyncio
+    async def test_sync_workflow_parses_recommendations(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import httpx
+
+        from spectra_sherpa.app.schemas.sherpa import (
+            EgressTier,
+            WorkflowContextEdge,
+            WorkflowContextNode,
+            WorkflowStateSync,
+        )
+        from spectra_sherpa.app.services import spectrasherpa as sherpa_cfg_mod
+        from spectra_sherpa.app.services.sherpa_advisor import SherpaAdvisor
+
+        captured: dict[str, object] = {}
+
+        class _FakeResponse:
+            status_code = 200
+
+            def json(self):
+                return {
+                    "recommendations": [
+                        {
+                            "suggestion_id": "s1",
+                            "workflow_id": 14,
+                            "category": "workflow_structure",
+                            "title": "Sherpa Analysis",
+                            "explanation": "Use PCA first.",
+                            "patch": None,
+                            "confidence": 0.85,
+                            "status": "pending",
+                        }
+                    ]
+                }
+
+        class _FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def request(self, method, url, json, headers):
+                captured["method"] = method
+                captured["url"] = url
+                captured["json"] = json
+                captured["headers"] = headers
+                return _FakeResponse()
+
+        monkeypatch.setattr(httpx, "AsyncClient", lambda *args, **kwargs: _FakeClient())
+        monkeypatch.setattr(
+            sherpa_cfg_mod,
+            "spectrasherpa_config",
+            SimpleNamespace(api_base_url="https://sherpa.example.com", api_key="deploy-key"),
+        )
+
+        advisor = SherpaAdvisor()
+        sync_msg = WorkflowStateSync(
+            workflow_id=14,
+            workflow_name="Demo",
+            nodes=[WorkflowContextNode(node_id="n1", node_type="model.pca")],
+            edges=[WorkflowContextEdge(from_node_id="n1", to_node_id="n2")],
+        )
+
+        recommendations = await advisor.sync_workflow(sync_msg, tier=EgressTier.SUMMARIES)
+
+        assert len(recommendations) == 1
+        assert recommendations[0].title == "Sherpa Analysis"
+        assert captured["method"] == "POST"
+        assert captured["url"] == "https://sherpa.example.com/api/v1/sherpa/sync"
+        assert captured["headers"] == {"X-Deployment-Key": "deploy-key"}
+        assert captured["json"]["workflow_id"] == 14
+        assert captured["json"]["tier"] == "summaries"
+
+    def test_advisor_is_available_helper_accepts_property_and_method(self) -> None:
+        from spectra_sherpa.app.services.ws_handlers import _advisor_is_available
+
+        class _PropertyAdvisor:
+            is_available = True
+
+        class _MethodAdvisor:
+            def is_available(self):
+                return True
+
+        assert _advisor_is_available(_PropertyAdvisor()) is True
+        assert _advisor_is_available(_MethodAdvisor()) is True
+
+
 # ---------------------------------------------------------------------------
 # Slice 2: Dataset tool registration
 # ---------------------------------------------------------------------------

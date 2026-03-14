@@ -252,6 +252,12 @@ async def handle_llm_chat(
 # ---------------------------------------------------------------------------
 
 
+def _advisor_is_available(advisor: Any) -> bool:
+    """Handle either a property-style or method-style availability check."""
+    available = getattr(advisor, "is_available", False)
+    return bool(available() if callable(available) else available)
+
+
 async def _check_demo_sherpa_limit(ws: WebSocket, user: Any) -> bool:
     """Check demo Sherpa interaction quota. Returns False (and sends error) if exhausted."""
     from spectra_sherpa.app.core.demo_limits import check_demo_sherpa, demo_limit_error_detail
@@ -281,7 +287,7 @@ async def handle_sherpa_sync(
         from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
 
         advisor = get_sherpa_advisor()
-        if not advisor.is_available:
+        if not _advisor_is_available(advisor):
             await ws.send_json({"type": "sherpa_status", "payload": {"connected": False, "reason": "not_configured"}})
             return
 
@@ -402,7 +408,7 @@ async def _sherpa_proxy_preamble(ws: WebSocket, user: Any) -> bool:
     from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
 
     advisor = get_sherpa_advisor()
-    if not advisor.is_available:
+    if not _advisor_is_available(advisor):
         await ws.send_json(
             {
                 "type": "sherpa_status",
