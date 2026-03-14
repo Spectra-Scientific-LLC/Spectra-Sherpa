@@ -372,6 +372,16 @@ async def api_key_middleware(request: Request, call_next) -> Response:
     if not requires_http_auth(get_client_host(request)):
         return await call_next(request)  # type: ignore[no-any-return]
 
+    # Server-backed Sherpa routes authenticate with X-Deployment-Key at the
+    # route/dependency layer. Do not block them at the generic gateway layer.
+    deployment_key = request.headers.get("X-Deployment-Key")
+    if deployment_key and (
+        path == "/api/v1/config/subscription"
+        or path.startswith("/api/v1/conversations")
+        or path.startswith("/api/v1/sherpa/")
+    ):
+        return await call_next(request)  # type: ignore[no-any-return]
+
     # Check for API key or Bearer token
     api_key = request.headers.get("X-API-Key")
     auth_header = request.headers.get("Authorization")
