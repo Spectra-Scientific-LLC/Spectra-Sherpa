@@ -232,19 +232,17 @@ class DemoContract(BaseModel):
     featured_templates: list[str] = Field(
         default_factory=lambda: [
             "pca",
-            "pls_regression",
-            "project1",
+            "pca_exploratory",
+            "pls_calibration",
             "ir_opus_analysis",
             "preprocessing",
-            "peak_detection",
-            "exploratory_analysis",
-            "classification",
-            "anomaly_detection",
-            "compare_models",
-            "calibration_transfer",
-            "data_fusion",
+            "peaks",
+            "classification_plsda",
+            "simca_classification",
+            "mcr_als",
+            "oes_process_monitoring",
         ],
-        description="Featured workflow templates in demo mode",
+        description="Featured workflow template slugs shown in demo mode",
     )
     available_plans: list[str] = Field(
         default_factory=list, description="Available subscription plans (for upgrade UI)"

@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, call, patch
 
 import numpy as np
 import pytest
+from fastapi import HTTPException
 
 from spectra_sherpa.app.lib.sherpa_dataset import (
     DomainContext,
@@ -438,6 +439,50 @@ class TestChatContextRouting:
             call({"type": "llm_chunk", "conversation_id": "conv-1", "chunk": "Hello"}),
             call({"type": "llm_done", "conversation_id": "conv-1"}),
         ]
+
+    @pytest.mark.asyncio
+    async def test_llm_server_proxy_maps_upstream_auth_failure_to_service_error(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import httpx
+
+        from spectra_sherpa.app.api.v1.routes import llm as llm_routes
+        from spectra_sherpa.app.services import spectrasherpa as sherpa_cfg_mod
+
+        class _FakeResponse:
+            status_code = 401
+            text = '{"detail":"invalid deployment key"}'
+
+            def json(self):
+                return {"detail": "invalid deployment key"}
+
+        class _FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def request(self, *args, **kwargs):
+                return _FakeResponse()
+
+        monkeypatch.setattr(httpx, "AsyncClient", lambda *args, **kwargs: _FakeClient())
+        monkeypatch.setattr(
+            sherpa_cfg_mod,
+            "spectrasherpa_config",
+            SimpleNamespace(api_base_url="https://sherpa.example.com", api_key="deploy-key"),
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await llm_routes._proxy_server_request(
+                "GET",
+                "/conversations",
+                params={"local_user_id": 7, "project_id": 42},
+            )
+
+        assert exc_info.value.status_code == 503
+        assert exc_info.value.detail == "Sherpa subscription service authorization failed."
 
     @pytest.mark.asyncio
     async def test_handle_sherpa_chat_uses_llm_chat_gate_not_sync_gate(

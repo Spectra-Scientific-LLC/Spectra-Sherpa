@@ -70,6 +70,11 @@ async def _proxy_server_request(
             detail = response.json().get("detail", detail)
         except Exception:
             pass
+        if response.status_code in (401, 403):
+            raise HTTPException(
+                status_code=503,
+                detail="Sherpa subscription service authorization failed.",
+            )
         raise HTTPException(status_code=response.status_code, detail=detail)
 
     return response

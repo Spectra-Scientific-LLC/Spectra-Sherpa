@@ -121,28 +121,36 @@ class TestDemoContractDefaults:
         assert contract.max_executions_per_session == 25
         assert contract.max_sherpa_interactions == 20
 
-    def test_featured_templates_match_known_ids(self) -> None:
-        """featured_templates must reference IDs that exist in the frontend TEMPLATES map."""
+    def test_featured_templates_match_known_slugs(self) -> None:
+        """featured_templates must reference slugs that exist in the template YAML files."""
         contract = DemoContract()
-        # These are the template IDs defined in frontend/src/stores/workflow.ts
-        known_template_ids = {
+        # These are the template slugs from src/spectra_sherpa/data/templates/*.yaml
+        known_template_slugs = {
             "pca",
-            "pls_regression",
-            "project1",
+            "pca_exploratory",
+            "pls_calibration",
             "ir_opus_analysis",
             "preprocessing",
-            "peak_detection",
-            "exploratory_analysis",
-            "classification",
-            "anomaly_detection",
-            "compare_models",
-            "calibration_transfer",
-            "data_fusion",
+            "peaks",
+            "classification_plsda",
+            "simca_classification",
+            "mcr_als",
+            "oes_process_monitoring",
+            "efa_analysis",
+            "hierarchical_clustering",
+            "knn_classification",
+            "mcr_als_kinetics",
+            "nmr_processing",
+            "raman_processing",
+            "region_selection_pls",
+            "simca_qc",
+            "simplisma",
+            "spectral_decomposition",
         }
-        for tmpl_id in contract.featured_templates:
+        for tmpl_slug in contract.featured_templates:
             assert (
-                tmpl_id in known_template_ids
-            ), f"featured_template '{tmpl_id}' does not match any known frontend template ID"
+                tmpl_slug in known_template_slugs
+            ), f"featured_template '{tmpl_slug}' does not match any known template slug"
 
 
 class TestDemoAnalyticsEndpoint:

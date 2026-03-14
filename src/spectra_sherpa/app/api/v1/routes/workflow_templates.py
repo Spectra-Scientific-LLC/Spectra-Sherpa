@@ -589,14 +589,25 @@ async def list_templates(
     session: AsyncSession = Depends(get_session),
 ) -> WorkflowTemplateListResponse:
     """List active workflow templates, defaulting to production-ready entries only."""
+    from spectra_sherpa.app.core.config import app_config
+
+    is_demo = app_config.site_profile == "demo"
 
     query = select(WorkflowTemplate).where(WorkflowTemplate.is_active.is_(True))
+
+    # Demo mode: restrict to curated featured templates only
+    if is_demo:
+        featured_slugs = app_config.demo_contract.featured_templates
+        query = query.where(WorkflowTemplate.slug.in_(featured_slugs))
+
     if category:
         query = query.where(WorkflowTemplate.category == category)
 
     result = await session.execute(query.order_by(WorkflowTemplate.category, WorkflowTemplate.name))
     templates = list(result.scalars().all())
-    if not include_wip:
+
+    # Never show WIP templates in demo mode
+    if not include_wip or is_demo:
         templates = [template for template in templates if _template_status(template) == "ready"]
 
     total = len(templates)

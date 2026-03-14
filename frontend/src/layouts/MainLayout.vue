@@ -79,7 +79,7 @@ const jobStore = useJobStore();
 const route = useRoute();
 
 const navCollapsed = ref(localStorage.getItem("navCollapsed") === "true");
-const chatCollapsed = ref(localStorage.getItem("chatCollapsed") !== "false");
+const chatCollapsed = ref(localStorage.getItem("chatCollapsed") === "true");
 const chatWidth = ref(360);
 const isResizing = ref(false);
 const isPublicRoute = computed(() => Boolean(route.meta.public));
