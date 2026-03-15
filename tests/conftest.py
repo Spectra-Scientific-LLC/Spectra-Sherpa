@@ -196,6 +196,15 @@ def ws_client():
         tc.close()
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _init_model_store_for_tests(tmp_path_factory) -> None:
+    """Ensure ModelStore is initialised so training nodes can persist artifacts."""
+    from spectra_sherpa.app.services.model_store import init_model_store
+
+    base = tmp_path_factory.mktemp("model_store")
+    init_model_store(base)
+
+
 @pytest.fixture(autouse=True)
 def reset_rate_limiter_state() -> None:
     """Reset file-backed limiter state between tests to avoid flaky 429s.

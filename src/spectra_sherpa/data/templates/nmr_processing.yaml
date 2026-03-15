@@ -14,6 +14,7 @@ template_data:
     parameters:
       source: spectrochempy
       example_dataset: nmrdata
+      example_file: nmrdata/bruker/tests/nmr/topspin_1d/1
     position_x: 175
     position_y: 50
   - node_id: preprocess_1

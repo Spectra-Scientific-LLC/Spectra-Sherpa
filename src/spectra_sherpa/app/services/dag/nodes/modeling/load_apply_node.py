@@ -230,10 +230,52 @@ class LoadApplyModelNode(Node):
         if X_data.ndim == 1:
             X_data = X_data.reshape(1, -1)
 
+        # --- Apply feature mask before validating feature count ---
+        # When a model was trained on selected features, it stores:
+        #   - feature_mask: boolean mask over the full spectrum
+        #   - selected_features: the actual axis values of selected features
+        #   - n_features: count of *selected* features the model expects
+        # We must apply the mask FIRST so n_features validation passes.
+        selected_features = manifest.get("selected_features")
+        feature_mask = manifest.get("feature_mask")
+        if feature_mask is not None and isinstance(X_new, SherpaDataset):
+            mask = np.asarray(feature_mask, dtype=bool)
+            fa = getattr(X_new, "feature_axis", None)
+            if fa is not None and fa.values is not None:
+                actual_wn = np.asarray(fa.values, dtype=np.float64)
+                # Apply mask only when new data is full-spectrum
+                if len(mask) == len(actual_wn) and X_data.shape[1] == len(actual_wn):
+                    X_data = X_data[:, mask]
+                    logger.info(f"Applied saved feature mask: {len(actual_wn)} -> {X_data.shape[1]} features")
+
         # --- Validate feature count ---
         n_features = manifest.get("n_features")
         if n_features is not None and X_data.shape[1] != n_features:
             raise ValueError(f"Feature count mismatch: model expects {n_features} features, " f"got {X_data.shape[1]}")
+
+        # --- Validate axis identity when selection was applied ---
+        if selected_features is not None and isinstance(X_new, SherpaDataset):
+            expected_wn = np.asarray(selected_features, dtype=np.float64)
+            fa = getattr(X_new, "feature_axis", None)
+            if fa is not None and fa.values is not None:
+                actual_wn = np.asarray(fa.values, dtype=np.float64)
+                # Compare masked axis values for non-contiguous selections
+                if X_data.shape[1] == len(expected_wn):
+                    if feature_mask is not None:
+                        mask = np.asarray(feature_mask, dtype=bool)
+                        if len(mask) == len(actual_wn):
+                            compare_wn = actual_wn[mask]
+                        else:
+                            compare_wn = actual_wn[: len(expected_wn)]
+                    else:
+                        compare_wn = actual_wn[: len(expected_wn)]
+                    if not np.allclose(compare_wn, expected_wn, atol=0.5):
+                        logger.warning(
+                            "Feature axis values differ from model training axis. "
+                            f"Expected range [{expected_wn[0]:.1f}, {expected_wn[-1]:.1f}], "
+                            f"got [{compare_wn[0]:.1f}, {compare_wn[-1]:.1f}]. "
+                            "Predictions may be unreliable."
+                        )
 
         # --- Reconstruct extract and apply ---
         extract = extract_cls.from_artifact(manifest, arrays)  # type: ignore[attr-defined]

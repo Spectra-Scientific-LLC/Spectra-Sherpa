@@ -536,6 +536,19 @@ class PCANode(Node):
             "q_critical_95": spe_p95,
         }
 
+        # Build model artifact for persistence
+        from ._artifact_builder import build_model_artifact
+
+        artifact = build_model_artifact(
+            extracted,
+            input_ds,
+            node_id=self.node_id,
+            metrics={
+                "explained_variance_ratio": evr_ratio.tolist(),
+                "cumulative_variance": cumulative_variance,
+            },
+        )
+
         return NodeResult(
             outputs={
                 "default": scores_dataset,  # Backwards-compatible default port
@@ -547,6 +560,7 @@ class PCANode(Node):
                     "input_data": input_data,
                     "input_data_ds": input_ds,
                 },
+                "_model_artifact": artifact,
             },
             diagnostics=diagnostics,
         )

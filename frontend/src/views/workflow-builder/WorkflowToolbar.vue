@@ -71,6 +71,28 @@
         </div>
       </div>
 
+      <!-- Selection & Design Section -->
+      <div class="section" @mouseenter="!clickCooldown && (activeSection = 'selection')">
+        <div class="section-header" :class="{ active: activeSection === 'selection' }" @click="toggleSection('selection')">
+          <span>Selection &amp; Design</span>
+          <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'selection' }"></i>
+        </div>
+        <div class="section-nodes" :class="{ expanded: activeSection === 'selection' }">
+          <div
+            v-for="(config, type) in selectionNodes"
+            :key="type"
+            class="node-button"
+            :class="config.colorClass"
+            @click="addNode(type)"
+          >
+            <span class="node-icon">{{ config.icon }}</span>
+            <span class="node-label">{{ config.label }}</span>
+            <i class="pi pi-plus add-icon"></i>
+            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
+          </div>
+        </div>
+      </div>
+
       <!-- Exploratory Section -->
       <div class="section" @mouseenter="!clickCooldown && (activeSection = 'exploratory')">
         <div class="section-header" :class="{ active: activeSection === 'exploratory' }" @click="toggleSection('exploratory')">
@@ -323,6 +345,8 @@ const NODE_ICONS: Record<string, string> = {
   'preprocess.wavenumber_align': '⚙️',
   'preprocess.osc': '⊥',
   'preprocess.emsc': '📐',
+  'transfer.pds': '🔄',
+  'transfer.sbc': '📐',
   'time_series.moving_window': '🕒',
   'time_series.trend_removal': '📉',
   // Exploratory
@@ -359,6 +383,17 @@ const NODE_ICONS: Record<string, string> = {
   'output.contour': '🗺️',
   'output.data_table': '📋',
   'output.export': '💾',
+  // Selection & Design
+  'selection.sample_partition': '🎯',
+  'selection.variable_select': '🔬',
+  'selection.ipls': '📊',
+  'selection.cars': '🏎️',
+  'selection.spa': '📐',
+  'selection.uve': '🧹',
+  'selection.stability': '🔒',
+  'selection.nested_cv': '🔄',
+  'selection.audit': '📋',
+  'selection.compare': '⚖️',
   // Deploy
   'deploy.input': '📥',
   'deploy.output': '📤',
@@ -369,6 +404,7 @@ const CATEGORY_COLOR: Record<string, string> = {
   data: 'node-data',
   synthesis: 'node-synthesis',
   preprocessing: 'node-preprocess',
+  selection: 'node-selection',
   exploratory: 'node-exploratory',
   regression: 'node-regression',
   classification: 'node-classify',
@@ -383,6 +419,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   data: 'Data',
   synthesis: 'Synthesis',
   preprocessing: 'Preprocessing',
+  selection: 'Selection & Design',
   exploratory: 'Exploratory',
   regression: 'Regression',
   classification: 'Classification',
@@ -447,6 +484,7 @@ const extraCategories = computed(() => {
 const dataNodes = computed(() => nodesByCategory.value.data || {});
 const synthesisNodes = computed(() => nodesByCategory.value.synthesis || {});
 const preprocessNodes = computed(() => nodesByCategory.value.preprocessing || {});
+const selectionNodes = computed(() => nodesByCategory.value.selection || {});
 const exploratoryNodes = computed(() => nodesByCategory.value.exploratory || {});
 const regressionNodes = computed(() => nodesByCategory.value.regression || {});
 const clusteringNodes = computed(() => nodesByCategory.value.clustering || {});
@@ -620,6 +658,10 @@ const addNode = (nodeType: string) => {
 
 .node-preprocess {
   background: linear-gradient(135deg, #22c55e, #16a34a);
+}
+
+.node-selection {
+  background: linear-gradient(135deg, #14b8a6, #0d9488);
 }
 
 .node-exploratory {

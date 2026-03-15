@@ -1,0 +1,98 @@
+schema_version: 1
+name: VIP-Assisted PLS
+slug: vip_assisted_pls
+description: Two-stage PLS regression where a full-spectrum model identifies important
+  wavelengths via VIP scores, then a reduced model is built on selected variables only.
+  Demonstrates iterative variable selection for parsimonious calibration.
+category: selection_design
+is_active: true
+template_data:
+  nodes:
+  - node_id: data_1
+    node_type: data.source
+    label: Load Spectral Data
+    parameters:
+      source: eigenvector
+      eigenvector_dataset: corn_m5
+    position_x: 175
+    position_y: 50
+  - node_id: preprocess_1
+    node_type: preprocess.normalize
+    label: SNV Normalize
+    parameters:
+      method: snv
+    position_x: 175
+    position_y: 250
+  - node_id: pls_full
+    node_type: model.pls
+    label: Full-Spectrum PLS
+    parameters:
+      n_components: 5
+    position_x: 175
+    position_y: 450
+  - node_id: vip_select
+    node_type: selection.variable_select
+    label: VIP Selection
+    parameters:
+      method: vip
+      threshold: 1.0
+    position_x: 500
+    position_y: 450
+  - node_id: pls_reduced
+    node_type: model.pls
+    label: Reduced PLS
+    parameters:
+      n_components: 3
+    position_x: 500
+    position_y: 700
+  - node_id: viz_1
+    node_type: output.plot
+    label: Compare Models
+    parameters:
+      plot_type: spectra
+    position_x: 175
+    position_y: 700
+  edges:
+  - from_node_id: data_1
+    to_node_id: preprocess_1
+  - from_node_id: preprocess_1
+    to_node_id: pls_full
+  - from_node_id: pls_full
+    to_node_id: vip_select
+    from_output: model
+    to_input: model
+  - from_node_id: preprocess_1
+    to_node_id: vip_select
+    to_input: X
+  - from_node_id: vip_select
+    to_node_id: pls_reduced
+    from_output: X_selected
+  - from_node_id: pls_full
+    to_node_id: viz_1
+  canvas_state:
+    zoom: 0.85
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_spectra:
+      role_type: X_spectra
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      description: Spectral data with concentration targets
+      accepted_techniques:
+      - FTIR
+      - NIR
+      - Raman
+    Y_reference:
+      role_type: Y_reference
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      target_type: continuous
+      description: Reference values (embedded in spectral data file)
+  certified_datasets:
+  - source: eigenvector
+    name: corn_m5
+  - source: eigenvector
+    name: diesel_nir

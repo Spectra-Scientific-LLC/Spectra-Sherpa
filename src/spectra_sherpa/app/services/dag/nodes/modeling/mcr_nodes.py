@@ -426,10 +426,20 @@ class MCRNode(Node):
             }
         )
 
+        # Build model artifact for persistence
+        from ._artifact_builder import build_model_artifact
+
+        artifact = build_model_artifact(
+            extracted,
+            input_ds,
+            node_id=self.node_id,
+        )
+
         return {
             "default": C_dataset,  # SherpaDataset: concentration profiles (n_samples, n_components)
             "C": C_dataset,  # Alias for concentrations
             "St": St_dataset,  # SherpaDataset: pure spectra (n_components, n_features)
             "residuals": residuals_dataset,  # SherpaDataset: residuals (n_samples, n_features)
             "model": mcr,  # Model port
+            "_model_artifact": artifact,
         }

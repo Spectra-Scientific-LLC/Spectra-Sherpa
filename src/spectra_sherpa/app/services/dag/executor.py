@@ -224,8 +224,8 @@ class DAGExecutor:
                 logger.exception("Failed to save model artifact for node %s", node_id)
                 raise  # Fail-fast: don't let a run appear successful while artifact is lost
         else:
-            # Fail-fast: a training run that emits an artifact must not succeed
-            # when persistence is unavailable.
+            # Fail closed: a training run that emits an artifact must not
+            # appear successful if persistence is unavailable.
             raise RuntimeError(
                 f"ModelStore not initialized — cannot persist artifact from node {node_id}. "
                 "Ensure init_model_store() is called at startup."

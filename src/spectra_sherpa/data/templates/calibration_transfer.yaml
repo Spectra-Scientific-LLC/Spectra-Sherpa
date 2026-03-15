@@ -1,0 +1,93 @@
+schema_version: 1
+name: Calibration Transfer (PDS)
+slug: calibration_transfer
+description: Transfer a calibration model between instruments using Piecewise Direct
+  Standardization (PDS). Connect paired transfer samples measured on both instruments
+  to fit the transfer function, then apply it to standardize new secondary spectra.
+  Includes transfer quality diagnostics (RMSE, per-feature error) without implying
+  a supervised calibration target that the workflow does not actually define.
+category: preprocessing
+is_active: true
+template_data:
+  nodes:
+  - node_id: primary_1
+    node_type: data.source
+    label: Primary Transfer Samples
+    parameters: {}
+    position_x: 100
+    position_y: 50
+  - node_id: secondary_1
+    node_type: data.source
+    label: Secondary Transfer Samples
+    parameters: {}
+    position_x: 400
+    position_y: 50
+  - node_id: new_data_1
+    node_type: data.source
+    label: New Secondary Spectra
+    parameters: {}
+    position_x: 700
+    position_y: 50
+  - node_id: transfer_1
+    node_type: transfer.pds
+    label: PDS Transfer
+    parameters:
+      half_window: 3
+      n_components: 2
+    position_x: 400
+    position_y: 350
+  - node_id: viz_1
+    node_type: output.plot
+    label: Transfer Diagnostics
+    parameters:
+      plot_type: spectra
+    position_x: 700
+    position_y: 350
+  edges:
+  - from_node_id: primary_1
+    to_node_id: transfer_1
+    to_input: X_primary
+  - from_node_id: secondary_1
+    to_node_id: transfer_1
+    to_input: X_secondary
+  - from_node_id: new_data_1
+    to_node_id: transfer_1
+    to_input: X_new
+  - from_node_id: transfer_1
+    to_node_id: viz_1
+    from_output: transfer_error
+  canvas_state:
+    zoom: 0.85
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_primary:
+      role_type: X_spectra
+      node_binding: primary_1
+      required: true
+      binding_mode: embedded
+      description: Transfer samples on the primary (master) instrument
+      accepted_techniques:
+      - FTIR
+      - NIR
+      - Raman
+    X_secondary:
+      role_type: X_spectra
+      node_binding: secondary_1
+      required: true
+      binding_mode: embedded
+      description: Same transfer samples on the secondary instrument
+      accepted_techniques:
+      - FTIR
+      - NIR
+      - Raman
+    X_new:
+      role_type: X_spectra
+      node_binding: new_data_1
+      required: true
+      binding_mode: embedded
+      description: New spectra from secondary instrument to standardize
+      accepted_techniques:
+      - FTIR
+      - NIR
+      - Raman

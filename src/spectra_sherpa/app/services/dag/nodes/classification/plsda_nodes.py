@@ -578,55 +578,12 @@ class PLSDANode(Node):
 
         VIP scores indicate the importance of each variable in the PLS model.
         VIP > 1 indicates important variables.
+
+        Delegates to the shared VIP utility in the selection package.
         """
-        # Extract numeric arrays from SpectroChemPy model
-        # Use _safe_getattr for version-resilient attribute access (SCP 0.8.1+)
-        raw_t = _safe_getattr(pls_model, ("x_scores", "_x_scores", "x_scores_"))
-        if raw_t is None:
-            return np.zeros(X.shape[1], dtype=float)
-        t = _coerce_numeric_array(raw_t)
+        from ..selection._vip import extract_vip_from_pls_model
 
-        # SpectroChemPy returns x_weights as (n_components, n_features),
-        # but VIP calculation expects (n_features, n_components)
-        raw_w = _safe_getattr(pls_model, ("x_weights", "_x_weights", "x_weights_"))
-        if raw_w is None:
-            return np.zeros(X.shape[1], dtype=float)
-        w_raw = _coerce_numeric_array(raw_w)
-        w = w_raw.T  # Transpose to (n_features, n_components)
-
-        raw_q = _safe_getattr(pls_model, ("y_loadings", "_y_loadings", "y_loadings_"))
-        if raw_q is None:
-            return np.zeros(X.shape[1], dtype=float)
-        q = _coerce_numeric_array(raw_q)
-
-        # Guard against malformed arrays
-        if t.ndim != 2 or w.ndim != 2 or q.ndim < 1:
-            return np.zeros(X.shape[1], dtype=float)
-
-        n_features = X.shape[1]
-        n_components = t.shape[1]
-
-        # Calculate explained variance for each component
-        s = np.diag(t.T @ t @ q.T @ q).reshape(n_components, -1)
-        s = np.nan_to_num(s, nan=0.0, posinf=0.0, neginf=0.0)
-        total_s = float(np.sum(s))
-        if total_s <= 1e-12:
-            return np.zeros(n_features, dtype=float)
-
-        # VIP formula
-        vip = np.zeros(n_features)
-        for i in range(n_features):
-            weights = []
-            for j in range(n_components):
-                norm = float(np.linalg.norm(np.nan_to_num(w[:, j], nan=0.0)))
-                if norm <= 1e-12:
-                    weights.append(0.0)
-                else:
-                    weights.append((w[i, j] / norm) ** 2)
-            weight = np.array(weights, dtype=float)
-            vip[i] = np.sqrt(n_features * np.sum(s.flatten() * weight) / total_s)
-
-        return np.nan_to_num(vip, nan=0.0, posinf=0.0, neginf=0.0)
+        return extract_vip_from_pls_model(pls_model, X.shape[1])
 
     def _generate_plsda_plots(
         self, scores, loadings, vip_scores, y_array, classes, n_components, wavenumbers, feature_names=None

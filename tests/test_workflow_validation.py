@@ -9,6 +9,7 @@ Verifies DAGExecutor.validate_full() catches:
 
 from __future__ import annotations
 
+import warnings
 from unittest.mock import patch
 
 import pytest
@@ -235,6 +236,58 @@ class TestParameterValidation:
         assert result.is_valid  # warnings don't make it invalid
         warnings = [w for w in result.warnings if "not in options" in w.message.lower()]
         assert len(warnings) == 1
+
+
+class TestRuntimePortTypeFallbacks:
+    def test_category_fallback_keeps_model_ports_as_model(self, monkeypatch):
+        from spectra_sherpa.app.services.dag.executor_validation import _category_from_type_ref
+        from spectra_sherpa.app.types import type_registry
+
+        monkeypatch.setattr(type_registry, "_loaded", False)
+
+        assert _category_from_type_ref("spectrasherpa://types/RegressionModel/1.0") == "model"
+        assert _category_from_type_ref("spectrasherpa://types/FittedModel/1.0") == "model"
+        assert _category_from_type_ref("spectrasherpa://types/TargetMatrix/1.0") == "target"
+
+    @pytest.mark.asyncio
+    async def test_model_edge_does_not_warn_when_registry_unloaded(self, monkeypatch):
+        from spectra_sherpa.app.services.dag.executor import DAGExecutor, WorkflowEdge, WorkflowNode
+        from spectra_sherpa.app.types import type_registry
+
+        monkeypatch.setattr(type_registry, "_loaded", False)
+
+        executor = DAGExecutor(process_pool=None)
+        executor.add_node(
+            WorkflowNode(
+                node_id="src",
+                node_type="data.source",
+                parameters={"source": "eigenvector", "eigenvector_dataset": "corn_m5"},
+            )
+        )
+        executor.add_node(
+            WorkflowNode(
+                node_id="pls",
+                node_type="model.pls",
+                parameters={"n_components": 3},
+            )
+        )
+        executor.add_node(
+            WorkflowNode(
+                node_id="predict",
+                node_type="model.pls_predict",
+                parameters={},
+            )
+        )
+        executor.add_edge(WorkflowEdge(from_node="src", to_node="pls", to_input="X"))
+        executor.add_edge(WorkflowEdge(from_node="pls", to_node="predict", from_output="model", to_input="model"))
+        executor.add_edge(WorkflowEdge(from_node="src", to_node="predict", from_output="default", to_input="X_new"))
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            await executor.execute()
+
+        mismatch_warnings = [w for w in caught if "Port type mismatch" in str(w.message)]
+        assert mismatch_warnings == []
 
 
 # ---------------------------------------------------------------------------

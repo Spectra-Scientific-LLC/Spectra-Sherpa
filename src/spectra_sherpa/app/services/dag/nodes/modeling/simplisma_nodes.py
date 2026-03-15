@@ -350,10 +350,20 @@ class SIMPLISMANode(Node):
         # Purity values extracted by SIMPLISMAExtract
         purity_list = purities.tolist() if purities is not None else []
 
+        # Build model artifact for persistence
+        from ._artifact_builder import build_model_artifact
+
+        artifact = build_model_artifact(
+            extracted,
+            input_ds,
+            node_id=self.node_id,
+        )
+
         return {
             "default": C_dataset,  # SherpaDataset: concentrations + sample labels (y) + component coords (x)
             "concentrations": C_dataset,  # Alias
             "spectra": St_dataset,  # SherpaDataset: pure spectra + wavenumbers (x) + component coords (y)
             "model": simplisma,  # Model port
             "purity_values": purity_list,  # Plain list (1D diagnostic)
+            "_model_artifact": artifact,
         }

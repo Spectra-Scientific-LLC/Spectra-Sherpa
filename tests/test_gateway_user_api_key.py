@@ -78,7 +78,10 @@ async def test_gateway_allows_deployment_key_on_subscription_overlay_path(
         async def _subscription():
             return {"ok": True}
 
-        app = create_app(extra_routers=[(router, {"prefix": "/api/v1", "tags": ["test"]})], include_server_routers=False)
+        app = create_app(
+            extra_routers=[(router, {"prefix": "/api/v1", "tags": ["test"]})],
+            include_server_routers=False,
+        )
 
         from httpx import ASGITransport, AsyncClient
 
@@ -110,7 +113,10 @@ async def test_gateway_allows_deployment_key_on_sherpa_route(
         async def _chat():
             return {"ok": True}
 
-        app = create_app(extra_routers=[(router, {"prefix": "/api/v1", "tags": ["test"]})], include_server_routers=False)
+        app = create_app(
+            extra_routers=[(router, {"prefix": "/api/v1", "tags": ["test"]})],
+            include_server_routers=False,
+        )
 
         from httpx import ASGITransport, AsyncClient
 
@@ -142,7 +148,10 @@ async def test_gateway_allows_deployment_key_on_conversations_route(
         async def _conversations():
             return [{"id": "c1"}]
 
-        app = create_app(extra_routers=[(router, {"prefix": "/api/v1", "tags": ["test"]})], include_server_routers=False)
+        app = create_app(
+            extra_routers=[(router, {"prefix": "/api/v1", "tags": ["test"]})],
+            include_server_routers=False,
+        )
 
         from httpx import ASGITransport, AsyncClient
 

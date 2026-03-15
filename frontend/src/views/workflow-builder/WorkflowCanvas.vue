@@ -509,6 +509,7 @@ const getNodeCategory = (type: string): string => {
       data: 'data',
       synthesis: 'data',
       preprocessing: 'preprocess',
+      selection: 'selection',
       modeling: 'model',
       analysis: 'analyze',
       classification: 'analyze',
@@ -531,6 +532,7 @@ const getNodeCategory = (type: string): string => {
       baseline: 'preprocess',
       smooth: 'preprocess',
       derivative: 'preprocess',
+      selection: 'selection',
       model: 'model',
       analysis: 'analyze',
       classification: 'analyze',
@@ -975,6 +977,7 @@ defineExpose({ centerNode });
 
 .header-data { background: linear-gradient(135deg, #3b82f6, #2563eb); }
 .header-preprocess { background: linear-gradient(135deg, #22c55e, #16a34a); }
+.header-selection { background: linear-gradient(135deg, #14b8a6, #0d9488); }
 .header-model { background: linear-gradient(135deg, #a855f7, #9333ea); }
 .header-analyze { background: linear-gradient(135deg, #eab308, #ca8a04); }
 .header-visualize { background: linear-gradient(135deg, #f97316, #ea580c); }

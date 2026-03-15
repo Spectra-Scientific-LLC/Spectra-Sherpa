@@ -39,7 +39,8 @@ def _category_from_type_ref(type_ref: str) -> str:
     """Derive the visual category from a type_ref URI.
 
     Resolves through the loaded type registry when available, otherwise
-    falls back to ``"dataset"``.  ``Any`` ports skip validation entirely.
+    infers a conservative category from the URI name instead of treating
+    everything as a dataset. ``Any`` ports skip validation entirely.
     """
     if "Any" in type_ref:
         return "any"  # Not in type_checks → validation skipped
@@ -49,7 +50,34 @@ def _category_from_type_ref(type_ref: str) -> str:
         td = type_registry.resolve(type_ref)
         return td.category
     except Exception:
+        pass
+
+    try:
+        type_name = type_ref.split("/types/", 1)[1].split("/", 1)[0]
+    except Exception:
+        return "any"
+
+    if type_name in {"TargetMatrix", "Categorical"}:
+        return "target"
+    if type_name in {"Scalar", "Array1D", "Array2D", "ConfusionMatrix"}:
+        return "array"
+    if type_name in {
+        "FittedModel",
+        "RegressionModel",
+        "ClassificationModel",
+        "DecompositionResult",
+        "ModelReference",
+    } or type_name.endswith("Model"):
+        return "model"
+    if type_name in {"ValidationResult", "Visualization", "Comparison", "WorkflowSnapshot"}:
+        return "config"
+    if (
+        "Dataset" in type_name
+        or "Spectrum" in type_name
+        or type_name in {"ScoreMatrix", "LoadingMatrix", "SpectralImage", "TimeSeries", "Chromatogram", "Voltammogram"}
+    ):
         return "dataset"
+    return "any"
 
 
 def _validate_spectral_units(

@@ -191,7 +191,63 @@ class FeatureAxis(AxisInfo):
     - Unit detection and type inference
     - Range queries
     - Region selection
+    - Feature selection state (include_mask, scores, method provenance)
     """
+
+    # --- Feature selection contract ---
+    # Mirrors SampleAxis.include_mask for the feature dimension.
+    include_mask: NpArray | None = Field(
+        None, description="Boolean mask indicating which features are selected (True = included)"
+    )
+    selection_scores: NpArray | None = Field(
+        None, description="Importance scores from variable selection (e.g. VIP, selectivity ratio)"
+    )
+    selection_method: str | None = Field(
+        None, description="Provenance: method that produced the mask (e.g. 'vip', 'ipls', 'manual')"
+    )
+
+    @model_validator(mode="after")
+    def _validate_feature_selection_fields(self) -> FeatureAxis:
+        n = self._expected_length if self._expected_length is not None else self.length
+        if self.include_mask is not None and n > 0 and len(self.include_mask) != n:
+            raise ValueError(f"include_mask length ({len(self.include_mask)}) != expected length ({n})")
+        if self.selection_scores is not None and n > 0 and len(self.selection_scores) != n:
+            raise ValueError(f"selection_scores length ({len(self.selection_scores)}) != expected length ({n})")
+        return self
+
+    @property
+    def n_selected(self) -> int:
+        """Number of features currently selected (all if no mask)."""
+        if self.include_mask is None:
+            return self.length
+        return int(np.sum(self.include_mask))
+
+    def exclude_feature(self, i: int) -> None:
+        """Mark feature *i* as excluded."""
+        n = self._expected_length if self._expected_length is not None else self.length
+        if self.include_mask is None:
+            self.include_mask = np.ones(n, dtype=bool)
+        self.include_mask[i] = False
+
+    def include_feature(self, i: int) -> None:
+        """Mark feature *i* as included."""
+        if self.include_mask is None:
+            return  # all already included
+        self.include_mask[i] = True
+
+    def apply_mask(self, mask: np.ndarray, method: str | None = None, scores: np.ndarray | None = None) -> None:
+        """Set the feature selection mask with provenance.
+
+        Args:
+            mask: Boolean array (True = keep). Must match axis length.
+            method: Name of the selection algorithm (e.g. 'vip', 'interval').
+            scores: Optional importance scores aligned with the axis.
+        """
+        self.include_mask = np.asarray(mask, dtype=bool)
+        if method is not None:
+            self.selection_method = method
+        if scores is not None:
+            self.selection_scores = np.asarray(scores, dtype=np.float64)
 
     @property
     def axis_type(self) -> str | None:
@@ -211,6 +267,9 @@ class FeatureAxis(AxisInfo):
             labels=list(self.labels) if self.labels is not None else None,
             units=self.units,
             title=self.title,
+            include_mask=self.include_mask.copy() if self.include_mask is not None else None,
+            selection_scores=self.selection_scores.copy() if self.selection_scores is not None else None,
+            selection_method=self.selection_method,
         )
         if self._expected_length is not None:
             cp.bind_expected_length(self._expected_length)
@@ -319,6 +378,9 @@ class SpectralAxis(FeatureAxis):
             labels=list(self.labels) if self.labels is not None else None,
             units=self.units,
             title=self.title,
+            include_mask=self.include_mask.copy() if self.include_mask is not None else None,
+            selection_scores=self.selection_scores.copy() if self.selection_scores is not None else None,
+            selection_method=self.selection_method,
         )
         if self._expected_length is not None:
             cp.bind_expected_length(self._expected_length)
@@ -365,6 +427,9 @@ class TimeAxis(FeatureAxis):
             labels=list(self.labels) if self.labels is not None else None,
             units=self.units,
             title=self.title,
+            include_mask=self.include_mask.copy() if self.include_mask is not None else None,
+            selection_scores=self.selection_scores.copy() if self.selection_scores is not None else None,
+            selection_method=self.selection_method,
         )
         if self._expected_length is not None:
             cp.bind_expected_length(self._expected_length)
@@ -401,6 +466,9 @@ class MZAxis(FeatureAxis):
             labels=list(self.labels) if self.labels is not None else None,
             units=self.units,
             title=self.title,
+            include_mask=self.include_mask.copy() if self.include_mask is not None else None,
+            selection_scores=self.selection_scores.copy() if self.selection_scores is not None else None,
+            selection_method=self.selection_method,
         )
         if self._expected_length is not None:
             cp.bind_expected_length(self._expected_length)
@@ -441,6 +509,9 @@ class PotentialAxis(FeatureAxis):
             labels=list(self.labels) if self.labels is not None else None,
             units=self.units,
             title=self.title,
+            include_mask=self.include_mask.copy() if self.include_mask is not None else None,
+            selection_scores=self.selection_scores.copy() if self.selection_scores is not None else None,
+            selection_method=self.selection_method,
         )
         if self._expected_length is not None:
             cp.bind_expected_length(self._expected_length)
@@ -482,6 +553,9 @@ class FrequencyAxis(FeatureAxis):
             labels=list(self.labels) if self.labels is not None else None,
             units=self.units,
             title=self.title,
+            include_mask=self.include_mask.copy() if self.include_mask is not None else None,
+            selection_scores=self.selection_scores.copy() if self.selection_scores is not None else None,
+            selection_method=self.selection_method,
         )
         if self._expected_length is not None:
             cp.bind_expected_length(self._expected_length)
@@ -538,6 +612,9 @@ class SpatialAxis(FeatureAxis):
             labels=list(self.labels) if self.labels is not None else None,
             units=self.units,
             title=self.title,
+            include_mask=self.include_mask.copy() if self.include_mask is not None else None,
+            selection_scores=self.selection_scores.copy() if self.selection_scores is not None else None,
+            selection_method=self.selection_method,
         )
         if self._expected_length is not None:
             cp.bind_expected_length(self._expected_length)

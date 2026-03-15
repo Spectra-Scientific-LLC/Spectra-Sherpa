@@ -1,0 +1,101 @@
+schema_version: 1
+name: Nested CV (Leakage-Safe Validation)
+slug: nested_cv_validation
+description: Evaluate variable selection methods with honest, unbiased performance
+  estimates. Variable selection is performed inside each CV fold to prevent
+  information leakage — the correct way to evaluate selection in chemometrics.
+  Reports RMSECV, R-squared, Q-squared, and selection stability across folds.
+category: selection_design
+is_active: true
+template_data:
+  nodes:
+  - node_id: data_1
+    node_type: data.source
+    label: Load Spectral Data
+    parameters:
+      source: eigenvector
+      eigenvector_dataset: corn_m5
+    position_x: 175
+    position_y: 50
+  - node_id: preprocess_1
+    node_type: preprocess.smooth
+    label: Savitzky-Golay Smooth
+    parameters:
+      method: savitzky_golay
+      size: 15
+      order: 2
+    position_x: 175
+    position_y: 250
+  - node_id: nested_cv_1
+    node_type: selection.nested_cv
+    label: Nested CV (VIP)
+    parameters:
+      selection_method: vip
+      n_components: 5
+      cv_folds: 5
+      vip_threshold: 1.0
+    position_x: 175
+    position_y: 500
+  - node_id: nested_cv_2
+    node_type: selection.nested_cv
+    label: Nested CV (No Selection)
+    parameters:
+      selection_method: none
+      n_components: 5
+      cv_folds: 5
+    position_x: 500
+    position_y: 500
+  - node_id: viz_1
+    node_type: output.plot
+    label: CV Metrics (VIP)
+    parameters:
+      plot_type: spectra
+    position_x: 175
+    position_y: 750
+  - node_id: viz_2
+    node_type: output.plot
+    label: CV Metrics (Full)
+    parameters:
+      plot_type: spectra
+    position_x: 500
+    position_y: 750
+  edges:
+  - from_node_id: data_1
+    to_node_id: preprocess_1
+  - from_node_id: preprocess_1
+    to_node_id: nested_cv_1
+    to_input: X
+  - from_node_id: preprocess_1
+    to_node_id: nested_cv_2
+    to_input: X
+  - from_node_id: nested_cv_1
+    to_node_id: viz_1
+    from_output: cv_metrics
+  - from_node_id: nested_cv_2
+    to_node_id: viz_2
+    from_output: cv_metrics
+  canvas_state:
+    zoom: 0.85
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_spectra:
+      role_type: X_spectra
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      description: Spectral data with concentration targets for CV evaluation
+      accepted_techniques:
+      - FTIR
+      - NIR
+      - Raman
+    Y_reference:
+      role_type: Y_reference
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      target_type: continuous
+      description: Reference values (embedded in spectral data file)
+  certified_datasets:
+  - source: eigenvector
+    name: corn_m5

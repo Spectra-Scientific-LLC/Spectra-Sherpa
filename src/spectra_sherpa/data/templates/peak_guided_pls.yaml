@@ -1,0 +1,97 @@
+schema_version: 1
+name: Peak-Guided PLS
+slug: peak_guided_pls
+description: Use peak detection to identify chemically meaningful spectral regions,
+  then build a PLS model on those regions only. Bridges spectroscopic interpretation
+  with statistical modeling — the selected wavelengths correspond to real absorption bands.
+category: selection_design
+is_active: true
+template_data:
+  nodes:
+  - node_id: data_1
+    node_type: data.source
+    label: Load Spectral Data
+    parameters:
+      source: eigenvector
+      eigenvector_dataset: corn_m5
+    position_x: 175
+    position_y: 50
+  - node_id: preprocess_1
+    node_type: preprocess.derivative
+    label: 2nd Derivative
+    parameters:
+      order: 2
+      window_length: 15
+      polyorder: 2
+    position_x: 175
+    position_y: 250
+  - node_id: peak_select
+    node_type: selection.variable_select
+    label: Peak Window Selection
+    parameters:
+      method: peak_window
+      peak_prominence: 0.05
+      peak_half_window: 15
+      include_negative_extrema: true
+    position_x: 175
+    position_y: 450
+  - node_id: partition_1
+    node_type: selection.sample_partition
+    label: Kennard-Stone Split
+    parameters:
+      method: kennard_stone
+      test_size: 0.25
+    position_x: 175
+    position_y: 650
+  - node_id: model_1
+    node_type: model.pls
+    label: PLS on Peak Regions
+    parameters:
+      n_components: 3
+    position_x: 175
+    position_y: 850
+  - node_id: viz_1
+    node_type: output.plot
+    label: Results
+    parameters:
+      plot_type: spectra
+    position_x: 500
+    position_y: 850
+  edges:
+  - from_node_id: data_1
+    to_node_id: preprocess_1
+  - from_node_id: preprocess_1
+    to_node_id: peak_select
+  - from_node_id: peak_select
+    to_node_id: partition_1
+    from_output: X_selected
+  - from_node_id: partition_1
+    to_node_id: model_1
+    from_output: X_cal
+  - from_node_id: model_1
+    to_node_id: viz_1
+  canvas_state:
+    zoom: 0.85
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_spectra:
+      role_type: X_spectra
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      description: Spectral data with concentration targets
+      accepted_techniques:
+      - FTIR
+      - NIR
+      - Raman
+    Y_reference:
+      role_type: Y_reference
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      target_type: continuous
+      description: Reference values (embedded in spectral data file)
+  certified_datasets:
+  - source: eigenvector
+    name: corn_m5

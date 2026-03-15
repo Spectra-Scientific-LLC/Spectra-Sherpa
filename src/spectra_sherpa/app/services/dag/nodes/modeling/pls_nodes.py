@@ -309,7 +309,8 @@ class PLSNode(Node):
             )
             y_2d = y_2d[valid]
             # Rebuild X_ds with valid rows so sample_axis stays consistent with scores shape
-            X_ds = SherpaDataset(X=X_ds.X[valid], feature_axis=X_ds.get_feature_axis())
+            _prev_meta = X_ds.meta.copy() if X_ds.meta else {}
+            X_ds = SherpaDataset(X=X_ds.X[valid], feature_axis=X_ds.get_feature_axis(), extra=_prev_meta)
 
         X_ndd = to_nddataset(X_ds)
         y_dataset = scp.NDDataset(y_2d)
@@ -556,6 +557,15 @@ class PLSNode(Node):
                 ),
             )
 
+        # Build model artifact for persistence
+        from ._artifact_builder import build_model_artifact
+
+        artifact_metrics = {}
+        if pls_r2 is not None:
+            artifact_metrics["r2"] = pls_r2
+        if pls_rmse is not None:
+            artifact_metrics["rmse"] = pls_rmse
+
         return {
             "default": X_scores_dataset,  # SherpaDataset: X scores (n_samples, n_components)
             "X_loadings": X_loadings_dataset,  # SherpaDataset: loadings (n_components, n_features)
@@ -563,6 +573,12 @@ class PLSNode(Node):
             "Y_loadings": Y_loadings_dataset,  # SherpaDataset: Y loadings (n_targets, n_components)
             "model": pls,  # SCP PLSRegression for Apply PLS Model
             "coef": coef_data,  # ndarray: regression coefficients (n_features, n_targets)
+            "_model_artifact": build_model_artifact(
+                extracted,
+                X_ds,
+                node_id=self.node_id,
+                metrics=artifact_metrics or None,
+            ),
         }
 
 

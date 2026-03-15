@@ -1,0 +1,113 @@
+schema_version: 1
+name: Variable Selection + PLS Calibration
+slug: variable_selection_pls
+description: PLS calibration with VIP-based variable selection to identify the most
+  informative spectral regions. Kennard-Stone partitioning ensures representative
+  calibration and test sets. VIP scores highlight wavelengths driving the model.
+category: selection_design
+is_active: true
+template_data:
+  nodes:
+  - node_id: data_1
+    node_type: data.source
+    label: Load Spectral Data
+    parameters:
+      source: eigenvector
+      eigenvector_dataset: corn_m5
+    position_x: 175
+    position_y: 50
+  - node_id: preprocess_1
+    node_type: preprocess.smooth
+    label: Savitzky-Golay Smooth
+    parameters:
+      method: savitzky_golay
+      size: 15
+      order: 2
+    position_x: 175
+    position_y: 250
+  - node_id: partition_1
+    node_type: selection.sample_partition
+    label: Kennard-Stone Partition
+    parameters:
+      method: kennard_stone
+      test_size: 0.25
+      metric: euclidean
+    position_x: 175
+    position_y: 450
+  - node_id: model_full
+    node_type: model.pls
+    label: PLS (Full Spectrum)
+    parameters:
+      n_components: 5
+    position_x: 175
+    position_y: 650
+  - node_id: varsel_1
+    node_type: selection.variable_select
+    label: VIP Variable Selection
+    parameters:
+      method: vip
+      threshold: 1.0
+    position_x: 500
+    position_y: 650
+  - node_id: model_selected
+    node_type: model.pls
+    label: PLS (Selected Variables)
+    parameters:
+      n_components: 5
+    position_x: 500
+    position_y: 900
+  - node_id: viz_1
+    node_type: output.plot
+    label: Calibration Results
+    parameters:
+      plot_type: spectra
+    position_x: 175
+    position_y: 900
+  edges:
+  - from_node_id: data_1
+    to_node_id: preprocess_1
+  - from_node_id: preprocess_1
+    to_node_id: partition_1
+  - from_node_id: partition_1
+    to_node_id: model_full
+    from_output: X_cal
+  - from_node_id: model_full
+    to_node_id: varsel_1
+    from_output: model
+    to_input: model
+  - from_node_id: partition_1
+    to_node_id: varsel_1
+    from_output: X_cal
+    to_input: X
+  - from_node_id: varsel_1
+    to_node_id: model_selected
+    from_output: X_selected
+  - from_node_id: model_full
+    to_node_id: viz_1
+  canvas_state:
+    zoom: 0.85
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_spectra:
+      role_type: X_spectra
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      description: Spectral data with concentration targets
+      accepted_techniques:
+      - FTIR
+      - NIR
+      - Raman
+    Y_reference:
+      role_type: Y_reference
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      target_type: continuous
+      description: Reference values (embedded in spectral data file)
+  certified_datasets:
+  - source: eigenvector
+    name: corn_m5
+  - source: eigenvector
+    name: diesel_nir
