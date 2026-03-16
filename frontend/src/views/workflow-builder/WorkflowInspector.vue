@@ -1324,6 +1324,7 @@
 </template>
 
 <script setup lang="ts">
+/* eslint-disable @typescript-eslint/no-explicit-any -- inspector renders heterogeneous node params and outputs across the full DAG surface. */
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import Accordion from "primevue/accordion";
 import AccordionTab from "primevue/accordiontab";
@@ -1438,8 +1439,8 @@ interface InputConnection {
 interface Props {
   selectedNode: WorkflowNode | null;
   nodeOutput: NodeOutput | null;
-  inputConnections: InputConnection[];
-  isOpen: boolean;
+  inputConnections?: InputConnection[];
+  isOpen?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -1740,7 +1741,7 @@ const getHistoryTimestamp = (entry: unknown): string | null => {
 };
 
 // Format timestamp - show full date if steps span multiple days
-const formatStepTimestamp = (timestamp: string, index: number): string => {
+const formatStepTimestamp = (timestamp: string, _index: number): string => {
   const date = new Date(timestamp);
   const history = sortedProcessingHistory.value;
 
@@ -1804,7 +1805,6 @@ const formatAcquisitionValue = (key: string, value: unknown): string => {
 };
 
 // Modal state
-const showPlotModal = ref(false);
 const showQuickPlotModal = ref(false);
 const showDataTableModal = ref(false);
 const showMetadataModal = ref(false);
@@ -2250,7 +2250,7 @@ const onDatasetSelect = (nodeData: Record<string, unknown>) => {
 };
 
 // Get selected dataset label for display
-const selectedDatasetLabel = computed(() => {
+const _selectedDatasetLabel = computed(() => {
   if (!selectedDatasetKey.value) return 'Select a dataset...';
 
   const findLabel = (nodes: DatasetTreeNode[], key: string): string | null => {
@@ -2405,7 +2405,7 @@ const axisOptions = computed(() => {
 });
 
 // Should show scatter plot
-const shouldShowPlot = computed(() => {
+const _shouldShowPlot = computed(() => {
   if (!props.selectedNode || !props.nodeOutput) return false;
   return ['output.plot', 'model.pca', 'data.source', 'preprocess.normalize', 'preprocess.scale'].includes(selectedNodeType.value) &&
          Array.isArray(props.nodeOutput.data) &&
@@ -2413,7 +2413,7 @@ const shouldShowPlot = computed(() => {
 });
 
 // Calculate plot points
-const plotPoints = computed(() => {
+const _plotPoints = computed(() => {
   if (!props.nodeOutput?.data) return [];
 
   const data = props.nodeOutput.data.filter((row): row is unknown[] => Array.isArray(row));
@@ -2452,7 +2452,7 @@ const plotPoints = computed(() => {
 });
 
 // Plot points for full-size modal (larger coordinate space)
-const plotPointsFull = computed(() => {
+const _plotPointsFull = computed(() => {
   if (!props.nodeOutput?.data) return [];
 
   const data = props.nodeOutput.data.filter((row): row is unknown[] => Array.isArray(row));
@@ -2859,7 +2859,7 @@ onMounted(() => {
   try {
     broadcastChannel.value = new BroadcastChannel('workflow_node_updates');
     broadcastChannel.value.onmessage = handleBroadcastMessage;
-  } catch (e) {
+  } catch {
     // BroadcastChannel not supported in this browser
     console.warn('BroadcastChannel not supported, falling back to storage events only');
   }

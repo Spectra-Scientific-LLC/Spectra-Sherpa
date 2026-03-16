@@ -951,6 +951,34 @@ export const useWorkflowStore = defineStore("workflow", () => {
     return response.data.notebook;
   }
 
+  async function downloadExport(format: "python" | "notebook" | "zip" = "python"): Promise<void> {
+    if (!workflowId.value) {
+      await saveWorkflow();
+    }
+
+    const response = await api.get(
+      `/workflows/${workflowId.value}/export/download?format=${format}`,
+      { responseType: "blob" },
+    );
+
+    const contentDisposition = response.headers["content-disposition"] || "";
+    const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+    const safeName = (workflowName.value || "workflow").toLowerCase().replace(/\s+/g, "_");
+    const extMap = { python: ".py", notebook: ".ipynb", zip: ".zip" };
+    const fallbackName = `${safeName}_workflow${extMap[format] || ""}`;
+    const filename = filenameMatch ? filenameMatch[1] : fallbackName;
+
+    const blob = new Blob([response.data]);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   async function fetchAvailableDatasets(): Promise<AvailableDatasets> {
     const response = await api.get("/datasets/available");
     availableDatasets.value = response.data;
@@ -1164,9 +1192,9 @@ export const useWorkflowStore = defineStore("workflow", () => {
         console.log(`[WorkflowStore] Backend updated (${nodeLibraryVersion.value} → ${serverVersion}), refreshing node library...`);
         await fetchNodeLibrary(true);
       }
-    } catch (error) {
+    } catch {
       // Silently fail - don't disrupt user experience
-      console.debug("[WorkflowStore] Version check failed:", error);
+      console.debug("[WorkflowStore] Version check failed");
     }
   }
 
@@ -1276,7 +1304,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
             param_name: displayParamName,
             message: `${paramDef.label} must be ≥ 1 (integer) or between 0-1 (variance threshold)`,
           });
-        } catch (e) {
+        } catch {
           errors.push({
             param_name: displayParamName,
             message: `${paramDef.label} must be an integer (e.g., 5), 'mle', or float 0-1 (e.g., 0.95)`,
@@ -1640,6 +1668,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
     executeTrial,
     exportToPython,
     exportToNotebook,
+    downloadExport,
     fetchAvailableDatasets,
     fetchSpectroChemPyFiles,
     availableSpectroChemPyDatasets,

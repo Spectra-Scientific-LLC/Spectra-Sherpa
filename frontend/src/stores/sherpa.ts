@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- assistant sync payloads intentionally preserve flexible node parameter/result shapes. */
 import { defineStore } from "pinia";
 import { ref, watch } from "vue";
 import { useLlmStore } from "@/stores/llm";

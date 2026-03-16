@@ -64,14 +64,14 @@
         <h3 class="comparison-section-title">Parameter Differences</h3>
         <div class="param-diff-list">
           <div
-            v-for="diff in paramDiffs"
-            :key="diff.path"
+            v-for="paramDiff in paramDiffs"
+            :key="paramDiff.path"
             class="param-diff-item"
           >
-            <span class="param-path">{{ diff.path }}</span>
+            <span class="param-path">{{ paramDiff.path }}</span>
             <span class="param-values">
               <span
-                v-for="(val, idx) in diff.values"
+                v-for="(val, idx) in paramDiff.values"
                 :key="idx"
               >
                 <span v-if="idx > 0" class="param-arrow"> &rarr; </span>

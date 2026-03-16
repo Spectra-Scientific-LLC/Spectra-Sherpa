@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- experiment store normalizes backend/axios failures with varying payload shapes. */
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import api from "@/api/client";

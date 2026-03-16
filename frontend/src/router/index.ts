@@ -1,14 +1,10 @@
 import { createRouter, createWebHistory, type RouteLocation } from "vue-router";
 
-import LogsView from "@/views/LogsView.vue";
-import NodeDetailView from "@/views/workflow-builder/NodeDetailView.vue";
-import LlmChatView from "@/views/LlmChatView.vue";
-import LoginView from "@/views/LoginView.vue";
 import { useAuthStore } from "@/stores/auth";
 import { useAppConfig } from "@/composables/useAppConfig";
 
 const routes = [
-  { path: "/login", component: LoginView, meta: { public: true } },
+  { path: "/login", component: () => import("@/views/LoginView.vue"), meta: { public: true } },
   { path: "/register", component: () => import("@/views/RegisterView.vue"), meta: { public: true } },
   { path: "/", redirect: "/project" },
 
@@ -30,7 +26,7 @@ const routes = [
   },
   {
     path: "/workflow/node/:nodeId",
-    component: NodeDetailView,
+    component: () => import("@/views/workflow-builder/NodeDetailView.vue"),
     meta: { standalone: true }
   },
   {
@@ -51,10 +47,10 @@ const routes = [
 
   // --- System pages ---
   { path: "/settings", component: () => import("@/views/settings/SettingsContent.vue") },
-  { path: "/logs", component: LogsView },
+  { path: "/logs", component: () => import("@/views/LogsView.vue") },
   {
     path: "/llm-chat",
-    component: LlmChatView,
+    component: () => import("@/views/LlmChatView.vue"),
     meta: { standalone: true }
   },
   {

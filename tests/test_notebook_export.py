@@ -49,12 +49,18 @@ def run_workflow():
     return results
 
 
+def export_artifacts(results, workflow_name='test_workflow'):
+    print("export")
+    return "test_workflow_123.zip"
+
+
 if __name__ == "__main__":
     results = run_workflow()
 
     print("\\nWorkflow completed successfully!")
     for key, value in results.items():
         print(f"  {key}: {type(value).__name__}")
+    export_artifacts(results)
 '''
 
 SAMPLE_PYTHON_CODE_NO_DESC = '''\
@@ -77,13 +83,29 @@ if __name__ == "__main__":
 '''
 
 
+def _wf_node(node_id: str, node_type: str, parameters: dict | None = None):
+    return SimpleNamespace(node_id=node_id, node_type=node_type, parameters=parameters or {})
+
+
+def _wf_edge(from_node_id: str, to_node_id: str, from_output: str | None = None, to_input: str | None = None):
+    return SimpleNamespace(
+        from_node_id=from_node_id,
+        to_node_id=to_node_id,
+        from_output=from_output,
+        to_input=to_input,
+    )
+
+
 def _make_mock_workflow(name: str = "Test Workflow", description: str | None = "A sample IR preprocessing pipeline."):
     return SimpleNamespace(
         name=name,
         description=description,
         integrity_hash="abc123def456",
-        nodes=[],
-        edges=[],
+        nodes=[
+            _wf_node("node_1", "data.source", {"source": "sklearn", "sklearn_dataset": "iris"}),
+            _wf_node("node_2", "preprocess.normalize", {}),
+        ],
+        edges=[_wf_edge("node_1", "node_2")],
     )
 
 
@@ -104,7 +126,16 @@ def mock_generate_minimal():
 
 
 class TestGenerateNotebook:
-    """Test the generate_notebook() function."""
+    """Test the generate_notebook() function.
+
+    The notebook now uses a per-node cell layout:
+      Cell 0: Title markdown
+      Cell 1: Getting Started markdown
+      Cell 2: Imports code cell
+      Cell 3: Results dict initialisation code cell
+      Cell 4+: Per-node markdown + code + optional inspection cells
+      Final cells: Export markdown + export code
+    """
 
     def test_returns_valid_nbformat_structure(self, mock_generate):
         from spectra_sherpa.app.services.notebook_export import generate_notebook
@@ -117,7 +148,8 @@ class TestGenerateNotebook:
         assert "metadata" in nb
         assert "cells" in nb
         assert isinstance(nb["cells"], list)
-        assert len(nb["cells"]) == 4  # markdown + imports + function + main
+        # Per-node layout produces more cells than the old 4-cell structure
+        assert len(nb["cells"]) >= 4
 
     def test_metadata_has_kernel_info(self, mock_generate):
         from spectra_sherpa.app.services.notebook_export import generate_notebook
@@ -157,11 +189,23 @@ class TestGenerateNotebook:
 
         assert "abc123def456" in source_text
 
-    def test_second_cell_is_code_with_imports(self, mock_generate):
+    def test_getting_started_cell(self, mock_generate):
         from spectra_sherpa.app.services.notebook_export import generate_notebook
 
         nb = generate_notebook(_make_mock_workflow())
         cell = nb["cells"][1]
+
+        assert cell["cell_type"] == "markdown"
+        source_text = "".join(cell["source"])
+        assert "Getting Started" in source_text
+        assert "pip install" in source_text
+
+    def test_imports_cell(self, mock_generate):
+        from spectra_sherpa.app.services.notebook_export import generate_notebook
+
+        nb = generate_notebook(_make_mock_workflow())
+        # Cell 2 is the imports code cell
+        cell = nb["cells"][2]
 
         assert cell["cell_type"] == "code"
         assert cell["execution_count"] is None
@@ -169,31 +213,43 @@ class TestGenerateNotebook:
 
         source_text = "".join(cell["source"])
         assert "import numpy as np" in source_text
-        assert "import spectrochempy as scp" in source_text
 
-    def test_third_cell_has_workflow_function(self, mock_generate):
+    def test_results_init_cell(self, mock_generate):
         from spectra_sherpa.app.services.notebook_export import generate_notebook
 
         nb = generate_notebook(_make_mock_workflow())
-        cell = nb["cells"][2]
-
-        assert cell["cell_type"] == "code"
-        source_text = "".join(cell["source"])
-        assert "def run_workflow():" in source_text
-        assert "return results" in source_text
-
-    def test_fourth_cell_is_runnable_main_block(self, mock_generate):
-        from spectra_sherpa.app.services.notebook_export import generate_notebook
-
-        nb = generate_notebook(_make_mock_workflow())
+        # Cell 3 initialises the results dict
         cell = nb["cells"][3]
 
         assert cell["cell_type"] == "code"
         source_text = "".join(cell["source"])
-        # Should NOT have `if __name__` — replaced with direct calls
-        assert "if __name__" not in source_text
-        # Should have the execution calls (de-indented)
-        assert "results = run_workflow()" in source_text
+        assert "results = {}" in source_text
+
+    def test_has_per_node_markdown_cells(self, mock_generate):
+        """Per-node cells should include Step markdown headers."""
+        from spectra_sherpa.app.services.notebook_export import generate_notebook
+
+        nb = generate_notebook(_make_mock_workflow())
+        all_text = "\n".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "markdown")
+        assert "Step" in all_text
+        assert "Step 1" in all_text
+        assert "Step 2" in all_text
+
+    def test_export_runs_only_once(self, mock_generate):
+        from spectra_sherpa.app.services.notebook_export import generate_notebook
+
+        nb = generate_notebook(_make_mock_workflow())
+        all_code = "\n".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
+        assert all_code.count("export_artifacts(results)") == 1
+
+    def test_no_if_name_main(self, mock_generate):
+        """Notebook cells should not contain `if __name__` guards."""
+        from spectra_sherpa.app.services.notebook_export import generate_notebook
+
+        nb = generate_notebook(_make_mock_workflow())
+        for cell in nb["cells"]:
+            source_text = "".join(cell["source"])
+            assert "if __name__" not in source_text
 
     def test_cell_source_is_list_of_strings(self, mock_generate):
         from spectra_sherpa.app.services.notebook_export import generate_notebook
@@ -223,9 +279,37 @@ class TestGenerateNotebook:
         nb = generate_notebook(workflow)
 
         assert nb["nbformat"] == 4
-        assert len(nb["cells"]) >= 3  # at least markdown + imports + function
+        assert len(nb["cells"]) >= 3  # at least title + getting started + imports
         source_text = "".join(nb["cells"][0]["source"])
         assert "# Minimal" in source_text
+
+    def test_step_cells_do_not_depend_on_python_comment_markers(self):
+        from spectra_sherpa.app.services.notebook_export import generate_notebook
+
+        markerless_code = '''\
+"""
+Generated workflow: Markerless
+"""
+
+import numpy as np
+
+def run_workflow():
+    results = {}
+    return results
+
+def export_artifacts(results, workflow_name='markerless'):
+    return "markerless.zip"
+
+if __name__ == "__main__":
+    results = run_workflow()
+'''
+
+        with patch("spectra_sherpa.app.services.notebook_export.generate_python_code", return_value=markerless_code):
+            nb = generate_notebook(_make_mock_workflow(name="Markerless"))
+
+        all_text = "\n".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "markdown")
+        assert "Step 1" in all_text
+        assert "Step 2" in all_text
 
 
 class TestSplitPythonCode:

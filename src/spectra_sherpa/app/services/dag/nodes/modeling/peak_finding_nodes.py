@@ -201,6 +201,66 @@ class PeakFindingNode(Node):
         rows.sort(key=lambda r: r["median_pos"])
         return rows
 
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python code for peak finding."""
+        input_expr = inputs.get("default", next(iter(inputs.values()), "input_data"))
+
+        height = self.parameters.get("height")
+        threshold = self.parameters.get("threshold")
+        distance = self.parameters.get("distance", 10)
+        prominence = self.parameters.get("prominence")
+        width = self.parameters.get("width")
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- Peak Finding ({self.node_id}) ---")
+        lines.append(f"{indent}from scipy.signal import find_peaks as _find_peaks")
+        lines.append(f"{indent}_pf_input = {input_expr}")
+        lines.append(f"{indent}_pf_data = np.atleast_2d(np.asarray(")
+        lines.append(f"{indent}    _pf_input.data if hasattr(_pf_input, 'data') else _pf_input,")
+        lines.append(f"{indent}    dtype=np.float64,")
+        lines.append(f"{indent}))")
+        lines.append(f"{indent}_pf_x = None")
+        lines.append(f"{indent}if hasattr(_pf_input, 'feature_axis') and _pf_input.feature_axis is not None:")
+        lines.append(f"{indent}    _pf_x = np.asarray(_pf_input.feature_axis.data, dtype=np.float64)")
+        lines.append(f"{indent}if _pf_x is None:")
+        lines.append(f"{indent}    _pf_x = np.arange(_pf_data.shape[1], dtype=np.float64)")
+
+        # Build peak kwargs
+        lines.append(f"{indent}_pf_kwargs = {{}}")
+        if height is not None:
+            lines.append(f"{indent}_pf_kwargs['height'] = {height!r}")
+        if threshold is not None:
+            lines.append(f"{indent}_pf_kwargs['threshold'] = {threshold!r}")
+        if distance is not None:
+            lines.append(f"{indent}_pf_kwargs['distance'] = {distance!r}")
+        if prominence is not None:
+            lines.append(f"{indent}_pf_kwargs['prominence'] = {prominence!r}")
+        if width is not None:
+            lines.append(f"{indent}_pf_kwargs['width'] = {width!r}")
+
+        lines.append(f"{indent}_all_positions = []")
+        lines.append(f"{indent}_all_heights = []")
+        lines.append(f"{indent}for _si in range(_pf_data.shape[0]):")
+        lines.append(f"{indent}    _idx, _props = _find_peaks(_pf_data[_si], **_pf_kwargs)")
+        lines.append(f"{indent}    _all_positions.extend(_pf_x[_idx].tolist())")
+        lines.append(f"{indent}    _all_heights.extend(_pf_data[_si, _idx].tolist())")
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(
+            f"{indent}    'peaks': {{'data': [{{'median_pos': p, 'median_height': h}}"
+            f" for p, h in zip(_all_positions, _all_heights)]}},"
+        )
+        lines.append(f"{indent}    'spectrum': _pf_data.tolist(),")
+        lines.append(f"{indent}    'annotated_spectrum': _pf_data.tolist(),")
+        lines.append(f"{indent}}}")
+        lines.append(f'{indent}print(f"  Peak Finding: {{len(_all_positions)}} peaks detected")')
+
+        return lines
+
     async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         """
         Execute peak finding on spectral data.

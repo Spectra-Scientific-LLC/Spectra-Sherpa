@@ -636,7 +636,8 @@ class TestExportHelpers:
 
     def test_wrap_result_lines_numpy(self):
         lines = wrap_result_lines("n1", "_data", "inp", "    ", use_scp=False)
-        assert any("_Result" in l for l in lines)
+        # use_scp=False no longer produces _Result — always SherpaDataset
+        assert any("SherpaDataset" in l for l in lines)
         assert any("results['n1']" in l for l in lines)
 
     def test_format_kwargs_simple(self):
@@ -728,8 +729,8 @@ class TestTransformAutoExport:
             use_scp=False,
         )
         code = "\n".join(lines)
-        # numpy mode uses _Result
-        assert "_Result" in code
+        # Both modes now use SherpaDataset (no _Result fallback)
+        assert "SherpaDataset" in code
         assert "scp.NDDataset" not in code
 
     def test_numpy_expr_params_substituted(self):

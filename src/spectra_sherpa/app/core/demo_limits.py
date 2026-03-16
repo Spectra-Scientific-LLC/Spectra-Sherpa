@@ -37,7 +37,10 @@ class DemoLimitTracker:
 
     def __init__(self, state_path: Path):
         self.state_path = state_path
-        self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass  # directory may already exist or be read-only in test/CI
         self._state = self._load_state()
 
     def _load_state(self) -> dict[str, _DemoCounterState]:

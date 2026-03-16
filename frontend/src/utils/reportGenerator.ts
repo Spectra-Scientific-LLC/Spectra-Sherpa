@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- report generation walks mixed workflow metadata/metric payloads for presentation only. */
 /**
  * Provenance report generator — produces self-contained HTML from workflow
  * execution data. All plots are embedded as base64 PNG (no external deps).

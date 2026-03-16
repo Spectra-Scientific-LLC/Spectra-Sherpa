@@ -454,7 +454,7 @@ const nodesByCategory = computed(() => {
   }
 
   // Populate from node library
-  workflowStore.nodeLibrary.forEach((metadata, nodeType) => {
+  workflowStore.nodeLibrary.forEach((metadata) => {
     const category = metadata.category;
     if (!groups[category]) {
       groups[category] = {};

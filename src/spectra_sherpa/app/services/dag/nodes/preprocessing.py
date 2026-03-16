@@ -736,9 +736,10 @@ class ClipRangeNode(Node):
                 lines.append(f"{indent}    if hasattr({inp}, 'x') and {inp}.x is not None:")
                 lines.append(f"{indent}        results['{self.node_id}'].x = {inp}.x[_mask]")
             else:
+                lines.append(f"{indent}    from spectra_sherpa.app.lib.axes import SpectralAxis")
+                lines.append(f"{indent}    _clipped_fa = SpectralAxis(values=_x_vals[_mask])")
                 lines.append(
-                    f"{indent}    results['{self.node_id}'] = _Result("
-                    f"_new_data, x=type('Ax', (), {{'data': _x_vals[_mask]}}))"
+                    f"{indent}    results['{self.node_id}'] = SherpaDataset(" f"_new_data, feature_axis=_clipped_fa)"
                 )
             lines.append(f"{indent}else:")
             # No axis info — integer column slicing fallback
@@ -749,7 +750,7 @@ class ClipRangeNode(Node):
             if use_scp:
                 lines.append(f"{indent}    results['{self.node_id}'] = scp.NDDataset(_new_data)")
             else:
-                lines.append(f"{indent}    results['{self.node_id}'] = _Result(_new_data)")
+                lines.append(f"{indent}    results['{self.node_id}'] = SherpaDataset(_new_data)")
         return lines
 
     async def execute(self, input_data: Any) -> Any:

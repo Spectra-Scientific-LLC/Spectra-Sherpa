@@ -131,6 +131,7 @@
 </template>
 
 <script setup lang="ts">
+/* eslint-disable @typescript-eslint/no-explicit-any -- table modal accepts generic node outputs and loose Plotly-shaped metadata. */
 import { ref, computed } from "vue";
 import Dialog from "primevue/dialog";
 import Dropdown from "primevue/dropdown";

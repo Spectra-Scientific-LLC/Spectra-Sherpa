@@ -3,7 +3,6 @@ import { ref, computed } from "vue";
 import api from "@/api/client";
 import type {
   ExecutionRunSummary,
-  ExecutionRunDetail,
   ComparisonResult,
   BatchPredictRequest,
   BatchPredictResponse,

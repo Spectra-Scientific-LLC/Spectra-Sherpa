@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- auth error payloads come from heterogeneous backend/axios shapes. */
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import api from '@/api/client'

@@ -67,11 +67,15 @@ type PlotlyClient = {
   };
 };
 
+type PlotlyElement = HTMLDivElement & {
+  on: (eventName: string, handler: (data: unknown) => void) => void;
+};
+
 let plotlyClientPromise: Promise<PlotlyClient> | null = null;
 
 const getPlotlyClient = async (): Promise<PlotlyClient> => {
   if (!plotlyClientPromise) {
-    plotlyClientPromise = import("plotly.js-dist-min").then(
+    plotlyClientPromise = import("plotly.js-cartesian-dist-min").then(
       (mod) =>
         (mod as unknown as { default?: PlotlyClient }).default ??
         (mod as unknown as PlotlyClient)
@@ -83,12 +87,14 @@ const getPlotlyClient = async (): Promise<PlotlyClient> => {
 const setupEventListeners = () => {
   if (!chartEl.value) return;
 
-  (chartEl.value as any).on("plotly_click", (data: PlotlyClickEvent) => {
-    emit("click", data);
+  const plotlyElement = chartEl.value as PlotlyElement;
+
+  plotlyElement.on("plotly_click", (data) => {
+    emit("click", data as PlotlyClickEvent);
   });
 
-  (chartEl.value as any).on("plotly_hover", (data: PlotlyHoverEvent) => {
-    emit("hover", data);
+  plotlyElement.on("plotly_hover", (data) => {
+    emit("hover", data as PlotlyHoverEvent);
   });
 };
 

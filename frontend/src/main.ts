@@ -6,6 +6,7 @@ import Tooltip from "primevue/tooltip";
 
 import App from "./App.vue";
 import router from "./router";
+import { useWorkflowStore } from "./stores/workflow";
 import { buildWsUrl } from "./utils/ws";
 
 import "primevue/resources/themes/lara-light-blue/theme.css";
@@ -54,8 +55,6 @@ app.directive("tooltip", Tooltip);
 let disposeWorkflowMetadataRefresh: (() => void) | null = null;
 
 const initWorkflowMetadataRefresh = async () => {
-  // Loaded lazily to keep the initial app chunk smaller.
-  const { useWorkflowStore } = await import("./stores/workflow");
   const workflowStore = useWorkflowStore();
 
   // Skip initial fetch when not authenticated (enterprise/hybrid mode).

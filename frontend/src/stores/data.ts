@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- dataset detail payloads are backend-shaped and partially optional in this store. */
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import api from "@/api/client";

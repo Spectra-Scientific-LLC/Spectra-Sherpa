@@ -206,12 +206,12 @@ function navigateToWorkflows() {
   router.push("/workflow");
 }
 
-function openExperiment(experimentId: number) {
+function openExperiment(_experimentId: number) {
   visible.value = false;
   router.push("/data");
 }
 
-function openWorkflow(workflowId: number) {
+function openWorkflow(_workflowId: number) {
   visible.value = false;
   router.push("/workflow");
 }

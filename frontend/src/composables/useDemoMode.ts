@@ -6,22 +6,22 @@
  * all component instances (same pattern as useBackendStatus).
  */
 
-import { ref, computed, readonly } from 'vue'
+import { computed, readonly } from 'vue'
+import api from '@/api/client'
 import { useAppConfig } from '@/composables/useAppConfig'
 import type { DemoQuotaResponse } from '@/types/config'
-
-// Module-level state (shared singleton)
-const executionsRemaining = ref<number | null>(null)
-const executionsLimit = ref(25)
-const sherpaRemaining = ref<number | null>(null)
-const sherpaLimit = ref(20)
-const showUpgradeModal = ref(false)
-const upgradeModalContext = ref<{
-  message: string
-  upgradeUrl: string
-  availablePlans: string[]
-  blockedCapability?: string
-} | null>(null)
+import {
+  closeDemoUpgradeModal,
+  executionsLimit,
+  executionsRemaining,
+  openDemoUpgradeModal,
+  sherpaLimit,
+  sherpaRemaining,
+  showUpgradeModal,
+  updateDemoQuotaFromFetch,
+  updateDemoQuotaFromRateLimit,
+  upgradeModalContext,
+} from '@/composables/demoModeState'
 
 export function useDemoMode() {
   const { siteProfile, config } = useAppConfig()
@@ -46,14 +46,14 @@ export function useDemoMode() {
   async function fetchQuota(): Promise<void> {
     if (!isDemoMode.value) return
     try {
-      // Lazy import to avoid circular dependency (this file is imported by client.ts interceptor)
-      const { default: api } = await import('@/api/client')
       const { data } = await api.get<DemoQuotaResponse>('/config/demo/quota')
       if (data.demo && data.executions && data.sherpa) {
-        executionsRemaining.value = data.executions.remaining
-        executionsLimit.value = data.executions.limit
-        sherpaRemaining.value = data.sherpa.remaining
-        sherpaLimit.value = data.sherpa.limit
+        updateDemoQuotaFromFetch(
+          data.executions.remaining,
+          data.executions.limit,
+          data.sherpa.remaining,
+          data.sherpa.limit,
+        )
       }
     } catch {
       // Non-critical; banner degrades to static mode without quota numbers
@@ -62,19 +62,16 @@ export function useDemoMode() {
 
   /** Called from API interceptor when 429 with demo fields is received */
   function updateFromRateLimit(remaining: number, limit: number): void {
-    executionsRemaining.value = remaining
-    executionsLimit.value = limit
+    updateDemoQuotaFromRateLimit(remaining, limit)
   }
 
   /** Called from API interceptor or WS handler to show the upgrade modal */
   function triggerUpgradeModal(context: typeof upgradeModalContext.value): void {
-    upgradeModalContext.value = context
-    showUpgradeModal.value = true
+    openDemoUpgradeModal(context)
   }
 
   function closeUpgradeModal(): void {
-    showUpgradeModal.value = false
-    upgradeModalContext.value = null
+    closeDemoUpgradeModal()
   }
 
   return {

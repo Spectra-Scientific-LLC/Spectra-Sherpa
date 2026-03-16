@@ -238,6 +238,7 @@
 </template>
 
 <script setup lang="ts">
+/* eslint-disable @typescript-eslint/no-explicit-any -- experiment comparison payloads include flexible metric/result snapshots. */
 import { ref, computed, onMounted, watch } from "vue";
 import TabView from "primevue/tabview";
 import TabPanel from "primevue/tabpanel";

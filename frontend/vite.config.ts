@@ -10,26 +10,10 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (!id.includes("node_modules")) {
-            return undefined;
-          }
-          if (id.includes("plotly.js-dist-min")) {
+          if (id.includes("plotly.js-cartesian-dist-min")) {
             return "plotly";
           }
-          if (id.includes("@vue-flow")) {
-            return "vue-flow";
-          }
-          if (id.includes("primevue") || id.includes("primeicons")) {
-            return "primevue";
-          }
-          if (
-            id.includes("/vue/") ||
-            id.includes("vue-router") ||
-            id.includes("pinia")
-          ) {
-            return "vue-core";
-          }
-          return "vendor";
+          return undefined;
         },
       },
     },

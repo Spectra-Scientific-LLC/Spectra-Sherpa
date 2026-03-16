@@ -184,6 +184,83 @@ class SBCNode(Node):
         diagnostics=["rmse_transfer", "method", "n_features"],
     )
 
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python code for SBC/DS calibration transfer."""
+        X_pri_expr = inputs.get("X_primary", "X_primary")
+        X_sec_expr = inputs.get("X_secondary", "X_secondary")
+        X_new_expr = inputs.get("X_new", "X_new")
+
+        params = self._resolve_params()
+        method = params.get("method", "sbc")
+        regularization = float(params.get("regularization", 1e-4))
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- SBC/DS Calibration Transfer ({self.node_id}) ---")
+        lines.append(
+            f"{indent}_X_pri = np.asarray("
+            f"{X_pri_expr}.data if hasattr({X_pri_expr}, 'data') else {X_pri_expr}, dtype=np.float64)"
+        )
+        lines.append(
+            f"{indent}_X_sec = np.asarray("
+            f"{X_sec_expr}.data if hasattr({X_sec_expr}, 'data') else {X_sec_expr}, dtype=np.float64)"
+        )
+        lines.append(
+            f"{indent}_X_new_arr = np.asarray("
+            f"{X_new_expr}.data if hasattr({X_new_expr}, 'data') else {X_new_expr}, dtype=np.float64)"
+        )
+        lines.append(f"{indent}_X_pri = np.atleast_2d(_X_pri)")
+        lines.append(f"{indent}_X_sec = np.atleast_2d(_X_sec)")
+        lines.append(f"{indent}_X_new_arr = np.atleast_2d(_X_new_arr)")
+
+        if method == "sbc":
+            lines.append(f"{indent}# SBC: per-wavelength slope/bias correction")
+            lines.append(f"{indent}_n_feat = _X_pri.shape[1]")
+            lines.append(f"{indent}_slope = np.ones(_n_feat)")
+            lines.append(f"{indent}_bias_sbc = np.zeros(_n_feat)")
+            lines.append(f"{indent}for _j in range(_n_feat):")
+            lines.append(f"{indent}    _xs = _X_sec[:, _j]; _xp = _X_pri[:, _j]")
+            lines.append(f"{indent}    _xm = np.mean(_xs); _ym = np.mean(_xp)")
+            lines.append(f"{indent}    _ssxx = np.sum((_xs - _xm) ** 2)")
+            lines.append(f"{indent}    if _ssxx > 1e-12:")
+            lines.append(f"{indent}        _slope[_j] = np.sum((_xs - _xm) * (_xp - _ym)) / _ssxx")
+            lines.append(f"{indent}        _bias_sbc[_j] = _ym - _slope[_j] * _xm")
+            lines.append(f"{indent}    else:")
+            lines.append(f"{indent}        _slope[_j] = 1.0; _bias_sbc[_j] = _ym - _xm")
+            lines.append(f"{indent}_X_standardized = _X_new_arr * _slope[np.newaxis, :] + _bias_sbc[np.newaxis, :]")
+            lines.append(f"{indent}_X_sec_std = _X_sec * _slope[np.newaxis, :] + _bias_sbc[np.newaxis, :]")
+        else:
+            lines.append(f"{indent}# DS: global multivariate transfer matrix")
+            lines.append(f"{indent}_U, _s, _Vt = np.linalg.svd(_X_sec, full_matrices=False)")
+            lines.append(f"{indent}_scale = max(float(np.mean(_s ** 2)) if _s.size else 0.0, 1.0)")
+            lines.append(f"{indent}_lam = max({regularization}, 0.0) * _scale")
+            lines.append(f"{indent}_shrink = _s / (_s ** 2 + _lam)")
+            lines.append(f"{indent}_F = (_Vt.T * _shrink) @ (_U.T @ _X_pri)")
+            lines.append(f"{indent}_X_standardized = _X_new_arr @ _F")
+            lines.append(f"{indent}_X_sec_std = _X_sec @ _F")
+
+        lines.append(f"{indent}_resid = _X_pri - _X_sec_std")
+        lines.append(f"{indent}_rmse_transfer = float(np.sqrt(np.mean(_resid ** 2)))")
+
+        # Wrap as SherpaDataset
+        lines.append(f"{indent}_fa = getattr({X_new_expr}, 'feature_axis', None)")
+        lines.append(f"{indent}_X_std_ds = SherpaDataset(_X_standardized, feature_axis=_fa)")
+
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'X_standardized': _X_std_ds,")
+        lines.append(f"{indent}    'transfer_error': {{'rmse_transfer': _rmse_transfer, 'method': {method!r}}},")
+        lines.append(f"{indent}}}")
+        lines.append(
+            f'{indent}print(f"  {method.upper()} Transfer:'
+            f' {{_X_new_arr.shape[0]}} spectra, RMSE={{_rmse_transfer:.6f}}")'
+        )
+
+        return lines
+
     async def execute(
         self,
         X_primary: Any = None,

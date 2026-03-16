@@ -1543,3 +1543,140 @@ async def export_workflow_to_notebook(
     except Exception:
         logger.exception("Unexpected error exporting notebook for workflow %s", workflow_id)
         raise HTTPException(status_code=500, detail="Failed to export notebook. Check server logs.")
+
+
+@router.get("/{workflow_id}/export/download")
+async def download_workflow_export(
+    workflow_id: int,
+    format: str = Query("python", description="Export format: python, notebook, or zip"),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Download workflow export as a file attachment.
+
+    Supports three formats:
+    - ``python``: Downloads the .py script directly
+    - ``notebook``: Downloads the .ipynb notebook directly
+    - ``zip``: Downloads a zip bundle containing the script, notebook,
+      a requirements.txt, and a data/ directory stub
+
+    This endpoint returns proper Content-Disposition headers for
+    browser-initiated file downloads (enterprise/cloud mode).
+    """
+    import json
+    import zipfile
+    from io import BytesIO
+
+    from starlette.responses import StreamingResponse
+
+    if not await check_export_allowed(current_user):
+        raise HTTPException(status_code=403, detail="Export not permitted for this user")
+
+    user_id = current_user.id
+
+    query = (
+        select(Workflow)
+        .where(Workflow.id == workflow_id)
+        .where(Workflow.user_id == user_id)
+        .options(
+            selectinload(Workflow.nodes),
+            selectinload(Workflow.edges),
+            selectinload(Workflow.tags),
+            selectinload(Workflow.folder),
+        )
+    )
+    result = await session.execute(query)
+    workflow = result.scalar_one_or_none()
+
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    safe_name = workflow.name.lower().replace(" ", "_")
+
+    try:
+        python_code = generate_python_code(workflow)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    if format == "python":
+        filename = f"{safe_name}_workflow.py"
+        return StreamingResponse(
+            BytesIO(python_code.encode("utf-8")),
+            media_type="text/x-python",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    elif format == "notebook":
+        from spectra_sherpa.app.services.notebook_export import generate_notebook
+
+        try:
+            notebook = generate_notebook(workflow)
+        except Exception:
+            logger.exception("Failed to generate notebook for workflow %s", workflow_id)
+            raise HTTPException(status_code=500, detail="Failed to generate notebook")
+
+        filename = f"{safe_name}_workflow.ipynb"
+        nb_bytes = json.dumps(notebook, indent=2).encode("utf-8")
+        return StreamingResponse(
+            BytesIO(nb_bytes),
+            media_type="application/x-ipynb+json",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    elif format == "zip":
+        from spectra_sherpa.app.services.notebook_export import generate_notebook
+
+        buf = BytesIO()
+        try:
+            notebook = generate_notebook(workflow)
+        except Exception:
+            notebook = None
+
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            # Python script
+            zf.writestr(f"{safe_name}/{safe_name}_workflow.py", python_code)
+
+            # Notebook (if generated)
+            if notebook is not None:
+                zf.writestr(
+                    f"{safe_name}/{safe_name}_workflow.ipynb",
+                    json.dumps(notebook, indent=2),
+                )
+
+            # Requirements file
+            requirements = (
+                "# Requirements for exported workflow\n"
+                "spectra-sherpa\n"
+                "numpy\n"
+                "scipy\n"
+                "scikit-learn\n"
+                "matplotlib\n"
+            )
+            zf.writestr(f"{safe_name}/requirements.txt", requirements)
+
+            # Data directory stub with README
+            data_readme = (
+                "# Data Directory\n\n"
+                "Place your spectral data files here.\n\n"
+                "Supported formats:\n"
+                "- CSV (.csv) — rows=samples, columns=wavelengths\n"
+                "- SpectroChemPy (.scp)\n"
+                "- JCAMP-DX (.dx, .jdx)\n"
+                "- SPC (.spc)\n"
+                "- MATLAB (.mat)\n"
+            )
+            zf.writestr(f"{safe_name}/data/README.md", data_readme)
+
+        buf.seek(0)
+        filename = f"{safe_name}_export.zip"
+        return StreamingResponse(
+            buf,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported format: {format}. Use 'python', 'notebook', or 'zip'.",
+        )

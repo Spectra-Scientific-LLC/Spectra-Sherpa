@@ -162,6 +162,104 @@ class PlotNode(Node):
         ],
     )
 
+    def generate_python(
+        self,
+        inputs: Dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> List[str]:
+        """Generate Python code for plot visualization."""
+        input_expr = inputs.get("default", next(iter(inputs.values()), "input_data"))
+        plot_type = self.parameters.get("plot_type", "spectra")
+        x_axis = self.parameters.get("x_axis", 0)
+        y_axis = self.parameters.get("y_axis", 1)
+
+        # Use node_id-scoped variable names to avoid collisions when
+        # multiple plot nodes appear in the same workflow.
+        _nid = self.node_id.replace("-", "_")
+
+        lines: List[str] = []
+        lines.append(f"{indent}# --- Plot ({self.node_id}) ---")
+        lines.append(f"{indent}import matplotlib.pyplot as plt")
+        lines.append(f"{indent}_plot_input_{_nid} = {input_expr}")
+
+        if plot_type in ("spectra",):
+            lines.append(f"{indent}_fig_{_nid}, _ax_{_nid} = plt.subplots(figsize=(10, 5))")
+            lines.append(f"{indent}if isinstance(_plot_input_{_nid}, dict) and 'data' in _plot_input_{_nid}:")
+            lines.append(f"{indent}    _pdata = np.atleast_2d(")
+            lines.append(f"{indent}        np.asarray(_plot_input_{_nid}['data'], dtype=np.float64)")
+            lines.append(f"{indent}    )")
+            lines.append(f"{indent}elif hasattr(_plot_input_{_nid}, 'data'):")
+            lines.append(f"{indent}    _pdata = np.atleast_2d(np.asarray(_plot_input_{_nid}.data, dtype=np.float64))")
+            lines.append(f"{indent}else:")
+            lines.append(f"{indent}    _pdata = np.atleast_2d(np.asarray(_plot_input_{_nid}, dtype=np.float64))")
+            lines.append(f"{indent}_x_ax = getattr(_plot_input_{_nid}, 'x', None)")
+            lines.append(f"{indent}if (")
+            lines.append(f"{indent}    _x_ax is None")
+            lines.append(f"{indent}    and hasattr(_plot_input_{_nid}, 'feature_axis')")
+            lines.append(f"{indent}    and _plot_input_{_nid}.feature_axis is not None")
+            lines.append(f"{indent}):")
+            lines.append(f"{indent}    _x_ax = np.asarray(_plot_input_{_nid}.feature_axis.data)")
+            lines.append(f"{indent}for _si in range(min(_pdata.shape[0], 50)):")
+            lines.append(f"{indent}    _xv = _x_ax if _x_ax is not None else np.arange(_pdata.shape[1])")
+            lines.append(f"{indent}    _ax_{_nid}.plot(_xv, _pdata[_si], alpha=0.7)")
+            lines.append(f"{indent}_ax_{_nid}.set_xlabel('Feature')")
+            lines.append(f"{indent}_ax_{_nid}.set_ylabel('Intensity')")
+            lines.append(f"{indent}_ax_{_nid}.set_title('Spectra Plot')")
+        elif plot_type in ("scores", "biplot"):
+            lines.append(f"{indent}_fig_{_nid}, _ax_{_nid} = plt.subplots(figsize=(8, 6))")
+            lines.append(f"{indent}if isinstance(_plot_input_{_nid}, dict) and 'scores' in _plot_input_{_nid}:")
+            lines.append(f"{indent}    _sc = _plot_input_{_nid}['scores']")
+            lines.append(f"{indent}    _sc_data = np.asarray(")
+            lines.append(f"{indent}        _sc.data if hasattr(_sc, 'data') else _sc,")
+            lines.append(f"{indent}        dtype=np.float64,")
+            lines.append(f"{indent}    )")
+            lines.append(f"{indent}    _ax_{_nid}.scatter(_sc_data[:, {x_axis}], _sc_data[:, {y_axis}], alpha=0.7)")
+            lines.append(f"{indent}    _ax_{_nid}.set_xlabel('PC {0}')".format(x_axis + 1))
+            lines.append(f"{indent}    _ax_{_nid}.set_ylabel('PC {0}')".format(y_axis + 1))
+            lines.append(f"{indent}    _ax_{_nid}.set_title('Scores Plot')")
+        elif plot_type == "loadings":
+            lines.append(f"{indent}_fig_{_nid}, _ax_{_nid} = plt.subplots(figsize=(10, 5))")
+            lines.append(f"{indent}if isinstance(_plot_input_{_nid}, dict) and 'loadings' in _plot_input_{_nid}:")
+            lines.append(f"{indent}    _ld = _plot_input_{_nid}['loadings']")
+            lines.append(f"{indent}    _ld_data = np.asarray(")
+            lines.append(f"{indent}        _ld.data if hasattr(_ld, 'data') else _ld,")
+            lines.append(f"{indent}        dtype=np.float64,")
+            lines.append(f"{indent}    )")
+            lines.append(f"{indent}    for _ci in range(min(_ld_data.shape[0], 5)):")
+            lines.append(f"{indent}        _ax_{_nid}.plot(_ld_data[_ci], label=f'PC {{_ci+1}}')")
+            lines.append(f"{indent}    _ax_{_nid}.legend()")
+            lines.append(f"{indent}    _ax_{_nid}.set_title('Loadings Plot')")
+        elif plot_type in ("contour", "heatmap"):
+            lines.append(f"{indent}_fig_{_nid}, _ax_{_nid} = plt.subplots(figsize=(10, 6))")
+            lines.append(f"{indent}if hasattr(_plot_input_{_nid}, 'data'):")
+            lines.append(f"{indent}    _hdata = np.atleast_2d(np.asarray(_plot_input_{_nid}.data, dtype=np.float64))")
+            lines.append(f"{indent}else:")
+            lines.append(f"{indent}    _hdata = np.atleast_2d(np.asarray(_plot_input_{_nid}, dtype=np.float64))")
+            if plot_type == "contour":
+                lines.append(f"{indent}_ax_{_nid}.contourf(_hdata, cmap='viridis')")
+            else:
+                lines.append(f"{indent}_ax_{_nid}.imshow(_hdata, aspect='auto', cmap='viridis')")
+            lines.append(f"{indent}_ax_{_nid}.set_title('{plot_type.title()} Plot')")
+            lines.append(f"{indent}plt.colorbar(")
+            lines.append(f"{indent}    _ax_{_nid}.collections[0] if _ax_{_nid}.collections else _ax_{_nid}.images[0],")
+            lines.append(f"{indent}    ax=_ax_{_nid},")
+            lines.append(f"{indent})")
+        else:
+            # scatter fallback
+            lines.append(f"{indent}_fig_{_nid}, _ax_{_nid} = plt.subplots(figsize=(8, 6))")
+            lines.append(f"{indent}if hasattr(_plot_input_{_nid}, 'data'):")
+            lines.append(f"{indent}    _sdata = np.atleast_2d(np.asarray(_plot_input_{_nid}.data, dtype=np.float64))")
+            lines.append(f"{indent}    _y = _sdata[:, 1] if _sdata.shape[1] > 1 else _sdata[:, 0]")
+            lines.append(f"{indent}    _ax_{_nid}.scatter(_sdata[:, 0], _y, alpha=0.7)")
+            lines.append(f"{indent}_ax_{_nid}.set_title('Scatter Plot')")
+
+        lines.append(f"{indent}plt.tight_layout()")
+        lines.append(f"{indent}results['{self.node_id}'] = {{'visualization': _fig_{_nid}}}")
+        lines.append(f'{indent}print(f"  Plot ({self.node_id}): {plot_type} figure created")')
+
+        return lines
+
     async def execute(self, input_data: Any) -> Dict[str, Any]:
         """
         Generate plot data from input.
@@ -691,6 +789,68 @@ class ExportNode(Node):
         ),
     )
 
+    def generate_python(
+        self,
+        inputs: Dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> List[str]:
+        """Generate Python code for data export."""
+        input_expr = inputs.get("default", next(iter(inputs.values()), "input_data"))
+        filename = self.parameters.get("filename", "output.csv")
+        fmt = self.parameters.get("format", "csv")
+
+        lines: List[str] = []
+        lines.append(f"{indent}# --- Export ({self.node_id}) ---")
+        lines.append(f"{indent}_export_input = {input_expr}")
+        lines.append(f"{indent}if hasattr(_export_input, 'data'):")
+        lines.append(f"{indent}    _export_data = np.asarray(_export_input.data)")
+        lines.append(f"{indent}elif isinstance(_export_input, dict) and 'data' in _export_input:")
+        lines.append(f"{indent}    _export_data = np.asarray(_export_input['data'])")
+        lines.append(f"{indent}else:")
+        lines.append(f"{indent}    _export_data = np.asarray(_export_input)")
+        lines.append(f"{indent}if _export_data.ndim == 0:")
+        lines.append(f"{indent}    _export_data = _export_data.reshape(1, 1)")
+        lines.append(f"{indent}else:")
+        lines.append(f"{indent}    _export_data = np.atleast_2d(_export_data)")
+        lines.append(f"{indent}_export_is_numeric = (")
+        lines.append(f"{indent}    np.issubdtype(_export_data.dtype, np.number)")
+        lines.append(f"{indent}    or np.issubdtype(_export_data.dtype, np.bool_)")
+        lines.append(f"{indent})")
+
+        # Write next to the script (DATA_DIR sibling) so export_artifacts()
+        # can pick it up later.  os is already imported at script level.
+        lines.append(f"{indent}_export_path = os.path.join(")
+        lines.append(f"{indent}    os.path.dirname(os.path.abspath(__file__)) if '__file__' in dir() else os.getcwd(),")
+        lines.append(f"{indent}    {repr(filename)},")
+        lines.append(f"{indent})")
+        if fmt == "csv":
+            lines.append(f"{indent}if _export_is_numeric:")
+            lines.append(f"{indent}    np.savetxt(_export_path, _export_data, delimiter=',')")
+            lines.append(f"{indent}else:")
+            lines.append(f"{indent}    np.savetxt(_export_path, _export_data.astype(str), delimiter=',', fmt='%s')")
+        elif fmt == "json":
+            lines.append(f"{indent}import json as _json")
+            lines.append(f"{indent}with open(_export_path, 'w') as _f:")
+            lines.append(f"{indent}    _json.dump(_export_data.tolist(), _f)")
+        else:
+            # jdx or fallback
+            lines.append(f"{indent}if _export_is_numeric:")
+            lines.append(f"{indent}    np.savetxt(_export_path, _export_data, delimiter=',')")
+            lines.append(f"{indent}else:")
+            lines.append(f"{indent}    np.savetxt(_export_path, _export_data.astype(str), delimiter=',', fmt='%s')")
+
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'file_info': {{")
+        lines.append(f"{indent}        'filename': {repr(filename)},")
+        lines.append(f"{indent}        'format': {repr(fmt)},")
+        lines.append(f"{indent}        'data_points': int(np.prod(_export_data.shape)),")
+        lines.append(f"{indent}    }}")
+        lines.append(f"{indent}}}")
+        lines.append(f'{indent}print(f"  Export: saved {{_export_data.shape}} to {{_export_path}}")')
+
+        return lines
+
     async def execute(self, input_data: Any) -> Dict[str, Any]:
         """
         Export data to file.
@@ -798,6 +958,52 @@ class StatsSummaryNode(Node):
             ),
         ],
     )
+
+    def generate_python(
+        self,
+        inputs: Dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> List[str]:
+        """Generate Python code for statistics summary."""
+        input_expr = inputs.get("default", next(iter(inputs.values()), "input_data"))
+
+        lines: List[str] = []
+        lines.append(f"{indent}# --- Statistics ({self.node_id}) ---")
+        lines.append(f"{indent}_stats_input = {input_expr}")
+        lines.append(f"{indent}if hasattr(_stats_input, 'data'):")
+        lines.append(f"{indent}    _stats_data = np.atleast_2d(np.asarray(_stats_input.data, dtype=np.float64))")
+        lines.append(f"{indent}elif isinstance(_stats_input, dict):")
+        lines.append(f"{indent}    if 'scores' in _stats_input:")
+        lines.append(f"{indent}        _sc = _stats_input['scores']")
+        lines.append(f"{indent}        _stats_data = np.atleast_2d(")
+        lines.append(f"{indent}            np.asarray(")
+        lines.append(f"{indent}                _sc.data if hasattr(_sc, 'data') else _sc,")
+        lines.append(f"{indent}                dtype=np.float64,")
+        lines.append(f"{indent}            )")
+        lines.append(f"{indent}        )")
+        lines.append(f"{indent}    elif 'data' in _stats_input:")
+        lines.append(f"{indent}        _stats_data = np.atleast_2d(np.asarray(_stats_input['data'], dtype=np.float64))")
+        lines.append(f"{indent}    else:")
+        lines.append(f"{indent}        _stats_data = np.zeros((1, 1))")
+        lines.append(f"{indent}else:")
+        lines.append(f"{indent}    _stats_data = np.atleast_2d(np.asarray(_stats_input, dtype=np.float64))")
+        lines.append(f"{indent}_n_samples, _n_features = _stats_data.shape")
+        lines.append(f"{indent}_summary = {{")
+        lines.append(f"{indent}    'n_samples': _n_samples, 'n_features': _n_features,")
+        lines.append(f"{indent}    'mean': float(np.mean(_stats_data)),")
+        lines.append(f"{indent}    'std': float(np.std(_stats_data)),")
+        lines.append(f"{indent}    'min': float(np.min(_stats_data)),")
+        lines.append(f"{indent}    'max': float(np.max(_stats_data)),")
+        lines.append(f"{indent}    'median': float(np.median(_stats_data)),")
+        lines.append(f"{indent}}}")
+        lines.append(f"{indent}results['{self.node_id}'] = {{'statistics': _summary}}")
+        lines.append(
+            f'{indent}print(f"  Statistics: {{_n_samples}} samples x {{_n_features}} features, '
+            f"mean={{_summary['mean']:.4f}}, std={{_summary['std']:.4f}}\")"
+        )
+
+        return lines
 
     async def execute(self, input_data: Any) -> Dict[str, Any]:
         """

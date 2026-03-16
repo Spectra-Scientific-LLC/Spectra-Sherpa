@@ -476,7 +476,7 @@ const fetchUsers = async () => {
     const response = await api.get('/admin/users');
     users.value = response.data;
     stats.value.totalUsers = users.value.length;
-  } catch (error) {
+  } catch {
     toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to load users', life: 3000 });
   } finally {
     loading.value = false;
@@ -488,8 +488,8 @@ const fetchStats = async () => {
     // In a real implementation, this would call a stats endpoint
     // For now, we'll compute from available data
     stats.value.activeUsers = Math.min(users.value.length, 5);
-  } catch (error) {
-    console.error('Failed to fetch stats:', error);
+  } catch {
+    console.error('Failed to fetch stats');
   }
 };
 
@@ -499,8 +499,8 @@ const fetchRecentJobs = async () => {
     const response = await api.get('/jobs', { params: { limit: 10 } });
     recentJobs.value = response.data.slice(0, 5);
     stats.value.totalJobs = response.data.length;
-  } catch (error) {
-    console.error('Failed to fetch jobs:', error);
+  } catch {
+    console.error('Failed to fetch jobs');
   } finally {
     loadingJobs.value = false;
   }
@@ -537,8 +537,8 @@ const fetchLlmProviders = async () => {
         });
       }
     }
-  } catch (error) {
-    console.error('Failed to fetch LLM providers:', error);
+  } catch {
+    console.error('Failed to fetch LLM providers');
   }
 };
 
@@ -585,7 +585,7 @@ const confirmRotateKey = async (user: AdminUser) => {
     const response = await api.post(`/admin/users/${user.id}/rotate-key`);
     newApiKey.value = response.data.api_key;
     showKeyDialog.value = true;
-  } catch (error) {
+  } catch {
     toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to generate key' });
   }
 };
@@ -616,7 +616,7 @@ const confirmDeleteUser = async (user: AdminUser) => {
     await api.delete(`/admin/users/${user.id}`);
     toast.add({ severity: 'success', summary: 'Success', detail: 'User deleted' });
     fetchUsers();
-  } catch (error) {
+  } catch {
     toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to delete user' });
   }
 };
@@ -684,7 +684,7 @@ const removeLlmKey = async (provider: LlmProviderConfig) => {
     await api.delete(`/api-keys/${provider.id}`);
     toast.add({ severity: 'success', summary: 'Success', detail: 'Key removed' });
     fetchLlmProviders();
-  } catch (error) {
+  } catch {
     toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to remove key' });
   }
 };

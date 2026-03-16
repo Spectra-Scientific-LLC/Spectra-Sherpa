@@ -269,7 +269,8 @@ class VariableSelectNode(Node):
             lines.append(f"{indent}_magnitude = np.abs(_centered)")
             lines.append(f"{indent}_max_mag = float(np.max(_magnitude)) if _magnitude.size else 0.0")
             lines.append(
-                f"{indent}_scores = (_magnitude / _max_mag) if _max_mag > 0 else np.zeros(_X_vs.shape[1], dtype=np.float64)"
+                f"{indent}_scores = (_magnitude / _max_mag) if _max_mag > 0"
+                f" else np.zeros(_X_vs.shape[1], dtype=np.float64)"
             )
             lines.append(f"{indent}if not np.any(_mask):")
             lines.append(f"{indent}    _strongest = int(np.argmax(_magnitude)) if _magnitude.size else 0")
@@ -321,30 +322,21 @@ class VariableSelectNode(Node):
 
         lines.append(f"{indent}_X_selected = _X_vs[:, _mask]")
         lines.append(f"{indent}_selected_target = getattr(_X_input, 'target', None)")
-        if use_scp:
-            lines.append(f"{indent}from spectra_sherpa.app.lib.axes import FeatureAxis, SpectralAxis")
-            lines.append(f"{indent}from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset")
-            lines.append(f"{indent}_reduced_fa = None")
-            lines.append(
-                f"{indent}if _fa_obj is not None and hasattr(_fa_obj, 'values')"
-                f" and getattr(_fa_obj, 'values', None) is not None:"
-            )
-            lines.append(f"{indent}    _fa_cls = type(_fa_obj) if isinstance(_fa_obj, FeatureAxis) else SpectralAxis")
-            lines.append(
-                f"{indent}    _reduced_fa = _fa_cls("
-                f"values=_fa_vals[_mask], units=getattr(_fa_obj, 'units', None), title=getattr(_fa_obj, 'title', None))"
-            )
-            lines.append(
-                f"{indent}_X_selected_ds = SherpaDataset("
-                f"X=_X_selected, feature_axis=_reduced_fa, target=_selected_target)"
-            )
-        else:
-            lines.append(f"{indent}_selected_x = _fa_vals[_mask] if _fa_vals.shape[0] == _X_vs.shape[1] else None")
-            lines.append(
-                f"{indent}_X_selected_ds = _Result("
-                f"_X_selected, x=_selected_x, target=_selected_target, "
-                f"target_names=getattr(_X_input, 'target_names', None))"
-            )
+        lines.append(f"{indent}from spectra_sherpa.app.lib.axes import FeatureAxis, SpectralAxis")
+        lines.append(f"{indent}_reduced_fa = None")
+        lines.append(
+            f"{indent}if _fa_obj is not None and hasattr(_fa_obj, 'values')"
+            f" and getattr(_fa_obj, 'values', None) is not None:"
+        )
+        lines.append(f"{indent}    _fa_cls = type(_fa_obj) if isinstance(_fa_obj, FeatureAxis) else SpectralAxis")
+        lines.append(
+            f"{indent}    _reduced_fa = _fa_cls("
+            f"values=_fa_vals[_mask], units=getattr(_fa_obj, 'units', None), title=getattr(_fa_obj, 'title', None))"
+        )
+        lines.append(
+            f"{indent}_X_selected_ds = SherpaDataset("
+            f"_X_selected, feature_axis=_reduced_fa, target=_selected_target)"
+        )
         lines.append(f'{indent}print(f"  Selected {{np.sum(_mask)}} / {{len(_mask)}} variables")')
         lines.append(f"{indent}results['{self.node_id}'] = {{")
         lines.append(f"{indent}    'X_selected': _X_selected_ds, 'mask': _mask,")

@@ -35,42 +35,33 @@ def wrap_result_lines(
     data_expr: str,
     input_expr: str,
     indent: str,
-    use_scp: bool,
+    use_scp: bool = True,
 ) -> list[str]:
     """Generate result-wrapping code lines for Python export.
 
-    SCP mode:  ``SherpaDataset(data, ...)`` to preserve embedded target metadata
-    numpy mode: ``_Result(data, x=...)``
+    Always wraps in ``SherpaDataset`` — the first-class data object.
+    ``SherpaDataset`` and ``TargetContext`` are imported at script level
+    by ``python_export.generate_python_code()``.
     """
-    if use_scp:
-        return [
-            f"{indent}from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext",
-            f"{indent}_feature_axis = getattr({input_expr}, 'feature_axis', None)",
-            f"{indent}_sample_axis = getattr({input_expr}, 'sample_axis', None)",
-            f"{indent}_target = getattr({input_expr}, 'target', None)",
-            f"{indent}_target_context = getattr({input_expr}, 'target_context', None)",
-            f"{indent}if _target_context is None:",
-            f"{indent}    _target_names = getattr({input_expr}, 'target_names', None)",
-            f"{indent}    if _target_names is not None:",
-            f"{indent}        _target_context = TargetContext(target_names=list(_target_names))",
-            f"{indent}results['{node_id}'] = SherpaDataset(",
-            f"{indent}    {data_expr},",
-            f"{indent}    feature_axis=_feature_axis,",
-            f"{indent}    sample_axis=_sample_axis,",
-            f"{indent}    target=_target,",
-            f"{indent}    target_context=(",
-            f"{indent}        _target_context.model_copy(deep=True)",
-            f"{indent}        if hasattr(_target_context, 'model_copy')",
-            f"{indent}        else _target_context",
-            f"{indent}    ),",
-            f"{indent})",
-        ]
     return [
-        f"{indent}results['{node_id}'] = _Result(",
+        f"{indent}_feature_axis = getattr({input_expr}, 'feature_axis', None)",
+        f"{indent}_sample_axis = getattr({input_expr}, 'sample_axis', None)",
+        f"{indent}_target = getattr({input_expr}, 'target', None)",
+        f"{indent}_target_context = getattr({input_expr}, 'target_context', None)",
+        f"{indent}if _target_context is None:",
+        f"{indent}    _target_names = getattr({input_expr}, 'target_names', None)",
+        f"{indent}    if _target_names is not None:",
+        f"{indent}        _target_context = TargetContext(target_names=list(_target_names))",
+        f"{indent}results['{node_id}'] = SherpaDataset(",
         f"{indent}    {data_expr},",
-        f"{indent}    x=getattr({input_expr}, 'x', None),",
-        f"{indent}    target=getattr({input_expr}, 'target', None),",
-        f"{indent}    target_names=getattr({input_expr}, 'target_names', None),",
+        f"{indent}    feature_axis=_feature_axis,",
+        f"{indent}    sample_axis=_sample_axis,",
+        f"{indent}    target=_target,",
+        f"{indent}    target_context=(",
+        f"{indent}        _target_context.model_copy(deep=True)",
+        f"{indent}        if hasattr(_target_context, 'model_copy')",
+        f"{indent}        else _target_context",
+        f"{indent}    ),",
         f"{indent})",
     ]
 

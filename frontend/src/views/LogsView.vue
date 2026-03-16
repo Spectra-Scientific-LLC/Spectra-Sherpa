@@ -27,7 +27,7 @@ const fetchLogs = async () => {
   try {
     const response = await api.get("/logs");
     logs.value = response.data.logs || [];
-  } catch (err) {
+  } catch {
     error.value = "Unable to load logs. Check API key and server status.";
   }
 };

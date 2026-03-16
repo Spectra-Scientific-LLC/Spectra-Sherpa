@@ -90,7 +90,9 @@ class DeployInputNode(Node):
                 f"{indent}results['{self.node_id}'] = scp.NDDataset(np.zeros((1, 1)))  # Replace with actual data"
             )
         else:
-            lines.append(f"{indent}results['{self.node_id}'] = _Result(np.zeros((1, 1)))  # Replace with actual data")
+            lines.append(
+                f"{indent}results['{self.node_id}'] = SherpaDataset(np.zeros((1, 1)))  # Replace with actual data"
+            )
         return lines
 
 

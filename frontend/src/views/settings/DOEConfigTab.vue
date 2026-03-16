@@ -239,6 +239,7 @@
 </template>
 
 <script setup lang="ts">
+/* eslint-disable @typescript-eslint/no-explicit-any -- DOE payloads are form-driven and backend-shaped in this admin editor. */
 import { ref, onMounted } from "vue";
 import Button from "primevue/button";
 import Checkbox from "primevue/checkbox";

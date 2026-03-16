@@ -83,6 +83,7 @@
 </template>
 
 <script setup lang="ts">
+/* eslint-disable @typescript-eslint/no-explicit-any -- batch submission errors are axios/backend shaped and intentionally loose here. */
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import Dropdown from "primevue/dropdown";
 import InputText from "primevue/inputtext";

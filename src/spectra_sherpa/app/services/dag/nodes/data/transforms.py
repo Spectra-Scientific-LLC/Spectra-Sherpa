@@ -195,8 +195,9 @@ class TrainTestSplitNode(Node):
             lines.append(f"{indent}    _X_train_ds.x = _X_input.x.copy()")
             lines.append(f"{indent}    _X_test_ds.x = _X_input.x.copy()")
         else:
-            lines.append(f"{indent}_X_train_ds = _Result(_X_train, x=getattr(_X_input, 'x', None))")
-            lines.append(f"{indent}_X_test_ds = _Result(_X_test, x=getattr(_X_input, 'x', None))")
+            lines.append(f"{indent}_fa = getattr(_X_input, 'feature_axis', None)")
+            lines.append(f"{indent}_X_train_ds = SherpaDataset(_X_train, feature_axis=_fa)")
+            lines.append(f"{indent}_X_test_ds = SherpaDataset(_X_test, feature_axis=_fa)")
 
         # Build result dict
         lines.append(f"{indent}results['{self.node_id}'] = {{")
@@ -444,14 +445,14 @@ class AttachTargetNode(Node):
             lines.append(f"{indent}    _result.target = _y_data")
             lines.append(f"{indent}results['{self.node_id}'] = _result")
         else:
-            # numpy mode: copy _Result with target
+            # numpy mode: wrap in SherpaDataset with target
             lines.append(f"{indent}_X_data = np.array(")
             lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
             lines.append(f"{indent}    dtype=np.float64,")
             lines.append(f"{indent})")
-            lines.append(f"{indent}results['{self.node_id}'] = _Result(")
+            lines.append(f"{indent}results['{self.node_id}'] = SherpaDataset(")
             lines.append(f"{indent}    _X_data,")
-            lines.append(f"{indent}    x=getattr(_X_input, 'x', None),")
+            lines.append(f"{indent}    feature_axis=getattr(_X_input, 'feature_axis', None),")
             lines.append(f"{indent}    target=_y_data,")
             lines.append(f"{indent})")
 

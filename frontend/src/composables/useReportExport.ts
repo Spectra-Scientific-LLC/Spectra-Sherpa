@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- report export extracts ad hoc numeric metrics from arbitrary terminal node outputs. */
 /**
  * Composable for exporting provenance reports from the workflow builder.
  *

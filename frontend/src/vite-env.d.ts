@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
 
-declare module 'plotly.js-dist-min' {
+declare module 'plotly.js-cartesian-dist-min' {
   export * from 'plotly.js';
 }

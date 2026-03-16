@@ -161,6 +161,7 @@
 </template>
 
 <script setup lang="ts">
+/* eslint-disable @typescript-eslint/no-explicit-any -- quick-plot consumes generic backend visualization payloads. */
 import { ref, computed } from "vue";
 import Dialog from "primevue/dialog";
 import Dropdown from "primevue/dropdown";

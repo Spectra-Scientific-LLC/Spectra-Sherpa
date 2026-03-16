@@ -94,7 +94,7 @@ import type { ProjectSummary } from "@/types";
 const techniqueOptions = ["FTIR", "Raman", "NMR", "UV-Vis", "NIR", "XRF", "MS"];
 
 interface Props {
-  visible: boolean;
+  visible?: boolean;
   editProject?: ProjectSummary | null;
 }
 

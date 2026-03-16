@@ -107,6 +107,7 @@
 </template>
 
 <script setup lang="ts">
+/* eslint-disable @typescript-eslint/no-explicit-any -- builder canvas mixes generic node-library metadata with loose drag/drop payloads. */
 import { ref, computed, provide, watch, onMounted, onUnmounted } from "vue";
 import Button from "primevue/button";
 import Checkbox from "primevue/checkbox";
@@ -611,6 +612,25 @@ const exportToNotebook = async () => {
   }
 };
 
+const downloadZip = async () => {
+  try {
+    await workflowStore.downloadExport("zip");
+    toast.add({
+      severity: "success",
+      summary: "Export",
+      detail: "Zip bundle downloaded",
+      life: 3000,
+    });
+  } catch (err: any) {
+    toast.add({
+      severity: "error",
+      summary: "Export Failed",
+      detail: err?.response?.data?.detail || "Failed to download zip bundle",
+      life: 5000,
+    });
+  }
+};
+
 const exportMenuItems = [
   {
     label: "Python Script (.py)",
@@ -621,6 +641,14 @@ const exportMenuItems = [
     label: "Jupyter Notebook (.ipynb)",
     icon: "pi pi-book",
     command: exportToNotebook,
+  },
+  {
+    separator: true,
+  },
+  {
+    label: "Download Bundle (.zip)",
+    icon: "pi pi-box",
+    command: downloadZip,
   },
 ];
 

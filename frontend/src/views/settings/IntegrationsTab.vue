@@ -192,6 +192,7 @@
 </template>
 
 <script setup lang="ts">
+/* eslint-disable @typescript-eslint/no-explicit-any -- provider config responses are heterogeneous until normalized by the backend. */
 import { ref, computed, onMounted } from 'vue';
 import api from '@/api/client';
 import { useToast } from 'primevue/usetoast';

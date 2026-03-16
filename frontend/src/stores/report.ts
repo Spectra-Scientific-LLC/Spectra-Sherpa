@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- report assembly combines workflow output payloads with partially typed backend responses. */
 import { defineStore } from "pinia";
 import { ref, reactive, computed } from "vue";
 import api from "@/api/client";

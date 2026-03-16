@@ -20,7 +20,7 @@ export interface PlotMetadata {
   y_units?: string;
   value_units?: string;
   value_units_label?: string;
-  loadings_axis_labels?: any[];
+  loadings_axis_labels?: unknown[];
   loadings_axis_units?: string;
   wavenumbers?: number[];
   feature_names?: string[];

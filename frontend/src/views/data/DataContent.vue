@@ -985,6 +985,7 @@
 </template>
 
 <script setup lang="ts">
+/* eslint-disable @typescript-eslint/no-explicit-any -- explore views consume mixed dataset summaries and visualization payloads. */
 import { ref, reactive, computed, onMounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import TabView from "primevue/tabview";
@@ -1001,7 +1002,6 @@ import FileUpload from "primevue/fileupload";
 import Panel from "primevue/panel";
 import ProgressSpinner from "primevue/progressspinner";
 import Tag from "primevue/tag";
-import InputSwitch from "primevue/inputswitch";
 import { useDataStore } from "@/stores/data";
 import { useProjectStore } from "@/stores/project";
 import { useToast } from "primevue/usetoast";

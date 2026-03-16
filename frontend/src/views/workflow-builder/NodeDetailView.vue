@@ -1260,8 +1260,9 @@
 </template>
 
 <script setup lang="ts">
+/* eslint-disable @typescript-eslint/no-explicit-any -- node outputs and plot payloads vary widely across node families in this inspection view. */
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
 import InputNumber from "primevue/inputnumber";
@@ -1274,10 +1275,9 @@ import { useToast } from "primevue/usetoast";
 import QuickPlotModal from "./modals/QuickPlotModal.vue";
 import DataTableModal from "./modals/DataTableModal.vue";
 import PlotlyChart from "@/components/PlotlyChart.vue";
-import { useProjectStore } from "@/stores/project";
 import { useWorkflowStore } from "@/stores/workflow";
 import { createCategoryColorMap } from "@/utils/colors";
-import { getYAxisLabel, getXAxisLabel, isSpectralData as checkIsSpectral } from "@/utils/plotLabels";
+import { getYAxisLabel } from "@/utils/plotLabels";
 import { buildNodeOutput, type NodeOutput } from "@/utils/nodeOutput";
 import {
   buildLabelTable,
@@ -1290,7 +1290,6 @@ import api from "@/api/client";
 
 
 const route = useRoute();
-const router = useRouter();
 const toast = useToast();
 
 // Session storage key for passing data between tabs
@@ -1400,7 +1399,6 @@ const originalParams = ref<Record<string, any>>({});
 
 // Validation errors
 const workflowStore = useWorkflowStore();
-const projectStore = useProjectStore();
 const validationErrors = ref<Array<{ param_name: string; message: string }>>([]);
 
 // Filter out internal "_metadata" errors from display (these occur when library isn't loaded yet)
@@ -1495,11 +1493,6 @@ const isSpectraData = computed(() => {
 });
 
 // Detect if data is time-series (kinetic / evolving)
-const isTimeSeriesData = computed(() => {
-  const metadata = nodeOutput.value?.metadata || {};
-  return !!metadata.is_time_series;
-});
-
 // Detect if this is a generic dataset (like Iris) with feature names
 const isGenericDataNode = computed(() => {
   if (!isDataNode.value) return false;
@@ -2235,8 +2228,6 @@ const yAxisLabel = computed(() => getYAxisLabel(nodeOutput.value?.metadata));
  * Compute X-axis label from metadata using shared utility.
  * Never uses "a.u." - falls back to ML terms ("Feature").
  */
-const xAxisLabel = computed(() => getXAxisLabel(nodeOutput.value?.metadata));
-
 // Watch for changes in PCA component count and clamp axis indices
 watch(
   () => nodeOutput.value?.metadata?.n_components,
@@ -4299,7 +4290,6 @@ const efaEigenvalueData = computed(() => {
   if (nodeTypeKey.value !== "model.efa" || !hasOutput.value) return [];
   // EFA primary output is forward eigenvalues as a SherpaDataset
   const data = nodeOutput.value?.data || [];
-  const metadata = nodeOutput.value?.metadata || {};
   if (!data.length || !Array.isArray(data[0])) return [];
 
   const nSamples = data.length;

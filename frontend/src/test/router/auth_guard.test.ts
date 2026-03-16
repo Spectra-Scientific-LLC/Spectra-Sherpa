@@ -52,6 +52,8 @@ import api from "@/api/client";
 import router from "@/router";
 import { useAuthStore } from "@/stores/auth";
 
+const HOME_PATH = "/project";
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -95,11 +97,11 @@ describe("Router auth guard", () => {
     });
 
     it("redirects /login → /", async () => {
-      expect(await navigateTo("/login")).toBe("/");
+      expect(await navigateTo("/login")).toBe(HOME_PATH);
     });
 
     it("redirects /register → /", async () => {
-      expect(await navigateTo("/register")).toBe("/");
+      expect(await navigateTo("/register")).toBe(HOME_PATH);
     });
 
     it("allows protected route without credentials", async () => {
@@ -156,7 +158,7 @@ describe("Router auth guard", () => {
     });
 
     it("redirects /login → / when already authenticated", async () => {
-      expect(await navigateTo("/login")).toBe("/");
+      expect(await navigateTo("/login")).toBe(HOME_PATH);
     });
   });
 
@@ -168,7 +170,7 @@ describe("Router auth guard", () => {
 
     it("redirects non-superuser → /", async () => {
       authenticateAs({ is_superuser: false });
-      expect(await navigateTo("/admin")).toBe("/");
+      expect(await navigateTo("/admin")).toBe(HOME_PATH);
     });
 
     it("allows superuser to access /admin", async () => {

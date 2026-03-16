@@ -227,6 +227,133 @@ class NestedCVNode(Node):
         diagnostics=["rmsecv", "r2", "q2", "mean_n_selected", "selection_stability"],
     )
 
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python code for leakage-safe nested cross-validation."""
+        X_expr = inputs.get("X", inputs.get("default", "input_data"))
+        y_expr = inputs.get("y", "None")
+
+        params = self._resolve_params()
+        selection_method = params.get("selection_method", "vip")
+        n_components = int(params.get("n_components", 5))
+        cv_folds = int(params.get("cv_folds", 5))
+        vip_threshold = float(params.get("vip_threshold", 1.0))
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- Nested CV / Leakage-safe ({self.node_id}) ---")
+        lines.append(f"{indent}from sklearn.cross_decomposition import PLSRegression as _PLSRegression")
+        lines.append(f"{indent}from sklearn.model_selection import KFold as _KFold")
+        lines.append(f"{indent}_X_input = {X_expr}")
+        lines.append(
+            f"{indent}_X_ncv = np.asarray(_X_input.data if hasattr(_X_input, 'data') else _X_input, dtype=np.float64)"
+        )
+        lines.append(f"{indent}_X_ncv = np.atleast_2d(_X_ncv)")
+
+        # Target extraction
+        lines.append(f"{indent}_y_raw = {y_expr}")
+        lines.append(f"{indent}if _y_raw is None and hasattr(_X_input, 'target') and _X_input.target is not None:")
+        lines.append(f"{indent}    _y_raw = _X_input.target")
+        lines.append(f"{indent}_y_ncv = np.asarray(_y_raw, dtype=np.float64).ravel()")
+
+        lines.append(f"{indent}_n_samples, _n_features = _X_ncv.shape")
+        lines.append(f"{indent}_cv_folds = min({cv_folds}, _n_samples)")
+        lines.append(f"{indent}_kf = _KFold(n_splits=_cv_folds, shuffle=True, random_state=42)")
+        lines.append(f"{indent}_y_pred_all = np.full(_n_samples, np.nan)")
+        lines.append(f"{indent}_fold_masks = []")
+        lines.append(f"{indent}_fold_n_selected = []")
+        lines.append("")
+        lines.append(f"{indent}for _fold_i, (_train_idx, _test_idx) in enumerate(_kf.split(_X_ncv)):")
+        lines.append(f"{indent}    _X_train, _X_test = _X_ncv[_train_idx], _X_ncv[_test_idx]")
+        lines.append(f"{indent}    _y_train, _y_test = _y_ncv[_train_idx], _y_ncv[_test_idx]")
+
+        # Variable selection inside fold
+        if selection_method == "vip":
+            lines.append(f"{indent}    # VIP-based variable selection on training data only")
+            lines.append(f"{indent}    _nc = min({n_components}, _X_train.shape[0] - 1, _n_features - 1)")
+            lines.append(f"{indent}    _pls_sel = _PLSRegression(n_components=max(_nc, 1), scale=False)")
+            lines.append(f"{indent}    _pls_sel.fit(_X_train, _y_train)")
+            lines.append(f"{indent}    _W = _pls_sel.x_weights_")
+            lines.append(f"{indent}    _T = _pls_sel.x_scores_")
+            lines.append(f"{indent}    _Q = _pls_sel.y_loadings_")
+            lines.append(f"{indent}    _p = _W.shape[0]")
+            lines.append(f"{indent}    _ss = np.sum(_T ** 2, axis=0) * np.sum(_Q ** 2, axis=0)")
+            lines.append(
+                f"{indent}    _vip = np.sqrt(_p * np.sum("
+                f"_ss * (_W / np.linalg.norm(_W, axis=0)) ** 2, axis=1) / np.sum(_ss))"
+            )
+            lines.append(f"{indent}    _mask = _vip >= {vip_threshold}")
+            lines.append(f"{indent}    if np.sum(_mask) == 0:")
+            lines.append(f"{indent}        _top_n = max(int(0.1 * _p), 1)")
+            lines.append(f"{indent}        _mask = np.zeros(_p, dtype=bool)")
+            lines.append(f"{indent}        _mask[np.argsort(_vip)[-_top_n:]] = True")
+        elif selection_method == "coef_abs":
+            lines.append(f"{indent}    # |Coefficient|-based variable selection on training data only")
+            lines.append(f"{indent}    _nc = min({n_components}, _X_train.shape[0] - 1, _n_features - 1)")
+            lines.append(f"{indent}    _pls_sel = _PLSRegression(n_components=max(_nc, 1), scale=False)")
+            lines.append(f"{indent}    _pls_sel.fit(_X_train, _y_train)")
+            lines.append(f"{indent}    _coefs = np.abs(_pls_sel.coef_.ravel())")
+            lines.append(f"{indent}    _thresh = np.median(_coefs)")
+            lines.append(f"{indent}    _mask = _coefs >= _thresh")
+            lines.append(f"{indent}    if np.sum(_mask) == 0:")
+            lines.append(f"{indent}        _mask = np.ones(_n_features, dtype=bool)")
+        else:
+            # "none" or other — use all variables
+            lines.append(f"{indent}    # No variable selection — use all variables")
+            lines.append(f"{indent}    _mask = np.ones(_n_features, dtype=bool)")
+
+        lines.append(f"{indent}    _fold_masks.append(_mask)")
+        lines.append(f"{indent}    _n_sel = int(np.sum(_mask))")
+        lines.append(f"{indent}    _fold_n_selected.append(_n_sel)")
+        lines.append(f"{indent}    if _n_sel == 0:")
+        lines.append(f"{indent}        _mask = np.ones(_n_features, dtype=bool)")
+        lines.append(f"{indent}        _n_sel = _n_features")
+        lines.append(f"{indent}    _nc_fit = min({n_components}, _n_sel - 1, len(_train_idx) - 1)")
+        lines.append(f"{indent}    _nc_fit = max(_nc_fit, 1)")
+        lines.append(f"{indent}    _pls_fold = _PLSRegression(n_components=_nc_fit, scale=False)")
+        lines.append(f"{indent}    _pls_fold.fit(_X_train[:, _mask], _y_train)")
+        lines.append(f"{indent}    _y_pred_all[_test_idx] = _pls_fold.predict(_X_test[:, _mask]).flatten()")
+        lines.append("")
+
+        # Compute metrics
+        lines.append(f"{indent}_valid = ~np.isnan(_y_pred_all)")
+        lines.append(f"{indent}_yt = _y_ncv[_valid]")
+        lines.append(f"{indent}_yp = _y_pred_all[_valid]")
+        lines.append(f"{indent}_ss_res = float(np.sum((_yt - _yp) ** 2))")
+        lines.append(f"{indent}_ss_tot = float(np.sum((_yt - np.mean(_yt)) ** 2))")
+        lines.append(f"{indent}_rmsecv = float(np.sqrt(np.mean((_yt - _yp) ** 2)))")
+        lines.append(f"{indent}_r2 = 1.0 - _ss_res / max(_ss_tot, 1e-12)")
+        lines.append(f"{indent}_q2 = _r2  # Q² = 1 - PRESS/TSS for CV")
+        lines.append(f"{indent}_bias = float(np.mean(_yp - _yt))")
+
+        # Stability
+        lines.append(f"{indent}_jaccards = []")
+        lines.append(f"{indent}for _i in range(len(_fold_masks)):")
+        lines.append(f"{indent}    for _j in range(_i + 1, len(_fold_masks)):")
+        lines.append(f"{indent}        _inter = np.sum(_fold_masks[_i] & _fold_masks[_j])")
+        lines.append(f"{indent}        _union = np.sum(_fold_masks[_i] | _fold_masks[_j])")
+        lines.append(f"{indent}        _jaccards.append(float(_inter / max(_union, 1)))")
+        lines.append(f"{indent}_mean_jaccard = float(np.mean(_jaccards)) if _jaccards else 1.0")
+
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'cv_metrics': {{'rmsecv': _rmsecv, 'r2': _r2, 'q2': _q2, 'bias': _bias,")
+        lines.append(f"{indent}        'selection_method': {selection_method!r}, 'n_folds': _cv_folds}},")
+        lines.append(f"{indent}    'y_pred': _y_pred_all,")
+        lines.append(
+            f"{indent}    'stability': {{'mean_jaccard': _mean_jaccard,"
+            f" 'mean_n_selected': float(np.mean(_fold_n_selected))}},"
+        )
+        lines.append(f"{indent}}}")
+        lines.append(
+            f'{indent}print(f"  Nested CV: RMSECV={{_rmsecv:.4f}}, R²={{_r2:.4f}},'
+            f' Q²={{_q2:.4f}}, stability={{_mean_jaccard:.3f}}")'
+        )
+
+        return lines
+
     async def execute(self, X: Any = None, y: Any = None, **kwargs: Any) -> NodeResult:
         params = self._resolve_params()
         selection_method = params.get("selection_method", "vip")

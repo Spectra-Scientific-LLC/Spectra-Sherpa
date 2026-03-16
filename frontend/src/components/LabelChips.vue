@@ -54,10 +54,14 @@ const adding = ref(false);
 const newLabel = ref("");
 const inputRef = ref<InstanceType<typeof InputText> | null>(null);
 
+type InputTextComponent = InstanceType<typeof InputText> & {
+  $el?: HTMLElement;
+};
+
 watch(adding, async (val) => {
   if (val) {
     await nextTick();
-    const el = (inputRef.value as any)?.$el as HTMLElement | undefined;
+    const el = (inputRef.value as InputTextComponent | null)?.$el;
     if (el) el.focus();
   }
 });

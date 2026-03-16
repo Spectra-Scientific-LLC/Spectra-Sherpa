@@ -214,6 +214,103 @@ class PDSNode(Node):
         diagnostics=["rmse_transfer", "max_error", "half_window", "n_features"],
     )
 
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        """Generate Python code for PDS calibration transfer."""
+        X_pri_expr = inputs.get("X_primary", "X_primary")
+        X_sec_expr = inputs.get("X_secondary", "X_secondary")
+        X_new_expr = inputs.get("X_new", "X_new")
+
+        params = self._resolve_params()
+        half_window = int(params.get("half_window", 3))
+        n_components = int(params.get("n_components", 2))
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- PDS Calibration Transfer ({self.node_id}) ---")
+        lines.append(f"{indent}# Piecewise Direct Standardization (Wang et al., Anal. Chem. 1991)")
+        lines.append(
+            f"{indent}_X_pri = np.asarray("
+            f"{X_pri_expr}.data if hasattr({X_pri_expr}, 'data') else {X_pri_expr}, dtype=np.float64)"
+        )
+        lines.append(
+            f"{indent}_X_sec = np.asarray("
+            f"{X_sec_expr}.data if hasattr({X_sec_expr}, 'data') else {X_sec_expr}, dtype=np.float64)"
+        )
+        lines.append(
+            f"{indent}_X_new_arr = np.asarray("
+            f"{X_new_expr}.data if hasattr({X_new_expr}, 'data') else {X_new_expr}, dtype=np.float64)"
+        )
+        lines.append(f"{indent}_X_pri = np.atleast_2d(_X_pri)")
+        lines.append(f"{indent}_X_sec = np.atleast_2d(_X_sec)")
+        lines.append(f"{indent}_X_new_arr = np.atleast_2d(_X_new_arr)")
+        lines.append(f"{indent}_half_window = {half_window}")
+        lines.append(f"{indent}_n_comp_pds = {n_components}")
+        lines.append(f"{indent}_n_feat = _X_pri.shape[1]")
+        lines.append("")
+        lines.append(f"{indent}# Fit PDS: local regression at each wavelength")
+        lines.append(f"{indent}_pds_transforms = []")
+        lines.append(f"{indent}for _j in range(_n_feat):")
+        lines.append(f"{indent}    _lo = max(0, _j - _half_window)")
+        lines.append(f"{indent}    _hi = min(_n_feat, _j + _half_window + 1)")
+        lines.append(f"{indent}    _X_win = _X_sec[:, _lo:_hi]")
+        lines.append(f"{indent}    _y_j = _X_pri[:, _j]")
+        lines.append(f"{indent}    _ws = _hi - _lo")
+        lines.append(f"{indent}    _X_mean = _X_win.mean(axis=0)")
+        lines.append(f"{indent}    _y_mean = _y_j.mean()")
+        lines.append(f"{indent}    _Xc = _X_win - _X_mean")
+        lines.append(f"{indent}    _yc = _y_j - _y_mean")
+        lines.append(f"{indent}    if _n_comp_pds > 0 and _ws > 1:")
+        lines.append(f"{indent}        _nc = min(_n_comp_pds, _ws, _X_sec.shape[0] - 1)")
+        lines.append(f"{indent}        try:")
+        lines.append(f"{indent}            _U, _s, _Vt = np.linalg.svd(_Xc, full_matrices=False)")
+        lines.append(f"{indent}            _s_inv = np.zeros_like(_s)")
+        lines.append(f"{indent}            _s_inv[:_nc] = 1.0 / np.maximum(_s[:_nc], 1e-12)")
+        lines.append(f"{indent}            _beta = _Vt.T @ np.diag(_s_inv) @ _U.T @ _yc")
+        lines.append(f"{indent}        except np.linalg.LinAlgError:")
+        lines.append(f"{indent}            _lam = 1e-6 * np.trace(_Xc.T @ _Xc) / max(_ws, 1)")
+        lines.append(f"{indent}            _beta = np.linalg.solve(_Xc.T @ _Xc + _lam * np.eye(_ws), _Xc.T @ _yc)")
+        lines.append(f"{indent}    else:")
+        lines.append(f"{indent}        _lam = 1e-6 * max(np.trace(_Xc.T @ _Xc) / max(_ws, 1), 1e-12)")
+        lines.append(f"{indent}        _beta = np.linalg.solve(_Xc.T @ _Xc + _lam * np.eye(_ws), _Xc.T @ _yc)")
+        lines.append(f"{indent}    _intercept = _y_mean - _X_mean @ _beta")
+        lines.append(
+            f"{indent}    _pds_transforms.append({{'beta': _beta, 'intercept': _intercept, 'lo': _lo, 'hi': _hi}})"
+        )
+        lines.append("")
+        lines.append(f"{indent}# Apply PDS to new secondary spectra")
+        lines.append(f"{indent}_X_std = np.zeros_like(_X_new_arr)")
+        lines.append(f"{indent}for _j, _t in enumerate(_pds_transforms):")
+        lines.append(f"{indent}    _X_std[:, _j] = _X_new_arr[:, _t['lo']:_t['hi']] @ _t['beta'] + _t['intercept']")
+        lines.append("")
+
+        # Wrap as SherpaDataset
+        lines.append(f"{indent}_fa = getattr({X_new_expr}, 'feature_axis', None)")
+        lines.append(f"{indent}_X_std_ds = SherpaDataset(_X_std, feature_axis=_fa)")
+
+        # Transfer diagnostics
+        lines.append(f"{indent}_X_sec_std = np.zeros_like(_X_sec)")
+        lines.append(f"{indent}for _j, _t in enumerate(_pds_transforms):")
+        lines.append(f"{indent}    _X_sec_std[:, _j] = _X_sec[:, _t['lo']:_t['hi']] @ _t['beta'] + _t['intercept']")
+        lines.append(f"{indent}_resid = _X_pri - _X_sec_std")
+        lines.append(f"{indent}_rmse_transfer = float(np.sqrt(np.mean(_resid ** 2)))")
+        lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'X_standardized': _X_std_ds,")
+        lines.append(
+            f"{indent}    'transfer_error': {{'rmse_transfer': _rmse_transfer,"
+            f" 'n_features': _n_feat, 'half_window': _half_window}},"
+        )
+        lines.append(f"{indent}}}")
+        lines.append(
+            f'{indent}print(f"  PDS Transfer: {{_X_new_arr.shape[0]}} spectra standardized,'
+            f' RMSE={{_rmse_transfer:.6f}}")'
+        )
+
+        return lines
+
     async def execute(
         self,
         X_primary: Any = None,

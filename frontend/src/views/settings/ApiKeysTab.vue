@@ -203,6 +203,7 @@
 </template>
 
 <script setup lang="ts">
+/* eslint-disable @typescript-eslint/no-explicit-any -- LLM config responses and errors remain loosely typed across providers. */
 import { ref, computed, onMounted, watch } from "vue";
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
@@ -323,7 +324,7 @@ const loadSavedKeys = async () => {
         llmModel.value = configResponse.data.model;
         llmVerbose.value = configResponse.data.verbose;
       }
-    } catch (error) {
+    } catch {
       console.log("No LLM config found, using defaults");
     }
   } catch (error) {

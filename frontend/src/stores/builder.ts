@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- builder state stores flexible blend settings and metadata from exploratory UI flows. */
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import api from "@/api/client";

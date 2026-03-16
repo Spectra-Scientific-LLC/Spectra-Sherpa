@@ -147,7 +147,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from "vue";
+/* eslint-disable @typescript-eslint/no-explicit-any -- selection nodes combine tree nodes, uploads, and backend records with different shapes. */
+import { ref, computed, onMounted } from "vue";
 import Dialog from "primevue/dialog";
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
@@ -155,7 +156,7 @@ import Tree from "primevue/tree";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
 import FileUpload from "primevue/fileupload";
-import { useWorkflowStore, type LibraryDataset, type ExperimentDataset } from "@/stores/workflow";
+import { useWorkflowStore, type LibraryDataset } from "@/stores/workflow";
 import { useBuilderStore } from "@/stores/builder";
 import { useToast } from "primevue/usetoast";
 

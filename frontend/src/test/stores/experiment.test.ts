@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from "pinia";
 
 import api from "@/api/client";
 import { useExperimentStore } from "@/stores/experiment";
+import type { ExperimentDetail, ExperimentFile, ExperimentSummary, VersionInfo } from "@/types";
 
 vi.mock("@/api/client", () => ({
   default: {
@@ -100,10 +101,33 @@ describe("Experiment Store", () => {
 
   it("deleteExperiment clears selected experiment state", async () => {
     const store = useExperimentStore();
-    store.experiments = [{ id: 7, name: "Delete Me", description: "" }] as any;
-    store.currentExperiment = { id: 7, name: "Delete Me", description: "" } as any;
-    store.files = [{ id: 1, file_path: "x.csv" }] as any;
-    store.versions = [{ id: 1, version_name: "v1" }] as any;
+    store.experiments = [{
+      id: 7,
+      name: "Delete Me",
+      description: "",
+      created_at: "2026-01-01T00:00:00Z",
+      file_count: 1,
+    }] satisfies ExperimentSummary[];
+    store.currentExperiment = {
+      id: 7,
+      name: "Delete Me",
+      description: "",
+      created_at: "2026-01-01T00:00:00Z",
+      file_count: 1,
+      metadata: {},
+    } satisfies ExperimentDetail;
+    store.files = [{
+      id: 1,
+      file_path: "x.csv",
+      stage: "raw",
+      created_at: "2026-01-01T00:00:00Z",
+    }] satisfies ExperimentFile[];
+    store.versions = [{
+      id: 1,
+      version_name: "v1",
+      created_at: "2026-01-01T00:00:00Z",
+      file_count: 1,
+    }] satisfies VersionInfo[];
 
     vi.mocked(api.delete).mockResolvedValueOnce({ data: null });
     await store.deleteExperiment(7);

@@ -18,7 +18,6 @@ from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
 
 from ...io_contracts import bind_X, bind_y, build_dataset_like, to_numpy_2d, to_numpy_y
 from ...node_base import Node, NodeMetadata, NodeParameter, NodeResult, PortMetadata, register_node
-from ..data._utils import slice_axis_for_indices
 
 logger = logging.getLogger(__name__)
 
@@ -240,26 +239,9 @@ class SamplePartitionNode(Node):
         lines.append(f"{indent}_X_test = _X_data[_test_idx]")
         lines.append(f"{indent}_y_cal = _y_data[_cal_idx] if _y_data is not None else None")
         lines.append(f"{indent}_y_test = _y_data[_test_idx] if _y_data is not None else None")
-        if use_scp:
-            lines.append(f"{indent}from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset")
-            lines.append(
-                f"{indent}_X_cal_ds = SherpaDataset("
-                f"X=_X_cal, feature_axis=getattr(_X_input, 'feature_axis', None), target=_y_cal)"
-            )
-            lines.append(
-                f"{indent}_X_test_ds = SherpaDataset("
-                f"X=_X_test, feature_axis=getattr(_X_input, 'feature_axis', None), target=_y_test)"
-            )
-        else:
-            lines.append(f"{indent}_x_axis = getattr(_X_input, 'x', None)")
-            lines.append(
-                f"{indent}_X_cal_ds = _Result("
-                f"_X_cal, x=_x_axis, target=_y_cal, target_names=getattr(_X_input, 'target_names', None))"
-            )
-            lines.append(
-                f"{indent}_X_test_ds = _Result("
-                f"_X_test, x=_x_axis, target=_y_test, target_names=getattr(_X_input, 'target_names', None))"
-            )
+        lines.append(f"{indent}_fa = getattr(_X_input, 'feature_axis', None)")
+        lines.append(f"{indent}_X_cal_ds = SherpaDataset(" f"_X_cal, feature_axis=_fa, target=_y_cal)")
+        lines.append(f"{indent}_X_test_ds = SherpaDataset(" f"_X_test, feature_axis=_fa, target=_y_test)")
         lines.append(f'{indent}print(f"  Partition ({method}): {{len(_cal_idx)}} cal, {{len(_test_idx)}} test")')
         lines.append(f"{indent}results['{self.node_id}'] = {{")
         lines.append(f"{indent}    'X_cal': _X_cal_ds, 'X_test': _X_test_ds,")
@@ -356,6 +338,8 @@ class SamplePartitionNode(Node):
         # Slice sample axis metadata
         src_sample_axis = getattr(X_ds, "sample_axis", None)
         if src_sample_axis is not None:
+            from ..data._utils import slice_axis_for_indices
+
             X_cal_ds.sample_axis = slice_axis_for_indices(src_sample_axis, cal_idx)
             X_test_ds.sample_axis = slice_axis_for_indices(src_sample_axis, test_idx)
 

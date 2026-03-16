@@ -362,6 +362,7 @@
 </template>
 
 <script setup lang="ts">
+/* eslint-disable @typescript-eslint/no-explicit-any -- deployment run payloads are backend-shaped and vary by execution status. */
 import { ref, computed, onMounted, watch, reactive } from "vue";
 import TabView from "primevue/tabview";
 import TabPanel from "primevue/tabpanel";

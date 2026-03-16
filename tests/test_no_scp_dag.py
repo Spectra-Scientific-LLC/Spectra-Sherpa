@@ -691,7 +691,7 @@ class TestGeneratePythonNoScp:
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
-        assert "_Result(" in code
+        assert "SherpaDataset(" in code
         assert "np.array(" in code
 
     def test_snv_scp_uses_sherpa_dataset(self):
@@ -705,56 +705,56 @@ class TestGeneratePythonNoScp:
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
-        assert "_Result(" in code
+        assert "SherpaDataset(" in code
 
     def test_cosmic_ray_no_scp(self):
         node = self._make_node("preprocess.cosmic_ray", {"window": 7, "zscore": 3.0})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
-        assert "_Result(" in code
+        assert "SherpaDataset(" in code
 
     def test_clip_floor_no_scp(self):
         node = self._make_node("preprocess.clip_floor", {"floor": 0.0})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
-        assert "_Result(" in code
+        assert "SherpaDataset(" in code
 
     def test_scale_max_no_scp(self):
         node = self._make_node("preprocess.scale", {"method": "scale_max", "target_max": 1.0})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
-        assert "_Result(" in code
+        assert "SherpaDataset(" in code
 
     def test_center_mean_no_scp(self):
         node = self._make_node("preprocess.scale", {"method": "mean_center"})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
-        assert "_Result(" in code
+        assert "SherpaDataset(" in code
 
     def test_pareto_no_scp(self):
         node = self._make_node("preprocess.scale", {"method": "pareto", "center": True})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
-        assert "_Result(" in code
+        assert "SherpaDataset(" in code
 
     def test_autoscaling_no_scp(self):
         node = self._make_node("preprocess.scale", {"method": "autoscale", "center": True})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
-        assert "_Result(" in code
+        assert "SherpaDataset(" in code
 
     def test_emsc_no_scp(self):
         node = self._make_node("preprocess.emsc", {"reference": "mean", "poly_order": 2})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
-        assert "_Result(" in code
+        assert "SherpaDataset(" in code
 
     def test_savgol_smooth_no_scp_uses_scipy(self):
         node = self._make_node("preprocess.smooth", {"method": "savitzky_golay", "size": 11, "order": 2})
@@ -762,7 +762,7 @@ class TestGeneratePythonNoScp:
         code = "\n".join(lines)
         assert "scp" not in code.lower() or "scp" not in code
         assert "savgol_filter" in code
-        assert "_Result(" in code
+        assert "SherpaDataset(" in code
 
     def test_savgol_smooth_scp_uses_method(self):
         node = self._make_node("preprocess.smooth", {"method": "savitzky_golay", "size": 11, "order": 2})
@@ -778,7 +778,7 @@ class TestGeneratePythonNoScp:
         code = "\n".join(lines)
         assert "savgol_filter" in code
         assert "deriv=1" in code
-        assert "_Result(" in code
+        assert "SherpaDataset(" in code
 
     def test_second_deriv_no_scp_uses_scipy(self):
         node = self._make_node(
@@ -788,7 +788,7 @@ class TestGeneratePythonNoScp:
         code = "\n".join(lines)
         assert "savgol_filter" in code
         assert "deriv=2" in code
-        assert "_Result(" in code
+        assert "SherpaDataset(" in code
 
     def test_sg_derivative_no_scp_uses_scipy(self):
         node = self._make_node(
@@ -797,7 +797,7 @@ class TestGeneratePythonNoScp:
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "savgol_filter" in code
-        assert "_Result(" in code
+        assert "SherpaDataset(" in code
 
     def test_sg_derivative_scp_uses_method(self):
         node = self._make_node(
@@ -823,7 +823,7 @@ class TestGeneratePythonNoScp:
         code = "\n".join(lines)
         assert "_x_vals" in code, "Should use x_vals for index lookup"
         assert "_mask" in code, "Should build boolean mask"
-        assert "_Result(" in code, "Should wrap with _Result"
+        assert "SherpaDataset(" in code, "Should wrap with SherpaDataset"
         # Primary path must use mask-based selection
         assert "_x_vals >= 500" in code
         assert "_x_vals <= 3000" in code

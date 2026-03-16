@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- plot payloads from backend nodes are intentionally heterogeneous in this translation layer. */
 /**
  * usePlotData — shared composable for building Plotly plots from node output.
  *
@@ -6,7 +7,7 @@
  */
 import { ref, computed, watch, type Ref, type ComputedRef } from "vue";
 import { createCategoryColorMap } from "@/utils/colors";
-import { getYAxisLabel, getXAxisLabel } from "@/utils/plotLabels";
+import { getYAxisLabel } from "@/utils/plotLabels";
 import {
   normalizeSampleLabel,
 } from "@/utils/sampleLabels";
@@ -1505,7 +1506,6 @@ export function usePlotData(
         };
       case "pca_biplot": {
         const loadingsPort = output.ports?.loadings;
-        const loadingsPayload = resolvePortPayload(loadingsPort);
         const loadings = loadingsPort?.data || metadata.loadings || [];
         return {
           data: buildBiplotTraces(output.data, loadings, metadata, xAxis.value, yAxis.value),
@@ -1646,7 +1646,6 @@ export function usePlotData(
 
   const dataShape = computed(() => {
     const output = nodeOutput.value;
-    const metadata = output?.metadata || {};
     const defaultRowLabel = isSpectra.value ? "spectra" : "rows";
     const defaultColLabel = isSpectra.value ? "points" : "features";
     const defaultShape = { rows: 0, cols: 0, range: null as [number, number] | null, rowLabel: defaultRowLabel, colLabel: defaultColLabel };

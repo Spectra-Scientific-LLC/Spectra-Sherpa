@@ -1,4 +1,6 @@
 import axios, { type AxiosError } from "axios";
+import { updateDemoQuotaFromRateLimit } from "@/composables/demoModeState";
+import { useNotifier } from "@/composables/useNotifier";
 import { isDemoUpgradeError } from "@/utils/errors";
 
 // Use relative URL in production (nginx proxies to backend)
@@ -74,22 +76,18 @@ function emitAsyncApiErrorNotification(error: AxiosError): void {
     }
   }
 
-  import("@/composables/useNotifier")
-    .then(({ useNotifier }) => {
-      const { notifyDeployOutcome, notifySystemEvent } = useNotifier();
-      const message = formatAsyncErrorMessage(error);
-      if (path.startsWith("/deploy/")) {
-        notifyDeployOutcome({ success: false, message });
-        return;
-      }
-      notifySystemEvent({
-        severity: "error",
-        title: "Background Sync Error",
-        message,
-        detail: extendedDetail,
-      });
-    })
-    .catch(() => undefined);
+  const { notifyDeployOutcome, notifySystemEvent } = useNotifier();
+  const message = formatAsyncErrorMessage(error);
+  if (path.startsWith("/deploy/")) {
+    notifyDeployOutcome({ success: false, message });
+    return;
+  }
+  notifySystemEvent({
+    severity: "error",
+    title: "Background Sync Error",
+    message,
+    detail: extendedDetail,
+  });
 }
 
 /**
@@ -133,11 +131,8 @@ api.interceptors.response.use(
     // Demo mode: 429 (execution limit) — update banner quota counter.
     // Demo mode: rate-limit response — update quota counter for DemoUpgradeModal.
     if (isDemoUpgradeError(error) && error.response?.status === 429) {
-      import("@/composables/useDemoMode").then(({ useDemoMode }) => {
-        const { updateFromRateLimit } = useDemoMode();
-        const data = error.response?.data;
-        updateFromRateLimit(data?.remaining ?? 0, data?.limit ?? 25);
-      });
+      const data = error.response?.data;
+      updateDemoQuotaFromRateLimit(data?.remaining ?? 0, data?.limit ?? 25);
       return Promise.reject(error);
     }
 

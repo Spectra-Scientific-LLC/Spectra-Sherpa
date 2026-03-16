@@ -31,25 +31,7 @@ describe("App layout selection", () => {
     mocks.routeMeta.public = false;
   });
 
-  it("renders the auth route directly for public routes", () => {
-    mocks.routeMeta.public = true;
-
-    const wrapper = mount(App, {
-      global: {
-        stubs: {
-          RouterView: defineComponent({
-            name: "RouterViewStub",
-            template: '<div data-test="router-view">auth route</div>',
-          }),
-        },
-      },
-    });
-
-    expect(wrapper.find('[data-test="router-view"]').exists()).toBe(true);
-    expect(wrapper.find('[data-test="main-layout"]').exists()).toBe(false);
-  });
-
-  it("renders the full workspace shell for non-public routes", () => {
+  it("always renders the shared main layout shell", () => {
     const wrapper = mount(App, {
       global: {
         stubs: {
@@ -62,6 +44,5 @@ describe("App layout selection", () => {
     });
 
     expect(wrapper.find('[data-test="main-layout"]').exists()).toBe(true);
-    expect(wrapper.find('[data-test="router-view"]').exists()).toBe(false);
   });
 });

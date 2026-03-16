@@ -262,6 +262,7 @@
 </template>
 
 <script setup lang="ts">
+/* eslint-disable @typescript-eslint/no-explicit-any -- blend editor emits exploratory configuration payloads with partially typed previews. */
 import { ref, computed, watch } from "vue";
 import Dialog from "primevue/dialog";
 import Button from "primevue/button";

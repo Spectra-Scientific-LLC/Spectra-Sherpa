@@ -287,8 +287,10 @@ class TestOrchestratorIntegration:
         )
 
         code = generate_python_code(wf)
-        assert ">>> EDIT" in code
-        assert "SherpaDataset(" not in code
+        # Placeholder now uses a DATA LOADING banner instead of ">>> EDIT"
+        assert "DATA LOADING" in code
+        assert "SherpaDataset.from_nddataset" not in code
+        assert "from spectra_sherpa.app.lib.scp_compat import from_nddataset" in code
 
     def test_eigenvector_multi_port_export(self):
         """Eigenvector source with both default and target ports connected."""

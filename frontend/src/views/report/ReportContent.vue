@@ -172,6 +172,7 @@
 </template>
 
 <script setup lang="ts">
+/* eslint-disable @typescript-eslint/no-explicit-any -- report view bridges backend report payloads into export-generator types. */
 import { ref, computed, onMounted, watch } from "vue";
 import Dropdown from "primevue/dropdown";
 import Button from "primevue/button";
