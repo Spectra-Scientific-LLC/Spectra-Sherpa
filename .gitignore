@@ -65,6 +65,19 @@ coverage.xml
 
 # Generated files
 openapi.json
+frontend/openapi.json
+
+# Workflow export dumps (generated at runtime)
+*_2026*/
+*_2025*/
+*.zip
+*.pkl
+
+# uv lock (we use poetry)
+uv.lock
+
+# direnv
+.envrc
 
 # Linter / type-checker caches
 .mypy_cache/
