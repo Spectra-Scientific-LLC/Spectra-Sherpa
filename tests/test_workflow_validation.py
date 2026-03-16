@@ -250,6 +250,10 @@ class TestRuntimePortTypeFallbacks:
         assert _category_from_type_ref("spectrasherpa://types/TargetMatrix/1.0") == "target"
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(
+        not __import__("spectra_sherpa.app.lib.scp_compat", fromlist=["HAS_SCP"]).HAS_SCP,
+        reason="requires SCP",
+    )
     async def test_model_edge_does_not_warn_when_registry_unloaded(self, monkeypatch):
         from spectra_sherpa.app.services.dag.executor import DAGExecutor, WorkflowEdge, WorkflowNode
         from spectra_sherpa.app.types import type_registry

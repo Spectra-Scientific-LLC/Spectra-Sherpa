@@ -12,6 +12,10 @@ import asyncio
 import numpy as np
 import pytest
 
+from spectra_sherpa.app.lib.scp_compat import HAS_SCP
+
+pytestmark = pytest.mark.skipif(not HAS_SCP, reason="requires SpectroChemPy")
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

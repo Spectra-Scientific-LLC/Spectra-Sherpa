@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from spectra_sherpa.app.lib.scp_compat import HAS_SCP
 from spectra_sherpa.app.services.dag.executor import DAGExecutor, WorkflowEdge, WorkflowNode
 
 TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "src" / "spectra_sherpa" / "data" / "templates"
@@ -52,11 +53,30 @@ def _build_executor(td: dict, overrides: dict[str, dict]) -> tuple[DAGExecutor, 
 @pytest.mark.parametrize(
     "slug,overrides",
     [
-        ("nested_cv_validation", {"data_1": {"source": "eigenvector", "eigenvector_dataset": "corn_m5"}}),
-        ("peak_guided_pls", {"data_1": {"source": "eigenvector", "eigenvector_dataset": "corn_m5"}}),
-        ("representative_calibration", {"data_1": {"source": "eigenvector", "eigenvector_dataset": "corn_m5"}}),
-        ("variable_selection_pls", {"data_1": {"source": "eigenvector", "eigenvector_dataset": "corn_m5"}}),
-        ("vip_assisted_pls", {"data_1": {"source": "eigenvector", "eigenvector_dataset": "corn_m5"}}),
+        (
+            "nested_cv_validation",
+            {"data_1": {"source": "eigenvector", "eigenvector_dataset": "corn_m5"}},
+        ),
+        pytest.param(
+            "peak_guided_pls",
+            {"data_1": {"source": "eigenvector", "eigenvector_dataset": "corn_m5"}},
+            marks=pytest.mark.skipif(not HAS_SCP, reason="requires SCP"),
+        ),
+        pytest.param(
+            "representative_calibration",
+            {"data_1": {"source": "eigenvector", "eigenvector_dataset": "corn_m5"}},
+            marks=pytest.mark.skipif(not HAS_SCP, reason="requires SCP"),
+        ),
+        pytest.param(
+            "variable_selection_pls",
+            {"data_1": {"source": "eigenvector", "eigenvector_dataset": "corn_m5"}},
+            marks=pytest.mark.skipif(not HAS_SCP, reason="requires SCP"),
+        ),
+        pytest.param(
+            "vip_assisted_pls",
+            {"data_1": {"source": "eigenvector", "eigenvector_dataset": "corn_m5"}},
+            marks=pytest.mark.skipif(not HAS_SCP, reason="requires SCP"),
+        ),
     ],
 )
 @pytest.mark.asyncio

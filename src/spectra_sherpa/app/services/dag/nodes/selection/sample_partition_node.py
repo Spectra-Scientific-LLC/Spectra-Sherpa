@@ -340,8 +340,8 @@ class SamplePartitionNode(Node):
         if src_sample_axis is not None:
             from ..data._utils import slice_axis_for_indices
 
-            X_cal_ds.sample_axis = slice_axis_for_indices(src_sample_axis, cal_idx)
-            X_test_ds.sample_axis = slice_axis_for_indices(src_sample_axis, test_idx)
+            X_cal_ds.sample_axis = slice_axis_for_indices(src_sample_axis, cal_idx)  # type: ignore[assignment]
+            X_test_ds.sample_axis = slice_axis_for_indices(src_sample_axis, test_idx)  # type: ignore[assignment]
 
         # Provenance
         step_params = {"method": method, "test_size": test_size}

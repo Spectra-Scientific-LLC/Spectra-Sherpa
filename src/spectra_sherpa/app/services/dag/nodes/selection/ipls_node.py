@@ -36,7 +36,7 @@ def _rmsecv_interval(
     X_sub = X[:, idx]
     n_comp = min(n_components, X_sub.shape[1], X_sub.shape[0] - 1)
     if n_comp < 1 or X_sub.shape[1] < 1:
-        return np.inf
+        return float(np.inf)
 
     kf = KFold(n_splits=cv_folds, shuffle=True, random_state=42)
     errors = []

@@ -22,6 +22,7 @@ import numpy as np
 import pytest
 import yaml
 
+from spectra_sherpa.app.lib.scp_compat import HAS_SCP
 from spectra_sherpa.app.services.notebook_export import generate_notebook
 from spectra_sherpa.app.services.python_export import generate_python_code, validate_export
 
@@ -223,6 +224,7 @@ class TestNumericalRoundtrip:
             assert ev_data.shape[0] == 3
             assert 0.0 < float(np.sum(ev_data)) <= 1.0
 
+    @pytest.mark.skipif(not HAS_SCP, reason="PLS requires SCP")
     def test_pls_sklearn_roundtrip(self):
         """PLS on sklearn iris (with embedded target): R² must be positive."""
         wf = SimpleNamespace(
@@ -289,6 +291,7 @@ class TestNumericalRoundtrip:
         scores_data = np.asarray(scores.data if hasattr(scores, "data") else scores)
         assert scores_data.shape == (150, 2)
 
+    @pytest.mark.skipif(not HAS_SCP, reason="PLS-DA requires SCP")
     def test_classification_plsda_roundtrip(self):
         """PLS-DA on iris: must produce predictions for all samples."""
         wf = SimpleNamespace(
@@ -422,6 +425,10 @@ class TestNumericalRoundtrip:
         assert isinstance(pf_result, dict)
         assert "peaks" in pf_result
 
+    @pytest.mark.skipif(
+        not HAS_SCP,
+        reason="Plot node requires matplotlib via SCP",
+    )
     def test_plot_roundtrip(self):
         """Plot node: must produce a visualization dict/figure."""
         wf = SimpleNamespace(

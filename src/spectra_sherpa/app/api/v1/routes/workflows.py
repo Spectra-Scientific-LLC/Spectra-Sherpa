@@ -1243,7 +1243,7 @@ async def execute_workflow(
             final_status=final_status,
             error_msg=error_msg,
             integrity_hash=wf_integrity_hash,
-            model_ids=[a.artifact_uid for a in (executor.saved_artifacts or [])],
+            model_ids=[a["artifact_uid"] for a in (executor.saved_artifacts or [])],
         )
 
         return WorkflowExecuteResponse(
@@ -1326,7 +1326,7 @@ async def execute_workflow(
             final_status=response_status,
             error_msg=error_msg,
             integrity_hash=wf_integrity_hash,
-            model_ids=[a.artifact_uid for a in (getattr(executor, "saved_artifacts", None) or [])],
+            model_ids=[a["artifact_uid"] for a in (getattr(executor, "saved_artifacts", None) or [])],
         )
 
         return WorkflowExecuteResponse(
