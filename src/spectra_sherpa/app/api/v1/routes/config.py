@@ -169,6 +169,7 @@ async def get_config(
                     "sherpaCodeGen": True,
                     "sherpaWriteReport": True,
                     "sherpaAgenticTools": True,
+                    "sherpaDataStory": True,
                     "sherpaFullContext": True,
                 }
             )

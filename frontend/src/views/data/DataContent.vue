@@ -590,8 +590,8 @@
             </div>
           </div>
 
-          <!-- Data Story section (catalog) -->
-          <div class="data-story-panel">
+          <!-- Data Story section (catalog) — enterprise/demo only -->
+          <div v-if="isFeatureEnabled('sherpaDataStory')" class="data-story-panel">
             <div class="data-story-header">
               <h4 class="panel-title">
                 <i class="pi pi-book"></i>
@@ -778,8 +778,8 @@
             />
           </div>
 
-          <!-- Data Story section (file) -->
-          <div class="data-story-panel">
+          <!-- Data Story section (file) — enterprise/demo only -->
+          <div v-if="isFeatureEnabled('sherpaDataStory')" class="data-story-panel">
             <div class="data-story-header">
               <h4 class="panel-title">
                 <i class="pi pi-book"></i>
@@ -1058,6 +1058,7 @@ import ProgressSpinner from "primevue/progressspinner";
 import Tag from "primevue/tag";
 import InputSwitch from "primevue/inputswitch";
 import api from "@/api/client";
+import { useAppConfig } from "@/composables/useAppConfig";
 import { useDataStore } from "@/stores/data";
 import { useProjectStore } from "@/stores/project";
 import { useToast } from "primevue/usetoast";
@@ -1068,6 +1069,7 @@ import PlotlyChart from "@/components/PlotlyChart.vue";
 const DATA_ENTRY_MODE_KEY = "sherpa:data-entry-mode";
 const DATA_ENTRY_PROJECT_KEY = "sherpa:data-entry-project-id";
 
+const { isFeatureEnabled } = useAppConfig();
 const dataStore = useDataStore();
 const projectStore = useProjectStore();
 const toast = useToast();
