@@ -474,8 +474,7 @@ def generate_python_code(
 
     # --- derive clean function names -------------------------------------
     raw_func_names = [
-        (nid, _derive_function_name(nid, node_type_map[nid], node_label_map.get(nid, "")))
-        for nid in execution_order
+        (nid, _derive_function_name(nid, node_type_map[nid], node_label_map.get(nid, ""))) for nid in execution_order
     ]
     func_names = _deduplicate_names(raw_func_names)
 
