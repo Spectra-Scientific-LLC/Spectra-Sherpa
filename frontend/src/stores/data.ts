@@ -318,18 +318,51 @@ export const useDataStore = defineStore("data", () => {
     if (!datasetInfo) return;
     dataStoryLoading.value = true;
     try {
-      const summarizedDataset = summarizeForDataStory(datasetInfo as Record<string, any>);
-      const prompt =
-        "Write a concise, informative data story for this spectroscopy dataset. " +
-        "Cover what the data measures, likely scientific context, typical applications, " +
-        "and any notable characteristics. Use 2-3 short professional paragraphs.\n\n" +
-        `Dataset summary:\n${JSON.stringify(summarizedDataset, null, 2)}`;
-      const response = await api.post<{ response: string }>("/llm/chat", {
-        message: prompt,
-        conversation_id: null,
-        metadata: {},
+      // Use the Sherpa WS proxy path: entitlement-gated, server-side prompt/template
+      const { useLlmStore } = await import("@/stores/llm");
+      const llm = useLlmStore();
+      await llm.connect();
+      const ws = llm.wsRef;
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        throw new Error("WebSocket not connected. Try again in a moment.");
+      }
+
+      const summarized = summarizeForDataStory(datasetInfo as Record<string, any>);
+      const result = await new Promise<string>((resolve, reject) => {
+        const timeout = window.setTimeout(() => {
+          cleanup();
+          reject(new Error("Data story generation timed out"));
+        }, 60_000);
+
+        const handler = (event: Event) => {
+          const payload = (event as CustomEvent).detail;
+          if (payload.type === "sherpa_data_story_result") {
+            cleanup();
+            resolve(payload.response || "");
+          } else if (payload.type === "sherpa_data_story_error") {
+            cleanup();
+            reject(new Error(payload.detail || "Data story generation failed"));
+          } else if (payload.type === "sherpa_subscription_required") {
+            cleanup();
+            reject(new Error("Subscription required for Data Story generation."));
+          }
+        };
+
+        const cleanup = () => {
+          clearTimeout(timeout);
+          window.removeEventListener("sherpa-ws-message", handler);
+        };
+
+        window.addEventListener("sherpa-ws-message", handler);
+        ws.send(
+          JSON.stringify({
+            action: "sherpa_data_story",
+            payload: { dataset_info: summarized },
+          })
+        );
       });
-      dataStoryText.value = response.data.response;
+
+      dataStoryText.value = result;
     } catch (error: any) {
       console.error("Failed to generate data story:", error);
       dataStoryText.value =
