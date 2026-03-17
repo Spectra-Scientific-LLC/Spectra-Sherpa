@@ -61,7 +61,7 @@
             :class="{ 'tools-active-btn': toolsActive }"
             aria-label="Toggle agentic tools"
             @click="toolsActive = !toolsActive"
-            v-tooltip.bottom="toolsActive ? 'Tools enabled' : 'Enable tools'"
+            v-tooltip.bottom="toolsActive ? 'Agentic tools enabled' : 'Enable agentic tools'"
           />
           <Button
             icon="pi pi-external-link"
