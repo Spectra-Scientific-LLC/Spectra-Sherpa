@@ -150,8 +150,8 @@ placeholder with your function. The input is a `SherpaDataset`; return a
 new one with the transformed data:
 
 ```python
-def execute(self, inputs: dict) -> dict:
-    ds = inputs["dataset"]          # SherpaDataset coming in
+async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
+    ds = coerce_to_sherpa(input_data)   # SherpaDataset coming in
     lam = self.parameters.get("lam", 1e5)
     p   = self.parameters.get("p", 0.001)
 
@@ -159,7 +159,7 @@ def execute(self, inputs: dict) -> dict:
     corrected = asymmetric_least_squares(ds.data, lam=lam, p=p)
 
     # Return a new SherpaDataset with the same axes and metadata
-    return {"dataset": build_dataset_like(ds, corrected)}
+    return build_dataset_like(corrected, ds)
 ```
 
 If your algorithm follows the scikit-learn pattern (`fit` then `transform`
@@ -174,11 +174,9 @@ against a known reference — a published result, a hand-calculated value,
 or scikit-learn output:
 
 ```python
+import asyncio
 import numpy as np
-from spectra_sherpa.app.services.dag.nodes.asymmetric_least_squares_node import (
-    AsymmetricLeastSquaresNode,
-)
-from tests.conftest import make_test_dataset   # or build your own fixture
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, SpectralAxis
 
 
 def test_als_baseline_removes_offset():
@@ -186,12 +184,16 @@ def test_als_baseline_removes_offset():
     X = np.ones((5, 100))
     X += np.linspace(0, 1, 100)    # add a ramp baseline
 
-    ds = make_test_dataset(X)
-    node = AsymmetricLeastSquaresNode(parameters={"lam": 1e5, "p": 0.001})
-    result = node.execute({"dataset": ds})
+    ds = SherpaDataset(
+        X=X,
+        feature_axis=SpectralAxis(values=np.arange(100, dtype=float)),
+    )
+    node = AsymmetricLeastSquaresNode("test_node", {"lam": 1e5, "p": 0.001})
+    result = asyncio.run(node.run(ds))
 
     # After correction the baseline should be near zero
-    baseline_residual = np.abs(result["dataset"].data).mean()
+    out = result.outputs["default"] if hasattr(result, "outputs") else result
+    baseline_residual = np.abs(out.data).mean()
     assert baseline_residual < 0.05, f"Residual too large: {baseline_residual:.4f}"
 ```
 
