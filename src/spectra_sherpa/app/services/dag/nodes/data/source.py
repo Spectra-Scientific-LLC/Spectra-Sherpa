@@ -16,6 +16,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from spectra_sherpa.app.core import config as config_mod
 from spectra_sherpa.app.lib.adapters.sklearn_adapter import from_sklearn as from_sklearn_bunch
 from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG
 from spectra_sherpa.app.lib.scp_compat import (
@@ -45,6 +46,11 @@ from spectra_sherpa.app.models.spectra_meta import (
     set_spectra_meta,
 )
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, safe_get_coord
+from spectra_sherpa.app.services.prepared_data import (
+    apply_dataset_prepared_data_overrides,
+    load_prepared_data_overrides_for_source,
+    normalize_relative_data_path,
+)
 
 from ...io_contracts import coerce_to_sherpa
 from ...node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
@@ -428,6 +434,7 @@ class DataSourceNode(Node):
         sklearn_dataset = self.parameters.get("sklearn_dataset", "iris")
         self._embedded_target_data = None
         self._embedded_target_names = None
+        self._resolved_source_file_paths: list[str] = []
 
         # Load data based on source
         if source == "spectrochempy":
@@ -593,6 +600,19 @@ class DataSourceNode(Node):
             input_shape=None,
         )
 
+        # ----- Explore-page prepared-data overrides -----
+        prepared_overrides = load_prepared_data_overrides_for_source(
+            source=source,
+            parameters=self.parameters,
+            resolved_file_paths=self._resolved_source_file_paths,
+        )
+        dataset = apply_dataset_prepared_data_overrides(
+            dataset,
+            prepared_overrides,
+            allow_x_title=not bool((self.parameters.get("spectral_axis_title") or "").strip()),
+            allow_is_time_series=not bool(self.parameters.get("is_time_series", False)),
+        )
+
         # ----- Explicit Y column selection (for multi-target datasets) -----
         y_column = (self.parameters.get("y_column") or "").strip()
         if y_column and dataset.target_context is not None:
@@ -601,6 +621,7 @@ class DataSourceNode(Node):
         # ----- Time-series flag (user toggle) -----
         if self.parameters.get("is_time_series", False):
             dataset.is_time_series = True
+            dataset.meta["is_time_series"] = True
 
         return {
             "default": dataset,
@@ -636,7 +657,7 @@ class DataSourceNode(Node):
             if sklearn_dataset:
                 domain.sample_type = sklearn_dataset
             catalog_entry = SKLEARN_CATALOG.get(sklearn_dataset or "", {})
-            if not catalog_entry.get("is_spectroscopic", True):
+            if not catalog_entry.get("is_spectra", True):
                 # Inject the warning into dataset.meta so the Inspector and
                 # result serialiser can surface it to the user.
                 if isinstance(dataset.meta, dict):
@@ -1534,7 +1555,6 @@ class DataSourceNode(Node):
         """
         from sqlalchemy import select
 
-        from spectra_sherpa.app.core.config import settings
         from spectra_sherpa.app.db.session import async_session
         from spectra_sherpa.app.models.experiment_file import ExperimentFile
         from spectra_sherpa.app.services.dag.nodes.data.loaders import MyDatasetNode
@@ -1567,17 +1587,18 @@ class DataSourceNode(Node):
                 # Build absolute path: file_path already includes stage subdirectory
                 # (e.g., "raw/filename.csv")
                 exp_dir = f"exp_{str(experiment_id).zfill(3)}"
-                full_path = settings.data_dir / "experiments" / exp_dir / file.file_path
+                full_path = config_mod.settings.data_dir / "experiments" / exp_dir / file.file_path
 
                 if not full_path.exists():
                     raise FileNotFoundError(
                         f"File not found: {full_path}. " f"File record exists in database but file is missing on disk."
                     )
 
+                self._record_resolved_file_path(full_path)
                 return self._load_from_file(str(full_path))
 
             exp_dir = f"exp_{str(experiment_id).zfill(3)}"
-            base_dir = settings.data_dir / "experiments" / exp_dir
+            base_dir = config_mod.settings.data_dir / "experiments" / exp_dir
             helper = MyDatasetNode(f"{self.node_id}__experiment_group", {"dataset_id": experiment_id})
             loaded = []
 
@@ -1591,6 +1612,7 @@ class DataSourceNode(Node):
                     )
                     continue
                 try:
+                    self._record_resolved_file_path(full_path)
                     loaded.append(helper._load_file(str(full_path), file_name=file.file_path))
                 except Exception as exc:
                     logger.warning(
@@ -1685,6 +1707,8 @@ class DataSourceNode(Node):
                 f"File not found: {file_path}. " f"Please verify the file exists and the path is correct."
             )
 
+        self._record_resolved_file_path(file_path)
+
         ext = os.path.splitext(file_path)[1]
 
         try:
@@ -1760,6 +1784,13 @@ class DataSourceNode(Node):
                 f"File format: {ext or 'unknown'}. "
                 f"Please verify the file is a valid spectral data file."
             ) from e
+
+    def _record_resolved_file_path(self, file_path: str | Path) -> None:
+        if not hasattr(self, "_resolved_source_file_paths"):
+            self._resolved_source_file_paths = []
+        normalized = normalize_relative_data_path(str(Path(file_path).resolve()))
+        if normalized not in self._resolved_source_file_paths:
+            self._resolved_source_file_paths.append(normalized)
 
     def _load_csv_pandas(self, file_path: str) -> NDDataset | SherpaDataset:
         """Load CSV files via pandas, preserving embedded target/property columns."""

@@ -22,12 +22,6 @@
       </span>
     </div>
 
-    <!-- Offline Mode Badge (local mode only) -->
-    <div v-if="appMode === 'local' && backendConnected" class="offline-mode-badge">
-      <i class="pi pi-wifi-off"></i>
-      <span>Offline Mode</span>
-    </div>
-
     <Sidebar :collapsed="navCollapsed" />
     <div class="workspace">
       <div class="main">
@@ -78,8 +72,16 @@ const authStore = useAuthStore();
 const jobStore = useJobStore();
 const route = useRoute();
 
+const readBooleanPreference = (key: string, defaultValue: boolean): boolean => {
+  const rawValue = localStorage.getItem(key);
+  if (rawValue === null) {
+    return defaultValue;
+  }
+  return rawValue === "true";
+};
+
 const navCollapsed = ref(localStorage.getItem("navCollapsed") === "true");
-const chatCollapsed = ref(localStorage.getItem("chatCollapsed") === "true");
+const chatCollapsed = ref(readBooleanPreference("chatCollapsed", true));
 const chatWidth = ref(360);
 const isResizing = ref(false);
 const isPublicRoute = computed(() => Boolean(route.meta.public));
@@ -149,6 +151,9 @@ const handleWindowResize = () => {
 };
 
 onMounted(() => {
+  if (localStorage.getItem("chatCollapsed") === null) {
+    localStorage.setItem("chatCollapsed", "true");
+  }
   const storedWidth = Number(localStorage.getItem("chatWidth"));
   const initialWidth = Number.isFinite(storedWidth) && storedWidth > 0
     ? storedWidth
@@ -310,26 +315,4 @@ watch(
   padding-top: 48px;
 }
 
-/* Offline mode badge */
-.offline-mode-badge {
-  position: fixed;
-  top: 8px;
-  right: 16px;
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  background: var(--surface-200, #e5e7eb);
-  color: var(--text-color-secondary, #6b7280);
-  border-radius: 16px;
-  font-size: 12px;
-  font-weight: 500;
-  opacity: 0.8;
-  pointer-events: none;
-}
-
-.offline-mode-badge i {
-  font-size: 11px;
-}
 </style>

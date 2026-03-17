@@ -18,8 +18,8 @@ const error = ref<string | null>(null)
  *
  * @param force - Force reload even if config already loaded
  */
-async function loadConfig(force = false): Promise<void> {
-  if (config.value && !force) return // Already loaded
+async function loadConfig(force = false): Promise<boolean> {
+  if (config.value && !force) return true // Already loaded
 
   loading.value = true
   error.value = null
@@ -27,38 +27,12 @@ async function loadConfig(force = false): Promise<void> {
   try {
     const response = await api.get<AppConfig>('/config')
     config.value = response.data
+    return true
   } catch (err: unknown) {
     error.value = axios.isAxiosError(err) ? err.message : 'Failed to load configuration'
     console.error('Config load error:', err)
-
-    // Fallback to default local config
-    config.value = {
-      mode: 'local',
-      egressEnabled: false,
-      registrationEnabled: false,
-      registrationRequiresCode: false,
-      apiBaseUrl: import.meta.env.VITE_API_BASE_URL || '/api/v1',
-      features: {
-        apiTokenSettings: true,
-        cloudOffload: false,
-        chatAssistant: false,
-        sherpaAdvisor: false,
-        pluginSystem: true,
-        nistDownloads: false,
-        sherpaPeakId: false,
-        sherpaCodeGen: false,
-        sherpaWriteReport: false,
-        sherpaAgenticTools: false,
-        sherpaFullContext: false,
-      },
-      llms: {
-        openai: { provider: 'openai', model: 'gpt-4o', enabled: false },
-        anthropic: { provider: 'anthropic', model: 'claude-3-5-sonnet-20241022', enabled: false },
-        deepseek: { provider: 'deepseek', model: 'deepseek-chat', enabled: false },
-        gemini: { provider: 'gemini', model: 'gemini-1.5-pro', enabled: false },
-      },
-      demo: null,
-    }
+    config.value = null
+    return false
   } finally {
     loading.value = false
   }
@@ -70,7 +44,7 @@ async function loadConfig(force = false): Promise<void> {
  * Use this after making changes that affect configuration
  * (e.g., adding API keys, changing providers)
  */
-async function reloadConfig(): Promise<void> {
+async function reloadConfig(): Promise<boolean> {
   return loadConfig(true)
 }
 
@@ -94,7 +68,7 @@ const hasLLMConfigured = computed(() => {
 /**
  * Get current app mode
  */
-const appMode = computed(() => config.value?.mode || 'local')
+const appMode = computed(() => config.value?.mode || 'enterprise')
 
 /**
  * Get site profile (marketing label, independent of runtime mode)

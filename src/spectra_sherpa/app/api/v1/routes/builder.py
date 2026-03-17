@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session
 from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.app.lib.domain_flags import infer_is_spectra
 from spectra_sherpa.app.models.calibration import Calibration
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.user import User
@@ -31,6 +32,12 @@ from spectra_sherpa.app.schemas.builder import (
 )
 from spectra_sherpa.app.services.builder import BuilderService
 from spectra_sherpa.app.services.experiments import experiment_dir
+from spectra_sherpa.app.services.prepared_data import (
+    PreparedDataOverrides,
+    apply_serialized_prepared_data_overrides,
+    load_prepared_data_overrides,
+    save_prepared_data_overrides,
+)
 
 
 async def _validate_file_path_ownership(
@@ -119,6 +126,22 @@ class FileInfoRequest(BaseModel):
     experiment_id: int | None = None
 
 
+class MetadataOverrideRequest(BaseModel):
+    """User-supplied metadata overrides for a dataset on the Explore page."""
+
+    # Identifies the dataset (one of file_path or reference source+name)
+    file_path: str | None = None
+    experiment_id: int | None = None
+    source: str | None = None  # e.g. "oes", "eigenvector"
+    name: str | None = None  # e.g. "uvspectra10"
+
+    # Override fields
+    x_title: str | None = None
+    x_units: str | None = None
+    y_title: str | None = None
+    is_time_series: bool | None = None
+
+
 async def _validate_payload_file_paths(
     items: list[Any],
     session: AsyncSession,
@@ -199,12 +222,49 @@ async def get_file_info(
             if y_axis and y_axis.get("labels"):
                 result["y_axis"]["labels"] = y_axis["labels"][:50]
 
+        # Apply persisted user overrides
+        overrides = load_prepared_data_overrides(file_path=file_path)
+        result = apply_serialized_prepared_data_overrides(result, overrides)
+
         return result
 
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.patch("/file-metadata")
+async def update_file_metadata(
+    payload: MetadataOverrideRequest,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    """Persist user-supplied metadata overrides for a dataset."""
+    overrides = PreparedDataOverrides(
+        x_title=payload.x_title,
+        x_units=payload.x_units,
+        y_title=payload.y_title,
+        is_time_series=payload.is_time_series,
+    )
+
+    if overrides.is_empty():
+        return {"status": "ok", "detail": "no changes"}
+
+    if payload.source and payload.name:
+        save_prepared_data_overrides(overrides, source=payload.source, name=payload.name)
+    elif payload.file_path:
+        file_path = payload.file_path
+        if payload.experiment_id is not None:
+            exp_dir = experiment_dir(payload.experiment_id)
+            full_path = (exp_dir / file_path).resolve()
+            file_path = str(full_path.relative_to(settings.data_dir))
+        await _validate_file_path_ownership(file_path, session, current_user)
+        save_prepared_data_overrides(overrides, file_path=file_path)
+    else:
+        raise HTTPException(400, "Provide file_path or source+name")
+
+    return {"status": "ok"}
 
 
 @router.post("/blend", response_model=BlendResponse)
@@ -408,6 +468,7 @@ async def list_reference_datasets() -> dict[str, list[dict[str, Any]]]:
                 "source": "eigenvector",
                 "label": v["label"],
                 "technique": v["technique"],
+                "is_spectra": infer_is_spectra(technique=v.get("technique"), x_units=v.get("x_units")),
                 "description": v["description"],
                 "featured": v.get("featured", False),
                 "has_embedded_target": bool(v.get("prop_names")),
@@ -421,6 +482,7 @@ async def list_reference_datasets() -> dict[str, list[dict[str, Any]]]:
                 "source": "oes",
                 "label": v["label"],
                 "technique": v["technique"],
+                "is_spectra": infer_is_spectra(technique=v.get("technique"), x_units=v.get("x_units")),
                 "description": v["description"],
                 "featured": v.get("featured", False),
                 "has_embedded_target": False,
@@ -434,6 +496,7 @@ async def list_reference_datasets() -> dict[str, list[dict[str, Any]]]:
                 "source": "sklearn",
                 "label": v["label"],
                 "technique": "ML/Statistics",
+                "is_spectra": infer_is_spectra(v.get("is_spectra"), technique="ML/Statistics"),
                 "description": f"Scikit-learn {k} dataset",
                 "has_embedded_target": True,
                 "target_type": "categorical" if v.get("task_type") == "classification" else "continuous",
@@ -447,6 +510,7 @@ async def list_reference_datasets() -> dict[str, list[dict[str, Any]]]:
                 "source": "spectrochempy",
                 "label": entry["label"],
                 "technique": entry["technique"],
+                "is_spectra": infer_is_spectra(technique=entry.get("technique")),
                 "description": entry["description"],
                 "category": entry["category"],
                 "file_count": entry["file_count"],
@@ -467,29 +531,44 @@ async def get_reference_dataset_info(source: str, name: str) -> dict[str, Any]:
 
         if name not in DATASET_CATALOG:
             raise HTTPException(404, f"Dataset '{name}' not found")
-        return get_dataset_info(name)
+        info = get_dataset_info(name)
 
     elif source == "sklearn":
         from spectra_sherpa.app.lib.sklearn_info import SKLEARN_CATALOG, get_sklearn_dataset_info
 
         if name not in SKLEARN_CATALOG:
             raise HTTPException(404, f"Dataset '{name}' not found")
-        return get_sklearn_dataset_info(name)
+        info = get_sklearn_dataset_info(name)
 
     elif source == "oes":
         from spectra_sherpa.app.lib.oes_datasets import OES_CATALOG, get_oes_dataset_info
 
         if name not in OES_CATALOG:
             raise HTTPException(404, f"Dataset '{name}' not found")
-        return get_oes_dataset_info(name)
+        info = get_oes_dataset_info(name)
 
     elif source == "spectrochempy":
         from spectra_sherpa.app.lib.scp_catalog import get_scp_dataset_info
 
         try:
-            return get_scp_dataset_info(name)
+            info = get_scp_dataset_info(name)
         except ValueError:
             raise HTTPException(404, f"Dataset '{name}' not found")
-
     else:
         raise HTTPException(400, f"Unknown source: {source}")
+
+    # Apply persisted user overrides to reference dataset info
+    overrides = load_prepared_data_overrides(source=source, name=name)
+    if not overrides.is_empty():
+        if overrides.x_title is not None:
+            info["x_title"] = overrides.x_title
+        if overrides.x_units is not None:
+            info["x_units"] = overrides.x_units
+        if overrides.y_title is not None:
+            info["data_quantity"] = overrides.y_title
+        if overrides.is_time_series is not None:
+            info["is_time_series"] = overrides.is_time_series
+            if "metadata" in info:
+                info["metadata"]["is_time_series"] = overrides.is_time_series
+
+    return info

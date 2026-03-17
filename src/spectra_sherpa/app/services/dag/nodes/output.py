@@ -168,93 +168,157 @@ class PlotNode(Node):
         indent: str = "    ",
         use_scp: bool = True,
     ) -> List[str]:
-        """Generate Python code for plot visualization."""
+        """Generate Python code for Plotly-based visualization."""
         input_expr = inputs.get("default", next(iter(inputs.values()), "input_data"))
         plot_type = self.parameters.get("plot_type", "spectra")
         x_axis = self.parameters.get("x_axis", 0)
         y_axis = self.parameters.get("y_axis", 1)
 
-        # Use node_id-scoped variable names to avoid collisions when
-        # multiple plot nodes appear in the same workflow.
         _nid = self.node_id.replace("-", "_")
 
         lines: List[str] = []
         lines.append(f"{indent}# --- Plot ({self.node_id}) ---")
-        lines.append(f"{indent}import matplotlib.pyplot as plt")
+        lines.append(f"{indent}try:")
+        lines.append(f"{indent}    import plotly.graph_objects as go")
+        lines.append(f"{indent}except ImportError:")
+        lines.append(f"{indent}    class _SherpaFallbackFigure(dict):")
+        lines.append(f"{indent}        def __init__(self, data=None):")
+        lines.append(f"{indent}            super().__init__()")
+        lines.append(f"{indent}            self['data'] = []")
+        lines.append(f"{indent}            self['layout'] = {{}}")
+        lines.append(f"{indent}            if data is not None:")
+        lines.append(f"{indent}                self['data'] = data if isinstance(data, list) else [data]")
+        lines.append(f"{indent}        def add_trace(self, trace):")
+        lines.append(f"{indent}            self.setdefault('data', []).append(trace)")
+        lines.append(f"{indent}        def update_layout(self, **kwargs):")
+        lines.append(f"{indent}            self.setdefault('layout', {{}}).update(kwargs)")
+        lines.append(f"{indent}        def show(self):")
+        lines.append(f"{indent}            return None")
+        lines.append(f"{indent}        def to_plotly_json(self):")
+        lines.append(f"{indent}            return dict(self)")
+        lines.append(f"{indent}        def write_html(self, path):")
+        lines.append(f"{indent}            with open(path, 'w', encoding='utf-8') as _f:")
+        lines.append(f"{indent}                _f.write('<html><body><pre>')")
+        lines.append(f"{indent}                _f.write(json.dumps(self.to_plotly_json(), indent=2))")
+        lines.append(f"{indent}                _f.write('</pre></body></html>')")
+        lines.append(f"{indent}    class _SherpaFallbackGO:")
+        lines.append(f"{indent}        Figure = _SherpaFallbackFigure")
+        lines.append(f"{indent}        @staticmethod")
+        lines.append(f"{indent}        def Scatter(**kwargs):")
+        lines.append(f"{indent}            return {{'type': 'scatter', **kwargs}}")
+        lines.append(f"{indent}        @staticmethod")
+        lines.append(f"{indent}        def Contour(**kwargs):")
+        lines.append(f"{indent}            return {{'type': 'contour', **kwargs}}")
+        lines.append(f"{indent}        @staticmethod")
+        lines.append(f"{indent}        def Heatmap(**kwargs):")
+        lines.append(f"{indent}            return {{'type': 'heatmap', **kwargs}}")
+        lines.append(f"{indent}    go = _SherpaFallbackGO()")
         lines.append(f"{indent}_plot_input_{_nid} = {input_expr}")
+        lines.append(f"{indent}if isinstance(_plot_input_{_nid}, dict) and 'scores' in _plot_input_{_nid}:")
+        lines.append(f"{indent}    _plot_source_{_nid} = _plot_input_{_nid}['scores']")
+        lines.append(f"{indent}elif isinstance(_plot_input_{_nid}, dict) and 'loadings' in _plot_input_{_nid}:")
+        lines.append(f"{indent}    _plot_source_{_nid} = _plot_input_{_nid}['loadings']")
+        lines.append(f"{indent}else:")
+        lines.append(f"{indent}    _plot_source_{_nid} = _plot_input_{_nid}")
+        lines.append(f"{indent}_plot_data_{_nid} = (")
+        lines.append(f"{indent}    np.asarray(_plot_source_{_nid}.data, dtype=np.float64)")
+        lines.append(f"{indent}    if hasattr(_plot_source_{_nid}, 'data')")
+        lines.append(f"{indent}    else np.asarray(_plot_source_{_nid}, dtype=np.float64)")
+        lines.append(f"{indent})")
+        lines.append(f"{indent}_plot_data_{_nid} = np.atleast_2d(_plot_data_{_nid})")
+        lines.append(f"{indent}_x_values_{_nid} = None")
+        lines.append(f"{indent}_x_title_{_nid} = 'Feature'")
+        lines.append(f"{indent}_x_units_{_nid} = ''")
+        lines.append(f"{indent}_y_title_{_nid} = 'Intensity'")
+        lines.append(f"{indent}if getattr(_plot_source_{_nid}, 'feature_axis', None) is not None:")
+        lines.append(f"{indent}    _x_values_{_nid} = np.asarray(_plot_source_{_nid}.feature_axis.data)")
+        lines.append(
+            f"{indent}    _x_title_{_nid} = " f"getattr(_plot_source_{_nid}.feature_axis, 'title', None) or 'Feature'"
+        )
+        lines.append(
+            f"{indent}    _x_units_{_nid} = " f"getattr(_plot_source_{_nid}.feature_axis, 'units', None) or ''"
+        )
+        lines.append(f"{indent}if getattr(_plot_source_{_nid}, 'domain', None) is not None:")
+        lines.append(f"{indent}    _y_title_{_nid} = _plot_source_{_nid}.domain.data_quantity or _y_title_{_nid}")
+        lines.append(f"{indent}elif getattr(_plot_source_{_nid}, 'units', None):")
+        lines.append(f"{indent}    _y_title_{_nid} = str(_plot_source_{_nid}.units)")
+        lines.append(
+            f"{indent}_x_label_{_nid} = "
+            f'f"{{_x_title_{_nid}}} ({{_x_units_{_nid}}})" if _x_units_{_nid} else _x_title_{_nid}'
+        )
 
         if plot_type in ("spectra",):
-            lines.append(f"{indent}_fig_{_nid}, _ax_{_nid} = plt.subplots(figsize=(10, 5))")
-            lines.append(f"{indent}if isinstance(_plot_input_{_nid}, dict) and 'data' in _plot_input_{_nid}:")
-            lines.append(f"{indent}    _pdata = np.atleast_2d(")
-            lines.append(f"{indent}        np.asarray(_plot_input_{_nid}['data'], dtype=np.float64)")
-            lines.append(f"{indent}    )")
-            lines.append(f"{indent}elif hasattr(_plot_input_{_nid}, 'data'):")
-            lines.append(f"{indent}    _pdata = np.atleast_2d(np.asarray(_plot_input_{_nid}.data, dtype=np.float64))")
-            lines.append(f"{indent}else:")
-            lines.append(f"{indent}    _pdata = np.atleast_2d(np.asarray(_plot_input_{_nid}, dtype=np.float64))")
-            lines.append(f"{indent}_x_ax = getattr(_plot_input_{_nid}, 'x', None)")
-            lines.append(f"{indent}if (")
-            lines.append(f"{indent}    _x_ax is None")
-            lines.append(f"{indent}    and hasattr(_plot_input_{_nid}, 'feature_axis')")
-            lines.append(f"{indent}    and _plot_input_{_nid}.feature_axis is not None")
-            lines.append(f"{indent}):")
-            lines.append(f"{indent}    _x_ax = np.asarray(_plot_input_{_nid}.feature_axis.data)")
-            lines.append(f"{indent}for _si in range(min(_pdata.shape[0], 50)):")
-            lines.append(f"{indent}    _xv = _x_ax if _x_ax is not None else np.arange(_pdata.shape[1])")
-            lines.append(f"{indent}    _ax_{_nid}.plot(_xv, _pdata[_si], alpha=0.7)")
-            lines.append(f"{indent}_ax_{_nid}.set_xlabel('Feature')")
-            lines.append(f"{indent}_ax_{_nid}.set_ylabel('Intensity')")
-            lines.append(f"{indent}_ax_{_nid}.set_title('Spectra Plot')")
+            lines.append(f"{indent}_fig_{_nid} = go.Figure()")
+            lines.append(f"{indent}for _si in range(min(_plot_data_{_nid}.shape[0], 50)):")
+            lines.append(
+                f"{indent}    _xv = _x_values_{_nid} if _x_values_{_nid} is not None "
+                f"else np.arange(_plot_data_{_nid}.shape[1])"
+            )
+            lines.append(
+                f"{indent}    _fig_{_nid}.add_trace("
+                f"go.Scatter(x=_xv, y=_plot_data_{_nid}[_si], mode='lines', name=f'Trace {{_si+1}}'))"
+            )
+            lines.append(
+                f"{indent}_fig_{_nid}.update_layout(template='plotly_white', title='Spectra Plot', "
+                f"xaxis_title=_x_label_{_nid}, yaxis_title=_y_title_{_nid})"
+            )
         elif plot_type in ("scores", "biplot"):
-            lines.append(f"{indent}_fig_{_nid}, _ax_{_nid} = plt.subplots(figsize=(8, 6))")
-            lines.append(f"{indent}if isinstance(_plot_input_{_nid}, dict) and 'scores' in _plot_input_{_nid}:")
-            lines.append(f"{indent}    _sc = _plot_input_{_nid}['scores']")
-            lines.append(f"{indent}    _sc_data = np.asarray(")
-            lines.append(f"{indent}        _sc.data if hasattr(_sc, 'data') else _sc,")
-            lines.append(f"{indent}        dtype=np.float64,")
-            lines.append(f"{indent}    )")
-            lines.append(f"{indent}    _ax_{_nid}.scatter(_sc_data[:, {x_axis}], _sc_data[:, {y_axis}], alpha=0.7)")
-            lines.append(f"{indent}    _ax_{_nid}.set_xlabel('PC {0}')".format(x_axis + 1))
-            lines.append(f"{indent}    _ax_{_nid}.set_ylabel('PC {0}')".format(y_axis + 1))
-            lines.append(f"{indent}    _ax_{_nid}.set_title('Scores Plot')")
+            lines.append(f"{indent}_fig_{_nid} = go.Figure()")
+            lines.append(f"{indent}if _plot_data_{_nid}.shape[1] > {max(x_axis, y_axis)}:")
+            lines.append(
+                f"{indent}    _fig_{_nid}.add_trace(go.Scatter("
+                f"x=_plot_data_{_nid}[:, {x_axis}], y=_plot_data_{_nid}[:, {y_axis}], "
+                f"mode='markers', name='Scores'))"
+            )
+            lines.append(
+                f"{indent}_fig_{_nid}.update_layout(template='plotly_white', title='Scores Plot', "
+                f"xaxis_title='PC {x_axis + 1}', yaxis_title='PC {y_axis + 1}')"
+            )
         elif plot_type == "loadings":
-            lines.append(f"{indent}_fig_{_nid}, _ax_{_nid} = plt.subplots(figsize=(10, 5))")
-            lines.append(f"{indent}if isinstance(_plot_input_{_nid}, dict) and 'loadings' in _plot_input_{_nid}:")
-            lines.append(f"{indent}    _ld = _plot_input_{_nid}['loadings']")
-            lines.append(f"{indent}    _ld_data = np.asarray(")
-            lines.append(f"{indent}        _ld.data if hasattr(_ld, 'data') else _ld,")
-            lines.append(f"{indent}        dtype=np.float64,")
-            lines.append(f"{indent}    )")
-            lines.append(f"{indent}    for _ci in range(min(_ld_data.shape[0], 5)):")
-            lines.append(f"{indent}        _ax_{_nid}.plot(_ld_data[_ci], label=f'PC {{_ci+1}}')")
-            lines.append(f"{indent}    _ax_{_nid}.legend()")
-            lines.append(f"{indent}    _ax_{_nid}.set_title('Loadings Plot')")
+            lines.append(f"{indent}_fig_{_nid} = go.Figure()")
+            lines.append(f"{indent}for _ci in range(min(_plot_data_{_nid}.shape[0], 5)):")
+            lines.append(
+                f"{indent}    _xv = _x_values_{_nid} if _x_values_{_nid} is not None "
+                f"else np.arange(_plot_data_{_nid}.shape[1])"
+            )
+            lines.append(
+                f"{indent}    _fig_{_nid}.add_trace(go.Scatter("
+                f"x=_xv, y=_plot_data_{_nid}[_ci], mode='lines', name=f'PC {{_ci+1}}'))"
+            )
+            lines.append(
+                f"{indent}_fig_{_nid}.update_layout(template='plotly_white', title='Loadings Plot', "
+                f"xaxis_title=_x_label_{_nid}, yaxis_title='Loading')"
+            )
         elif plot_type in ("contour", "heatmap"):
-            lines.append(f"{indent}_fig_{_nid}, _ax_{_nid} = plt.subplots(figsize=(10, 6))")
-            lines.append(f"{indent}if hasattr(_plot_input_{_nid}, 'data'):")
-            lines.append(f"{indent}    _hdata = np.atleast_2d(np.asarray(_plot_input_{_nid}.data, dtype=np.float64))")
-            lines.append(f"{indent}else:")
-            lines.append(f"{indent}    _hdata = np.atleast_2d(np.asarray(_plot_input_{_nid}, dtype=np.float64))")
+            lines.append(
+                f"{indent}_xv = _x_values_{_nid} if _x_values_{_nid} is not None "
+                f"else np.arange(_plot_data_{_nid}.shape[1])"
+            )
+            lines.append(f"{indent}_yv = np.arange(_plot_data_{_nid}.shape[0])")
+            lines.append(f"{indent}_fig_{_nid} = go.Figure(")
             if plot_type == "contour":
-                lines.append(f"{indent}_ax_{_nid}.contourf(_hdata, cmap='viridis')")
+                lines.append(f"{indent}    data=go.Contour(z=_plot_data_{_nid}, x=_xv, y=_yv, colorscale='Viridis')")
             else:
-                lines.append(f"{indent}_ax_{_nid}.imshow(_hdata, aspect='auto', cmap='viridis')")
-            lines.append(f"{indent}_ax_{_nid}.set_title('{plot_type.title()} Plot')")
-            lines.append(f"{indent}plt.colorbar(")
-            lines.append(f"{indent}    _ax_{_nid}.collections[0] if _ax_{_nid}.collections else _ax_{_nid}.images[0],")
-            lines.append(f"{indent}    ax=_ax_{_nid},")
+                lines.append(f"{indent}    data=go.Heatmap(z=_plot_data_{_nid}, x=_xv, y=_yv, colorscale='Viridis')")
             lines.append(f"{indent})")
+            lines.append(
+                f"{indent}_fig_{_nid}.update_layout(template='plotly_white', title='{plot_type.title()} Plot', "
+                f"xaxis_title=_x_label_{_nid}, yaxis_title='Sample Index')"
+            )
         else:
-            # scatter fallback
-            lines.append(f"{indent}_fig_{_nid}, _ax_{_nid} = plt.subplots(figsize=(8, 6))")
-            lines.append(f"{indent}if hasattr(_plot_input_{_nid}, 'data'):")
-            lines.append(f"{indent}    _sdata = np.atleast_2d(np.asarray(_plot_input_{_nid}.data, dtype=np.float64))")
-            lines.append(f"{indent}    _y = _sdata[:, 1] if _sdata.shape[1] > 1 else _sdata[:, 0]")
-            lines.append(f"{indent}    _ax_{_nid}.scatter(_sdata[:, 0], _y, alpha=0.7)")
-            lines.append(f"{indent}_ax_{_nid}.set_title('Scatter Plot')")
+            lines.append(f"{indent}_fig_{_nid} = go.Figure()")
+            lines.append(
+                f"{indent}_fig_{_nid}.add_trace(go.Scatter("
+                f"x=_plot_data_{_nid}[:, 0], "
+                f"y=_plot_data_{_nid}[:, 1] if _plot_data_{_nid}.shape[1] > 1 else _plot_data_{_nid}[:, 0], "
+                f"mode='markers', name='Scatter'))"
+            )
+            lines.append(f"{indent}_fig_{_nid}.update_layout(template='plotly_white', title='Scatter Plot')")
 
-        lines.append(f"{indent}plt.tight_layout()")
+        lines.append(f"{indent}try:")
+        lines.append(f"{indent}    _fig_{_nid}.show()")
+        lines.append(f"{indent}except Exception:")
+        lines.append(f"{indent}    pass")
         lines.append(f"{indent}results['{self.node_id}'] = {{'visualization': _fig_{_nid}}}")
         lines.append(f'{indent}print(f"  Plot ({self.node_id}): {plot_type} figure created")')
 

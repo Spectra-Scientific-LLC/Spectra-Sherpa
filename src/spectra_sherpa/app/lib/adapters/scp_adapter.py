@@ -31,6 +31,21 @@ from spectra_sherpa.app.lib.sherpa_dataset import (
 logger = logging.getLogger(__name__)
 
 
+def _to_plain_dict(obj: Any) -> Any:
+    """Recursively convert any dict-like objects (including ReadOnlyDict) to plain dicts.
+
+    SpectroChemPy wraps metadata in ReadOnlyDict instances whose ``_readonly``
+    attribute is not preserved during pickling, causing unpickle failures in
+    process pools.  This helper ensures all nested dict-likes become plain dicts.
+    """
+    if isinstance(obj, dict):
+        return {k: _to_plain_dict(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        converted = [_to_plain_dict(item) for item in obj]
+        return type(obj)(converted)
+    return obj
+
+
 def _extract_title(ds: Any) -> str | None:
     """Get a meaningful title from NDDataset, falling back to .name.
 
@@ -66,7 +81,7 @@ def from_nddataset(ds: Any) -> SherpaDataset:
     inner_axes = _extract_inner_axes(ds, ndim, dim_names=dim_names) if ndim > 2 else None
 
     # Extract provenance from meta
-    meta = dict(ds.meta) if hasattr(ds, "meta") and ds.meta else {}
+    meta = _to_plain_dict(dict(ds.meta)) if hasattr(ds, "meta") and ds.meta else {}
     provenance_raw = meta.pop("processing_history", [])
 
     # Build extra from remaining meta
@@ -199,7 +214,7 @@ def scp_roundtrip(
     target_context = ds.target_context.model_copy(deep=True)
     quality = ds.quality.model_copy(deep=True)
     domain = ds.domain.model_copy(deep=True)
-    extra = copy.deepcopy(ds.extra)
+    extra = _to_plain_dict(copy.deepcopy(ds.extra))
     sample_axis_snapshot = ds.sample_axis  # .copy() already happens in the property getter
     inner_axes_snapshot = ds.inner_axes  # .copy() already happens in the property getter
     backend = ds.backend

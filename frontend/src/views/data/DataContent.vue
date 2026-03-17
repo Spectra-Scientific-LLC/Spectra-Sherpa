@@ -512,8 +512,38 @@
                   <span class="meta-val">{{ dataStore.catalogDatasetInfo.target_names.join(', ') }}</span>
                 </div>
                 <div class="meta-row">
+                  <span class="meta-key">X-Axis</span>
+                  <Dropdown
+                    v-model="editXTitle"
+                    :options="xTitleOptions"
+                    editable
+                    placeholder="Select or type..."
+                    class="meta-dropdown"
+                  />
+                </div>
+                <div class="meta-row">
+                  <span class="meta-key">X Units</span>
+                  <Dropdown
+                    v-model="editXUnits"
+                    :options="xUnitsOptions"
+                    editable
+                    placeholder="Units"
+                    class="meta-dropdown"
+                  />
+                </div>
+                <div class="meta-row">
+                  <span class="meta-key">Y-Axis</span>
+                  <Dropdown
+                    v-model="editYTitle"
+                    :options="yTitleOptions"
+                    editable
+                    placeholder="Select or type..."
+                    class="meta-dropdown"
+                  />
+                </div>
+                <div class="meta-row">
                   <span class="meta-key">Time Series</span>
-                  <span class="meta-val">{{ isTimeSeriesToggle ? 'Yes' : 'No' }}</span>
+                  <InputSwitch v-model="isTimeSeriesToggle" />
                 </div>
               </div>
             </div>
@@ -560,36 +590,6 @@
             </div>
           </div>
 
-          <!-- Data Story section -->
-          <div class="data-story-panel">
-            <div class="data-story-header">
-              <h4 class="panel-title">
-                <i class="pi pi-book"></i>
-                Data Story
-              </h4>
-              <div class="data-story-actions">
-                <span class="ai-feature-note">AI Feature</span>
-                <Button
-                  :label="dataStoryButtonLabel"
-                  icon="pi pi-sparkles"
-                  class="p-button-sm p-button-outlined"
-                  :loading="dataStore.dataStoryLoading"
-                  @click="dataStore.generateDataStory()"
-                />
-              </div>
-            </div>
-            <div v-if="dataStore.dataStoryLoading" class="data-story-loading">
-              <ProgressSpinner style="width: 24px; height: 24px" />
-              <span>Generating narrative...</span>
-            </div>
-            <div v-else-if="dataStore.dataStoryText" class="data-story-text">
-              {{ dataStore.dataStoryText }}
-            </div>
-            <p v-else class="data-story-hint">
-              Click "Generate Data Story" to create an LLM-powered narrative
-              describing this dataset's scientific context and characteristics.
-            </p>
-          </div>
         </div>
 
         <div v-else-if="!dataStore.fileInfo" class="explore-empty">
@@ -704,19 +704,39 @@
                   <span class="meta-key">Technique</span>
                   <Tag :value="String(sdMeta.spectral_technique)" severity="info" />
                 </div>
-                <div v-if="sdMeta.x_title" class="meta-row">
+                <div class="meta-row">
                   <span class="meta-key">X-Axis</span>
-                  <span class="meta-val">
-                    {{ sdMeta.x_title }}{{ sdMeta.x_units ? ` (${sdMeta.x_units})` : '' }}
-                  </span>
+                  <Dropdown
+                    v-model="editXTitle"
+                    :options="xTitleOptions"
+                    editable
+                    placeholder="Select or type..."
+                    class="meta-dropdown"
+                  />
                 </div>
-                <div v-if="sdMeta.data_quantity" class="meta-row">
+                <div class="meta-row">
+                  <span class="meta-key">X Units</span>
+                  <Dropdown
+                    v-model="editXUnits"
+                    :options="xUnitsOptions"
+                    editable
+                    placeholder="Units"
+                    class="meta-dropdown"
+                  />
+                </div>
+                <div class="meta-row">
                   <span class="meta-key">Y-Axis</span>
-                  <span class="meta-val">{{ sdMeta.data_quantity }}</span>
+                  <Dropdown
+                    v-model="editYTitle"
+                    :options="yTitleOptions"
+                    editable
+                    placeholder="Select or type..."
+                    class="meta-dropdown"
+                  />
                 </div>
                 <div class="meta-row">
                   <span class="meta-key">Time Series</span>
-                  <span class="meta-val">{{ isTimeSeriesToggle ? 'Yes' : 'No' }}</span>
+                  <InputSwitch v-model="isTimeSeriesToggle" />
                 </div>
               </div>
             </div>
@@ -727,34 +747,6 @@
             />
           </div>
 
-          <div class="data-story-panel">
-            <div class="data-story-header">
-              <h4 class="panel-title">
-                <i class="pi pi-book"></i>
-                Data Story
-              </h4>
-              <div class="data-story-actions">
-                <span class="ai-feature-note">AI Feature</span>
-                <Button
-                  :label="dataStoryButtonLabel"
-                  icon="pi pi-sparkles"
-                  class="p-button-sm p-button-outlined"
-                  :loading="dataStore.dataStoryLoading"
-                  @click="dataStore.generateDataStory()"
-                />
-              </div>
-            </div>
-            <div v-if="dataStore.dataStoryLoading" class="data-story-loading">
-              <ProgressSpinner style="width: 24px; height: 24px" />
-              <span>Generating narrative...</span>
-            </div>
-            <div v-else-if="dataStore.dataStoryText" class="data-story-text">
-              {{ dataStore.dataStoryText }}
-            </div>
-            <p v-else class="data-story-hint">
-              Generate a narrative summary for this imported dataset before moving on to the workflow.
-            </p>
-          </div>
         </div>
       </TabPanel>
 
@@ -1002,6 +994,8 @@ import FileUpload from "primevue/fileupload";
 import Panel from "primevue/panel";
 import ProgressSpinner from "primevue/progressspinner";
 import Tag from "primevue/tag";
+import InputSwitch from "primevue/inputswitch";
+import api from "@/api/client";
 import { useDataStore } from "@/stores/data";
 import { useProjectStore } from "@/stores/project";
 import { useToast } from "primevue/usetoast";
@@ -1044,31 +1038,101 @@ const uploadStage = ref("raw");
 const selectedFile = ref<File | null>(null);
 const deleteTarget = ref<ExperimentFile | null>(null);
 
-// Time-series toggle — persisted into fileInfo/catalogDatasetInfo metadata
+// ── Editable metadata dropdowns ──────────────────────────────────────
+
+const xTitleOptions = [
+  "Wavenumber", "Wavelength", "Raman Shift", "m/z", "Time",
+  "Energy", "Channel", "Index",
+];
+const xUnitsMap: Record<string, string[]> = {
+  "Wavenumber": ["cm\u207B\u00B9"],
+  "Wavelength": ["nm", "\u00B5m"],
+  "Raman Shift": ["cm\u207B\u00B9"],
+  "m/z": ["Da", "Th"],
+  "Time": ["s", "min", "h"],
+  "Energy": ["eV", "keV"],
+  "Channel": [""],
+  "Index": [""],
+};
+const yTitleOptions = [
+  "Intensity", "Absorbance", "Transmittance", "Reflectance", "Response",
+];
+
+const editXTitle = ref("");
+const editXUnits = ref("");
+const editYTitle = ref("");
 const isTimeSeriesToggle = ref(false);
 
-// Reset toggle when a new file or catalog dataset is loaded
-watch(
-  () => dataStore.fileInfo,
-  (fi) => {
-    isTimeSeriesToggle.value = !!(fi?.metadata as Record<string, unknown> | undefined)?.is_time_series;
-  },
-);
-watch(
-  () => dataStore.catalogDatasetInfo,
-  (info) => {
-    isTimeSeriesToggle.value = !!(info?.metadata as Record<string, unknown> | undefined)?.is_time_series;
-  },
-);
-// When the toggle changes, update the metadata in-place so the workflow builder picks it up
-watch(isTimeSeriesToggle, (val) => {
-  if (dataStore.fileInfo?.metadata) {
-    (dataStore.fileInfo.metadata as Record<string, unknown>).is_time_series = val;
-  }
-  if (dataStore.catalogDatasetInfo?.metadata) {
-    (dataStore.catalogDatasetInfo.metadata as Record<string, unknown>).is_time_series = val;
-  }
+// Compute available X-units based on selected X-title
+const xUnitsOptions = computed(() => {
+  const units = xUnitsMap[editXTitle.value];
+  if (units) return units.filter((u) => u !== "");
+  return [];
 });
+
+// Sync editable fields when a new dataset loads
+function _syncFromFileInfo(fi: any) {
+  const m = fi?.metadata as Record<string, unknown> | undefined;
+  editXTitle.value = (m?.x_title ?? "") as string;
+  editXUnits.value = (m?.x_units ?? "") as string;
+  editYTitle.value = (m?.data_quantity ?? "") as string;
+  isTimeSeriesToggle.value = !!(m?.is_time_series);
+}
+function _syncFromCatalog(info: any) {
+  editXTitle.value = (info?.x_title ?? "") as string;
+  editXUnits.value = (info?.x_units ?? "") as string;
+  editYTitle.value = (info?.data_quantity ?? "") as string;
+  isTimeSeriesToggle.value = !!(info?.metadata as Record<string, unknown> | undefined)?.is_time_series
+    || !!(info?.is_time_series);
+}
+
+watch(() => dataStore.fileInfo, _syncFromFileInfo);
+watch(() => dataStore.catalogDatasetInfo, _syncFromCatalog);
+
+// Persist changes to backend + update in-memory metadata
+async function persistMetadataOverride() {
+  // Plot labels update reactively via sdMeta reading editXTitle/editXUnits/editYTitle.
+  // Do NOT mutate dataStore.fileInfo.metadata here — that would trigger a full
+  // plot re-render (new trace objects) instead of just a layout label change.
+
+  // Build request payload
+  const body: Record<string, unknown> = {
+    x_title: editXTitle.value || null,
+    x_units: editXUnits.value || null,
+    y_title: editYTitle.value || null,
+    is_time_series: isTimeSeriesToggle.value,
+  };
+  const catInfo = dataStore.catalogDatasetInfo as Record<string, unknown> | null;
+  if (catInfo?.source && catInfo?.name) {
+    body.source = catInfo.source;
+    body.name = catInfo.name;
+  } else if (dataStore.activeFilePath) {
+    body.file_path = dataStore.activeFilePath;
+    if (dataStore.activeExperimentId) {
+      body.experiment_id = dataStore.activeExperimentId;
+    }
+  } else {
+    return; // nothing to persist
+  }
+
+  try {
+    await api.patch("/builder/file-metadata", body);
+  } catch (err) {
+    console.warn("Failed to persist metadata override", err);
+  }
+}
+
+// Debounced persist on any editable field change
+let _persistTimer: ReturnType<typeof setTimeout> | null = null;
+function schedulePersist() {
+  if (_persistTimer) clearTimeout(_persistTimer);
+  _persistTimer = setTimeout(persistMetadataOverride, 500);
+}
+
+watch(editXTitle, schedulePersist);
+watch(editXUnits, schedulePersist);
+watch(editYTitle, schedulePersist);
+watch(isTimeSeriesToggle, schedulePersist);
 
 const fileStages = [
   { key: "raw", label: "Raw", icon: "pi pi-file" },
@@ -1192,10 +1256,10 @@ const sdMeta = computed(() => {
   return {
     wavenumbers: (m?.wavenumbers ?? []) as number[],
     labels: (m?.labels ?? m?.sample_labels ?? []) as string[],
-    x_title: (m?.x_title ?? "") as string,
-    x_units: (m?.x_units ?? "") as string,
+    x_title: editXTitle.value || (m?.x_title ?? "") as string,
+    x_units: editXUnits.value || (m?.x_units ?? "") as string,
     spectral_technique: (m?.spectral_technique ?? null) as string | null,
-    data_quantity: (m?.data_quantity ?? null) as string | null,
+    data_quantity: editYTitle.value || (m?.data_quantity ?? null) as string | null,
     value_units: (m?.value_units ?? null) as string | null,
     is_spectra: (m?.is_spectra ?? false) as boolean,
     prop_names: (m?.prop_names ?? []) as string[],
@@ -1249,13 +1313,6 @@ const previewPlotData = computed(() => {
   }));
 });
 
-const isReversedXAxis = computed(() => {
-  const technique = (sdMeta.value.spectral_technique ?? "").toUpperCase();
-  if (technique === "IR" || technique === "NIR" || technique === "RAMAN") return true;
-  const units = sdMeta.value.x_units.toLowerCase();
-  return units.includes("cm") || units.includes("wavenumber");
-});
-
 const xAxisLabel = computed(() => {
   const { x_title, x_units, spectral_technique } = sdMeta.value;
   if (x_title && x_units) return `${x_title} (${x_units})`;
@@ -1275,7 +1332,7 @@ const previewPlotLayout = computed(() => ({
   title: { text: "Spectra Preview", font: { size: 14 } },
   xaxis: {
     title: xAxisLabel.value,
-    autorange: isReversedXAxis.value ? ("reversed" as const) : (true as const),
+    autorange: true as const,
   },
   yaxis: { title: yAxisLabel.value },
   autosize: true,
@@ -1325,10 +1382,6 @@ const boxPlotLayout = computed(() => {
     paper_bgcolor: "#ffffff",
   };
 });
-
-const dataStoryButtonLabel = computed(() =>
-  dataStore.dataStoryText ? "Regenerate Data Story" : "Generate Data Story"
-);
 
 function queryNumber(value: unknown): number | null {
   if (typeof value !== "string" || !value.trim()) return null;
@@ -1938,6 +1991,20 @@ function formatDate(dateStr: string): string {
   font-weight: 500;
 }
 
+.meta-dropdown {
+  width: 160px;
+  font-size: 0.85rem;
+}
+
+.meta-dropdown :deep(.p-dropdown-label) {
+  padding: 4px 8px;
+  font-size: 0.85rem;
+}
+
+.meta-dropdown :deep(.p-dropdown-trigger) {
+  width: 1.8rem;
+}
+
 /* ---- Reference catalog section ---- */
 .ref-catalog-section {
   background: #ffffff;
@@ -2146,64 +2213,6 @@ function formatDate(dateStr: string): string {
 
 .prop-stats-table {
   font-size: 0.85rem;
-}
-
-/* ---- Data story ---- */
-.data-story-panel {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 20px;
-}
-
-.data-story-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.data-story-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.data-story-header .panel-title {
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.ai-feature-note {
-  color: #dc2626;
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-}
-
-.data-story-loading {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 16px 0;
-  color: #64748b;
-  font-size: 0.9rem;
-}
-
-.data-story-text {
-  font-size: 0.9rem;
-  color: #334155;
-  line-height: 1.7;
-  white-space: pre-line;
-}
-
-.data-story-hint {
-  font-size: 0.85rem;
-  color: #94a3b8;
-  margin: 0;
-  font-style: italic;
 }
 
 /* ---- Synthesis tab ---- */

@@ -77,3 +77,5 @@ template_data:
     name: wine
   - source: spectrochempy
     name: irdata
+  - source: oes
+    name: uvspectra10

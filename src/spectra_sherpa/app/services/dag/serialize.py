@@ -19,6 +19,7 @@ from typing import Any, Dict
 
 import numpy as np
 
+from spectra_sherpa.app.lib.domain_flags import infer_is_spectra
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
@@ -229,7 +230,7 @@ def _serialize_sherpa_dataset(
 
     dataset_registry.register(dataset, owner_user_id=owner_user_id)
     result = dataset.to_dict()
-    result["manifest"] = dataset.manifest.model_dump()
+    result["manifest"] = dataset.manifest.model_dump(mode="json")
 
     # Remap axis keys for frontend compatibility
     # SherpaDataset.to_dict() uses spectral_axis/sample_axis but the
@@ -246,7 +247,13 @@ def _serialize_sherpa_dataset(
     except Exception:
         technique = None
         data_quantity = None
-    is_spectra = technique is not None
+    feature_axis = dataset.get_feature_axis()
+    is_spectra = infer_is_spectra(
+        dataset.meta.get("is_spectra") if isinstance(dataset.meta, dict) else None,
+        technique=technique or dataset.domain.technique,
+        x_title=feature_axis.title if feature_axis is not None else None,
+        x_units=feature_axis.units if feature_axis is not None else None,
+    )
 
     metadata = result.setdefault("metadata", {})
     metadata["data_type"] = "spectra" if is_spectra else "generic"

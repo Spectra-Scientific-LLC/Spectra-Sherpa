@@ -61,6 +61,10 @@ type PlotlyClient = {
     layout: PlotlyLayout,
     config: PlotlyConfig
   ) => unknown | Promise<unknown>;
+  relayout: (
+    element: HTMLDivElement,
+    update: PlotlyLayout
+  ) => unknown | Promise<unknown>;
   purge: (element: HTMLDivElement) => void;
   Plots: {
     resize: (element: HTMLDivElement) => void;
@@ -123,10 +127,33 @@ onMounted(() => {
   });
 });
 
+// Full re-render when data or config change
 watch(
-  () => [props.data, props.layout, props.config],
+  () => [props.data, props.config],
   () => {
     void render();
+  },
+  { deep: true }
+);
+
+// Layout-only update (axis labels, titles) — use relayout to avoid re-rendering traces
+watch(
+  () => props.layout,
+  async (newLayout) => {
+    if (!chartEl.value || !newLayout) return;
+    const Plotly = await getPlotlyClient();
+    // Flatten layout for relayout: e.g. { xaxis: { title: "X" } } → { "xaxis.title": "X" }
+    const flat: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(newLayout)) {
+      if (val && typeof val === "object" && !Array.isArray(val)) {
+        for (const [subKey, subVal] of Object.entries(val as Record<string, unknown>)) {
+          flat[`${key}.${subKey}`] = subVal;
+        }
+      } else {
+        flat[key] = val;
+      }
+    }
+    Plotly.relayout(chartEl.value, flat);
   },
   { deep: true }
 );

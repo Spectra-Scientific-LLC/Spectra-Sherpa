@@ -578,12 +578,10 @@ const exportToPython = async () => {
       life: 2000,
     });
   } catch (err: unknown) {
-    const detail = err instanceof Error ? err.message
-      : (err as any)?.response?.data?.detail || "Export failed — check that the workflow is saved and the backend is running";
     toast.add({
       severity: "error",
       summary: "Export Failed",
-      detail,
+      detail: getErrorMessage(err, "Export failed — check that the workflow is saved and the backend is running"),
       life: 5000,
     });
   }
@@ -602,11 +600,11 @@ const exportToNotebook = async () => {
       detail: "Jupyter notebook downloaded",
       life: 2000,
     });
-  } catch {
+  } catch (err: unknown) {
     toast.add({
       severity: "error",
       summary: "Export Failed",
-      detail: "Could not generate notebook",
+      detail: getErrorMessage(err, "Could not generate notebook"),
       life: 3000,
     });
   }
@@ -625,7 +623,7 @@ const downloadZip = async () => {
     toast.add({
       severity: "error",
       summary: "Export Failed",
-      detail: err?.response?.data?.detail || "Failed to download zip bundle",
+      detail: getErrorMessage(err, "Failed to download zip bundle"),
       life: 5000,
     });
   }

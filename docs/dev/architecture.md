@@ -40,6 +40,8 @@ SpectraSherpa follows a "Clean Architecture" pattern with a strict separation be
 
 SpectraSherpa supports multiple deployment modes (`local`, `hybrid`, `enterprise`). Mode-checking hooks in `create_app()` lifespan callbacks allow extension packages to add middleware. Without extensions, non-local code paths fall through to safe defaults.
 
+The frontend learns the active mode from the backend config endpoint. If config loading fails, the UI does not assume local mode as a fallback; protected routes fail closed until config is available again. This keeps enterprise and hybrid deployments from silently degrading into local-mode behavior.
+
 ## High-Level Structure
 
 ```
@@ -104,6 +106,8 @@ Edge adapters in `app/lib/adapters/` handle all external format conversions (num
 
 **NDDataset** (SpectroChemPy) — Used by SCP-only nodes that require SpectroChemPy's coordinate-aware algorithms (rubberband baseline, PCA, PLS, MCR, EFA, SIMPLISMA, etc.). Round-trip adapters (`from_nddataset`, `to_nddataset`) in `adapters/scp_adapter.py` convert at SCP boundaries.
 
+Prepared-data overrides from the Data/Explore flow are persisted separately from the raw source files and reapplied at workflow runtime. That same override payload is also used during Python and notebook export so generated code reflects the user-prepared dataset state rather than only the raw on-disk file.
+
 ### 4. SpectroChemPy Optional Dependency
 
 [SpectroChemPy](https://www.spectrochempy.fr/) is an optional dependency (`pip install spectra-sherpa[scp]`) developed by A. Travert & C. Fernandez at LCS (ENSICAEN/CNRS), licensed under [CeCILL-B](https://cecill.info/licences/Licence_CeCILL-B_V1-en.html) (BSD-compatible).
@@ -127,6 +131,7 @@ All node ports use typed connections via `TypeRegistry`:
 - **Metadata Propagation:** Every node automatically appends its operation to the `processing_history` metadata via `meta_helpers.add_processing_step()`.
 - **Unit Awareness:** The system tracks units (wavenumber vs nm, absorbance vs transmittance) to prevent invalid operations.
 - **Provenance:** Full processing chain recorded in dataset metadata for audit trails.
+- **Prepared Data State:** User overrides such as x-axis name, x-axis units, data quantity, and time-series classification persist through Data/Explore, workflow execution, and runnable exports.
 
 ### 7. WebSocket Lifecycle
 

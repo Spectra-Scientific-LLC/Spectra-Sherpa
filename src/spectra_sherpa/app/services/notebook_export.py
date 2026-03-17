@@ -26,6 +26,7 @@ from spectra_sherpa.app.services.python_export import _generate_node_python_line
 
 if TYPE_CHECKING:
     from spectra_sherpa.app.models.workflow import Workflow
+    from spectra_sherpa.app.services.workflow_export_context import WorkflowExportContext
 
 
 # Standard Jupyter notebook metadata (Python 3 kernel)
@@ -164,7 +165,7 @@ _NODE_GUIDES: dict[str, str] = {
     ),
     "output.plot": (
         "Visualization of the results. In the exported notebook, plots are rendered "
-        "using matplotlib. Examine the plots to verify each processing step."
+        "as Plotly figures so you can inspect and zoom them interactively."
     ),
     "output.export": (
         "Saves the data to a file (CSV, JSON, etc.). The exported file can be "
@@ -456,7 +457,10 @@ def _deindent_block(
     return out
 
 
-def generate_notebook(workflow: Workflow) -> dict:
+def generate_notebook(
+    workflow: Workflow,
+    export_context: "WorkflowExportContext | None" = None,
+) -> dict:
     """Generate a Jupyter notebook dict from a workflow.
 
     Produces a per-node cell notebook with:
@@ -476,7 +480,7 @@ def generate_notebook(workflow: Workflow) -> dict:
             (propagated from ``generate_python_code``).
     """
     # Generate the full Python code (validates and creates the script)
-    python_code = generate_python_code(workflow)
+    python_code = generate_python_code(workflow, export_context=export_context)
     sections = _split_python_code(python_code)
 
     # --- Also get the per-node structure from the workflow ---
@@ -519,12 +523,12 @@ def generate_notebook(workflow: Workflow) -> dict:
         "",
         "### Prerequisites",
         "```",
-        "pip install spectra-sherpa numpy scipy scikit-learn matplotlib",
+        "pip install spectra-sherpa numpy scipy scikit-learn plotly",
         "```",
         "",
         "### Data",
-        "Place your spectral data files in a `data/` folder next to this notebook. "
-        "The first code cell sets up the `DATA_DIR` variable pointing to this folder.",
+        "Place your source files in a `data/` folder next to this notebook, or set "
+        "`SHERPA_DATA_DIR` to point somewhere else. The first code cell sets `DATA_DIR`.",
         "",
         "### How to use",
         "1. Run cells in order (Shift+Enter)",
@@ -585,6 +589,7 @@ def generate_notebook(workflow: Workflow) -> dict:
             dict_output_nodes,
             indent="    ",
             use_scp=HAS_SCP,
+            export_context=export_context,
         )
         code_lines = _deindent_block(block_lines, 4)
         # Strip trailing blank lines

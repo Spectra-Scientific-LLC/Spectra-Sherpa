@@ -238,6 +238,16 @@ class WorkflowExecuteResponse(BaseModel):
     integrity_hash: str | None = Field(None, description="SHA-256 integrity hash of executed workflow")
 
 
+class WorkflowPythonExportResponse(BaseModel):
+    """Schema for workflow Python export response."""
+
+    workflow_id: int
+    workflow_name: str
+    python_code: str
+    filename: str
+    saved_path: str
+
+
 # Node library schemas
 class NodeParameterInfo(BaseModel):
     """Schema for node parameter metadata."""

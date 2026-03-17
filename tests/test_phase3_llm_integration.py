@@ -21,40 +21,6 @@ from spectra_sherpa.app.lib.sherpa_dataset import (
 from spectra_sherpa.app.services.dataset_registry import dataset_registry
 
 # ---------------------------------------------------------------------------
-# Slice 1: write_data_story()
-# ---------------------------------------------------------------------------
-
-
-class TestWriteDataStory:
-    @pytest.mark.asyncio
-    async def test_with_dataset_info_uses_summarizer(self):
-        """write_data_story uses JSON dict context."""
-        dataset_info = {"name": "Corn NIR", "technique": "NIR"}
-
-        with (
-            patch(
-                "spectra_sherpa.app.services.llm.LLMService._single_turn",
-                new_callable=AsyncMock,
-                return_value="NIR data story...",
-            ) as mock_turn,
-            patch(
-                "spectra_sherpa.app.services.llm.LLMService.__init__",
-                return_value=None,
-            ),
-        ):
-            from spectra_sherpa.app.services.llm import LLMService
-
-            svc = LLMService.__new__(LLMService)
-            svc.user = None
-            result = await svc.write_data_story(dataset_info=dataset_info)
-
-            assert result == "NIR data story..."
-            call_args = mock_turn.call_args[0][0]
-            assert "Corn NIR" in call_args
-            assert "NIR" in call_args
-
-
-# ---------------------------------------------------------------------------
 # Slice 1: _summarize_metadata
 # ---------------------------------------------------------------------------
 

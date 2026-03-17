@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import logging
 import uuid
+import warnings
+from dataclasses import dataclass
 from typing import Any, Optional
 
 import numpy as np
@@ -43,6 +45,121 @@ logger = logging.getLogger(__name__)
 
 from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
 from spectra_sherpa.app.lib.scp_compat import from_nddataset, scp, to_nddataset
+
+
+@dataclass
+class PCARuntimeBundle:
+    input_data: Any
+    input_ds: Any
+    pca: Any
+    extracted: PCAExtract
+    scores_dataset: Any
+    loadings_dataset: Any
+    actual_n_components: int
+    evr_ratio: np.ndarray
+    eigenvalues: np.ndarray
+    n_observations: int
+    n_features: int
+    n_components_parsed: int | str | float
+
+
+def _parse_pca_n_components(raw_value: Any, shape: tuple[int, int]) -> int | str | float:
+    """Parse and validate PCA n_components using the same rules as GUI execution."""
+    n_observations, n_features = shape
+
+    if isinstance(raw_value, str):
+        value = raw_value.strip()
+        if value.lower() == "mle":
+            n_components_parsed: int | str | float = "mle"
+        else:
+            try:
+                parsed = float(value)
+                if parsed.is_integer() and parsed >= 1:
+                    n_components_parsed = int(parsed)
+                elif 0.0 < parsed < 1.0:
+                    n_components_parsed = parsed
+                else:
+                    raise ValueError(f"Invalid n_components value: {value}")
+            except ValueError as exc:
+                raise ValueError(
+                    f"n_components must be an integer, 'mle', or float between 0 and 1. Got: {value}"
+                ) from exc
+    else:
+        n_components_parsed = raw_value
+
+    if n_components_parsed == "mle" and n_observations < n_features:
+        raise ValueError(
+            f"n_components='mle' requires n_observations >= n_features. "
+            f"Got {n_observations} observations and {n_features} features. "
+            "Consider using a specific number of components or a variance threshold (0-1)."
+        )
+
+    return n_components_parsed
+
+
+def run_pca_runtime(
+    input_data: Any,
+    *,
+    n_components_param: Any = "5",
+    standardized: bool = False,
+    scaled: bool = False,
+) -> PCARuntimeBundle:
+    """Run PCA through the same runtime path used by the GUI and export code."""
+    input_ds = bind_X(
+        input_data,
+        missing_message="Missing required input: input_data (X)",
+        dataset_error_message="input_data must be an dataset or array-like object",
+        allow_array=True,
+    )
+    input_ndd = to_nddataset(input_ds)
+
+    n_observations, n_features = input_ds.shape
+    n_components_parsed = _parse_pca_n_components(n_components_param, input_ds.shape)
+
+    logger.debug("[PCA Node] Executing with:")
+    logger.debug("  - n_components parsed: %s (type: %s)", n_components_parsed, type(n_components_parsed).__name__)
+    logger.debug("  - Data shape: %s observations x %s features", n_observations, n_features)
+
+    # SpectroChemPy may emit noisy matmul warnings on some datasets even when
+    # the fit succeeds. The GUI never surfaced these to users; keep runtime
+    # behavior consistent for both GUI and exported scripts.
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="divide by zero encountered in matmul", category=RuntimeWarning)
+        warnings.filterwarnings("ignore", message="overflow encountered in matmul", category=RuntimeWarning)
+        warnings.filterwarnings("ignore", message="invalid value encountered in matmul", category=RuntimeWarning)
+        pca = scp.PCA(n_components=n_components_parsed, standardized=standardized, scaled=scaled)
+        pca.fit(input_ndd)
+        extracted = PCAExtract.from_scp(pca, input_ndd)
+        scores_dataset = pca.transform()
+        loadings_dataset = pca.components
+
+    if scores_dataset is None:
+        raise ValueError("PCA transform() returned None — SCP model may not have fitted correctly")
+    if loadings_dataset is None:
+        raise ValueError("PCA components is None — SCP model may not have fitted correctly")
+
+    actual_n_components = extracted.n_components
+    evr_ratio = extracted.explained_variance_ratio
+    eigenvalues = extracted.explained_variance
+    if evr_ratio is None:
+        evr_ratio = np.zeros(actual_n_components, dtype=np.float64)
+    if eigenvalues is None:
+        eigenvalues = np.ones(actual_n_components, dtype=np.float64) * 1e-12
+
+    return PCARuntimeBundle(
+        input_data=input_data,
+        input_ds=input_ds,
+        pca=pca,
+        extracted=extracted,
+        scores_dataset=scores_dataset,
+        loadings_dataset=loadings_dataset,
+        actual_n_components=actual_n_components,
+        evr_ratio=evr_ratio,
+        eigenvalues=eigenvalues,
+        n_observations=n_observations,
+        n_features=n_features,
+        n_components_parsed=n_components_parsed,
+    )
 
 
 @register_node
@@ -192,26 +309,19 @@ class PCANode(Node):
         lines.append(f"{indent}# --- PCA ({self.node_id}) ---")
 
         if use_scp:
-            # Extract data
             lines.append(f"{indent}_X_input = {X_expr}")
-            lines.append(f"{indent}_X_data = np.array(")
-            lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
-            lines.append(f"{indent}    dtype=np.float64,")
-            lines.append(f"{indent})")
-            # Fit PCA via SCP
-            std_str = "True" if standardized else "False"
-            scl_str = "True" if scaled else "False"
-            lines.append(f"{indent}_X_ndd = scp.NDDataset(_X_data)")
             lines.append(
-                f"{indent}_pca = scp.PCA(n_components={n_components}, standardized={std_str}, scaled={scl_str})"
+                f"{indent}from spectra_sherpa.app.services.dag.nodes.modeling.pca_nodes " f"import run_pca_runtime"
             )
-            lines.append(f"{indent}_pca.fit(_X_ndd)")
-            # Extract results
-            lines.append(f"{indent}_scores = np.asarray(_pca.transform().data, dtype=np.float64)")
-            lines.append(f"{indent}_loadings = np.asarray(_pca.components.data, dtype=np.float64)")
-            lines.append(f"{indent}_evr = np.asarray(_pca.explained_variance_ratio, dtype=np.float64).ravel()")
-            lines.append(f"{indent}if _evr.max() > 1.0:")
-            lines.append(f"{indent}    _evr = _evr / 100.0")
+            lines.append(
+                f"{indent}_pca_bundle = run_pca_runtime("
+                f"_X_input, n_components_param={n_components!r}, "
+                f"standardized={standardized!r}, scaled={scaled!r})"
+            )
+            lines.append(f"{indent}_pca = _pca_bundle.pca")
+            lines.append(f"{indent}_scores = np.asarray(_pca_bundle.scores_dataset.data, dtype=np.float64)")
+            lines.append(f"{indent}_loadings = np.asarray(_pca_bundle.loadings_dataset.data, dtype=np.float64)")
+            lines.append(f"{indent}_evr = np.asarray(_pca_bundle.evr_ratio, dtype=np.float64).ravel()")
         else:
             # numpy mode via sklearn
             lines.append(f"{indent}from sklearn.decomposition import PCA as _PCA")
@@ -258,81 +368,28 @@ class PCANode(Node):
             dataset_error_message="input_data must be an dataset or array-like object",
             allow_array=True,
         )
-        input_ndd = to_nddataset(input_ds)
 
         # Get parameters
         n_components_str = self.parameters.get("n_components", "5")
         standardized = self.parameters.get("standardized", False)
         scaled = self.parameters.get("scaled", False)
-
-        # Parse n_components parameter (can be int, "mle", or float 0-1)
-        n_components_parsed: int | str | float
-        if isinstance(n_components_str, str):
-            n_components_str = n_components_str.strip()
-            if n_components_str.lower() == "mle":
-                n_components_parsed = "mle"
-            else:
-                try:
-                    # Try to parse as float first
-                    val = float(n_components_str)
-                    # If it's a whole number, convert to int
-                    if val.is_integer() and val >= 1:
-                        n_components_parsed = int(val)
-                    # If it's between 0 and 1, keep as float (variance threshold)
-                    elif 0.0 < val < 1.0:
-                        n_components_parsed = val
-                    else:
-                        raise ValueError(f"Invalid n_components value: {n_components_str}")
-                except ValueError:
-                    raise ValueError(
-                        f"n_components must be an integer, 'mle', or float between 0 and 1. Got: {n_components_str}"
-                    )
-        else:
-            # Handle numeric input from legacy workflows
-            n_components_parsed = n_components_str
-
-        # Validate MLE constraint: n_observations >= n_features
-        n_observations, n_features = input_ds.shape
-        if n_components_parsed == "mle" and n_observations < n_features:
-            raise ValueError(
-                f"n_components='mle' requires n_observations >= n_features. "
-                f"Got {n_observations} observations and {n_features} features. "
-                f"Consider using a specific number of components or a variance threshold (0-1)."
-            )
-
-        logger.debug("[PCA Node] Executing with:")
-        logger.debug("  - All parameters: %s", self.parameters)
-        logger.debug("  - n_components parsed: %s (type: %s)", n_components_parsed, type(n_components_parsed).__name__)
-        logger.debug("  - Data shape: %s observations x %s features", n_observations, n_features)
-
-        # Perform PCA using SpectroChemPy
-        pca = scp.PCA(n_components=n_components_parsed, standardized=standardized, scaled=scaled)
-        pca.fit(input_ndd)
-
-        # Extract results using typed extractor — all defensive unwrapping
-        # and normalization logic lives in PCAExtract.from_scp()
-        extracted = PCAExtract.from_scp(pca, input_ndd)
-
-        # Use SpectroChemPy's native NDDataset outputs for coordinate preservation
-        scores_dataset = pca.transform()
-        loadings_dataset = pca.components
-
-        if scores_dataset is None:
-            raise ValueError("PCA transform() returned None — SCP model may not have fitted correctly")
-        if loadings_dataset is None:
-            raise ValueError("PCA components is None — SCP model may not have fitted correctly")
-
+        bundle = run_pca_runtime(
+            input_data,
+            n_components_param=n_components_str,
+            standardized=standardized,
+            scaled=scaled,
+        )
+        input_ds = bundle.input_ds
+        pca = bundle.pca
+        extracted = bundle.extracted
+        scores_dataset = bundle.scores_dataset
+        loadings_dataset = bundle.loadings_dataset
         scores_data = extracted.scores
-        actual_n_components = extracted.n_components
-        evr_ratio = extracted.explained_variance_ratio
-        eigenvalues = extracted.explained_variance
-
-        # Defensive guard — protect against SCP versions where extraction
-        # silently yields None (manifests as "'NoneType' … 'tolist'").
-        if evr_ratio is None:
-            evr_ratio = np.zeros(actual_n_components, dtype=np.float64)
-        if eigenvalues is None:
-            eigenvalues = np.ones(actual_n_components, dtype=np.float64) * 1e-12
+        actual_n_components = bundle.actual_n_components
+        evr_ratio = bundle.evr_ratio
+        eigenvalues = bundle.eigenvalues
+        n_observations = bundle.n_observations
+        n_features = bundle.n_features
 
         pc_labels = [f"PC{i+1} ({evr_ratio[i] * 100:.1f}%)" for i in range(actual_n_components)]
 
@@ -516,7 +573,9 @@ class PCANode(Node):
         )
 
         logger.debug(
-            "[PCA Node] Requested n_components=%s, fitted with %s components", n_components_parsed, actual_n_components
+            "[PCA Node] Requested n_components=%s, fitted with %s components",
+            bundle.n_components_parsed,
+            actual_n_components,
         )
         logger.debug("[PCA Node] Scores shape: %s, Loadings shape: %s", scores_dataset.shape, loadings_dataset.shape)
 

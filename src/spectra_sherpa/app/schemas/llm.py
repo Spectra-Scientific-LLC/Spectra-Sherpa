@@ -24,11 +24,3 @@ class LLMChatResponse(BaseModel):
 class LLMConversation(BaseModel):
     conversation_id: str
     messages: List[LLMMessage]
-
-
-class LLMDataStoryRequest(BaseModel):
-    dataset_info: Dict[str, Any] = Field(..., description="Dataset information dictionary")
-
-
-class LLMTextResponse(BaseModel):
-    response: str

@@ -9,7 +9,7 @@ pip install spectra-sherpa
 spectra-sherpa
 ```
 
-Your browser opens automatically to `http://localhost:8000`. No login required — SpectraSherpa runs as a local tool (like Jupyter). The default route opens the **Projects** page, which is the current starting point for template-first onboarding.
+Your browser opens automatically to `http://localhost:8000`. In local mode, no login is required and SpectraSherpa behaves like a desktop tool. In hybrid or enterprise deployments, protected pages require the backend config to load successfully and then enforce normal authentication. The default route opens the **Projects** page, which is the current starting point for template-first onboarding.
 
 If you want the SpectroChemPy-backed example datasets and workflows, install the optional extra:
 
@@ -72,6 +72,8 @@ You can work either from uploaded experiment files or from bundled example sourc
 1. Open **Experiments**.
 2. Create a new experiment.
 3. Upload your spectral files.
+4. Open the data preview flow and review the inferred names, units, quantity, and time-series status.
+5. Apply any overrides you want to keep.
 
 Supported formats include `.csv`, `.jdx`, `.dx`, `.spc`, `.spa`, `.spg`, `.txt`, `.wdf`, `.mat`, and `.opus`.
 
@@ -81,6 +83,8 @@ Supported formats include `.csv`, `.jdx`, `.dx`, `.spc`, `.spa`, `.spg`, `.txt`,
 2. Select the `Data Source` node.
 3. Change the source to your experiment-backed data selection.
 4. Pick the experiment and file, then re-execute the workflow.
+
+Those Data/Explore overrides persist to the backend and are replayed when the workflow runs, so the workflow uses the same prepared dataset state you reviewed earlier.
 
 ---
 
@@ -98,11 +102,17 @@ Typical first checks:
 
 ## 6. Export Results
 
-You can export from the workflow toolbar or from export-oriented output nodes in the graph. Exported artifacts are attached to the workflow/project context rather than only shown as a transient browser download.
+You can export from the workflow toolbar or from export-oriented output nodes in the graph.
+
+- Python export writes a runnable script that replays your workflow and includes explicit prepared-data override assignments.
+- Notebook export writes the same workflow as an executable Jupyter notebook.
+- Zip export bundles the script, notebook, requirements, source data files, and workflow/prepared-data manifests under a relative `data/` folder.
+
+Python and notebook exports look for source files in a `data/` folder next to the export by default. Set `SHERPA_DATA_DIR` if you want the exported code to read from a different location.
 
 ## 7. Configure LLM API Keys (Optional)
 
-SpectraSherpa can use LLMs for AI-assisted workflow generation and a chat assistant. This is optional — all core spectroscopy features work without it.
+SpectraSherpa can use LLMs for the BYOK chat assistant. This is optional and separate from the core spectroscopy workflow features.
 
 ### Option A: Environment Variables
 

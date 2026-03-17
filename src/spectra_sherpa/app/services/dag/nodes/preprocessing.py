@@ -386,7 +386,7 @@ def _savgol_smooth_export(params, inp, node_id, indent, use_scp):
 def _snv_transform(data: np.ndarray) -> np.ndarray:
     mean_vals = np.mean(data, axis=1, keepdims=True)
     std_vals = np.std(data, axis=1, keepdims=True)
-    std_vals[std_vals == 0] = 1.0
+    std_vals[(std_vals == 0) | ~np.isfinite(std_vals)] = 1.0
     return (data - mean_vals) / std_vals
 
 
@@ -987,8 +987,8 @@ def _pareto_scale(data: np.ndarray, center: bool = True) -> np.ndarray:
     if center:
         data = data - np.mean(data, axis=0, keepdims=True)
     std = np.std(data, axis=0, keepdims=True)
-    sf = np.sqrt(std)
-    sf[sf == 0] = 1.0
+    sf = np.sqrt(np.maximum(std, 0))
+    sf[(sf == 0) | ~np.isfinite(sf)] = 1.0
     return data / sf
 
 
@@ -1231,7 +1231,7 @@ def _autoscale(data: np.ndarray, center: bool = True) -> np.ndarray:
     if center:
         data = data - np.mean(data, axis=0, keepdims=True)
     std = np.std(data, axis=0, keepdims=True)
-    std[std == 0] = 1.0
+    std[(std == 0) | ~np.isfinite(std)] = 1.0
     return data / std
 
 
@@ -1507,7 +1507,7 @@ class SmoothNode(Node):
                 param_type="number",
                 default=11,
                 min_value=3,
-                max_value=51,
+                max_value=21,
                 step=2,
                 description="Window size (must be odd)",
                 required=False,
@@ -1520,7 +1520,7 @@ class SmoothNode(Node):
                 param_type="number",
                 default=2,
                 min_value=1,
-                max_value=5,
+                max_value=6,
                 step=1,
                 description="Polynomial order",
                 required=False,

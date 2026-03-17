@@ -20,6 +20,7 @@ from spectra_sherpa.app.services.dag.node_base import node_registry
 
 if TYPE_CHECKING:
     from spectra_sherpa.app.models.workflow import Workflow
+    from spectra_sherpa.app.services.workflow_export_context import SourceExportSpec, WorkflowExportContext
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,140 @@ def _generate_source_placeholder_lines(node_id: str, node, edges: list[Edge], in
     return lines
 
 
+def _inject_prepared_override_lines(
+    lines: list[str],
+    node_id: str,
+    spec: "SourceExportSpec | None",
+    indent: str,
+) -> list[str]:
+    if spec is None or spec.overrides.is_empty():
+        return lines
+
+    insert_at = next((idx for idx, line in enumerate(lines) if f"results['{node_id}']" in line), len(lines))
+    return lines[:insert_at] + _generate_prepared_override_lines("_ds", spec, indent) + lines[insert_at:]
+
+
+def _generate_prepared_override_lines(dataset_expr: str, spec: "SourceExportSpec", indent: str) -> list[str]:
+    safe_id = _safe_identifier(spec.node_id)
+    lines: list[str] = []
+    lines.append(f"{indent}# Replay Data/Explore overrides for {spec.node_id}")
+
+    if spec.overrides.x_title is not None or spec.overrides.x_units is not None:
+        lines.append(f"{indent}if getattr({dataset_expr}, 'feature_axis', None) is not None:")
+        lines.append(f"{indent}    _feature_axis_{safe_id} = {dataset_expr}.feature_axis.copy()")
+        if spec.overrides.x_title is not None:
+            lines.append(f"{indent}    _feature_axis_{safe_id}.title = {spec.overrides.x_title!r}")
+            lines.append(f"{indent}    {dataset_expr}.meta['x_title'] = {spec.overrides.x_title!r}")
+        if spec.overrides.x_units is not None:
+            lines.append(
+                f"{indent}    _feature_axis_{safe_id}.units = "
+                f"{repr(spec.overrides.x_units) if spec.overrides.x_units else 'None'}"
+            )
+            lines.append(f"{indent}    {dataset_expr}.meta['x_units'] = {spec.overrides.x_units!r}")
+        lines.append(f"{indent}    {dataset_expr}.feature_axis = _feature_axis_{safe_id}")
+
+    if spec.overrides.y_title is not None or spec.overrides.x_units is not None:
+        lines.append(f"{indent}_domain_{safe_id} = {dataset_expr}.domain.model_copy(deep=True)")
+        if spec.overrides.x_units is not None:
+            lines.append(
+                f"{indent}_domain_{safe_id}.expected_units = "
+                f"{repr(spec.overrides.x_units) if spec.overrides.x_units else 'None'}"
+            )
+        if spec.overrides.y_title is not None:
+            lines.append(f"{indent}_domain_{safe_id}.data_quantity = {spec.overrides.y_title!r}")
+            lines.append(f"{indent}{dataset_expr}.meta['data_quantity'] = {spec.overrides.y_title!r}")
+        lines.append(f"{indent}{dataset_expr}.domain = _domain_{safe_id}")
+
+    if spec.overrides.is_time_series is not None:
+        lines.append(f"{indent}{dataset_expr}.is_time_series = {spec.overrides.is_time_series!r}")
+        lines.append(f"{indent}{dataset_expr}.meta['is_time_series'] = {spec.overrides.is_time_series!r}")
+
+    return lines
+
+
+def _generate_bundled_source_lines(
+    node_id: str,
+    node,
+    spec: "SourceExportSpec",
+    indent: str,
+    is_multi_port: bool,
+    use_scp: bool,
+) -> list[str]:
+    safe_id = _safe_identifier(node_id)
+    lines: list[str] = []
+    lines.append(f"{indent}# --- Data Source ({node_id}) — bundled files ---")
+
+    if spec.loader_mode == "single_file":
+        bundle_file = spec.bundle_files[0]
+        lines.append(f"{indent}_bundle_path_{safe_id} = os.path.join(DATA_DIR, {bundle_file.bundle_relative_path!r})")
+        lines.append(f"{indent}if _bundle_path_{safe_id}.lower().endswith('.csv'):")
+        lines.append(f"{indent}    from spectra_sherpa.app.lib.io import load_csv_as_sherpa")
+        lines.append(f"{indent}    _ds = load_csv_as_sherpa(_bundle_path_{safe_id})")
+        lines.append(f"{indent}else:")
+        lines.append(f"{indent}    if not {use_scp!r}:")
+        lines.append(f"{indent}        raise ImportError('SpectroChemPy is required for non-CSV bundled data export')")
+        lines.append(f"{indent}    from spectra_sherpa.app.lib.scp_compat import from_nddataset")
+        lines.append(f"{indent}    _ndd = scp.read(_bundle_path_{safe_id})")
+        lines.append(f"{indent}    _ds = from_nddataset(_ndd)")
+        lines.extend(_generate_prepared_override_lines("_ds", spec, indent))
+        lines.append(f'{indent}print(f"  Data Source ({node_id}): {{_ds.shape}} from bundled file")')
+        if is_multi_port:
+            lines.append(f"{indent}results['{node_id}'] = {{'default': _ds, 'target': _ds.target}}")
+        else:
+            lines.append(f"{indent}results['{node_id}'] = _ds")
+        return lines
+
+    lines.append(f"{indent}from spectra_sherpa.app.lib.scp_compat import from_nddataset")
+    lines.append(f"{indent}from spectra_sherpa.app.services.dag.nodes.data.loaders import MyDatasetNode")
+    lines.append(f"{indent}_loader_{safe_id} = MyDatasetNode({node_id!r}, {{'dataset_id': 0}})")
+    lines.append(f"{indent}_loaded_{safe_id} = []")
+    for bundle_file in spec.bundle_files:
+        lines.append(
+            f"{indent}_loaded_{safe_id}.append("
+            f"_loader_{safe_id}._load_file("
+            f"os.path.join(DATA_DIR, {bundle_file.bundle_relative_path!r}), "
+            f"file_name={bundle_file.bundle_relative_path!r}"
+            f"))"
+        )
+    lines.append(f"{indent}_groups_{safe_id} = _loader_{safe_id}._group_by_x_axis(_loaded_{safe_id})")
+    lines.append(
+        f"{indent}_groups_{safe_id}.sort("
+        f"key=lambda _group: _loader_{safe_id}._x_length(_group[0].dataset), reverse=True"
+        f")"
+    )
+    lines.append(f"{indent}_spectra_group_{safe_id} = _groups_{safe_id}[0]")
+    lines.append(
+        f"{indent}_embedded_target_{safe_id} = "
+        f"_loader_{safe_id}._combine_embedded_targets(_spectra_group_{safe_id})"
+    )
+    lines.append(f"{indent}_spectra_items_{safe_id} = [item.dataset for item in _spectra_group_{safe_id}]")
+    lines.append(f"{indent}_spectra_names_{safe_id} = [item.file_name for item in _spectra_group_{safe_id}]")
+    lines.append(f"{indent}_spectra_{safe_id} = (")
+    lines.append(
+        f"{indent}    _loader_{safe_id}._concatenate(_spectra_items_{safe_id}, _spectra_names_{safe_id}) "
+        f"if len(_spectra_items_{safe_id}) > 1 else _spectra_items_{safe_id}[0]"
+    )
+    lines.append(f"{indent})")
+    lines.append(f"{indent}_ds = from_nddataset(_spectra_{safe_id})")
+    lines.append(f"{indent}if _embedded_target_{safe_id} is not None:")
+    lines.append(
+        f"{indent}    _embedded_target_data_{safe_id}, "
+        f"_embedded_target_names_{safe_id} = _embedded_target_{safe_id}"
+    )
+    lines.append(f"{indent}    _ds.target = _embedded_target_data_{safe_id}")
+    lines.append(f"{indent}    _ds.target_context = TargetContext(")
+    lines.append(f"{indent}        target_type='continuous',")
+    lines.append(f"{indent}        target_names=_embedded_target_names_{safe_id},")
+    lines.append(f"{indent}    )")
+    lines.extend(_generate_prepared_override_lines("_ds", spec, indent))
+    lines.append(f'{indent}print(f"  Data Source ({node_id}): {{_ds.shape}} from bundled folder")')
+    if is_multi_port:
+        lines.append(f"{indent}results['{node_id}'] = {{'default': _ds, 'target': _ds.target}}")
+    else:
+        lines.append(f"{indent}results['{node_id}'] = _ds")
+    return lines
+
+
 def _generate_node_python_lines(
     node_id: str,
     node,
@@ -82,15 +217,24 @@ def _generate_node_python_lines(
     dict_output_nodes: frozenset[str],
     indent: str,
     use_scp: bool,
+    export_context: "WorkflowExportContext | None" = None,
 ) -> list[str]:
     """Generate the code block for a single workflow node."""
     input_map = build_input_map(node_id, edges, dict_output_nodes=dict_output_nodes)
     if not input_map:
         used_ports = {e.from_output or "default" for e in edges if e.from_node == node_id}
         is_multi_port = len(used_ports) > 1
+        spec = export_context.source_spec_for(node_id) if export_context is not None else None
+        if spec is not None and spec.loader_mode != "builtin":
+            return _generate_bundled_source_lines(node_id, node, spec, indent, is_multi_port, use_scp)
         if node.supports_python_export():
             export_inputs = {"_multi_port": str(is_multi_port)}
-            return node.generate_python(export_inputs, indent=indent, use_scp=use_scp)
+            return _inject_prepared_override_lines(
+                node.generate_python(export_inputs, indent=indent, use_scp=use_scp),
+                node_id,
+                spec,
+                indent,
+            )
         return _generate_source_placeholder_lines(node_id, node, edges, indent)
     return node.generate_python(input_map, indent=indent, use_scp=use_scp)
 
@@ -157,7 +301,10 @@ def validate_export(workflow: Workflow) -> list[ExportValidationError]:
     return errors
 
 
-def generate_python_code(workflow: Workflow) -> str:
+def generate_python_code(
+    workflow: Workflow,
+    export_context: "WorkflowExportContext | None" = None,
+) -> str:
     """
     Generate executable Python code from a workflow.
 
@@ -286,6 +433,8 @@ def generate_python_code(workflow: Workflow) -> str:
     lines.append(f"{indent}    return {{str(k): _to_jsonable(v) for k, v in value.items()}}")
     lines.append(f"{indent}if isinstance(value, (list, tuple, set)):")
     lines.append(f"{indent}    return [_to_jsonable(v) for v in value]")
+    lines.append(f"{indent}if hasattr(value, 'to_plotly_json'):")
+    lines.append(f"{indent}    return value.to_plotly_json()")
     lines.append(f"{indent}if hasattr(value, 'data'):")
     lines.append(f"{indent}    return {{'type': type(value).__name__, 'shape': list(np.asarray(value.data).shape)}}")
     lines.append(f"{indent}return repr(value)")
@@ -310,11 +459,13 @@ def generate_python_code(workflow: Workflow) -> str:
     lines.append("")
 
     # Data directory constant
-    lines.append("# ── Data directory: place your raw spectral files here ──")
-    lines.append("DATA_DIR = (")
+    data_env_var = export_context.data_env_var if export_context is not None else "SHERPA_DATA_DIR"
+    lines.append("# ── Data directory: defaults to ./data and can be overridden with SHERPA_DATA_DIR ──")
+    lines.append("DEFAULT_DATA_DIR = (")
     lines.append('    os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")')
     lines.append('    if "__file__" in dir() else os.path.join(os.getcwd(), "data")')
     lines.append(")")
+    lines.append(f"DATA_DIR = os.environ.get({data_env_var!r}, DEFAULT_DATA_DIR)")
     lines.append("")
     lines.append("")
 
@@ -340,7 +491,15 @@ def generate_python_code(workflow: Workflow) -> str:
         step_indent = indent + "    "
 
         lines.append(f"{indent}def _step_{safe_nid}():")
-        node_lines = _generate_node_python_lines(node_id, node, edges, dict_output_nodes, step_indent, use_scp)
+        node_lines = _generate_node_python_lines(
+            node_id,
+            node,
+            edges,
+            dict_output_nodes,
+            step_indent,
+            use_scp,
+            export_context,
+        )
         lines.extend(node_lines)
 
         # Validate: every node must store its result in results[node_id]
@@ -390,6 +549,11 @@ def generate_python_code(workflow: Workflow) -> str:
     lines.append(f"{indent}                _write_array_artifact(os.path.join(out_dir, _fname), sub_val.data)")
     lines.append(f"{indent}            elif isinstance(sub_val, np.ndarray):")
     lines.append(f"{indent}                _write_array_artifact(os.path.join(out_dir, _fname), sub_val)")
+    lines.append(f"{indent}            elif hasattr(sub_val, 'to_plotly_json'):")
+    lines.append(f"{indent}                sub_val.write_html(os.path.join(out_dir, f'{{_fname}}.html'))")
+    lines.append(
+        f"{indent}                _save_json(" f"os.path.join(out_dir, f'{{_fname}}.json'), sub_val.to_plotly_json())"
+    )
     lines.append(f"{indent}            elif hasattr(sub_val, 'predict'):  # model object")
     lines.append(f"{indent}                with open(os.path.join(out_dir, f'{{_fname}}.pkl'), 'wb') as f:")
     lines.append(f"{indent}                    pickle.dump(sub_val, f)")
@@ -402,7 +566,11 @@ def generate_python_code(workflow: Workflow) -> str:
     lines.append(f"{indent}    else:")
     lines.append(f"{indent}        _save_json(os.path.join(out_dir, f'{{key}}.json'), _to_jsonable(value))")
     lines.append("")
-    lines.append(f"{indent}# Save matplotlib figures if any")
+    lines.append(f"{indent}# Save top-level Plotly or matplotlib figures if any")
+    lines.append(f"{indent}for key, value in results.items():")
+    lines.append(f"{indent}    if hasattr(value, 'to_plotly_json'):")
+    lines.append(f"{indent}        value.write_html(os.path.join(out_dir, f'{{key}}.html'))")
+    lines.append(f"{indent}        _save_json(os.path.join(out_dir, f'{{key}}.json'), value.to_plotly_json())")
     lines.append(f"{indent}try:")
     lines.append(f"{indent}    import matplotlib.pyplot as _plt")
     lines.append(f"{indent}    for i, fig in enumerate(_plt.get_fignums()):")

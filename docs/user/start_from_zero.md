@@ -228,7 +228,7 @@ Click the **chat icon** in the sidebar. Try questions like:
 
 ### E. Export to Python
 
-When you're happy with a workflow, use the **Export** button to generate a standalone Python script or Jupyter notebook. This gives you reproducible code you can share, publish, or run independently.
+When you're happy with a workflow, use the **Export** button to generate a standalone Python script, Jupyter notebook, or zip bundle. The exported code now expects a sibling `data/` folder by default, and zip export writes the needed source files there automatically.
 
 ---
 

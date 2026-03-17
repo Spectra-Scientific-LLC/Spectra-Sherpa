@@ -11,6 +11,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from spectra_sherpa.app.lib.domain_flags import infer_is_spectra
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -330,10 +332,19 @@ def get_scp_dataset_info(name: str) -> dict[str, Any]:
     catalog = build_scp_catalog()
     for entry in catalog:
         if entry["name"] == name:
-            return {"source": "spectrochempy", **entry}
+            return {
+                "source": "spectrochempy",
+                "is_spectra": infer_is_spectra(technique=entry.get("technique")),
+                **entry,
+            }
 
     # Fall back to category-level lookup
     if name in SCP_CATALOG:
-        return {"name": name, "source": "spectrochempy", **SCP_CATALOG[name]}
+        return {
+            "name": name,
+            "source": "spectrochempy",
+            "is_spectra": infer_is_spectra(technique=SCP_CATALOG[name].get("technique")),
+            **SCP_CATALOG[name],
+        }
 
     raise ValueError(f"Unknown SCP dataset: {name!r}. " f"Available: {', '.join(e['name'] for e in catalog)}")

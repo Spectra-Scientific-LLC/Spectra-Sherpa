@@ -23,7 +23,7 @@ const { mockAppMode, mockRegistrationEnabled, mockLoadConfig } = vi.hoisted(
   () => ({
     mockAppMode: { value: "local" as string },
     mockRegistrationEnabled: { value: true as boolean },
-    mockLoadConfig: vi.fn().mockResolvedValue(undefined),
+    mockLoadConfig: vi.fn().mockResolvedValue(true),
   })
 );
 
@@ -139,6 +139,11 @@ describe("Router auth guard", () => {
     it("blocks /register → /login when registrationEnabled is false", async () => {
       mockRegistrationEnabled.value = false;
       expect(await navigateTo("/register")).toBe("/login");
+    });
+
+    it("fails closed when config load fails", async () => {
+      mockLoadConfig.mockResolvedValueOnce(false);
+      expect(await navigateTo("/workflow")).toBe("/login");
     });
   });
 
