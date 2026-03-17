@@ -412,6 +412,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         handle_llm_chat,
         handle_sherpa_chat,
         handle_sherpa_chat_with_tools,
+        handle_sherpa_data_story,
         handle_sherpa_decide,
         handle_sherpa_generate_code,
         handle_sherpa_identify_peaks,
@@ -551,6 +552,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 await handle_sherpa_generate_code(websocket, payload, ws_user, _llm_rate_limiter)
             elif action == "sherpa_write_report":
                 await handle_sherpa_write_report(websocket, payload, ws_user, _llm_rate_limiter)
+            elif action == "sherpa_data_story":
+                await handle_sherpa_data_story(websocket, payload, ws_user, _llm_rate_limiter)
             elif action == "sherpa_chat_with_tools":
                 await handle_sherpa_chat_with_tools(websocket, payload, ws_user, _llm_rate_limiter)
             else:

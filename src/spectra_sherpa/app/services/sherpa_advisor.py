@@ -294,6 +294,16 @@ class SherpaAdvisor:
         response = payload.get("response", "")
         return {"response": response, "report": response}
 
+    async def generate_data_story(self, *, dataset_info: dict[str, Any]) -> dict[str, Any]:
+        """Proxy data story generation to the Sherpa server."""
+        payload = await self._request_json(
+            "POST",
+            "/sherpa/data-story",
+            json_body={"dataset_info": dataset_info},
+        )
+        response = payload.get("response", "")
+        return {"response": response}
+
     async def chat_with_tools(
         self,
         *,

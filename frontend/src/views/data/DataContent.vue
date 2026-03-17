@@ -590,6 +590,37 @@
             </div>
           </div>
 
+          <!-- Data Story section (catalog) -->
+          <div class="data-story-panel">
+            <div class="data-story-header">
+              <h4 class="panel-title">
+                <i class="pi pi-book"></i>
+                Data Story
+              </h4>
+              <div class="data-story-actions">
+                <span class="ai-feature-note">AI Feature</span>
+                <Button
+                  :label="dataStoryButtonLabel"
+                  icon="pi pi-sparkles"
+                  class="p-button-sm p-button-outlined"
+                  :loading="dataStore.dataStoryLoading"
+                  @click="dataStore.generateDataStory()"
+                />
+              </div>
+            </div>
+            <div v-if="dataStore.dataStoryLoading" class="data-story-loading">
+              <ProgressSpinner style="width: 24px; height: 24px" />
+              <span>Generating narrative...</span>
+            </div>
+            <div v-else-if="dataStore.dataStoryText" class="data-story-text">
+              {{ dataStore.dataStoryText }}
+            </div>
+            <p v-else class="data-story-hint">
+              Click "Generate Data Story" to create an LLM-powered narrative
+              describing this dataset's scientific context and characteristics.
+            </p>
+          </div>
+
         </div>
 
         <div v-else-if="!dataStore.fileInfo" class="explore-empty">
@@ -745,6 +776,37 @@
               :datasetDict="dataStore.fileInfo"
               :loading="dataStore.fileInfoLoading"
             />
+          </div>
+
+          <!-- Data Story section (file) -->
+          <div class="data-story-panel">
+            <div class="data-story-header">
+              <h4 class="panel-title">
+                <i class="pi pi-book"></i>
+                Data Story
+              </h4>
+              <div class="data-story-actions">
+                <span class="ai-feature-note">AI Feature</span>
+                <Button
+                  :label="dataStoryButtonLabel"
+                  icon="pi pi-sparkles"
+                  class="p-button-sm p-button-outlined"
+                  :loading="dataStore.dataStoryLoading"
+                  @click="dataStore.generateDataStory()"
+                />
+              </div>
+            </div>
+            <div v-if="dataStore.dataStoryLoading" class="data-story-loading">
+              <ProgressSpinner style="width: 24px; height: 24px" />
+              <span>Generating narrative...</span>
+            </div>
+            <div v-else-if="dataStore.dataStoryText" class="data-story-text">
+              {{ dataStore.dataStoryText }}
+            </div>
+            <p v-else class="data-story-hint">
+              Click "Generate Data Story" to create an LLM-powered narrative
+              describing this dataset's scientific context and characteristics.
+            </p>
           </div>
 
         </div>
@@ -1286,6 +1348,10 @@ const isTabular = computed(() => {
   if (!fi) return false;
   return fi.x_axis?.labels != null && fi.x_axis.labels.length > 0;
 });
+
+const dataStoryButtonLabel = computed(() =>
+  dataStore.dataStoryText ? "Regenerate Data Story" : "Generate Data Story"
+);
 
 const hasSpectra = computed(() => {
   const fi = dataStore.fileInfo;
@@ -2003,6 +2069,66 @@ function formatDate(dateStr: string): string {
 
 .meta-dropdown :deep(.p-dropdown-trigger) {
   width: 1.8rem;
+}
+
+/* ---- Data Story section ---- */
+.data-story-panel {
+  margin-top: 16px;
+  padding: 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.data-story-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.data-story-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.data-story-header .panel-title {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-feature-note {
+  font-size: 0.75rem;
+  color: #8b5cf6;
+  font-weight: 500;
+  background: #ede9fe;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.data-story-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.data-story-text {
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: #334155;
+  white-space: pre-wrap;
+}
+
+.data-story-hint {
+  color: #94a3b8;
+  font-size: 0.85rem;
+  font-style: italic;
+  margin: 0;
 }
 
 /* ---- Reference catalog section ---- */

@@ -571,6 +571,34 @@ async def handle_sherpa_write_report(
         await ws.send_json({"type": "sherpa_report_error", "detail": "Report generation failed."})
 
 
+async def handle_sherpa_data_story(
+    ws: WebSocket,
+    payload: dict,
+    user: Any,
+    rate_limiter: RateLimiter,
+) -> None:
+    try:
+        if not await _sherpa_proxy_preamble(ws, user):
+            return
+
+        from spectra_sherpa.app.services.sherpa_advisor import (
+            SubscriptionRequiredError,
+            get_sherpa_advisor,
+        )
+
+        advisor = get_sherpa_advisor()
+        data = payload.get("payload", {})
+        result = await advisor.generate_data_story(
+            dataset_info=data.get("dataset_info", {}),
+        )
+        await ws.send_json({"type": "sherpa_data_story_result", **result})
+    except SubscriptionRequiredError as exc:
+        await ws.send_json({"type": "sherpa_subscription_required", "detail": exc.detail})
+    except Exception as exc:
+        logger.exception("sherpa_data_story failed: %s", exc)
+        await ws.send_json({"type": "sherpa_data_story_error", "detail": "Data story generation failed."})
+
+
 async def handle_sherpa_chat_with_tools(
     ws: WebSocket,
     payload: dict,

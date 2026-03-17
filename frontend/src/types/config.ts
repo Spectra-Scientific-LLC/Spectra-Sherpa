@@ -28,6 +28,7 @@ export interface AppFeatures {
   sherpaCodeGen?: boolean
   sherpaWriteReport?: boolean
   sherpaAgenticTools?: boolean
+  sherpaDataStory?: boolean
   sherpaFullContext?: boolean
 }
 
