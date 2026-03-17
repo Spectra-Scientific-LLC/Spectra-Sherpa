@@ -338,125 +338,6 @@ def _is_inspection_worthy(node_type: str) -> bool:
     )
 
 
-def _extract_node_id_from_marker(stripped: str) -> str | None:
-    """Extract node_id from a ``# --- Label (node_id) ---`` comment."""
-    if "(" in stripped and ")" in stripped:
-        start = stripped.index("(") + 1
-        end = stripped.index(")")
-        return stripped[start:end].strip()
-    if "Source:" in stripped:
-        parts = stripped.split("Source:")
-        if len(parts) > 1:
-            return parts[1].strip().split()[0].strip()
-    return None
-
-
-def _extract_node_blocks(
-    func_lines: list[str],
-    has_step_wrappers: bool,
-) -> tuple[list[tuple[str, list[str]]], int]:
-    """Split ``run_workflow()`` body into per-node ``(node_id, lines)`` blocks.
-
-    Handles two formats:
-
-    * **Wrapped** (new): each node lives inside ``def _step_X(): ...``
-      — split on ``def _step_`` boundaries, de-indent 8 spaces.
-    * **Legacy**: nodes delimited by ``# --- `` comment markers
-      — split on markers, de-indent 4 spaces.
-
-    Returns ``(blocks, deindent_spaces)``.
-    """
-    # --- collect body lines, skipping run_workflow boilerplate ----
-    body_lines: list[str] = []
-    past_header = False
-
-    if has_step_wrappers:
-        trigger = "def _step_"
-    else:
-        trigger = None  # fall through to legacy markers
-
-    for line in func_lines:
-        stripped = line.strip()
-        if not past_header:
-            if trigger and stripped.startswith(trigger):
-                past_header = True
-                body_lines.append(line)
-            elif not trigger and (stripped.startswith("# --- ") or stripped.startswith("# ╔")):
-                past_header = True
-                body_lines.append(line)
-            continue
-        body_lines.append(line)
-
-    # Remove trailing "return results" / blanks
-    while body_lines and body_lines[-1].strip() in ("return results", ""):
-        body_lines.pop()
-
-    # --- split into blocks ----------------------------------------
-    node_blocks: list[tuple[str, list[str]]] = []
-    current_block: list[str] = []
-    current_node_id: str | None = None
-
-    if has_step_wrappers:
-        # Split on ``def _step_`` boundaries
-        for line in body_lines:
-            stripped = line.strip()
-            if stripped.startswith("def _step_"):
-                if current_block:
-                    node_blocks.append((current_node_id or "unknown", current_block))
-                current_block = [line]
-                current_node_id = None
-            else:
-                if current_node_id is None and (stripped.startswith("# --- ") or stripped.startswith("# ╔")):
-                    current_node_id = _extract_node_id_from_marker(stripped)
-                current_block.append(line)
-    else:
-        # Legacy: split on ``# --- `` or ``# ╔`` markers
-        for line in body_lines:
-            stripped = line.strip()
-            if stripped.startswith("# --- ") or stripped.startswith("# ╔"):
-                if current_block:
-                    node_blocks.append((current_node_id or "unknown", current_block))
-                current_block = [line]
-                current_node_id = _extract_node_id_from_marker(stripped)
-            else:
-                current_block.append(line)
-
-    if current_block:
-        node_blocks.append((current_node_id or "unknown", current_block))
-
-    deindent = 8 if has_step_wrappers else 4
-    return node_blocks, deindent
-
-
-def _deindent_block(
-    block_lines: list[str],
-    n_spaces: int,
-    *,
-    strip_wrappers: bool = False,
-) -> list[str]:
-    """De-indent *block_lines* by *n_spaces* spaces.
-
-    When *strip_wrappers* is True, ``def _step_…():`` and ``_step_…()``
-    call lines are dropped so notebook cells contain only the node logic.
-    """
-    prefix = " " * n_spaces
-    out: list[str] = []
-    for line in block_lines:
-        stripped = line.strip()
-        if strip_wrappers:
-            if stripped.startswith("def _step_") and stripped.endswith(":"):
-                continue
-            if stripped.startswith("_step_") and stripped.endswith("()"):
-                continue
-        if line.startswith(prefix):
-            out.append(line[n_spaces:])
-        elif line.startswith("    "):
-            out.append(line[4:])
-        else:
-            out.append(line)
-    return out
-
-
 def generate_notebook(
     workflow: Workflow,
     export_context: "WorkflowExportContext | None" = None,
@@ -544,7 +425,7 @@ def generate_notebook(
     if sections["imports"]:
         cells.append(_make_cell("code", sections["imports"]))
 
-    # ── Cell 4: Results dict + DATA_DIR ──
+    # ── Cell 4: Results dict ──
     cells.append(
         _make_cell(
             "code",
@@ -579,24 +460,22 @@ def generate_notebook(
         ]
         cells.append(_make_cell("markdown", md))
 
-        # Code cell — generate directly from the DAG so notebook structure
-        # does not depend on comment-marker formatting in Python export.
+        # Code cell — generate directly from the DAG
         node = node_map[nid]
         block_lines = _generate_node_python_lines(
             nid,
             node,
             edges,
             dict_output_nodes,
-            indent="    ",
+            indent="",
             use_scp=HAS_SCP,
             export_context=export_context,
         )
-        code_lines = _deindent_block(block_lines, 4)
         # Strip trailing blank lines
-        while code_lines and code_lines[-1].strip() == "":
-            code_lines.pop()
-        if code_lines:
-            cells.append(_make_cell("code", code_lines))
+        while block_lines and block_lines[-1].strip() == "":
+            block_lines.pop()
+        if block_lines:
+            cells.append(_make_cell("code", block_lines))
 
         # Inspection cell for key node types
         if _is_inspection_worthy(node_type) and nid in node_type_map:
@@ -682,64 +561,15 @@ def generate_notebook(
         )
     )
 
-    # Build the main/export block
-    if sections["main"]:
-        main_lines = []
-        for line in sections["main"]:
-            if line.startswith("if __name__"):
-                continue
-            if line.startswith("    "):
-                main_lines.append(line[4:])
-            else:
-                main_lines.append(line)
-
-        # Remove "results = run_workflow()" and export calls since the notebook
-        # has already executed the steps incrementally and exposes a single
-        # dedicated export cell below.
-        filtered = []
-        for line in main_lines:
-            if "run_workflow()" in line:
-                continue
-            if "export_artifacts(" in line:
-                continue
-            filtered.append(line)
-
-        # Strip leading/trailing blanks
-        while filtered and filtered[0].strip() == "":
-            filtered.pop(0)
-        while filtered and filtered[-1].strip() == "":
-            filtered.pop()
-
-        if filtered:
-            cells.append(_make_cell("code", filtered))
-
-    # Also include the export_artifacts function and call
-    # Extract it from the generated code
-    export_func_lines = []
-    in_export_func = False
-    for line in python_code.split("\n"):
-        if line.startswith("def export_artifacts("):
-            in_export_func = True
-        if in_export_func:
-            if line.startswith("def export_artifacts(") or line.startswith("    "):
-                export_func_lines.append(line)
-            elif line.strip() == "" and export_func_lines:
-                export_func_lines.append(line)
-            else:
-                if export_func_lines and not line.startswith("def ") and line.strip() == "":
-                    continue
-                if line.startswith("if __name__") or line.startswith("def "):
-                    break
-
-    # Strip trailing blanks
-    while export_func_lines and export_func_lines[-1].strip() == "":
-        export_func_lines.pop()
-
-    if export_func_lines:
-        export_func_lines.append("")
-        export_func_lines.append("# Run export")
-        export_func_lines.append("export_artifacts(results)")
-        cells.append(_make_cell("code", export_func_lines))
+    wf_name_safe = workflow.name.replace(" ", "_").replace("/", "_")
+    cells.append(
+        _make_cell(
+            "code",
+            [
+                f"export_artifacts(results, {wf_name_safe!r})",
+            ],
+        )
+    )
 
     return {
         "nbformat": 4,

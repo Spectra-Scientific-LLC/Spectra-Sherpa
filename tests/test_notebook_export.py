@@ -240,7 +240,7 @@ class TestGenerateNotebook:
 
         nb = generate_notebook(_make_mock_workflow())
         all_code = "\n".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
-        assert all_code.count("export_artifacts(results)") == 1
+        assert all_code.count("export_artifacts(results") == 1
 
     def test_no_if_name_main(self, mock_generate):
         """Notebook cells should not contain `if __name__` guards."""

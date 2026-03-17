@@ -1170,6 +1170,63 @@ class SherpaDataset:
 
         return ds
 
+    def with_data(self, new_data: Any) -> SherpaDataset:
+        """Create a new SherpaDataset with replaced data, preserving all metadata.
+
+        Copies feature_axis, sample_axis, target, target_context, domain,
+        provenance, quality, and extra metadata.  Feature axis is preserved
+        only when the feature count matches; target and sample axis are
+        preserved only when the sample count matches.
+
+        Example::
+
+            normalized = spectra.with_data((data - mean) / std)
+        """
+        arr = np.asarray(new_data, dtype=np.float64)
+        if arr.ndim == 1:
+            arr = arr.reshape(1, -1)
+
+        same_samples = arr.shape[0] == self._X.shape[0]
+        same_features = arr.shape[-1] == self._X.shape[-1]
+
+        feature_ax = self.feature_axis if same_features else None
+        sample_ax = self.sample_axis if same_samples else None
+        target = self._target.copy() if (self._target is not None and same_samples) else None
+
+        axes_copy: dict[int, AxisInfo] = {}
+        for dim, ax in self._axes.items():
+            if dim == self._SPECTRAL_DIM or dim == self._SAMPLE_DIM:
+                continue
+            # Inner axes: preserve if dimension size matches
+            normalized_dim = dim if dim >= 0 else arr.ndim + dim
+            if 0 < normalized_dim < arr.ndim and arr.shape[normalized_dim] == self._X.shape[normalized_dim]:
+                axes_copy[dim] = ax.copy()
+        inner = axes_copy or None
+
+        ds = SherpaDataset(
+            X=arr,
+            feature_axis=feature_ax,
+            sample_axis=sample_ax,
+            axes=inner,
+            target=target,
+            target_context=self._target_context.model_copy(deep=True),
+            domain=self._domain.model_copy(deep=True),
+            provenance=self._provenance.copy(),
+            quality=self._quality.model_copy(deep=True),
+            backend=self.backend,
+            title=self.title,
+            units=self.units,
+            extra=copy.deepcopy(self._extra),
+            is_time_series=self.is_time_series,
+        )
+
+        # Preserve non-SampleAxis at dim 0 if applicable
+        dim0_ax = self._axes.get(self._SAMPLE_DIM)
+        if dim0_ax is not None and not isinstance(dim0_ax, SampleAxis) and same_samples:
+            ds._axes[self._SAMPLE_DIM] = dim0_ax.copy()
+
+        return ds
+
     # ── Slicing ────────────────────────────────────────────────────
 
     def __getitem__(self, key: Any) -> SherpaDataset:

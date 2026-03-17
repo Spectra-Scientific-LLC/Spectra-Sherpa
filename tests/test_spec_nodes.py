@@ -630,14 +630,12 @@ class TestExportHelpers:
 
     def test_wrap_result_lines_scp(self):
         lines = wrap_result_lines("n1", "_data", "inp", "    ", use_scp=True)
-        assert any("SherpaDataset" in l for l in lines)
-        assert any("target_context" in l for l in lines)
+        assert any("with_data" in l for l in lines)
         assert any("results['n1']" in l for l in lines)
 
     def test_wrap_result_lines_numpy(self):
         lines = wrap_result_lines("n1", "_data", "inp", "    ", use_scp=False)
-        # use_scp=False no longer produces _Result — always SherpaDataset
-        assert any("SherpaDataset" in l for l in lines)
+        assert any("with_data" in l for l in lines)
         assert any("results['n1']" in l for l in lines)
 
     def test_format_kwargs_simple(self):
@@ -719,8 +717,8 @@ class TestTransformAutoExport:
         assert "np.array(results['src'].data" in code
         # Expression with substituted param
         assert "_result = np.maximum(_data, 0.5)" in code
-        # SCP export keeps SherpaDataset semantics so embedded target metadata survives
-        assert "SherpaDataset" in code
+        # SCP export uses with_data() to preserve embedded target metadata
+        assert "with_data" in code
 
     def test_numpy_expr_generates_python_numpy(self):
         node = ClipFloorAutoExportNode("ae_3", {"floor": 0.5})
@@ -729,8 +727,8 @@ class TestTransformAutoExport:
             use_scp=False,
         )
         code = "\n".join(lines)
-        # Both modes now use SherpaDataset (no _Result fallback)
-        assert "SherpaDataset" in code
+        # Both modes now use with_data() (no _Result fallback)
+        assert "with_data" in code
         assert "scp.NDDataset" not in code
 
     def test_numpy_expr_params_substituted(self):
