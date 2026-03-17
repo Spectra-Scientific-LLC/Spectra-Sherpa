@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import logging
-
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,15 +12,12 @@ from spectra_sherpa.app.schemas.llm import (
     LLMChatRequest,
     LLMChatResponse,
     LLMConversation,
-    LLMDataStoryRequest,
     LLMMessage,
-    LLMTextResponse,
 )
 from spectra_sherpa.app.services.llm import LLMService, conversation_store
 from spectra_sherpa.app.services.rate_limiter import RateLimiter
 
 router = APIRouter(prefix="/llm")
-logger = logging.getLogger(__name__)
 
 # Per-user rate limiting for LLM requests
 # Configurable via MAX_LLM_REQUESTS_PER_HOUR environment variable (default: 100)
@@ -197,22 +192,3 @@ async def delete_conversation(
     removed = conversation_store.delete(conversation_id, user_id=user_id)
     if not removed:
         raise HTTPException(status_code=404, detail="Conversation not found")
-
-
-@router.post("/data-story", response_model=LLMTextResponse)
-async def generate_data_story(
-    payload: LLMDataStoryRequest,
-    session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_user),
-) -> LLMTextResponse:
-    """Generate a narrative 'data story' for a reference dataset."""
-    _check_llm_rate_limit(current_user)
-    service = LLMService(session, user=current_user)
-    try:
-        response = await service.write_data_story(dataset_info=payload.dataset_info)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        logger.exception("data story generation failed for user=%s", current_user.id)
-        raise HTTPException(status_code=502, detail=f"Data story generation failed: {exc}") from exc
-    return LLMTextResponse(response=response)

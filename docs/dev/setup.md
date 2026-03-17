@@ -32,6 +32,8 @@ This guide is for contributors who want to modify the SpectraSherpa codebase.
     poetry run uvicorn spectra_sherpa.app.main:create_app --factory --reload --port 8000
     ```
 
+    In all modes (`local`, `hybrid`, `enterprise`), the frontend depends on a healthy config response from the backend. If config loading fails, the UI now fails closed instead of pretending the app is in local mode.
+
 ## Frontend Setup (Vue 3 + TypeScript)
 
 1.  Navigate to the frontend directory:
@@ -93,7 +95,10 @@ Copy `.env.example` to `.env` for local configuration. The defaults work with ze
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `APP_MODE` | `local` | `local`, `hybrid`, or `enterprise` |
+| `DATA_DIR` | `./data` in source checkout, `~/.spectra_sherpa` when installed | App data root for experiments, exports, manifests, and prepared-data override sidecars |
 | `DATABASE_URL` | `sqlite:///./spectra_sherpa.db` | Database connection string |
 | `DEEPSEEK_API_KEY` | (none) | LLM API key (or configure in Settings UI) |
+
+Experiment-backed files and materialized example/template files are resolved against the active `DATA_DIR` at runtime, not at module import time. This matters when switching between local, hybrid, enterprise, test, or packaged deployments.
 
 See `.env.example` for all available settings including hybrid/enterprise options.

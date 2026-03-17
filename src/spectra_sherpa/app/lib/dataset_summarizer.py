@@ -133,13 +133,13 @@ class DatasetSummarizer:
 
     def to_mcp_resource(self, dataset: SherpaDataset) -> dict[str, Any]:
         """MCP resource representation: manifest + preview + provenance."""
-        manifest = dataset.manifest.model_dump()
+        manifest = dataset.manifest.model_dump(mode="json")
         preview = self._preview(dataset, n_rows=5)
         return {
             "manifest": manifest,
             "preview": preview,
             "provenance": dataset.provenance.to_list(),
-            "state": dataset.state.model_dump(),
+            "state": dataset.state.model_dump(mode="json"),
         }
 
     # ── Tier Builders ─────────────────────────────────────────────

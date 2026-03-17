@@ -303,83 +303,15 @@
             </div>
           </template>
 
-          <!-- SCALE node -->
-          <template v-else-if="selectedNodeType === 'preprocess.scale'">
-            <div class="field">
-              <label>Range</label>
-              <div class="range-inputs">
-                <InputNumber
-                  v-model="localParams.range[0]"
-                  placeholder="Min"
-                  @update:model-value="emitParams"
-                />
-                <span>to</span>
-                <InputNumber
-                  v-model="localParams.range[1]"
-                  placeholder="Max"
-                  @update:model-value="emitParams"
-                />
-              </div>
-            </div>
-          </template>
+          <!-- SCALE node: uses metadata-driven rendering (generic) -->
 
-          <!-- BASELINE node -->
-          <template v-else-if="selectedNodeType === 'baseline.penalized_ls'">
-            <div class="field" :class="{ 'field-error': getParamError('lam') }">
-              <label class="param-label-with-info">
-                Lambda (λ): {{ localParams.lam?.toLocaleString() }}
-                <i
-                  class="pi pi-info-circle param-info-icon"
-                  v-tooltip.right="{
-                    value: 'Smoothness parameter for Asymmetric Least Squares baseline. Larger values create smoother baselines. Typical range: 10⁴-10⁷.',
-                    showDelay: 300,
-                    hideDelay: 100,
-                    class: 'scientific-tooltip'
-                  }"
-                ></i>
-              </label>
-              <Slider
-                v-model="localParams.lam"
-                :min="1000"
-                :max="1000000"
-                :step="1000"
-                @change="emitParams"
-              />
-              <small v-if="getParamError('lam')" class="param-error">
-                {{ getParamError('lam') }}
-              </small>
-            </div>
-            <div class="field" :class="{ 'field-error': getParamError('p') }">
-              <label class="param-label-with-info">
-                Asymmetry (p): {{ localParams.p }}
-                <i
-                  class="pi pi-info-circle param-info-icon"
-                  v-tooltip.right="{
-                    value: 'Asymmetry parameter controlling baseline curvature. Smaller values fit baseline closer to lower envelope. Typical: 0.001-0.01.',
-                    showDelay: 300,
-                    hideDelay: 100,
-                    class: 'scientific-tooltip'
-                  }"
-                ></i>
-              </label>
-              <Slider
-                v-model="localParams.p"
-                :min="0.001"
-                :max="0.1"
-                :step="0.001"
-                @change="emitParams"
-              />
-              <small v-if="getParamError('p')" class="param-error">
-                {{ getParamError('p') }}
-              </small>
-            </div>
-          </template>
+          <!-- BASELINE node: uses metadata-driven rendering (generic) -->
 
           <!-- SMOOTH node -->
           <template v-else-if="selectedNodeType === 'preprocess.smooth'">
-            <div class="field" :class="{ 'field-error': getParamError('window') }">
+            <div class="field" :class="{ 'field-error': getParamError('size') }">
               <label class="param-label-with-info">
-                Window Size: {{ localParams.window }}
+                Window Size: {{ localParams.size }}
                 <i
                   class="pi pi-info-circle param-info-icon"
                   v-tooltip.right="{
@@ -391,19 +323,19 @@
                 ></i>
               </label>
               <Slider
-                v-model="localParams.window"
-                :min="5"
-                :max="51"
+                v-model="localParams.size"
+                :min="3"
+                :max="21"
                 :step="2"
                 @change="emitParams"
               />
-              <small v-if="getParamError('window')" class="param-error">
-                {{ getParamError('window') }}
+              <small v-if="getParamError('size')" class="param-error">
+                {{ getParamError('size') }}
               </small>
             </div>
-            <div class="field" :class="{ 'field-error': getParamError('poly') }">
+            <div class="field" :class="{ 'field-error': getParamError('order') }">
               <label class="param-label-with-info">
-                Polynomial Order: {{ localParams.poly }}
+                Polynomial Order: {{ localParams.order }}
                 <i
                   class="pi pi-info-circle param-info-icon"
                   v-tooltip.right="{
@@ -415,14 +347,14 @@
                 ></i>
               </label>
               <Slider
-                v-model="localParams.poly"
+                v-model="localParams.order"
                 :min="1"
-                :max="5"
+                :max="6"
                 :step="1"
                 @change="emitParams"
               />
-              <small v-if="getParamError('poly')" class="param-error">
-                {{ getParamError('poly') }}
+              <small v-if="getParamError('order')" class="param-error">
+                {{ getParamError('order') }}
               </small>
             </div>
           </template>
@@ -434,7 +366,7 @@
             <div class="field">
               <label>X-Axis</label>
               <Dropdown
-                v-model="localParams.xAxis"
+                v-model="localParams.x_axis"
                 :options="axisOptions"
                 optionLabel="label"
                 optionValue="value"
@@ -444,7 +376,7 @@
             <div class="field">
               <label>Y-Axis</label>
               <Dropdown
-                v-model="localParams.yAxis"
+                v-model="localParams.y_axis"
                 :options="axisOptions"
                 optionLabel="label"
                 optionValue="value"
@@ -2417,8 +2349,8 @@ const _plotPoints = computed(() => {
   if (!props.nodeOutput?.data) return [];
 
   const data = props.nodeOutput.data.filter((row): row is unknown[] => Array.isArray(row));
-  const xIdx = localParams.value.xAxis ?? 0;
-  const yIdx = localParams.value.yAxis ?? 1;
+  const xIdx = localParams.value.x_axis ?? 0;
+  const yIdx = localParams.value.y_axis ?? 1;
 
   const xValues = data.map((row) => row[xIdx]).filter((v): v is number => typeof v === 'number');
   const yValues = data.map((row) => row[yIdx]).filter((v): v is number => typeof v === 'number');
@@ -2456,8 +2388,8 @@ const _plotPointsFull = computed(() => {
   if (!props.nodeOutput?.data) return [];
 
   const data = props.nodeOutput.data.filter((row): row is unknown[] => Array.isArray(row));
-  const xIdx = localParams.value.xAxis ?? 0;
-  const yIdx = localParams.value.yAxis ?? 1;
+  const xIdx = localParams.value.x_axis ?? 0;
+  const yIdx = localParams.value.y_axis ?? 1;
 
   const xValues = data.map((row) => row[xIdx]).filter((v): v is number => typeof v === 'number');
   const yValues = data.map((row) => row[yIdx]).filter((v): v is number => typeof v === 'number');

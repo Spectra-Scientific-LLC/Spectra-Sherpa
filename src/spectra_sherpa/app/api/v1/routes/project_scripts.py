@@ -24,6 +24,7 @@ from spectra_sherpa.app.schemas.project_scripts import (
     ProjectScriptUpdate,
 )
 from spectra_sherpa.app.services.python_export import generate_python_code
+from spectra_sherpa.app.services.workflow_export_context import build_workflow_export_context
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +137,8 @@ async def generate_script(
 
     # Generate Python code
     try:
-        code = generate_python_code(workflow)
+        export_context = await build_workflow_export_context(workflow, session)
+        code = generate_python_code(workflow, export_context=export_context)
     except Exception as exc:
         raise HTTPException(
             status_code=422,

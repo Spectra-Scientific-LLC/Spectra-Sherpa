@@ -767,6 +767,187 @@ async def test_instantiate_example_mode_honors_selected_example_dataset(
 
 
 @pytest.mark.asyncio
+async def test_instantiate_example_mode_oes_workflow_exports_python(
+    auth_client: AsyncClient,
+    test_session: AsyncSession,
+    test_user: User,
+):
+    from spectra_sherpa.app.services.experiments import experiment_dir
+    from spectra_sherpa.app.services.prepared_data import save_prepared_data_overrides
+
+    template = WorkflowTemplate(
+        slug="oes_export_template",
+        name="OES Process Monitoring",
+        description="Bundled OES example data",
+        category="exploratory",
+        template_data={
+            "nodes": [
+                {
+                    "node_id": "data_1",
+                    "node_type": "data.source",
+                    "label": "Load OES Data",
+                    "parameters": {"source": "eigenvector", "eigenvector_dataset": "metal_etch_oes"},
+                    "position_x": 120,
+                    "position_y": 180,
+                },
+                {
+                    "node_id": "preprocess_1",
+                    "node_type": "preprocess.normalize",
+                    "label": "SNV Normalize",
+                    "parameters": {"method": "snv"},
+                    "position_x": 360,
+                    "position_y": 180,
+                },
+                {
+                    "node_id": "model_1",
+                    "node_type": "model.pca",
+                    "label": "PCA",
+                    "parameters": {"n_components": 3},
+                    "position_x": 600,
+                    "position_y": 180,
+                },
+                {
+                    "node_id": "stats_1",
+                    "node_type": "stats.summary",
+                    "label": "Monitoring Summary",
+                    "parameters": {},
+                    "position_x": 840,
+                    "position_y": 120,
+                },
+                {
+                    "node_id": "viz_1",
+                    "node_type": "output.plot",
+                    "label": "OES Scores Plot",
+                    "parameters": {"plot_type": "spectra"},
+                    "position_x": 840,
+                    "position_y": 240,
+                },
+            ],
+            "edges": [
+                {"from_node_id": "data_1", "to_node_id": "preprocess_1"},
+                {"from_node_id": "preprocess_1", "to_node_id": "model_1"},
+                {"from_node_id": "model_1", "to_node_id": "stats_1"},
+                {"from_node_id": "model_1", "to_node_id": "viz_1", "from_output": "scores"},
+            ],
+            "canvas_state": {"zoom": 1.0, "pan_x": 0, "pan_y": 0},
+            "data_roles": {
+                "X_spectra": {
+                    "role_type": "X_spectra",
+                    "node_binding": "data_1",
+                    "required": True,
+                    "binding_mode": "embedded",
+                    "accepted_techniques": ["OES", "UV-Vis"],
+                }
+            },
+            "certified_datasets": [
+                {"source": "eigenvector", "name": "metal_etch_oes"},
+            ],
+            "status": "ready",
+        },
+        is_active=True,
+    )
+    project = Project(user_id=test_user.id, name="OES Export Project", description="")
+    test_session.add_all([template, project])
+    await test_session.commit()
+    await test_session.refresh(template)
+    await test_session.refresh(project)
+
+    created_experiment = Experiment(
+        id=1101,
+        user_id=test_user.id,
+        project_id=project.id,
+        name="Example - OES Process Monitoring",
+        description="Bundled OES example",
+        metadata_path="{}",
+    )
+    imported_file = ExperimentFile(
+        id=1102,
+        experiment_id=1101,
+        file_path="raw/metal_etch_oes.csv",
+        file_type="csv",
+        stage="raw",
+        file_size_bytes=1024,
+    )
+
+    async def mock_create_experiment(**kwargs):
+        test_session.add(created_experiment)
+        await test_session.flush()
+        return created_experiment
+
+    async def mock_import_reference(session, exp_id, source, dataset_name):
+        test_session.add(imported_file)
+        await test_session.flush()
+        return [imported_file]
+
+    exp_dir = experiment_dir(created_experiment.id)
+    raw_file = exp_dir / imported_file.file_path
+    raw_file.parent.mkdir(parents=True, exist_ok=True)
+    raw_file.write_text(
+        "sample,200,201,202,etch_rate\nrun_1,1.0,1.1,1.2,0.4\nrun_2,1.3,1.4,1.5,0.6\n",
+        encoding="utf-8",
+    )
+    save_prepared_data_overrides(
+        {
+            "x_title": "Time",
+            "x_units": "ms",
+            "y_title": "Intensity",
+            "is_time_series": True,
+        },
+        file_path=f"experiments/exp_{created_experiment.id:03d}/{imported_file.file_path}",
+    )
+
+    with (
+        patch(
+            "spectra_sherpa.app.api.v1.routes.workflow_templates._create_example_experiment",
+            new=AsyncMock(side_effect=mock_create_experiment),
+        ),
+        patch(
+            "spectra_sherpa.app.api.v1.routes.workflow_templates.import_reference_dataset",
+            new=AsyncMock(side_effect=mock_import_reference),
+        ),
+    ):
+        instantiate_response = await auth_client.post(
+            f"/api/v1/workflow-templates/{template.id}/instantiate",
+            json={
+                "workflow_name": "OES Export Workflow",
+                "project_id": project.id,
+                "launch_mode": "example",
+            },
+        )
+
+    assert instantiate_response.status_code == 201
+    workflow_id = instantiate_response.json()["id"]
+
+    export_response = await auth_client.get(f"/api/v1/workflows/{workflow_id}/export/python")
+
+    assert export_response.status_code == 200
+    body = export_response.json()
+    assert body["workflow_id"] == workflow_id
+    assert "python_code" in body
+    assert "Generated workflow: OES Export Workflow" in body["python_code"]
+    assert "os.path.join(DATA_DIR, 'data_1/metal_etch_oes.csv')" in body["python_code"]
+    assert "_feature_axis_data_1.title = 'Time'" in body["python_code"]
+    assert "_feature_axis_data_1.units = 'ms'" in body["python_code"]
+    assert "_ds.is_time_series = True" in body["python_code"]
+
+    zip_response = await auth_client.get(f"/api/v1/workflows/{workflow_id}/export/download?format=zip")
+    assert zip_response.status_code == 200
+    import io
+    import json
+    import zipfile
+
+    with zipfile.ZipFile(io.BytesIO(zip_response.content)) as zf:
+        names = set(zf.namelist())
+        assert "oes_export_workflow/data/data_1/metal_etch_oes.csv" in names
+        assert "oes_export_workflow/prepared_data_manifest.json" in names
+        assert "oes_export_workflow/workflow_manifest.json" in names
+        manifest = json.loads(zf.read("oes_export_workflow/prepared_data_manifest.json"))
+        assert manifest["sources"][0]["overrides"]["x_title"] == "Time"
+        requirements = zf.read("oes_export_workflow/requirements.txt").decode("utf-8")
+        assert "plotly" in requirements
+
+
+@pytest.mark.asyncio
 async def test_instantiate_example_mode_rejects_uncertified_example_dataset(
     auth_client: AsyncClient,
     test_session: AsyncSession,

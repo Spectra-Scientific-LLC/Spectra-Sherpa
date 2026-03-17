@@ -62,6 +62,7 @@
           icon="pi pi-cog"
           class="p-button-text p-button-rounded p-button-sm project-settings-btn"
           aria-label="Project settings"
+          title="Edit project settings"
           @click="showEditProjectDialog"
         />
       </div>
@@ -102,12 +103,14 @@
         icon="pi pi-comments"
         class="p-button-text p-button-rounded"
         aria-label="Toggle chat panel"
+        :title="chatToggleTitle"
         @click="emit('toggle-chat')"
       />
       <Button
         icon="pi pi-bell"
         class="p-button-text p-button-rounded"
         aria-label="Notifications"
+        title="Open notifications"
         :badge="notificationStore.unreadCount > 0 ? String(notificationStore.unreadCount) : undefined"
         badgeClass="p-badge-danger"
         @click="notificationDrawerVisible = !notificationDrawerVisible"
@@ -124,6 +127,7 @@
         icon="pi pi-user"
         class="p-button-text p-button-rounded"
         aria-label="User menu"
+        title="Open user menu"
         @click="toggleUserMenu"
       />
       <Menu ref="userMenu" :model="userMenuItems" :popup="true" />
@@ -184,7 +188,7 @@ import ProjectDialog from "./ProjectDialog.vue";
 import ProjectDetailsDrawer from "./ProjectDetailsDrawer.vue";
 import NotificationCenterDrawer from "./NotificationCenterDrawer.vue";
 
-defineProps<{
+const props = defineProps<{
   navCollapsed: boolean;
   chatCollapsed: boolean;
   showChatToggle?: boolean;
@@ -253,6 +257,10 @@ const userMenuItems = computed(() => [
 const toggleUserMenu = (event: Event) => {
   userMenu.value.toggle(event);
 };
+
+const chatToggleTitle = computed(() =>
+  props.chatCollapsed ? "Open chat panel" : "Collapse chat panel"
+);
 
 // Status indicator computed properties (Traffic Lights)
 const backendStatus = computed(() => {

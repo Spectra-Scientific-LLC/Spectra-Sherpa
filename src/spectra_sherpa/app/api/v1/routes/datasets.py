@@ -171,7 +171,7 @@ async def dataset_manifest(
     current_user: User = Depends(get_current_user),
 ):
     ds = _resolve_handle_or_raise(dataset_id, current_user)
-    return ds.manifest.model_dump()
+    return ds.manifest.model_dump(mode="json")
 
 
 @router.get("/{dataset_id}/preview")
@@ -242,4 +242,4 @@ async def dataset_branch(
         raise HTTPException(status_code=403, detail="Dataset is not accessible for this user") from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"Dataset handle not found: {dataset_id}") from exc
-    return branched.manifest.model_dump()
+    return branched.manifest.model_dump(mode="json")

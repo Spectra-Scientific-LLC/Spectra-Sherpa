@@ -33,6 +33,7 @@ from spectra_sherpa.app.schemas.workflows import (
     WorkflowDetail,
     WorkflowExecuteRequest,
     WorkflowExecuteResponse,
+    WorkflowPythonExportResponse,
     WorkflowSummary,
     WorkflowUpdate,
     WorkflowValidationIssue,
@@ -46,8 +47,10 @@ from spectra_sherpa.app.services.dag import WorkflowEdge as DAGEdge
 from spectra_sherpa.app.services.dag import WorkflowNode as DAGNode
 from spectra_sherpa.app.services.dag.integrity import compute_workflow_hash
 from spectra_sherpa.app.services.export_store import save_jupyter_workflow_export, save_python_workflow_export
+from spectra_sherpa.app.services.notebook_export import generate_notebook
 from spectra_sherpa.app.services.python_export import generate_python_code
 from spectra_sherpa.app.services.serialization import serialize_result
+from spectra_sherpa.app.services.workflow_export_context import build_workflow_export_context
 
 logger = logging.getLogger(__name__)
 
@@ -1448,12 +1451,12 @@ async def get_type_registry(
     return type_registry.to_api_json()
 
 
-@router.get("/{workflow_id}/export/python")
+@router.get("/{workflow_id}/export/python", response_model=WorkflowPythonExportResponse)
 async def export_workflow_to_python(
     workflow_id: int,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-) -> dict[str, str]:
+) -> WorkflowPythonExportResponse:
     """Export a workflow as executable Python code for the authenticated user."""
     if not await check_export_allowed(current_user):
         raise HTTPException(status_code=403, detail="Export not permitted for this user")
@@ -1479,7 +1482,8 @@ async def export_workflow_to_python(
         raise HTTPException(status_code=404, detail="Workflow not found")
 
     try:
-        python_code = generate_python_code(workflow)
+        export_context = await build_workflow_export_context(workflow, session)
+        python_code = generate_python_code(workflow, export_context=export_context)
         saved_path = save_python_workflow_export(workflow.id, workflow.name, python_code)
         return {
             "workflow_id": workflow_id,
@@ -1526,9 +1530,8 @@ async def export_workflow_to_notebook(
         raise HTTPException(status_code=404, detail="Workflow not found")
 
     try:
-        from spectra_sherpa.app.services.notebook_export import generate_notebook
-
-        notebook = generate_notebook(workflow)
+        export_context = await build_workflow_export_context(workflow, session)
+        notebook = generate_notebook(workflow, export_context=export_context)
         saved_path = save_jupyter_workflow_export(workflow.id, workflow.name, notebook)
         safe_name = workflow.name.lower().replace(" ", "_")
         return {
@@ -1594,7 +1597,8 @@ async def download_workflow_export(
     safe_name = workflow.name.lower().replace(" ", "_")
 
     try:
-        python_code = generate_python_code(workflow)
+        export_context = await build_workflow_export_context(workflow, session)
+        python_code = generate_python_code(workflow, export_context=export_context)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -1607,10 +1611,8 @@ async def download_workflow_export(
         )
 
     elif format == "notebook":
-        from spectra_sherpa.app.services.notebook_export import generate_notebook
-
         try:
-            notebook = generate_notebook(workflow)
+            notebook = generate_notebook(workflow, export_context=export_context)
         except Exception:
             logger.exception("Failed to generate notebook for workflow %s", workflow_id)
             raise HTTPException(status_code=500, detail="Failed to generate notebook")
@@ -1624,13 +1626,47 @@ async def download_workflow_export(
         )
 
     elif format == "zip":
-        from spectra_sherpa.app.services.notebook_export import generate_notebook
-
         buf = BytesIO()
         try:
-            notebook = generate_notebook(workflow)
+            notebook = generate_notebook(workflow, export_context=export_context)
         except Exception:
             notebook = None
+
+        prepared_manifest = {
+            "sources": [
+                {
+                    "node_id": spec.node_id,
+                    "source": spec.source,
+                    "loader_mode": spec.loader_mode,
+                    "bundle_files": [bundle.bundle_relative_path for bundle in spec.bundle_files],
+                    "source_files": [bundle.source_relative_path for bundle in spec.bundle_files],
+                    "overrides": spec.overrides.to_sidecar_dict(),
+                }
+                for spec in export_context.source_specs.values()
+            ]
+        }
+        workflow_manifest = {
+            "workflow_id": workflow.id,
+            "workflow_name": workflow.name,
+            "description": workflow.description,
+            "nodes": [
+                {
+                    "node_id": node.node_id,
+                    "node_type": node.node_type,
+                    "parameters": node.parameters,
+                }
+                for node in workflow.nodes
+            ],
+            "edges": [
+                {
+                    "from_node_id": edge.from_node_id,
+                    "to_node_id": edge.to_node_id,
+                    "from_output": edge.from_output,
+                    "to_input": edge.to_input,
+                }
+                for edge in workflow.edges
+            ],
+        }
 
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             # Python script
@@ -1650,14 +1686,23 @@ async def download_workflow_export(
                 "numpy\n"
                 "scipy\n"
                 "scikit-learn\n"
-                "matplotlib\n"
+                "plotly\n"
             )
             zf.writestr(f"{safe_name}/requirements.txt", requirements)
 
-            # Data directory stub with README
+            for bundle in export_context.iter_bundle_files():
+                if bundle.absolute_path.exists():
+                    zf.write(bundle.absolute_path, f"{safe_name}/data/{bundle.bundle_relative_path}")
+
+            zf.writestr(f"{safe_name}/prepared_data_manifest.json", json.dumps(prepared_manifest, indent=2))
+            zf.writestr(f"{safe_name}/workflow_manifest.json", json.dumps(workflow_manifest, indent=2))
+
+            # Data directory README
             data_readme = (
                 "# Data Directory\n\n"
-                "Place your spectral data files here.\n\n"
+                "This folder contains the source files used by the exported workflow.\n\n"
+                "The generated Python script and notebook look here by default, or you can\n"
+                "set the `SHERPA_DATA_DIR` environment variable to point somewhere else.\n\n"
                 "Supported formats:\n"
                 "- CSV (.csv) — rows=samples, columns=wavelengths\n"
                 "- SpectroChemPy (.scp)\n"

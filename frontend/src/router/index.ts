@@ -78,7 +78,13 @@ router.beforeEach(async (to, from, next) => {
 
   // Ensure config is loaded (needed for mode check)
   if (!config.value) {
-    await loadConfig()
+    const loaded = await loadConfig()
+    if (!loaded) {
+      if (to.meta.public) {
+        return next()
+      }
+      return next('/login')
+    }
   }
 
   // Block registration route whenever backend doesn't support it.

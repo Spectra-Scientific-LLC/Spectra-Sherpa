@@ -5,9 +5,10 @@ from typing import AsyncGenerator
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.app.core.config import DATABASE_URL, settings
 
-_is_sqlite = settings.database_url.startswith("sqlite")
+_database_url = getattr(settings, "database_url", DATABASE_URL)
+_is_sqlite = _database_url.startswith("sqlite")
 
 # Build engine kwargs conditionally per database driver
 _engine_kwargs: dict = {"pool_pre_ping": True}
@@ -20,7 +21,7 @@ else:
     _engine_kwargs["pool_size"] = 10
     _engine_kwargs["max_overflow"] = 20
 
-engine = create_async_engine(settings.database_url, **_engine_kwargs)
+engine = create_async_engine(_database_url, **_engine_kwargs)
 
 
 if _is_sqlite:

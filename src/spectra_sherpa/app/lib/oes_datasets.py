@@ -12,6 +12,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from spectra_sherpa.app.lib.domain_flags import infer_is_spectra
+
 OES_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "oes"
 
 OES_CATALOG: dict[str, dict[str, Any]] = {
@@ -88,6 +90,7 @@ def get_oes_dataset_info(
         "source": "oes",
         "label": catalog["label"],
         "technique": catalog["technique"],
+        "is_spectra": infer_is_spectra(technique=catalog.get("technique"), x_units=catalog.get("x_units")),
         "description": catalog["description"],
         "x_title": catalog["x_title"],
         "x_units": catalog["x_units"],

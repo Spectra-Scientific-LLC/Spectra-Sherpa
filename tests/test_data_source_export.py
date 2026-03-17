@@ -482,3 +482,92 @@ def test_knn_export_emits_plots_port():
     code = "\n".join(node.generate_python({}, indent="    ", use_scp=True))
 
     assert "'plots': {}" in code
+
+
+@pytest.mark.asyncio
+async def test_source_execute_replays_prepared_data_overrides():
+    import spectra_sherpa.app.services.dag.nodes.data.source  # noqa: F401
+    from spectra_sherpa.app.services.prepared_data import load_prepared_data_overrides, save_prepared_data_overrides
+
+    save_prepared_data_overrides(
+        {
+            "x_title": "Time",
+            "x_units": "s",
+            "y_title": "Response",
+            "is_time_series": True,
+        },
+        source="sklearn",
+        name="iris",
+    )
+    try:
+        node = _create_source("sklearn", sklearn_dataset="iris")
+        result = await node.execute()
+        dataset = result["default"]
+
+        assert load_prepared_data_overrides(source="sklearn", name="iris").x_title == "Time"
+        assert dataset.feature_axis is not None
+        assert dataset.feature_axis.title == "Time"
+        assert dataset.feature_axis.units == "s"
+        assert dataset.domain.data_quantity == "Response"
+        assert dataset.is_time_series is True
+    finally:
+        from spectra_sherpa.app.services.prepared_data import sidecar_path
+
+        sidecar = sidecar_path(file_path=None, source="sklearn", name="iris")
+        sidecar.unlink(missing_ok=True)
+
+
+def test_generate_python_code_uses_bundled_files_and_explicit_overrides():
+    from pathlib import Path
+
+    from spectra_sherpa.app.services.prepared_data import PreparedDataOverrides
+    from spectra_sherpa.app.services.python_export import generate_python_code
+    from spectra_sherpa.app.services.workflow_export_context import (
+        BundledSourceFile,
+        SourceExportSpec,
+        WorkflowExportContext,
+    )
+
+    wf = _make_workflow(
+        "Bundled Export",
+        nodes=[
+            _wf_node(
+                "src",
+                "data.source",
+                {"source": "experiment", "experiment_id": 12, "file_id": 34, "stage": "raw"},
+            ),
+            _wf_node("pca", "model.pca", {"n_components": 2}),
+        ],
+        edges=[_wf_edge("src", "pca", from_output="default", to_input="default")],
+    )
+
+    context = WorkflowExportContext(
+        source_specs={
+            "src": SourceExportSpec(
+                node_id="src",
+                source="experiment",
+                loader_mode="single_file",
+                overrides=PreparedDataOverrides(
+                    x_title="Time",
+                    x_units="s",
+                    y_title="Response",
+                    is_time_series=True,
+                ),
+                bundle_files=(
+                    BundledSourceFile(
+                        absolute_path=Path("/tmp/example.csv"),
+                        source_relative_path="experiments/exp_012/raw/example.csv",
+                        bundle_relative_path="src/example.csv",
+                    ),
+                ),
+            )
+        }
+    )
+
+    code = generate_python_code(wf, export_context=context)
+
+    assert "os.path.join(DATA_DIR, 'src/example.csv')" in code
+    assert "_feature_axis_src.title = 'Time'" in code
+    assert "_feature_axis_src.units = 's'" in code
+    assert "_domain_src.data_quantity = 'Response'" in code
+    assert "_ds.is_time_series = True" in code

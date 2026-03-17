@@ -4,7 +4,7 @@ This reference lists the available processing nodes in the Workflow Builder, org
 
 Nodes marked with **[SCP]** require [SpectroChemPy](https://www.spectrochempy.fr/) (`pip install spectra-sherpa[scp]`). All other nodes run on NumPy/SciPy/scikit-learn.
 
-Nodes marked with **[Export]** support Python code export via the `/workflows/{id}/export/python` endpoint. The exported script reproduces the workflow as standalone Python code. Nodes without **[Export]** are either data I/O nodes (which become user-editable placeholders in the exported script), visualization/output nodes, or specialized algorithms not yet supported for export.
+Nodes marked with **[Export]** support Python code export via the `/workflows/{id}/export/python` endpoint. The exported script reproduces the workflow as standalone Python code. Nodes without **[Export]** are visualization/output nodes or specialized algorithms not yet supported for runnable export.
 
 **Consolidated nodes** use a `method` dropdown to select among multiple algorithms.
 
@@ -14,17 +14,20 @@ Nodes marked with **[Export]** support Python code export via the `/workflows/{i
 
 #### Data Source **[Export]**
 *   **Node Type**: `data.source`
-*   **Description**: Generic data loader for single files or synthetic data.
+*   **Description**: Generic data loader for bundled examples, uploaded experiment files, and direct file-backed sources.
 *   **Parameters**:
-    *   `source` (select): `spectrochempy`, `sklearn`, `eigenvector`, `file`.
+    *   `source` (select): `spectrochempy`, `sklearn`, `eigenvector`, `file`, `experiment`.
     *   `example_dataset` (select): `irdata`, `ramandata`, `nmrdata`.
     *   `sklearn_dataset` (select): `iris`, `wine`, `breast_cancer`, `digits`.
     *   `eigenvector_dataset` (select): Eigenvector Research benchmarks (`diesel_nir`, `corn_m5`, `nir_shootout_cal1`, etc.).
     *   `example_file` (text): Specific file within example dataset (e.g., `CO@Mo_Al2O3.SPG`).
+    *   `experiment_id` (number): Experiment to load when `source=experiment`.
+    *   `file_id` (number): Optional specific file within the experiment.
+    *   `stage` (select): Experiment stage such as `raw`.
     *   `file_path` (text): Absolute path (for file source).
     *   `transpose_on_load` (boolean): Swap rows/cols.
 *   **Outputs**: `default` (Dataset), `target` (target/property values if available).
-*   **Notes**: Export is supported for `sklearn`, `eigenvector`, and `spectrochempy` source types. The exported code constructs a `SherpaDataset` with typed axes and embedded target values, making it a practical reference for the SherpaDataset API. Sklearn datasets include class labels; Eigenvector datasets include reference properties (e.g., Moisture, Protein). Other source types (`file`, `experiment`) produce user-editable placeholders in exports.
+*   **Notes**: Export is supported for built-in reference datasets as well as `file` and `experiment` sources. For file-backed and experiment-backed workflows, the exported Python/notebook code loads from a relative `data/` directory by default and can be redirected with `SHERPA_DATA_DIR`. Data/Explore overrides such as x-axis name, x-axis units, data quantity, and time-series status are emitted as explicit assignments in the exported code so runnable exports stay aligned with the prepared dataset used in the GUI.
 
 #### Load Group **[SCP]**
 *   **Node Type**: `data.load_group`
@@ -515,4 +518,3 @@ These nodes act as entry and exit points for headless prediction pipelines (batc
     *   `output_format` (select, default: `json`): `json`, `csv`, `plain_text`.
     *   `key_value_separator` (text, default: `=`): Separator for plain_text mode.
     *   `end_of_message_tag` (text, default: `\n`): Termination string for plain_text mode.
-

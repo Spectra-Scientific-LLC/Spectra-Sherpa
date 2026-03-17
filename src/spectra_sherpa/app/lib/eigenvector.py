@@ -23,6 +23,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from spectra_sherpa.app.lib.domain_flags import infer_is_spectra
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -690,6 +692,7 @@ def get_dataset_info(
         "source": "eigenvector",
         "label": catalog["label"],
         "technique": catalog["technique"],
+        "is_spectra": infer_is_spectra(technique=catalog.get("technique"), x_units=catalog.get("x_units")),
         "description": catalog["description"],
         "x_title": catalog.get("x_title"),
         "x_units": catalog.get("x_units"),

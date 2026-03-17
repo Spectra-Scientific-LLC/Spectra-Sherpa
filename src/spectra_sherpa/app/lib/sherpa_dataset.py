@@ -42,6 +42,7 @@ from spectra_sherpa.app.lib.axes import (
     SpectralAxis,
     TimeAxis,
 )
+from spectra_sherpa.app.lib.domain_flags import infer_is_spectra
 
 # ---------------------------------------------------------------------------
 # Pydantic-compatible numpy array type for JSON schema generation
@@ -738,6 +739,23 @@ class SherpaDataset:
         # Branching
         self._branch: BranchInfo | None = None
 
+    # ── Pickle support ──────────────────────────────────────────────
+
+    @staticmethod
+    def _purge_scp_dicts(obj: Any) -> Any:
+        """Recursively replace SpectroChemPy ReadOnlyDict with plain dict."""
+        if isinstance(obj, dict):
+            return {k: SherpaDataset._purge_scp_dicts(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            converted = [SherpaDataset._purge_scp_dicts(v) for v in obj]
+            return type(obj)(converted)
+        return obj
+
+    def __getstate__(self) -> dict[str, Any]:
+        state = self.__dict__.copy()
+        state["_extra"] = self._purge_scp_dicts(state.get("_extra", {}))
+        return state
+
     # ── Core Properties ────────────────────────────────────────────
 
     @property
@@ -1386,26 +1404,34 @@ class SherpaDataset:
         if self._target is not None:
             result["target"] = self._target.tolist()
 
-        result["domain"] = self._domain.model_dump(exclude_none=True)
-        result["target_context"] = self._target_context.model_dump(exclude_none=True)
+        result["domain"] = self._domain.model_dump(mode="json", exclude_none=True)
+        result["target_context"] = self._target_context.model_dump(mode="json", exclude_none=True)
         result["provenance"] = self._provenance.to_list()
         result["quality"] = _json_safe(self._quality.model_dump(exclude_none=True))
-        result["state"] = self.state.model_dump()
+        result["state"] = self.state.model_dump(mode="json")
 
         if self._extra:
             result["extra"] = _json_safe(self._extra)
 
         if self._branch:
-            result["branch"] = self._branch.model_dump()
+            result["branch"] = self._branch.model_dump(mode="json")
 
         # Time-series flag
         result["is_time_series"] = self.is_time_series
 
         # Frontend compatibility: metadata block
+        feature_axis = self.get_feature_axis()
+        x_title = feature_axis.title if feature_axis is not None else None
+        x_units = feature_axis.units if feature_axis is not None else None
+        is_spectra = infer_is_spectra(
+            technique=self._domain.technique,
+            x_title=x_title,
+            x_units=x_units,
+        )
         result["metadata"] = {
             "processing_history": self._provenance.to_list(),
             "data_type": self._domain.technique or "generic",
-            "is_spectra": self._domain.technique not in (None, "generic"),
+            "is_spectra": is_spectra,
             "is_time_series": self.is_time_series,
         }
 

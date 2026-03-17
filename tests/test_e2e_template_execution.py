@@ -286,11 +286,11 @@ async def test_nmf_rejects_negative_data():
 
 
 def test_sklearn_datasets_have_non_spectroscopic_warning():
-    """sklearn catalog entries must carry is_spectroscopic=False and a warning (fix #10)."""
+    """sklearn catalog entries must carry is_spectra=False and a warning (fix #10)."""
     from spectra_sherpa.app.lib.sklearn_info import SKLEARN_CATALOG
 
     for name, entry in SKLEARN_CATALOG.items():
-        assert entry.get("is_spectroscopic") is False, f"sklearn dataset '{name}' missing is_spectroscopic=False"
+        assert entry.get("is_spectra") is False, f"sklearn dataset '{name}' missing is_spectra=False"
         assert entry.get("warning"), f"sklearn dataset '{name}' missing non-spectroscopic warning"
 
 

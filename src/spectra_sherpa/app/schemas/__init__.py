@@ -24,7 +24,6 @@ from .llm import (
     LLMChatResponse,
     LLMConversation,
     LLMMessage,
-    LLMTextResponse,
 )
 from .logs import LogEntry, LogResponse
 from .project_scripts import (
@@ -66,7 +65,6 @@ __all__ = [
     "LLMChatResponse",
     "LLMConversation",
     "LLMMessage",
-    "LLMTextResponse",
     "GenerateScriptRequest",
     "ProjectCreate",
     "ProjectDetail",

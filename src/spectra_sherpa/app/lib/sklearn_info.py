@@ -22,25 +22,25 @@ SKLEARN_CATALOG: dict[str, dict[str, Any]] = {
     "iris": {
         "label": "Iris — non-spectroscopic (3 species, 4 features, 150 samples)",
         "task_type": "classification",
-        "is_spectroscopic": False,
+        "is_spectra": False,
         "warning": _SKLEARN_NON_SPECTROSCOPIC_WARNING,
     },
     "wine": {
         "label": "Wine — non-spectroscopic (3 classes, 13 features, 178 samples)",
         "task_type": "classification",
-        "is_spectroscopic": False,
+        "is_spectra": False,
         "warning": _SKLEARN_NON_SPECTROSCOPIC_WARNING,
     },
     "breast_cancer": {
         "label": "Breast Cancer — non-spectroscopic (2 classes, 30 features, 569 samples)",
         "task_type": "classification",
-        "is_spectroscopic": False,
+        "is_spectra": False,
         "warning": _SKLEARN_NON_SPECTROSCOPIC_WARNING,
     },
     "digits": {
         "label": "Digits — non-spectroscopic (10 classes, 64 features, 1797 samples)",
         "task_type": "classification",
-        "is_spectroscopic": False,
+        "is_spectra": False,
         "warning": _SKLEARN_NON_SPECTROSCOPIC_WARNING,
     },
 }
@@ -69,7 +69,7 @@ def get_sklearn_dataset_info(name: str) -> dict[str, Any]:
         "source": "sklearn",
         "label": catalog["label"],
         "technique": "Non-spectroscopic (tabular)",
-        "is_spectroscopic": catalog.get("is_spectroscopic", False),
+        "is_spectra": catalog.get("is_spectra", False),
         "warning": catalog.get("warning"),
         "description": bunch.DESCR,
         "task_type": catalog["task_type"],
