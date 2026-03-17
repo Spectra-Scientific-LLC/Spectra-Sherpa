@@ -603,3 +603,47 @@ class TestConfigResponseContract:
 
         for key in safe:
             assert "_" not in key, f"Top-level key '{key}' contains underscore — use camelCase"
+
+
+# ===========================================================================
+# 13. Subscription overlay cache behavior
+# ===========================================================================
+
+
+class TestSubscriptionOverlay:
+    @pytest.mark.asyncio
+    async def test_subscription_overlay_failure_clears_stale_cache(self, monkeypatch):
+        from spectra_sherpa.app.api.v1.routes import config as config_routes
+        from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
+
+        api_key = "dk_test"
+        config_routes._subscription_overlay_cache[api_key] = {"features": {"sherpaDataStory": True}}
+
+        monkeypatch.setattr(spectrasherpa_config, "api_key", api_key)
+        monkeypatch.setattr(spectrasherpa_config, "api_base_url", "https://example.test")
+
+        class _Response:
+            status_code = 503
+
+            @staticmethod
+            def json():
+                return {"detail": "unavailable"}
+
+        class _AsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def get(self, *args, **kwargs):
+                return _Response()
+
+        monkeypatch.setattr(config_routes.httpx, "AsyncClient", _AsyncClient)
+
+        overlay = await config_routes._load_subscription_overlay()
+        assert overlay is None
+        assert api_key not in config_routes._subscription_overlay_cache

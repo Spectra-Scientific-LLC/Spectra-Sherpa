@@ -109,13 +109,15 @@ async def _load_subscription_overlay() -> dict | None:
             )
         if response.status_code != 200:
             logger.warning("Subscription config fetch returned %s", response.status_code)
-            return _subscription_overlay_cache.get(api_key)
+            _subscription_overlay_cache.pop(api_key, None)
+            return None
         payload = response.json()
         _subscription_overlay_cache[api_key] = payload
         return payload
     except Exception:
         logger.warning("Failed to fetch subscription config overlay", exc_info=True)
-        return _subscription_overlay_cache.get(api_key)
+        _subscription_overlay_cache.pop(api_key, None)
+        return None
 
 
 @router.get("")
