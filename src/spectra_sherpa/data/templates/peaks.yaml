@@ -96,10 +96,18 @@ template_data:
   - source: eigenvector
     name: corn_m5
   - source: eigenvector
+    name: corn_mp5
+  - source: eigenvector
+    name: corn_mp6
+  - source: eigenvector
     name: cgl_nir
   - source: eigenvector
     name: nir_shootout_cal1
   - source: eigenvector
+    name: nir_shootout_cal2
+  - source: eigenvector
     name: nir_shootout_test1
+  - source: eigenvector
+    name: nir_shootout_test2
   - source: eigenvector
     name: metal_etch_oes

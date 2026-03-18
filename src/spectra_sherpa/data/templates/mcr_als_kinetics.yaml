@@ -101,13 +101,27 @@ template_data:
   certified_datasets:
   - source: spectrochempy
     name: irdata
-  - source: eigenvector
-    name: nir_shootout_test1
+  - source: spectrochempy
+    name: ramandata
+  - source: spectrochempy
+    name: matlabdata/als2004dataset.MAT
   - source: eigenvector
     name: diesel_nir
   - source: eigenvector
     name: corn_m5
   - source: eigenvector
+    name: corn_mp5
+  - source: eigenvector
+    name: corn_mp6
+  - source: eigenvector
     name: cgl_nir
-  - source: spectrochempy
-    name: matlabdata/als2004dataset.MAT
+  - source: eigenvector
+    name: diesel_nir_mat
+  - source: eigenvector
+    name: nir_shootout_cal1
+  - source: eigenvector
+    name: nir_shootout_cal2
+  - source: eigenvector
+    name: nir_shootout_test1
+  - source: eigenvector
+    name: nir_shootout_test2

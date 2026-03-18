@@ -91,3 +91,10 @@ template_data:
       - FTIR
       - NIR
       - Raman
+  certified_datasets:
+  - source: eigenvector
+    name: corn_m5
+  - source: eigenvector
+    name: corn_mp5
+  - source: eigenvector
+    name: corn_mp6
