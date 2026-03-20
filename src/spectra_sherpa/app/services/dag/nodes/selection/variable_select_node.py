@@ -34,6 +34,7 @@ class VariableSelectNode(Node):
     Methods:
     - **interval**: Select contiguous wavenumber region(s).
     - **peak_window**: Detect peaks and select +-window around each.
+    - **apply_mask**: Reuse an externally supplied boolean mask.
     - **vip**: Variable Importance in Projection from a PLS model.
     - **coef_abs**: Absolute regression coefficients from a PLS model.
     - **selectivity_ratio**: Target-projection selectivity ratio from PLS.
@@ -52,6 +53,7 @@ class VariableSelectNode(Node):
                 options=[
                     {"label": "Spectral Interval", "value": "interval"},
                     {"label": "Peak Window", "value": "peak_window"},
+                    {"label": "Apply Existing Mask", "value": "apply_mask"},
                     {"label": "VIP (PLS)", "value": "vip"},
                     {"label": "Coefficient Magnitude", "value": "coef_abs"},
                     {"label": "Selectivity Ratio", "value": "selectivity_ratio"},
@@ -153,6 +155,13 @@ class VariableSelectNode(Node):
                 label="PLS Model (optional)",
                 description="Trained PLS/PLS-DA model dict for VIP, coef, or selectivity ratio methods",
             ),
+            PortMetadata(
+                name="mask",
+                type_ref="spectrasherpa://types/Array1D/1.0",
+                required=False,
+                label="Existing Mask",
+                description="Boolean feature mask to reuse when method='apply_mask'",
+            ),
         ],
         output_ports=[
             PortMetadata(
@@ -192,6 +201,7 @@ class VariableSelectNode(Node):
         method = params.get("method", "vip")
         X_expr = inputs.get("X", inputs.get("default", "input_data"))
         model_expr = inputs.get("model")
+        mask_expr = inputs.get("mask")
 
         lines: list[str] = []
         lines.append(f"{indent}# --- Variable Selection ({self.node_id}) ---")
@@ -220,6 +230,20 @@ class VariableSelectNode(Node):
             lines.append(f"{indent}# Interval selection: [{rs}, {re_}]")
             lines.append(f"{indent}_lo, _hi = min({rs}, {re_}), max({rs}, {re_})")
             lines.append(f"{indent}_mask = (_fa_vals >= _lo) & (_fa_vals <= _hi)")
+        elif method == "apply_mask":
+            lines.append(f"{indent}if {mask_expr} is None:")
+            lines.append(f"{indent}    raise ValueError('apply_mask requires a connected mask input')")
+            lines.append(
+                f"{indent}_mask = np.asarray("
+                f"{mask_expr}.data if hasattr({mask_expr}, 'data') else {mask_expr}, dtype=bool"
+                f").reshape(-1)"
+            )
+            lines.append(f"{indent}if _mask.size != _X_vs.shape[1]:")
+            lines.append(
+                f"{indent}    raise ValueError("
+                f"'Mask length mismatch: ' + str(_mask.size) + ' != ' + str(_X_vs.shape[1]))"
+            )
+            lines.append(f"{indent}_scores = _mask.astype(np.float64)")
         elif method == "vip":
             threshold = params.get("threshold", 1.0)
             lines.append(f"{indent}# VIP selection: threshold={threshold}")
@@ -322,7 +346,11 @@ class VariableSelectNode(Node):
 
         lines.append(f"{indent}_X_selected = _X_vs[:, _mask]")
         lines.append(f"{indent}_selected_target = getattr(_X_input, 'target', None)")
+        lines.append(f"{indent}from spectra_sherpa.app.services.dag.io_contracts import build_dataset_like")
         lines.append(f"{indent}from spectra_sherpa.app.lib.axes import FeatureAxis, SpectralAxis")
+        lines.append(f"{indent}_X_selected_ds = build_dataset_like(_X_selected, _X_input)")
+        lines.append(f"{indent}if _selected_target is not None:")
+        lines.append(f"{indent}    _X_selected_ds.target = _selected_target")
         lines.append(f"{indent}_reduced_fa = None")
         lines.append(
             f"{indent}if _fa_obj is not None and hasattr(_fa_obj, 'values')"
@@ -333,10 +361,10 @@ class VariableSelectNode(Node):
             f"{indent}    _reduced_fa = _fa_cls("
             f"values=_fa_vals[_mask], units=getattr(_fa_obj, 'units', None), title=getattr(_fa_obj, 'title', None))"
         )
-        lines.append(
-            f"{indent}_X_selected_ds = SherpaDataset("
-            f"_X_selected, feature_axis=_reduced_fa, target=_selected_target)"
-        )
+        lines.append(f"{indent}if _reduced_fa is not None:")
+        lines.append(f"{indent}    _X_selected_ds.feature_axis = _reduced_fa")
+        lines.append(f"{indent}if hasattr(_X_selected_ds, 'meta'):")
+        lines.append(f"{indent}    _X_selected_ds.meta['feature_mask'] = _mask.tolist()")
         lines.append(f'{indent}print(f"  Selected {{np.sum(_mask)}} / {{len(_mask)}} variables")')
         lines.append(f"{indent}results['{self.node_id}'] = {{")
         lines.append(f"{indent}    'X_selected': _X_selected_ds, 'mask': _mask,")
@@ -346,7 +374,7 @@ class VariableSelectNode(Node):
 
         return lines
 
-    async def execute(self, X: Any = None, model: Any = None, **kwargs: Any) -> NodeResult:
+    async def execute(self, X: Any = None, model: Any = None, mask: Any = None, **kwargs: Any) -> NodeResult:
         params = self._resolve_params()
         method = params.get("method", "vip")
         invert = bool(params.get("invert", False))
@@ -372,6 +400,14 @@ class VariableSelectNode(Node):
 
         elif method == "peak_window":
             mask, scores = self._select_peak_window(X_array, n_features, params)
+
+        elif method == "apply_mask":
+            if mask is None:
+                raise ValueError("apply_mask method requires a connected mask input.")
+            mask = np.asarray(mask, dtype=bool).reshape(-1)
+            if mask.size != n_features:
+                raise ValueError(f"Mask length ({mask.size}) != n_features ({n_features})")
+            scores = mask.astype(np.float64)
 
         elif method == "vip":
             mask, scores = self._select_vip(model, n_features, params)

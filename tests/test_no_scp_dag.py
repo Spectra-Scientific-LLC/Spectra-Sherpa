@@ -211,6 +211,38 @@ async def test_autoscaling_execution(iris_dataset):
 
 
 @pytest.mark.asyncio
+async def test_autoscaling_with_reference_uses_train_statistics(iris_dataset):
+    """Test-set scaling must reuse train-set centering and variance."""
+    train = SherpaDataset(
+        X=np.array(
+            [
+                [1.0, 2.0],
+                [3.0, 6.0],
+                [5.0, 10.0],
+            ]
+        ),
+        feature_axis=SpectralAxis(values=np.array([1000.0, 1100.0]), units="cm-1"),
+    )
+    test = SherpaDataset(
+        X=np.array(
+            [
+                [7.0, 14.0],
+                [9.0, 18.0],
+            ]
+        ),
+        feature_axis=train.feature_axis.copy(),
+    )
+    node = node_registry.create_node("preprocess.scale", "test_as_ref", {"method": "autoscale", "center": True})
+
+    result = await node.run(default=test, reference=train)
+    output = result.outputs.get("default")
+
+    expected = (test.X - np.mean(train.X, axis=0, keepdims=True)) / np.std(train.X, axis=0, keepdims=True)
+    np.testing.assert_allclose(output.X, expected)
+    assert not np.allclose(np.mean(output.X, axis=0), 0.0)
+
+
+@pytest.mark.asyncio
 async def test_pareto_scaling_execution(iris_dataset):
     """ParetoScalingNode (TransformSpecNode) should scale by sqrt(std)."""
     node = node_registry.create_node("preprocess.scale", "test_ps", {"method": "pareto", "center": True})

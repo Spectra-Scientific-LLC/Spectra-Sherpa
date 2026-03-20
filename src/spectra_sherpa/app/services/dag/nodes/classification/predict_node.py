@@ -332,12 +332,6 @@ class ClassifierPredictNode(Node):
             predictions.append(closest_class)
             all_distances.append(sample_distances)
 
-        try:
-            if all(isinstance(c, (int, np.integer)) for c in classes):
-                predictions = [str(int(p)) for p in predictions]
-        except (ValueError, TypeError):
-            pass
-
         logger.debug("Classified %d samples into %d classes", n_samples, len(set(predictions)))
 
         return {

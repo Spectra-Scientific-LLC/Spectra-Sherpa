@@ -1,15 +1,17 @@
 schema_version: 1
 name: PLS Regression Calibration
 slug: pls_calibration
-description: Build a PLS regression model for quantitative calibration. Includes preprocessing,
-  PLS modeling, and prediction diagnostics with the Eigenvector corn NIR dataset.
+description: Build a PLS regression model for quantitative calibration. Savitzky-Golay
+  smoothing is applied before Kennard-Stone train/test splitting (smoothing is a
+  stateless per-spectrum operation with no data leakage). The trained model predicts
+  on the held-out test set and reports independent test metrics (RMSEP, R²).
 category: calibration
 is_active: true
 template_data:
   nodes:
   - node_id: data_1
     node_type: data.source
-    label: Load Calibration Data
+    label: Load Data
     parameters:
       source: eigenvector
       eigenvector_dataset: corn_m5
@@ -22,40 +24,82 @@ template_data:
       method: savitzky_golay
       size: 15
       order: 2
-    position_x: 425
-    position_y: 300
+    position_x: 175
+    position_y: 250
+  - node_id: partition_1
+    node_type: selection.sample_partition
+    label: Train/Test Split
+    parameters:
+      method: kennard_stone
+      test_size: 0.25
+      n_pcs: 5
+    position_x: 175
+    position_y: 450
   - node_id: model_1
     node_type: model.pls
     label: PLS Regression
     parameters:
       n_components: 3
     position_x: 175
-    position_y: 550
-  - node_id: stats_1
-    node_type: stats.summary
-    label: Model Diagnostics
+    position_y: 650
+  - node_id: predict_1
+    node_type: model.pls_predict
+    label: Predict Test Set
     parameters: {}
-    position_x: 50
-    position_y: 800
+    position_x: 500
+    position_y: 650
+  - node_id: eval_1
+    node_type: diagnostics.holdout_evaluation
+    label: Test Evaluation
+    parameters:
+      task_type: regression
+    position_x: 500
+    position_y: 850
+  - node_id: table_1
+    node_type: output.data_table
+    label: Test Metrics
+    parameters: {}
+    position_x: 175
+    position_y: 1050
   - node_id: viz_1
     node_type: output.plot
     label: Predicted vs Actual
     parameters:
-      plot_type: spectra
-    position_x: 450
-    position_y: 800
+      plot_type: scatter
+    position_x: 500
+    position_y: 1050
   edges:
   - from_node_id: data_1
     to_node_id: preprocess_1
   - from_node_id: preprocess_1
+    to_node_id: partition_1
+  - from_node_id: partition_1
     to_node_id: model_1
+    from_output: X_train
+  - from_node_id: partition_1
+    to_node_id: predict_1
+    from_output: X_test
+    to_input: X_new
   - from_node_id: model_1
-    to_node_id: stats_1
-  - from_node_id: model_1
+    to_node_id: predict_1
+    from_output: model
+    to_input: model
+  - from_node_id: predict_1
+    to_node_id: eval_1
+    from_output: y_pred
+    to_input: y_pred
+  - from_node_id: partition_1
+    to_node_id: eval_1
+    from_output: y_test
+    to_input: y_true
+  - from_node_id: eval_1
+    to_node_id: table_1
+    from_output: metrics
+  - from_node_id: eval_1
     to_node_id: viz_1
-    from_output: Y_scores
+    from_output: visualization
   canvas_state:
-    zoom: 1.0
+    zoom: 0.85
     pan_x: 0
     pan_y: 0
   data_roles:

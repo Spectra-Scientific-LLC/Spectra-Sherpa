@@ -388,6 +388,12 @@ class Node(ABC):
                 # Single "default" port → pass as first positional arg
                 if list(kwargs.keys()) == ["default"]:
                     raw = await self.execute(kwargs["default"])
+                elif "default" in kwargs and len(kwargs) > 1:
+                    # Multi-port call with a "default" port: the "default" port
+                    # maps to the first positional parameter of execute() (e.g.
+                    # ``input_data``), while the remaining ports match by name.
+                    default_val = kwargs.pop("default")
+                    raw = await self.execute(default_val, **kwargs)
                 else:
                     raw = await self.execute(**kwargs)
             elif inputs:

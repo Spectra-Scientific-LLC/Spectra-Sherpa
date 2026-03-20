@@ -1,27 +1,45 @@
 schema_version: 1
 name: SIMCA Classification
 slug: simca_classification
-description: Soft Independent Modelling of Class Analogy. Autoscale features, build
-  per-class PCA models, and classify samples by residual distance to each class model.
+description: Soft Independent Modelling of Class Analogy. Stratified train/test split
+  is performed before autoscaling to prevent information leakage, and the test
+  set reuses scaling parameters fitted on the training set. Per-class PCA models
+  are built on the training set, then samples are classified by residual distance
+  and evaluated on the held-out test set.
 category: classification
 is_active: true
 template_data:
   nodes:
   - node_id: data_1
     node_type: data.source
-    label: Training Data
+    label: Load Data
     parameters:
       source: sklearn
       sklearn_dataset: wine
     position_x: 175
     position_y: 50
-  - node_id: preprocess_1
+  - node_id: partition_1
+    node_type: selection.sample_partition
+    label: Train/Test Split
+    parameters:
+      method: stratified
+      test_size: 0.25
+    position_x: 175
+    position_y: 250
+  - node_id: preprocess_train
     node_type: preprocess.scale
-    label: Autoscale
+    label: Autoscale (Train)
     parameters:
       method: autoscale
-    position_x: 425
-    position_y: 300
+    position_x: 175
+    position_y: 450
+  - node_id: preprocess_test
+    node_type: preprocess.scale
+    label: Autoscale (Test)
+    parameters:
+      method: autoscale
+    position_x: 500
+    position_y: 450
   - node_id: model_1
     node_type: classification.simca
     label: SIMCA
@@ -29,24 +47,72 @@ template_data:
       n_components: 3
       alpha: 0.05
     position_x: 175
-    position_y: 550
+    position_y: 650
+  - node_id: predict_1
+    node_type: classification.predict
+    label: Predict Test Set
+    parameters: {}
+    position_x: 500
+    position_y: 650
+  - node_id: eval_1
+    node_type: diagnostics.holdout_evaluation
+    label: Test Evaluation
+    parameters:
+      task_type: classification
+    position_x: 500
+    position_y: 850
+  - node_id: table_1
+    node_type: output.data_table
+    label: Test Metrics
+    parameters: {}
+    position_x: 175
+    position_y: 1050
   - node_id: viz_1
     node_type: output.plot
-    label: Results
+    label: Classification Results
     parameters:
-      plot_type: spectra
-    position_x: 425
-    position_y: 800
+      plot_type: heatmap
+    position_x: 500
+    position_y: 1050
   edges:
   - from_node_id: data_1
-    to_node_id: preprocess_1
-  - from_node_id: preprocess_1
+    to_node_id: partition_1
+  - from_node_id: partition_1
+    to_node_id: preprocess_train
+    from_output: X_train
+  - from_node_id: partition_1
+    to_node_id: preprocess_test
+    from_output: X_test
+    to_input: default
+  - from_node_id: partition_1
+    to_node_id: preprocess_test
+    from_output: X_train
+    to_input: reference
+  - from_node_id: preprocess_train
     to_node_id: model_1
+  - from_node_id: preprocess_test
+    to_node_id: predict_1
+    to_input: X_new
   - from_node_id: model_1
+    to_node_id: predict_1
+    from_output: model
+    to_input: model
+  - from_node_id: predict_1
+    to_node_id: eval_1
+    from_output: y_pred
+    to_input: y_pred
+  - from_node_id: partition_1
+    to_node_id: eval_1
+    from_output: y_test
+    to_input: y_true
+  - from_node_id: eval_1
+    to_node_id: table_1
+    from_output: metrics
+  - from_node_id: eval_1
     to_node_id: viz_1
-    from_output: default
+    from_output: visualization
   canvas_state:
-    zoom: 1.0
+    zoom: 0.85
     pan_x: 0
     pan_y: 0
   data_roles:

@@ -102,9 +102,12 @@ class TestGeneratePythonCompleteness:
             parameters={"method": "random", "test_size": 0.2},
         )
         code = "\n".join(node.generate_python({"X": "data"}))
-        assert "_y_cal" in code
+        assert "_y_train" in code
+        assert "'y_train'" in code
+        assert "target=_y_train" in code
+        # Backward-compatible aliases also emitted
         assert "'y_cal'" in code
-        assert "target=_y_cal" in code
+        assert "'X_cal'" in code
 
     def test_sample_partition_spxy_export(self):
         from spectra_sherpa.app.services.dag.nodes.selection.sample_partition_node import SamplePartitionNode

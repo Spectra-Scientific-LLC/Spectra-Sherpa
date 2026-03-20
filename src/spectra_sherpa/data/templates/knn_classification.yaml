@@ -1,27 +1,44 @@
 schema_version: 1
 name: KNN Classification
 slug: knn_classification
-description: K-Nearest Neighbors classification for supervised learning. Scale features,
-  train a KNN classifier, and review predictions and class assignments.
+description: K-Nearest Neighbors classification. Stratified train/test split is
+  performed before mean centering to prevent information leakage, and the test
+  set reuses centering parameters fitted on the training set. Performance is
+  evaluated with accuracy and confusion matrix on the held-out test set.
 category: classification
 is_active: true
 template_data:
   nodes:
   - node_id: data_1
     node_type: data.source
-    label: Load Training Data
+    label: Load Data
     parameters:
       source: sklearn
       sklearn_dataset: wine
     position_x: 175
     position_y: 50
-  - node_id: preprocess_1
+  - node_id: partition_1
+    node_type: selection.sample_partition
+    label: Train/Test Split
+    parameters:
+      method: stratified
+      test_size: 0.25
+    position_x: 175
+    position_y: 250
+  - node_id: preprocess_train
     node_type: preprocess.scale
-    label: Mean Center
+    label: Scale (Train)
     parameters:
       method: mean_center
-    position_x: 425
-    position_y: 300
+    position_x: 175
+    position_y: 450
+  - node_id: preprocess_test
+    node_type: preprocess.scale
+    label: Scale (Test)
+    parameters:
+      method: mean_center
+    position_x: 500
+    position_y: 450
   - node_id: model_1
     node_type: classification.knn
     label: KNN Classifier
@@ -29,32 +46,72 @@ template_data:
       n_neighbors: 5
       metric: euclidean
     position_x: 175
-    position_y: 550
-  - node_id: stats_1
-    node_type: stats.summary
-    label: Results Summary
+    position_y: 650
+  - node_id: predict_1
+    node_type: classification.predict
+    label: Predict Test Set
     parameters: {}
-    position_x: 50
-    position_y: 800
+    position_x: 500
+    position_y: 650
+  - node_id: eval_1
+    node_type: diagnostics.holdout_evaluation
+    label: Test Evaluation
+    parameters:
+      task_type: classification
+    position_x: 500
+    position_y: 850
+  - node_id: table_1
+    node_type: output.data_table
+    label: Test Metrics
+    parameters: {}
+    position_x: 175
+    position_y: 1050
   - node_id: viz_1
     node_type: output.plot
     label: Confusion Matrix
     parameters:
       plot_type: heatmap
-    position_x: 450
-    position_y: 800
+    position_x: 500
+    position_y: 1050
   edges:
   - from_node_id: data_1
-    to_node_id: preprocess_1
-  - from_node_id: preprocess_1
+    to_node_id: partition_1
+  - from_node_id: partition_1
+    to_node_id: preprocess_train
+    from_output: X_train
+  - from_node_id: partition_1
+    to_node_id: preprocess_test
+    from_output: X_test
+    to_input: default
+  - from_node_id: partition_1
+    to_node_id: preprocess_test
+    from_output: X_train
+    to_input: reference
+  - from_node_id: preprocess_train
     to_node_id: model_1
+  - from_node_id: preprocess_test
+    to_node_id: predict_1
+    to_input: X_new
   - from_node_id: model_1
-    to_node_id: stats_1
-  - from_node_id: model_1
+    to_node_id: predict_1
+    from_output: model
+    to_input: model
+  - from_node_id: predict_1
+    to_node_id: eval_1
+    from_output: y_pred
+    to_input: y_pred
+  - from_node_id: partition_1
+    to_node_id: eval_1
+    from_output: y_test
+    to_input: y_true
+  - from_node_id: eval_1
+    to_node_id: table_1
+    from_output: metrics
+  - from_node_id: eval_1
     to_node_id: viz_1
-    from_output: default
+    from_output: visualization
   canvas_state:
-    zoom: 1.0
+    zoom: 0.85
     pan_x: 0
     pan_y: 0
   data_roles:

@@ -256,8 +256,70 @@ async def test_cross_validation_loocv_applied_for_small_n():
     assert "R2" in metrics
 
 
+@pytest.mark.asyncio
+async def test_cross_validation_honors_explicit_classification_task_type():
+    """CrossValidation must use explicit classification scoring instead of label-cardinality heuristics."""
+    node = node_registry.create_node(
+        node_type="diagnostics.cross_validation",
+        node_id="cv_classification_test",
+        parameters={"cv_folds": 5, "cv_method": "k_fold", "task_type": "classification"},
+    )
+
+    result = await node.execute(
+        y_true=np.array(["low", "low", "high", "high"]),
+        y_pred=np.array(["low", "high", "high", "high"]),
+    )
+
+    metrics = result.get("cv_metrics", {})
+    assert metrics.get("task_type") == "classification"
+    assert metrics.get("accuracy") == pytest.approx(0.75)
+    assert metrics.get("n_classes") == 2
+
+
 # ---------------------------------------------------------------------------
-# 5. Fix #3 — NMF rejects negative data
+# 5. Holdout evaluation integration regressions
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_holdout_evaluation_tolerates_non_finite_regression_predictions():
+    node = node_registry.create_node(
+        node_type="diagnostics.holdout_evaluation",
+        node_id="holdout_nan_test",
+        parameters={"task_type": "regression"},
+    )
+
+    result = await node.execute(
+        y_true=np.array([1.0, 2.0, 3.0, 4.0]),
+        y_pred=np.array([1.1, np.nan, 2.9, np.inf]),
+    )
+
+    metrics = result["metrics"]
+    assert metrics["n_samples"] == 4
+    assert metrics["n_valid_samples"] == 2
+    assert metrics["n_invalid_predictions"] == 2
+    assert metrics["status"] == "contains_non_finite_predictions"
+    assert np.isfinite(metrics["RMSEP"])
+    assert len(result["visualization"]["data"]) == 2
+
+
+def test_holdout_evaluation_generate_python_matches_runtime_payload_shape():
+    node = node_registry.create_node(
+        node_type="diagnostics.holdout_evaluation",
+        node_id="holdout_export_test",
+        parameters={"task_type": "classification"},
+    )
+
+    code = "\n".join(node.generate_python({"y_true": "y_true", "y_pred": "y_pred"}))
+
+    assert "classification_report" in code
+    assert "'classes': _classes.tolist()" in code
+    assert "'type': 'confusion_matrix'" in code
+    assert "'ClassificationTest'" in code
+
+
+# ---------------------------------------------------------------------------
+# 6. Fix #3 — NMF rejects negative data
 # ---------------------------------------------------------------------------
 
 

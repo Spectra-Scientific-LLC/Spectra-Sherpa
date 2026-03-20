@@ -70,14 +70,14 @@ template_data:
     to_node_id: partition_1
   - from_node_id: partition_1
     to_node_id: model_full
-    from_output: X_cal
+    from_output: X_train
   - from_node_id: model_full
     to_node_id: varsel_1
     from_output: model
     to_input: model
   - from_node_id: partition_1
     to_node_id: varsel_1
-    from_output: X_cal
+    from_output: X_train
     to_input: X
   - from_node_id: varsel_1
     to_node_id: model_selected

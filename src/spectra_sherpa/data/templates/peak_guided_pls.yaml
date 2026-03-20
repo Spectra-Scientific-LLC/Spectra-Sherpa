@@ -2,8 +2,10 @@ schema_version: 1
 name: Peak-Guided PLS
 slug: peak_guided_pls
 description: Use peak detection to identify chemically meaningful spectral regions,
-  then build a PLS model on those regions only. Bridges spectroscopic interpretation
-  with statistical modeling — the selected wavelengths correspond to real absorption bands.
+  then build a PLS model on those regions only. The derivative is applied before
+  splitting (stateless per-spectrum operation), then the peak mask is learned on
+  the training set only and reused on the held-out test set. Kennard-Stone
+  partitioning uses PCA-reduced distance calculation.
 category: selection_design
 is_active: true
 template_data:
@@ -25,23 +27,31 @@ template_data:
       polyorder: 2
     position_x: 175
     position_y: 250
-  - node_id: peak_select
+  - node_id: partition_1
+    node_type: selection.sample_partition
+    label: Train/Test Split
+    parameters:
+      method: kennard_stone
+      test_size: 0.25
+      n_pcs: 5
+    position_x: 175
+    position_y: 450
+  - node_id: peak_select_train
     node_type: selection.variable_select
-    label: Peak Window Selection
+    label: Peak Window Selection (Train)
     parameters:
       method: peak_window
       peak_prominence: 0.05
       peak_half_window: 15
       include_negative_extrema: true
     position_x: 175
-    position_y: 450
-  - node_id: partition_1
-    node_type: selection.sample_partition
-    label: Kennard-Stone Split
+    position_y: 650
+  - node_id: peak_select_test
+    node_type: selection.variable_select
+    label: Apply Peak Mask (Test)
     parameters:
-      method: kennard_stone
-      test_size: 0.25
-    position_x: 175
+      method: apply_mask
+    position_x: 500
     position_y: 650
   - node_id: model_1
     node_type: model.pls
@@ -50,26 +60,72 @@ template_data:
       n_components: 3
     position_x: 175
     position_y: 850
-  - node_id: viz_1
-    node_type: output.plot
-    label: Results
-    parameters:
-      plot_type: spectra
+  - node_id: predict_1
+    node_type: model.pls_predict
+    label: Predict Test Set
+    parameters: {}
     position_x: 500
     position_y: 850
+  - node_id: eval_1
+    node_type: diagnostics.holdout_evaluation
+    label: Test Evaluation
+    parameters:
+      task_type: regression
+    position_x: 500
+    position_y: 1050
+  - node_id: table_1
+    node_type: output.data_table
+    label: Test Metrics
+    parameters: {}
+    position_x: 175
+    position_y: 1250
+  - node_id: viz_1
+    node_type: output.plot
+    label: Predicted vs Actual
+    parameters:
+      plot_type: scatter
+    position_x: 500
+    position_y: 1250
   edges:
   - from_node_id: data_1
     to_node_id: preprocess_1
   - from_node_id: preprocess_1
-    to_node_id: peak_select
-  - from_node_id: peak_select
     to_node_id: partition_1
-    from_output: X_selected
   - from_node_id: partition_1
+    from_output: X_train
+    to_node_id: peak_select_train
+  - from_node_id: partition_1
+    from_output: X_test
+    to_node_id: peak_select_test
+  - from_node_id: peak_select_train
+    to_node_id: peak_select_test
+    from_output: mask
+    to_input: mask
+  - from_node_id: peak_select_train
     to_node_id: model_1
-    from_output: X_cal
+    from_output: X_selected
+  - from_node_id: peak_select_test
+    to_node_id: predict_1
+    from_output: X_selected
+    to_input: X_new
   - from_node_id: model_1
+    to_node_id: predict_1
+    from_output: model
+    to_input: model
+  - from_node_id: predict_1
+    to_node_id: eval_1
+    from_output: y_pred
+    to_input: y_pred
+  - from_node_id: partition_1
+    to_node_id: eval_1
+    from_output: y_test
+    to_input: y_true
+  - from_node_id: eval_1
+    to_node_id: table_1
+    from_output: metrics
+  - from_node_id: eval_1
     to_node_id: viz_1
+    from_output: visualization
   canvas_state:
     zoom: 0.85
     pan_x: 0

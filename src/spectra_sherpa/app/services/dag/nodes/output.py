@@ -213,23 +213,58 @@ class PlotNode(Node):
         lines.append(f"{indent}        def Heatmap(**kwargs):")
         lines.append(f"{indent}            return {{'type': 'heatmap', **kwargs}}")
         lines.append(f"{indent}    go = _SherpaFallbackGO()")
-        lines.append(f"{indent}_plot_input_{_nid} = {input_expr}")
-        lines.append(f"{indent}if isinstance(_plot_input_{_nid}, dict) and 'scores' in _plot_input_{_nid}:")
+        _p = f"_plot_input_{_nid}"  # shorthand for generated variable
+        lines.append(f"{indent}{_p} = {input_expr}")
+        lines.append(f"{indent}_plot_kind_{_nid} = None")
+        lines.append(f"{indent}_plot_metadata_{_nid} = {{}}")
+        lines.append(f"{indent}if isinstance({_p}, dict)" f" and {_p}.get('type') == 'predicted_vs_actual':")
+        lines.append(f"{indent}    _plot_kind_{_nid} = 'predicted_vs_actual'")
+        lines.append(f"{indent}    _plot_source_{_nid} = {_p}")
+        lines.append(f"{indent}    _plot_metadata_{_nid} = {_p}.get('metadata') or {{}}")
+        lines.append(
+            f"{indent}    _plot_data_{_nid} = np.atleast_2d(" f"np.asarray({_p}.get('data', []), dtype=np.float64))"
+        )
+        lines.append(f"{indent}elif isinstance({_p}, dict)" f" and {_p}.get('type') == 'confusion_matrix':")
+        lines.append(f"{indent}    _plot_kind_{_nid} = 'confusion_matrix'")
+        lines.append(f"{indent}    _plot_source_{_nid} = {_p}")
+        lines.append(f"{indent}    _plot_metadata_{_nid} = {_p}.get('metadata') or {{}}")
+        lines.append(
+            f"{indent}    _plot_data_{_nid} = np.atleast_2d(" f"np.asarray({_p}.get('data', []), dtype=np.float64))"
+        )
+        lines.append(f"{indent}elif isinstance(_plot_input_{_nid}, dict) and 'scores' in _plot_input_{_nid}:")
         lines.append(f"{indent}    _plot_source_{_nid} = _plot_input_{_nid}['scores']")
+        lines.append(f"{indent}    _plot_data_{_nid} = (")
+        lines.append(f"{indent}        np.asarray(_plot_source_{_nid}.data, dtype=np.float64)")
+        lines.append(f"{indent}        if hasattr(_plot_source_{_nid}, 'data')")
+        lines.append(f"{indent}        else np.asarray(_plot_source_{_nid}, dtype=np.float64)")
+        lines.append(f"{indent}    )")
+        lines.append(f"{indent}    _plot_data_{_nid} = np.atleast_2d(_plot_data_{_nid})")
         lines.append(f"{indent}elif isinstance(_plot_input_{_nid}, dict) and 'loadings' in _plot_input_{_nid}:")
         lines.append(f"{indent}    _plot_source_{_nid} = _plot_input_{_nid}['loadings']")
+        lines.append(f"{indent}    _plot_data_{_nid} = (")
+        lines.append(f"{indent}        np.asarray(_plot_source_{_nid}.data, dtype=np.float64)")
+        lines.append(f"{indent}        if hasattr(_plot_source_{_nid}, 'data')")
+        lines.append(f"{indent}        else np.asarray(_plot_source_{_nid}, dtype=np.float64)")
+        lines.append(f"{indent}    )")
+        lines.append(f"{indent}    _plot_data_{_nid} = np.atleast_2d(_plot_data_{_nid})")
         lines.append(f"{indent}else:")
         lines.append(f"{indent}    _plot_source_{_nid} = _plot_input_{_nid}")
-        lines.append(f"{indent}_plot_data_{_nid} = (")
-        lines.append(f"{indent}    np.asarray(_plot_source_{_nid}.data, dtype=np.float64)")
-        lines.append(f"{indent}    if hasattr(_plot_source_{_nid}, 'data')")
-        lines.append(f"{indent}    else np.asarray(_plot_source_{_nid}, dtype=np.float64)")
-        lines.append(f"{indent})")
-        lines.append(f"{indent}_plot_data_{_nid} = np.atleast_2d(_plot_data_{_nid})")
+        lines.append(f"{indent}    _plot_data_{_nid} = (")
+        lines.append(f"{indent}        np.asarray(_plot_source_{_nid}.data, dtype=np.float64)")
+        lines.append(f"{indent}        if hasattr(_plot_source_{_nid}, 'data')")
+        lines.append(f"{indent}        else np.asarray(_plot_source_{_nid}, dtype=np.float64)")
+        lines.append(f"{indent}    )")
+        lines.append(f"{indent}    _plot_data_{_nid} = np.atleast_2d(_plot_data_{_nid})")
         lines.append(f"{indent}_x_values_{_nid} = None")
         lines.append(f"{indent}_x_title_{_nid} = 'Feature'")
         lines.append(f"{indent}_x_units_{_nid} = ''")
         lines.append(f"{indent}_y_title_{_nid} = 'Intensity'")
+        lines.append(f"{indent}if _plot_kind_{_nid} == 'predicted_vs_actual':")
+        lines.append(f"{indent}    _x_title_{_nid} = 'Actual'")
+        lines.append(f"{indent}    _y_title_{_nid} = 'Predicted'")
+        lines.append(f"{indent}elif _plot_kind_{_nid} == 'confusion_matrix':")
+        lines.append(f"{indent}    _x_title_{_nid} = 'Predicted Class'")
+        lines.append(f"{indent}    _y_title_{_nid} = 'True Class'")
         lines.append(f"{indent}if getattr(_plot_source_{_nid}, 'feature_axis', None) is not None:")
         lines.append(f"{indent}    _x_values_{_nid} = np.asarray(_plot_source_{_nid}.feature_axis.data)")
         lines.append(
@@ -247,7 +282,38 @@ class PlotNode(Node):
             f'f"{{_x_title_{_nid}}} ({{_x_units_{_nid}}})" if _x_units_{_nid} else _x_title_{_nid}'
         )
 
-        if plot_type in ("spectra",):
+        if plot_type == "scatter":
+            lines.append(f"{indent}_fig_{_nid} = go.Figure()")
+            lines.append(f"{indent}if _plot_kind_{_nid} == 'predicted_vs_actual' and _plot_data_{_nid}.shape[1] >= 2:")
+            lines.append(
+                f"{indent}    _fig_{_nid}.add_trace(go.Scatter("
+                f"x=_plot_data_{_nid}[:, 0], y=_plot_data_{_nid}[:, 1], mode='markers', name='Predictions'))"
+            )
+            lines.append(f"{indent}    _min_v = float(np.min(_plot_data_{_nid})) if _plot_data_{_nid}.size else 0.0")
+            lines.append(f"{indent}    _max_v = float(np.max(_plot_data_{_nid})) if _plot_data_{_nid}.size else 1.0")
+            lines.append(
+                f"{indent}    _fig_{_nid}.add_trace(go.Scatter("
+                f"x=[_min_v, _max_v], y=[_min_v, _max_v], mode='lines', name='Ideal'))"
+            )
+            lines.append(
+                f"{indent}    _fig_{_nid}.update_layout("
+                f"template='plotly_white', title='Predicted vs Actual', "
+                f"xaxis_title=_x_title_{_nid}, yaxis_title=_y_title_{_nid})"
+            )
+            lines.append(f"{indent}else:")
+            lines.append(
+                f"{indent}    _fig_{_nid}.add_trace(go.Scatter("
+                f"x=_plot_data_{_nid}[:, 0], "
+                f"y=_plot_data_{_nid}[:, 1] if _plot_data_{_nid}.shape[1] > 1 else _plot_data_{_nid}[:, 0], "
+                f"mode='markers', name='Scatter'))"
+            )
+            lines.append(
+                f"{indent}    _fig_{_nid}.update_layout("
+                f"template='plotly_white', title='Scatter Plot', "
+                f"xaxis_title=_x_title_{_nid}, "
+                f"yaxis_title=_y_title_{_nid})"
+            )
+        elif plot_type in ("spectra",):
             lines.append(f"{indent}_fig_{_nid} = go.Figure()")
             lines.append(f"{indent}for _si in range(min(_plot_data_{_nid}.shape[0], 50)):")
             lines.append(
@@ -295,6 +361,17 @@ class PlotNode(Node):
                 f"else np.arange(_plot_data_{_nid}.shape[1])"
             )
             lines.append(f"{indent}_yv = np.arange(_plot_data_{_nid}.shape[0])")
+            lines.append(f"{indent}if _plot_kind_{_nid} == 'confusion_matrix':")
+            lines.append(f"{indent}    _classes = _plot_metadata_{_nid}.get('classes')")
+            _pd = f"_plot_data_{_nid}"
+            lines.append(
+                f"{indent}    if isinstance(_classes, list)" f" and len(_classes) == {_pd}.shape[0] == {_pd}.shape[1]:"
+            )
+            lines.append(f"{indent}        _xv = _classes")
+            lines.append(f"{indent}        _yv = _classes")
+            lines.append(f"{indent}    else:")
+            lines.append(f"{indent}        _xv = np.arange(_plot_data_{_nid}.shape[1])")
+            lines.append(f"{indent}        _yv = np.arange(_plot_data_{_nid}.shape[0])")
             lines.append(f"{indent}_fig_{_nid} = go.Figure(")
             if plot_type == "contour":
                 lines.append(f"{indent}    data=go.Contour(z=_plot_data_{_nid}, x=_xv, y=_yv, colorscale='Viridis')")
@@ -303,7 +380,8 @@ class PlotNode(Node):
             lines.append(f"{indent})")
             lines.append(
                 f"{indent}_fig_{_nid}.update_layout(template='plotly_white', title='{plot_type.title()} Plot', "
-                f"xaxis_title=_x_label_{_nid}, yaxis_title='Sample Index')"
+                f"xaxis_title=_x_title_{_nid} if _plot_kind_{_nid} == 'confusion_matrix' else _x_label_{_nid}, "
+                f"yaxis_title=_y_title_{_nid} if _plot_kind_{_nid} == 'confusion_matrix' else 'Sample Index')"
             )
         else:
             lines.append(f"{indent}_fig_{_nid} = go.Figure()")
@@ -353,6 +431,10 @@ class PlotNode(Node):
 
         # Handle dict input (e.g., from PCA node)
         if isinstance(input_data, dict):
+            if input_data.get("type") == "predicted_vs_actual":
+                return self._plot_predicted_vs_actual(input_data)
+            if input_data.get("type") == "confusion_matrix":
+                return self._plot_confusion_matrix(input_data)
             if "scores" in input_data:
                 if plot_type == "biplot":
                     return self._plot_biplot(input_data, x_axis, y_axis)
@@ -790,6 +872,81 @@ class PlotNode(Node):
                 "plot_type": "generic",
                 "data": data.get("data", []),
                 "layout": data.get("layout", {}),
+            }
+        }
+
+    def _plot_predicted_vs_actual(self, data: dict) -> Dict[str, Any]:
+        """Generate a regression holdout scatter plot."""
+        pairs = np.asarray(data.get("data", []), dtype=np.float64)
+        if pairs.ndim == 1:
+            pairs = pairs.reshape(-1, 2) if pairs.size else np.zeros((0, 2))
+
+        actual = pairs[:, 0].tolist() if pairs.shape[1] >= 1 else []
+        predicted = pairs[:, 1].tolist() if pairs.shape[1] >= 2 else []
+        if actual and predicted:
+            lo = min(min(actual), min(predicted))
+            hi = max(max(actual), max(predicted))
+        else:
+            lo, hi = 0.0, 1.0
+
+        return {
+            "visualization": {
+                "plot_type": "scatter",
+                "data": [
+                    {
+                        "x": actual,
+                        "y": predicted,
+                        "type": "scatter",
+                        "mode": "markers",
+                        "name": "Predictions",
+                    },
+                    {
+                        "x": [lo, hi],
+                        "y": [lo, hi],
+                        "type": "scatter",
+                        "mode": "lines",
+                        "name": "Ideal",
+                    },
+                ],
+                "layout": {
+                    "title": "Predicted vs Actual",
+                    "xaxis": {"title": "Actual"},
+                    "yaxis": {"title": "Predicted"},
+                },
+            }
+        }
+
+    def _plot_confusion_matrix(self, data: dict) -> Dict[str, Any]:
+        """Generate a confusion-matrix heatmap."""
+        matrix = np.asarray(data.get("data", []), dtype=np.float64)
+        if matrix.ndim == 1:
+            matrix = matrix.reshape(1, -1)
+
+        x_labels = list(range(matrix.shape[1]))
+        y_labels = list(range(matrix.shape[0]))
+        metadata = data.get("metadata") or {}
+        classes = metadata.get("classes")
+        if isinstance(classes, list) and len(classes) == matrix.shape[0] == matrix.shape[1]:
+            x_labels = classes
+            y_labels = classes
+
+        return {
+            "visualization": {
+                "plot_type": "heatmap",
+                "data": [
+                    {
+                        "x": x_labels,
+                        "y": y_labels,
+                        "z": matrix.tolist(),
+                        "type": "heatmap",
+                        "colorscale": "Viridis",
+                    }
+                ],
+                "layout": {
+                    "title": "Confusion Matrix",
+                    "xaxis": {"title": "Predicted Class"},
+                    "yaxis": {"title": "True Class"},
+                },
             }
         }
 

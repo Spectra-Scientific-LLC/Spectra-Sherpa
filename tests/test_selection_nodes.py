@@ -354,6 +354,30 @@ class TestVariableSelectNode:
         assert "scores" in result.outputs
 
     @pytest.mark.asyncio
+    async def test_apply_mask_selection(self, make_dataset):
+        from spectra_sherpa.app.services.dag.nodes.selection.variable_select_node import VariableSelectNode
+
+        ds = make_dataset(n_features=12)
+        node = VariableSelectNode("test_apply_mask", {"method": "apply_mask"})
+        supplied_mask = np.array([True, False, True, False, True, False, True, False, True, False, True, False])
+
+        result = await node.execute(X=ds, mask=supplied_mask)
+
+        np.testing.assert_array_equal(result.outputs["mask"], supplied_mask)
+        np.testing.assert_array_equal(result.outputs["scores"], supplied_mask.astype(np.float64))
+        assert result.outputs["X_selected"].shape[1] == int(np.sum(supplied_mask))
+
+    @pytest.mark.asyncio
+    async def test_apply_mask_requires_matching_length(self, make_dataset):
+        from spectra_sherpa.app.services.dag.nodes.selection.variable_select_node import VariableSelectNode
+
+        ds = make_dataset(n_features=12)
+        node = VariableSelectNode("test_apply_mask_bad", {"method": "apply_mask"})
+
+        with pytest.raises(ValueError, match="Mask length"):
+            await node.execute(X=ds, mask=np.array([True, False, True]))
+
+    @pytest.mark.asyncio
     async def test_vip_requires_model(self, make_dataset):
         from spectra_sherpa.app.services.dag.nodes.selection.variable_select_node import VariableSelectNode
 
@@ -393,3 +417,19 @@ class TestVariableSelectNode:
         n_normal = result_normal.diagnostics["n_selected"]
         n_invert = result_invert.diagnostics["n_selected"]
         assert n_normal + n_invert == 200
+
+
+def test_sample_partition_generate_python_preserves_export_contract():
+    from spectra_sherpa.app.services.dag.nodes.selection.sample_partition_node import SamplePartitionNode
+
+    node = SamplePartitionNode(
+        "partition_export",
+        {"method": "kennard_stone", "test_size": 0.25, "metric": "euclidean", "n_pcs": 5},
+    )
+
+    code = "\n".join(node.generate_python({"X": "input_data"}))
+
+    assert "n_pcs=5" in code
+    assert "build_dataset_like" in code
+    assert "slice_axis_for_indices" in code
+    assert "np.asarray(_raw_y)" in code

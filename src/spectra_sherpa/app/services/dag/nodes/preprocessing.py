@@ -970,14 +970,22 @@ def _scale_max_export(params, inp, node_id, indent, use_scp):
     ] + _wrap_result_lines(node_id, "_data", inp, indent, use_scp)
 
 
-def _center_mean_export(params, inp, node_id, indent, use_scp):
+def _center_mean_export(params, inp, node_id, indent, use_scp, reference_expr=None):
     lines = [header_line("Mean Center", node_id, indent)]
     lines += extract_data_lines(inp, indent)
+    ref_expr = reference_expr or inp
+    lines += [
+        f"{indent}_center_ref = {ref_expr}",
+        f"{indent}_center_ref_data = np.asarray(",
+        f"{indent}    _center_ref.data if hasattr(_center_ref, 'data') else _center_ref,",
+        f"{indent}    dtype=np.float64,",
+        f"{indent})",
+    ]
     lines += [
         f"{indent}if _data.ndim == 1:",
-        f"{indent}    _data = _data - np.mean(_data)",
+        f"{indent}    _data = _data - np.mean(_center_ref_data)",
         f"{indent}else:",
-        f"{indent}    _data = _data - np.mean(_data, axis=0)",
+        f"{indent}    _data = _data - np.mean(_center_ref_data, axis=0)",
     ]
     lines += _wrap_result_lines(node_id, "_data", inp, indent, use_scp)
     return lines
@@ -992,14 +1000,22 @@ def _pareto_scale(data: np.ndarray, center: bool = True) -> np.ndarray:
     return data / sf
 
 
-def _pareto_export(params, inp, node_id, indent, use_scp):
+def _pareto_export(params, inp, node_id, indent, use_scp, reference_expr=None):
     center = params.get("center", True)
     lines = [header_line("Pareto Scaling", node_id, indent)]
     lines += extract_data_lines(inp, indent)
-    if center:
-        lines.append(f"{indent}_data = _data - np.mean(_data, axis=0, keepdims=True)")
+    ref_expr = reference_expr or inp
     lines += [
-        f"{indent}_std = np.std(np.array({inp}.data, dtype=np.float64), axis=0, keepdims=True)",
+        f"{indent}_pareto_ref = {ref_expr}",
+        f"{indent}_pareto_ref_data = np.asarray(",
+        f"{indent}    _pareto_ref.data if hasattr(_pareto_ref, 'data') else _pareto_ref,",
+        f"{indent}    dtype=np.float64,",
+        f"{indent})",
+    ]
+    if center:
+        lines.append(f"{indent}_data = _data - np.mean(_pareto_ref_data, axis=0, keepdims=True)")
+    lines += [
+        f"{indent}_std = np.std(_pareto_ref_data, axis=0, keepdims=True)",
         f"{indent}_sf = np.sqrt(_std)",
         f"{indent}_sf[_sf == 0] = 1.0",
         f"{indent}_data = _data / _sf",
@@ -1235,14 +1251,22 @@ def _autoscale(data: np.ndarray, center: bool = True) -> np.ndarray:
     return data / std
 
 
-def _autoscale_export(params, inp, node_id, indent, use_scp):
+def _autoscale_export(params, inp, node_id, indent, use_scp, reference_expr=None):
     center = params.get("center", True)
     lines = [header_line("Autoscaling", node_id, indent)]
     lines += extract_data_lines(inp, indent)
-    if center:
-        lines.append(f"{indent}_data = _data - np.mean(_data, axis=0, keepdims=True)")
+    ref_expr = reference_expr or inp
     lines += [
-        f"{indent}_std = np.std(np.array({inp}.data, dtype=np.float64), axis=0, keepdims=True)",
+        f"{indent}_scale_ref = {ref_expr}",
+        f"{indent}_scale_ref_data = np.asarray(",
+        f"{indent}    _scale_ref.data if hasattr(_scale_ref, 'data') else _scale_ref,",
+        f"{indent}    dtype=np.float64,",
+        f"{indent})",
+    ]
+    if center:
+        lines.append(f"{indent}_data = _data - np.mean(_scale_ref_data, axis=0, keepdims=True)")
+    lines += [
+        f"{indent}_std = np.std(_scale_ref_data, axis=0, keepdims=True)",
         f"{indent}_std[_std == 0] = 1.0",
         f"{indent}_data = _data / _std",
     ]
@@ -1963,13 +1987,24 @@ def _scale_dispatch(
     method: str = "mean_center",
     center: bool = True,
     target_max: float = 1.0,
+    reference_data: np.ndarray | None = None,
 ) -> np.ndarray:
+    ref = data if reference_data is None else reference_data
     if method == "mean_center":
-        return data - np.mean(data, axis=0)
+        return data - np.mean(ref, axis=0)
     elif method == "autoscale":
-        return _autoscale(data, center=center)
+        if center:
+            data = data - np.mean(ref, axis=0, keepdims=True)
+        std = np.std(ref, axis=0, keepdims=True)
+        std[(std == 0) | ~np.isfinite(std)] = 1.0
+        return data / std
     elif method == "pareto":
-        return _pareto_scale(data, center=center)
+        if center:
+            data = data - np.mean(ref, axis=0, keepdims=True)
+        std = np.std(ref, axis=0, keepdims=True)
+        sf = np.sqrt(np.maximum(std, 0))
+        sf[(sf == 0) | ~np.isfinite(sf)] = 1.0
+        return data / sf
     elif method == "scale_max":
         return _scale_max_transform(data, target_max=target_max)
     raise ValueError(f"Unknown scaling method: {method}")
@@ -2033,18 +2068,36 @@ class ScaleNode(Node):
                 label="Input Spectra",
                 description="Spectral data to process",
             ),
+            PortMetadata(
+                name="reference",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=False,
+                label="Reference Spectra",
+                description="Optional dataset used to fit centering/scaling parameters",
+            ),
         ],
         output_type="NDDataset",
     )
 
-    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
+    async def execute(
+        self,
+        default: Any = None,
+        input_data: Any = None,
+        reference: Any = None,
+        **kwargs: Any,
+    ) -> Any:
+        source = input_data if input_data is not None else default
         input_ds = coerce_to_sherpa(
-            input_data,
+            source,
             input_name="input_data",
         )
         params = self._resolve_params()
         data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
-        scaled = _scale_dispatch(data, **params)
+        ref_data = None
+        if reference is not None:
+            reference_ds = coerce_to_sherpa(reference, input_name="reference")
+            ref_data = to_numpy_2d(reference_ds, name="reference", dtype=np.float64)
+        scaled = _scale_dispatch(data, reference_data=ref_data, **params)
         result = build_dataset_like(scaled, input_ds)
 
         method = params.get("method", "mean_center")
@@ -2067,15 +2120,18 @@ class ScaleNode(Node):
         return True
 
     def generate_python(self, inputs, indent="    ", use_scp=True):
-        inp = next(iter(inputs.values())) if inputs else "input_data"
+        inp = inputs.get("default") if inputs else None
+        if inp is None:
+            inp = next(iter(inputs.values())) if inputs else "input_data"
+        reference_expr = inputs.get("reference")
         params = self._resolve_params()
         method = params.get("method", "mean_center")
         if method == "mean_center":
-            return _center_mean_export(params, inp, self.node_id, indent, use_scp)
+            return _center_mean_export(params, inp, self.node_id, indent, use_scp, reference_expr)
         elif method == "autoscale":
-            return _autoscale_export(params, inp, self.node_id, indent, use_scp)
+            return _autoscale_export(params, inp, self.node_id, indent, use_scp, reference_expr)
         elif method == "pareto":
-            return _pareto_export(params, inp, self.node_id, indent, use_scp)
+            return _pareto_export(params, inp, self.node_id, indent, use_scp, reference_expr)
         elif method == "scale_max":
             return _scale_max_export(params, inp, self.node_id, indent, use_scp)
         return [f"{indent}# TODO: scale method '{method}' export not implemented"]
