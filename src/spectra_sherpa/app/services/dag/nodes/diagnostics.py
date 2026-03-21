@@ -389,14 +389,14 @@ class CrossValidationNode(Node):
         input_ports=[
             PortMetadata(
                 name="y_true",
-                type_ref="spectrasherpa://types/Array1D/1.0",
+                type_ref="spectrasherpa://types/Any/1.0",
                 required=True,
                 label="True Values (y)",
                 description="True target values",
             ),
             PortMetadata(
                 name="y_pred",
-                type_ref="spectrasherpa://types/Array1D/1.0",
+                type_ref="spectrasherpa://types/Any/1.0",
                 required=True,
                 label="Predicted Values (ŷ)",
                 description="Predicted target values (from CV)",
@@ -721,14 +721,14 @@ class HoldoutEvaluationNode(Node):
         input_ports=[
             PortMetadata(
                 name="y_true",
-                type_ref="spectrasherpa://types/Array1D/1.0",
+                type_ref="spectrasherpa://types/Any/1.0",
                 required=True,
                 label="True Values",
                 description="Ground-truth target values from the test set",
             ),
             PortMetadata(
                 name="y_pred",
-                type_ref="spectrasherpa://types/Array1D/1.0",
+                type_ref="spectrasherpa://types/Any/1.0",
                 required=True,
                 label="Predicted Values",
                 description="Model predictions on the test set",

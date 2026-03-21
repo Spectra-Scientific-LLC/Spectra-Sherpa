@@ -35,6 +35,39 @@ def _is_dataset(obj: Any) -> bool:
     return False
 
 
+def _is_estimator_like(obj: Any) -> bool:
+    """Return True for bare fitted/transformer-style model objects."""
+    return hasattr(obj, "fit") or hasattr(obj, "transform") or hasattr(obj, "predict")
+
+
+def _is_model_payload(obj: Any) -> bool:
+    """Return True for built-in model artifacts passed between nodes.
+
+    Runtime workflows use both bare estimators and wrapped model dicts. The
+    wrapped forms are intentionally narrow here so plain config dicts do not
+    silently validate as models.
+    """
+    if _is_estimator_like(obj):
+        return True
+
+    if not isinstance(obj, dict):
+        return False
+
+    nested_model = obj.get("model")
+    if nested_model is not None and _is_estimator_like(nested_model):
+        return True
+
+    class_models = obj.get("class_models")
+    if isinstance(class_models, dict) and class_models:
+        return True
+
+    model_id = obj.get("model_id")
+    if isinstance(model_id, str) and model_id.strip():
+        return True
+
+    return False
+
+
 def _category_from_type_ref(type_ref: str) -> str:
     """Derive the visual category from a type_ref URI.
 
@@ -156,7 +189,7 @@ def _validate_port_type(
     type_checks = {
         "dataset": lambda d: _is_dataset(d),
         "array": lambda d: isinstance(d, (list, tuple, np.ndarray)) or _is_dataset(d),
-        "model": lambda d: hasattr(d, "fit") or hasattr(d, "transform") or hasattr(d, "predict"),
+        "model": _is_model_payload,
         "target": lambda d: isinstance(d, (list, tuple, np.ndarray, dict)) or _is_dataset(d),
         "config": lambda d: isinstance(d, dict),
     }

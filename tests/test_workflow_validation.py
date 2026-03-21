@@ -30,6 +30,7 @@ from spectra_sherpa.app.services.dag.executor import (
 @pytest.fixture(autouse=True)
 def _register_nodes():
     """Ensure core node types are registered."""
+    import spectra_sherpa.app.services.dag.nodes.classification  # noqa: F401
     import spectra_sherpa.app.services.dag.nodes.data  # noqa: F401
     import spectra_sherpa.app.services.dag.nodes.preprocessing  # noqa: F401
 
@@ -285,6 +286,100 @@ class TestRuntimePortTypeFallbacks:
         executor.add_edge(WorkflowEdge(from_node="src", to_node="pls", to_input="X"))
         executor.add_edge(WorkflowEdge(from_node="pls", to_node="predict", from_output="model", to_input="model"))
         executor.add_edge(WorkflowEdge(from_node="src", to_node="predict", from_output="default", to_input="X_new"))
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            await executor.execute()
+
+        mismatch_warnings = [w for w in caught if "Port type mismatch" in str(w.message)]
+        assert mismatch_warnings == []
+
+    def test_wrapped_classification_models_validate_as_model_payloads(self):
+        from sklearn.neighbors import KNeighborsClassifier
+
+        from spectra_sherpa.app.services.dag.executor_validation import _validate_port_type
+
+        knn = KNeighborsClassifier(n_neighbors=1)
+        valid_payloads = [
+            {"model": knn, "type": "knn"},
+            {"model": knn, "classes": ["a", "b"], "type": "plsda"},
+            {
+                "class_models": {"a": {"loadings": [[1.0]], "class_mean": [0.0]}},
+                "classes": ["a"],
+                "type": "simca",
+            },
+            {"model_id": "artifact-123"},
+        ]
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            for payload in valid_payloads:
+                _validate_port_type(
+                    data=payload,
+                    expected_type="model",
+                    port_name="model",
+                    source_node_id="train",
+                    target_node_id="predict",
+                    strict=False,
+                )
+
+        mismatch_warnings = [w for w in caught if "Port type mismatch" in str(w.message)]
+        assert mismatch_warnings == []
+
+    def test_plain_config_dict_does_not_validate_as_model_payload(self):
+        from spectra_sherpa.app.services.dag.executor_validation import _validate_port_type
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            _validate_port_type(
+                data={"type": "knn", "n_neighbors": 5},
+                expected_type="model",
+                port_name="model",
+                source_node_id="config",
+                target_node_id="predict",
+                strict=False,
+            )
+
+        mismatch_warnings = [w for w in caught if "Port type mismatch" in str(w.message)]
+        assert len(mismatch_warnings) == 1
+
+    @pytest.mark.asyncio
+    async def test_knn_model_edge_does_not_warn_for_wrapped_model_payload(self):
+        executor = DAGExecutor(process_pool=None)
+        executor.add_node(
+            WorkflowNode(
+                node_id="src",
+                node_type="data.source",
+                parameters={"source": "sklearn", "sklearn_dataset": "iris"},
+            )
+        )
+        executor.add_node(
+            WorkflowNode(
+                node_id="split",
+                node_type="selection.sample_partition",
+                parameters={"method": "random", "test_size": 0.25, "random_seed": 42},
+            )
+        )
+        executor.add_node(
+            WorkflowNode(
+                node_id="train",
+                node_type="classification.knn",
+                parameters={"n_neighbors": 3},
+            )
+        )
+        executor.add_node(
+            WorkflowNode(
+                node_id="predict",
+                node_type="classification.predict",
+                parameters={},
+            )
+        )
+
+        executor.add_edge(WorkflowEdge(from_node="src", to_node="split"))
+        executor.add_edge(WorkflowEdge(from_node="split", to_node="train", from_output="X_train", to_input="X"))
+        executor.add_edge(WorkflowEdge(from_node="split", to_node="train", from_output="y_train", to_input="y"))
+        executor.add_edge(WorkflowEdge(from_node="split", to_node="predict", from_output="X_test", to_input="X_new"))
+        executor.add_edge(WorkflowEdge(from_node="train", to_node="predict", from_output="model", to_input="model"))
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")

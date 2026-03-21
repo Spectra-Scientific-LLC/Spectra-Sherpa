@@ -367,3 +367,155 @@ class TestDAGStructure:
                 if node["node_type"] not in exempt_types and node["node_id"] not in targets:
                     errors.append(f"{slug}: node '{node['node_id']}' ({node['node_type']}) has no incoming edge")
         assert not errors, "Orphaned nodes:\n" + "\n".join(errors)
+
+
+# ---------------------------------------------------------------------------
+# Port existence — every edge from_output / to_input must exist on the node
+# ---------------------------------------------------------------------------
+
+
+def _get_port_names(node_type: str, direction: str) -> list[str] | None:
+    """Return output or input port names for a node type, or None if unknown."""
+    try:
+        cls = node_registry.get_node_class(node_type)
+    except Exception:
+        return None
+    meta = getattr(cls, "metadata", None)
+    if meta is None:
+        return None
+    ports = meta.output_ports if direction == "out" else meta.input_ports
+    if not ports:
+        return None
+    return [p.name for p in ports]
+
+
+def _get_port_type_ref(node_type: str, port_name: str, direction: str) -> str | None:
+    """Return the type_ref for a specific port, or None."""
+    try:
+        cls = node_registry.get_node_class(node_type)
+    except Exception:
+        return None
+    meta = getattr(cls, "metadata", None)
+    if meta is None:
+        return None
+    ports = meta.output_ports if direction == "out" else meta.input_ports
+    if not ports:
+        return None
+    for p in ports:
+        if p.name == port_name:
+            return str(p.type_ref)
+    return None
+
+
+# Downstream nodes that accept the full multi-output dict via the executor's
+# dict-passthrough behavior (no specific from_output needed).
+_DICT_PASSTHROUGH_TARGETS = {"stats.summary", "output.plot", "output.export"}
+
+
+class TestEdgePorts:
+    """Every edge must reference ports that actually exist on the source/target nodes."""
+
+    def test_from_output_ports_exist(self, all_templates: list[dict]) -> None:
+        errors = []
+        for t in all_templates:
+            slug = t["slug"]
+            nodes = {n["node_id"]: n["node_type"] for n in t["template_data"]["nodes"]}
+            for i, edge in enumerate(t["template_data"]["edges"]):
+                from_output = edge.get("from_output", "default")
+                from_type = nodes.get(edge["from_node_id"], "")
+                to_type = nodes.get(edge["to_node_id"], "")
+                out_ports = _get_port_names(from_type, "out")
+                if out_ports is None:
+                    continue
+                # Dict-passthrough: downstream nodes that parse the full dict
+                if from_output == "default" and "default" not in out_ports:
+                    if to_type in _DICT_PASSTHROUGH_TARGETS:
+                        continue
+                    errors.append(
+                        f"{slug}: edge {i} ({edge['from_node_id']}->{edge['to_node_id']}) "
+                        f'from_output="default" but {from_type} has no default port '
+                        f"(available: {out_ports})"
+                    )
+                elif from_output != "default" and from_output not in out_ports:
+                    errors.append(
+                        f"{slug}: edge {i} ({edge['from_node_id']}->{edge['to_node_id']}) "
+                        f'from_output="{from_output}" not in {from_type} '
+                        f"output_ports {out_ports}"
+                    )
+        assert not errors, "Invalid from_output ports:\n" + "\n".join(errors)
+
+    def test_to_input_ports_exist(self, all_templates: list[dict]) -> None:
+        errors = []
+        for t in all_templates:
+            slug = t["slug"]
+            nodes = {n["node_id"]: n["node_type"] for n in t["template_data"]["nodes"]}
+            for i, edge in enumerate(t["template_data"]["edges"]):
+                to_input = edge.get("to_input", "default")
+                to_type = nodes.get(edge["to_node_id"], "")
+                in_ports = _get_port_names(to_type, "in")
+                if in_ports is None:
+                    continue
+                if to_input != "default" and to_input not in in_ports:
+                    errors.append(
+                        f"{slug}: edge {i} ({edge['from_node_id']}->{edge['to_node_id']}) "
+                        f'to_input="{to_input}" not in {to_type} '
+                        f"input_ports {in_ports}"
+                    )
+        assert not errors, "Invalid to_input ports:\n" + "\n".join(errors)
+
+
+# ---------------------------------------------------------------------------
+# Type compatibility — from_output type_ref must be assignable to to_input
+# ---------------------------------------------------------------------------
+
+
+class TestEdgeTypeCompatibility:
+    """Edge type_refs must be compatible (same type, subtype, or Any target)."""
+
+    @pytest.fixture(scope="class", autouse=True)
+    def _load_type_registry(self) -> None:
+        from pathlib import Path
+
+        from spectra_sherpa.app.types import type_registry
+
+        if not type_registry._by_name:
+            registry_dir = Path(__file__).resolve().parent.parent / "src" / "spectra_sherpa" / "app" / "types"
+            type_registry.load(registry_dir)
+
+    def test_edge_type_refs_compatible(self, all_templates: list[dict]) -> None:
+        from spectra_sherpa.app.types.validator import can_connect
+
+        errors = []
+        for t in all_templates:
+            slug = t["slug"]
+            nodes = {n["node_id"]: n["node_type"] for n in t["template_data"]["nodes"]}
+            for i, edge in enumerate(t["template_data"]["edges"]):
+                from_output = edge.get("from_output", "default")
+                to_input = edge.get("to_input", "default")
+                from_type = nodes.get(edge["from_node_id"], "")
+                to_type = nodes.get(edge["to_node_id"], "")
+
+                # Skip dict-passthrough edges
+                if from_output == "default" and to_type in _DICT_PASSTHROUGH_TARGETS:
+                    out_ports = _get_port_names(from_type, "out")
+                    if out_ports and "default" not in out_ports:
+                        continue
+
+                src_ref = _get_port_type_ref(from_type, from_output, "out")
+                # For to_input="default" fallback to first port
+                dst_ref = _get_port_type_ref(to_type, to_input, "in")
+                if dst_ref is None and to_input == "default":
+                    in_ports = _get_port_names(to_type, "in")
+                    if in_ports:
+                        dst_ref = _get_port_type_ref(to_type, in_ports[0], "in")
+
+                if src_ref is None or dst_ref is None:
+                    continue
+
+                ok, reason = can_connect(src_ref, dst_ref)
+                if not ok:
+                    errors.append(
+                        f"{slug}: edge {i} ({edge['from_node_id']}.{from_output} "
+                        f"-> {edge['to_node_id']}.{to_input}) {reason}"
+                    )
+        assert not errors, "Type-incompatible edges:\n" + "\n".join(errors)
