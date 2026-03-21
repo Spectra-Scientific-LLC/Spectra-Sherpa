@@ -392,7 +392,6 @@ class VariableSelectNode(Node):
         fa = getattr(X_ds, "feature_axis", None)
         fa_values = np.asarray(fa.values, dtype=np.float64) if (fa is not None and fa.values is not None) else None
 
-        mask: np.ndarray
         scores: np.ndarray | None = None
 
         if method == "interval":
