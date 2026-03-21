@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from spectra_sherpa.app.services.dag.node_base import node_registry
+from spectra_sherpa.app.services.dag.node_base import Node, NodeMetadata, PortMetadata, node_registry, register_node
 from spectra_sherpa.app.services.dag.node_meta_validator import (
     validate_all_registered_node_meta,
     validate_node_meta,
@@ -142,3 +142,70 @@ class TestAllNodeTypeRefs:
         ok, errors = validate_all_registered_node_meta()
         assert ok, "\n".join(errors)
         assert errors == []
+
+
+class TestExecutePortContracts:
+    def test_multi_port_default_contract_registers_when_signature_is_compatible(self):
+        class _ValidDefaultPortNode(Node):
+            metadata = NodeMetadata(
+                node_type="_test.valid_default_port_contract",
+                category="test",
+                label="Valid Default Contract",
+                description="Registration should accept compatible multi-port default signatures",
+                input_ports=[
+                    PortMetadata(
+                        name="default",
+                        type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                        required=True,
+                        label="Input",
+                    ),
+                    PortMetadata(
+                        name="reference",
+                        type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                        required=False,
+                        label="Reference",
+                    ),
+                ],
+            )
+
+            async def execute(self, input_data=None, reference=None, **kwargs):
+                return input_data
+
+        register_node(_ValidDefaultPortNode)
+        try:
+            assert "_test.valid_default_port_contract" in node_registry
+        finally:
+            node_registry.unregister("_test.valid_default_port_contract")
+
+    def test_multi_port_default_contract_fails_fast_on_registration(self):
+        class _InvalidDefaultPortNode(Node):
+            metadata = NodeMetadata(
+                node_type="_test.invalid_default_port_contract",
+                category="test",
+                label="Invalid Default Contract",
+                description="Registration should reject keyword-only default handlers",
+                input_ports=[
+                    PortMetadata(
+                        name="default",
+                        type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                        required=True,
+                        label="Input",
+                    ),
+                    PortMetadata(
+                        name="reference",
+                        type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                        required=False,
+                        label="Reference",
+                    ),
+                ],
+            )
+
+            async def execute(self, *, reference=None, **kwargs):
+                return reference
+
+        ok, errors = validate_node_meta(_InvalidDefaultPortNode)
+        assert not ok
+        assert any("default' input port" in err for err in errors)
+
+        with pytest.raises(ValueError, match="default"):
+            register_node(_InvalidDefaultPortNode)

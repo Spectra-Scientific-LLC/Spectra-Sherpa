@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Type
 
-from .node_base import Node, node_registry
+from .node_base import Node, node_registry, validate_execute_port_contract
 
 
 def _ensure_registry_loaded() -> None:
@@ -59,6 +59,8 @@ def validate_node_meta(node_class: Type[Node]) -> tuple[bool, List[str]]:
 
     if not isinstance(meta.diagnostics, list):
         errors.append(f"{meta.node_type} diagnostics must be a list, got {type(meta.diagnostics).__name__}")
+
+    errors.extend(validate_execute_port_contract(node_class))
 
     return len(errors) == 0, errors
 

@@ -7,6 +7,7 @@ Nodes can be connected to form directed acyclic graphs (DAGs).
 
 from __future__ import annotations
 
+import inspect
 import logging
 import threading
 from abc import ABC, abstractmethod
@@ -142,6 +143,72 @@ class NodeMetadata:
     policy: Optional[NodePolicy] = None
     # Optional URL linking to external documentation (e.g., SpectroChemPy API docs)
     help_url: Optional[str] = None
+
+
+def validate_execute_port_contract(node_class: Type["Node"]) -> list[str]:
+    """Validate that ``execute()`` can accept the ports declared in metadata.
+
+    This is intentionally limited to signature-level checks only. Runtime type
+    compatibility remains the executor's responsibility.
+    """
+    meta = node_class.get_metadata()
+    if not meta.input_ports:
+        return []
+
+    sig = inspect.signature(node_class.execute)
+    exec_params = list(sig.parameters.values())[1:]  # Drop ``self``.
+    errors: list[str] = []
+
+    has_var_positional = any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in exec_params)
+    has_var_keyword = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in exec_params)
+    named_params = {
+        p.name
+        for p in exec_params
+        if p.kind
+        in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.KEYWORD_ONLY,
+        )
+    }
+
+    def _accepts_default_positionally() -> bool:
+        for param in exec_params:
+            if param.kind in (
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.VAR_POSITIONAL,
+            ):
+                return True
+            if param.kind in (inspect.Parameter.KEYWORD_ONLY, inspect.Parameter.VAR_KEYWORD):
+                return False
+        return False
+
+    port_names = [port.name for port in meta.input_ports]
+    if "default" in port_names and not _accepts_default_positionally():
+        errors.append(
+            f"{meta.node_type} declares a 'default' input port, but execute() cannot accept "
+            "that input positionally. The first execute() parameter after self must be positional "
+            "or the signature must accept *args."
+        )
+
+    missing_named_ports = [
+        port.name
+        for port in meta.input_ports
+        if port.name != "default" and port.name not in named_params and not has_var_keyword
+    ]
+    if missing_named_ports:
+        errors.append(
+            f"{meta.node_type} declares named input ports not accepted by execute(): "
+            f"{', '.join(missing_named_ports)}. Add matching keyword parameters or **kwargs."
+        )
+
+    if "default" in port_names and len(port_names) > 1 and not (has_var_positional or _accepts_default_positionally()):
+        errors.append(
+            f"{meta.node_type} uses a multi-port 'default' input but execute() lacks a positional default receiver."
+        )
+
+    return errors
 
 
 def _format_value(value: Any) -> str:
@@ -469,6 +536,9 @@ class NodeRegistry:
         with self._lock:
             metadata = node_class.get_metadata()
             node_type = metadata.node_type
+            contract_errors = validate_execute_port_contract(node_class)
+            if contract_errors:
+                raise ValueError("\n".join(contract_errors))
 
             if node_type in self._nodes:
                 if self._frozen and node_type in self._builtin_types:

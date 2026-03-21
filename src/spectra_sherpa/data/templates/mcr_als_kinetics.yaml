@@ -81,6 +81,7 @@ template_data:
     from_output: C
   - from_node_id: model_1
     to_node_id: export_1
+    from_output: C
   canvas_state:
     zoom: 1.0
     pan_x: 0

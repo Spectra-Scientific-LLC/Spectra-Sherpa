@@ -73,8 +73,10 @@ template_data:
     to_node_id: analysis_1
   - from_node_id: analysis_1
     to_node_id: viz_1
+    from_output: annotated_spectrum
   - from_node_id: analysis_1
     to_node_id: stats_1
+    from_output: peaks
   canvas_state:
     zoom: 1.0
     pan_x: 0

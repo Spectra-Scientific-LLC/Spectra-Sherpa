@@ -44,7 +44,7 @@ template_data:
     to_node_id: model_1
   - from_node_id: model_1
     to_node_id: viz_1
-    from_output: plots
+    from_output: linkage_matrix
   canvas_state:
     zoom: 1.0
     pan_x: 0
