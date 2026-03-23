@@ -118,6 +118,13 @@
 
           <div class="actions">
             <Button
+              label="Validate Connection"
+              icon="pi pi-check-circle"
+              @click="validateConfiguredConnection"
+              :loading="validating"
+              class="p-button-secondary"
+            />
+            <Button
               label="Refresh"
               icon="pi pi-refresh"
               @click="refreshConnection"
@@ -172,6 +179,8 @@
           <i class="pi pi-check-circle"></i>
           <div class="details">
             <p><strong>Connection successful!</strong></p>
+            <p v-if="testResult.deployment?.label">Deployment: {{ testResult.deployment.label }}</p>
+            <p v-if="testResult.deployment?.plan">Plan: {{ testResult.deployment.plan }}</p>
             <p v-if="testResult.user">Logged in as: {{ testResult.user.email || testResult.user.username }}</p>
             <p v-if="testResult.keys?.length">{{ testResult.keys.length }} managed LLM provider(s) available</p>
           </div>
@@ -210,6 +219,7 @@ const serverUrl = ref('');
 const apiKey = ref('');
 const showKey = ref(false);
 const testing = ref(false);
+const validating = ref(false);
 const connecting = ref(false);
 const disconnecting = ref(false);
 const refreshing = ref(false);
@@ -334,6 +344,48 @@ const testConnection = async () => {
   }
 };
 
+const fetchConfiguredConnectionDetails = async () => {
+  const userResponse = await api.get('/config/spectrasherpa/user');
+  const keysResponse = await api.get('/config/spectrasherpa/keys');
+
+  if (userResponse.data?.error) {
+    throw new Error(userResponse.data.error);
+  }
+  if (keysResponse.data?.error) {
+    throw new Error(keysResponse.data.error);
+  }
+
+  return {
+    deployment: userResponse.data,
+    keys: Array.isArray(keysResponse.data?.keys) ? keysResponse.data.keys : [],
+  };
+};
+
+const validateConfiguredConnection = async () => {
+  validating.value = true;
+  try {
+    const details = await fetchConfiguredConnectionDetails();
+    userInfo.value = details.deployment;
+    managedKeys.value = details.keys;
+    connectionStatus.value = 'connected';
+    testResult.value = {
+      success: true,
+      ...details,
+    };
+  } catch (error: any) {
+    userInfo.value = null;
+    managedKeys.value = [];
+    connectionStatus.value = 'error';
+    testResult.value = {
+      success: false,
+      error: error?.message || 'Connection validation failed',
+    };
+  } finally {
+    showTestResult.value = true;
+    validating.value = false;
+  }
+};
+
 const activateHybrid = async () => {
   connecting.value = true;
   try {
@@ -400,12 +452,9 @@ const deactivateHybrid = async () => {
 const refreshConnection = async () => {
   refreshing.value = true;
   try {
-    const userResponse = await api.get('/config/spectrasherpa/user');
-    userInfo.value = userResponse.data?.error ? null : userResponse.data;
-
-    const keysResponse = await api.get('/config/spectrasherpa/keys');
-    managedKeys.value = Array.isArray(keysResponse.data?.keys) ? keysResponse.data.keys : [];
-
+    const details = await fetchConfiguredConnectionDetails();
+    userInfo.value = details.deployment;
+    managedKeys.value = details.keys;
     connectionStatus.value = 'connected';
   } catch {
     userInfo.value = null;
