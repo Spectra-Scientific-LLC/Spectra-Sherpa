@@ -68,9 +68,11 @@ template_data:
     to_node_id: preprocess_1
   - from_node_id: preprocess_1
     to_node_id: partition_1
+    to_input: X
   - from_node_id: partition_1
     to_node_id: model_full
     from_output: X_train
+    to_input: X
   - from_node_id: model_full
     to_node_id: varsel_1
     from_output: model
@@ -82,6 +84,7 @@ template_data:
   - from_node_id: varsel_1
     to_node_id: model_selected
     from_output: X_selected
+    to_input: X
   - from_node_id: model_full
     to_node_id: viz_1
   canvas_state:

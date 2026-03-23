@@ -76,6 +76,21 @@ type PlotlyElement = HTMLDivElement & {
 };
 
 let plotlyClientPromise: Promise<PlotlyClient> | null = null;
+let listenersBound = false;
+
+const cloneForPlotly = <T>(value: T): T => {
+  if (value == null) {
+    return value;
+  }
+  if (typeof structuredClone === "function") {
+    try {
+      return structuredClone(value);
+    } catch {
+      // Vue proxies and some DOM-backed values can fail structuredClone.
+    }
+  }
+  return JSON.parse(JSON.stringify(value)) as T;
+};
 
 const getPlotlyClient = async (): Promise<PlotlyClient> => {
   if (!plotlyClientPromise) {
@@ -89,9 +104,10 @@ const getPlotlyClient = async (): Promise<PlotlyClient> => {
 };
 
 const setupEventListeners = () => {
-  if (!chartEl.value) return;
+  if (!chartEl.value || listenersBound) return;
 
   const plotlyElement = chartEl.value as PlotlyElement;
+  if (typeof plotlyElement.on !== "function") return;
 
   plotlyElement.on("plotly_click", (data) => {
     emit("click", data as PlotlyClickEvent);
@@ -100,6 +116,8 @@ const setupEventListeners = () => {
   plotlyElement.on("plotly_hover", (data) => {
     emit("hover", data as PlotlyHoverEvent);
   });
+
+  listenersBound = true;
 };
 
 const render = async () => {
@@ -107,9 +125,10 @@ const render = async () => {
     return;
   }
   const Plotly = await getPlotlyClient();
-  const layout = props.layout || {};
-  const config = { responsive: true, displaylogo: false, ...props.config };
-  Plotly.react(chartEl.value, props.data, layout, config);
+  const data = cloneForPlotly(props.data || []);
+  const layout = cloneForPlotly(props.layout || {});
+  const config = { responsive: true, displaylogo: false, ...cloneForPlotly(props.config || {}) };
+  await Plotly.react(chartEl.value, data, layout, config);
   setupEventListeners();
 };
 
@@ -165,6 +184,7 @@ onBeforeUnmount(() => {
       Plotly.purge(element);
     });
   }
+  listenersBound = false;
 });
 </script>
 

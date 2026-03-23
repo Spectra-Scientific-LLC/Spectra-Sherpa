@@ -50,6 +50,7 @@ template_data:
     to_node_id: feature_1
   - from_node_id: feature_1
     to_node_id: model_1
+    to_input: X
   - from_node_id: model_1
     to_node_id: viz_1
     from_output: Y_scores

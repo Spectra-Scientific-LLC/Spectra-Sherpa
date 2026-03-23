@@ -77,9 +77,11 @@ template_data:
   edges:
   - from_node_id: data_1
     to_node_id: partition_1
+    to_input: X
   - from_node_id: partition_1
     to_node_id: preprocess_train
     from_output: X_train
+    to_input: default
   - from_node_id: partition_1
     to_node_id: preprocess_test
     from_output: X_test
@@ -90,6 +92,7 @@ template_data:
     to_input: reference
   - from_node_id: preprocess_train
     to_node_id: model_1
+    to_input: X
   - from_node_id: preprocess_test
     to_node_id: predict_1
     to_input: X_new

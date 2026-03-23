@@ -72,6 +72,7 @@ template_data:
     to_node_id: preprocess_3
   - from_node_id: preprocess_3
     to_node_id: preprocess_4
+    to_input: default
   - from_node_id: preprocess_4
     to_node_id: viz_1
   - from_node_id: preprocess_4

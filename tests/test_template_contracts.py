@@ -463,6 +463,24 @@ class TestEdgePorts:
                     )
         assert not errors, "Invalid to_input ports:\n" + "\n".join(errors)
 
+    def test_multi_input_targets_require_explicit_to_input(self, all_templates: list[dict]) -> None:
+        errors = []
+        for t in all_templates:
+            slug = t["slug"]
+            nodes = {n["node_id"]: n["node_type"] for n in t["template_data"]["nodes"]}
+            for i, edge in enumerate(t["template_data"]["edges"]):
+                if "to_input" in edge:
+                    continue
+                to_type = nodes.get(edge["to_node_id"], "")
+                in_ports = _get_port_names(to_type, "in")
+                if in_ports and len(in_ports) > 1:
+                    errors.append(
+                        f"{slug}: edge {i} ({edge['from_node_id']}->{edge['to_node_id']}) "
+                        f"targets multi-input node {to_type} with input_ports {in_ports} "
+                        "but omits to_input"
+                    )
+        assert not errors, "Edges missing explicit to_input for multi-input targets:\n" + "\n".join(errors)
+
 
 # ---------------------------------------------------------------------------
 # Type compatibility — from_output type_ref must be assignable to to_input
