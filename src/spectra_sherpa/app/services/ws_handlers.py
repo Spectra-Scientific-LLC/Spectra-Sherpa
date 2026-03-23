@@ -20,12 +20,11 @@ exceptions are caught and turned into error messages.
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any, Callable
 
-import httpx
 from fastapi import WebSocket
+from starlette.websockets import WebSocketState
 
 from spectra_sherpa.app.core.security import check_egress_permission
 from spectra_sherpa.app.db.session import async_session
@@ -34,6 +33,30 @@ from spectra_sherpa.app.services.rate_limiter import RateLimiter
 from spectra_sherpa.app.services.websocket_manager import ws_manager
 
 logger = logging.getLogger(__name__)
+
+
+def _rate_limit_user_key(user: Any) -> str:
+    return f"user_{user.id}" if user and getattr(user, "id", None) else "anonymous"
+
+
+def _ws_is_connected(ws: WebSocket) -> bool:
+    state = getattr(ws, "client_state", None)
+    return state is None or state == WebSocketState.CONNECTED
+
+
+async def _safe_ws_send_json(ws: WebSocket, payload: dict[str, Any]) -> bool:
+    if not _ws_is_connected(ws):
+        return False
+    try:
+        await ws.send_json(payload)
+        return True
+    except Exception:
+        logger.debug("WebSocket send failed; client likely disconnected", exc_info=True)
+        return False
+
+
+async def _handle_sherpa_access_error(ws: WebSocket, detail: str) -> None:
+    await _safe_ws_send_json(ws, {"type": "sherpa_error", "detail": detail})
 
 
 # ---------------------------------------------------------------------------
@@ -51,10 +74,10 @@ async def handle_subscribe(
 ) -> None:
     channel = resolve_channel(payload.get("channel"))
     if not channel:
-        await ws.send_json({"type": "error", "detail": "Missing or unauthorized channel"})
+        await _safe_ws_send_json(ws, {"type": "error", "detail": "Missing or unauthorized channel"})
         return
     await ws_manager.subscribe(ws, channel)
-    await ws.send_json({"type": "subscribed", "channel": channel})
+    await _safe_ws_send_json(ws, {"type": "subscribed", "channel": channel})
 
 
 async def handle_unsubscribe(
@@ -67,10 +90,10 @@ async def handle_unsubscribe(
 ) -> None:
     channel = resolve_channel(payload.get("channel"))
     if not channel:
-        await ws.send_json({"type": "error", "detail": "Missing or unauthorized channel"})
+        await _safe_ws_send_json(ws, {"type": "error", "detail": "Missing or unauthorized channel"})
         return
     await ws_manager.unsubscribe(ws, channel)
-    await ws.send_json({"type": "unsubscribed", "channel": channel})
+    await _safe_ws_send_json(ws, {"type": "unsubscribed", "channel": channel})
 
 
 # ---------------------------------------------------------------------------
@@ -90,25 +113,6 @@ def _is_contextual_server_channel(use_server_chat: bool) -> bool:
     return use_server_chat
 
 
-def _extract_upstream_error_detail(response: httpx.Response) -> str:
-    """Best-effort detail extraction for proxied HTTP failures."""
-    try:
-        payload = response.json()
-    except ValueError:
-        text = response.text.strip()
-        return text or f"Server returned {response.status_code}"
-
-    detail = payload.get("detail") if isinstance(payload, dict) else None
-    if isinstance(detail, dict):
-        message = detail.get("message")
-        if isinstance(message, str) and message.strip():
-            return message
-        return json.dumps(detail)
-    if isinstance(detail, str) and detail.strip():
-        return detail
-    return f"Server returned {response.status_code}"
-
-
 async def _proxy_server_chat(
     ws: WebSocket,
     message: str,
@@ -116,23 +120,25 @@ async def _proxy_server_chat(
     metadata: dict | None,
     user: Any,
 ) -> None:
-    """Proxy LLM chat to the server's /sherpa/chat endpoint via SSE."""
-    import json
+    """Proxy LLM chat to the server's /sherpa/chat endpoint via SSE.
+
+    Uses ``SherpaAdvisor._stream_sse`` to reuse timeout config, connection
+    pooling, and SSE parsing — avoiding the duplicated httpx logic that
+    previously lived here.
+    """
+    from spectra_sherpa.app.services.sherpa_advisor import (
+        SherpaAuthorizationError,
+        SubscriptionRequiredError,
+        get_sherpa_advisor,
+    )
+
+    advisor = get_sherpa_advisor()
+    if not advisor.is_available:
+        await _safe_ws_send_json(ws, {"type": "error", "detail": "Server chat not configured (no deployment key)"})
+        return
 
     workflow_context = metadata.get("workflow_context") if metadata else None
     user_id = user.id if user else None
-
-    # ── Remote proxy path (httpx SSE to remote spectra-server) ──
-    from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
-
-    base_url = spectrasherpa_config.api_base_url.rstrip("/")
-    if not base_url.endswith("/api/v1"):
-        base_url = f"{base_url}/api/v1"
-    api_key = spectrasherpa_config.api_key
-
-    if not api_key:
-        await ws.send_json({"type": "error", "detail": "Server chat not configured (no deployment key)"})
-        return
 
     body = {
         "message": message,
@@ -143,47 +149,56 @@ async def _proxy_server_chat(
     }
 
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            async with client.stream(
-                "POST",
-                f"{base_url}/sherpa/chat",
-                json=body,
-                headers={"X-Deployment-Key": api_key},
-            ) as response:
-                if response.status_code != 200:
-                    await response.aread()
-                    detail = _extract_upstream_error_detail(response)
-                    await ws.send_json({"type": "error", "detail": detail})
+        started = False
+        event_stream = advisor._stream_sse("/sherpa/chat", json_body=body)
+        try:
+            async for event in event_stream:
+                etype = event.get("type")
+                if etype == "start":
+                    started = True
+                    if not await _safe_ws_send_json(
+                        ws,
+                        {"type": "llm_start", "conversation_id": event.get("conversation_id")},
+                    ):
+                        return
+                elif etype == "chunk":
+                    if not started:
+                        started = True
+                        if not await _safe_ws_send_json(
+                            ws,
+                            {"type": "llm_start", "conversation_id": event.get("conversation_id")},
+                        ):
+                            return
+                    if not await _safe_ws_send_json(
+                        ws,
+                        {
+                            "type": "llm_chunk",
+                            "conversation_id": event.get("conversation_id"),
+                            "chunk": event.get("text", ""),
+                        },
+                    ):
+                        return
+                elif etype == "done":
+                    await _safe_ws_send_json(
+                        ws,
+                        {"type": "llm_done", "conversation_id": event.get("conversation_id")},
+                    )
                     return
-                async for line in response.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    try:
-                        event = json.loads(line[6:])
-                    except json.JSONDecodeError:
-                        continue
-                    etype = event.get("type")
-                    if etype == "start":
-                        await ws.send_json({"type": "llm_start", "conversation_id": event.get("conversation_id")})
-                    elif etype == "chunk":
-                        await ws.send_json(
-                            {
-                                "type": "llm_chunk",
-                                "conversation_id": event.get("conversation_id"),
-                                "chunk": event.get("text", ""),
-                            }
-                        )
-                    elif etype == "done":
-                        await ws.send_json({"type": "llm_done", "conversation_id": event.get("conversation_id")})
-                    elif etype == "error":
-                        await ws.send_json({"type": "error", "detail": event.get("detail", "")})
-    except httpx.ConnectError:
-        await ws.send_json({"type": "error", "detail": "Cannot connect to SpectraSherpa server"})
-    except httpx.TimeoutException:
-        await ws.send_json({"type": "error", "detail": "Server chat request timed out"})
+                elif etype == "error":
+                    await _safe_ws_send_json(ws, {"type": "error", "detail": event.get("detail", "")})
+                    return
+        finally:
+            aclose = getattr(event_stream, "aclose", None)
+            if callable(aclose):
+                await aclose()
+    except SherpaAuthorizationError as exc:
+        logger.warning("Server chat authorization failed: %s", exc.detail)
+        await _safe_ws_send_json(ws, {"type": "error", "detail": f"Server chat authorization failed: {exc.detail}"})
+    except SubscriptionRequiredError as exc:
+        await _safe_ws_send_json(ws, {"type": "error", "detail": f"Server chat subscription required: {exc.detail}"})
     except Exception as exc:
         logger.exception("Server chat proxy failed: %s", exc)
-        await ws.send_json({"type": "error", "detail": "Server chat proxy failed"})
+        await _safe_ws_send_json(ws, {"type": "error", "detail": f"Server chat failed: {exc}"})
 
 
 async def _local_llm_chat(
@@ -203,12 +218,14 @@ async def _local_llm_chat(
                 metadata=metadata,
             )
         except ValueError as exc:
-            await ws.send_json({"type": "error", "detail": str(exc)})
+            await _safe_ws_send_json(ws, {"type": "error", "detail": str(exc)})
             return
-        await ws.send_json({"type": "llm_start", "conversation_id": convo_id})
+        if not await _safe_ws_send_json(ws, {"type": "llm_start", "conversation_id": convo_id}):
+            return
         async for chunk in stream:
-            await ws.send_json({"type": "llm_chunk", "conversation_id": convo_id, "chunk": chunk})
-        await ws.send_json({"type": "llm_done", "conversation_id": convo_id})
+            if not await _safe_ws_send_json(ws, {"type": "llm_chunk", "conversation_id": convo_id, "chunk": chunk}):
+                return
+        await _safe_ws_send_json(ws, {"type": "llm_done", "conversation_id": convo_id})
 
 
 async def handle_llm_chat(
@@ -220,13 +237,13 @@ async def handle_llm_chat(
     try:
         message = payload.get("message") or ""
         if not message:
-            await ws.send_json({"type": "error", "detail": "Missing message"})
+            await _safe_ws_send_json(ws, {"type": "error", "detail": "Missing message"})
             return
 
         # Rate limit
-        user_key = f"user_{user.id}" if user and user.id else "anonymous"
+        user_key = _rate_limit_user_key(user)
         if not rate_limiter.allow(user_key):
-            await ws.send_json({"type": "error", "detail": "LLM rate limit exceeded. Try again later."})
+            await _safe_ws_send_json(ws, {"type": "error", "detail": "LLM rate limit exceeded. Try again later."})
             return
 
         conversation_id = payload.get("conversation_id")
@@ -240,7 +257,10 @@ async def handle_llm_chat(
                 session=permission_session,
                 skip_global_check=True,
             ):
-                await ws.send_json({"type": "error", "detail": "AI chat is disabled in user privacy settings."})
+                await _safe_ws_send_json(
+                    ws,
+                    {"type": "error", "detail": "AI chat is disabled in user privacy settings."},
+                )
                 return
 
         # Only the server-backed Sherpa channel consumes workflow context.
@@ -264,7 +284,7 @@ async def handle_llm_chat(
             await _local_llm_chat(ws, message, conversation_id, metadata, user)
     except Exception as exc:
         logger.exception("llm_chat failed: %s", exc)
-        await ws.send_json({"type": "error", "detail": "LLM request failed. Check server logs for details."})
+        await _safe_ws_send_json(ws, {"type": "error", "detail": "LLM request failed. Check server logs for details."})
 
 
 # ---------------------------------------------------------------------------
@@ -279,16 +299,24 @@ def _advisor_is_available(advisor: Any) -> bool:
 
 
 async def _check_demo_sherpa_limit(ws: WebSocket, user: Any) -> bool:
-    """Check demo Sherpa interaction quota. Returns False (and sends error) if exhausted."""
-    from spectra_sherpa.app.core.demo_limits import check_demo_sherpa, demo_limit_error_detail
+    """Check demo Sherpa quota *without consuming*.  Returns False (and sends error) if exhausted."""
+    from spectra_sherpa.app.core.demo_limits import check_demo_sherpa_available, demo_limit_error_detail
 
     user_id = getattr(user, "id", None) if user else None
-    allowed, remaining = check_demo_sherpa(user_id)
+    allowed, remaining = check_demo_sherpa_available(user_id)
     if not allowed:
         detail = demo_limit_error_detail("sherpa", remaining)
-        await ws.send_json({"type": "sherpa_error", **detail})
+        await _safe_ws_send_json(ws, {"type": "sherpa_error", **detail})
         return False
     return True
+
+
+def _consume_demo_sherpa(user: Any) -> None:
+    """Consume one Sherpa interaction quota.  Call only after successful work."""
+    from spectra_sherpa.app.core.demo_limits import consume_demo_sherpa
+
+    user_id = getattr(user, "id", None) if user else None
+    consume_demo_sherpa(user_id)
 
 
 async def handle_sherpa_sync(
@@ -297,8 +325,10 @@ async def handle_sherpa_sync(
     user: Any,
     rate_limiter: RateLimiter,
 ) -> None:
+    from spectra_sherpa.app.services.sherpa_advisor import SherpaAuthorizationError, SubscriptionRequiredError
+
     try:
-        if not await _check_demo_sherpa_limit(ws, user):
+        if not await _sherpa_proxy_preamble(ws, user, rate_limiter, permission_name="allow_spectrasherpa_sync"):
             return
 
         from spectra_sherpa.app.schemas.sherpa import EgressTier, WorkflowStateSync
@@ -307,42 +337,26 @@ async def handle_sherpa_sync(
         from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
 
         advisor = get_sherpa_advisor()
-        if not _advisor_is_available(advisor):
-            await ws.send_json({"type": "sherpa_status", "payload": {"connected": False, "reason": "not_configured"}})
-            return
-
-        # Cloud proxy sends workflow data to SpectraSherpa — gate by allow_spectrasherpa_sync
-        async with async_session() as permission_session:
-            allowed = await check_egress_permission(
-                user,
-                "allow_spectrasherpa_sync",
-                data_type="workflow",
-                destination="spectrasherpa",
-                session=permission_session,
-            )
-        if not allowed:
-            await ws.send_json(
-                {
-                    "type": "sherpa_error",
-                    "detail": "Sherpa sync not permitted. Enable cloud sync in Settings > Data & Privacy.",
-                }
-            )
-            return
-
         sync_data = dict(payload.get("payload", {}))
         tier = EgressTier(sync_data.pop("tier", "structure"))
         sync_msg = WorkflowStateSync(**sync_data)
         recommendations = await advisor.sync_workflow(sync_msg, tier=tier)
+        _consume_demo_sherpa(user)
         logger.info("sherpa_sync (proxy): %d nodes → %d recommendations", len(sync_msg.nodes), len(recommendations))
-        await ws.send_json(
+        await _safe_ws_send_json(
+            ws,
             {
                 "type": "sherpa_recommendations",
                 "payload": [r.model_dump(mode="json") for r in recommendations],
-            }
+            },
         )
+    except SherpaAuthorizationError as exc:
+        await _handle_sherpa_access_error(ws, exc.detail)
+    except SubscriptionRequiredError as exc:
+        await _safe_ws_send_json(ws, {"type": "sherpa_subscription_required", "detail": exc.detail})
     except Exception as exc:
         logger.exception("sherpa_sync failed: %s", exc)
-        await ws.send_json({"type": "sherpa_error", "detail": "Sherpa sync failed. Check server logs for details."})
+        await _safe_ws_send_json(ws, {"type": "sherpa_error", "detail": "Sherpa sync failed. Check server logs."})
 
 
 async def handle_sherpa_decide(
@@ -351,25 +365,33 @@ async def handle_sherpa_decide(
     user: Any,
     rate_limiter: RateLimiter,
 ) -> None:
-    if not await _check_demo_sherpa_limit(ws, user):
-        return
+    from spectra_sherpa.app.services.sherpa_advisor import SherpaAuthorizationError, SubscriptionRequiredError
 
-    from spectra_sherpa.app.schemas.sherpa import UserDecision
-    from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
-
-    advisor = get_sherpa_advisor()
     try:
+        if not await _sherpa_proxy_preamble(ws, user, rate_limiter):
+            return
+
+        from spectra_sherpa.app.schemas.sherpa import UserDecision
+        from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
+
+        advisor = get_sherpa_advisor()
         decision = UserDecision(**payload.get("payload", {}))
         delivered = await advisor.send_decision(decision)
-        await ws.send_json(
+        _consume_demo_sherpa(user)
+        await _safe_ws_send_json(
+            ws,
             {
                 "type": "sherpa_decision_ack",
                 "payload": {"delivered": delivered, "suggestion_id": decision.suggestion_id},
-            }
+            },
         )
+    except SherpaAuthorizationError as exc:
+        await _handle_sherpa_access_error(ws, exc.detail)
+    except SubscriptionRequiredError as exc:
+        await _safe_ws_send_json(ws, {"type": "sherpa_subscription_required", "detail": exc.detail})
     except Exception as exc:
         logger.exception("sherpa_decide failed: %s", exc)
-        await ws.send_json({"type": "sherpa_error", "detail": "Sherpa decision failed. Check server logs for details."})
+        await _safe_ws_send_json(ws, {"type": "sherpa_error", "detail": "Sherpa decision failed. Check server logs."})
 
 
 async def handle_sherpa_chat(
@@ -378,14 +400,18 @@ async def handle_sherpa_chat(
     user: Any,
     rate_limiter: RateLimiter,
 ) -> None:
-    from spectra_sherpa.app.services.sherpa_advisor import SubscriptionRequiredError
+    from spectra_sherpa.app.services.sherpa_advisor import SherpaAuthorizationError, SubscriptionRequiredError
 
     try:
-        if not await _sherpa_proxy_preamble(ws, user):
+        if not await _sherpa_proxy_preamble(ws, user, rate_limiter):
             return
 
         chat_data = payload.get("payload", {})
         message = chat_data.get("message", "")
+        if not message:
+            await _safe_ws_send_json(ws, {"type": "sherpa_error", "detail": "Missing message"})
+            return
+
         history = chat_data.get("history", [])
 
         from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
@@ -393,26 +419,39 @@ async def handle_sherpa_chat(
         advisor = get_sherpa_advisor()
 
         workflow_id = chat_data.get("workflow_id")
-        # Forward workflow_context so server-side engine has graph for follow-up
         workflow_context_raw = await _filter_sherpa_workflow_context(
             user,
             chat_data.get("workflow_context"),
         )
 
-        await ws.send_json({"type": "sherpa_chat_start"})
+        started = False
         async for chunk in advisor.chat_followup(
             message=message,
             workflow_id=workflow_id,
             history=history,
             workflow_context=workflow_context_raw,
         ):
-            await ws.send_json({"type": "sherpa_chat_chunk", "chunk": chunk})
-        await ws.send_json({"type": "sherpa_chat_done"})
+            if not started:
+                if not await _safe_ws_send_json(ws, {"type": "sherpa_chat_start"}):
+                    return
+                started = True
+            if not await _safe_ws_send_json(ws, {"type": "sherpa_chat_chunk", "chunk": chunk}):
+                return
+
+        if started:
+            _consume_demo_sherpa(user)
+            await _safe_ws_send_json(ws, {"type": "sherpa_chat_done"})
+        else:
+            # Stream ended with no chunks — surface as empty completion
+            if await _safe_ws_send_json(ws, {"type": "sherpa_chat_start"}):
+                await _safe_ws_send_json(ws, {"type": "sherpa_chat_done"})
+    except SherpaAuthorizationError as exc:
+        await _handle_sherpa_access_error(ws, exc.detail)
     except SubscriptionRequiredError as exc:
-        await ws.send_json({"type": "sherpa_subscription_required", "detail": exc.detail})
+        await _safe_ws_send_json(ws, {"type": "sherpa_subscription_required", "detail": exc.detail})
     except Exception as exc:
         logger.exception("sherpa_chat failed: %s", exc)
-        await ws.send_json({"type": "sherpa_error", "detail": "Sherpa chat failed. Check server logs for details."})
+        await _safe_ws_send_json(ws, {"type": "sherpa_error", "detail": "Sherpa chat failed. Check server logs."})
 
 
 # ---------------------------------------------------------------------------
@@ -420,12 +459,22 @@ async def handle_sherpa_chat(
 # ---------------------------------------------------------------------------
 
 
-async def _sherpa_proxy_preamble(ws: WebSocket, user: Any) -> bool:
+async def _sherpa_proxy_preamble(
+    ws: WebSocket,
+    user: Any,
+    rate_limiter: RateLimiter,
+    *,
+    permission_name: str = "allow_llm_chat",
+) -> bool:
     """Shared pre-checks for all subscription-gated Sherpa proxy handlers.
 
     Returns True if the request is allowed to proceed, False otherwise
     (error already sent on the WebSocket).
     """
+    if not rate_limiter.allow(_rate_limit_user_key(user)):
+        await _safe_ws_send_json(ws, {"type": "sherpa_error", "detail": "Sherpa rate limit exceeded. Try again later."})
+        return False
+
     if not await _check_demo_sherpa_limit(ws, user):
         return False
 
@@ -433,28 +482,31 @@ async def _sherpa_proxy_preamble(ws: WebSocket, user: Any) -> bool:
 
     advisor = get_sherpa_advisor()
     if not _advisor_is_available(advisor):
-        await ws.send_json(
+        await _safe_ws_send_json(
+            ws,
             {
                 "type": "sherpa_status",
                 "payload": {"connected": False, "reason": "not_configured"},
-            }
+            },
         )
         return False
 
     async with async_session() as permission_session:
         allowed = await check_egress_permission(
             user,
-            "allow_llm_chat",
+            permission_name,
+            data_type="workflow" if permission_name == "allow_spectrasherpa_sync" else None,
+            destination="spectrasherpa" if permission_name == "allow_spectrasherpa_sync" else None,
             session=permission_session,
             skip_global_check=True,
         )
     if not allowed:
-        await ws.send_json(
-            {
-                "type": "sherpa_error",
-                "detail": "Sherpa AI features are disabled in user privacy settings.",
-            }
+        detail = (
+            "Sherpa sync not permitted. Enable cloud sync in Settings > Data & Privacy."
+            if permission_name == "allow_spectrasherpa_sync"
+            else "Sherpa AI features are disabled in user privacy settings."
         )
+        await _safe_ws_send_json(ws, {"type": "sherpa_error", "detail": detail})
         return False
     return True
 
@@ -484,14 +536,13 @@ async def handle_sherpa_identify_peaks(
     user: Any,
     rate_limiter: RateLimiter,
 ) -> None:
+    from spectra_sherpa.app.services.sherpa_advisor import SherpaAuthorizationError, SubscriptionRequiredError
+
     try:
-        if not await _sherpa_proxy_preamble(ws, user):
+        if not await _sherpa_proxy_preamble(ws, user, rate_limiter):
             return
 
-        from spectra_sherpa.app.services.sherpa_advisor import (
-            SubscriptionRequiredError,
-            get_sherpa_advisor,
-        )
+        from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
 
         advisor = get_sherpa_advisor()
         data = payload.get("payload", {})
@@ -500,14 +551,17 @@ async def handle_sherpa_identify_peaks(
             absorbance=data.get("absorbance", []),
         )
         if "error" in result:
-            await ws.send_json({"type": "sherpa_peaks_error", "detail": result["error"]})
+            await _safe_ws_send_json(ws, {"type": "sherpa_peaks_error", "detail": result["error"]})
         else:
-            await ws.send_json({"type": "sherpa_peaks_result", **result})
+            _consume_demo_sherpa(user)
+            await _safe_ws_send_json(ws, {"type": "sherpa_peaks_result", **result})
+    except SherpaAuthorizationError as exc:
+        await _handle_sherpa_access_error(ws, exc.detail)
     except SubscriptionRequiredError as exc:
-        await ws.send_json({"type": "sherpa_subscription_required", "detail": exc.detail})
+        await _safe_ws_send_json(ws, {"type": "sherpa_subscription_required", "detail": exc.detail})
     except Exception as exc:
         logger.exception("sherpa_identify_peaks failed: %s", exc)
-        await ws.send_json({"type": "sherpa_peaks_error", "detail": "Peak identification failed."})
+        await _safe_ws_send_json(ws, {"type": "sherpa_peaks_error", "detail": "Peak identification failed."})
 
 
 async def handle_sherpa_generate_code(
@@ -516,14 +570,13 @@ async def handle_sherpa_generate_code(
     user: Any,
     rate_limiter: RateLimiter,
 ) -> None:
+    from spectra_sherpa.app.services.sherpa_advisor import SherpaAuthorizationError, SubscriptionRequiredError
+
     try:
-        if not await _sherpa_proxy_preamble(ws, user):
+        if not await _sherpa_proxy_preamble(ws, user, rate_limiter):
             return
 
-        from spectra_sherpa.app.services.sherpa_advisor import (
-            SubscriptionRequiredError,
-            get_sherpa_advisor,
-        )
+        from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
 
         advisor = get_sherpa_advisor()
         data = payload.get("payload", {})
@@ -532,14 +585,17 @@ async def handle_sherpa_generate_code(
             context=data.get("context"),
         )
         if "error" in result:
-            await ws.send_json({"type": "sherpa_code_error", "detail": result["error"]})
+            await _safe_ws_send_json(ws, {"type": "sherpa_code_error", "detail": result["error"]})
         else:
-            await ws.send_json({"type": "sherpa_code_result", **result})
+            _consume_demo_sherpa(user)
+            await _safe_ws_send_json(ws, {"type": "sherpa_code_result", **result})
+    except SherpaAuthorizationError as exc:
+        await _handle_sherpa_access_error(ws, exc.detail)
     except SubscriptionRequiredError as exc:
-        await ws.send_json({"type": "sherpa_subscription_required", "detail": exc.detail})
+        await _safe_ws_send_json(ws, {"type": "sherpa_subscription_required", "detail": exc.detail})
     except Exception as exc:
         logger.exception("sherpa_generate_code failed: %s", exc)
-        await ws.send_json({"type": "sherpa_code_error", "detail": "Code generation failed."})
+        await _safe_ws_send_json(ws, {"type": "sherpa_code_error", "detail": "Code generation failed."})
 
 
 async def handle_sherpa_write_report(
@@ -548,27 +604,29 @@ async def handle_sherpa_write_report(
     user: Any,
     rate_limiter: RateLimiter,
 ) -> None:
+    from spectra_sherpa.app.services.sherpa_advisor import SherpaAuthorizationError, SubscriptionRequiredError
+
     try:
-        if not await _sherpa_proxy_preamble(ws, user):
+        if not await _sherpa_proxy_preamble(ws, user, rate_limiter):
             return
 
-        from spectra_sherpa.app.services.sherpa_advisor import (
-            SubscriptionRequiredError,
-            get_sherpa_advisor,
-        )
+        from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
 
         advisor = get_sherpa_advisor()
         data = payload.get("payload", {})
         result = await advisor.write_report(experiment=data.get("experiment", {}))
         if "error" in result:
-            await ws.send_json({"type": "sherpa_report_error", "detail": result["error"]})
+            await _safe_ws_send_json(ws, {"type": "sherpa_report_error", "detail": result["error"]})
         else:
-            await ws.send_json({"type": "sherpa_report_result", **result})
+            _consume_demo_sherpa(user)
+            await _safe_ws_send_json(ws, {"type": "sherpa_report_result", **result})
+    except SherpaAuthorizationError as exc:
+        await _handle_sherpa_access_error(ws, exc.detail)
     except SubscriptionRequiredError as exc:
-        await ws.send_json({"type": "sherpa_subscription_required", "detail": exc.detail})
+        await _safe_ws_send_json(ws, {"type": "sherpa_subscription_required", "detail": exc.detail})
     except Exception as exc:
         logger.exception("sherpa_write_report failed: %s", exc)
-        await ws.send_json({"type": "sherpa_report_error", "detail": "Report generation failed."})
+        await _safe_ws_send_json(ws, {"type": "sherpa_report_error", "detail": "Report generation failed."})
 
 
 async def handle_sherpa_data_story(
@@ -577,26 +635,28 @@ async def handle_sherpa_data_story(
     user: Any,
     rate_limiter: RateLimiter,
 ) -> None:
+    from spectra_sherpa.app.services.sherpa_advisor import SherpaAuthorizationError, SubscriptionRequiredError
+
     try:
-        if not await _sherpa_proxy_preamble(ws, user):
+        if not await _sherpa_proxy_preamble(ws, user, rate_limiter):
             return
 
-        from spectra_sherpa.app.services.sherpa_advisor import (
-            SubscriptionRequiredError,
-            get_sherpa_advisor,
-        )
+        from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
 
         advisor = get_sherpa_advisor()
         data = payload.get("payload", {})
         result = await advisor.generate_data_story(
             dataset_info=data.get("dataset_info", {}),
         )
-        await ws.send_json({"type": "sherpa_data_story_result", **result})
+        _consume_demo_sherpa(user)
+        await _safe_ws_send_json(ws, {"type": "sherpa_data_story_result", **result})
+    except SherpaAuthorizationError as exc:
+        await _handle_sherpa_access_error(ws, exc.detail)
     except SubscriptionRequiredError as exc:
-        await ws.send_json({"type": "sherpa_subscription_required", "detail": exc.detail})
+        await _safe_ws_send_json(ws, {"type": "sherpa_subscription_required", "detail": exc.detail})
     except Exception as exc:
         logger.exception("sherpa_data_story failed: %s", exc)
-        await ws.send_json({"type": "sherpa_data_story_error", "detail": "Data story generation failed."})
+        await _safe_ws_send_json(ws, {"type": "sherpa_data_story_error", "detail": "Data story generation failed."})
 
 
 async def handle_sherpa_chat_with_tools(
@@ -605,59 +665,88 @@ async def handle_sherpa_chat_with_tools(
     user: Any,
     rate_limiter: RateLimiter,
 ) -> None:
-    try:
-        if not await _sherpa_proxy_preamble(ws, user):
-            return
+    from spectra_sherpa.app.services.sherpa_advisor import (
+        SherpaAuthorizationError,
+        SubscriptionRequiredError,
+        get_sherpa_advisor,
+    )
 
-        from spectra_sherpa.app.services.sherpa_advisor import (
-            SubscriptionRequiredError,
-            get_sherpa_advisor,
-        )
+    try:
+        if not await _sherpa_proxy_preamble(ws, user, rate_limiter):
+            return
 
         advisor = get_sherpa_advisor()
         data = payload.get("payload", {})
         message = data.get("message", "")
+        if not message:
+            await _safe_ws_send_json(ws, {"type": "sherpa_error", "detail": "Missing message"})
+            return
+
         history = data.get("history", [])
         workflow_context = await _filter_sherpa_workflow_context(
             user,
             data.get("workflow_context", data.get("context")),
         )
 
-        await ws.send_json({"type": "sherpa_chat_start"})
-        async for event in advisor.chat_with_tools(
+        started = False
+        event_stream = advisor.chat_with_tools(
             message=message,
             history=history,
             workflow_context=workflow_context,
-        ):
-            event_type = event.get("type", "chunk")
-            if event_type == "chunk":
-                # SSE contract uses "text"; fall back to "content" for compat
-                chunk_text = event.get("text", event.get("content", ""))
-                await ws.send_json({"type": "sherpa_chat_chunk", "chunk": chunk_text})
-            elif event_type == "tool_start":
-                # Flatten: surface tool_name at top level for frontend
-                await ws.send_json(
-                    {
-                        "type": "sherpa_tool_start",
-                        "tool_name": event.get("tool", event.get("tool_name", "unknown")),
-                        "round": event.get("round"),
-                        "arguments": event.get("arguments"),
-                    }
-                )
-            elif event_type == "tool_result":
-                await ws.send_json(
-                    {
-                        "type": "sherpa_tool_result",
-                        "tool_name": event.get("tool", event.get("tool_name", "unknown")),
-                        "success": event.get("success"),
-                        "summary": event.get("summary"),
-                    }
-                )
-            elif event_type == "error":
-                await ws.send_json({"type": "sherpa_error", "detail": event.get("content", event.get("text", ""))})
-        await ws.send_json({"type": "sherpa_chat_done"})
+        )
+        try:
+            async for event in event_stream:
+                event_type = event.get("type", "chunk")
+                if not started and event_type in ("chunk", "tool_start"):
+                    if not await _safe_ws_send_json(ws, {"type": "sherpa_chat_start"}):
+                        return
+                    started = True
+                if event_type == "chunk":
+                    chunk_text = event.get("text", event.get("content", ""))
+                    if not await _safe_ws_send_json(ws, {"type": "sherpa_chat_chunk", "chunk": chunk_text}):
+                        return
+                elif event_type == "tool_start":
+                    if not await _safe_ws_send_json(
+                        ws,
+                        {
+                            "type": "sherpa_tool_start",
+                            "tool_name": event.get("tool", event.get("tool_name", "unknown")),
+                            "round": event.get("round"),
+                            "arguments": event.get("arguments"),
+                        },
+                    ):
+                        return
+                elif event_type == "tool_result":
+                    if not await _safe_ws_send_json(
+                        ws,
+                        {
+                            "type": "sherpa_tool_result",
+                            "tool_name": event.get("tool", event.get("tool_name", "unknown")),
+                            "success": event.get("success"),
+                            "summary": event.get("summary"),
+                        },
+                    ):
+                        return
+                elif event_type == "done":
+                    break
+                elif event_type == "error":
+                    await _safe_ws_send_json(
+                        ws,
+                        {"type": "sherpa_error", "detail": event.get("content", event.get("text", ""))},
+                    )
+                    return
+        finally:
+            aclose = getattr(event_stream, "aclose", None)
+            if callable(aclose):
+                await aclose()
+
+        if started:
+            _consume_demo_sherpa(user)
+        await _safe_ws_send_json(ws, {"type": "sherpa_chat_done"})
+    except SherpaAuthorizationError as exc:
+        await _handle_sherpa_access_error(ws, exc.detail)
     except SubscriptionRequiredError as exc:
-        await ws.send_json({"type": "sherpa_subscription_required", "detail": exc.detail})
+        await _safe_ws_send_json(ws, {"type": "sherpa_subscription_required", "detail": exc.detail})
     except Exception as exc:
         logger.exception("sherpa_chat_with_tools failed: %s", exc)
-        await ws.send_json({"type": "sherpa_error", "detail": "Chat with tools failed."})
+        await _safe_ws_send_json(ws, {"type": "sherpa_error", "detail": "Chat with tools failed."})

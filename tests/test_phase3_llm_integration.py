@@ -336,50 +336,25 @@ class TestChatContextRouting:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        import httpx
-
-        from spectra_sherpa.app.services import spectrasherpa as sherpa_cfg_mod
         from spectra_sherpa.app.services import ws_handlers
 
         ws = SimpleNamespace(send_json=AsyncMock())
         captured: dict[str, object] = {}
 
-        class _FakeResponse:
-            status_code = 200
+        async def _fake_stream(self, path, *, json_body=None):
+            captured["path"] = path
+            captured["json_body"] = json_body
+            yield {"type": "start", "conversation_id": "conv-1"}
+            yield {"type": "chunk", "conversation_id": "conv-1", "text": "Hello"}
+            yield {"type": "done", "conversation_id": "conv-1"}
 
-            async def __aenter__(self):
-                return self
+        class _Advisor:
+            is_available = True
+            _stream_sse = _fake_stream
 
-            async def __aexit__(self, exc_type, exc, tb):
-                return False
-
-            async def aiter_lines(self):
-                yield 'data: {"type":"start","conversation_id":"conv-1"}'
-                yield 'data: {"type":"chunk","conversation_id":"conv-1","text":"Hello"}'
-                yield 'data: {"type":"done","conversation_id":"conv-1"}'
-
-        class _FakeClient:
-            def __init__(self, *args, **kwargs):
-                captured["timeout"] = kwargs.get("timeout")
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, exc_type, exc, tb):
-                return False
-
-            def stream(self, method, url, json, headers):
-                captured["method"] = method
-                captured["url"] = url
-                captured["json"] = json
-                captured["headers"] = headers
-                return _FakeResponse()
-
-        monkeypatch.setattr(httpx, "AsyncClient", _FakeClient)
         monkeypatch.setattr(
-            sherpa_cfg_mod,
-            "spectrasherpa_config",
-            SimpleNamespace(api_base_url="https://sherpa.example.com", api_key="deploy-key"),
+            "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
+            lambda: _Advisor(),
         )
 
         metadata = {
@@ -390,16 +365,47 @@ class TestChatContextRouting:
 
         await ws_handlers._proxy_server_chat(ws, "hello", "conv-1", metadata, user)
 
-        assert captured["method"] == "POST"
-        assert captured["url"] == "https://sherpa.example.com/api/v1/sherpa/chat"
-        assert captured["headers"] == {"X-Deployment-Key": "deploy-key"}
-        assert captured["json"] == {
-            "message": "hello",
-            "conversation_id": "conv-1",
-            "workflow_context": {"nodes": [{"node_id": "n1"}]},
-            "local_user_id": 7,
-            "project_id": 42,
-        }
+        assert captured["path"] == "/sherpa/chat"
+        assert captured["json_body"]["message"] == "hello"
+        assert captured["json_body"]["local_user_id"] == 7
+        assert ws.send_json.await_args_list == [
+            call({"type": "llm_start", "conversation_id": "conv-1"}),
+            call({"type": "llm_chunk", "conversation_id": "conv-1", "chunk": "Hello"}),
+            call({"type": "llm_done", "conversation_id": "conv-1"}),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_proxy_server_chat_stops_after_done_event(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from spectra_sherpa.app.services import ws_handlers
+
+        ws = SimpleNamespace(send_json=AsyncMock())
+
+        async def _fake_stream(self, path, *, json_body=None):
+            yield {"type": "start", "conversation_id": "conv-1"}
+            yield {"type": "chunk", "conversation_id": "conv-1", "text": "Hello"}
+            yield {"type": "done", "conversation_id": "conv-1"}
+            raise AssertionError("proxy continued reading after done")
+
+        class _Advisor:
+            is_available = True
+            _stream_sse = _fake_stream
+
+        monkeypatch.setattr(
+            "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
+            lambda: _Advisor(),
+        )
+
+        await ws_handlers._proxy_server_chat(
+            ws,
+            "hello",
+            "conv-1",
+            {"project_id": 42, "workflow_context": {"nodes": [{"node_id": "n1"}]}},
+            SimpleNamespace(id=7),
+        )
+
         assert ws.send_json.await_args_list == [
             call({"type": "llm_start", "conversation_id": "conv-1"}),
             call({"type": "llm_chunk", "conversation_id": "conv-1", "chunk": "Hello"}),
@@ -411,43 +417,22 @@ class TestChatContextRouting:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        import httpx
-
-        from spectra_sherpa.app.services import spectrasherpa as sherpa_cfg_mod
         from spectra_sherpa.app.services import ws_handlers
+        from spectra_sherpa.app.services.sherpa_advisor import SherpaAuthorizationError
 
         ws = SimpleNamespace(send_json=AsyncMock())
 
-        class _FakeResponse:
-            status_code = 401
+        async def _fake_stream(self, path, *, json_body=None):
+            raise SherpaAuthorizationError("Invalid deployment key")
+            yield  # make it an async generator  # noqa: E501
 
-            async def __aenter__(self):
-                return self
+        class _Advisor:
+            is_available = True
+            _stream_sse = _fake_stream
 
-            async def __aexit__(self, exc_type, exc, tb):
-                return False
-
-            async def aread(self):
-                return b'{"detail":"Invalid deployment key"}'
-
-            def json(self):
-                return {"detail": "Invalid deployment key"}
-
-        class _FakeClient:
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, exc_type, exc, tb):
-                return False
-
-            def stream(self, *args, **kwargs):
-                return _FakeResponse()
-
-        monkeypatch.setattr(httpx, "AsyncClient", lambda *args, **kwargs: _FakeClient())
         monkeypatch.setattr(
-            sherpa_cfg_mod,
-            "spectrasherpa_config",
-            SimpleNamespace(api_base_url="https://sherpa.example.com", api_key="deploy-key"),
+            "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
+            lambda: _Advisor(),
         )
 
         await ws_handlers._proxy_server_chat(
@@ -458,7 +443,40 @@ class TestChatContextRouting:
             SimpleNamespace(id=7),
         )
 
-        ws.send_json.assert_awaited_once_with({"type": "error", "detail": "Invalid deployment key"})
+        ws.send_json.assert_awaited_once_with(
+            {"type": "error", "detail": "Server chat authorization failed: Invalid deployment key"}
+        )
+
+    @pytest.mark.asyncio
+    async def test_proxy_server_chat_does_not_raise_when_client_disconnects_during_error_reporting(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from spectra_sherpa.app.services import ws_handlers
+        from spectra_sherpa.app.services.sherpa_advisor import SherpaAuthorizationError
+
+        ws = SimpleNamespace(send_json=AsyncMock(side_effect=RuntimeError("WebSocket disconnected")))
+
+        async def _fake_stream(self, path, *, json_body=None):
+            raise SherpaAuthorizationError("Invalid deployment key")
+            yield  # pragma: no cover
+
+        class _Advisor:
+            is_available = True
+            _stream_sse = _fake_stream
+
+        monkeypatch.setattr(
+            "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
+            lambda: _Advisor(),
+        )
+
+        await ws_handlers._proxy_server_chat(
+            ws,
+            "hello",
+            "conv-1",
+            {"project_id": 42},
+            SimpleNamespace(id=7),
+        )
 
     @pytest.mark.asyncio
     async def test_llm_server_proxy_maps_upstream_auth_failure_to_service_error(
@@ -605,18 +623,18 @@ class TestChatContextRouting:
         assert captured["workflow_context"] is None
 
     @pytest.mark.asyncio
-    async def test_handle_sherpa_chat_forwards_subscription_required_detail(
+    async def test_handle_sherpa_chat_surfaces_authorization_detail_as_sherpa_error(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from spectra_sherpa.app.services import ws_handlers
-        from spectra_sherpa.app.services.sherpa_advisor import SubscriptionRequiredError
+        from spectra_sherpa.app.services.sherpa_advisor import SherpaAuthorizationError
 
         class _Advisor:
             is_available = True
 
             async def chat_followup(self, **_kwargs):
-                raise SubscriptionRequiredError("Invalid deployment key")
+                raise SherpaAuthorizationError("Invalid deployment key")
                 yield  # pragma: no cover
 
         ws = SimpleNamespace(send_json=AsyncMock())
@@ -647,10 +665,97 @@ class TestChatContextRouting:
             rate_limiter,
         )
 
-        assert ws.send_json.await_args_list == [
-            call({"type": "sherpa_chat_start"}),
-            call({"type": "sherpa_subscription_required", "detail": "Invalid deployment key"}),
-        ]
+        # With deferred start, sherpa_chat_start is not sent when the error
+        # occurs before any chunks arrive.
+        ws.send_json.assert_awaited_once_with({"type": "sherpa_error", "detail": "Invalid deployment key"})
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("handler_name", "payload", "advisor_method", "result_type"),
+        [
+            (
+                "handle_sherpa_identify_peaks",
+                {"payload": {"wavenumbers": [1000.0], "absorbance": [0.5]}},
+                "identify_peaks",
+                "sherpa_peaks_result",
+            ),
+            (
+                "handle_sherpa_generate_code",
+                {"payload": {"task_description": "Build a preprocessing node"}},
+                "generate_code",
+                "sherpa_code_result",
+            ),
+            (
+                "handle_sherpa_write_report",
+                {"payload": {"experiment": {"name": "corn"}}},
+                "write_report",
+                "sherpa_report_result",
+            ),
+        ],
+    )
+    async def test_successful_sherpa_unary_actions_consume_demo_quota(
+        self,
+        handler_name: str,
+        payload: dict[str, object],
+        advisor_method: str,
+        result_type: str,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from spectra_sherpa.app.services import ws_handlers
+
+        consume_calls: list[int | None] = []
+
+        async def _result(self, **_kwargs):
+            return {"response": "ok"}
+
+        class _Advisor:
+            is_available = True
+
+        setattr(_Advisor, advisor_method, _result)
+
+        ws = SimpleNamespace(send_json=AsyncMock())
+        user = SimpleNamespace(id=7)
+        rate_limiter = SimpleNamespace(allow=lambda _key: True)
+
+        monkeypatch.setattr(ws_handlers, "check_egress_permission", AsyncMock(return_value=True))
+        monkeypatch.setattr(ws_handlers, "_check_demo_sherpa_limit", AsyncMock(return_value=True))
+        monkeypatch.setattr(
+            "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
+            lambda: _Advisor(),
+        )
+        monkeypatch.setattr(
+            "spectra_sherpa.app.core.demo_limits.consume_demo_sherpa",
+            lambda user_id: consume_calls.append(user_id),
+        )
+
+        handler = getattr(ws_handlers, handler_name)
+        await handler(ws, payload, user, rate_limiter)
+
+        assert consume_calls == [7]
+        ws.send_json.assert_awaited()
+        assert ws.send_json.await_args_list[-1].args[0]["type"] == result_type
+
+    @pytest.mark.asyncio
+    async def test_handle_sherpa_chat_rate_limits_requests(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from spectra_sherpa.app.services import ws_handlers
+
+        ws = SimpleNamespace(send_json=AsyncMock())
+        user = SimpleNamespace(id=7)
+        rate_limiter = SimpleNamespace(allow=lambda _key: False)
+
+        await ws_handlers.handle_sherpa_chat(
+            ws,
+            {"payload": {"message": "Explain this workflow"}},
+            user,
+            rate_limiter,
+        )
+
+        ws.send_json.assert_awaited_once_with(
+            {"type": "sherpa_error", "detail": "Sherpa rate limit exceeded. Try again later."}
+        )
 
     @pytest.mark.asyncio
     async def test_handle_sherpa_chat_with_tools_blocks_when_llm_chat_disabled(
@@ -688,6 +793,50 @@ class TestChatContextRouting:
             }
         )
 
+    @pytest.mark.asyncio
+    async def test_handle_sherpa_chat_with_tools_stops_on_done_event(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from spectra_sherpa.app.services import ws_handlers
+
+        class _Advisor:
+            is_available = True
+
+            async def chat_with_tools(self, **_kwargs):
+                yield {"type": "chunk", "text": "Sherpa reply"}
+                yield {"type": "done"}
+                raise AssertionError("handler continued iterating after done")
+
+        ws = SimpleNamespace(send_json=AsyncMock())
+        user = SimpleNamespace(id=7)
+        rate_limiter = SimpleNamespace(allow=lambda _key: True)
+
+        async def _check_permission(_user, permission: str, **_kwargs):
+            if permission in {"allow_llm_chat", "allow_llm_context"}:
+                return True
+            raise AssertionError(f"Unexpected permission check: {permission}")
+
+        monkeypatch.setattr(ws_handlers, "check_egress_permission", _check_permission)
+        monkeypatch.setattr(ws_handlers, "_check_demo_sherpa_limit", AsyncMock(return_value=True))
+        monkeypatch.setattr(
+            "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
+            lambda: _Advisor(),
+        )
+
+        await ws_handlers.handle_sherpa_chat_with_tools(
+            ws,
+            {"payload": {"message": "help", "workflow_context": {"nodes": [{"node_id": "n1"}]}}},
+            user,
+            rate_limiter,
+        )
+
+        assert ws.send_json.await_args_list == [
+            call({"type": "sherpa_chat_start"}),
+            call({"type": "sherpa_chat_chunk", "chunk": "Sherpa reply"}),
+            call({"type": "sherpa_chat_done"}),
+        ]
+
 
 class TestSherpaAdvisorProxy:
     @pytest.mark.asyncio
@@ -713,9 +862,13 @@ class TestSherpaAdvisorProxy:
 
             async def aiter_lines(self):
                 yield 'data: {"type":"start","conversation_id":"conv-1"}'
+                yield ""
                 yield 'data: {"type":"chunk","text":"Hello"}'
+                yield ""
                 yield 'data: {"type":"chunk","text":" world"}'
+                yield ""
                 yield 'data: {"type":"done","conversation_id":"conv-1"}'
+                yield ""
 
         class _FakeClient:
             async def __aenter__(self):
@@ -759,6 +912,135 @@ class TestSherpaAdvisorProxy:
             "history": [{"role": "user", "content": "Earlier"}],
             "workflow_context": {"nodes": [{"node_id": "n1"}]},
         }
+
+    @pytest.mark.asyncio
+    async def test_chat_followup_stops_on_done_without_waiting_for_socket_close(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import httpx
+
+        from spectra_sherpa.app.services import spectrasherpa as sherpa_cfg_mod
+        from spectra_sherpa.app.services.sherpa_advisor import SherpaAdvisor
+
+        class _FakeResponse:
+            status_code = 200
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def aiter_lines(self):
+                yield 'data: {"type":"start","conversation_id":"conv-1"}'
+                yield ""
+                yield 'data: {"type":"chunk","text":"Hello"}'
+                yield ""
+                yield 'data: {"type":"done","conversation_id":"conv-1"}'
+                yield ""
+                raise AssertionError("advisor continued reading after done")
+
+        class _FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            def stream(self, method, url, json, headers):
+                return _FakeResponse()
+
+        monkeypatch.setattr(httpx, "AsyncClient", lambda *args, **kwargs: _FakeClient())
+        monkeypatch.setattr(
+            sherpa_cfg_mod,
+            "spectrasherpa_config",
+            SimpleNamespace(api_base_url="https://sherpa.example.com", api_key="deploy-key"),
+        )
+
+        advisor = SherpaAdvisor()
+        chunks = [chunk async for chunk in advisor.chat_followup(message="What does this show?")]
+
+        assert chunks == ["Hello"]
+
+    @pytest.mark.asyncio
+    async def test_chat_followup_parses_standard_multiline_sse_frames(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import httpx
+
+        from spectra_sherpa.app.services import spectrasherpa as sherpa_cfg_mod
+        from spectra_sherpa.app.services.sherpa_advisor import SherpaAdvisor
+
+        class _FakeResponse:
+            status_code = 200
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def aiter_lines(self):
+                yield 'data: {"type":"chunk",'
+                yield 'data:"text":"Hello"}'
+                yield ""
+                yield 'data:{"type":"done"}'
+                yield ""
+
+        class _FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            def stream(self, method, url, json, headers):
+                return _FakeResponse()
+
+        monkeypatch.setattr(httpx, "AsyncClient", lambda *args, **kwargs: _FakeClient())
+        monkeypatch.setattr(
+            sherpa_cfg_mod,
+            "spectrasherpa_config",
+            SimpleNamespace(api_base_url="https://sherpa.example.com", api_key="deploy-key"),
+        )
+
+        advisor = SherpaAdvisor()
+        chunks = [chunk async for chunk in advisor.chat_followup(message="What does this show?")]
+
+        assert chunks == ["Hello"]
+
+    @pytest.mark.asyncio
+    async def test_request_json_maps_unauthorized_to_authorization_error(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import httpx
+
+        from spectra_sherpa.app.services import spectrasherpa as sherpa_cfg_mod
+        from spectra_sherpa.app.services.sherpa_advisor import SherpaAdvisor, SherpaAuthorizationError
+
+        class _FakeResponse:
+            status_code = 401
+
+            def json(self):
+                return {"detail": "Invalid deployment key"}
+
+        class _FakeClient:
+            async def request(self, method, url, json, headers):
+                return _FakeResponse()
+
+        monkeypatch.setattr(httpx, "AsyncClient", lambda *args, **kwargs: _FakeClient())
+        monkeypatch.setattr(
+            sherpa_cfg_mod,
+            "spectrasherpa_config",
+            SimpleNamespace(api_base_url="https://sherpa.example.com", api_key="deploy-key"),
+        )
+
+        advisor = SherpaAdvisor()
+        with pytest.raises(SherpaAuthorizationError, match="Invalid deployment key"):
+            await advisor._request_json("POST", "/sherpa/chat", json_body={"message": "hello"})
 
     @pytest.mark.asyncio
     async def test_sync_workflow_parses_recommendations(

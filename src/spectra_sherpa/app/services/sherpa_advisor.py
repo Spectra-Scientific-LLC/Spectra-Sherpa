@@ -35,6 +35,14 @@ class SubscriptionRequiredError(Exception):
         super().__init__(detail)
 
 
+class SherpaAuthorizationError(Exception):
+    """Raised when the Sherpa deployment key is invalid, revoked, or unauthorized."""
+
+    def __init__(self, detail: str = "Sherpa authorization failed"):
+        self.detail = detail
+        super().__init__(detail)
+
+
 class SherpaAdvisor:
     """
     Stub implementation of Sherpa AI Advisor.
@@ -43,13 +51,35 @@ class SherpaAdvisor:
     spectra-server can inject a full implementation that connects to cloud AI services.
     """
 
+    # Shared timeout configs — keep connect/write snappy, allow generous read
+    # for LLM generation latency (first-token wait + long completions).
+    UNARY_TIMEOUT = httpx.Timeout(connect=30.0, read=120.0, write=30.0, pool=30.0)
+    STREAM_TIMEOUT = httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=30.0)
+
     def __init__(self):
         """Initialize advisor proxy with optional server-backed availability."""
         from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
 
-        self._features = set()
+        self._features: set[str] = set()
         self._config = spectrasherpa_config
+        # Shared httpx client for connection reuse (TLS session, keep-alive)
+        self._client: httpx.AsyncClient | None = None
         logger.debug("SherpaAdvisor initialized")
+
+    def _get_client(self, *, streaming: bool = False) -> httpx.AsyncClient:
+        """Return a shared httpx client, creating one if needed.
+
+        The client is long-lived for connection reuse.  Streaming requests
+        use a separate per-call client because httpx streaming holds a
+        connection for the entire generator lifetime.
+        """
+        if streaming:
+            # Streaming calls need their own client — the connection is held
+            # open for the duration of the async generator.
+            return httpx.AsyncClient(timeout=self.STREAM_TIMEOUT)
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=self.UNARY_TIMEOUT)
+        return self._client
 
     @property
     def _base_url(self) -> str:
@@ -81,6 +111,34 @@ class SherpaAdvisor:
             return detail
         return f"Server returned {response.status_code}"
 
+    @classmethod
+    def _raise_for_status(cls, response: httpx.Response) -> None:
+        detail = cls._extract_detail(response)
+        if response.status_code == 402:
+            raise SubscriptionRequiredError(detail)
+        if response.status_code in {401, 403}:
+            raise SherpaAuthorizationError(detail)
+        if response.status_code >= 400:
+            raise RuntimeError(detail)
+
+    @staticmethod
+    def _parse_sse_data_line(line: str) -> str | None:
+        if not line.startswith("data:"):
+            return None
+        payload = line[5:]
+        return payload[1:] if payload.startswith(" ") else payload
+
+    @staticmethod
+    def _decode_sse_event(data_lines: list[str]) -> dict[str, Any] | None:
+        if not data_lines:
+            return None
+        raw_payload = "\n".join(data_lines)
+        try:
+            event = json.loads(raw_payload)
+        except json.JSONDecodeError:
+            return None
+        return event if isinstance(event, dict) else None
+
     def _ensure_configured(self) -> None:
         if not self.is_available:
             raise RuntimeError("Sherpa server is not configured. Set SPECTRASHERPA_API_KEY.")
@@ -95,22 +153,19 @@ class SherpaAdvisor:
         self._ensure_configured()
 
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                response = await client.request(
-                    method,
-                    f"{self._base_url}{path}",
-                    json=json_body,
-                    headers=self._headers,
-                )
+            client = self._get_client(streaming=False)
+            response = await client.request(
+                method,
+                f"{self._base_url}{path}",
+                json=json_body,
+                headers=self._headers,
+            )
         except httpx.ConnectError as exc:
             raise RuntimeError("Cannot connect to SpectraSherpa server") from exc
         except httpx.TimeoutException as exc:
             raise RuntimeError("Sherpa request timed out") from exc
 
-        if response.status_code in {401, 402, 403}:
-            raise SubscriptionRequiredError(self._extract_detail(response))
-        if response.status_code >= 400:
-            raise RuntimeError(self._extract_detail(response))
+        self._raise_for_status(response)
 
         payload = response.json()
         if not isinstance(payload, dict):
@@ -126,29 +181,43 @@ class SherpaAdvisor:
         self._ensure_configured()
 
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with self._get_client(streaming=True) as client:
                 async with client.stream(
                     "POST",
                     f"{self._base_url}{path}",
                     json=json_body,
                     headers=self._headers,
                 ) as response:
-                    if response.status_code in {401, 402, 403}:
-                        await response.aread()
-                        raise SubscriptionRequiredError(self._extract_detail(response))
                     if response.status_code >= 400:
                         await response.aread()
-                        raise RuntimeError(self._extract_detail(response))
+                        self._raise_for_status(response)
 
-                    async for line in response.aiter_lines():
-                        if not line.startswith("data: "):
-                            continue
-                        try:
-                            event = json.loads(line[6:])
-                        except json.JSONDecodeError:
-                            continue
-                        if isinstance(event, dict):
-                            yield event
+                    line_stream = response.aiter_lines()
+                    data_lines: list[str] = []
+                    try:
+                        async for line in line_stream:
+                            if line.startswith(":"):
+                                continue
+
+                            if line == "":
+                                event = self._decode_sse_event(data_lines)
+                                data_lines.clear()
+                                if event is None:
+                                    continue
+                                yield event
+                                continue
+
+                            data_line = self._parse_sse_data_line(line)
+                            if data_line is not None:
+                                data_lines.append(data_line)
+
+                        trailing_event = self._decode_sse_event(data_lines)
+                        if trailing_event is not None:
+                            yield trailing_event
+                    finally:
+                        aclose = getattr(line_stream, "aclose", None)
+                        if callable(aclose):
+                            await aclose()
         except httpx.ConnectError as exc:
             raise RuntimeError("Cannot connect to SpectraSherpa server") from exc
         except httpx.TimeoutException as exc:
@@ -257,12 +326,18 @@ class SherpaAdvisor:
             "history": history or [],
             "workflow_context": workflow_context,
         }
-        async for event in self._stream_sse("/sherpa/chat", json_body=body):
-            event_type = event.get("type")
-            if event_type == "chunk":
-                yield str(event.get("text", ""))
-            elif event_type == "error":
-                raise RuntimeError(str(event.get("detail", "Sherpa chat failed.")))
+        stream = self._stream_sse("/sherpa/chat", json_body=body)
+        try:
+            async for event in stream:
+                event_type = event.get("type")
+                if event_type == "chunk":
+                    yield str(event.get("text", ""))
+                elif event_type == "done":
+                    return
+                elif event_type == "error":
+                    raise RuntimeError(str(event.get("detail", "Sherpa chat failed.")))
+        finally:
+            await stream.aclose()
 
     async def identify_peaks(self, *, wavenumbers: list[float], absorbance: list[float]) -> dict[str, Any]:
         """Proxy peak identification to the Sherpa server."""
@@ -317,8 +392,14 @@ class SherpaAdvisor:
             "history": history or [],
             "workflow_context": workflow_context,
         }
-        async for event in self._stream_sse("/sherpa/chat-with-tools", json_body=body):
-            yield event
+        stream = self._stream_sse("/sherpa/chat-with-tools", json_body=body)
+        try:
+            async for event in stream:
+                if event.get("type") == "done":
+                    return
+                yield event
+        finally:
+            await stream.aclose()
 
 
 # Global singleton instance

@@ -212,6 +212,18 @@ def check_demo_sherpa(user_id: int | None) -> Tuple[bool, int]:
     return (False, 0)
 
 
+def check_demo_sherpa_available(user_id: int | None) -> Tuple[bool, int]:
+    """Check quota without consuming.  Call :func:`consume_demo_sherpa` on success."""
+    allowed, remaining = _tracker.check_sherpa(user_id)
+    return (allowed, remaining)
+
+
+def consume_demo_sherpa(user_id: int | None) -> int:
+    """Consume one Sherpa interaction quota.  Return remaining count."""
+    _tracker.consume_sherpa(user_id)
+    return _tracker.sherpa_remaining(user_id)
+
+
 def demo_execution_remaining(user_id: int | None) -> int:
     """Get remaining execution quota without consuming."""
     return _tracker.execution_remaining(user_id)
