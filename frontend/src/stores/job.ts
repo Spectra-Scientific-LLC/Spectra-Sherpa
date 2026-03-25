@@ -2,7 +2,7 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import api from "@/api/client";
 import type { JobInfo } from "@/types";
-import { buildWsUrl, withCredentials } from "@/utils/ws";
+import { buildAuthMessage, buildWsUrl, withCredentials } from "@/utils/ws";
 import { useAuthStore } from "@/stores/auth";
 import { useNotifier } from "@/composables/useNotifier";
 
@@ -69,11 +69,18 @@ export const useJobStore = defineStore("job", () => {
     }
   };
 
+  const MAX_RECONNECT_ATTEMPTS = 10;
+
   const scheduleReconnect = () => {
     if (!allowReconnect || reconnectTimer !== null) {
       return;
     }
     reconnectAttempts.value += 1;
+    if (reconnectAttempts.value > MAX_RECONNECT_ATTEMPTS) {
+      connectionStatus.value = "disconnected";
+      lastError.value = "Max reconnection attempts reached";
+      return;
+    }
     const delay = Math.min(1000 * 2 ** (reconnectAttempts.value - 1), 30000);
     connectionStatus.value = "connecting";
     reconnectTimer = window.setTimeout(() => {
@@ -103,6 +110,8 @@ export const useJobStore = defineStore("job", () => {
       connected.value = true;
       connectionStatus.value = "connected";
       reconnectAttempts.value = 0;
+      // Authenticate via first message instead of URL query params
+      socket.send(buildAuthMessage());
       const userChannel = authStore.user?.id
         ? `jobs:${authStore.user.id}`
         : "jobs";

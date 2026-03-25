@@ -25,21 +25,28 @@ export const buildWsUrl = (): string => {
 
 /**
  * Attach credentials to a WebSocket URL.
- * Sends both token and api_key when both exist so the backend can
- * fall back to api_key if the JWT is expired (avoids unnecessary 1008).
+ *
+ * @deprecated Prefer sending credentials via {@link buildAuthMessage} as the
+ * first message after connection opens. Query-param auth is retained for
+ * backward compatibility with older backend versions.
  */
 export const withCredentials = (wsUrl: string): string => {
-  const apiKey = localStorage.getItem("api_key");
+  // Credentials are now sent via the first WebSocket message (buildAuthMessage).
+  // Return the URL unchanged to avoid leaking tokens in server logs / browser history.
+  return wsUrl;
+};
+
+/**
+ * Build an authentication message to send as the first WebSocket frame.
+ * The backend accepts `{type: "authenticate", token, api_key}` as an
+ * alternative to query-param auth, keeping tokens out of URLs and logs.
+ */
+export const buildAuthMessage = (): string => {
   const token = localStorage.getItem("token");
-  if (!apiKey && !token) {
-    return wsUrl;
-  }
-  const url = new URL(wsUrl);
-  if (token) {
-    url.searchParams.set("token", token);
-  }
-  if (apiKey) {
-    url.searchParams.set("api_key", apiKey);
-  }
-  return url.toString();
+  const apiKey = localStorage.getItem("api_key");
+  return JSON.stringify({
+    type: "authenticate",
+    token: token || null,
+    api_key: apiKey || null,
+  });
 };

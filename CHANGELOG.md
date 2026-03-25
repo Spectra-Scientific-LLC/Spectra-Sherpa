@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Health endpoint degraded state** — `GET /api/v1/health` now returns `{"status": "degraded", "plugin_failure_count": N}` when one or more filesystem or entry-point plugins failed to load at startup, making operational issues visible without exposing internal exception details.
+- **Shared LLM quota helper** — Added a dedicated `llm_rate_limits` service so REST and WebSocket Sherpa flows use the same per-user quota logic and superuser bypass rules.
+- **Enterprise connection validation UI** — Configured enterprise and demo deployments now show a persistent **Validate Connection** action in Settings > Integrations instead of hiding connection checks after initial setup.
+- **Data Story contextual prompt input** — The Data page now includes an Additional Context field so users can pass instrument or process context into Sherpa Data Story generation.
 
 ### Fixed
 - **Hybrid mode implicit identity logging** — Rejections of credential-free requests from non-loopback hosts in hybrid mode are now logged at `WARNING` level. Grants of implicit loopback identity are logged at `DEBUG`.
@@ -19,6 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`test_io_csv` SCP skip guard** — Skip condition now uses `HAS_SCP` from `scp_compat` instead of checking if `create_spectral_dataset is None`; the import always succeeds when the compat layer provides stubs.
 - **Test files no longer import `spectrochempy` directly** — `test_modeling_nodes`, `test_core_modeling`, and `test_data_loading_golden` now import `NDDataset` from `scp_compat` per the established rule.
 - **PostgreSQL FK cascade migration** — `p6q8r0s2t815` now uses direct `drop_constraint` / `create_foreign_key` on PostgreSQL instead of `batch_alter_table(recreate="always")`, which failed with `DependentObjectsStillExistError` when foreign keys referenced the primary key being rebuilt.
+- **Sherpa/WebSocket completion handling** — Server-backed Sherpa chat and related SSE proxy flows now terminate on upstream `done` events instead of waiting for socket close, eliminating long-lived “Thinking” states in enterprise/demo deployments.
+- **Sherpa auth and quota enforcement** — Sherpa proxy handlers now distinguish authorization failures from subscription failures, apply shared per-user LLM rate limits consistently, and consume demo Sherpa quota uniformly across chat, sync, Data Story, code, peak, and report actions.
+- **Simplified paid AI quota model** — Normal hybrid and enterprise deployments now use `MAX_LLM_REQUESTS_PER_HOUR` as the main auditable paid-usage limit, with superusers bypassing the quota.
+- **Workflow template edge validation on load** — The frontend workflow store now preserves explicit `"default"` ports from backend templates, preventing valid multi-input template edges from appearing red after load.
+- **Data Story / Sherpa Advisor interaction lockout** — Data Story generation is now visibly disabled while Sherpa Advisor is using the shared AI channel, with explicit user-facing messaging instead of ambiguous first-run failures.
+- **Plot node freeze on rendered workflow plots** — The Plotly wrapper now clones reactive payloads and avoids stacking event listeners, preventing workflow-page freezes when opening rendered plot nodes.
+
+### Changed
+- **Workflow node modules split by package** — The large monolithic preprocessing and output node files were broken into package-style modules, reducing file size and clarifying ownership without changing the public node catalog.
+- **Frontend workflow store type extraction** — Workflow store types were moved into `frontend/src/stores/workflow-types.ts` and frontend unit coverage was expanded around stores, errors, and demo state.
+- **Release documentation refresh** — Configuration, quickstart, frontend README, developer LLM contract docs, and the main README were updated to match the current Sherpa integration flow, quota model, Data Story UX, and future-domain positioning.
 
 ## [0.1.6] - 2026-03-11
 

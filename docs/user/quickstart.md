@@ -110,9 +110,14 @@ You can export from the workflow toolbar or from export-oriented output nodes in
 
 Python and notebook exports look for source files in a `data/` folder next to the export by default. Set `SHERPA_DATA_DIR` if you want the exported code to read from a different location.
 
-## 7. Configure LLM API Keys (Optional)
+## 7. Configure AI Features (Optional)
 
-SpectraSherpa can use LLMs for the BYOK chat assistant. This is optional and separate from the core spectroscopy workflow features.
+SpectraSherpa supports two AI setup patterns:
+
+- `local` mode: bring your own API key for the built-in LLM chat
+- `hybrid` / `enterprise` / `demo`: connect to a deployment-backed Sherpa service
+
+Both are optional and separate from the core spectroscopy workflow features.
 
 ### Option A: Environment Variables
 
@@ -128,7 +133,7 @@ OPENAI_API_KEY=sk-...
 
 Restart SpectraSherpa after editing `.env`. The configured provider(s) will appear in Settings.
 
-### Option B: In-App Settings
+### Option B: In-App Settings for Local BYOK
 
 1. Open SpectraSherpa in your browser.
 2. Go to **Settings** > **API Keys**.
@@ -140,6 +145,22 @@ Restart SpectraSherpa after editing `.env`. The configured provider(s) will appe
 ### Supported Providers
 
 Configure your preferred LLM provider in **Settings > API Keys**. Any OpenAI-compatible provider is supported, including DeepSeek, OpenAI, Google Gemini, and custom endpoints.
+
+### Hybrid / Enterprise / Demo Sherpa
+
+If you are running a shared or managed deployment:
+
+1. Open **Settings** > **Integrations**.
+2. Review the Sherpa deployment status.
+3. Click **Validate Connection** to verify the configured deployment.
+
+In configured enterprise/demo deployments, this check appears as **Validate Connection** rather than **Test Connection**.
+
+### Data Story Context
+
+On the **Data** page, the Data Story panel includes an **Additional Context** text box. Use it to supply short domain context such as instrument type, plasma source, sample matrix, or what the story should emphasize.
+
+If Sherpa Advisor is actively using the shared AI channel, the **Generate Data Story** button is disabled until that operation finishes.
 
 ---
 

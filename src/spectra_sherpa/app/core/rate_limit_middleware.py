@@ -1,9 +1,9 @@
 """
 Rate Limit Middleware
 
-Enforces rate limiting for HYBRID and ENTERPRISE mode deployments:
-1. Auth endpoint rate limiting per IP (login, register)
-2. Execution rate limiting per user/IP (sliding window)
+Enforces conservative auth endpoint throttling for HYBRID and ENTERPRISE mode
+deployments. User-facing paid usage is governed separately by the Sherpa/LLM
+rate limiter. Demo-profile execution quotas remain enforced here.
 
 Rate limiting uses the persistent file-backed RateLimiter so state survives
 restarts and is consistent across Gunicorn workers.
@@ -19,7 +19,7 @@ from fastapi import Request, Response, status
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from spectra_sherpa.app.core.app_paths import get_app_data_paths
-from spectra_sherpa.app.core.config import app_config, settings
+from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.core.demo_limits import check_demo_execution, demo_limit_error_detail
 from spectra_sherpa.app.core.mode_policy import has_rate_limits
 from spectra_sherpa.app.core.security import decode_access_token, get_client_host
@@ -30,7 +30,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     """
     Rate limiting for Hybrid and Enterprise modes:
     1. Auth endpoint rate limiting per IP (login, register)
-    2. Execution rate limiting per user/IP (sliding window)
     """
 
     # Paths that bypass rate limiting
@@ -53,14 +52,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     def __init__(self, app):
         super().__init__(app)
-        # Use file-backed rate limiter: survives restarts, shared across workers
-        limit = app_config.rate_limit_executions or 100
         app_paths = get_app_data_paths(settings.data_dir)
-        self._rate_limiter = RateLimiter(
-            max_calls=limit,
-            period_sec=3600,
-            state_path=app_paths.execution_rate_limits_state,
-        )
         # Separate rate limiters for auth endpoints (per-IP, tighter)
         self._auth_limiters = {
             path: RateLimiter(
@@ -94,9 +86,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if path in self.PUBLIC_PATHS or path.startswith("/docs"):
             return await call_next(request)  # type: ignore[no-any-return]
 
-        # === DEMO EXECUTION LIMIT (tighter per-session cap) ===
-        # Only actual execution endpoints consume demo quota — not workflow
-        # creation, version restore, or other management POSTs.
+        # Demo site profile keeps its own compute quota model even though the
+        # general execution rate limiter has been retired.
         if request.method == "POST" and self._is_execution_path(path):
             user_id = self._get_user_id(request)
             allowed, remaining = check_demo_execution(user_id)
@@ -106,29 +97,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     "Demo execution limit reached",
                     demo_limit_error_detail("execution", remaining),
                 )
-
-        # === EXECUTION RATE LIMITING (Hybrid + Enterprise) ===
-        if app_config.rate_limit_executions:
-            # Only rate limit actual execution POSTs — not workflow CRUD,
-            # version restore, or other management operations.
-            if request.method == "POST" and self._is_execution_path(path):
-                client_id = self._get_client_id(request)
-                if not self._rate_limiter.allow(client_id):
-                    return self._error_response(
-                        status.HTTP_429_TOO_MANY_REQUESTS,
-                        "Rate limit exceeded",
-                        {
-                            "limit": app_config.rate_limit_executions,
-                            "window": "1 hour",
-                            "retry_after": "Try again later",
-                        },
-                    )
-                # Add rate limit headers to response
-                remaining = self._rate_limiter.remaining(client_id)
-                response = await call_next(request)
-                response.headers["X-RateLimit-Limit"] = str(app_config.rate_limit_executions)
-                response.headers["X-RateLimit-Remaining"] = str(remaining)
-                return response  # type: ignore[no-any-return]
 
         return await call_next(request)  # type: ignore[no-any-return]
 
@@ -164,16 +132,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 except (ValueError, TypeError):
                     pass
         return None
-
-    def _get_client_id(self, request: Request) -> str:
-        """Get client identifier for rate limiting (prefer user ID over IP)."""
-        user_id = self._get_user_id(request)
-        if user_id is not None:
-            return f"user:{user_id}"
-
-        # Fall back to IP (respects TRUST_PROXY for real client IP behind proxy)
-        client_ip = get_client_host(request) or "unknown"
-        return f"ip:{client_ip}"
 
     def _error_response(self, status_code: int, message: str, details: dict[str, object] | None = None) -> Response:
         """Create a JSON error response."""

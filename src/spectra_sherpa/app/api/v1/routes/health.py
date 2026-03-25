@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,7 +17,12 @@ from spectra_sherpa.app.models.workflow import Workflow
 router = APIRouter()
 
 
-@router.get("/health")
+class HealthResponse(BaseModel):
+    status: Literal["ok", "degraded"]
+    plugin_failure_count: int | None = None
+
+
+@router.get("/health", response_model=HealthResponse)
 async def health_check() -> dict:
     from spectra_sherpa.app.services.plugin_loader import plugin_load_failures
 

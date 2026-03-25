@@ -67,9 +67,23 @@ src/
 |---------|-------------|
 | `npm run dev` | Start HMR dev server (port 5173) |
 | `npm run build` | Type-check + production build |
-| `npm run test` | Run Vitest tests |
-| `npm run lint` | ESLint check (`--max-warnings 0`) |
+| `npm run test:unit` | Run Vitest unit tests |
+| `npm run lint` | ESLint check (`eslint src/ --max-warnings 300`) |
 | `npm run format` | Prettier auto-format |
+
+## API Type Generation
+
+TypeScript types can be generated from the backend OpenAPI schema to keep
+frontend types in sync with backend models:
+
+```bash
+# Start the backend server first, then:
+npm run generate:types
+```
+
+This writes `src/types/api-generated.ts` using `openapi-typescript`. From the
+repo root you can also run `make generate-types`. Re-run whenever backend
+schemas change.
 
 ## Build Output
 

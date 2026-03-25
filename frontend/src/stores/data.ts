@@ -99,6 +99,7 @@ export const useDataStore = defineStore("data", () => {
   const catalogDatasetError = ref<string | null>(null);
   const dataStoryText = ref<string | null>(null);
   const dataStoryLoading = ref(false);
+  const dataStoryContext = ref("");
 
   // Computed
   const experimentDatasets = computed<ExperimentDataset[]>(
@@ -316,8 +317,14 @@ export const useDataStore = defineStore("data", () => {
   const generateDataStory = async () => {
     const datasetInfo = catalogDatasetInfo.value || fileInfo.value;
     if (!datasetInfo) return;
-    dataStoryLoading.value = true;
     try {
+      const { useSherpaStore } = await import("@/stores/sherpa");
+      const sherpa = useSherpaStore();
+      if (sherpa.state === "syncing" || sherpa.state === "chatting") {
+        return;
+      }
+      dataStoryLoading.value = true;
+
       // Use the Sherpa WS proxy path: entitlement-gated, server-side prompt/template
       const { useLlmStore } = await import("@/stores/llm");
       const llm = useLlmStore();
@@ -357,7 +364,10 @@ export const useDataStore = defineStore("data", () => {
         ws.send(
           JSON.stringify({
             action: "sherpa_data_story",
-            payload: { dataset_info: summarized },
+            payload: {
+              dataset_info: summarized,
+              additional_context: dataStoryContext.value.trim() || null,
+            },
           })
         );
       });
@@ -404,6 +414,7 @@ export const useDataStore = defineStore("data", () => {
     catalogDatasetError,
     dataStoryText,
     dataStoryLoading,
+    dataStoryContext,
     experimentDatasets,
     libraryDatasets,
 

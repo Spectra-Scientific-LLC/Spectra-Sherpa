@@ -91,10 +91,13 @@ def get_cors_origins() -> list[str]:
     if cors_allow_all():
         return ["*"]
 
-    # Non-local modes without CORS_ORIGINS: use localhost defaults.
-    # spectra-server enforces stricter CORS via its own startup hooks.
-    logger.info(
-        "CORS_ORIGINS not set for %s mode — using localhost defaults.",
+    # Non-local modes without CORS_ORIGINS: warn loudly and fall back to
+    # localhost defaults.  spectra-server enforces stricter CORS via its own
+    # startup hooks, but the OSS core should also flag this clearly.
+    logger.critical(
+        "CORS_ORIGINS not set for %s mode — falling back to localhost-only "
+        "origins. Set CORS_ORIGINS to your production domain(s) before "
+        "exposing this service to the network.",
         app_config.mode,
     )
 
@@ -523,13 +526,41 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     break  # Write failed: socket is gone, fall through to disconnect
                 continue
 
-            action = payload.get("action")
+            action = payload.get("action") or payload.get("type")
             logger.info("WS action received: %s", action)
 
             if action == "ping":
                 await websocket.send_json({"type": "pong"})
                 continue
             if action == "pong":
+                continue
+
+            # First-message authentication: clients may send credentials
+            # as the first WebSocket frame instead of via URL query params.
+            # This keeps tokens out of server logs and browser history.
+            if action == "authenticate":
+                auth_token = payload.get("token")
+                auth_api_key = payload.get("api_key")
+                if auth_token or auth_api_key:
+                    async with async_session() as _auth_session:
+                        if auth_token:
+                            ws_user = (
+                                await get_user_from_credentials(
+                                    _auth_session, token=auth_token, client_host=ws_client_host
+                                )
+                                or ws_user
+                            )
+                        if ws_user is None and auth_api_key:
+                            ws_user = (
+                                await get_user_from_credentials(
+                                    _auth_session, api_key=auth_api_key, client_host=ws_client_host
+                                )
+                                or ws_user
+                            )
+                    # Refresh the job channel with the newly resolved user
+                    if ws_user and ws_user.id is not None:
+                        job_channel = f"jobs:{ws_user.id}"
+                await websocket.send_json({"type": "authenticated", "user_id": ws_user.id if ws_user else None})
                 continue
 
             if action == "subscribe":
@@ -591,6 +622,8 @@ def create_app(
     _app = FastAPI(
         title=settings.app_name,
         openapi_url="/api/openapi.json",
+        docs_url="/api/docs",
+        redoc_url="/api/redoc",
         lifespan=_make_lifespan(extra_startup, extra_shutdown),
     )
 

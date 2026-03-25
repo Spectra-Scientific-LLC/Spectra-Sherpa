@@ -1,1 +1,0 @@
-var e=()=>typeof window<`u`?`${window.location.protocol===`https:`?`wss:`:`ws:`}//${window.location.host}/ws`:`ws://127.0.0.1:8000/ws`,t=e=>{let t=localStorage.getItem(`api_key`),n=localStorage.getItem(`token`);if(!t&&!n)return e;let r=new URL(e);return n&&r.searchParams.set(`token`,n),t&&r.searchParams.set(`api_key`,t),r.toString()};export{t as n,e as t};

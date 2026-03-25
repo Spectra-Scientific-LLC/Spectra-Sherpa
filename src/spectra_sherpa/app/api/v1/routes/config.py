@@ -182,7 +182,8 @@ async def get_config(
             }
             config["limits"] = {
                 **config.get("limits", {}),
-                "maxSherpaRequestsHour": 100,
+                "maxSherpaRequestsHour": settings.max_llm_requests_per_hour,
+                "adminBypass": True,
             }
 
     return config

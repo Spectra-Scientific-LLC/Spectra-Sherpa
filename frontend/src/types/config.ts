@@ -38,8 +38,9 @@ export interface SubscriptionInfo {
 }
 
 export interface AppLimits {
-  maxExecutions?: number
+  maxSherpaRequestsHour?: number
   maxFileSizeMB: number
+  adminBypass?: boolean
   sessionExpiryHours?: number
 }
 

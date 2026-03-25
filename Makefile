@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help setup install dev test test-all lint fmt build clean node-scaffold
+.PHONY: help setup install dev test test-all lint fmt build clean node-scaffold generate-types
 
 help:            ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -40,6 +40,9 @@ fmt:             ## Auto-format backend (black + ruff) and frontend (prettier)
 
 node-scaffold:   ## Generate boilerplate for a new processing node (interactive)
 	poetry run python scripts/scaffold_node.py
+
+generate-types:  ## Generate TypeScript types from OpenAPI schema
+	cd frontend && npm run generate:types
 
 build:           ## Build frontend into src/spectra_sherpa/static/
 	cd frontend && npm run build

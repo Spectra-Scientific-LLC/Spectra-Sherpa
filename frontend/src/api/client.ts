@@ -14,7 +14,16 @@ const api = axios.create({
 });
 
 // Async endpoints polled or updated in the background.
-const ASYNC_ERROR_PATH_HINTS = ["/jobs", "/deploy/runs", "/deploy/workflows"];
+const ASYNC_ERROR_PATH_HINTS = [
+  "/jobs",
+  "/deploy/runs",
+  "/deploy/workflows",
+  "/experiments",
+  "/execute",
+  "/models",
+  "/predict",
+  "/llm",
+];
 const ASYNC_ERROR_DEDUPE_WINDOW_MS = 15000;
 const asyncErrorDedup = new Map<string, number>();
 

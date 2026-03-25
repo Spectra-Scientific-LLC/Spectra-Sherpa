@@ -490,14 +490,17 @@ class AppConfig(BaseModel):
         except Exception:
             pass
 
-        # Limits: only present when rate_limit_executions or session_expiry_hours are set
-        if self.rate_limit_executions or self.session_expiry_hours:
-            _limits: dict[str, int] = {"maxFileSizeMB": settings.max_file_size_mb}
-            if self.rate_limit_executions:
-                _limits["maxExecutions"] = self.rate_limit_executions
+        # User-facing quota model: one Sherpa/LLM hourly limit plus optional
+        # session expiry metadata. Execution throttling is no longer exposed.
+        if settings.max_llm_requests_per_hour or self.session_expiry_hours:
+            _limits: dict[str, Any] = {
+                "maxFileSizeMB": settings.max_file_size_mb,
+                "maxSherpaRequestsHour": settings.max_llm_requests_per_hour,
+                "adminBypass": True,
+            }
             if self.session_expiry_hours:
                 _limits["sessionExpiryHours"] = self.session_expiry_hours
-            limits: dict[str, int] | None = _limits
+            limits: dict[str, Any] | None = _limits
         else:
             limits = None
 

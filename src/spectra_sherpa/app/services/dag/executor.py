@@ -13,14 +13,19 @@ import hashlib
 import json
 import logging
 import uuid
-from dataclasses import dataclass
-from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset
 
 from .executor_pool import _run_node_in_worker, get_default_pool, set_default_pool  # noqa: F401
+from .executor_types import (  # noqa: F401 — re-exported for backward compat
+    ValidationIssue,
+    ValidationResult,
+    WorkflowEdge,
+    WorkflowNode,
+    WorkflowStatus,
+)
 from .executor_validation import (  # noqa: F401 — tests import/monkeypatch these
     HAS_NDDATASET,
     _category_from_type_ref,
@@ -33,70 +38,6 @@ from .graph_utils import build_dependency_map, topological_sort
 from .node_base import Node, NodeResult, NodeStatus, node_registry
 
 logger = logging.getLogger(__name__)
-
-
-class WorkflowStatus(str, Enum):
-    """Workflow execution status."""
-
-    IDLE = "idle"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    ERROR = "error"
-    CANCELLED = "cancelled"
-
-
-@dataclass
-class WorkflowEdge:
-    """Represents a connection between two nodes in a workflow."""
-
-    from_node: str  # source node ID
-    to_node: str  # target node ID
-    from_output: str = "default"  # output port name
-    to_input: str = "default"  # input port name
-
-
-@dataclass
-class WorkflowNode:
-    """Represents a node instance in a workflow."""
-
-    node_id: str
-    node_type: str
-    parameters: Dict[str, Any]
-    position: Optional[Dict[str, float]] = None  # x, y coordinates for UI
-
-
-@dataclass
-class ValidationIssue:
-    """A single workflow validation issue."""
-
-    level: str  # "error" or "warning"
-    node_id: Optional[str]  # None for graph-level issues
-    port: Optional[str]  # Port name if applicable
-    message: str
-
-
-@dataclass
-class ValidationResult:
-    """Structured result from workflow validation."""
-
-    issues: List["ValidationIssue"]
-
-    @property
-    def is_valid(self) -> bool:
-        """True if no errors (warnings are OK)."""
-        return not any(i.level == "error" for i in self.issues)
-
-    @property
-    def errors(self) -> List["ValidationIssue"]:
-        return [i for i in self.issues if i.level == "error"]
-
-    @property
-    def warnings(self) -> List["ValidationIssue"]:
-        return [i for i in self.issues if i.level == "warning"]
-
-    def to_error_strings(self) -> List[str]:
-        """Backward-compatible: return error messages as list of strings."""
-        return [i.message for i in self.issues if i.level == "error"]
 
 
 class DAGExecutor:

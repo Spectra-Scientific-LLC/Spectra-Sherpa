@@ -111,7 +111,7 @@ async def test_baseline_penalized_ls_uses_nir_lambda(diesel_nir_dataset: SherpaD
     )
 
     # Capture the effective lambda by patching baseline_penalized_ls
-    import spectra_sherpa.app.services.dag.nodes.preprocessing as prep_mod
+    import spectra_sherpa.app.services.dag.nodes.preprocessing.baseline_nodes as prep_mod
 
     captured_lam: list[float] = []
     original_fn = prep_mod.baseline_penalized_ls

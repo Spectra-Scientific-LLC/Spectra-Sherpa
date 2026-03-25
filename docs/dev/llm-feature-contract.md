@@ -69,7 +69,8 @@ async def my_feature(self, *, dataset_info: dict[str, Any]) -> dict[str, Any]:
 
 - Single-shot: use `_request_json()`, return dict with `"response"` key
 - Streaming: use `_stream_sse()`, yield dicts
-- Both raise `SubscriptionRequiredError` on 401/402/403
+- Raise `SherpaAuthorizationError` on `401/403`
+- Raise `SubscriptionRequiredError` on `402`
 
 ### 2b. WS handler (`ws_handlers.py`)
 
@@ -78,15 +79,17 @@ async def handle_sherpa_my_feature(
     ws: WebSocket, payload: dict, user: Any, rate_limiter: RateLimiter,
 ) -> None:
     try:
-        if not await _sherpa_proxy_preamble(ws, user):
+        if not await _sherpa_proxy_preamble(ws, user, rate_limiter):
             return
         from spectra_sherpa.app.services.sherpa_advisor import (
-            SubscriptionRequiredError, get_sherpa_advisor,
+            SherpaAuthorizationError, SubscriptionRequiredError, get_sherpa_advisor,
         )
         advisor = get_sherpa_advisor()
         data = payload.get("payload", {})
         result = await advisor.my_feature(dataset_info=data.get("dataset_info", {}))
         await ws.send_json({"type": "sherpa_my_feature_result", **result})
+    except SherpaAuthorizationError as exc:
+        await ws.send_json({"type": "sherpa_error", "detail": exc.detail})
     except SubscriptionRequiredError as exc:
         await ws.send_json({"type": "sherpa_subscription_required", "detail": exc.detail})
     except Exception as exc:
@@ -94,7 +97,15 @@ async def handle_sherpa_my_feature(
         await ws.send_json({"type": "sherpa_my_feature_error", "detail": "Failed."})
 ```
 
-Every handler: preamble check, try/except with SubscriptionRequiredError, generic fallback.
+Every handler: preamble check, try/except with authorization + subscription handling, generic fallback.
+
+`_sherpa_proxy_preamble()` is the shared gate for:
+
+- per-user LLM rate limiting
+- admin bypass
+- demo Sherpa quota checks
+- deployment availability
+- privacy / egress permission checks
 
 ### 2c. Dispatcher (`main.py`)
 

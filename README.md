@@ -82,22 +82,7 @@ SpectraSherpa's core math applies broadly to multivariate spectral and sensor da
 
 ### Future Plan
 
-The following domains are documented as algorithmically aligned with SpectraSherpa, but do not yet have equivalent template-guided onboarding and bundled example coverage:
-
-- Terahertz (THz)
-- Fluorescence / EEM
-- LIBS
-- NMR
-- XRF / TXRF
-- XRD / HRXRD / CD-SAXS
-- XPS
-- GC-MS / LC-MS
-- TOF-SIMS
-- ICP-MS
-- ICP-OES
-- Hyperspectral imaging (HSI)
-- Electronic nose / tongue
-- Broad virtual metrology and multi-sensor semiconductor workflows beyond OES process monitoring
+Many other measurement domains are good fits for SpectraSherpa's architecture and chemometric approach, including vibrational, elemental, diffraction, mass spectrometry, imaging, and broader semiconductor virtual metrology workflows. These are inspirational targets rather than finished product claims today, and we are actively looking for developers and scientist-contributors who want to help expand template coverage, validation datasets, and technique-specific UX.
 
 See the [Applications Guide](docs/user/applications.md) for the current support split between shipped templates, partial support, and future plan.
 

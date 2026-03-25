@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 import os
 from pathlib import Path
 from typing import Optional
@@ -9,6 +10,8 @@ from typing import Optional
 from cryptography.fernet import Fernet
 
 from spectra_sherpa._paths import get_default_data_dir
+
+logger = logging.getLogger(__name__)
 
 ENV_FILENAME = ".env"
 
@@ -30,6 +33,7 @@ def _looks_like_fernet_key(value: str) -> bool:
     try:
         decoded = base64.urlsafe_b64decode(value.encode())
     except Exception:
+        logger.debug("Value does not look like a Fernet key (decode failed)", exc_info=True)
         return False
     return len(decoded) == 32
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -8,6 +9,8 @@ from typing import Any, Mapping
 import numpy as np
 
 from spectra_sherpa.app.core.config import settings
+
+logger = logging.getLogger(__name__)
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, SpectralAxis
 
 
@@ -99,6 +102,7 @@ def load_prepared_data_overrides(
         if target.exists():
             return PreparedDataOverrides.from_mapping(json.loads(target.read_text(encoding="utf-8")))
     except Exception:
+        logger.warning("Failed to load prepared data overrides for %s", file_path or source or name, exc_info=True)
         return PreparedDataOverrides()
     return PreparedDataOverrides()
 

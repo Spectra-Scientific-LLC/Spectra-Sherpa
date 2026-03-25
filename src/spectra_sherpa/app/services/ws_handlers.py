@@ -29,14 +29,11 @@ from starlette.websockets import WebSocketState
 from spectra_sherpa.app.core.security import check_egress_permission
 from spectra_sherpa.app.db.session import async_session
 from spectra_sherpa.app.services.llm import LLMService
+from spectra_sherpa.app.services.llm_rate_limits import allow_llm_request, has_llm_rate_limit_bypass
 from spectra_sherpa.app.services.rate_limiter import RateLimiter
 from spectra_sherpa.app.services.websocket_manager import ws_manager
 
 logger = logging.getLogger(__name__)
-
-
-def _rate_limit_user_key(user: Any) -> str:
-    return f"user_{user.id}" if user and getattr(user, "id", None) else "anonymous"
 
 
 def _ws_is_connected(ws: WebSocket) -> bool:
@@ -241,8 +238,7 @@ async def handle_llm_chat(
             return
 
         # Rate limit
-        user_key = _rate_limit_user_key(user)
-        if not rate_limiter.allow(user_key):
+        if not allow_llm_request(rate_limiter, user):
             await _safe_ws_send_json(ws, {"type": "error", "detail": "LLM rate limit exceeded. Try again later."})
             return
 
@@ -471,11 +467,11 @@ async def _sherpa_proxy_preamble(
     Returns True if the request is allowed to proceed, False otherwise
     (error already sent on the WebSocket).
     """
-    if not rate_limiter.allow(_rate_limit_user_key(user)):
+    if not allow_llm_request(rate_limiter, user):
         await _safe_ws_send_json(ws, {"type": "sherpa_error", "detail": "Sherpa rate limit exceeded. Try again later."})
         return False
 
-    if not await _check_demo_sherpa_limit(ws, user):
+    if not has_llm_rate_limit_bypass(user) and not await _check_demo_sherpa_limit(ws, user):
         return False
 
     from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
@@ -647,6 +643,7 @@ async def handle_sherpa_data_story(
         data = payload.get("payload", {})
         result = await advisor.generate_data_story(
             dataset_info=data.get("dataset_info", {}),
+            additional_context=data.get("additional_context"),
         )
         _consume_demo_sherpa(user)
         await _safe_ws_send_json(ws, {"type": "sherpa_data_story_result", **result})

@@ -160,19 +160,23 @@
           <div class="usage-grid">
             <div class="usage-card">
               <h3>Rate Limit Status</h3>
-              <div class="rate-info" v-if="appConfig?.limits?.maxExecutions">
+              <div class="rate-info" v-if="appConfig?.limits?.maxSherpaRequestsHour">
                 <div class="rate-item">
-                  <span class="rate-label">Limit per hour:</span>
-                  <span class="rate-value">{{ appConfig.limits.maxExecutions }}</span>
+                  <span class="rate-label">Sherpa requests/hour/user:</span>
+                  <span class="rate-value">{{ appConfig.limits.maxSherpaRequestsHour }}</span>
                 </div>
-                <div class="rate-item">
+                <div class="rate-item" v-if="appConfig?.limits?.adminBypass">
+                  <span class="rate-label">Admins bypass:</span>
+                  <span class="rate-value">Yes</span>
+                </div>
+                <div class="rate-item" v-if="appConfig?.limits?.sessionExpiryHours">
                   <span class="rate-label">Session expiry:</span>
                   <span class="rate-value">{{ appConfig.limits.sessionExpiryHours }}h</span>
                 </div>
               </div>
               <div v-else class="no-limits">
                 <i class="pi pi-info-circle"></i>
-                <span>No rate limits configured (enterprise mode settings not active)</span>
+                <span>No Sherpa request limit configured.</span>
               </div>
             </div>
 

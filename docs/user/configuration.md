@@ -34,6 +34,21 @@ SpectraSherpa supports three runtime modes:
 
 The frontend reads the active mode from the backend configuration response. If that config request fails, SpectraSherpa does not fall back to local mode. Public pages may still render, but protected routes stay unavailable until the backend config is reachable again.
 
+## Common Environment Variables
+
+These are the highest-signal settings for most deployments:
+
+| Variable | What it controls | Notes |
+|----------|------------------|-------|
+| `APP_MODE` | Runtime mode | `local`, `hybrid`, or `enterprise` |
+| `CORS_ORIGINS` | Browser origins allowed to call the backend | Required for non-local deployments |
+| `EGRESS_ENABLED` | Whether external network calls are allowed | Needed for BYOK LLM features and NIST fetches |
+| `MAX_LLM_REQUESTS_PER_HOUR` | Per-user hourly limit for paid Sherpa/LLM usage | Superusers bypass this limit |
+| `SHERPA_ENGINE_API_KEY` | Deployment key for server-backed Sherpa features | Used in hybrid/enterprise/demo |
+| `SHERPA_ENGINE_MODEL` | Server-side model name for Sherpa | Used in hybrid/enterprise/demo |
+
+`RATE_LIMIT_EXECUTIONS` is no longer the primary user-facing quota for normal hybrid or enterprise use. Paid AI usage is governed by `MAX_LLM_REQUESTS_PER_HOUR`. Demo-profile execution quotas still exist separately under the demo contract.
+
 ## Exported Workflow Data Paths
 
 Exported Python scripts and notebooks look for source files in a `data/` folder next to the export by default. You can override that location with the `SHERPA_DATA_DIR` environment variable.
@@ -58,3 +73,22 @@ To use the BYOK LLM chat or **NIST Library Search**, you need to enable network 
 3.  Alternatively, you can add keys directly in the UI under **Settings > API Keys**.
 
 > **Privacy Note:** In Local Mode, your API keys are stored encrypted on your machine. Data is only sent to the AI provider when you explicitly use an AI feature such as the BYOK chat assistant.
+
+## Sherpa Advisor in Hybrid / Enterprise / Demo
+
+In `hybrid`, `enterprise`, and `demo` deployments, Sherpa Advisor and Data Story are typically backed by a server-side Sherpa deployment rather than local BYOK settings.
+
+- Configure the deployment with `SHERPA_ENGINE_API_KEY` and related server settings.
+- In the UI, use **Settings > Integrations** to verify the connection.
+- When the deployment is already configured, the button is **Validate Connection** rather than **Test Connection**.
+- In enterprise/demo mode, this integration check stays available even when the deployment is already connected.
+
+## Rate Limiting
+
+For multi-user deployments, the main auditable user quota is:
+
+```bash
+MAX_LLM_REQUESTS_PER_HOUR=100
+```
+
+This limit applies to Sherpa Advisor, Data Story, and other paid LLM-backed features. Superusers bypass it. If you run with `SITE_PROFILE=demo`, the separate demo contract quotas still apply in addition to this hourly limit.

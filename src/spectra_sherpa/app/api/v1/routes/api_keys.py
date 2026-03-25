@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +10,11 @@ from spectra_sherpa.app.models.api_key import APIKey
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.schemas.api_key import APIKeyCreate, APIKeyInfo
 from spectra_sherpa.app.services.encryption import encrypt_value
+
+
+class _StatusResponse(BaseModel):
+    status: str
+
 
 router = APIRouter()
 
@@ -24,7 +30,12 @@ async def list_api_keys(
     return [APIKeyInfo(service_name=key.service_name, last_used_at=key.last_used_at) for key in keys]
 
 
-@router.post("/api-keys", status_code=201, dependencies=[Depends(demo_guard("api_key_management"))])
+@router.post(
+    "/api-keys",
+    status_code=201,
+    response_model=_StatusResponse,
+    dependencies=[Depends(demo_guard("api_key_management"))],
+)
 async def set_api_key(
     payload: APIKeyCreate,
     session: AsyncSession = Depends(get_session),

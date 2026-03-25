@@ -6,7 +6,7 @@ import type { ConversationSummary, LlmMessage } from "@/types";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useAuthStore } from "@/stores/auth";
 import { useProjectStore } from "@/stores/project";
-import { buildWsUrl, withCredentials } from "@/utils/ws";
+import { buildAuthMessage, buildWsUrl, withCredentials } from "@/utils/ws";
 
 const STORAGE_KEY = "llm_conversations";
 
@@ -67,11 +67,18 @@ export const useLlmStore = defineStore("llm", () => {
     }
   };
 
+  const MAX_RECONNECT_ATTEMPTS = 10;
+
   const scheduleReconnect = () => {
     if (!allowReconnect || reconnectTimer !== null) {
       return;
     }
     reconnectAttempts.value += 1;
+    if (reconnectAttempts.value > MAX_RECONNECT_ATTEMPTS) {
+      connectionStatus.value = "disconnected";
+      lastError.value = "Max reconnection attempts reached";
+      return;
+    }
     const delay = Math.min(1000 * 2 ** (reconnectAttempts.value - 1), 30000);
     connectionStatus.value = "connecting";
     reconnectTimer = window.setTimeout(() => {
@@ -139,6 +146,8 @@ export const useLlmStore = defineStore("llm", () => {
     wsRef.value.addEventListener("open", () => {
       connectionStatus.value = "connected";
       reconnectAttempts.value = 0;
+      // Authenticate via first message instead of URL query params
+      wsRef.value?.send(buildAuthMessage());
     });
 
     wsRef.value.addEventListener("error", () => {

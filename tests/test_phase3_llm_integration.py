@@ -259,6 +259,43 @@ class TestChatContextRouting:
         assert permission_calls == ["allow_llm_chat", "allow_llm_context"]
 
     @pytest.mark.asyncio
+    async def test_handle_llm_chat_superuser_bypasses_rate_limit(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from spectra_sherpa.app.services import ws_handlers
+
+        ws = SimpleNamespace(send_json=AsyncMock())
+        user = SimpleNamespace(id=7, is_superuser=True)
+        rate_limiter = SimpleNamespace(allow=lambda _key: False)
+        local_chat = AsyncMock()
+
+        async def _check_permission(_user, permission: str, **_kwargs):
+            assert permission == "allow_llm_chat"
+            return True
+
+        monkeypatch.setattr(ws_handlers, "_should_use_server_chat", lambda: False)
+        monkeypatch.setattr(ws_handlers, "_local_llm_chat", local_chat)
+        monkeypatch.setattr(ws_handlers, "check_egress_permission", _check_permission)
+
+        await ws_handlers.handle_llm_chat(ws, {"message": "hello"}, user, rate_limiter)
+
+        local_chat.assert_awaited_once()
+        ws.send_json.assert_not_awaited()
+
+
+class TestHttpLlmRateLimits:
+    def test_superuser_bypasses_http_llm_rate_limit(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from spectra_sherpa.app.api.v1.routes import llm as llm_routes
+
+        monkeypatch.setattr(llm_routes._llm_rate_limiter, "allow", lambda _key: False)
+
+        llm_routes._check_llm_rate_limit(SimpleNamespace(id=1, is_superuser=True))
+
+    @pytest.mark.asyncio
     async def test_handle_llm_chat_server_route_keeps_context_when_allowed(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -756,6 +793,35 @@ class TestChatContextRouting:
         ws.send_json.assert_awaited_once_with(
             {"type": "sherpa_error", "detail": "Sherpa rate limit exceeded. Try again later."}
         )
+
+    @pytest.mark.asyncio
+    async def test_sherpa_proxy_preamble_superuser_bypasses_rate_and_demo_limits(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from spectra_sherpa.app.services import ws_handlers
+
+        ws = SimpleNamespace(send_json=AsyncMock())
+        user = SimpleNamespace(id=7, is_superuser=True)
+        rate_limiter = SimpleNamespace(allow=lambda _key: False)
+        demo_check = AsyncMock(return_value=False)
+
+        async def _check_permission(_user, permission: str, **_kwargs):
+            assert permission == "allow_llm_chat"
+            return True
+
+        monkeypatch.setattr(ws_handlers, "_check_demo_sherpa_limit", demo_check)
+        monkeypatch.setattr(ws_handlers, "check_egress_permission", _check_permission)
+        monkeypatch.setattr(
+            "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
+            lambda: SimpleNamespace(is_available=True),
+        )
+
+        allowed = await ws_handlers._sherpa_proxy_preamble(ws, user, rate_limiter)
+
+        assert allowed is True
+        demo_check.assert_not_awaited()
+        ws.send_json.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_handle_sherpa_chat_with_tools_blocks_when_llm_chat_disabled(

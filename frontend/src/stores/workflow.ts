@@ -1,205 +1,54 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import api from "@/api/client";
-import type { NodeTypeMetadata, NodeLibraryResponse, NodeExecutionState, NodeExecutionStatus } from "@/types";
+import type { NodeTypeMetadata, NodeLibraryResponse, NodeExecutionStatus } from "@/types";
 import { getErrorMessage } from "@/utils/errors";
 import { useJobStore } from "@/stores/job";
-import type { ExperimentStage } from "@/types";
 
-type ParamsMap = Record<string, unknown>;
-type UnknownRecord = Record<string, unknown>;
+// Types extracted to workflow-types.ts for module size reduction.
+// Re-exported here for backward compatibility.
+export type {
+  TemplateDataRole,
+  TemplateDataBinding,
+  TemplateLaunchMode,
+  TemplateExampleBinding,
+  WorkflowNode,
+  WorkflowEdge,
+  WorkflowTemplate,
+  WorkflowTemplateCatalog,
+  ReferenceDatasetOption,
+  TrialExecuteResponse,
+  DatasetFile,
+  ExperimentDataset,
+  LibraryDataset,
+  AvailableDatasets,
+  WorkflowListItem,
+} from "@/stores/workflow-types";
 
-export interface TemplateDataRole {
-  role_type: string;
-  node_binding: string;
-  required?: boolean;
-  binding_mode?: string;
-  target_type?: string | null;
-  connects_to_port?: string | null;
-  description?: string;
-  accepted_techniques?: string[] | null;
-}
+import type {
+  ParamsMap,
+  UnknownRecord,
+  WorkflowNode,
+  WorkflowEdge,
+  WorkflowTemplate,
+  WorkflowTemplateCatalog,
+  ReferenceDatasetOption,
+  TypeRegistryEntry,
+  TypeRegistryPayload,
+  BackendWorkflowNode,
+  BackendWorkflowEdge,
+  WorkflowCreatePayload,
+  WorkflowExecuteResponse,
+  TrialExecuteResponse,
+  TemplateLaunchMode,
+  TemplateDataBinding,
+  TemplateExampleBinding,
+  AvailableDatasets,
+  WorkflowListItem,
+  TemplateDataRole,
+} from "@/stores/workflow-types";
 
-export interface TemplateDataBinding {
-  source?: "experiment";
-  experimentId: number;
-  fileId?: number | null;
-  stage?: ExperimentStage;
-  targetBinding?: TemplateDataBinding;
-  targetType?: string | null;
-}
-
-export type TemplateLaunchMode = "example" | "user";
-
-export interface TemplateExampleBinding {
-  source: ReferenceDatasetOption["source"];
-  datasetName: string;
-}
-
-export interface WorkflowNode {
-  id: string;
-  type: string;
-  x: number;
-  y: number;
-  params: ParamsMap;
-  // Execution state (not persisted to backend, only used in frontend)
-  executionState?: NodeExecutionState;
-}
-
-export interface WorkflowEdge {
-  from: string;
-  to: string;
-  fromPort?: string;  // Output port name (default: "default")
-  toPort?: string;    // Input port name for multi-input nodes (e.g., "X", "y")
-  // Validation fields
-  isValid?: boolean;  // Whether this connection is type-compatible
-  validationError?: string | null;  // Error message if invalid
-  dataType?: string | null;  // Data type flowing through edge (e.g., "dataset", "PCA")
-}
-
-export interface WorkflowTemplate {
-  id: number;
-  slug: string;
-  name: string;
-  description: string;
-  category: string;
-  status: string;
-  template_data: {
-    nodes: BackendWorkflowNode[];
-    edges: BackendWorkflowEdge[];
-    canvas_state?: UnknownRecord;
-    data_roles?: Record<string, TemplateDataRole>;
-    status?: string;
-  };
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface WorkflowTemplateCatalog {
-  templates: WorkflowTemplate[];
-  total: number;
-}
-
-export interface ReferenceDatasetOption {
-  name: string;
-  source: "eigenvector" | "sklearn" | "spectrochempy" | "oes";
-  label: string;
-  technique?: string | null;
-  description?: string | null;
-  featured?: boolean;
-  has_embedded_target?: boolean;
-  target_type?: string | null;
-  task_type?: string | null;
-  category?: string | null;
-  file_count?: number | null;
-  entry_type?: string | null;
-}
-
-interface TypeRegistryEntry {
-  uri: string;
-  version: string;
-  parent: string | null;
-  parent_uri: string | null;
-  category: string;
-  description: string;
-}
-
-interface TypeRegistryPayload {
-  version: string;
-  types: Record<string, TypeRegistryEntry>;
-  subtypes: Record<string, string[]>;
-}
-
-// Backend API types
-interface BackendWorkflowNode {
-  node_id: string;
-  node_type: string;
-  label: string | null;
-  parameters: ParamsMap;
-  position_x: number;
-  position_y: number;
-}
-
-interface BackendWorkflowEdge {
-  from_node_id: string;
-  to_node_id: string;
-  from_output: string;
-  to_input: string;
-}
-
-interface WorkflowCreatePayload {
-  name: string;
-  description?: string;
-  status: string;
-  canvas_state?: UnknownRecord;
-  nodes: BackendWorkflowNode[];
-  edges: BackendWorkflowEdge[];
-}
-
-interface WorkflowExecuteResponse {
-  workflow_id: number;
-  status: string;
-  results: UnknownRecord;
-  diagnostics?: Record<string, UnknownRecord>;
-  node_statuses: Record<string, string>;
-  executed_at: string;
-  error?: string;
-  integrity_hash?: string | null;
-}
-
-// Trial execution response (for DetailView independent execution)
-export interface TrialExecuteResponse {
-  target_node_id: string;
-  status: string;  // "completed" or "error"
-  result: UnknownRecord | null;
-  error: string | null;
-}
-
-// Available datasets for DATA node selection
-export interface DatasetFile {
-  id: number;
-  file_path: string;
-  file_type: string | null;
-  file_size_bytes: number;
-}
-
-export interface ExperimentDataset {
-  id: number;
-  name: string;
-  description: string | null;
-  stages: {
-    raw: DatasetFile[];
-    preprocessed: DatasetFile[];
-    synthetic: DatasetFile[];
-  };
-}
-
-export interface LibraryDataset {
-  id: number;
-  compound_name: string;
-  cas_number: string;
-  resolution: string | null;
-  file_path: string;
-}
-
-export interface AvailableDatasets {
-  experiments: ExperimentDataset[];
-  library: LibraryDataset[];
-  builder: UnknownRecord[];
-}
-
-export interface WorkflowListItem {
-  id: number;
-  name: string;
-  created_at: string;
-  updated_at: string;
-  description?: string | null;
-  status?: string;
-}
-
-// Templates are served by the backend API. The frontend must not keep a
-// parallel hardcoded catalog here.
+import type { NodeExecutionState } from "@/types";
 
 export const useWorkflowStore = defineStore("workflow", () => {
   // State
@@ -418,8 +267,10 @@ export const useWorkflowStore = defineStore("workflow", () => {
     const frontendEdges: WorkflowEdge[] = backendEdges.map((e) => ({
       from: e.from_node_id,
       to: e.to_node_id,
-      fromPort: e.from_output !== "default" ? e.from_output : undefined,
-      toPort: e.to_input !== "default" ? e.to_input : undefined,
+      // Preserve explicit "default" ports from the backend so multi-input or
+      // multi-output nodes that genuinely expose a "default" port remain valid.
+      fromPort: e.from_output || undefined,
+      toPort: e.to_input || undefined,
     }));
 
     return { nodes: frontendNodes, edges: frontendEdges };
@@ -1399,28 +1250,47 @@ export const useWorkflowStore = defineStore("workflow", () => {
 
     // Port-level validation (if ports are defined)
     if (sourceMetadata.output_ports && targetMetadata.input_ports) {
-      // Get the specific output port (default to first output port if not specified)
-      const outputPortName = edge.fromPort || "default";
-      const outputPort = sourceMetadata.output_ports.find(p => p.name === outputPortName)
-                         || sourceMetadata.output_ports[0]; // Fallback to first port
+      const outputPorts = sourceMetadata.output_ports;
+      const inputPorts = targetMetadata.input_ports;
+
+      const resolveOutputPort = () => {
+        if (!edge.fromPort || edge.fromPort === "default") {
+          return outputPorts.find((p) => p.name === "default")
+            || outputPorts[0];
+        }
+        return outputPorts.find((p) => p.name === edge.fromPort) || null;
+      };
+
+      const resolveInputPort = () => {
+        if (!edge.toPort) {
+          return inputPorts.length === 1 ? inputPorts[0] : null;
+        }
+        if (edge.toPort === "default") {
+          return inputPorts.find((p) => p.name === "default")
+            || (inputPorts.length === 1 ? inputPorts[0] : null);
+        }
+        return inputPorts.find((p) => p.name === edge.toPort) || null;
+      };
+
+      const outputPort = resolveOutputPort();
 
       // Get the specific input port (must be specified for multi-input nodes)
       let inputPort;
-      if (edge.toPort) {
-        inputPort = targetMetadata.input_ports.find(p => p.name === edge.toPort);
+      if (edge.toPort !== undefined) {
+        inputPort = resolveInputPort();
         if (!inputPort) {
-          const availablePorts = targetMetadata.input_ports.map(p => `"${p.label}" (${typeRefToDisplayName(p.type_ref)})`).join(', ');
+          const availablePorts = inputPorts.map(p => `"${p.label}" (${typeRefToDisplayName(p.type_ref)})`).join(', ');
           return {
             isValid: false,
-            error: `❌ Invalid Port: "${edge.toPort}" doesn't exist on ${targetMetadata.label}. Available ports: ${availablePorts}`
+            error: `❌ Invalid Port: "${edge.toPort}" doesn't resolve on ${targetMetadata.label}. Available ports: ${availablePorts}`
           };
         }
-      } else if (targetMetadata.input_ports.length === 1) {
+      } else if (inputPorts.length === 1) {
         // Single input port - auto-connect
-        inputPort = targetMetadata.input_ports[0];
+        inputPort = inputPorts[0];
       } else {
         // Multi-input node but no port specified
-        const availablePorts = targetMetadata.input_ports.map(p => `"${p.label}" (${typeRefToDisplayName(p.type_ref)})`).join(', ');
+        const availablePorts = inputPorts.map(p => `"${p.label}" (${typeRefToDisplayName(p.type_ref)})`).join(', ');
         return {
           isValid: false,
           error: `🔌 Select Input Port: ${targetMetadata.label} has multiple inputs. Please click the specific port: ${availablePorts}`

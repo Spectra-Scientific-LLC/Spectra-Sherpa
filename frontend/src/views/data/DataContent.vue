@@ -599,14 +599,36 @@
               </h4>
               <div class="data-story-actions">
                 <span class="ai-feature-note">AI Feature</span>
-                <Button
-                  :label="dataStoryButtonLabel"
-                  icon="pi pi-sparkles"
-                  class="p-button-sm p-button-outlined"
-                  :loading="dataStore.dataStoryLoading"
-                  @click="dataStore.generateDataStory()"
-                />
+                <span
+                  class="data-story-button-wrap"
+                  :title="dataStoryButtonHoverText"
+                >
+                  <Button
+                    :label="dataStoryButtonLabel"
+                    icon="pi pi-sparkles"
+                    class="p-button-sm p-button-outlined"
+                    :loading="dataStore.dataStoryLoading"
+                    :disabled="isDataStoryButtonDisabled"
+                    @click="dataStore.generateDataStory()"
+                  />
+                </span>
               </div>
+            </div>
+            <div class="data-story-context">
+              <label class="data-story-context-label" for="catalog-data-story-context">
+                Additional Context
+              </label>
+              <Textarea
+                id="catalog-data-story-context"
+                v-model="dataStore.dataStoryContext"
+                rows="3"
+                autoResize
+                class="data-story-context-input"
+                placeholder="Optional: add domain context such as OES with ICP plasma, process background, sample type, or what story you want emphasized."
+              />
+              <p class="data-story-context-hint">
+                This will be passed to the LLM as extra context for a more relevant narrative.
+              </p>
             </div>
             <div v-if="dataStore.dataStoryLoading" class="data-story-loading">
               <ProgressSpinner style="width: 24px; height: 24px" />
@@ -787,14 +809,36 @@
               </h4>
               <div class="data-story-actions">
                 <span class="ai-feature-note">AI Feature</span>
-                <Button
-                  :label="dataStoryButtonLabel"
-                  icon="pi pi-sparkles"
-                  class="p-button-sm p-button-outlined"
-                  :loading="dataStore.dataStoryLoading"
-                  @click="dataStore.generateDataStory()"
-                />
+                <span
+                  class="data-story-button-wrap"
+                  :title="dataStoryButtonHoverText"
+                >
+                  <Button
+                    :label="dataStoryButtonLabel"
+                    icon="pi pi-sparkles"
+                    class="p-button-sm p-button-outlined"
+                    :loading="dataStore.dataStoryLoading"
+                    :disabled="isDataStoryButtonDisabled"
+                    @click="dataStore.generateDataStory()"
+                  />
+                </span>
               </div>
+            </div>
+            <div class="data-story-context">
+              <label class="data-story-context-label" for="file-data-story-context">
+                Additional Context
+              </label>
+              <Textarea
+                id="file-data-story-context"
+                v-model="dataStore.dataStoryContext"
+                rows="3"
+                autoResize
+                class="data-story-context-input"
+                placeholder="Optional: add domain context such as OES with ICP plasma, process background, sample type, or what story you want emphasized."
+              />
+              <p class="data-story-context-hint">
+                This will be passed to the LLM as extra context for a more relevant narrative.
+              </p>
             </div>
             <div v-if="dataStore.dataStoryLoading" class="data-story-loading">
               <ProgressSpinner style="width: 24px; height: 24px" />
@@ -1061,6 +1105,7 @@ import api from "@/api/client";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useDataStore } from "@/stores/data";
 import { useProjectStore } from "@/stores/project";
+import { useSherpaStore } from "@/stores/sherpa";
 import { useToast } from "primevue/usetoast";
 import type { ExperimentFile, ExperimentSummary } from "@/types";
 import DataQualityPanel from "./DataQualityPanel.vue";
@@ -1072,6 +1117,7 @@ const DATA_ENTRY_PROJECT_KEY = "sherpa:data-entry-project-id";
 const { isFeatureEnabled } = useAppConfig();
 const dataStore = useDataStore();
 const projectStore = useProjectStore();
+const sherpaStore = useSherpaStore();
 const toast = useToast();
 const route = useRoute();
 const router = useRouter();
@@ -1353,6 +1399,14 @@ const isTabular = computed(() => {
 
 const dataStoryButtonLabel = computed(() =>
   dataStore.dataStoryText ? "Regenerate Data Story" : "Generate Data Story"
+);
+
+const isDataStoryButtonDisabled = computed(() =>
+  sherpaStore.state === "syncing" || sherpaStore.state === "chatting"
+);
+
+const dataStoryButtonHoverText = computed(() =>
+  isDataStoryButtonDisabled.value ? "Available when Sherpa Advisor finishes" : ""
 );
 
 const hasSpectra = computed(() => {
@@ -2095,11 +2149,39 @@ function formatDate(dateStr: string): string {
   gap: 8px;
 }
 
+.data-story-button-wrap {
+  display: inline-flex;
+}
+
 .data-story-header .panel-title {
   margin: 0;
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.data-story-context {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.data-story-context-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.data-story-context-input {
+  width: 100%;
+}
+
+.data-story-context-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #64748b;
+  line-height: 1.4;
 }
 
 .ai-feature-note {

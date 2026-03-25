@@ -15,6 +15,7 @@ from spectra_sherpa.app.schemas.llm import (
     LLMMessage,
 )
 from spectra_sherpa.app.services.llm import LLMService, conversation_store
+from spectra_sherpa.app.services.llm_rate_limits import allow_llm_request
 from spectra_sherpa.app.services.rate_limiter import RateLimiter
 
 router = APIRouter(prefix="/llm")
@@ -77,8 +78,7 @@ async def _proxy_server_request(
 
 def _check_llm_rate_limit(user: User) -> None:
     """Check and enforce per-user LLM rate limiting."""
-    user_key = f"user_{user.id}" if user.id else "anonymous"
-    if not _llm_rate_limiter.allow(user_key):
+    if not allow_llm_request(_llm_rate_limiter, user):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="LLM rate limit exceeded. Try again later.",

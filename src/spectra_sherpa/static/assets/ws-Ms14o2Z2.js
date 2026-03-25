@@ -1,0 +1,1 @@
+var e=()=>typeof window<`u`?`${window.location.protocol===`https:`?`wss:`:`ws:`}//${window.location.host}/ws`:`ws://127.0.0.1:8000/ws`,t=e=>e,n=()=>{let e=localStorage.getItem(`token`),t=localStorage.getItem(`api_key`);return JSON.stringify({type:`authenticate`,token:e||null,api_key:t||null})};export{e as n,t as r,n as t};

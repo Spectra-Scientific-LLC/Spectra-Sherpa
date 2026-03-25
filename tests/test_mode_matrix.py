@@ -122,21 +122,28 @@ class TestLimits:
     """Verify rate limits and session expiry are mode-appropriate."""
 
     def test_local_has_no_limits(self):
-        """Local mode returns limits=null."""
+        """Local mode exposes the active Sherpa/LLM quota."""
         cfg = _make_config(mode="local")
-        assert cfg.to_client_safe()["limits"] is None
+        limits = cfg.to_client_safe()["limits"]
+        assert limits is not None
+        assert limits["maxSherpaRequestsHour"] > 0
+        assert limits["adminBypass"] is True
 
     def test_hybrid_has_no_limits(self):
-        """Hybrid mode returns limits=null (unless explicitly set)."""
+        """Hybrid mode exposes the active Sherpa/LLM quota."""
         cfg = _make_config(mode="hybrid")
-        assert cfg.to_client_safe()["limits"] is None
+        limits = cfg.to_client_safe()["limits"]
+        assert limits is not None
+        assert limits["maxSherpaRequestsHour"] > 0
+        assert limits["adminBypass"] is True
 
     def test_enterprise_has_limits(self):
-        """Enterprise mode returns non-null limits with defaults."""
+        """Enterprise mode returns the Sherpa/LLM quota plus session metadata."""
         cfg = _make_config(mode="enterprise", rate_limit=100, session_expiry=24)
         limits = cfg.to_client_safe()["limits"]
         assert limits is not None
-        assert limits["maxExecutions"] == 100
+        assert limits["maxSherpaRequestsHour"] > 0
+        assert limits["adminBypass"] is True
         assert limits["sessionExpiryHours"] == 24
         assert "maxFileSizeMB" in limits
 
