@@ -624,7 +624,7 @@
                 rows="3"
                 autoResize
                 class="data-story-context-input"
-                placeholder="Optional: add domain context such as OES with ICP plasma, process background, sample type, or what story you want emphasized."
+                placeholder="Optional: add domain context, process background, sample type, or what you want the story to emphasize."
               />
               <p class="data-story-context-hint">
                 This will be passed to the LLM as extra context for a more relevant narrative.
@@ -834,7 +834,7 @@
                 rows="3"
                 autoResize
                 class="data-story-context-input"
-                placeholder="Optional: add domain context such as OES with ICP plasma, process background, sample type, or what story you want emphasized."
+                placeholder="Optional: add domain context, process background, sample type, or what you want the story to emphasize."
               />
               <p class="data-story-context-hint">
                 This will be passed to the LLM as extra context for a more relevant narrative.
