@@ -63,6 +63,23 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             for path, (max_calls, period) in self.AUTH_RATE_LIMITS.items()
         }
 
+    async def _get_authenticated_user(self, request: Request) -> Any | None:
+        """Resolve the current user for demo-limit bypass checks."""
+        from spectra_sherpa.app.api.deps import _resolve_user
+        from spectra_sherpa.app.db.session import async_session
+
+        auth_header = request.headers.get("Authorization", "")
+        token = auth_header[7:] if auth_header.startswith("Bearer ") else None
+        api_key = request.headers.get("X-API-Key")
+
+        async with async_session() as session:
+            return await _resolve_user(
+                session,
+                api_key=api_key,
+                token=token,
+                client_host=get_client_host(request),
+            )
+
     async def dispatch(self, request: Request, call_next) -> Response:
         # Only active in multi-user modes (Hybrid and Enterprise)
         if not has_rate_limits():
@@ -89,7 +106,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Demo site profile keeps its own compute quota model even though the
         # general execution rate limiter has been retired.
         if request.method == "POST" and self._is_execution_path(path):
-            user_id = self._get_user_id(request)
+            user = await self._get_authenticated_user(request)
+            if user is not None and getattr(user, "is_superuser", False):
+                return await call_next(request)  # type: ignore[no-any-return]
+
+            user_id = getattr(user, "id", None) if user is not None else self._get_user_id(request)
             allowed, remaining = check_demo_execution(user_id)
             if not allowed:
                 return self._error_response(

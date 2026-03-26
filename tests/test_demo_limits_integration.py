@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from spectra_sherpa.app.api.v1.routes.config import get_demo_quota
 from spectra_sherpa.app.core.config import DemoContract, app_config
 from spectra_sherpa.app.core.demo_limits import (
     check_demo_execution,
@@ -245,6 +246,16 @@ def test_demo_mode_toggles_enforcement(demo_mode):
     # Should return to previous count (state persists)
     # Note: After the check in OSS mode, the counter wasn't incremented
     assert demo_execution_remaining(user_id) == 2
+
+
+@pytest.mark.asyncio
+async def test_demo_quota_reports_admin_bypass(demo_mode):
+    quota = await get_demo_quota(current_user=type("Admin", (), {"id": 42, "is_superuser": True})())
+
+    assert quota["demo"] is True
+    assert quota["adminBypass"] is True
+    assert quota["executions"]["remaining"] == quota["executions"]["limit"] == 3
+    assert quota["sherpa"]["remaining"] == quota["sherpa"]["limit"] == 5
 
 
 def test_rate_limit_executions_config_field():

@@ -208,14 +208,16 @@ async def get_demo_quota(
 
     user_id = current_user.id if current_user else None
     contract = app_config.demo_contract
+    admin_bypass = bool(current_user and current_user.is_superuser)
     return {
         "demo": True,
+        "adminBypass": admin_bypass,
         "executions": {
-            "remaining": demo_execution_remaining(user_id),
+            "remaining": contract.max_executions_per_session if admin_bypass else demo_execution_remaining(user_id),
             "limit": contract.max_executions_per_session,
         },
         "sherpa": {
-            "remaining": demo_sherpa_remaining(user_id),
+            "remaining": contract.max_sherpa_interactions if admin_bypass else demo_sherpa_remaining(user_id),
             "limit": contract.max_sherpa_interactions,
         },
     }

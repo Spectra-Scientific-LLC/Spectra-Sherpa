@@ -63,6 +63,7 @@ export interface DemoQuota {
 
 export interface DemoQuotaResponse {
   demo: boolean
+  adminBypass?: boolean
   executions?: DemoQuota
   sherpa?: DemoQuota
 }
