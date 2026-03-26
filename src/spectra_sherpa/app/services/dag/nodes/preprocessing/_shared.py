@@ -44,9 +44,6 @@ from ...export_helpers import (  # noqa: F401
     extract_data_lines,
     header_line,
 )
-from ...export_helpers import (
-    wrap_result_lines as _wrap_result_lines,
-)
 from ...meta_helpers import copy_processing_history  # noqa: F401
 
 # --- DAG node framework ---
