@@ -10,6 +10,7 @@ import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import cast
 
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import OperationalError
@@ -431,7 +432,7 @@ async def ensure_egress_defaults() -> None:
             result = await session.execute(
                 select(User).outerjoin(UserEgressDefaults).where(UserEgressDefaults.user_id.is_(None))
             )
-            users_missing = result.scalars().all()
+            users_missing = cast(list[User], result.scalars().all())
 
             for user in users_missing:
                 session.add(
@@ -445,15 +446,21 @@ async def ensure_egress_defaults() -> None:
                 )
 
             normalized_users = 0
-            defaults_rows = (await session.execute(select(UserEgressDefaults))).scalars().all()
+            defaults_rows = cast(
+                list[UserEgressDefaults],
+                (await session.execute(select(UserEgressDefaults))).scalars().all(),
+            )
             for defaults in defaults_rows:
+                mutable_defaults = cast(object, defaults)
+                allow_llm_chat = bool(getattr(mutable_defaults, "allow_llm_chat"))
+                allow_llm_context = bool(getattr(mutable_defaults, "allow_llm_context"))
                 if is_demo:
-                    if not defaults.allow_llm_chat or not defaults.allow_llm_context:
-                        defaults.allow_llm_chat = True
-                        defaults.allow_llm_context = True
+                    if not allow_llm_chat or not allow_llm_context:
+                        setattr(mutable_defaults, "allow_llm_chat", True)
+                        setattr(mutable_defaults, "allow_llm_context", True)
                         normalized_users += 1
-                elif not defaults.allow_llm_chat and defaults.allow_llm_context:
-                    defaults.allow_llm_context = False
+                elif not allow_llm_chat and allow_llm_context:
+                    setattr(mutable_defaults, "allow_llm_context", False)
                     normalized_users += 1
 
             if users_missing or normalized_users:

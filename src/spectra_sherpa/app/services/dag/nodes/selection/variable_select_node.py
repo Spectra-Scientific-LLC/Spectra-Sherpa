@@ -445,6 +445,7 @@ class VariableSelectNode(Node):
                 reduced_fa_cls = type(fa) if isinstance(fa, FeatureAxis) else SpectralAxis
                 reduced_fa = reduced_fa_cls(
                     values=fa_values[mask],
+                    labels=list(np.asarray(fa.labels)[mask]) if fa.labels is not None else None,
                     units=fa.units,
                     title=fa.title,
                     include_mask=np.ones(n_selected, dtype=bool),

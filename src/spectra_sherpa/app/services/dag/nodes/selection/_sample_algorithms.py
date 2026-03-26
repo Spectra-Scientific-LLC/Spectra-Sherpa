@@ -5,6 +5,8 @@ Pure NumPy implementations of Kennard-Stone, DUPLEX, and SPXY.
 
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 from sklearn.decomposition import PCA
 
@@ -14,7 +16,7 @@ def _pairwise_distances(X: np.ndarray, metric: str = "euclidean") -> np.ndarray:
     if metric == "euclidean":
         from scipy.spatial.distance import cdist
 
-        return cdist(X, X, metric="euclidean")
+        return cast(np.ndarray, cdist(X, X, metric="euclidean"))
     elif metric == "mahalanobis":
         cov = np.cov(X, rowvar=False)
         # Regularise for rank-deficient data
@@ -32,7 +34,7 @@ def _pairwise_distances(X: np.ndarray, metric: str = "euclidean") -> np.ndarray:
         X_normed = X_centered / norms
         corr = X_normed @ X_normed.T
         np.clip(corr, -1.0, 1.0, out=corr)
-        return 1.0 - corr
+        return cast(np.ndarray, 1.0 - corr)
     else:
         raise ValueError(f"Unknown metric: {metric!r}")
 
@@ -43,7 +45,7 @@ def _maybe_reduce(X: np.ndarray, n_pcs: int | None) -> np.ndarray:
         return X
     n_pcs = min(n_pcs, min(X.shape))
     pca = PCA(n_components=n_pcs)
-    return pca.fit_transform(X)
+    return cast(np.ndarray, pca.fit_transform(X))
 
 
 def kennard_stone(
@@ -77,8 +79,10 @@ def kennard_stone(
     D = _pairwise_distances(X_work, metric=metric)
 
     # Seed: pair with maximum distance
-    i, j = np.unravel_index(np.argmax(D), D.shape)
-    selected = [int(i), int(j)]
+    i_raw, j_raw = np.unravel_index(np.argmax(D), D.shape)
+    i = int(i_raw)
+    j = int(j_raw)
+    selected = [i, j]
     remaining = set(range(n_samples)) - {i, j}
 
     # Greedy maximin
@@ -122,9 +126,11 @@ def duplex(
     D = _pairwise_distances(X_work, metric=metric)
 
     # Seed: pair with maximum distance → one to cal, one to test
-    i, j = np.unravel_index(np.argmax(D), D.shape)
-    cal = [int(i)]
-    test = [int(j)]
+    i_raw, j_raw = np.unravel_index(np.argmax(D), D.shape)
+    i = int(i_raw)
+    j = int(j_raw)
+    cal = [i]
+    test = [j]
     remaining = set(range(n_samples)) - {i, j}
 
     def _pick_next(pool: list[int], remaining: set[int]) -> int:
@@ -213,8 +219,10 @@ def spxy(
     D = D_x / max_dx + D_y / max_dy
 
     # Kennard-Stone on combined distance matrix
-    i, j = np.unravel_index(np.argmax(D), D.shape)
-    cal = [int(i), int(j)]
+    i_raw, j_raw = np.unravel_index(np.argmax(D), D.shape)
+    i = int(i_raw)
+    j = int(j_raw)
+    cal = [i, j]
     remaining = set(range(n_samples)) - {i, j}
 
     while len(cal) < n_cal and remaining:
