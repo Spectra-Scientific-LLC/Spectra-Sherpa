@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import api from "@/api/client";
+import { getErrorMessage } from "@/utils/errors";
 import type {
   ExperimentSummary,
   ExperimentFile,
@@ -12,11 +13,18 @@ import type {
   ExperimentDataset,
 } from "@/stores/workflow";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-function summarizeForDataStory(datasetInfo: Record<string, any>): Record<string, any> {
-  const metadata = (datasetInfo.metadata as Record<string, any> | undefined) ?? {};
-  const xAxis = (datasetInfo.x_axis as Record<string, any> | undefined) ?? {};
-  const fileMetadata = (datasetInfo.file_metadata as Record<string, any> | undefined) ?? {};
+type StoryObject = Record<string, unknown>;
+
+function asObject(value: unknown): StoryObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as StoryObject)
+    : {};
+}
+
+function summarizeForDataStory(datasetInfo: StoryObject): StoryObject {
+  const metadata = asObject(datasetInfo.metadata);
+  const xAxis = asObject(datasetInfo.x_axis);
+  const fileMetadata = asObject(datasetInfo.file_metadata);
   const propertyStats = Array.isArray(datasetInfo.property_stats)
     ? datasetInfo.property_stats.slice(0, 12)
     : undefined;
@@ -67,7 +75,6 @@ function summarizeForDataStory(datasetInfo: Record<string, any>): Record<string,
     },
   };
 }
-/* eslint-enable @typescript-eslint/no-explicit-any */
 
 export const useDataStore = defineStore("data", () => {
   // Dataset catalog (from /datasets/available)
@@ -91,10 +98,10 @@ export const useDataStore = defineStore("data", () => {
   const fileInfoError = ref<string | null>(null);
 
   // Reference dataset catalog + exploration
-  const referenceCatalog = ref<Record<string, any[]> | null>(null);
+  const referenceCatalog = ref<Record<string, unknown[]> | null>(null);
   const referenceCatalogLoading = ref(false);
   const referenceCatalogError = ref<string | null>(null);
-  const catalogDatasetInfo = ref<Record<string, any> | null>(null);
+  const catalogDatasetInfo = ref<StoryObject | null>(null);
   const catalogDatasetLoading = ref(false);
   const catalogDatasetError = ref<string | null>(null);
   const dataStoryText = ref<string | null>(null);
@@ -233,9 +240,9 @@ export const useDataStore = defineStore("data", () => {
       const response = await api.post<SherpaDatasetDict>("/builder/file-info", body);
       fileInfo.value = response.data;
       return response.data;
-    } catch (error: any) {
+    } catch (error: unknown) {
       fileInfo.value = null;
-      fileInfoError.value = error?.message || "Failed to inspect file";
+      fileInfoError.value = getErrorMessage(error, "Failed to inspect file");
       throw error;
     } finally {
       fileInfoLoading.value = false;
@@ -269,14 +276,13 @@ export const useDataStore = defineStore("data", () => {
     referenceCatalogLoading.value = true;
     referenceCatalogError.value = null;
     try {
-      const response = await api.get<Record<string, any[]>>(
+      const response = await api.get<Record<string, unknown[]>>(
         "/builder/reference-datasets"
       );
       referenceCatalog.value = response.data;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to fetch reference catalog:", error);
-      referenceCatalogError.value =
-        error?.response?.data?.detail || error?.message || "Failed to load reference catalog";
+      referenceCatalogError.value = getErrorMessage(error, "Failed to load reference catalog");
     } finally {
       referenceCatalogLoading.value = false;
     }
@@ -302,13 +308,12 @@ export const useDataStore = defineStore("data", () => {
     // Clear file inspection so Explore tab shows catalog card
     clearInspection();
     try {
-      const response = await api.get<Record<string, any>>(
+      const response = await api.get<StoryObject>(
         `/builder/reference-datasets/${source}/${name}`
       );
       catalogDatasetInfo.value = response.data;
-    } catch (error: any) {
-      catalogDatasetError.value =
-        error?.response?.data?.detail || error?.message || "Failed to load dataset info";
+    } catch (error: unknown) {
+      catalogDatasetError.value = getErrorMessage(error, "Failed to load dataset info");
     } finally {
       catalogDatasetLoading.value = false;
     }
@@ -334,7 +339,7 @@ export const useDataStore = defineStore("data", () => {
         throw new Error("WebSocket not connected. Try again in a moment.");
       }
 
-      const summarized = summarizeForDataStory(datasetInfo as Record<string, any>);
+      const summarized = summarizeForDataStory(datasetInfo as StoryObject);
       const result = await new Promise<string>((resolve, reject) => {
         const timeout = window.setTimeout(() => {
           cleanup();
@@ -373,12 +378,12 @@ export const useDataStore = defineStore("data", () => {
       });
 
       dataStoryText.value = result;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to generate data story:", error);
-      dataStoryText.value =
-        error?.response?.data?.detail ||
-        error?.message ||
-        "Unable to generate data story. Check your LLM configuration.";
+      dataStoryText.value = getErrorMessage(
+        error,
+        "Unable to generate data story. Check your LLM configuration."
+      );
     } finally {
       dataStoryLoading.value = false;
     }

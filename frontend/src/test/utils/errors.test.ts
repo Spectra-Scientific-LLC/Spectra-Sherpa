@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import axios, { AxiosError, type AxiosResponse } from "axios";
+import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from "axios";
 import { getErrorMessage, isDemoUpgradeError, getDemoUpgradeInfo } from "@/utils/errors";
 
 function makeAxiosError(
@@ -12,7 +12,7 @@ function makeAxiosError(
     status,
     statusText: "Error",
     headers: {},
-    config: {} as any,
+    config: {} as InternalAxiosRequestConfig,
     data,
   } as AxiosResponse;
   return error;

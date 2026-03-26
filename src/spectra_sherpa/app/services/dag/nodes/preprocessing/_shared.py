@@ -85,6 +85,7 @@ def _wrap_result_lines(
 
     return wrap_result_lines(node_id, data_expr, input_expr, indent, use_scp)
 
+
 # ---------------------------------------------------------------------------
 # Technology-aware baseline lambda defaults
 # ---------------------------------------------------------------------------

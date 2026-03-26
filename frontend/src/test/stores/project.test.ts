@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from "pinia";
 
 import api from "@/api/client";
 import { useProjectStore } from "@/stores/project";
+import type { ProjectDetail } from "@/types";
 
 vi.mock("@/api/client", () => ({
   default: {
@@ -111,7 +112,15 @@ describe("Project Store", () => {
       vi.mocked(api.get).mockResolvedValueOnce({ data: [] });
       const store = useProjectStore();
       store.currentProjectId = 1;
-      store.currentProject = mockProject as any;
+      store.currentProject = {
+        ...mockProject,
+        metadata: {},
+        experiments: [],
+        workflows: [],
+        scripts: [],
+        models: [],
+        children: [],
+      } satisfies ProjectDetail;
 
       const success = await store.deleteProject(1);
 

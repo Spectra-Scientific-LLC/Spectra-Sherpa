@@ -45,7 +45,6 @@ import type {
   TemplateExampleBinding,
   AvailableDatasets,
   WorkflowListItem,
-  TemplateDataRole,
 } from "@/stores/workflow-types";
 
 import type { NodeExecutionState } from "@/types";
