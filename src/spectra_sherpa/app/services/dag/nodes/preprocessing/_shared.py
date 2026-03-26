@@ -72,6 +72,19 @@ from ...spec_nodes import (  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
+
+def _wrap_result_lines(
+    node_id: str,
+    data_expr: str,
+    input_expr: str,
+    indent: str,
+    use_scp: bool = True,
+) -> list[str]:
+    """Preprocessing-local re-export of the shared result wrapper helper."""
+    from ...export_helpers import wrap_result_lines
+
+    return wrap_result_lines(node_id, data_expr, input_expr, indent, use_scp)
+
 # ---------------------------------------------------------------------------
 # Technology-aware baseline lambda defaults
 # ---------------------------------------------------------------------------
