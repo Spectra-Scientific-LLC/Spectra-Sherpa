@@ -436,7 +436,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     ws_client_host = get_client_host(websocket)
     requires_ws_auth = _requires_ws_auth(ws_client_host)
 
-    if requires_ws_auth:
+    if requires_ws_auth and has_credentials:
         token_valid = bool(token) and is_valid_bearer_token(token)
         api_key_valid = bool(api_key) and await is_valid_api_key(api_key)
         if not (token_valid or api_key_valid):
@@ -560,8 +560,18 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     # Refresh the job channel with the newly resolved user
                     if ws_user and ws_user.id is not None:
                         job_channel = f"jobs:{ws_user.id}"
+                if requires_ws_auth and ws_user is None:
+                    await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                    break
                 await websocket.send_json({"type": "authenticated", "user_id": ws_user.id if ws_user else None})
                 continue
+
+            # Remote hybrid/enterprise sockets may connect before sending the
+            # first-frame auth message. Reject any privileged action until the
+            # connection has authenticated.
+            if requires_ws_auth and ws_user is None:
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                break
 
             if action == "subscribe":
                 await handle_subscribe(websocket, payload, ws_user, _llm_rate_limiter, resolve_channel=_resolve_channel)

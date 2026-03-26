@@ -64,7 +64,31 @@ def test_ws_hybrid_non_loopback_rejects_anonymous(ws_client):
     app_config.mode = "hybrid"
 
     with ws_client.websocket_connect("/ws") as ws:
+        ws.send_json({"action": "subscribe", "channel": "jobs"})
         _policy_violation_on_receive(ws)
+
+
+def test_ws_hybrid_non_loopback_accepts_first_frame_authentication(ws_client, monkeypatch):
+    app_config.mode = "hybrid"
+    _install_noop_async_session(monkeypatch)
+
+    monkeypatch.setattr(app_main, "is_valid_bearer_token", lambda token: token == "jwt-1")
+
+    async def _resolve_user(_session, api_key=None, token=None, client_host=None):
+        if token == "jwt-1":
+            return SimpleNamespace(id=11, is_superuser=False, is_active=True)
+        return None
+
+    monkeypatch.setattr(app_main, "get_user_from_credentials", _resolve_user)
+
+    with ws_client.websocket_connect("/ws") as ws:
+        ws.send_json({"action": "authenticate", "token": "jwt-1"})
+        response = ws.receive_json()
+        assert response == {"type": "authenticated", "user_id": 11}
+
+        ws.send_json({"action": "subscribe", "channel": "jobs"})
+        response = ws.receive_json()
+        assert response == {"type": "subscribed", "channel": "jobs:11"}
 
 
 def test_ws_hybrid_loopback_allows_anonymous(ws_client, monkeypatch):
@@ -94,6 +118,22 @@ def test_ws_enterprise_mode_rejects_invalid_credentials(ws_client, monkeypatch):
     monkeypatch.setattr(app_main, "is_valid_bearer_token", lambda _token: False)
 
     with ws_client.websocket_connect("/ws?api_key=bad-key") as ws:
+        _policy_violation_on_receive(ws)
+
+
+def test_ws_enterprise_rejects_invalid_first_frame_authentication(ws_client, monkeypatch):
+    app_config.mode = "enterprise"
+    _install_noop_async_session(monkeypatch)
+
+    monkeypatch.setattr(app_main, "is_valid_bearer_token", lambda _token: False)
+
+    async def _resolve_user(_session, api_key=None, token=None, client_host=None):
+        return None
+
+    monkeypatch.setattr(app_main, "get_user_from_credentials", _resolve_user)
+
+    with ws_client.websocket_connect("/ws") as ws:
+        ws.send_json({"action": "authenticate", "token": "bad-jwt"})
         _policy_violation_on_receive(ws)
 
 
