@@ -1083,7 +1083,6 @@
 </template>
 
 <script setup lang="ts">
-/* eslint-disable @typescript-eslint/no-explicit-any -- explore views consume mixed dataset summaries and visualization payloads. */
 import { ref, reactive, computed, onMounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import TabView from "primevue/tabview";
@@ -1103,11 +1102,16 @@ import Tag from "primevue/tag";
 import InputSwitch from "primevue/inputswitch";
 import api from "@/api/client";
 import { useAppConfig } from "@/composables/useAppConfig";
-import { useDataStore } from "@/stores/data";
+import {
+  useDataStore,
+  type CatalogDatasetInfo,
+} from "@/stores/data";
 import { useProjectStore } from "@/stores/project";
 import { useSherpaStore } from "@/stores/sherpa";
+import { getErrorMessage } from "@/utils/errors";
 import { useToast } from "primevue/usetoast";
 import type { ExperimentFile, ExperimentSummary } from "@/types";
+import type { ReferenceDatasetOption } from "@/stores/workflow";
 import DataQualityPanel from "./DataQualityPanel.vue";
 import PlotlyChart from "@/components/PlotlyChart.vue";
 
@@ -1181,14 +1185,14 @@ const xUnitsOptions = computed(() => {
 });
 
 // Sync editable fields when a new dataset loads
-function _syncFromFileInfo(fi: any) {
+function _syncFromFileInfo(fi: { metadata?: Record<string, unknown> } | null) {
   const m = fi?.metadata as Record<string, unknown> | undefined;
   editXTitle.value = (m?.x_title ?? "") as string;
   editXUnits.value = (m?.x_units ?? "") as string;
   editYTitle.value = (m?.data_quantity ?? "") as string;
   isTimeSeriesToggle.value = !!(m?.is_time_series);
 }
-function _syncFromCatalog(info: any) {
+function _syncFromCatalog(info: CatalogDatasetInfo | null) {
   editXTitle.value = (info?.x_title ?? "") as string;
   editXUnits.value = (info?.x_units ?? "") as string;
   editYTitle.value = (info?.data_quantity ?? "") as string;
@@ -1212,7 +1216,7 @@ async function persistMetadataOverride() {
     y_title: editYTitle.value || null,
     is_time_series: isTimeSeriesToggle.value,
   };
-  const catInfo = dataStore.catalogDatasetInfo as Record<string, unknown> | null;
+  const catInfo = dataStore.catalogDatasetInfo;
   if (catInfo?.source && catInfo?.name) {
     body.source = catInfo.source;
     body.name = catInfo.name;
@@ -1284,7 +1288,7 @@ function dsKey(ds: { source?: string; name: string }): string {
   return `${ds.source || "spectrochempy"}::${ds.name}`;
 }
 
-function toggleRefDataset(ds: { source?: string; name: string }) {
+function toggleRefDataset(ds: ReferenceDatasetOption) {
   const key = dsKey(ds);
   if (selectedRefDatasets.has(key)) {
     selectedRefDatasets.delete(key);
@@ -1312,11 +1316,11 @@ async function onImportSelectedDatasets() {
       life: 3000,
     });
     selectedRefDatasets.clear();
-  } catch (err: any) {
+  } catch (err: unknown) {
     toast.add({
       severity: "error",
       summary: "Import Failed",
-      detail: err?.response?.data?.detail || "Failed to import datasets",
+      detail: getErrorMessage(err, "Failed to import datasets"),
       life: 5000,
     });
   } finally {
@@ -1337,13 +1341,13 @@ const SCP_CATEGORY_LABELS: Record<string, string> = {
 
 const scpCategories = computed(() => {
   const scp = dataStore.referenceCatalog?.spectrochempy ?? [];
-  const cats = new Set(scp.map((d: any) => d.category || "other"));
+  const cats = new Set(scp.map((d) => d.category || "other"));
   return Array.from(cats);
 });
 
 function scpByCategory(category: string) {
   const scp = dataStore.referenceCatalog?.spectrochempy ?? [];
-  return scp.filter((d: any) => (d.category || "other") === category);
+  return scp.filter((d) => (d.category || "other") === category);
 }
 
 function scpCategoryLabel(category: string): string {
@@ -1683,11 +1687,11 @@ async function onCreateExperiment() {
     if (created?.id) {
       await dataStore.selectExperiment(created.id);
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     toast.add({
       severity: "error",
       summary: "Create Failed",
-      detail: err?.response?.data?.detail || "Failed to create dataset",
+      detail: getErrorMessage(err, "Failed to create dataset"),
       life: 5000,
     });
   } finally {
@@ -1697,7 +1701,7 @@ async function onCreateExperiment() {
 
 // --- File operations ---
 
-function onFileSelect(event: any) {
+function onFileSelect(event: { files?: File[] }) {
   selectedFile.value = event.files?.[0] ?? null;
 }
 
@@ -1770,8 +1774,8 @@ async function onInspectFile(file: ExperimentFile) {
   activeTab.value = 1;
 }
 
-async function onExploreReference(source: string, name: string) {
-  await dataStore.exploreCatalogDataset(source, name);
+async function onExploreReference(source: string | undefined, name: string) {
+  await dataStore.exploreCatalogDataset(source || "spectrochempy", name);
   activeTab.value = 1;
 }
 

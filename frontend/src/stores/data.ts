@@ -11,9 +11,54 @@ import type {
   AvailableDatasets,
   LibraryDataset,
   ExperimentDataset,
+  ReferenceDatasetOption,
 } from "@/stores/workflow";
 
 type StoryObject = Record<string, unknown>;
+
+export interface DataStoryPropertyStat {
+  name: string;
+  min?: number | null;
+  max?: number | null;
+  mean?: number | null;
+  nan_pct?: number | null;
+}
+
+export interface DataStoryFileMetadata {
+  name?: string | null;
+  author?: string | null;
+  date?: string | null;
+}
+
+export interface CatalogDatasetInfo {
+  label?: string | null;
+  title?: string | null;
+  source?: string | null;
+  technique?: string | null;
+  description?: string | null;
+  n_samples?: number | null;
+  n_features?: number | null;
+  task_type?: string | null;
+  x_title?: string | null;
+  x_units?: string | null;
+  data_quantity?: string | null;
+  wavelength_min?: number | null;
+  wavelength_max?: number | null;
+  is_time_series?: boolean;
+  name?: string;
+  feature_names?: string[];
+  target_names?: string[];
+  property_stats?: DataStoryPropertyStat[];
+  file_metadata?: DataStoryFileMetadata;
+  metadata?: StoryObject;
+}
+
+export interface ReferenceCatalog {
+  eigenvector: ReferenceDatasetOption[];
+  oes: ReferenceDatasetOption[];
+  spectrochempy: ReferenceDatasetOption[];
+  sklearn: ReferenceDatasetOption[];
+}
 
 function asObject(value: unknown): StoryObject {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -98,10 +143,10 @@ export const useDataStore = defineStore("data", () => {
   const fileInfoError = ref<string | null>(null);
 
   // Reference dataset catalog + exploration
-  const referenceCatalog = ref<Record<string, unknown[]> | null>(null);
+  const referenceCatalog = ref<ReferenceCatalog | null>(null);
   const referenceCatalogLoading = ref(false);
   const referenceCatalogError = ref<string | null>(null);
-  const catalogDatasetInfo = ref<StoryObject | null>(null);
+  const catalogDatasetInfo = ref<CatalogDatasetInfo | null>(null);
   const catalogDatasetLoading = ref(false);
   const catalogDatasetError = ref<string | null>(null);
   const dataStoryText = ref<string | null>(null);
@@ -276,7 +321,7 @@ export const useDataStore = defineStore("data", () => {
     referenceCatalogLoading.value = true;
     referenceCatalogError.value = null;
     try {
-      const response = await api.get<Record<string, unknown[]>>(
+      const response = await api.get<ReferenceCatalog>(
         "/builder/reference-datasets"
       );
       referenceCatalog.value = response.data;
@@ -308,7 +353,7 @@ export const useDataStore = defineStore("data", () => {
     // Clear file inspection so Explore tab shows catalog card
     clearInspection();
     try {
-      const response = await api.get<StoryObject>(
+      const response = await api.get<CatalogDatasetInfo>(
         `/builder/reference-datasets/${source}/${name}`
       );
       catalogDatasetInfo.value = response.data;
