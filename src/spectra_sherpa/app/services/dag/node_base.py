@@ -46,6 +46,37 @@ class NodeResult:
         return NodeResult(outputs={"default": raw})
 
 
+@dataclass
+class SalientFeature:
+    """A single feature identified as important by an analysis node.
+
+    Used by any node that selects, ranks, or detects notable variables —
+    peak finding, SPA, CARS, VIP scores, PCA loadings, etc.
+    """
+
+    position: float  # Feature position (wavenumber, variable index, etc.)
+    importance: float = 1.0  # 0-1 normalized or raw score
+    label: str = ""  # Human-readable label (e.g., "consensus peak")
+
+
+@dataclass
+class SalientFeatures:
+    """Generic contract for nodes that identify important features.
+
+    Any node that produces a ranked or detected set of notable variables
+    should emit a ``SalientFeatures`` instance (serialized via ``asdict``)
+    under the ``"salient_features"`` key in its output dict.  The chat /
+    LLM layer consumes this contract to provide chemistry-aware reasoning.
+    """
+
+    method: str  # "peak_finding", "spa", "cars", "vip", "pca_loadings"
+    features: List[SalientFeature] = field(default_factory=list)
+    x_units: str = "cm-1"
+    x_title: str = ""
+    n_total_variables: int = 0  # Total variables in original data
+    selection_context: Dict[str, Any] = field(default_factory=dict)
+
+
 class NodeStatus(str, Enum):
     """Node execution status."""
 

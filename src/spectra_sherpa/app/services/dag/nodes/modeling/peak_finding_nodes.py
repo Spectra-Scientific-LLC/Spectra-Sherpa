@@ -18,6 +18,8 @@ from ...node_base import (
     NodeMetadata,
     NodeParameter,
     PortMetadata,
+    SalientFeature,
+    SalientFeatures,
     register_node,
 )
 from .core_utils import (
@@ -496,6 +498,12 @@ class PeakFindingNode(Node):
             "shapes": plotly_shapes,
         }
 
+        # Detect spectral technique from input dataset (best-effort)
+        from ...meta_helpers import detect_spectral_technique
+
+        technique: str | None = detect_spectral_technique(input_ds)
+        n_features = data.shape[1]
+
         result = {
             "peaks": {
                 "data": consensus_rows,
@@ -505,6 +513,8 @@ class PeakFindingNode(Node):
                     "n_consensus_peaks": len(consensus_rows),
                     "n_total_detections": total_peaks,
                     "n_samples": n_samples,
+                    "n_features": n_features,
+                    "technique": technique,
                     "x_title": x_title,
                     "x_units": x_units,
                 },
@@ -518,6 +528,29 @@ class PeakFindingNode(Node):
                 },
             },
         }
+
+        # Emit SalientFeatures contract for the LLM chat layer
+        from dataclasses import asdict
+
+        salient = SalientFeatures(
+            method="peak_finding",
+            features=[
+                SalientFeature(
+                    position=row["median_pos"],
+                    importance=row["count"] / n_samples if n_samples > 0 else 0.0,
+                    label=f"consensus peak ({row['detected']})",
+                )
+                for row in consensus_rows
+            ],
+            x_units=x_units,
+            x_title=x_title,
+            n_total_variables=n_features,
+            selection_context={
+                "n_samples": n_samples,
+                "technique": technique,
+            },
+        )
+        result["salient_features"] = asdict(salient)
 
         logger.debug(
             "[Peak Finding] %s consensus peaks from %s detections across %s spectra",

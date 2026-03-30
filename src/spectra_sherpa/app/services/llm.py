@@ -46,7 +46,7 @@ DEFAULT_PROVIDER = "deepseek"
 DEFAULT_MODEL = "deepseek-chat"
 DEFAULT_BASE_URL = "https://api.deepseek.com"
 
-MAX_HISTORY_MESSAGES = 40
+MAX_HISTORY_MESSAGES = 80
 
 # Cache for reference PDF content by path
 _reference_pdf_cache: dict[str, Optional[str]] = {}
@@ -191,15 +191,34 @@ class LLMService:
 
     @staticmethod
     def _prepare_metadata_for_local_chat(metadata: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
-        """Local BYOK chat is intentionally naive and does not consume contextual metadata."""
+        """Local BYOK chat strips most metadata but preserves salient features.
+
+        Salient features are lightweight (positions + importance scores) and
+        contain no sensitive data.  Keeping them allows the rule-based peak
+        assignment fallback to enrich the local LLM prompt.
+        """
         if metadata is None:
             return None
 
         from spectra_sherpa.app.core.config import app_config
 
-        if app_config.mode == "local":
+        if app_config.mode != "local":
+            return metadata
+
+        # Extract only salient_features from results_summary
+        wf = metadata.get("workflow_context")
+        if not isinstance(wf, dict):
             return None
-        return metadata
+        rs = wf.get("results_summary")
+        if not isinstance(rs, dict):
+            return None
+        salient_blocks: dict[str, Any] = {}
+        for node_id, node_result in rs.items():
+            if isinstance(node_result, dict) and "salient_features" in node_result:
+                salient_blocks[node_id] = {"salient_features": node_result["salient_features"]}
+        if salient_blocks:
+            return {"workflow_context": {"results_summary": salient_blocks}}
+        return None
 
     async def _ensure_llm_chat_allowed(self) -> None:
         """Enforce the user-level AI chat toggle independently of context sharing."""
@@ -557,6 +576,82 @@ class LLMService:
             return raw[: self._MAX_METADATA_CHARS] + "...(truncated)"
         return raw
 
+    @staticmethod
+    def _extract_salient_features(metadata: dict[str, Any]) -> Optional[str]:
+        """Extract salient features from workflow results and format for the LLM.
+
+        Walks ``metadata["workflow_context"]["results_summary"]`` looking for
+        nodes that emitted a ``salient_features`` dict (the SalientFeatures
+        contract).  For each, formats a concise text block with positions,
+        importance scores, and rule-based functional group assignments.
+        """
+        wf = metadata.get("workflow_context")
+        if not isinstance(wf, dict):
+            return None
+        rs = wf.get("results_summary")
+        if not isinstance(rs, dict):
+            return None
+
+        blocks: list[str] = []
+        for node_id, node_result in rs.items():
+            if not isinstance(node_result, dict):
+                continue
+            sf = node_result.get("salient_features")
+            if not isinstance(sf, dict) or not sf.get("features"):
+                continue
+
+            method = sf.get("method", "unknown")
+            x_units = sf.get("x_units", "cm-1")
+            ctx = sf.get("selection_context", {})
+            technique = ctx.get("technique") or "unknown"
+            n_samples = ctx.get("n_samples", "?")
+
+            # Run rule-based assignment on positions
+            from spectra_sherpa.app.lib.peak_assignment import assign_peaks
+
+            positions = [f["position"] for f in sf["features"] if isinstance(f, dict)]
+            assignments = assign_peaks(positions, x_units=x_units) if positions else []
+            assignment_map: dict[float, list[str]] = {}
+            for a in assignments:
+                if a.matches:
+                    assignment_map[a.position] = [m.group for m in a.matches]
+
+            lines: list[str] = []
+            header = f"Salient features ({method}, {len(sf['features'])} features"
+            if technique != "unknown":
+                header += f", {technique}"
+            header += f", {n_samples} samples, {x_units}):"
+            lines.append(header)
+
+            for feat in sf["features"]:
+                if not isinstance(feat, dict):
+                    continue
+                pos = feat.get("position", 0)
+                imp = feat.get("importance", 0)
+                label = feat.get("label", "")
+                line = f"  {pos:.1f} {x_units} (importance: {imp:.2f})"
+                if label:
+                    line += f" [{label}]"
+                rule_groups = assignment_map.get(pos)
+                if rule_groups:
+                    line += f" — Possible: {', '.join(rule_groups)}"
+                lines.append(line)
+
+            blocks.append("\n".join(lines))
+
+        if not blocks:
+            return None
+
+        guidance = (
+            "\nWhen discussing peak assignments or chemical origins:\n"
+            "- Start with what you can determine from positions, units, and technique\n"
+            "- Ask clarifying questions if technique or sample type is unknown\n"
+            "- Use the rule-based assignments above as starting points, then refine\n"
+            "- Consider which peaks appear together (functional group fingerprints)\n"
+            "- Be explicit about confidence: 'likely', 'possible', 'needs more context'"
+        )
+        return "\n\n".join(blocks) + guidance
+
     def _build_messages(
         self, history: list[dict[str, str]], metadata: Optional[dict[str, Any]], config: dict[str, Any]
     ) -> list[dict[str, str]]:
@@ -591,6 +686,11 @@ class LLMService:
             # Apply context tiering and add metadata as JSON context
             context_parts.append(self._summarize_metadata(metadata))
             messages.append({"role": "system", "content": "Context:\n" + "\n\n".join(context_parts)})
+
+            # Add focused salient features context (chemistry-aware prompting)
+            salient_text = self._extract_salient_features(metadata)
+            if salient_text:
+                messages.append({"role": "system", "content": salient_text})
 
         messages.extend(history[-MAX_HISTORY_MESSAGES:])
         return messages
