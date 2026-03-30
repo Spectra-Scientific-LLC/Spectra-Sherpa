@@ -41,6 +41,16 @@ INVALID_API_KEY_CACHE_TTL = 60  # 1 minute
 _invalid_api_key_cache: dict[str, float] = {}  # {key_hash: expires_at}
 
 
+def llm_egress_defaults_enabled() -> bool:
+    """Whether new users should default LLM chat/context egress to enabled."""
+    return app_config.site_profile == "demo" or app_config.mode == "local"
+
+
+def llm_egress_defaults_forced() -> bool:
+    """Whether LLM chat/context egress is forced on regardless of user choice."""
+    return app_config.site_profile == "demo"
+
+
 def _hash_api_key(api_key: str) -> str:
     """Create a fast hash of API key for cache lookup."""
     return hashlib.sha256(api_key.encode()).hexdigest()
@@ -539,11 +549,12 @@ async def check_egress_permission(
     # No explicit permission set - apply sensible defaults.
     # These are intentionally conservative: new users are created with
     # allow_spectrasherpa_sync=False, so the default here must match.
-    # Demo mode: allow_llm_context defaults to True so users can chat immediately.
-    is_demo = app_config.site_profile == "demo"
+    # Local & demo modes: LLM chat/context default to True so users can
+    # use their own API keys immediately without extra configuration.
+    _llm_default = llm_egress_defaults_enabled()
     DEFAULT_PERMISSIONS = {
-        "allow_llm_chat": is_demo,  # On by default in demo mode
-        "allow_llm_context": is_demo,  # On by default in demo mode
+        "allow_llm_chat": _llm_default,  # On by default in local & demo
+        "allow_llm_context": _llm_default,  # On by default in local & demo
         "allow_nist_queries": False,  # Explicit opt-in required
         "allow_export": False,  # Explicit opt-in required
         "allow_spectrasherpa_sync": False,

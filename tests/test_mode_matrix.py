@@ -323,23 +323,19 @@ class TestAuthMiddleware:
 
 
 class TestTokenTTL:
-    """Verify token lifetime differs by mode."""
+    """Verify token lifetime is uniform across modes.
 
-    def test_local_token_ttl_is_long(self):
-        """Local mode: 8-day token for desktop convenience."""
-        # 8 days = 60 * 24 * 8 = 11520 minutes
-        expected = 60 * 24 * 8
-        with patch.dict("os.environ", {"APP_MODE": "local"}, clear=False):
+    Local mode bypasses JWT entirely (implicit user), so a uniform
+    60-minute default removes dead-code complexity.
+    """
+
+    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
+    def test_token_ttl_is_60_minutes_for_all_modes(self, mode):
+        """All modes use the same 60-minute default TTL."""
+        with patch.dict("os.environ", {"APP_MODE": mode}, clear=False):
             from spectra_sherpa.app.core.config import _get_int
 
-            ttl = _get_int("ACCESS_TOKEN_EXPIRE_MINUTES", 60 if "local" != "local" else expected)
-            assert ttl == expected
-
-    def test_non_local_token_ttl_is_short(self):
-        """Non-local modes: 60-minute token for security."""
-        for mode in ("hybrid", "enterprise"):
-            # The default for non-local is 60 minutes
-            ttl = 60 if mode != "local" else 60 * 24 * 8
+            ttl = _get_int("ACCESS_TOKEN_EXPIRE_MINUTES", 60)
             assert ttl == 60
 
 

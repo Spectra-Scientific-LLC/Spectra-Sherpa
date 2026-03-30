@@ -62,12 +62,10 @@ class Settings:
     # JWT Authentication
     secret_key: str = os.getenv("SECRET_KEY", "your-super-secret-key-change-in-production")
     algorithm: str = "HS256"
-    # Token lifetime: 8 days for local convenience, 60 min for internet-facing modes.
+    # Token lifetime: 60 min default for all modes.  Local mode bypasses JWT
+    # entirely (implicit user identity), so this only matters for hybrid/enterprise.
     # Override with ACCESS_TOKEN_EXPIRE_MINUTES env var.
-    access_token_expire_minutes: int = _get_int(
-        "ACCESS_TOKEN_EXPIRE_MINUTES",
-        60 if os.getenv("APP_MODE", "local") != "local" else 60 * 24 * 8,
-    )
+    access_token_expire_minutes: int = _get_int("ACCESS_TOKEN_EXPIRE_MINUTES", 60)
 
     max_spectra_per_job: int = _get_int("MAX_SPECTRA_PER_JOB", 1000)  # Increased for MCR-ALS datasets
     max_wavenumbers: int = _get_int("MAX_WAVENUMBERS", 20000)

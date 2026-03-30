@@ -118,8 +118,13 @@ def export_always_allowed() -> bool:
 
 
 def cors_allow_all() -> bool:
-    """In local mode, all CORS origins are permitted (desktop convenience)."""
-    return app_config.mode == "local"
+    """Whether to allow all CORS origins.
+
+    Always returns False — even in local mode, CORS is restricted to
+    localhost origins to prevent cross-origin data exfiltration from
+    malicious websites targeting the local server.
+    """
+    return False
 
 
 # ── Limits ───────────────────────────────────────────────────────

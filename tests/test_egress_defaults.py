@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import timedelta
 
 import pytest
 from sqlalchemy import select
@@ -56,6 +57,28 @@ async def test_update_egress_defaults_forces_llm_chat_on_in_demo(
 
 
 @pytest.mark.asyncio
+async def test_update_egress_defaults_uses_local_llm_defaults_on_create(
+    auth_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import spectra_sherpa.app.core.config as config_mod
+
+    monkeypatch.setattr(config_mod.app_config, "mode", "local", raising=False)
+    monkeypatch.setattr(config_mod.app_config, "site_profile", None, raising=False)
+
+    response = await auth_client.put(
+        "/api/v1/egress/defaults",
+        json={"allow_export": True},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["allow_llm_chat"] is True
+    assert body["allow_llm_context"] is True
+    assert body["allow_export"] is True
+
+
+@pytest.mark.asyncio
 async def test_ensure_egress_defaults_normalizes_demo_rows(
     test_session: AsyncSession,
     test_user,
@@ -85,6 +108,75 @@ async def test_ensure_egress_defaults_normalizes_demo_rows(
     assert refreshed is not None
     assert refreshed.allow_llm_chat is True
     assert refreshed.allow_llm_context is True
+
+
+@pytest.mark.asyncio
+async def test_ensure_egress_defaults_backfills_untouched_local_rows(
+    test_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import spectra_sherpa.app.core.config as config_mod
+    import spectra_sherpa.app.core.startup as startup_mod
+
+    defaults = UserEgressDefaults(
+        user_id=test_user.id,
+        allow_llm_chat=False,
+        allow_llm_context=False,
+    )
+    test_session.add(defaults)
+    await test_session.commit()
+
+    @asynccontextmanager
+    async def _session_ctx():
+        yield test_session
+
+    monkeypatch.setattr(config_mod.app_config, "mode", "local", raising=False)
+    monkeypatch.setattr(config_mod.app_config, "site_profile", None, raising=False)
+    monkeypatch.setattr(startup_mod, "async_session", lambda: _session_ctx())
+
+    await startup_mod.ensure_egress_defaults()
+
+    refreshed = await test_session.scalar(select(UserEgressDefaults).where(UserEgressDefaults.user_id == test_user.id))
+    assert refreshed is not None
+    assert refreshed.allow_llm_chat is True
+    assert refreshed.allow_llm_context is True
+
+
+@pytest.mark.asyncio
+async def test_ensure_egress_defaults_preserves_explicit_local_opt_out(
+    test_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import spectra_sherpa.app.core.config as config_mod
+    import spectra_sherpa.app.core.startup as startup_mod
+
+    defaults = UserEgressDefaults(
+        user_id=test_user.id,
+        allow_llm_chat=False,
+        allow_llm_context=False,
+    )
+    test_session.add(defaults)
+    await test_session.commit()
+    await test_session.refresh(defaults)
+    defaults.updated_at = defaults.created_at + timedelta(minutes=1)
+    await test_session.commit()
+
+    @asynccontextmanager
+    async def _session_ctx():
+        yield test_session
+
+    monkeypatch.setattr(config_mod.app_config, "mode", "local", raising=False)
+    monkeypatch.setattr(config_mod.app_config, "site_profile", None, raising=False)
+    monkeypatch.setattr(startup_mod, "async_session", lambda: _session_ctx())
+
+    await startup_mod.ensure_egress_defaults()
+
+    refreshed = await test_session.scalar(select(UserEgressDefaults).where(UserEgressDefaults.user_id == test_user.id))
+    assert refreshed is not None
+    assert refreshed.allow_llm_chat is False
+    assert refreshed.allow_llm_context is False
 
 
 @pytest.mark.asyncio

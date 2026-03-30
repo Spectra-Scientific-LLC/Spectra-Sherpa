@@ -63,9 +63,7 @@ def get_cors_origins() -> list[str]:
 
     Priority:
     1. CORS_ORIGINS env var (comma-separated list)
-    2. Mode-based defaults:
-       - local: Allow all origins (development convenience)
-       - hybrid/enterprise: Localhost + configured domains
+    2. Mode-based defaults: localhost origins for all modes
 
     NOTE: For hybrid/enterprise production deployments, CORS_ORIGINS must be set
     to your frontend domain(s). The localhost defaults are only for development.
@@ -75,7 +73,9 @@ def get_cors_origins() -> list[str]:
     if cors_env:
         return [origin.strip() for origin in cors_env.split(",") if origin.strip()]
 
-    # Default origins for development
+    # Default origins: localhost on standard dev/prod ports.
+    # All modes use localhost-only CORS to prevent cross-origin data
+    # exfiltration from malicious websites targeting the local server.
     default_origins = [
         "http://127.0.0.1:5173",
         "http://localhost:5173",
@@ -85,21 +85,15 @@ def get_cors_origins() -> list[str]:
         "http://localhost:8000",
     ]
 
-    # In local mode, also allow the frontend to run on any port
-    from spectra_sherpa.app.core.mode_policy import cors_allow_all
-
-    if cors_allow_all():
-        return ["*"]
-
-    # Non-local modes without CORS_ORIGINS: warn loudly and fall back to
-    # localhost defaults.  spectra-server enforces stricter CORS via its own
-    # startup hooks, but the OSS core should also flag this clearly.
-    logger.critical(
-        "CORS_ORIGINS not set for %s mode — falling back to localhost-only "
-        "origins. Set CORS_ORIGINS to your production domain(s) before "
-        "exposing this service to the network.",
-        app_config.mode,
-    )
+    # In non-local modes without explicit CORS_ORIGINS, warn loudly.
+    # Local mode is fine with localhost defaults (single-user desktop).
+    if app_config.mode != "local":
+        logger.critical(
+            "CORS_ORIGINS not set for %s mode — falling back to localhost-only "
+            "origins. Set CORS_ORIGINS to your production domain(s) before "
+            "exposing this service to the network.",
+            app_config.mode,
+        )
 
     # Add production URL if configured
     if app_config.api_base_url and app_config.api_base_url not in default_origins:

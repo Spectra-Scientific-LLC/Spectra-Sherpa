@@ -63,17 +63,31 @@ async def update_egress_defaults(
     current_user: User = Depends(get_current_user),
 ):
     """Update the current user's default egress settings (creates if not exists)"""
-    from spectra_sherpa.app.core.config import app_config
+    from spectra_sherpa.app.core.security import (
+        llm_egress_defaults_enabled,
+        llm_egress_defaults_forced,
+    )
 
-    is_demo = app_config.site_profile == "demo"
+    force_llm_defaults = llm_egress_defaults_forced()
+    enable_llm_defaults = llm_egress_defaults_enabled()
     result = await session.execute(
         select(UserEgressDefaultsModel).where(UserEgressDefaultsModel.user_id == current_user.id)
     )
     defaults = result.scalar_one_or_none()
 
     if defaults is None:
-        allow_llm_chat = True if is_demo else bool(defaults_update.allow_llm_chat)
-        allow_llm_context = True if is_demo else bool(defaults_update.allow_llm_context)
+        if force_llm_defaults:
+            allow_llm_chat = True
+            allow_llm_context = True
+        else:
+            allow_llm_chat = (
+                defaults_update.allow_llm_chat if defaults_update.allow_llm_chat is not None else enable_llm_defaults
+            )
+            allow_llm_context = (
+                defaults_update.allow_llm_context
+                if defaults_update.allow_llm_context is not None
+                else enable_llm_defaults
+            )
         if not allow_llm_chat:
             allow_llm_context = False
         defaults = UserEgressDefaultsModel(
@@ -91,7 +105,7 @@ async def update_egress_defaults(
         # Update existing
         if defaults_update.allow_spectrasherpa_sync is not None:
             defaults.allow_spectrasherpa_sync = defaults_update.allow_spectrasherpa_sync
-        if is_demo:
+        if force_llm_defaults:
             defaults.allow_llm_chat = True
             defaults.allow_llm_context = True
         else:

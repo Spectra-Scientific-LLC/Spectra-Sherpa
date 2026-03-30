@@ -17,6 +17,10 @@ from sqlalchemy.exc import OperationalError
 
 from spectra_sherpa.app.core.app_paths import get_app_data_paths
 from spectra_sherpa.app.core.config import app_config, settings
+from spectra_sherpa.app.core.security import (
+    llm_egress_defaults_enabled,
+    llm_egress_defaults_forced,
+)
 from spectra_sherpa.app.db.init_db import init_db
 from spectra_sherpa.app.db.seeder import seed_data
 from spectra_sherpa.app.db.session import async_session
@@ -428,20 +432,23 @@ async def ensure_egress_defaults() -> None:
     """
     try:
         async with async_session() as session:
-            is_demo = app_config.site_profile == "demo"
+            force_llm_defaults = llm_egress_defaults_forced()
+            enable_llm_defaults = llm_egress_defaults_enabled()
             result = await session.execute(
                 select(User).outerjoin(UserEgressDefaults).where(UserEgressDefaults.user_id.is_(None))
             )
             users_missing = cast(list[User], result.scalars().all())
 
+            # Local & demo: LLM chat/context on by default so users can use
+            # their own API keys immediately.  Data egress stays off.
             for user in users_missing:
                 session.add(
                     UserEgressDefaults(
                         user_id=user.id,
-                        allow_llm_chat=is_demo,  # On by default in demo mode
+                        allow_llm_chat=enable_llm_defaults,  # On by default in local & demo
                         allow_export=False,  # Local file export disabled by default
                         allow_nist_queries=False,  # NIST queries disabled by default
-                        allow_llm_context=is_demo,  # On by default in demo mode
+                        allow_llm_context=enable_llm_defaults,  # On by default in local & demo
                     )
                 )
 
@@ -454,11 +461,18 @@ async def ensure_egress_defaults() -> None:
                 mutable_defaults = cast(object, defaults)
                 allow_llm_chat = bool(getattr(mutable_defaults, "allow_llm_chat"))
                 allow_llm_context = bool(getattr(mutable_defaults, "allow_llm_context"))
-                if is_demo:
+                created_at = getattr(mutable_defaults, "created_at", None)
+                updated_at = getattr(mutable_defaults, "updated_at", None)
+                untouched_row = created_at is not None and updated_at == created_at
+                if force_llm_defaults:
                     if not allow_llm_chat or not allow_llm_context:
                         setattr(mutable_defaults, "allow_llm_chat", True)
                         setattr(mutable_defaults, "allow_llm_context", True)
                         normalized_users += 1
+                elif enable_llm_defaults and untouched_row and not allow_llm_chat and not allow_llm_context:
+                    setattr(mutable_defaults, "allow_llm_chat", True)
+                    setattr(mutable_defaults, "allow_llm_context", True)
+                    normalized_users += 1
                 elif not allow_llm_chat and allow_llm_context:
                     setattr(mutable_defaults, "allow_llm_context", False)
                     normalized_users += 1

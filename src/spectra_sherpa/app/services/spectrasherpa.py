@@ -15,7 +15,7 @@ import logging
 import os
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
@@ -27,17 +27,14 @@ SPECTRASHERPA_API_BASE = "https://api.spectrasherpa.ai"  # Placeholder for cloud
 class SpectraSherpaConfig(BaseModel):
     """Configuration for SpectraSherpa cloud service."""
 
+    model_config = ConfigDict(frozen=False)
+
     enabled: bool = Field(default=False, description="Whether cloud integration is enabled")
     api_base_url: str = Field(default=SPECTRASHERPA_API_BASE, description="Base URL for SpectraSherpa cloud API")
     api_key: str | None = Field(default=None, description="API key for cloud service")
     deployment_id: str | None = Field(default=None, description="Deployment/tenant ID")
     sync_enabled: bool = Field(default=False, description="Enable workflow sync")
     managed_llm_keys_enabled: bool = Field(default=False, description="Use cloud-managed LLM API keys")
-
-    class Config:
-        """Pydantic config."""
-
-        frozen = False  # Allow updates from spectra-server
 
 
 # Global config instance — initialized from env so hybrid mode persists across restarts
