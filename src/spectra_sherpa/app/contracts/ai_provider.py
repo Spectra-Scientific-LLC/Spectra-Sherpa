@@ -42,15 +42,11 @@ class AIServiceProvider(Protocol):
         """Acknowledge a user decision."""
         ...
 
-    async def identify_peaks(
-        self, *, wavenumbers: list[float], absorbance: list[float]
-    ) -> dict[str, Any]:
+    async def identify_peaks(self, *, wavenumbers: list[float], absorbance: list[float]) -> dict[str, Any]:
         """Identify spectral peaks."""
         ...
 
-    async def generate_code(
-        self, *, task_description: str, context: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+    async def generate_code(self, *, task_description: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
         """Generate code for a given task."""
         ...
 
