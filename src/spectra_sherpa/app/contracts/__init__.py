@@ -11,6 +11,12 @@ their own dedicated modules to avoid name collisions with feature flags.
 
 from spectra_sherpa.app.contracts.actors import CurrentActor
 from spectra_sherpa.app.contracts.ai_provider import AIServiceProvider
+from spectra_sherpa.app.contracts.auth_resolver import (
+    ExtraUserAPIKeyAuthenticator,
+    clear_extra_user_api_key_authenticator,
+    get_extra_user_api_key_authenticator,
+    set_extra_user_api_key_authenticator,
+)
 from spectra_sherpa.app.contracts.capabilities import (
     CHAT_ASSISTANT,
     SHERPA_ADVISOR,
@@ -25,12 +31,6 @@ from spectra_sherpa.app.contracts.config_overlay import (
     ConfigOverlayProvider,
     get_config_overlay_provider,
     set_config_overlay_provider,
-)
-from spectra_sherpa.app.contracts.auth_resolver import (
-    clear_extra_user_api_key_authenticator,
-    ExtraUserAPIKeyAuthenticator,
-    get_extra_user_api_key_authenticator,
-    set_extra_user_api_key_authenticator,
 )
 from spectra_sherpa.app.contracts.demo_policy import (
     DemoPolicy,

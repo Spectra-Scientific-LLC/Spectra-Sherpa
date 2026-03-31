@@ -518,7 +518,6 @@ async def activate_hybrid(request: ActivateHybridRequest, http_request: Request)
     env_path = _find_or_create_env_path()
 
     # ── 4. Generate SECRET_KEY if still default ──
-    from spectra_sherpa.app.core.config import settings
     from spectra_sherpa.app.core.startup import DEFAULT_SECRET_KEY
 
     secret_key_generated = False

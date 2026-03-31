@@ -13,10 +13,6 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from spectra_sherpa.app.contracts.ai_provider import AIServiceProvider
-from spectra_sherpa.app.services.ai_provider_errors import (
-    SherpaAuthorizationError,
-    SubscriptionRequiredError,
-)
 from spectra_sherpa.app.services.deployment_ai_provider import DeploymentAIProvider
 
 logger = logging.getLogger(__name__)

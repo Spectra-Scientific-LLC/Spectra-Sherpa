@@ -18,7 +18,7 @@ Usage (in spectra-server startup)::
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Awaitable
+from typing import Any, Awaitable, Callable
 
 logger = logging.getLogger(__name__)
 

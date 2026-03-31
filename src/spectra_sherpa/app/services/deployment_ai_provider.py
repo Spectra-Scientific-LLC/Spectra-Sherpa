@@ -7,7 +7,6 @@ from typing import Any
 
 import httpx
 
-from spectra_sherpa.app.contracts.ai_provider import AIServiceProvider
 from spectra_sherpa.app.services.ai_provider_errors import (
     SherpaAuthorizationError,
     SubscriptionRequiredError,

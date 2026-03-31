@@ -8,8 +8,8 @@ from starlette.websockets import WebSocketDisconnect
 import spectra_sherpa.app.main as app_main
 import spectra_sherpa.app.services.ws_handlers as ws_handlers_mod
 from spectra_sherpa.app.core.config import app_config
-from spectra_sherpa.app.ws_actions import SHERPA_SYNC
 from spectra_sherpa.app.services.websocket_manager import ws_manager
+from spectra_sherpa.app.ws_actions import SHERPA_SYNC
 
 
 class _NullAsyncSessionContext:
