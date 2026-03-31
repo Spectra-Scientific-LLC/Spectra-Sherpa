@@ -102,8 +102,8 @@ See the [Applications Guide](docs/user/applications.md) for the current support 
 | Mode | Login required? | Use Case |
 |------|-----------------|----------|
 | `local` | No — single user, opens straight to the app | Desktop analysis, privacy-first |
-| `hybrid` | No for local network; yes for remote access | Local processing, optional cloud features |
-| `enterprise` | Yes — full accounts with roles | Shared lab environments, multiple users |
+| `hybrid` | Optional external service integration | Local GUI with remote services |
+| `enterprise` | Extension-defined | Shared lab environments, multi-user operation |
 
 ## Algorithm Library
 

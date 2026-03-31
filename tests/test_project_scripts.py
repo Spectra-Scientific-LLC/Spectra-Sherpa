@@ -40,7 +40,7 @@ from spectra_sherpa.app.models.workflow import Workflow
 @pytest.fixture
 async def user2(test_session: AsyncSession) -> User:
     """Create a second test user for ownership tests."""
-    user = User(username="otheruser", password_hash="otherhash")
+    user = User(username="otheruser")
     test_session.add(user)
     await test_session.commit()
     await test_session.refresh(user)

@@ -86,7 +86,7 @@ async def smoke_session(smoke_engine) -> AsyncSession:
 
 @pytest.fixture
 async def smoke_user(smoke_session: AsyncSession) -> User:
-    user = User(username="smoke_user", password_hash="nologin")
+    user = User(username="smoke_user")
     smoke_session.add(user)
     await smoke_session.commit()
     await smoke_session.refresh(user)
@@ -202,13 +202,16 @@ class TestAuthLogin:
         assert "access_token" in data
         assert data["token_type"] == "bearer"
 
-    async def test_login_rejects_bad_credentials(self, auth_client: AsyncClient):
-        """Login endpoint rejects invalid credentials with 400."""
+    async def test_login_is_server_only(self, auth_client: AsyncClient):
+        """OSS distribution does not expose /auth/login; server does."""
         resp = await auth_client.post(
             "/api/v1/auth/login",
             data={"username": "anyone", "password": "anything"},
         )
-        assert resp.status_code == 400
+        if _HAS_SERVER_AUTH:
+            assert resp.status_code == 400
+        else:
+            assert resp.status_code in (404, 405)
 
 
 # ---------------------------------------------------------------------------
@@ -317,7 +320,7 @@ class TestWebSocket:
             assert "jobs" in resp["channel"]
 
     def test_ws_sherpa_sync_roundtrip(self, ws_client: TestClient, monkeypatch):
-        """Send sherpa_sync and verify response (may be error without full state)."""
+        """Unregistered Sherpa actions fail closed in the OSS-only app."""
         app_config.mode = "local"
 
         def _factory():
@@ -338,5 +341,4 @@ class TestWebSocket:
                 }
             )
             resp = ws.receive_json()
-            # Either a sync response or an error (both are valid round-trips)
-            assert resp["type"] in ("sherpa_sync", "sherpa_status", "sherpa_error", "error")
+            assert resp == {"type": "error", "detail": "Unknown action"}

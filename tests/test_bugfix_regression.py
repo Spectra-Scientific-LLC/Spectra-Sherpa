@@ -140,72 +140,7 @@ class TestDiscoverFilesExclude:
 
 
 # ---------------------------------------------------------------------------
-# 3. Rate limit coverage (see also test_rate_limit_intent.py)
-# ---------------------------------------------------------------------------
-
-
-class TestIsExecutionPath:
-    """_is_execution_path correctly distinguishes compute from management POSTs."""
-
-    @pytest.fixture
-    def mw(self):
-        """Get a RateLimitMiddleware instance for testing _is_execution_path."""
-        from unittest.mock import MagicMock
-
-        from spectra_sherpa.app.core.rate_limit_middleware import RateLimitMiddleware
-
-        return RateLimitMiddleware(MagicMock())
-
-    # --- True positives: these SHOULD consume demo quota ---
-
-    @pytest.mark.parametrize(
-        "path",
-        [
-            "/api/v1/workflows/42/execute",  # workflow execute
-            "/api/v1/workflows/trial/execute",  # trial execute
-            "/api/v1/workflows/999/predict",  # workflow predict
-            "/api/v1/jobs",  # job submission
-            "/api/v1/jobs/batch",  # batch jobs
-            "/api/v1/compute",  # compute endpoint
-            "/api/v1/compute/some-sub",  # compute sub-path
-            "/api/v1/deploy",  # deployment
-            "/api/v1/deploy/model-1",  # deploy sub-path
-        ],
-    )
-    def test_execution_paths_detected(self, mw, path):
-        assert mw._is_execution_path(path) is True, f"{path} should be an execution path"
-
-    # --- True negatives: these should NOT consume demo quota ---
-
-    @pytest.mark.parametrize(
-        "path",
-        [
-            "/api/v1/workflows",  # workflow create
-            "/api/v1/workflows/42",  # workflow update
-            "/api/v1/workflows/42/versions/1/restore",  # version restore
-            "/api/v1/workflows/42/nodes",  # node CRUD
-            "/api/v1/auth/login",  # auth
-            "/api/v1/auth/register",  # auth
-            "/api/v1/config",  # config
-            "/api/v1/experiments/1/files",  # file upload
-        ],
-    )
-    def test_non_execution_paths_excluded(self, mw, path):
-        assert mw._is_execution_path(path) is False, f"{path} should NOT be an execution path"
-
-    def test_predict_suffix_catches_all_model_predict(self, mw):
-        """Any path ending in /predict is treated as execution."""
-        assert mw._is_execution_path("/api/v1/workflows/7/predict") is True
-        assert mw._is_execution_path("/api/v1/models/42/predict") is True
-
-    def test_execute_suffix_catches_all_workflow_execute(self, mw):
-        """Any path ending in /execute is treated as execution."""
-        assert mw._is_execution_path("/api/v1/workflows/1/execute") is True
-        assert mw._is_execution_path("/api/v1/workflows/abc/execute") is True
-
-
-# ---------------------------------------------------------------------------
-# 4. Comparison ordering
+# 3. Comparison ordering
 # ---------------------------------------------------------------------------
 
 

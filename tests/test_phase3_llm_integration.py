@@ -378,16 +378,18 @@ class TestHttpLlmRateLimits:
         ws = SimpleNamespace(send_json=AsyncMock())
         captured: dict[str, object] = {}
 
-        async def _fake_stream(self, path, *, json_body=None):
-            captured["path"] = path
-            captured["json_body"] = json_body
+        async def _fake_stream_llm_chat(self, *, message, conversation_id=None, workflow_context=None, local_user_id=None, project_id=None):
+            captured["message"] = message
+            captured["conversation_id"] = conversation_id
+            captured["local_user_id"] = local_user_id
+            captured["project_id"] = project_id
             yield {"type": "start", "conversation_id": "conv-1"}
             yield {"type": "chunk", "conversation_id": "conv-1", "text": "Hello"}
             yield {"type": "done", "conversation_id": "conv-1"}
 
         class _Advisor:
             is_available = True
-            _stream_sse = _fake_stream
+            stream_llm_chat = _fake_stream_llm_chat
 
         monkeypatch.setattr(
             "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
@@ -402,9 +404,9 @@ class TestHttpLlmRateLimits:
 
         await ws_handlers._proxy_server_chat(ws, "hello", "conv-1", metadata, user)
 
-        assert captured["path"] == "/sherpa/chat"
-        assert captured["json_body"]["message"] == "hello"
-        assert captured["json_body"]["local_user_id"] == 7
+        assert captured["message"] == "hello"
+        assert captured["local_user_id"] == 7
+        assert captured["project_id"] == 42
         assert ws.send_json.await_args_list == [
             call({"type": "llm_start", "conversation_id": "conv-1"}),
             call({"type": "llm_chunk", "conversation_id": "conv-1", "chunk": "Hello"}),
@@ -420,7 +422,7 @@ class TestHttpLlmRateLimits:
 
         ws = SimpleNamespace(send_json=AsyncMock())
 
-        async def _fake_stream(self, path, *, json_body=None):
+        async def _fake_stream_llm_chat(self, **_kwargs):
             yield {"type": "start", "conversation_id": "conv-1"}
             yield {"type": "chunk", "conversation_id": "conv-1", "text": "Hello"}
             yield {"type": "done", "conversation_id": "conv-1"}
@@ -428,7 +430,7 @@ class TestHttpLlmRateLimits:
 
         class _Advisor:
             is_available = True
-            _stream_sse = _fake_stream
+            stream_llm_chat = _fake_stream_llm_chat
 
         monkeypatch.setattr(
             "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
@@ -455,17 +457,17 @@ class TestHttpLlmRateLimits:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from spectra_sherpa.app.services import ws_handlers
-        from spectra_sherpa.app.services.sherpa_advisor import SherpaAuthorizationError
+        from spectra_sherpa.app.services.ai_provider_errors import SherpaAuthorizationError
 
         ws = SimpleNamespace(send_json=AsyncMock())
 
-        async def _fake_stream(self, path, *, json_body=None):
+        async def _fake_stream_llm_chat(self, **_kwargs):
             raise SherpaAuthorizationError("Invalid deployment key")
             yield  # make it an async generator  # noqa: E501
 
         class _Advisor:
             is_available = True
-            _stream_sse = _fake_stream
+            stream_llm_chat = _fake_stream_llm_chat
 
         monkeypatch.setattr(
             "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
@@ -490,17 +492,17 @@ class TestHttpLlmRateLimits:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from spectra_sherpa.app.services import ws_handlers
-        from spectra_sherpa.app.services.sherpa_advisor import SherpaAuthorizationError
+        from spectra_sherpa.app.services.ai_provider_errors import SherpaAuthorizationError
 
         ws = SimpleNamespace(send_json=AsyncMock(side_effect=RuntimeError("WebSocket disconnected")))
 
-        async def _fake_stream(self, path, *, json_body=None):
+        async def _fake_stream_llm_chat(self, **_kwargs):
             raise SherpaAuthorizationError("Invalid deployment key")
             yield  # pragma: no cover
 
         class _Advisor:
             is_available = True
-            _stream_sse = _fake_stream
+            stream_llm_chat = _fake_stream_llm_chat
 
         monkeypatch.setattr(
             "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
@@ -559,352 +561,12 @@ class TestHttpLlmRateLimits:
         assert exc_info.value.status_code == 503
         assert exc_info.value.detail == "Sherpa subscription service authorization failed."
 
-    @pytest.mark.asyncio
-    async def test_handle_sherpa_chat_uses_llm_chat_gate_not_sync_gate(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        from spectra_sherpa.app.services import ws_handlers
-
-        class _Advisor:
-            is_available = True
-
-            async def chat_followup(self, **_kwargs):
-                yield "Sherpa reply"
-
-        ws = SimpleNamespace(send_json=AsyncMock())
-        user = SimpleNamespace(id=7)
-        rate_limiter = SimpleNamespace(allow=lambda _key: True)
-        permission_calls: list[str] = []
-
-        async def _check_permission(_user, permission: str, **_kwargs):
-            permission_calls.append(permission)
-            if permission == "allow_llm_chat":
-                return True
-            if permission == "allow_llm_context":
-                return True
-            raise AssertionError(f"Unexpected permission check: {permission}")
-
-        monkeypatch.setattr(ws_handlers, "check_egress_permission", _check_permission)
-        monkeypatch.setattr(ws_handlers, "_check_demo_sherpa_limit", AsyncMock(return_value=True))
-        monkeypatch.setattr(
-            "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
-            lambda: _Advisor(),
-        )
-
-        await ws_handlers.handle_sherpa_chat(
-            ws,
-            {
-                "payload": {
-                    "message": "Explain this workflow",
-                    "workflow_context": {"nodes": [{"node_id": "n1"}]},
-                }
-            },
-            user,
-            rate_limiter,
-        )
-
-        assert permission_calls == ["allow_llm_chat", "allow_llm_context"]
-        assert ws.send_json.await_args_list == [
-            call({"type": "sherpa_chat_start"}),
-            call({"type": "sherpa_chat_chunk", "chunk": "Sherpa reply"}),
-            call({"type": "sherpa_chat_done"}),
-        ]
-
-    @pytest.mark.asyncio
-    async def test_handle_sherpa_chat_strips_context_when_llm_context_disabled(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        from spectra_sherpa.app.services import ws_handlers
-
-        captured: dict[str, object] = {}
-
-        class _Advisor:
-            is_available = True
-
-            async def chat_followup(self, **kwargs):
-                captured.update(kwargs)
-                yield "Sherpa reply"
-
-        ws = SimpleNamespace(send_json=AsyncMock())
-        user = SimpleNamespace(id=7)
-        rate_limiter = SimpleNamespace(allow=lambda _key: True)
-
-        async def _check_permission(_user, permission: str, **_kwargs):
-            if permission == "allow_llm_chat":
-                return True
-            if permission == "allow_llm_context":
-                return False
-            raise AssertionError(f"Unexpected permission check: {permission}")
-
-        monkeypatch.setattr(ws_handlers, "check_egress_permission", _check_permission)
-        monkeypatch.setattr(ws_handlers, "_check_demo_sherpa_limit", AsyncMock(return_value=True))
-        monkeypatch.setattr(
-            "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
-            lambda: _Advisor(),
-        )
-
-        await ws_handlers.handle_sherpa_chat(
-            ws,
-            {
-                "payload": {
-                    "message": "Explain this workflow",
-                    "workflow_context": {"nodes": [{"node_id": "n1"}]},
-                }
-            },
-            user,
-            rate_limiter,
-        )
-
-        assert captured["workflow_context"] is None
-
-    @pytest.mark.asyncio
-    async def test_handle_sherpa_chat_surfaces_authorization_detail_as_sherpa_error(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        from spectra_sherpa.app.services import ws_handlers
-        from spectra_sherpa.app.services.sherpa_advisor import SherpaAuthorizationError
-
-        class _Advisor:
-            is_available = True
-
-            async def chat_followup(self, **_kwargs):
-                raise SherpaAuthorizationError("Invalid deployment key")
-                yield  # pragma: no cover
-
-        ws = SimpleNamespace(send_json=AsyncMock())
-        user = SimpleNamespace(id=7)
-        rate_limiter = SimpleNamespace(allow=lambda _key: True)
-
-        async def _check_permission(_user, permission: str, **_kwargs):
-            if permission in {"allow_llm_chat", "allow_llm_context"}:
-                return True
-            raise AssertionError(f"Unexpected permission check: {permission}")
-
-        monkeypatch.setattr(ws_handlers, "check_egress_permission", _check_permission)
-        monkeypatch.setattr(ws_handlers, "_check_demo_sherpa_limit", AsyncMock(return_value=True))
-        monkeypatch.setattr(
-            "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
-            lambda: _Advisor(),
-        )
-
-        await ws_handlers.handle_sherpa_chat(
-            ws,
-            {
-                "payload": {
-                    "message": "Explain this workflow",
-                    "workflow_context": {"nodes": [{"node_id": "n1"}]},
-                }
-            },
-            user,
-            rate_limiter,
-        )
-
-        # With deferred start, sherpa_chat_start is not sent when the error
-        # occurs before any chunks arrive.
-        ws.send_json.assert_awaited_once_with({"type": "sherpa_error", "detail": "Invalid deployment key"})
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        ("handler_name", "payload", "advisor_method", "result_type"),
-        [
-            (
-                "handle_sherpa_identify_peaks",
-                {"payload": {"wavenumbers": [1000.0], "absorbance": [0.5]}},
-                "identify_peaks",
-                "sherpa_peaks_result",
-            ),
-            (
-                "handle_sherpa_generate_code",
-                {"payload": {"task_description": "Build a preprocessing node"}},
-                "generate_code",
-                "sherpa_code_result",
-            ),
-            (
-                "handle_sherpa_write_report",
-                {"payload": {"experiment": {"name": "corn"}}},
-                "write_report",
-                "sherpa_report_result",
-            ),
-        ],
-    )
-    async def test_successful_sherpa_unary_actions_consume_demo_quota(
-        self,
-        handler_name: str,
-        payload: dict[str, object],
-        advisor_method: str,
-        result_type: str,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        from spectra_sherpa.app.services import ws_handlers
-
-        consume_calls: list[int | None] = []
-
-        async def _result(self, **_kwargs):
-            return {"response": "ok"}
-
-        class _Advisor:
-            is_available = True
-
-        setattr(_Advisor, advisor_method, _result)
-
-        ws = SimpleNamespace(send_json=AsyncMock())
-        user = SimpleNamespace(id=7)
-        rate_limiter = SimpleNamespace(allow=lambda _key: True)
-
-        monkeypatch.setattr(ws_handlers, "check_egress_permission", AsyncMock(return_value=True))
-        monkeypatch.setattr(ws_handlers, "_check_demo_sherpa_limit", AsyncMock(return_value=True))
-        monkeypatch.setattr(
-            "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
-            lambda: _Advisor(),
-        )
-        monkeypatch.setattr(
-            "spectra_sherpa.app.core.demo_limits.consume_demo_sherpa",
-            lambda user_id: consume_calls.append(user_id),
-        )
-
-        handler = getattr(ws_handlers, handler_name)
-        await handler(ws, payload, user, rate_limiter)
-
-        assert consume_calls == [7]
-        ws.send_json.assert_awaited()
-        assert ws.send_json.await_args_list[-1].args[0]["type"] == result_type
-
-    @pytest.mark.asyncio
-    async def test_handle_sherpa_chat_rate_limits_requests(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        from spectra_sherpa.app.services import ws_handlers
-
-        ws = SimpleNamespace(send_json=AsyncMock())
-        user = SimpleNamespace(id=7)
-        rate_limiter = SimpleNamespace(allow=lambda _key: False)
-
-        await ws_handlers.handle_sherpa_chat(
-            ws,
-            {"payload": {"message": "Explain this workflow"}},
-            user,
-            rate_limiter,
-        )
-
-        ws.send_json.assert_awaited_once_with(
-            {"type": "sherpa_error", "detail": "Sherpa rate limit exceeded. Try again later."}
-        )
-
-    @pytest.mark.asyncio
-    async def test_sherpa_proxy_preamble_superuser_bypasses_rate_and_demo_limits(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        from spectra_sherpa.app.services import ws_handlers
-
-        ws = SimpleNamespace(send_json=AsyncMock())
-        user = SimpleNamespace(id=7, is_superuser=True)
-        rate_limiter = SimpleNamespace(allow=lambda _key: False)
-        demo_check = AsyncMock(return_value=False)
-
-        async def _check_permission(_user, permission: str, **_kwargs):
-            assert permission == "allow_llm_chat"
-            return True
-
-        monkeypatch.setattr(ws_handlers, "_check_demo_sherpa_limit", demo_check)
-        monkeypatch.setattr(ws_handlers, "check_egress_permission", _check_permission)
-        monkeypatch.setattr(
-            "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
-            lambda: SimpleNamespace(is_available=True),
-        )
-
-        allowed = await ws_handlers._sherpa_proxy_preamble(ws, user, rate_limiter)
-
-        assert allowed is True
-        demo_check.assert_not_awaited()
-        ws.send_json.assert_not_awaited()
-
-    @pytest.mark.asyncio
-    async def test_handle_sherpa_chat_with_tools_blocks_when_llm_chat_disabled(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        from spectra_sherpa.app.services import ws_handlers
-
-        ws = SimpleNamespace(send_json=AsyncMock())
-        user = SimpleNamespace(id=7)
-        rate_limiter = SimpleNamespace(allow=lambda _key: True)
-
-        async def _check_permission(_user, permission: str, **_kwargs):
-            assert permission == "allow_llm_chat"
-            return False
-
-        monkeypatch.setattr(ws_handlers, "check_egress_permission", _check_permission)
-        monkeypatch.setattr(ws_handlers, "_check_demo_sherpa_limit", AsyncMock(return_value=True))
-        monkeypatch.setattr(
-            "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
-            lambda: SimpleNamespace(is_available=True),
-        )
-
-        await ws_handlers.handle_sherpa_chat_with_tools(
-            ws,
-            {"payload": {"message": "help"}},
-            user,
-            rate_limiter,
-        )
-
-        ws.send_json.assert_awaited_once_with(
-            {
-                "type": "sherpa_error",
-                "detail": "Sherpa AI features are disabled in user privacy settings.",
-            }
-        )
-
-    @pytest.mark.asyncio
-    async def test_handle_sherpa_chat_with_tools_stops_on_done_event(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        from spectra_sherpa.app.services import ws_handlers
-
-        class _Advisor:
-            is_available = True
-
-            async def chat_with_tools(self, **_kwargs):
-                yield {"type": "chunk", "text": "Sherpa reply"}
-                yield {"type": "done"}
-                raise AssertionError("handler continued iterating after done")
-
-        ws = SimpleNamespace(send_json=AsyncMock())
-        user = SimpleNamespace(id=7)
-        rate_limiter = SimpleNamespace(allow=lambda _key: True)
-
-        async def _check_permission(_user, permission: str, **_kwargs):
-            if permission in {"allow_llm_chat", "allow_llm_context"}:
-                return True
-            raise AssertionError(f"Unexpected permission check: {permission}")
-
-        monkeypatch.setattr(ws_handlers, "check_egress_permission", _check_permission)
-        monkeypatch.setattr(ws_handlers, "_check_demo_sherpa_limit", AsyncMock(return_value=True))
-        monkeypatch.setattr(
-            "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
-            lambda: _Advisor(),
-        )
-
-        await ws_handlers.handle_sherpa_chat_with_tools(
-            ws,
-            {"payload": {"message": "help", "workflow_context": {"nodes": [{"node_id": "n1"}]}}},
-            user,
-            rate_limiter,
-        )
-
-        assert ws.send_json.await_args_list == [
-            call({"type": "sherpa_chat_start"}),
-            call({"type": "sherpa_chat_chunk", "chunk": "Sherpa reply"}),
-            call({"type": "sherpa_chat_done"}),
-        ]
+    # Premium Sherpa WS handler tests (handle_sherpa_chat, handle_sherpa_chat_with_tools,
+    # _sherpa_proxy_preamble, unary actions) moved to spectra-server test suite —
+    # those handlers now live in spectrasherpa_server.ws_handlers.
 
 
-class TestSherpaAdvisorProxy:
+class TestDeploymentAIProvider:
     @pytest.mark.asyncio
     async def test_chat_followup_streams_chunks_from_server(
         self,
@@ -913,7 +575,7 @@ class TestSherpaAdvisorProxy:
         import httpx
 
         from spectra_sherpa.app.services import spectrasherpa as sherpa_cfg_mod
-        from spectra_sherpa.app.services.sherpa_advisor import SherpaAdvisor
+        from spectra_sherpa.app.services.deployment_ai_provider import DeploymentAIProvider
 
         captured: dict[str, object] = {}
 
@@ -957,7 +619,7 @@ class TestSherpaAdvisorProxy:
             SimpleNamespace(api_base_url="https://sherpa.example.com", api_key="deploy-key"),
         )
 
-        advisor = SherpaAdvisor()
+        advisor = DeploymentAIProvider()
         chunks = [
             chunk
             async for chunk in advisor.chat_followup(
@@ -987,7 +649,7 @@ class TestSherpaAdvisorProxy:
         import httpx
 
         from spectra_sherpa.app.services import spectrasherpa as sherpa_cfg_mod
-        from spectra_sherpa.app.services.sherpa_advisor import SherpaAdvisor
+        from spectra_sherpa.app.services.deployment_ai_provider import DeploymentAIProvider
 
         class _FakeResponse:
             status_code = 200
@@ -1024,7 +686,7 @@ class TestSherpaAdvisorProxy:
             SimpleNamespace(api_base_url="https://sherpa.example.com", api_key="deploy-key"),
         )
 
-        advisor = SherpaAdvisor()
+        advisor = DeploymentAIProvider()
         chunks = [chunk async for chunk in advisor.chat_followup(message="What does this show?")]
 
         assert chunks == ["Hello"]
@@ -1037,7 +699,7 @@ class TestSherpaAdvisorProxy:
         import httpx
 
         from spectra_sherpa.app.services import spectrasherpa as sherpa_cfg_mod
-        from spectra_sherpa.app.services.sherpa_advisor import SherpaAdvisor
+        from spectra_sherpa.app.services.deployment_ai_provider import DeploymentAIProvider
 
         class _FakeResponse:
             status_code = 200
@@ -1072,7 +734,7 @@ class TestSherpaAdvisorProxy:
             SimpleNamespace(api_base_url="https://sherpa.example.com", api_key="deploy-key"),
         )
 
-        advisor = SherpaAdvisor()
+        advisor = DeploymentAIProvider()
         chunks = [chunk async for chunk in advisor.chat_followup(message="What does this show?")]
 
         assert chunks == ["Hello"]
@@ -1085,7 +747,8 @@ class TestSherpaAdvisorProxy:
         import httpx
 
         from spectra_sherpa.app.services import spectrasherpa as sherpa_cfg_mod
-        from spectra_sherpa.app.services.sherpa_advisor import SherpaAdvisor, SherpaAuthorizationError
+        from spectra_sherpa.app.services.ai_provider_errors import SherpaAuthorizationError
+        from spectra_sherpa.app.services.deployment_ai_provider import DeploymentAIProvider
 
         class _FakeResponse:
             status_code = 401
@@ -1104,7 +767,7 @@ class TestSherpaAdvisorProxy:
             SimpleNamespace(api_base_url="https://sherpa.example.com", api_key="deploy-key"),
         )
 
-        advisor = SherpaAdvisor()
+        advisor = DeploymentAIProvider()
         with pytest.raises(SherpaAuthorizationError, match="Invalid deployment key"):
             await advisor._request_json("POST", "/sherpa/chat", json_body={"message": "hello"})
 
@@ -1122,7 +785,7 @@ class TestSherpaAdvisorProxy:
             WorkflowStateSync,
         )
         from spectra_sherpa.app.services import spectrasherpa as sherpa_cfg_mod
-        from spectra_sherpa.app.services.sherpa_advisor import SherpaAdvisor
+        from spectra_sherpa.app.services.deployment_ai_provider import DeploymentAIProvider
 
         captured: dict[str, object] = {}
 
@@ -1166,7 +829,7 @@ class TestSherpaAdvisorProxy:
             SimpleNamespace(api_base_url="https://sherpa.example.com", api_key="deploy-key"),
         )
 
-        advisor = SherpaAdvisor()
+        advisor = DeploymentAIProvider()
         sync_msg = WorkflowStateSync(
             workflow_id=14,
             workflow_name="Demo",
@@ -1184,18 +847,7 @@ class TestSherpaAdvisorProxy:
         assert captured["json"]["workflow_id"] == 14
         assert captured["json"]["tier"] == "summaries"
 
-    def test_advisor_is_available_helper_accepts_property_and_method(self) -> None:
-        from spectra_sherpa.app.services.ws_handlers import _advisor_is_available
-
-        class _PropertyAdvisor:
-            is_available = True
-
-        class _MethodAdvisor:
-            def is_available(self):
-                return True
-
-        assert _advisor_is_available(_PropertyAdvisor()) is True
-        assert _advisor_is_available(_MethodAdvisor()) is True
+    # test_advisor_is_available moved to spectra-server test suite.
 
 
 # ---------------------------------------------------------------------------

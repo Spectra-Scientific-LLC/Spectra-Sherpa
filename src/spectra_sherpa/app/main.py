@@ -55,6 +55,7 @@ from spectra_sherpa.app.services.websocket_manager import ws_manager
 logger = logging.getLogger(__name__)
 
 RouterMount: TypeAlias = tuple[APIRouter, str | Mapping[str, Any]]
+WebSocketRegistryHook: TypeAlias = Callable[[FastAPI], None]
 
 
 def get_cors_origins() -> list[str]:
@@ -405,19 +406,7 @@ def _mount_frontend(app: FastAPI) -> None:
 async def websocket_endpoint(websocket: WebSocket) -> None:
     # Import rate limiter here to avoid circular imports
     from spectra_sherpa.app.api.v1.routes.llm import _llm_rate_limiter
-    from spectra_sherpa.app.services.ws_handlers import (
-        handle_llm_chat,
-        handle_sherpa_chat,
-        handle_sherpa_chat_with_tools,
-        handle_sherpa_data_story,
-        handle_sherpa_decide,
-        handle_sherpa_generate_code,
-        handle_sherpa_identify_peaks,
-        handle_sherpa_sync,
-        handle_sherpa_write_report,
-        handle_subscribe,
-        handle_unsubscribe,
-    )
+    from spectra_sherpa.app.services.ws_handlers import handle_subscribe, handle_unsubscribe
 
     api_key = websocket.headers.get("x-api-key") or websocket.query_params.get("api_key")
     auth_header = websocket.headers.get("authorization", "")
@@ -484,6 +473,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             pass  # Non-critical — don't block WS connection
 
     job_channel = f"jobs:{ws_user.id}" if ws_user and ws_user.id is not None else None
+    ws_registry = getattr(websocket.app.state, "ws_action_registry", None)
 
     def _resolve_channel(requested: str | None) -> str | None:
         if not requested:
@@ -491,7 +481,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         if requested == "jobs":
             return job_channel
         if requested.startswith("jobs:"):
-            if ws_user and ws_user.is_superuser:
+            if ws_user and getattr(ws_user, "is_superuser", False):
                 return requested
             if requested == job_channel:
                 return requested
@@ -573,24 +563,14 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 await handle_unsubscribe(
                     websocket, payload, ws_user, _llm_rate_limiter, resolve_channel=_resolve_channel
                 )
-            elif action == "llm_chat":
-                await handle_llm_chat(websocket, payload, ws_user, _llm_rate_limiter)
-            elif action == "sherpa_sync":
-                await handle_sherpa_sync(websocket, payload, ws_user, _llm_rate_limiter)
-            elif action == "sherpa_decide":
-                await handle_sherpa_decide(websocket, payload, ws_user, _llm_rate_limiter)
-            elif action == "sherpa_chat":
-                await handle_sherpa_chat(websocket, payload, ws_user, _llm_rate_limiter)
-            elif action == "sherpa_identify_peaks":
-                await handle_sherpa_identify_peaks(websocket, payload, ws_user, _llm_rate_limiter)
-            elif action == "sherpa_generate_code":
-                await handle_sherpa_generate_code(websocket, payload, ws_user, _llm_rate_limiter)
-            elif action == "sherpa_write_report":
-                await handle_sherpa_write_report(websocket, payload, ws_user, _llm_rate_limiter)
-            elif action == "sherpa_data_story":
-                await handle_sherpa_data_story(websocket, payload, ws_user, _llm_rate_limiter)
-            elif action == "sherpa_chat_with_tools":
-                await handle_sherpa_chat_with_tools(websocket, payload, ws_user, _llm_rate_limiter)
+            elif ws_registry is not None and await ws_registry.dispatch(
+                action,
+                websocket,
+                payload,
+                ws_user,
+                _llm_rate_limiter,
+            ):
+                continue
             else:
                 await websocket.send_json({"type": "error", "detail": "Unknown action"})
     except WebSocketDisconnect:
@@ -608,7 +588,9 @@ def create_app(
     extra_startup: list[Callable[[], Awaitable[None]]] | None = None,
     extra_shutdown: list[Callable[[], Awaitable[None]]] | None = None,
     extra_middleware: list[Callable[[FastAPI], None]] | None = None,
+    extra_ws_action_registrars: list[WebSocketRegistryHook] | None = None,
     include_server_routers: bool = True,
+    include_actor_compat_route: bool = True,
 ) -> FastAPI:
     """Build and return the FastAPI application.
 
@@ -630,6 +612,11 @@ def create_app(
         redoc_url="/api/redoc",
         lifespan=_make_lifespan(extra_startup, extra_shutdown),
     )
+    from spectra_sherpa.app.services.ws_action_registry import build_default_ws_action_registry
+
+    _app.state.ws_action_registry = build_default_ws_action_registry()
+    for registrar in extra_ws_action_registrars or []:
+        registrar(_app)
 
     # --- Middleware (last added = outermost in Starlette's onion model) ---
     # Extra middleware (e.g. EnterpriseEnforcementMiddleware) is added first
@@ -650,7 +637,10 @@ def create_app(
 
     # --- Routers ---
     _app.include_router(
-        build_api_router(include_server_routers=include_server_routers),
+        build_api_router(
+            include_server_routers=include_server_routers,
+            include_actor_compat_route=include_actor_compat_route,
+        ),
         prefix="/api/v1",
     )
     for router, kwargs in mounts:

@@ -1101,15 +1101,14 @@ async def execute_workflow(
     node_types = [n.node_type for n in workflow.nodes]
 
     # Demo mode: block execution of workflows containing hidden node types.
-    from spectra_sherpa.app.core.config import CAPABILITY_HIDDEN_NODE_TYPES
     from spectra_sherpa.app.core.config import app_config as _cfg
 
     if _cfg.site_profile == "demo":
-        blocked: set[str] = set()
-        for cap in _cfg.demo_contract.disabled_capabilities:
-            blocked.update(CAPABILITY_HIDDEN_NODE_TYPES.get(cap, []))
+        from spectra_sherpa.app.contracts.demo_policy import get_demo_policy
+
+        hidden = get_demo_policy().hidden_node_types
         for nt in node_types:
-            if nt in blocked:
+            if nt in hidden:
                 raise HTTPException(
                     status_code=403,
                     detail=f"Node type '{nt}' is not available in demo mode.",
@@ -1358,12 +1357,12 @@ async def get_node_library(
     nodes = list(node_registry.list_nodes())
 
     # In demo mode, hide nodes associated with disabled capabilities.
-    from spectra_sherpa.app.core.config import CAPABILITY_HIDDEN_NODE_TYPES, app_config
+    from spectra_sherpa.app.core.config import app_config
 
     if app_config.site_profile == "demo":
-        hidden_types: set[str] = set()
-        for cap in app_config.demo_contract.disabled_capabilities:
-            hidden_types.update(CAPABILITY_HIDDEN_NODE_TYPES.get(cap, []))
+        from spectra_sherpa.app.contracts.demo_policy import get_demo_policy
+
+        hidden_types = get_demo_policy().hidden_node_types
         if hidden_types:
             nodes = [n for n in nodes if n.node_type not in hidden_types]
 

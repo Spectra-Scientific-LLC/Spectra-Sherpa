@@ -20,6 +20,8 @@ from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.core.mode_policy import is_hybrid, is_local, is_loopback
 
 logger = __import__("logging").getLogger(__name__)
+from spectra_sherpa.app.contracts.actors import CurrentActor  # noqa: F401 — re-export for new code
+from spectra_sherpa.app.contracts.auth_resolver import get_extra_user_api_key_authenticator
 from spectra_sherpa.app.db.session import async_session
 from spectra_sherpa.app.models.user import User
 
@@ -53,7 +55,7 @@ async def _get_or_create_local_user(session: AsyncSession) -> User:
     result = await session.execute(select(User).order_by(User.id).limit(1))
     user = cast(Optional[User], result.scalar_one_or_none())
     if not user:
-        user = User(username="local", password_hash="local")
+        user = User(username="local")
         session.add(user)
         await session.commit()
         await session.refresh(user)
@@ -102,14 +104,17 @@ async def _resolve_user(
             if user:
                 return user
 
-        # Cache miss — do expensive bcrypt verification against active users only.
-        # We iterate rather than query by hash because bcrypt salts are random.
-        result = await session.execute(select(User).where(User.api_key_hash.isnot(None), User.is_active.is_(True)))
-        for user in cast(list[User], result.scalars().all()):
-            api_key_hash = user.api_key_hash
-            if api_key_hash is not None and security.verify_password(api_key, api_key_hash):
-                security._cache_api_key(api_key, user.id)
-                return user
+        authenticator = get_extra_user_api_key_authenticator()
+        if authenticator is not None:
+            authenticated_user_id = await authenticator(api_key, session)
+            if authenticated_user_id is not None:
+                result = await session.execute(
+                    select(User).where(User.id == authenticated_user_id, User.is_active.is_(True))
+                )
+                user = cast(Optional[User], result.scalar_one_or_none())
+                if user:
+                    security._cache_api_key(api_key, user.id)
+                    return user
 
     # 2. JWT Auth (User Login)
     if token:
@@ -171,20 +176,22 @@ async def get_current_user(
     return user
 
 
-async def get_current_active_user(
+async def get_current_actor(
     current_user: User = Depends(get_current_user),
-) -> User:
-    # is_active check is enforced in get_current_user; this is a pass-through alias.
-    return current_user
+) -> CurrentActor:
+    """Narrow actor dependency for OSS compatibility surfaces."""
+    return cast(CurrentActor, current_user)
 
 
 def demo_guard(capability: str):
-    """Factory for demo mode route guards. Checks the Demo Contract."""
+    """Factory for demo mode route guards. Checks the injected DemoPolicy."""
 
     def _guard():
         if app_config.site_profile == "demo":
-            contract = app_config.demo_contract
-            if capability in contract.disabled_capabilities:
+            from spectra_sherpa.app.contracts.demo_policy import get_demo_policy
+
+            policy = get_demo_policy()
+            if capability in policy.disabled_capabilities:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="This feature is not available in demo mode.",
@@ -201,8 +208,10 @@ def check_demo_capability(capability: str) -> None:
     to the endpoint.
     """
     if app_config.site_profile == "demo":
-        contract = app_config.demo_contract
-        if capability in contract.disabled_capabilities:
+        from spectra_sherpa.app.contracts.demo_policy import get_demo_policy
+
+        policy = get_demo_policy()
+        if capability in policy.disabled_capabilities:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="This feature is not available in demo mode.",

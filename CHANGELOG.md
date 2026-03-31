@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-30
+
 ### Security
 - **Auto-generated local SECRET_KEY** — In local mode, if `SECRET_KEY` is not set, a cryptographically random key is generated on first startup and persisted to `~/.spectra_sherpa/.secret_key` (mode 0600). This prevents JWT tokens from being invalidated on every restart without requiring manual configuration.
 
@@ -15,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Shared LLM quota helper** — Added a dedicated `llm_rate_limits` service so REST and WebSocket Sherpa flows use the same per-user quota logic and superuser bypass rules.
 - **Enterprise connection validation UI** — Configured enterprise and demo deployments now show a persistent **Validate Connection** action in Settings > Integrations instead of hiding connection checks after initial setup.
 - **Data Story contextual prompt input** — The Data page now includes an Additional Context field so users can pass instrument or process context into Sherpa Data Story generation.
+- **Config degradation signaling** — `GET /api/v1/config` now includes `configStatus` and `configError` fields so hybrid and enterprise deployments can distinguish a subscription-overlay outage from a deliberate “all premium features disabled” state.
+- **OSS extension boundary hardening** — Added an explicit actor/bootstrap contract and per-app WebSocket action registry so managed auth and premium actions can be composed by the proprietary layer without implicit OSS ownership.
 
 ### Fixed
 - **Hybrid mode implicit identity logging** — Rejections of credential-free requests from non-loopback hosts in hybrid mode are now logged at `WARNING` level. Grants of implicit loopback identity are logged at `DEBUG`.
@@ -28,11 +32,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Workflow template edge validation on load** — The frontend workflow store now preserves explicit `"default"` ports from backend templates, preventing valid multi-input template edges from appearing red after load.
 - **Data Story / Sherpa Advisor interaction lockout** — Data Story generation is now visibly disabled while Sherpa Advisor is using the shared AI channel, with explicit user-facing messaging instead of ambiguous first-run failures.
 - **Plot node freeze on rendered workflow plots** — The Plotly wrapper now clones reactive payloads and avoids stacking event listeners, preventing workflow-page freezes when opening rendered plot nodes.
+- **Sherpa capability defaults are now explicit** — Base app config always exposes the full Sherpa capability set as `false`, avoiding missing-key / `undefined` feature states in local mode and during server-overlay failures.
+- **Subscription overlay outages are visible to the UI** — Hybrid and enterprise config responses now fail closed on premium features while also surfacing a machine-readable degraded status instead of silently appearing as an empty feature set.
+- **Contract export shadowing removed** — `spectra_sherpa.app.contracts` no longer re-exports WebSocket action names that collided with Sherpa capability names such as `SHERPA_DATA_STORY` and `SHERPA_WRITE_REPORT`.
+- **Mode-matrix contract tests now use shared capability constants** — Config-shape regressions are now checked against the canonical contract vocabulary instead of duplicated string literals.
+- **OSS/server boundary cleanup** — Removed the OSS managed-auth fallback, made `/auth/me` ownership explicit in managed builds, and aligned server-backed chat with the public AI provider contract.
 
 ### Changed
 - **Workflow node modules split by package** — The large monolithic preprocessing and output node files were broken into package-style modules, reducing file size and clarifying ownership without changing the public node catalog.
 - **Frontend workflow store type extraction** — Workflow store types were moved into `frontend/src/stores/workflow-types.ts` and frontend unit coverage was expanded around stores, errors, and demo state.
 - **Release documentation refresh** — Configuration, quickstart, frontend README, developer LLM contract docs, and the main README were updated to match the current Sherpa integration flow, quota model, Data Story UX, and future-domain positioning.
+- **Hybrid/provider architecture cleanup** — The Sherpa advisor layer is now split into a registry/fallback plus deployment-backed transport, and the app factory exposes cleaner extension hooks for managed builds.
+
+### Removed
+- **Dead compatibility cleanup** — Removed unused auth and deployment-provider helper code left behind by the auth/provider split.
 
 ## [0.1.6] - 2026-03-11
 

@@ -8,7 +8,6 @@ Returns client-safe configuration including:
 - Rate limits (if enterprise mode)
 """
 
-import json
 import logging
 import os
 
@@ -16,23 +15,24 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
-from sqlalchemy import func, or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
-from spectra_sherpa.app.api.deps import get_current_user, get_session, get_user_from_credentials
-from spectra_sherpa.app.core.app_paths import get_app_data_paths
+from spectra_sherpa.app.api.deps import get_session, get_user_from_credentials
+from spectra_sherpa.app.contracts.capabilities import CHAT_ASSISTANT
 from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.core.llm_registry import PROVIDERS, get_provider
 from spectra_sherpa.app.core.security import get_bearer_token_optional
 from spectra_sherpa.app.models.api_key import APIKey
-from spectra_sherpa.app.models.execution_run import ExecutionRun
 from spectra_sherpa.app.models.user import User
 
 router = APIRouter(prefix="/config", tags=["config"])
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-_subscription_overlay_cache: dict[str, dict] = {}
+CONFIG_STATUS_OK = "ok"
+CONFIG_STATUS_DEGRADED = "degraded"
+CONFIG_ERROR_SUBSCRIPTION_OVERLAY_UNAVAILABLE = "subscription_overlay_unavailable"
 
 
 async def get_optional_current_user(
@@ -76,48 +76,28 @@ async def _check_provider_availability(
     if os.getenv(provider["env_var"]):
         return True
 
-    # Check database (scoped to user key OR system key)
-    # If user_id is None, only system keys are considered.
-    query = select(APIKey.id).where(APIKey.service_name == provider_id)
-    if user_id is None:
-        query = query.where(APIKey.user_id.is_(None))
-    else:
-        query = query.where(or_(APIKey.user_id == user_id, APIKey.user_id.is_(None)))
-    query = query.limit(1)
+    # Check database — BYOK (per-user) keys only.
+    # System-wide keys are managed by spectra-server and resolved via
+    # the injected ExtraKeyResolver at runtime, not at availability check.
+    if user_id is not None:
+        query = (
+            select(APIKey.id)
+            .where(APIKey.service_name == provider_id, APIKey.user_id == user_id)
+            .limit(1)
+        )
+        result = await session.execute(query)
+        if result.scalar_one_or_none() is not None:
+            return True
 
-    result = await session.execute(query)
-    return result.scalar_one_or_none() is not None
+    # Check server-injected resolver for additional availability
+    from spectra_sherpa.app.contracts.key_resolver import get_extra_key_resolver
 
+    if get_extra_key_resolver() is not None:
+        # If a server resolver is installed, assume system keys may be available.
+        # The actual key lookup happens at request time, not here.
+        return True
 
-async def _load_subscription_overlay() -> dict | None:
-    """Fetch subscription-backed config from the Sherpa server when configured."""
-    from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
-
-    api_key = spectrasherpa_config.api_key
-    if not api_key:
-        return None
-
-    base_url = spectrasherpa_config.api_base_url.rstrip("/")
-    if not base_url.endswith("/api/v1"):
-        base_url = f"{base_url}/api/v1"
-
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(
-                f"{base_url}/config/subscription",
-                headers={"X-Deployment-Key": api_key},
-            )
-        if response.status_code != 200:
-            logger.warning("Subscription config fetch returned %s", response.status_code)
-            _subscription_overlay_cache.pop(api_key, None)
-            return None
-        payload = response.json()
-        _subscription_overlay_cache[api_key] = payload
-        return payload
-    except Exception:
-        logger.warning("Failed to fetch subscription config overlay", exc_info=True)
-        _subscription_overlay_cache.pop(api_key, None)
-        return None
+    return False
 
 
 @router.get("")
@@ -137,6 +117,8 @@ async def get_config(
     # Get base config from environment
     config = app_config.to_client_safe()
     user_id = current_user.id if current_user is not None else None
+    config["configStatus"] = CONFIG_STATUS_OK
+    config["configError"] = None
 
     # Update LLM availability by checking actual sources
     for provider_id in PROVIDERS.keys():
@@ -147,125 +129,36 @@ async def get_config(
     if app_config.mode == "local":
         # Recalculate feature flags with true provider availability.
         has_llm = any(llm["enabled"] for llm in config["llms"].values())
-        config["features"]["chatAssistant"] = has_llm
+        config["features"][CHAT_ASSISTANT] = has_llm
     else:
         # Server-backed modes use subscription entitlements, not local BYOK keys.
         for provider_config in config["llms"].values():
             provider_config["enabled"] = False
 
-        config["features"]["chatAssistant"] = False
-        config["subscription"] = {"plan": "none", "status": None, "upgrade_url": ""}
+        config["features"][CHAT_ASSISTANT] = False
+        config["subscription"] = None
 
-        overlay = await _load_subscription_overlay()
-        if overlay:
-            config["features"].update(overlay.get("features", {}))
-            config["subscription"] = overlay.get("subscription")
-            if overlay.get("limits") is not None:
-                config["limits"] = overlay["limits"]
-        elif app_config.site_profile == "demo":
-            config["features"].update(
-                {
-                    "chatAssistant": True,
-                    "sherpaAdvisor": True,
-                    "sherpaPeakId": True,
-                    "sherpaCodeGen": True,
-                    "sherpaWriteReport": True,
-                    "sherpaAgenticTools": True,
-                    "sherpaDataStory": True,
-                    "sherpaFullContext": True,
-                }
-            )
-            config["subscription"] = {
-                "plan": "demo",
-                "status": "active",
-                "upgrade_url": app_config.demo_contract.upgrade_url,
-            }
-            config["limits"] = {
-                **config.get("limits", {}),
-                "maxSherpaRequestsHour": settings.max_llm_requests_per_hour,
-                "adminBypass": True,
-            }
+        # Delegate overlay assembly to the injected provider (spectra-server).
+        from spectra_sherpa.app.contracts.config_overlay import get_config_overlay_provider
+
+        overlay_provider = get_config_overlay_provider()
+        if overlay_provider is not None:
+            from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
+
+            overlay = await overlay_provider(spectrasherpa_config.api_key)
+            if overlay:
+                config["features"].update(overlay.get("features", {}))
+                config["subscription"] = overlay.get("subscription")
+                if overlay.get("limits") is not None:
+                    config["limits"] = overlay["limits"]
+                if overlay.get("demo") is not None:
+                    config["demo"] = overlay["demo"]
+            else:
+                config["configStatus"] = CONFIG_STATUS_DEGRADED
+                config["configError"] = CONFIG_ERROR_SUBSCRIPTION_OVERLAY_UNAVAILABLE
+        # No overlay provider in local-only installs — base config is correct as-is.
 
     return config
-
-
-@router.get("/demo/quota")
-async def get_demo_quota(
-    current_user: User | None = Depends(get_optional_current_user),
-):
-    """
-    Return remaining demo quotas without consuming tokens.
-
-    Returns ``{"demo": false}`` when the site profile is not ``demo``.
-    """
-    if app_config.site_profile != "demo":
-        return {"demo": False}
-
-    from spectra_sherpa.app.core.demo_limits import (
-        demo_execution_remaining,
-        demo_sherpa_remaining,
-    )
-
-    user_id = current_user.id if current_user else None
-    contract = app_config.demo_contract
-    admin_bypass = bool(current_user and current_user.is_superuser)
-    return {
-        "demo": True,
-        "adminBypass": admin_bypass,
-        "executions": {
-            "remaining": contract.max_executions_per_session if admin_bypass else demo_execution_remaining(user_id),
-            "limit": contract.max_executions_per_session,
-        },
-        "sherpa": {
-            "remaining": contract.max_sherpa_interactions if admin_bypass else demo_sherpa_remaining(user_id),
-            "limit": contract.max_sherpa_interactions,
-        },
-    }
-
-
-@router.get("/demo/analytics")
-async def get_demo_analytics(
-    current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-):
-    """
-    Demo session analytics for admin dashboard. Requires superuser.
-
-    Returns aggregate counts from the execution_run table and
-    active demo rate-limit sessions from the state file.
-    """
-    if not current_user.is_superuser:
-        raise HTTPException(status_code=403, detail="Admin only")
-    if app_config.site_profile != "demo":
-        return {"demo": False}
-
-    total_runs = (await session.execute(select(func.count(ExecutionRun.id)))).scalar() or 0
-
-    unique_users = (await session.execute(select(func.count(func.distinct(ExecutionRun.user_id))))).scalar() or 0
-
-    status_rows = (
-        await session.execute(select(ExecutionRun.status, func.count(ExecutionRun.id)).group_by(ExecutionRun.status))
-    ).all()
-    status_counts = {row[0]: row[1] for row in status_rows}
-
-    # Count active demo sessions from the file-backed rate limiter state
-    active_sessions = 0
-    state_path = get_app_data_paths(settings.data_dir).demo_limits_state
-    if state_path.exists():
-        try:
-            state = json.loads(state_path.read_text())
-            # Count user sessions (keys like "user:123" or "anon:shared")
-            active_sessions = len(state)
-        except (json.JSONDecodeError, IOError):
-            pass
-
-    return {
-        "demo": True,
-        "total_runs": total_runs,
-        "unique_users": unique_users,
-        "status_counts": status_counts,
-        "active_sessions": active_sessions,
-    }
 
 
 @router.get("/mode")

@@ -597,8 +597,11 @@ async def list_templates(
 
     # Demo mode: restrict to curated featured templates only
     if is_demo:
-        featured_slugs = app_config.demo_contract.featured_templates
-        query = query.where(WorkflowTemplate.slug.in_(featured_slugs))
+        from spectra_sherpa.app.contracts.demo_policy import get_demo_policy
+
+        featured_slugs = get_demo_policy().featured_templates
+        if featured_slugs:
+            query = query.where(WorkflowTemplate.slug.in_(featured_slugs))
 
     if category:
         query = query.where(WorkflowTemplate.category == category)

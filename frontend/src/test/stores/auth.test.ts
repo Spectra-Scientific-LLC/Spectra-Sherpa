@@ -112,10 +112,10 @@ describe("Auth Store", () => {
 
   describe("clearCredentials", () => {
     it("removes token and api_key without navigation", () => {
-      localStorage.setItem("token", "jwt");
       localStorage.setItem("api_key", "key");
       const store = useAuthStore();
       store.token = "jwt";
+      localStorage.setItem("token", "jwt");
 
       store.clearCredentials();
 
@@ -145,6 +145,21 @@ describe("Auth Store", () => {
       const result = await store.changePassword("wrong", "new");
 
       expect(result).toEqual({ success: false, error: "Current password incorrect" });
+    });
+  });
+
+  describe("initHybridUser", () => {
+    it("accepts minimal actor payload from OSS /auth/me", async () => {
+      vi.mocked(api.get).mockResolvedValueOnce({
+        data: { id: 7, username: "implicit-user", is_active: true },
+      });
+      const store = useAuthStore();
+
+      await store.initHybridUser();
+
+      expect(api.get).toHaveBeenCalledWith("/auth/me");
+      expect(store.user).toEqual({ id: 7, username: "implicit-user", is_active: true });
+      expect(store.isAuthenticated).toBe(true);
     });
   });
 });

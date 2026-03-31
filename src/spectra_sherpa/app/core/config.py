@@ -15,6 +15,10 @@ from spectra_sherpa._paths import (
     get_package_root,
     get_project_root,
 )
+from spectra_sherpa.app.contracts.capabilities import (
+    ALL_SHERPA_CAPABILITIES,
+    CHAT_ASSISTANT,
+)
 from spectra_sherpa.app.core.app_paths import AppDataPaths, get_app_data_paths
 
 
@@ -208,57 +212,6 @@ class LLMConfig(BaseModel):
         return self.api_key is not None and len(self.api_key) > 0
 
 
-class DemoContract(BaseModel):
-    """Configuration for demo site profile (used by spectra-server).
-
-    Defines quotas, featured content, and restrictions for demo mode.
-    In OSS mode, these are unused (site_profile=None). In demo mode,
-    spectra-server injects appropriate values for the demo deployment.
-    """
-
-    disabled_capabilities: list[str] = Field(
-        default_factory=lambda: ["data_upload", "project_import", "llm_config", "api_key_management", "file_load"],
-        description="Capabilities disabled in demo mode",
-    )
-    max_executions_per_session: int = Field(default=25, description="Maximum workflow executions per demo session")
-    max_sherpa_interactions: int = Field(default=20, description="Maximum Sherpa AI interactions per demo session")
-    session_expiry_hours: int = Field(default=24, description="Demo session expiry time in hours")
-    featured_datasets: list[str] = Field(
-        default_factory=lambda: ["diesel_nir", "corn_m5", "nir_shootout_cal1", "nir_shootout_test1", "metal_etch_oes"],
-        description="Featured datasets shown in demo mode",
-    )
-    featured_templates: list[str] = Field(
-        default_factory=lambda: [
-            "pca",
-            "pca_exploratory",
-            "pls_calibration",
-            "ir_opus_analysis",
-            "preprocessing",
-            "peaks",
-            "classification_plsda",
-            "simca_classification",
-            "mcr_als",
-            "oes_process_monitoring",
-        ],
-        description="Featured workflow template slugs shown in demo mode",
-    )
-    available_plans: list[str] = Field(
-        default_factory=list, description="Available subscription plans (for upgrade UI)"
-    )
-    upgrade_url: str = Field(default="", description="URL to redirect for plan upgrades")
-    upgrade_message: str = Field(
-        default="Upgrade to unlock unlimited executions and full features",
-        description="Message shown when demo limits are reached",
-    )
-
-
-# Mapping from disabled_capabilities entries to node types that should
-# be hidden from the node library when that capability is disabled.
-CAPABILITY_HIDDEN_NODE_TYPES: dict[str, list[str]] = {
-    "file_load": ["data.file_load", "data.load_group"],
-}
-
-
 class ExecutionConfig(BaseModel):
     """Execution and compute settings"""
 
@@ -282,9 +235,6 @@ class AppConfig(BaseModel):
     # These are None in OSS mode but can be injected by spectra-server
     site_profile: Optional[str] = Field(
         default=None, description="Site profile (e.g., 'demo', 'internal') - used by spectra-server"
-    )
-    demo_contract: DemoContract = Field(
-        default_factory=DemoContract, description="Demo mode configuration - used by spectra-server"
     )
     rate_limit_executions: Optional[int] = Field(
         default=None, description="Max executions per hour per user (enterprise/hybrid mode) - used by spectra-server"
@@ -419,19 +369,6 @@ class AppConfig(BaseModel):
         session_expiry_raw = _get_int("SESSION_EXPIRY_HOURS", 0) if mode != "local" else 0
         session_expiry_hours = session_expiry_raw if session_expiry_raw else None
 
-        # Demo contract overrides (only when SITE_PROFILE=demo)
-        demo_contract_kwargs: dict[str, Any] = {}
-        if site_profile == "demo":
-            demo_max_exec = os.getenv("DEMO_MAX_EXECUTIONS")
-            if demo_max_exec:
-                demo_contract_kwargs["max_executions_per_session"] = int(demo_max_exec)
-            demo_max_sherpa = os.getenv("DEMO_MAX_SHERPA_INTERACTIONS")
-            if demo_max_sherpa:
-                demo_contract_kwargs["max_sherpa_interactions"] = int(demo_max_sherpa)
-            upgrade_url = os.getenv("UPGRADE_URL")
-            if upgrade_url:
-                demo_contract_kwargs["upgrade_url"] = upgrade_url
-
         return cls(
             mode=mode,  # type: ignore[arg-type]
             egress_enabled=egress_enabled,
@@ -439,7 +376,6 @@ class AppConfig(BaseModel):
             site_profile=site_profile,
             rate_limit_executions=rate_limit_executions,
             session_expiry_hours=session_expiry_hours,
-            demo_contract=DemoContract(**demo_contract_kwargs),
             llms=llm_configs,
             execution=ExecutionConfig(
                 mode="hybrid" if mode != "local" else "local",
@@ -478,16 +414,6 @@ class AppConfig(BaseModel):
             enterprise_pw = os.getenv("ENTERPRISE_PASSWORD", "").strip()
             registration_requires_code = bool(enterprise_pw)
 
-        # Sherpa Advisor: subscription-driven (not key-presence)
-        sherpa_advisor = False
-        try:
-            from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
-
-            advisor = get_sherpa_advisor()
-            sherpa_advisor = bool(getattr(advisor, "_subscription_features", {}).get("sherpa_sync", False))
-        except Exception:
-            pass
-
         # User-facing quota model: one Sherpa/LLM hourly limit plus optional
         # session expiry metadata. Execution throttling is no longer exposed.
         if settings.max_llm_requests_per_hour or self.session_expiry_hours:
@@ -512,9 +438,10 @@ class AppConfig(BaseModel):
             "features": {
                 "apiTokenSettings": self.mode in ("local", "hybrid"),
                 "cloudOffload": self.execution.gradient_api_key is not None,
-                "chatAssistant": has_llm,
+                CHAT_ASSISTANT: has_llm,
                 "nistDownloads": self.egress_enabled,
-                "sherpaAdvisor": sherpa_advisor,
+                # Sherpa capabilities default to False; server overlay enables them.
+                **{cap: False for cap in ALL_SHERPA_CAPABILITIES},
                 "pluginSystem": True,
             },
             "llms": {
@@ -524,21 +451,8 @@ class AppConfig(BaseModel):
             "limits": limits,
         }
 
-        # Add demo contract info if in demo profile
-        if self.site_profile == "demo":
-            result["demo"] = {
-                "maxExecutionsPerSession": self.demo_contract.max_executions_per_session,
-                "maxSherpaInteractions": self.demo_contract.max_sherpa_interactions,
-                "sessionExpiryHours": self.demo_contract.session_expiry_hours,
-                "featuredDatasets": self.demo_contract.featured_datasets,
-                "featuredTemplates": self.demo_contract.featured_templates,
-                "availablePlans": self.demo_contract.available_plans,
-                "upgradeUrl": self.demo_contract.upgrade_url,
-                "upgradeMessage": self.demo_contract.upgrade_message,
-                "disabledCapabilities": self.demo_contract.disabled_capabilities,
-            }
-        else:
-            result["demo"] = None
+        # Demo metadata is injected by server overlay, not OSS.
+        result["demo"] = None
 
         return result
 

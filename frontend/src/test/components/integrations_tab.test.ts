@@ -14,7 +14,20 @@ const mocks = vi.hoisted(() => ({
     value: {
       mode: 'enterprise',
       subscription: { plan: 'demo' },
-      features: {},
+      features: {
+        apiTokenSettings: false,
+        cloudOffload: false,
+        chatAssistant: false,
+        sherpaAdvisor: false,
+        pluginSystem: true,
+        nistDownloads: false,
+        sherpaPeakId: false,
+        sherpaCodeGen: false,
+        sherpaWriteReport: false,
+        sherpaAgenticTools: false,
+        sherpaDataStory: false,
+        sherpaFullContext: false,
+      },
     },
   },
 }));
@@ -105,7 +118,20 @@ describe('IntegrationsTab', () => {
     mocks.appConfig.value = {
       mode: 'enterprise',
       subscription: { plan: 'demo' },
-      features: {},
+      features: {
+        apiTokenSettings: false,
+        cloudOffload: false,
+        chatAssistant: false,
+        sherpaAdvisor: false,
+        pluginSystem: true,
+        nistDownloads: false,
+        sherpaPeakId: false,
+        sherpaCodeGen: false,
+        sherpaWriteReport: false,
+        sherpaAgenticTools: false,
+        sherpaDataStory: false,
+        sherpaFullContext: false,
+      },
     };
 
     mocks.apiGet.mockImplementation((url: string) => {

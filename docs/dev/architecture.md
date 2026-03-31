@@ -1,6 +1,6 @@
 # System Architecture
 
-SpectraSherpa follows a "Clean Architecture" pattern with a strict separation between the core domain logic and the delivery mechanism (FastAPI).
+SpectraSherpa follows a clean, contract-first architecture: the OSS repo owns the scientific platform and extension contracts, while optional extension packages can compose additional auth, AI, and deployment behavior around that host.
 
 ## Overview
 
@@ -30,7 +30,7 @@ SpectraSherpa follows a "Clean Architecture" pattern with a strict separation be
 │          manifest.json + arrays.npz                  │
 │                                                      │
 │  Auth (mode-dependent):                              │
-│    local → no auth │ hybrid → JWT+API │ enterprise   │
+│    local → built-in │ hybrid/enterprise → extension  │
 │                                                      │
 │  DB: SQLAlchemy (SQLite default; configurable)       │
 └──────────────────────────────────────────────────────┘
@@ -38,7 +38,7 @@ SpectraSherpa follows a "Clean Architecture" pattern with a strict separation be
 
 ### Mode System
 
-SpectraSherpa supports multiple deployment modes (`local`, `hybrid`, `enterprise`). Mode-checking hooks in `create_app()` lifespan callbacks allow extension packages to add middleware. Without extensions, non-local code paths fall through to safe defaults.
+SpectraSherpa supports multiple deployment modes (`local`, `hybrid`, `enterprise`). Mode checks and extension hooks in `create_app()` allow optional extension packages to register auth, config overlays, and extra WebSocket actions without OSS route overlap.
 
 The frontend learns the active mode from the backend config endpoint. If config loading fails, the UI does not assume local mode as a fallback; protected routes fail closed until config is available again. This keeps enterprise and hybrid deployments from silently degrading into local-mode behavior.
 
@@ -70,16 +70,30 @@ src/spectra_sherpa/
 └── static/             # Compiled Vue frontend
 ```
 
+## Extension Boundary
+
+`spectra-sherpa` is the OSS host platform. It owns:
+- workflow engine
+- datasets, projects, provenance
+- local BYOK AI flows
+- extension contracts and app factory hooks
+
+Optional extension packages can add:
+- alternate auth models
+- config overlays
+- AI providers
+- extra WebSocket actions
+
 ## Core Concepts
 
 ### 1. The Mode Contract
 
-**Runtime mode** (`APP_MODE`): `local` | `hybrid` | `enterprise` — controls auth, egress, and rate limiting.
+**Runtime mode** (`APP_MODE`): `local` | `hybrid` | `enterprise` — controls auth shape, egress policy, and which extension hooks are active.
 
 Mode logic is centralized in `spectra_sherpa.app.core.mode_policy`.
 - **Local:** No auth, single-user, desktop convenience.
-- **Hybrid:** JWT + API key auth for remote clients, loopback exemption.
-- **Enterprise:** Full auth for all clients, rate limiting, multi-user.
+- **Hybrid:** Local GUI plus optional extension-backed remote services.
+- **Enterprise:** Extension-defined auth and multi-user behavior.
 
 ### 2. The Node Graph
 SpectraSherpa is fundamentally a Directed Acyclic Graph (DAG) engine.
@@ -133,7 +147,18 @@ All node ports use typed connections via `TypeRegistry`:
 - **Provenance:** Full processing chain recorded in dataset metadata for audit trails.
 - **Prepared Data State:** User overrides such as x-axis name, x-axis units, data quantity, and time-series classification persist through Data/Explore, workflow execution, and runnable exports.
 
-### 7. WebSocket Lifecycle
+### 7. Extension Contracts
+
+Extension packages integrate through explicit contracts:
+- actor bootstrap contract for `/auth/me`
+- injected config overlay provider
+- injected key and auth resolvers
+- AI provider registry
+- per-app WebSocket action registry
+
+OSS owns the host. Extensions register implementations.
+
+### 8. WebSocket Lifecycle
 
 Real-time communication uses a single WebSocket endpoint at `/ws`. Clients send JSON messages with an `"action"` key; the server responds with messages using a `"type"` key.
 
@@ -145,9 +170,9 @@ Real-time communication uses a single WebSocket endpoint at `/ws`. Clients send 
 6. **MCP Tools** — `{"action": "tool_list"}` or `{"action": "tool_invoke", ...}`
 7. **Errors** — Server sends `{"type": "error", "detail": "..."}` for unknown actions or failures
 
-The `useJobStore` Pinia store manages WebSocket state on the frontend.
+The WebSocket host carries a per-app action registry so OSS-only builds expose only OSS actions, while extension-enabled builds register extra actions explicitly at startup.
 
-### 8. Database Models
+### 9. Database Models
 
 SQLAlchemy models with a configurable async backend (SQLite default via `DATABASE_URL`):
 
@@ -191,9 +216,9 @@ User
 - `BatchPrediction.model_id` — String `artifact_uid` (primary model for this prediction)
 - `ProjectScript.source_workflow_id` — Tracks auto-generated scripts from workflows
 
-Alembic migrations manage schema evolution. See `alembic/versions/` for the full migration history.
+Alembic migrations manage schema evolution. OSS owns the base scientific/project schema; extension packages may maintain additional schema and runtime ownership for their own features.
 
-### 9. Model Artifact System
+### 10. Model Artifact System
 
 Training nodes (PCA, PLS, MCR, PLSDA, KNN, SIMCA, etc.) emit a `_model_artifact` key in their results. The executor intercepts this and persists the model:
 

@@ -6,6 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
 
 import spectra_sherpa.app.db.session as db_session
+from spectra_sherpa.app.contracts import (
+    clear_extra_user_api_key_authenticator,
+    set_extra_user_api_key_authenticator,
+)
 from spectra_sherpa.app.core import security
 from spectra_sherpa.app.core.config import app_config
 from spectra_sherpa.app.main import create_app
@@ -37,16 +41,19 @@ async def test_gateway_accepts_user_api_key(
         # Simulate a remote (non-loopback) client so gateway enforces auth
         monkeypatch.setattr(security, "get_client_host", lambda _req: "203.0.113.42")
 
-        # Create a user with an API key hash
+        # Create a user and inject a server-style managed API-key authenticator.
         api_key = "sk_test_user_key_1234567890"
-        api_key_hash = security.get_password_hash(api_key)
-        user = User(
-            username="gatewayuser",
-            password_hash="testhash",
-            api_key_hash=api_key_hash,
-        )
+        user = User(username="gatewayuser")
         test_session.add(user)
         await test_session.commit()
+        api_key_hash = security.get_password_hash(api_key)
+
+        async def _authenticate_user_api_key(candidate: str, _session: AsyncSession) -> int | None:
+            if security.verify_password(candidate, api_key_hash):
+                return user.id
+            return None
+
+        set_extra_user_api_key_authenticator(_authenticate_user_api_key)
 
         # No auth should be blocked in hybrid mode for remote clients
         resp = await client.get("/api/v1/experiments")
@@ -56,6 +63,7 @@ async def test_gateway_accepts_user_api_key(
         resp = await client.get("/api/v1/experiments", headers={"X-API-Key": api_key})
         assert resp.status_code == 200
     finally:
+        clear_extra_user_api_key_authenticator()
         app_config.mode = original_mode
 
 

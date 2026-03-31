@@ -91,6 +91,16 @@ const registrationEnabled = computed(() => config.value?.registrationEnabled ?? 
 const registrationRequiresCode = computed(() => config.value?.registrationRequiresCode ?? false)
 
 /**
+ * Config delivery status for degraded server-backed modes.
+ */
+const configStatus = computed(() => config.value?.configStatus ?? 'ok')
+
+/**
+ * Machine-readable config load degradation reason from the backend.
+ */
+const configError = computed(() => config.value?.configError ?? null)
+
+/**
  * Check if specific feature is enabled
  */
 function isFeatureEnabled(feature: keyof AppConfig['features']): boolean {
@@ -125,6 +135,8 @@ export function useAppConfig() {
     egressEnabled,
     registrationEnabled,
     registrationRequiresCode,
+    configStatus,
+    configError,
     isFeatureEnabled,
     formatProviderName,
   }

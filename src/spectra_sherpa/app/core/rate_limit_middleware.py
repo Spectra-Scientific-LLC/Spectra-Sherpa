@@ -2,8 +2,9 @@
 Rate Limit Middleware
 
 Enforces conservative auth endpoint throttling for HYBRID and ENTERPRISE mode
-deployments. User-facing paid usage is governed separately by the Sherpa/LLM
-rate limiter. Demo-profile execution quotas remain enforced here.
+deployments.  User-facing paid usage is governed separately by the Sherpa/LLM
+rate limiter.  Demo-profile execution quotas are enforced by spectra-server's
+``EnterpriseEnforcementMiddleware``.
 
 Rate limiting uses the persistent file-backed RateLimiter so state survives
 restarts and is consistent across Gunicorn workers.
@@ -20,9 +21,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from spectra_sherpa.app.core.app_paths import get_app_data_paths
 from spectra_sherpa.app.core.config import settings
-from spectra_sherpa.app.core.demo_limits import check_demo_execution, demo_limit_error_detail
 from spectra_sherpa.app.core.mode_policy import has_rate_limits
-from spectra_sherpa.app.core.security import decode_access_token, get_client_host
+from spectra_sherpa.app.core.security import get_client_host
 from spectra_sherpa.app.services.rate_limiter import RateLimiter
 
 
@@ -37,7 +37,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         "/",
         "/api/v1/health",
         "/api/v1/config",
-        "/api/v1/config/demo/quota",
         "/api/v1/auth/login",
         "/docs",
         "/openapi.json",
@@ -63,23 +62,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             for path, (max_calls, period) in self.AUTH_RATE_LIMITS.items()
         }
 
-    async def _get_authenticated_user(self, request: Request) -> Any | None:
-        """Resolve the current user for demo-limit bypass checks."""
-        from spectra_sherpa.app.api.deps import _resolve_user
-        from spectra_sherpa.app.db.session import async_session
-
-        auth_header = request.headers.get("Authorization", "")
-        token = auth_header[7:] if auth_header.startswith("Bearer ") else None
-        api_key = request.headers.get("X-API-Key")
-
-        async with async_session() as session:
-            return await _resolve_user(
-                session,
-                api_key=api_key,
-                token=token,
-                client_host=get_client_host(request),
-            )
-
     async def dispatch(self, request: Request, call_next) -> Response:
         # Only active in multi-user modes (Hybrid and Enterprise)
         if not has_rate_limits():
@@ -103,56 +85,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if path in self.PUBLIC_PATHS or path.startswith("/docs"):
             return await call_next(request)  # type: ignore[no-any-return]
 
-        # Demo site profile keeps its own compute quota model even though the
-        # general execution rate limiter has been retired.
-        if request.method == "POST" and self._is_execution_path(path):
-            user = await self._get_authenticated_user(request)
-            if user is not None and getattr(user, "is_superuser", False):
-                return await call_next(request)  # type: ignore[no-any-return]
-
-            user_id = getattr(user, "id", None) if user is not None else self._get_user_id(request)
-            allowed, remaining = check_demo_execution(user_id)
-            if not allowed:
-                return self._error_response(
-                    status.HTTP_429_TOO_MANY_REQUESTS,
-                    "Demo execution limit reached",
-                    demo_limit_error_detail("execution", remaining),
-                )
-
         return await call_next(request)  # type: ignore[no-any-return]
-
-    # Paths where a POST actually triggers compute.
-    # Both demo quota and general rate limiting use _is_execution_path().
-    EXECUTION_PATHS = [
-        "/api/v1/workflows/trial/execute",
-        "/api/v1/jobs",
-        "/api/v1/compute",
-        "/api/v1/deploy",
-    ]
-    EXECUTION_SUFFIXES = ["/execute", "/predict"]
-
-    def _is_execution_path(self, path: str) -> bool:
-        """Return True only for POST paths that represent real compute work."""
-        for ep in self.EXECUTION_PATHS:
-            if path.startswith(ep):
-                return True
-        # Match POST /api/v1/workflows/{id}/execute
-        for suffix in self.EXECUTION_SUFFIXES:
-            if path.endswith(suffix):
-                return True
-        return False
-
-    def _get_user_id(self, request: Request) -> int | None:
-        """Extract the numeric user ID from the Bearer token, or None."""
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            payload = decode_access_token(auth_header[7:])
-            if payload and payload.get("sub"):
-                try:
-                    return int(payload["sub"])
-                except (ValueError, TypeError):
-                    pass
-        return None
 
     def _error_response(self, status_code: int, message: str, details: dict[str, object] | None = None) -> Response:
         """Create a JSON error response."""

@@ -2,6 +2,7 @@
 import { defineStore } from "pinia";
 import { ref, reactive, computed } from "vue";
 import api from "@/api/client";
+import { SHERPA_WS_ACTION, SHERPA_WS_EVENT } from "@/lib/sherpaWs";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useLlmStore } from "@/stores/llm";
 import type { ExecutionRunSummary } from "@/types";
@@ -227,13 +228,13 @@ export const useReportStore = defineStore("report", () => {
 
         const handler = (event: Event) => {
           const payload = (event as CustomEvent).detail;
-          if (payload.type === "sherpa_report_result") {
+          if (payload.type === SHERPA_WS_EVENT.reportResult) {
             cleanup();
             resolve(payload.report || payload.response || "");
-          } else if (payload.type === "sherpa_report_error") {
+          } else if (payload.type === SHERPA_WS_EVENT.reportError) {
             cleanup();
             reject(new Error(payload.detail || "Report generation failed"));
-          } else if (payload.type === "sherpa_subscription_required") {
+          } else if (payload.type === SHERPA_WS_EVENT.subscriptionRequired) {
             cleanup();
             reject(new Error("Subscription required for AI reports"));
           }
@@ -246,7 +247,7 @@ export const useReportStore = defineStore("report", () => {
 
         window.addEventListener("sherpa-ws-message", handler);
         ws.send(JSON.stringify({
-          action: "sherpa_write_report",
+          action: SHERPA_WS_ACTION.writeReport,
           payload: { experiment },
         }));
       });

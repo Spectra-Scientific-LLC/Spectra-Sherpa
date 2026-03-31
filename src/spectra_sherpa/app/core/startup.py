@@ -412,7 +412,7 @@ async def ensure_default_user() -> None:
             result = await session.execute(select(User).limit(1))
             user = result.scalar_one_or_none()
             if user is None:
-                session.add(User(username="local", password_hash="local"))
+                session.add(User(username="local"))
                 await session.commit()
     except OperationalError:
         logger.warning("Skipping default user creation; database not initialized.")

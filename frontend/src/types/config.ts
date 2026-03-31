@@ -20,16 +20,16 @@ export interface AppFeatures {
   apiTokenSettings: boolean
   cloudOffload: boolean
   chatAssistant: boolean
-  sherpaAdvisor?: boolean
-  pluginSystem?: boolean
-  nistDownloads?: boolean
+  sherpaAdvisor: boolean
+  pluginSystem: boolean
+  nistDownloads: boolean
   // Subscription-gated Sherpa capabilities
-  sherpaPeakId?: boolean
-  sherpaCodeGen?: boolean
-  sherpaWriteReport?: boolean
-  sherpaAgenticTools?: boolean
-  sherpaDataStory?: boolean
-  sherpaFullContext?: boolean
+  sherpaPeakId: boolean
+  sherpaCodeGen: boolean
+  sherpaWriteReport: boolean
+  sherpaAgenticTools: boolean
+  sherpaDataStory: boolean
+  sherpaFullContext: boolean
 }
 
 export interface SubscriptionInfo {
@@ -79,6 +79,8 @@ export interface DemoBlockedDetail {
 export interface AppConfig {
   mode: AppMode
   siteProfile?: SiteProfile | null
+  configStatus?: 'ok' | 'degraded'
+  configError?: 'subscription_overlay_unavailable' | null
   egressEnabled: boolean
   registrationEnabled?: boolean
   registrationRequiresCode?: boolean

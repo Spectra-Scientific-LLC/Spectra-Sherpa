@@ -10,18 +10,17 @@ from spectra_sherpa.app.db.base import Base
 
 class APIKey(Base):
     """
-    Stores encrypted API keys for LLM providers.
+    Stores encrypted BYOK API keys for LLM providers.
 
-    Keys can be:
-    - User-specific (user_id set): BYOK keys for individual users
-    - System-wide (user_id=None): Shared keys managed by admins
+    OSS owns only user-scoped keys. Older deployments may still contain
+    legacy system rows with ``user_id=None``; the OSS runtime ignores them.
+    Server-managed shared keys live in spectra-server tables instead.
     """
 
     __tablename__ = "api_key"
     __table_args__ = (UniqueConstraint("user_id", "service_name"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # user_id is nullable to allow system-wide keys (user_id=None)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id", ondelete="SET NULL"), nullable=True, index=True)
     service_name: Mapped[str] = mapped_column(String(100), nullable=False)
     key_encrypted: Mapped[str] = mapped_column(Text, nullable=False)

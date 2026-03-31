@@ -9,18 +9,22 @@ from spectra_sherpa.app.db.base import Base
 
 
 class User(Base):
+    """User identity model shared by OSS and server distributions.
+
+    OSS code should program against the ``CurrentActor`` protocol
+    (``contracts.actors``) rather than importing this class directly.
+    The protocol requires only ``id``, ``username``, and ``is_active``.
+
+    This ORM now owns only local-platform identity fields. Managed auth,
+    admin, and account metadata belong to spectra-server.
+    """
+
     __tablename__ = "user"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    is_superuser: Mapped[bool] = mapped_column(default=False)
     is_active: Mapped[bool] = mapped_column(default=True)
-    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    api_key_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     last_active: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    login_count: Mapped[int] = mapped_column(default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

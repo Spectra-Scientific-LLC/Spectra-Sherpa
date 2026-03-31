@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- assistant sync payloads intentionally preserve flexible node parameter/result shapes. */
 import { defineStore } from "pinia";
 import { ref, watch } from "vue";
+import { SHERPA_WS_ACTION, SHERPA_WS_EVENT, getSherpaChatAction } from "@/lib/sherpaWs";
 import { useLlmStore } from "@/stores/llm";
 import { useWorkflowStore } from "@/stores/workflow";
 import type { SherpaMessage, SherpaRecommendationPayload } from "@/types";
@@ -139,7 +140,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
 
     ws.send(
       JSON.stringify({
-        action: "sherpa_sync",
+        action: SHERPA_WS_ACTION.sync,
         payload: buildSyncPayload(),
       })
     );
@@ -198,7 +199,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
     activeTools.value = [];
     ws.send(
       JSON.stringify({
-        action: useTools ? "sherpa_chat_with_tools" : "sherpa_chat",
+        action: getSherpaChatAction(useTools),
         payload: {
           message,
           workflow_id: workflow.workflowId,
@@ -226,7 +227,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
 
    
   function handleWsMessage(payload: any): void {
-    if (payload.type === "sherpa_recommendations") {
+    if (payload.type === SHERPA_WS_EVENT.recommendations) {
       state.value = "idle";
       const recs: SherpaRecommendationPayload[] = (
         payload.payload || []
@@ -256,21 +257,21 @@ export const useSherpaStore = defineStore("sherpa", () => {
           });
         }
       }
-    } else if (payload.type === "sherpa_chat_start") {
+    } else if (payload.type === SHERPA_WS_EVENT.chatStart) {
       // Transition from "syncing" to "chatting" so the sync timeout is cleared
       if (state.value === "syncing" || state.value === "idle") {
         state.value = "chatting";
       }
       streamingIndex.value = messages.value.length;
       messages.value.push({ role: "assistant", content: "" });
-    } else if (payload.type === "sherpa_chat_chunk") {
+    } else if (payload.type === SHERPA_WS_EVENT.chatChunk) {
       if (streamingIndex.value !== null) {
         messages.value[streamingIndex.value].content += payload.chunk;
       }
-    } else if (payload.type === "sherpa_chat_done") {
+    } else if (payload.type === SHERPA_WS_EVENT.chatDone) {
       state.value = "idle";
       streamingIndex.value = null;
-    } else if (payload.type === "sherpa_status") {
+    } else if (payload.type === SHERPA_WS_EVENT.status) {
       const connected = payload.payload?.connected;
       if (!connected) {
         const reason = payload.payload?.reason || "unknown";
@@ -281,20 +282,20 @@ export const useSherpaStore = defineStore("sherpa", () => {
           content: `Sherpa Advisor is not available (${reason}). Configure the cloud connection in Settings > Integrations.`,
         });
       }
-    } else if (payload.type === "sherpa_peaks_result") {
+    } else if (payload.type === SHERPA_WS_EVENT.peaksResult) {
       // Server returns {response: "text..."} and optionally {peaks: [...]}
       // WS handler flattens result fields alongside type
       lastPeaksResult.value = {
         peaks: payload.peaks,
         response: payload.response,
       };
-    } else if (payload.type === "sherpa_peaks_error") {
+    } else if (payload.type === SHERPA_WS_EVENT.peaksError) {
       lastPeaksResult.value = null;
       messages.value.push({
         role: "system",
         content: payload.detail || "Peak identification failed.",
       });
-    } else if (payload.type === "sherpa_code_result") {
+    } else if (payload.type === SHERPA_WS_EVENT.codeResult) {
       // Server returns {response: "```python\n...```"} and optionally {code, language}
       const rawCode = payload.code || _extractCodeFromMarkdown(payload.response || "");
       lastCodeResult.value = {
@@ -302,18 +303,18 @@ export const useSherpaStore = defineStore("sherpa", () => {
         language: payload.language || "python",
         response: payload.response,
       };
-    } else if (payload.type === "sherpa_code_error") {
+    } else if (payload.type === SHERPA_WS_EVENT.codeError) {
       lastCodeResult.value = null;
       messages.value.push({
         role: "system",
         content: payload.detail || "Code generation failed.",
       });
-    } else if (payload.type === "sherpa_tool_start") {
+    } else if (payload.type === SHERPA_WS_EVENT.toolStart) {
       activeTools.value.push({
         tool_name: payload.tool_name || "unknown",
         status: "started",
       });
-    } else if (payload.type === "sherpa_tool_result") {
+    } else if (payload.type === SHERPA_WS_EVENT.toolResult) {
       const idx = activeTools.value.findIndex(
         (t) => t.tool_name === payload.tool_name && t.status === "started"
       );
@@ -324,14 +325,14 @@ export const useSherpaStore = defineStore("sherpa", () => {
           result: payload.result,
         };
       }
-    } else if (payload.type === "sherpa_subscription_required") {
+    } else if (payload.type === SHERPA_WS_EVENT.subscriptionRequired) {
       subscriptionRequired.value = payload.detail || "This feature requires a subscription.";
       state.value = "idle";
       messages.value.push({
         role: "system",
         content: payload.detail || "This feature requires a Sherpa subscription. Upgrade your plan to unlock it.",
       });
-    } else if (payload.type === "sherpa_error") {
+    } else if (payload.type === SHERPA_WS_EVENT.error) {
       state.value = "error";
       // Demo limit error: has upgrade_url (sent by _check_demo_sherpa_limit)
       if (payload.upgrade_url) {

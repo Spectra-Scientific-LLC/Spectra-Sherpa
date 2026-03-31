@@ -16,6 +16,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from spectra_sherpa.app.contracts.capabilities import (
+    ALL_SHERPA_CAPABILITIES,
+    CHAT_ASSISTANT,
+    SHERPA_ADVISOR,
+)
 from spectra_sherpa.app.core.config import AppConfig, LLMConfig
 
 # ---------------------------------------------------------------------------
@@ -93,24 +98,26 @@ class TestFeatureFlags:
             cfg = _make_config(mode=mode, egress_enabled=egress)
             assert cfg.to_client_safe()["features"]["nistDownloads"] is egress
 
-    def test_sherpa_advisor_requires_subscription(self):
-        """sherpaAdvisor is subscription-driven, not key-presence-driven."""
-        # Without subscription entitlements: always False regardless of mode/key
+    def test_sherpa_advisor_always_false_in_base_config(self):
+        """sherpaAdvisor defaults to False in to_client_safe().
+
+        The server overlay (subscription entitlements) is what enables it.
+        OSS base config never computes sherpaAdvisor=True on its own.
+        """
         for mode in ("local", "hybrid", "enterprise"):
             with patch.dict("os.environ", {"SPECTRASHERPA_API_KEY": "test-key"}):
                 cfg = _make_config(mode=mode)
-                assert cfg.to_client_safe()["features"]["sherpaAdvisor"] is False
+                assert cfg.to_client_safe()["features"][SHERPA_ADVISOR] is False
 
-        # With subscription entitlements: True when advisor reports sherpa_sync
-        mock_advisor = MagicMock()
-        mock_advisor._subscription_features = {"sherpa_sync": True}
-        mock_advisor._subscription_plan = "pro"
-        with patch(
-            "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
-            return_value=mock_advisor,
-        ):
-            cfg = _make_config(mode="hybrid")
-            assert cfg.to_client_safe()["features"]["sherpaAdvisor"] is True
+    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
+    def test_all_sherpa_capabilities_present_and_false_in_base_config(self, mode: str):
+        """Base config must expose the full Sherpa capability surface as False."""
+        cfg = _make_config(mode=mode)
+        features = cfg.to_client_safe()["features"]
+
+        for capability in ALL_SHERPA_CAPABILITIES:
+            assert capability in features
+            assert features[capability] is False
 
 
 # ===========================================================================
@@ -369,10 +376,10 @@ class TestConfigResponseShape:
         expected_flags = [
             "apiTokenSettings",
             "cloudOffload",
-            "chatAssistant",
+            CHAT_ASSISTANT,
             "nistDownloads",
-            "sherpaAdvisor",
             "pluginSystem",
+            *ALL_SHERPA_CAPABILITIES,
         ]
         for flag in expected_flags:
             assert flag in features, f"Missing feature flag: {flag}"
@@ -590,10 +597,11 @@ class TestConfigResponseContract:
         # Feature flags
         features = safe["features"]
         for key in (
-            "chatAssistant",
+            CHAT_ASSISTANT,
             "nistDownloads",
             "apiTokenSettings",
             "cloudOffload",
+            *ALL_SHERPA_CAPABILITIES,
             "pluginSystem",
         ):
             assert key in features, f"Missing feature flag: {key}"
@@ -615,38 +623,89 @@ class TestConfigResponseContract:
 
 class TestSubscriptionOverlay:
     @pytest.mark.asyncio
-    async def test_subscription_overlay_failure_clears_stale_cache(self, monkeypatch):
+    @pytest.mark.parametrize("mode", ["hybrid", "enterprise"])
+    async def test_config_marks_overlay_failure_as_degraded(self, monkeypatch, mode: str):
         from spectra_sherpa.app.api.v1.routes import config as config_routes
-        from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
+        from spectra_sherpa.app.contracts import config_overlay as overlay_mod
 
-        api_key = "dk_test"
-        config_routes._subscription_overlay_cache[api_key] = {"features": {"sherpaDataStory": True}}
+        cfg = _make_config(mode=mode)
+        monkeypatch.setattr(config_routes, "app_config", cfg)
 
-        monkeypatch.setattr(spectrasherpa_config, "api_key", api_key)
-        monkeypatch.setattr(spectrasherpa_config, "api_base_url", "https://example.test")
+        # Inject an overlay provider that returns None (simulating failure).
+        async def _overlay_unavailable(_key):
+            return None
 
-        class _Response:
-            status_code = 503
+        monkeypatch.setattr(overlay_mod, "_config_overlay_provider", _overlay_unavailable)
 
-            @staticmethod
-            def json():
-                return {"detail": "unavailable"}
+        async def _provider_unavailable(*args, **kwargs):
+            return False
 
-        class _AsyncClient:
-            def __init__(self, *args, **kwargs):
-                pass
+        monkeypatch.setattr(config_routes, "_check_provider_availability", _provider_unavailable)
 
-            async def __aenter__(self):
-                return self
+        response = await config_routes.get_config(session=MagicMock(), current_user=None)
 
-            async def __aexit__(self, exc_type, exc, tb):
-                return False
+        assert response["configStatus"] == config_routes.CONFIG_STATUS_DEGRADED
+        assert response["configError"] == config_routes.CONFIG_ERROR_SUBSCRIPTION_OVERLAY_UNAVAILABLE
+        assert response["subscription"] is None
+        assert response["features"][CHAT_ASSISTANT] is False
+        for capability in ALL_SHERPA_CAPABILITIES:
+            assert response["features"][capability] is False
 
-            async def get(self, *args, **kwargs):
-                return _Response()
+        # Cleanup
+        monkeypatch.setattr(overlay_mod, "_config_overlay_provider", None)
 
-        monkeypatch.setattr(config_routes.httpx, "AsyncClient", _AsyncClient)
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode", ["hybrid", "enterprise"])
+    async def test_overlay_provider_applies_features(self, monkeypatch, mode: str):
+        from spectra_sherpa.app.api.v1.routes import config as config_routes
+        from spectra_sherpa.app.contracts import config_overlay as overlay_mod
 
-        overlay = await config_routes._load_subscription_overlay()
-        assert overlay is None
-        assert api_key not in config_routes._subscription_overlay_cache
+        cfg = _make_config(mode=mode)
+        monkeypatch.setattr(config_routes, "app_config", cfg)
+
+        async def _overlay_with_features(_key):
+            return {
+                "features": {SHERPA_ADVISOR: True, CHAT_ASSISTANT: True},
+                "subscription": {"plan": "pro", "status": "active"},
+            }
+
+        monkeypatch.setattr(overlay_mod, "_config_overlay_provider", _overlay_with_features)
+
+        async def _provider_unavailable(*args, **kwargs):
+            return False
+
+        monkeypatch.setattr(config_routes, "_check_provider_availability", _provider_unavailable)
+
+        response = await config_routes.get_config(session=MagicMock(), current_user=None)
+
+        assert response["configStatus"] == config_routes.CONFIG_STATUS_OK
+        assert response["features"][CHAT_ASSISTANT] is True
+        assert response["features"][SHERPA_ADVISOR] is True
+        assert response["subscription"]["plan"] == "pro"
+
+        # Cleanup
+        monkeypatch.setattr(overlay_mod, "_config_overlay_provider", None)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode", ["hybrid", "enterprise"])
+    async def test_no_overlay_provider_returns_base_config(self, monkeypatch, mode: str):
+        """When no overlay provider is installed, non-local modes return base config."""
+        from spectra_sherpa.app.api.v1.routes import config as config_routes
+        from spectra_sherpa.app.contracts import config_overlay as overlay_mod
+
+        cfg = _make_config(mode=mode)
+        monkeypatch.setattr(config_routes, "app_config", cfg)
+
+        # Ensure no provider is installed
+        monkeypatch.setattr(overlay_mod, "_config_overlay_provider", None)
+
+        async def _provider_unavailable(*args, **kwargs):
+            return False
+
+        monkeypatch.setattr(config_routes, "_check_provider_availability", _provider_unavailable)
+
+        response = await config_routes.get_config(session=MagicMock(), current_user=None)
+
+        # No provider → base config, not degraded (just no overlay)
+        assert response["configStatus"] == config_routes.CONFIG_STATUS_OK
+        assert response["features"][CHAT_ASSISTANT] is False

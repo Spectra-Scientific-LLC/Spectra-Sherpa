@@ -37,9 +37,8 @@ def _ensure_user_table() -> None:
         "user",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("username", sa.String(length=100), nullable=False),
-        sa.Column("password_hash", sa.String(length=255), nullable=False),
-        sa.Column("is_superuser", sa.Boolean(), nullable=False, server_default="0"),
-        sa.Column("api_key_hash", sa.String(length=255), nullable=True),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default="1"),
+        sa.Column("last_active", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),

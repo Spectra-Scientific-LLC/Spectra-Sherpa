@@ -120,7 +120,7 @@ async def test_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
 async def test_user(test_session: AsyncSession) -> User:
     """Create a test user"""
     User = _get_user_model()
-    user = User(username="testuser", password_hash="testhash")
+    user = User(username="testuser")
     test_session.add(user)
     await test_session.commit()
     await test_session.refresh(user)

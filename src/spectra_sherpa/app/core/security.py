@@ -226,10 +226,11 @@ async def is_valid_api_key(api_key: Optional[str]) -> bool:
     if _is_cached_invalid_api_key(api_key):
         return False
 
-    # Check user-specific API keys in database
+    # Check server-managed user API keys in database
     try:
         from sqlalchemy import select
 
+        from spectra_sherpa.app.contracts.auth_resolver import get_extra_user_api_key_authenticator
         from spectra_sherpa.app.db.session import async_session
         from spectra_sherpa.app.models.user import User
 
@@ -242,17 +243,11 @@ async def is_valid_api_key(api_key: Optional[str]) -> bool:
                 if user and getattr(user, "is_active", True):
                     return True
 
-            # Cache miss - expensive bcrypt verification
-            result = await session.execute(
-                select(User).where(
-                    User.api_key_hash.isnot(None),
-                    User.is_active.is_(True),
-                )
-            )
-            users_with_keys = result.scalars().all()
-            for user in users_with_keys:
-                if user.api_key_hash and verify_password(api_key, user.api_key_hash):
-                    _cache_api_key(api_key, user.id)
+            authenticator = get_extra_user_api_key_authenticator()
+            if authenticator is not None:
+                authenticated_user_id = await authenticator(api_key, session)
+                if authenticated_user_id is not None:
+                    _cache_api_key(api_key, authenticated_user_id)
                     return True
     except Exception:
         # Fail closed if database lookup fails

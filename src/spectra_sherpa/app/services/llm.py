@@ -502,16 +502,15 @@ class LLMService:
                 await self.session.commit()
                 return decrypt_value(user_key.key_encrypted)
 
-        # Priority 3: Check system key in database
-        system_key_query = select(APIKey).where(APIKey.service_name == provider, APIKey.user_id.is_(None))
-        result = await self.session.execute(system_key_query)
-        system_key = result.scalar_one_or_none()
+        # Priority 3: Server-injected resolver (system keys managed by spectra-server)
+        from spectra_sherpa.app.contracts.key_resolver import get_extra_key_resolver
 
-        if system_key:
-            logger.info(f"Using {provider} API key from system database (id={system_key.id})")
-            system_key.last_used_at = datetime.now(timezone.utc)
-            await self.session.commit()
-            return decrypt_value(system_key.key_encrypted)
+        extra_resolver = get_extra_key_resolver()
+        if extra_resolver is not None:
+            resolved = await extra_resolver(provider, self.session)
+            if resolved:
+                logger.info(f"Using {provider} API key from injected key resolver")
+                return resolved
 
         # No key found anywhere
         logger.error(f"{provider} API key not found in any source")

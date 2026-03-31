@@ -7,7 +7,8 @@ import router from '@/router'
 interface User {
     id: number
     username: string
-    is_superuser: boolean
+    is_active?: boolean
+    is_superuser?: boolean
 }
 
 export const useAuthStore = defineStore('auth', () => {

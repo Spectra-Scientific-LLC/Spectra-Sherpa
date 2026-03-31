@@ -15,6 +15,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 
+const makeViewStub = (name: string) => ({
+  default: {
+    name,
+    template: `<div>${name}</div>`,
+  },
+});
+
 // ---------------------------------------------------------------------------
 // Controllable mock refs — vi.hoisted() runs before mock factories so these
 // values are available when the factory closure is created.
@@ -44,6 +51,13 @@ vi.mock("@/api/client", () => ({
     delete: vi.fn(),
   },
 }));
+
+vi.mock("@/views/LoginView.vue", () => makeViewStub("LoginView"));
+vi.mock("@/views/RegisterView.vue", () => makeViewStub("RegisterView"));
+vi.mock("@/views/project/ProjectContent.vue", () => makeViewStub("ProjectContent"));
+vi.mock("@/views/data/DataContent.vue", () => makeViewStub("DataContent"));
+vi.mock("@/views/workflow-builder/WorkflowBuilderContent.vue", () => makeViewStub("WorkflowBuilderContent"));
+vi.mock("@/views/AdminView.vue", () => makeViewStub("AdminView"));
 
 // ---------------------------------------------------------------------------
 // Imports after mocks so the router picks up the mocked composable/api.
@@ -197,7 +211,7 @@ describe("Router auth guard", () => {
 
     it("loopback client: allows navigation when /auth/me resolves", async () => {
       vi.mocked(api.get).mockResolvedValueOnce({
-        data: { id: 1, username: "implicit-user", is_superuser: false },
+        data: { id: 1, username: "implicit-user", is_active: true },
       });
       expect(await navigateTo("/workflow")).toBe("/workflow");
     });

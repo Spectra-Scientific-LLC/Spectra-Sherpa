@@ -50,31 +50,12 @@ def get_server_routers() -> list[RouterInclude]:
         return []
 
     routers: list[RouterInclude] = []
-    auth_loaded = False
-
-    try:
-        from spectra_sherpa.app.api.v1.routes import auth
-    except ImportError:
-        # After repo split, Repo 1 may not carry full auth routes.
-        from spectra_sherpa.app.api.v1.routes import auth_compat
-
-        logger.info(
-            "Server auth routes unavailable in this distribution; " "registering OSS auth compatibility router",
-        )
-        routers.append((auth_compat.router, {"prefix": "/auth", "tags": ["auth"]}))
-    else:
-        auth_loaded = True
-        routers.append((auth.router, {"prefix": "/auth", "tags": ["auth"]}))
-
     try:
         from spectra_sherpa.app.api.v1.routes import admin
     except ImportError:
         logger.info("Server admin routes unavailable in this distribution; skipping admin router")
     else:
         routers.append((admin.router, {"prefix": "/admin", "tags": ["admin"]}))
-
-    if not auth_loaded:
-        logger.debug("Using auth compatibility router for /auth endpoints")
     return routers
 
 
@@ -82,6 +63,7 @@ def build_api_router(
     *,
     extra_routers: list[RouterInclude] | None = None,
     include_server_routers: bool = True,
+    include_actor_compat_route: bool = True,
 ) -> APIRouter:
     """Build the v1 API router with all functional routes.
 
@@ -118,19 +100,19 @@ def build_api_router(
     # API key management (BYOK) — available in all modes
     router.include_router(api_keys.router, tags=["api-keys"])
 
+    if include_actor_compat_route:
+        # Actor compatibility route: available in OSS distributions so /auth/me
+        # resolves for local and hybrid bootstrap without implying managed auth.
+        from spectra_sherpa.app.api.v1.routes import auth_compat
+
+        router.include_router(auth_compat.router, prefix="/auth", tags=["auth"])
+
     # Server/auth routes:
-    # - non-local modes: include server auth/admin (or auth_compat fallback)
-    # - local mode: include auth_compat so /api/v1/auth/me always resolves
-    #   (frontend bootstrap + smoke tests rely on this path in all distributions)
+    # - non-local modes: include server-owned auth/admin when available
     if include_server_routers:
         server_routers = get_server_routers()
-        if server_routers:
-            for server_router, kwargs in server_routers:
-                router.include_router(server_router, **dict(kwargs))
-        else:
-            from spectra_sherpa.app.api.v1.routes import auth_compat
-
-            router.include_router(auth_compat.router, prefix="/auth", tags=["auth"])
+        for server_router, kwargs in server_routers:
+            router.include_router(server_router, **dict(kwargs))
 
     # Extension point: Repo 2 passes extra routers here
     for extra, kwargs in extra_routers or []:

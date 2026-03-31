@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 import spectra_sherpa.app.main as app_main
 from spectra_sherpa.app.api.v1 import api as api_v1
+from spectra_sherpa.app.ws_actions import LLM_CHAT, SHERPA_SYNC
 
 
 def _paths(routes) -> set[str]:
@@ -35,8 +36,15 @@ def test_build_api_router_can_skip_server_routes():
         router = api_v1.build_api_router(include_server_routers=False)
     get_server.assert_not_called()
     paths = _paths(router.routes)
-    assert not any(path.startswith("/auth") for path in paths)
+    assert "/auth/me" in paths
+    assert "/auth/login" not in paths
     assert not any(path.startswith("/admin") for path in paths)
+
+
+def test_build_api_router_can_skip_actor_compat_route():
+    router = api_v1.build_api_router(include_actor_compat_route=False)
+
+    assert "/auth/me" not in _paths(router.routes)
 
 
 def test_build_api_router_includes_server_routes_when_enabled():
@@ -62,6 +70,7 @@ def test_build_api_router_exposes_auth_me_for_multi_user_mode(monkeypatch: pytes
     router = api_v1.build_api_router(include_server_routers=True)
 
     assert "/auth/me" in _paths(router.routes)
+    assert "/auth/login" not in _paths(router.routes)
 
 
 def test_build_api_router_exposes_auth_me_when_server_routes_missing(monkeypatch: pytest.MonkeyPatch):
@@ -70,6 +79,7 @@ def test_build_api_router_exposes_auth_me_when_server_routes_missing(monkeypatch
     router = api_v1.build_api_router(include_server_routers=True)
 
     assert "/auth/me" in _paths(router.routes)
+    assert "/auth/login" not in _paths(router.routes)
 
 
 def test_create_app_accepts_extra_router_prefix_string():
@@ -86,6 +96,7 @@ def test_create_app_accepts_extra_router_prefix_string():
     assert "/x/ping" in _paths(app.routes)
     assert "/ws" in _paths(app.routes)
     assert "/api/ready" in _paths(app.routes)
+    assert app.state.ws_action_registry.names() == (LLM_CHAT,)
 
 
 def test_create_app_accepts_extra_router_mapping():
@@ -100,6 +111,35 @@ def test_create_app_accepts_extra_router_mapping():
         extra_routers=[(extra, {"prefix": "/svc", "tags": ["svc"]})],
     )
     assert "/svc/status" in _paths(app.routes)
+
+
+def test_create_app_can_skip_actor_compat_route():
+    app = app_main.create_app(include_server_routers=False, include_actor_compat_route=False)
+
+    assert "/api/v1/auth/me" not in _paths(app.routes)
+
+
+def test_create_app_resets_websocket_actions_to_core_only():
+    app = app_main.create_app(include_server_routers=False)
+    app.state.ws_action_registry.register("custom_action", lambda *_args, **_kwargs: None)  # type: ignore[arg-type]
+    assert "custom_action" in app.state.ws_action_registry.names()
+
+    fresh_app = app_main.create_app(include_server_routers=False)
+
+    assert fresh_app.state.ws_action_registry.names() == (LLM_CHAT,)
+    assert SHERPA_SYNC not in fresh_app.state.ws_action_registry.names()
+
+
+def test_create_app_can_register_extra_websocket_actions():
+    def _register_extra(app):
+        app.state.ws_action_registry.register("custom_action", lambda *_args, **_kwargs: None)  # type: ignore[arg-type]
+
+    app = app_main.create_app(
+        include_server_routers=False,
+        extra_ws_action_registrars=[_register_extra],
+    )
+
+    assert "custom_action" in app.state.ws_action_registry.names()
 
 
 def test_ready_endpoint_is_public_when_http_auth_required(monkeypatch: pytest.MonkeyPatch):

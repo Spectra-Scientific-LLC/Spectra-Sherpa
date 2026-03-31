@@ -8,6 +8,7 @@ from starlette.websockets import WebSocketDisconnect
 import spectra_sherpa.app.main as app_main
 import spectra_sherpa.app.services.ws_handlers as ws_handlers_mod
 from spectra_sherpa.app.core.config import app_config
+from spectra_sherpa.app.ws_actions import SHERPA_SYNC
 from spectra_sherpa.app.services.websocket_manager import ws_manager
 
 
@@ -203,6 +204,25 @@ def test_ws_data_import_action_is_no_longer_supported(ws_client, monkeypatch):
         ws.send_json({"action": "llm_data_import", "message": "inspect /etc/hosts"})
         response = ws.receive_json()
         assert response == {"type": "error", "detail": "Unknown action"}
+
+
+def test_ws_unregistered_sherpa_action_returns_unknown_action(ws_client, monkeypatch):
+    app_config.mode = "local"
+    _install_noop_async_session(monkeypatch)
+
+    async def _resolve_user(_session, api_key=None, token=None, client_host=None):
+        return SimpleNamespace(id=1, is_superuser=False, is_active=True)
+
+    monkeypatch.setattr(app_main, "get_user_from_credentials", _resolve_user)
+    original_registry = app_main.app.state.ws_action_registry
+    app_main.app.state.ws_action_registry = app_main.create_app(include_server_routers=False).state.ws_action_registry
+    try:
+        with ws_client.websocket_connect("/ws") as ws:
+            ws.send_json({"action": SHERPA_SYNC, "payload": {"nodes": [], "edges": []}})
+            response = ws.receive_json()
+            assert response == {"type": "error", "detail": "Unknown action"}
+    finally:
+        app_main.app.state.ws_action_registry = original_registry
 
 
 # ---------------------------------------------------------------------------

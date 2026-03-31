@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import api from "@/api/client";
+import { SHERPA_WS_ACTION, SHERPA_WS_EVENT } from "@/lib/sherpaWs";
 import { getErrorMessage } from "@/utils/errors";
 import type {
   ExperimentSummary,
@@ -393,13 +394,13 @@ export const useDataStore = defineStore("data", () => {
 
         const handler = (event: Event) => {
           const payload = (event as CustomEvent).detail;
-          if (payload.type === "sherpa_data_story_result") {
+          if (payload.type === SHERPA_WS_EVENT.dataStoryResult) {
             cleanup();
             resolve(payload.response || "");
-          } else if (payload.type === "sherpa_data_story_error") {
+          } else if (payload.type === SHERPA_WS_EVENT.dataStoryError) {
             cleanup();
             reject(new Error(payload.detail || "Data story generation failed"));
-          } else if (payload.type === "sherpa_subscription_required") {
+          } else if (payload.type === SHERPA_WS_EVENT.subscriptionRequired) {
             cleanup();
             reject(new Error("Subscription required for Data Story generation."));
           }
@@ -413,7 +414,7 @@ export const useDataStore = defineStore("data", () => {
         window.addEventListener("sherpa-ws-message", handler);
         ws.send(
           JSON.stringify({
-            action: "sherpa_data_story",
+            action: SHERPA_WS_ACTION.dataStory,
             payload: {
               dataset_info: summarized,
               additional_context: dataStoryContext.value.trim() || null,

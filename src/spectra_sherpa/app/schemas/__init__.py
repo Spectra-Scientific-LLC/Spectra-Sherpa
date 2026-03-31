@@ -1,4 +1,5 @@
 from .api_key import APIKeyCreate, APIKeyInfo
+from .actor import Actor
 from .builder import (
     BlendRequest,
     BlendResponse,
@@ -50,6 +51,7 @@ from .user import User, UserCreate, UserStatusUpdate, UserUpdate
 __all__ = [
     "APIKeyCreate",
     "APIKeyInfo",
+    "Actor",
     "BlendRequest",
     "BlendResponse",
     "CurveDefaultsResponse",
