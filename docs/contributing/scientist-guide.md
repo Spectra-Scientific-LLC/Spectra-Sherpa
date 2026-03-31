@@ -78,11 +78,22 @@ ds = SherpaDataset(
 # Same sklearn calls — SherpaDataset.data is the raw NumPy array
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(ds.data)
+ds.provenance.append("standard_scaler", {"with_mean": True, "with_std": True},
+                      input_shape=ds.data.shape, output_shape=X_scaled.shape)
 
 pca = PCA(n_components=5)
 scores = pca.fit_transform(X_scaled)
+ds.provenance.append("pca", {"n_components": 5, "solver": "auto"},
+                      input_shape=X_scaled.shape, output_shape=scores.shape)
+
 loadings = pca.components_                # identical to sklearn
 explained_var = pca.explained_variance_ratio_  # identical to sklearn
+
+# Every step is recorded — who did what, with which parameters, on what shape
+for step in ds.provenance:
+    print(f"{step.op_id}: {dict(step.parameters)}  {step.input_shape} → {step.output_shape}")
+# standard_scaler: {'with_mean': True, 'with_std': True}  (150, 4) → (150, 4)
+# pca: {'n_components': 5, 'solver': 'auto'}              (150, 4) → (150, 5)
 ```
 
 The `model.pca` node in the visual Workflow Builder does exactly this
