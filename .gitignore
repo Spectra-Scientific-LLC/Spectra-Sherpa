@@ -92,5 +92,5 @@ spectrasherpa-server/
 # SpectroChemPy runtime data (downloaded at runtime, not part of source)
 .spectrochempy/
 
-# Internal planning docs
-contracts/
+# Internal planning docs (top-level only, not src/spectra_sherpa/app/contracts/)
+/contracts/

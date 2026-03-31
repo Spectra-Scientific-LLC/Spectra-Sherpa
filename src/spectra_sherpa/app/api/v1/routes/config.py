@@ -80,11 +80,7 @@ async def _check_provider_availability(
     # System-wide keys are managed by spectra-server and resolved via
     # the injected ExtraKeyResolver at runtime, not at availability check.
     if user_id is not None:
-        query = (
-            select(APIKey.id)
-            .where(APIKey.service_name == provider_id, APIKey.user_id == user_id)
-            .limit(1)
-        )
+        query = select(APIKey.id).where(APIKey.service_name == provider_id, APIKey.user_id == user_id).limit(1)
         result = await session.execute(query)
         if result.scalar_one_or_none() is not None:
             return True

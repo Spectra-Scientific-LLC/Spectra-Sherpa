@@ -15,6 +15,7 @@ from spectra_sherpa.app.contracts.actors import CurrentActor
 
 router = APIRouter()
 
+
 @router.get("/me", response_model=schemas.Actor)
 async def read_current_user(
     current_user: CurrentActor = Depends(get_current_actor),

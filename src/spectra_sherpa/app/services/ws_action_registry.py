@@ -86,5 +86,3 @@ def register_core_ws_actions(registry: WebSocketActionRegistry) -> None:
         capability=CHAT_ASSISTANT,
         source="spectra-sherpa",
     )
-
-

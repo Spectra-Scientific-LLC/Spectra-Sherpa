@@ -378,7 +378,9 @@ class TestHttpLlmRateLimits:
         ws = SimpleNamespace(send_json=AsyncMock())
         captured: dict[str, object] = {}
 
-        async def _fake_stream_llm_chat(self, *, message, conversation_id=None, workflow_context=None, local_user_id=None, project_id=None):
+        async def _fake_stream_llm_chat(
+            self, *, message, conversation_id=None, workflow_context=None, local_user_id=None, project_id=None
+        ):
             captured["message"] = message
             captured["conversation_id"] = conversation_id
             captured["local_user_id"] = local_user_id
