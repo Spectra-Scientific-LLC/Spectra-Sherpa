@@ -77,8 +77,9 @@ SpectraSherpa's core math applies broadly to multivariate spectral and sensor da
 
 | Support Level | Techniques | Notes |
 |---------------|------------|-------|
-| Template-guided example workflows | FTIR, NIR, OES | Shipped templates and bundled example datasets can be instantiated directly from Projects. Some example workflows also require the optional `spectra-sherpa[scp]` install. |
-| User-data workflows | FTIR, Raman, NIR, UV-Vis, OES | These techniques are accepted by the current template contracts and node library when the user binds their own compatible data. |
+| Template-guided example workflows | FTIR, NIR, Raman, OES | Shipped templates with bundled example datasets from [Eigenvector Research](https://eigenvector.com/resources/data-sets/) and SpectroChemPy, instantiated directly from Projects. Some example workflows require the optional `spectra-sherpa[scp]` install. |
+| Template-guided (user-supplied data) | UV-Vis | Templates exist for PCA, MCR-ALS, clustering, and preprocessing. Users bind their own compatible data. |
+| User-data workflows | FTIR, Raman, NIR, UV-Vis, OES | All techniques accepted by the node library and template contracts when the user supplies compatible data. |
 
 ### Future Plan
 
