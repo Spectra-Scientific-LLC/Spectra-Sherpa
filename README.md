@@ -40,8 +40,8 @@ X = dataset.data      # get the NumPy array back at any time
 y = dataset.target    # labels, if any
 ```
 
-**Export any workflow to a standalone Python script or Jupyter notebook.**
-The visual builder is for exploration and reproducibility. The notebook is the artifact you publish, share, or hand off — it runs with no SpectraSherpa dependency.
+**Export any workflow to a Python script or Jupyter notebook.**
+The visual builder is for exploration and reproducibility. The notebook is the artifact you publish, share, or hand off — it requires only `pip install spectra-sherpa` and standard scientific libraries (NumPy, SciPy, scikit-learn).
 
 **Add your own algorithm as a processing step.**
 If you have a working function in a notebook, one command generates the wrapper and registers it in the toolbar:

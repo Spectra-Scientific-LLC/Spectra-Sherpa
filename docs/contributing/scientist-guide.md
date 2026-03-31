@@ -40,7 +40,12 @@ columns) onto the Data page. The app detects the format automatically.
 
 ## How SpectraSherpa relates to what you already use
 
-If you have written something like this in a notebook:
+Here is a PCA workflow in scikit-learn and its SpectraSherpa equivalent
+side by side. The numerical results are identical — same SVD solver, same
+centering, same output arrays — but SpectraSherpa adds provenance tracking,
+axis-aware metadata, and a visual builder on top.
+
+**scikit-learn (your existing notebook):**
 
 ```python
 from sklearn.preprocessing import StandardScaler
@@ -56,39 +61,43 @@ loadings = pca.components_
 explained_var = pca.explained_variance_ratio_
 ```
 
-SpectraSherpa runs the same computation. The `model.pca` node uses the same
-underlying mathematics. Results are validated side-by-side against scikit-learn
-reference outputs. See the
+**SpectraSherpa (same computation, with provenance):**
+
+```python
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, SpectralAxis
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+
+# Wrap your data — the NumPy array is the same, but axes and history travel with it
+ds = SherpaDataset(
+    X=X,
+    feature_axis=SpectralAxis(values=wavenumbers, units="cm-1"),
+    title="FTIR tablet spectra",
+)
+
+# Same sklearn calls — SherpaDataset.data is the raw NumPy array
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(ds.data)
+
+pca = PCA(n_components=5)
+scores = pca.fit_transform(X_scaled)
+loadings = pca.components_                # identical to sklearn
+explained_var = pca.explained_variance_ratio_  # identical to sklearn
+```
+
+The `model.pca` node in the visual Workflow Builder does exactly this
+internally — it calls scikit-learn's `PCA`, stores scores, loadings, and
+explained variance, and attaches them to the output dataset with full
+processing history. See the
 [PCA reproduction study](../user/case_study_pca.md) for a concrete numerical
 comparison using a published spectral dataset — same parameters, same results,
 verified to five decimal places.
 
 **The goal is not to replace your scripts.** It is to let you build and
 explore visually, track every processing decision with provenance, and then
-export the result as a standalone Python script or Jupyter notebook that
-runs anywhere without SpectraSherpa.
-
-### The data format
-
-SpectraSherpa's data container is a thin layer over NumPy. Your existing
-array operations work without modification:
-
-```python
-from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, SpectralAxis, SampleAxis
-
-# Wrap your existing array
-ds = SherpaDataset(
-    X=your_array,                                      # (n_samples, n_features)
-    feature_axis=SpectralAxis(values=wavenumbers, units="cm-1"),
-    sample_axis=SampleAxis(values=sample_ids),
-    title="My dataset",
-)
-
-# Get the raw array back at any time
-X = ds.data          # NumPy array, shape (n_samples, n_features)
-y = ds.target        # labels or reference values, if any
-wn = ds.feature_axis.values   # wavenumber or wavelength axis
-```
+export the result as a Python script or Jupyter notebook. The exported code
+requires `pip install spectra-sherpa` but no web server — it runs anywhere
+Python and the standard scientific stack are available.
 
 ---
 

@@ -4,7 +4,7 @@ This reference lists the available processing nodes in the Workflow Builder, org
 
 Nodes marked with **[SCP]** require [SpectroChemPy](https://www.spectrochempy.fr/) (`pip install spectra-sherpa[scp]`). All other nodes run on NumPy/SciPy/scikit-learn.
 
-Nodes marked with **[Export]** support Python code export via the `/workflows/{id}/export/python` endpoint. The exported script reproduces the workflow as standalone Python code. Nodes without **[Export]** are visualization/output nodes or specialized algorithms not yet supported for runnable export.
+Nodes marked with **[Export]** support Python code export via the `/workflows/{id}/export/python` endpoint. The exported script reproduces the workflow as runnable Python code (requires `pip install spectra-sherpa`). Nodes without **[Export]** are visualization/output nodes or specialized algorithms not yet supported for export.
 
 **Consolidated nodes** use a `method` dropdown to select among multiple algorithms.
 

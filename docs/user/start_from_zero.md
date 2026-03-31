@@ -228,7 +228,7 @@ Click the **chat icon** in the sidebar. Try questions like:
 
 ### E. Export to Python
 
-When you're happy with a workflow, use the **Export** button to generate a standalone Python script, Jupyter notebook, or zip bundle. The exported code now expects a sibling `data/` folder by default, and zip export writes the needed source files there automatically.
+When you're happy with a workflow, use the **Export** button to generate a Python script, Jupyter notebook, or zip bundle. The exported code requires `spectra-sherpa` to be installed (`pip install spectra-sherpa`) and expects a sibling `data/` folder by default — zip export writes the needed source files there automatically.
 
 ---
 

@@ -113,7 +113,7 @@ Initial open-source release.
 - **Workflow Builder** — Visual DAG editor with over 60 nodes for preprocessing, modeling, classification, diagnostics, and DOE
 - **Model Artifacts** — Train, persist, and reload PCA, PLS, MCR, PLSDA, KNN, SIMCA models
 - **Type System** — URI-based port typing with registry-driven connection validation
-- **Python & Notebook Export** — Generate standalone scripts or Jupyter notebooks from any workflow
+- **Python & Notebook Export** — Generate reproducible scripts or Jupyter notebooks from any workflow
 - **Project Management** — Experiments, workflows, scripts, and models with versioned snapshots
 - **Experiment Tracking** — DOE support with 96-well plate layouts, samples, and mixtures
 - **Deploy** — Batch prediction, folder watching, execution run tracking with provenance
