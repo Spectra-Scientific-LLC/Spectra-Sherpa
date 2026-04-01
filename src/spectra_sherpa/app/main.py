@@ -417,19 +417,14 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     ws_client_host = get_client_host(websocket)
     requires_ws_auth = _requires_ws_auth(ws_client_host)
 
-    # ── Phase 1: resolve user from connection-time credentials ──
-    # Supports headers + query params (compat) and implicit loopback identity.
-    ws_user, has_credentials = await resolve_initial_ws_user(
+    # ── Phase 1: resolve implicit local identity only ──
+    # Remote connections start unauthenticated and must send a first-message
+    # authenticate action before any privileged WebSocket action.
+    ws_user = await resolve_initial_ws_user(
         websocket,
         client_host=ws_client_host,
         requires_auth=requires_ws_auth,
     )
-
-    # Invalid credentials on an auth-required connection → reject early
-    if has_credentials and ws_user is None and requires_ws_auth:
-        await websocket.accept()
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
 
     if ws_user is not None and hasattr(ws_user, "is_active") and not ws_user.is_active:
         await websocket.accept()
@@ -497,6 +492,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 )
                 if ws_user and ws_user.id is not None:
                     job_channel = f"jobs:{ws_user.id}"
+                    await stamp_last_active(ws_user)
                 if require_authenticated_action(requires_auth=requires_ws_auth, ws_user=ws_user):
                     await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
                     break

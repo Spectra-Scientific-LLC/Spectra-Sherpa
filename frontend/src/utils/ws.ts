@@ -24,22 +24,21 @@ export const buildWsUrl = (): string => {
 };
 
 /**
- * Attach credentials to a WebSocket URL.
+ * Keep the WebSocket URL credential-free.
  *
- * @deprecated Prefer sending credentials via {@link buildAuthMessage} as the
- * first message after connection opens. Query-param auth is retained for
- * backward compatibility with older backend versions.
+ * WebSocket authentication is handled by {@link buildAuthMessage} as the first
+ * message after connect. This helper remains a no-op so callers don't need to
+ * know whether older code previously tried to decorate the URL.
  */
 export const withCredentials = (wsUrl: string): string => {
-  // Credentials are now sent via the first WebSocket message (buildAuthMessage).
-  // Return the URL unchanged to avoid leaking tokens in server logs / browser history.
+  // Keep tokens out of URLs, logs, and proxy metadata.
   return wsUrl;
 };
 
 /**
  * Build an authentication message to send as the first WebSocket frame.
- * The backend accepts `{type: "authenticate", token, api_key}` as an
- * alternative to query-param auth, keeping tokens out of URLs and logs.
+ * The backend expects `{type: "authenticate", token, api_key}` for explicit
+ * remote WebSocket authentication.
  */
 export const buildAuthMessage = (): string => {
   const token = localStorage.getItem("token");

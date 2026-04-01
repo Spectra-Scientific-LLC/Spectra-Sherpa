@@ -75,8 +75,6 @@ def test_ws_hybrid_non_loopback_accepts_first_frame_authentication(ws_client, mo
     app_config.mode = "hybrid"
     _install_noop_async_session(monkeypatch)
 
-    monkeypatch.setattr(ws_auth_mod, "is_valid_bearer_token", lambda token: token == "jwt-1")
-
     async def _resolve_user(_session, api_key=None, token=None, client_host=None):
         if token == "jwt-1":
             return SimpleNamespace(id=11, is_superuser=False, is_active=True)
@@ -92,6 +90,22 @@ def test_ws_hybrid_non_loopback_accepts_first_frame_authentication(ws_client, mo
         ws.send_json({"action": "subscribe", "channel": "jobs"})
         response = ws.receive_json()
         assert response == {"type": "subscribed", "channel": "jobs:11"}
+
+
+def test_ws_hybrid_non_loopback_ignores_query_param_credentials(ws_client):
+    app_config.mode = "hybrid"
+
+    with ws_client.websocket_connect("/ws?api_key=k1") as ws:
+        ws.send_json({"action": "subscribe", "channel": "jobs"})
+        _policy_violation_on_receive(ws)
+
+
+def test_ws_hybrid_non_loopback_ignores_header_credentials(ws_client):
+    app_config.mode = "hybrid"
+
+    with ws_client.websocket_connect("/ws", headers={"authorization": "Bearer jwt-1"}) as ws:
+        ws.send_json({"action": "subscribe", "channel": "jobs"})
+        _policy_violation_on_receive(ws)
 
 
 def test_ws_hybrid_loopback_allows_anonymous(ws_client, monkeypatch):
@@ -110,25 +124,40 @@ def test_ws_hybrid_loopback_allows_anonymous(ws_client, monkeypatch):
         assert response == {"type": "subscribed", "channel": "jobs:7"}
 
 
-def test_ws_enterprise_mode_rejects_invalid_credentials(ws_client, monkeypatch):
+def test_ws_hybrid_loopback_authenticate_can_upgrade_identity_with_api_key(ws_client, monkeypatch):
+    app_config.mode = "hybrid"
+    _install_noop_async_session(monkeypatch)
+    monkeypatch.setattr(app_main, "get_client_host", lambda _request_or_ws: "127.0.0.1")
+
+    async def _resolve_user(_session, api_key=None, token=None, client_host=None):
+        if api_key == "linked-key":
+            return SimpleNamespace(id=99, is_superuser=False, is_active=True)
+        return SimpleNamespace(id=7, is_superuser=False, is_active=True)
+
+    monkeypatch.setattr(ws_auth_mod, "get_user_from_credentials", _resolve_user)
+
+    with ws_client.websocket_connect("/ws") as ws:
+        ws.send_json({"action": "authenticate", "token": "stale-jwt", "api_key": "linked-key"})
+        response = ws.receive_json()
+        assert response == {"type": "authenticated", "user_id": 99}
+
+        ws.send_json({"action": "subscribe", "channel": "jobs"})
+        response = ws.receive_json()
+        assert response == {"type": "subscribed", "channel": "jobs:99"}
+
+
+def test_ws_enterprise_ignores_query_param_credentials(ws_client, monkeypatch):
     app_config.mode = "enterprise"
     _install_noop_async_session(monkeypatch)
 
-    async def _invalid_api_key(_api_key):
-        return False
-
-    monkeypatch.setattr(ws_auth_mod, "is_valid_api_key", _invalid_api_key)
-    monkeypatch.setattr(ws_auth_mod, "is_valid_bearer_token", lambda _token: False)
-
     with ws_client.websocket_connect("/ws?api_key=bad-key") as ws:
+        ws.send_json({"action": "subscribe", "channel": "jobs"})
         _policy_violation_on_receive(ws)
 
 
 def test_ws_enterprise_rejects_invalid_first_frame_authentication(ws_client, monkeypatch):
     app_config.mode = "enterprise"
     _install_noop_async_session(monkeypatch)
-
-    monkeypatch.setattr(ws_auth_mod, "is_valid_bearer_token", lambda _token: False)
 
     async def _resolve_user(_session, api_key=None, token=None, client_host=None):
         return None
@@ -140,22 +169,31 @@ def test_ws_enterprise_rejects_invalid_first_frame_authentication(ws_client, mon
         _policy_violation_on_receive(ws)
 
 
-def test_ws_enterprise_user_cannot_subscribe_other_users_jobs(ws_client, monkeypatch):
+def test_ws_enterprise_ignores_header_credentials(ws_client, monkeypatch):
     app_config.mode = "enterprise"
     _install_noop_async_session(monkeypatch)
 
-    async def _valid_api_key(api_key):
-        return api_key == "k1"
+    with ws_client.websocket_connect("/ws", headers={"x-api-key": "root-key"}) as ws:
+        ws.send_json({"action": "subscribe", "channel": "jobs"})
+        _policy_violation_on_receive(ws)
+
+
+def test_ws_enterprise_user_cannot_subscribe_other_users_jobs(ws_client, monkeypatch):
+    app_config.mode = "enterprise"
+    _install_noop_async_session(monkeypatch)
 
     async def _resolve_user(_session, api_key=None, token=None, client_host=None):
         if api_key == "k1":
             return SimpleNamespace(id=1, is_superuser=False, is_active=True)
         return None
 
-    monkeypatch.setattr(ws_auth_mod, "is_valid_api_key", _valid_api_key)
     monkeypatch.setattr(ws_auth_mod, "get_user_from_credentials", _resolve_user)
 
-    with ws_client.websocket_connect("/ws?api_key=k1") as ws:
+    with ws_client.websocket_connect("/ws") as ws:
+        ws.send_json({"action": "authenticate", "api_key": "k1"})
+        response = ws.receive_json()
+        assert response == {"type": "authenticated", "user_id": 1}
+
         ws.send_json({"action": "subscribe", "channel": "jobs:2"})
         response = ws.receive_json()
         assert response["type"] == "error"
@@ -170,18 +208,18 @@ def test_ws_enterprise_superuser_can_subscribe_any_jobs_channel(ws_client, monke
     app_config.mode = "enterprise"
     _install_noop_async_session(monkeypatch)
 
-    async def _valid_api_key(api_key):
-        return api_key == "root-key"
-
     async def _resolve_user(_session, api_key=None, token=None, client_host=None):
         if api_key == "root-key":
             return SimpleNamespace(id=99, is_superuser=True, is_active=True)
         return None
 
-    monkeypatch.setattr(ws_auth_mod, "is_valid_api_key", _valid_api_key)
     monkeypatch.setattr(ws_auth_mod, "get_user_from_credentials", _resolve_user)
 
-    with ws_client.websocket_connect("/ws?api_key=root-key") as ws:
+    with ws_client.websocket_connect("/ws") as ws:
+        ws.send_json({"action": "authenticate", "api_key": "root-key"})
+        response = ws.receive_json()
+        assert response == {"type": "authenticated", "user_id": 99}
+
         ws.send_json({"action": "subscribe", "channel": "jobs:2"})
         response = ws.receive_json()
         assert response == {"type": "subscribed", "channel": "jobs:2"}
@@ -191,18 +229,18 @@ def test_ws_data_import_action_is_no_longer_supported(ws_client, monkeypatch):
     app_config.mode = "enterprise"
     _install_noop_async_session(monkeypatch)
 
-    async def _valid_api_key(api_key):
-        return api_key == "k1"
-
     async def _resolve_user(_session, api_key=None, token=None, client_host=None):
         if api_key == "k1":
             return SimpleNamespace(id=1, is_superuser=False, is_active=True)
         return None
 
-    monkeypatch.setattr(ws_auth_mod, "is_valid_api_key", _valid_api_key)
     monkeypatch.setattr(ws_auth_mod, "get_user_from_credentials", _resolve_user)
 
-    with ws_client.websocket_connect("/ws?api_key=k1") as ws:
+    with ws_client.websocket_connect("/ws") as ws:
+        ws.send_json({"action": "authenticate", "api_key": "k1"})
+        response = ws.receive_json()
+        assert response == {"type": "authenticated", "user_id": 1}
+
         ws.send_json({"action": "llm_data_import", "message": "inspect /etc/hosts"})
         response = ws.receive_json()
         assert response == {"type": "error", "detail": "Unknown action"}
