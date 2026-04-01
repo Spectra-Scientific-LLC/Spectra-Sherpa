@@ -386,17 +386,27 @@ export const useDataStore = defineStore("data", () => {
       }
 
       const summarized = summarizeForDataStory(datasetInfo as StoryObject);
+      dataStoryText.value = "";  // Show progressive text as chunks arrive
+
       const result = await new Promise<string>((resolve, reject) => {
         const timeout = window.setTimeout(() => {
           cleanup();
-          reject(new Error("Data story generation timed out"));
-        }, 60_000);
+          // If we already have partial text, resolve with what we have
+          if (dataStoryText.value) {
+            resolve(dataStoryText.value);
+          } else {
+            reject(new Error("Data story generation timed out"));
+          }
+        }, 180_000);
 
         const handler = (event: Event) => {
           const payload = (event as CustomEvent).detail;
-          if (payload.type === SHERPA_WS_EVENT.dataStoryResult) {
+          if (payload.type === SHERPA_WS_EVENT.dataStoryChunk) {
+            // Stream chunks progressively into the UI
+            dataStoryText.value += payload.text || "";
+          } else if (payload.type === SHERPA_WS_EVENT.dataStoryResult) {
             cleanup();
-            resolve(payload.response || "");
+            resolve(payload.response || dataStoryText.value || "");
           } else if (payload.type === SHERPA_WS_EVENT.dataStoryError) {
             cleanup();
             reject(new Error(payload.detail || "Data story generation failed"));

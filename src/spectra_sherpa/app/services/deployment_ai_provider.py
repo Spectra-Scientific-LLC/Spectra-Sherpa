@@ -278,16 +278,22 @@ class DeploymentAIProvider:
         *,
         dataset_info: dict[str, Any],
         additional_context: str | None = None,
-    ) -> dict[str, Any]:
-        payload = await self._request_json(
-            "POST",
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Stream data story generation via SSE."""
+        stream = self._stream_sse(
             "/sherpa/data-story",
             json_body={
                 "dataset_info": dataset_info,
                 "additional_context": additional_context,
             },
         )
-        return {"response": payload.get("response", "")}
+        try:
+            async for event in stream:
+                yield event
+        finally:
+            aclose = getattr(stream, "aclose", None)
+            if callable(aclose):
+                await aclose()
 
     async def chat_with_tools(
         self,

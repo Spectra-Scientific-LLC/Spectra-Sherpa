@@ -59,9 +59,10 @@ class AIServiceProvider(Protocol):
         *,
         dataset_info: dict[str, Any],
         additional_context: str | None = None,
-    ) -> dict[str, Any]:
-        """Generate a narrative data story."""
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Stream a narrative data story. Yields {type: 'chunk', text: ...} events."""
         ...
+        yield {}  # type: ignore[misc]  — abstract, never called
 
     # ── Streaming methods ────────────────────────────────────────────
 

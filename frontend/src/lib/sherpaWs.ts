@@ -22,6 +22,7 @@ export const SHERPA_WS_EVENT = {
   error: "sherpa_error",
   reportResult: "sherpa_report_result",
   reportError: "sherpa_report_error",
+  dataStoryChunk: "sherpa_data_story_chunk",
   dataStoryResult: "sherpa_data_story_result",
   dataStoryError: "sherpa_data_story_error",
 } as const;

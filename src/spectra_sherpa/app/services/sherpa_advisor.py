@@ -59,8 +59,8 @@ class DisabledAIProvider:
         *,
         dataset_info: dict[str, Any],
         additional_context: str | None = None,
-    ) -> dict[str, Any]:
-        return {"response": ""}
+    ) -> AsyncIterator[dict[str, Any]]:
+        yield {"type": "error", "detail": "AI provider not configured"}
 
     async def chat_followup(
         self,
