@@ -42,8 +42,8 @@
           <i class="pi pi-circle-fill"></i>
         </div>
         <div class="stat-content">
-          <span class="stat-value">{{ stats.activeUsers }}</span>
-          <span class="stat-label">Active Today</span>
+          <span class="stat-value">{{ stats.activeNow }}<span v-if="stats.activeToday > stats.activeNow" class="stat-secondary"> / {{ stats.activeToday }}</span></span>
+          <span class="stat-label">Active Now{{ stats.activeToday > stats.activeNow ? ' / Today' : '' }}</span>
         </div>
       </div>
     </div>
@@ -107,12 +107,12 @@
                 <Tag :severity="slotProps.data.is_active !== false ? 'success' : 'secondary'" :value="slotProps.data.is_active !== false ? 'Active' : 'Disabled'" />
               </template>
             </Column>
-            <Column field="created_at" header="Created" style="width: 120px" sortable>
+            <Column field="created_at" header="Created" style="width: 170px" sortable>
               <template #body="slotProps">
-                {{ formatDate(slotProps.data.created_at) }}
+                {{ formatDateTime(slotProps.data.created_at) }}
               </template>
             </Column>
-            <Column field="last_login_at" header="Last Login" style="width: 120px" sortable>
+            <Column field="last_login_at" header="Last Login" style="width: 170px" sortable>
               <template #body="slotProps">
                 <span :class="{ 'text-secondary': !slotProps.data.last_login_at }">
                   {{ slotProps.data.last_login_at ? formatRelativeTime(slotProps.data.last_login_at) : 'Never' }}
@@ -362,6 +362,7 @@ interface AdminUser {
   is_superuser: boolean;
   is_active?: boolean;
   last_login_at?: string;
+  last_active?: string;
   login_count?: number;
   created_at?: string;
   [key: string]: unknown;
@@ -405,7 +406,8 @@ const stats = ref({
   totalUsers: 0,
   totalJobs: 0,
   llmRequests: 0,
-  activeUsers: 0,
+  activeNow: 0,
+  activeToday: 0,
 });
 
 // User dialogs
@@ -489,9 +491,15 @@ const fetchUsers = async () => {
 
 const fetchStats = async () => {
   try {
-    // In a real implementation, this would call a stats endpoint
-    // For now, we'll compute from available data
-    stats.value.activeUsers = Math.min(users.value.length, 5);
+    const now = Date.now();
+    const FIVE_MINUTES = 5 * 60 * 1000;
+    const ONE_DAY = 24 * 60 * 60 * 1000;
+    stats.value.activeNow = users.value.filter(
+      (u) => u.last_active && now - new Date(u.last_active).getTime() < FIVE_MINUTES,
+    ).length;
+    stats.value.activeToday = users.value.filter(
+      (u) => u.last_active && now - new Date(u.last_active).getTime() < ONE_DAY,
+    ).length;
   } catch {
     console.error('Failed to fetch stats');
   }
@@ -699,9 +707,11 @@ const copyKey = () => {
   toast.add({ severity: 'info', summary: 'Copied', detail: 'API Key copied to clipboard', life: 1000 });
 };
 
-const formatDate = (dateStr: string) => {
+const formatDateTime = (dateStr: string) => {
   if (!dateStr) return '-';
-  return new Date(dateStr).toLocaleDateString();
+  const d = new Date(dateStr);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+    + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 };
 
 const formatRelativeTime = (dateStr: string) => {
@@ -714,7 +724,7 @@ const formatRelativeTime = (dateStr: string) => {
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
-  return formatDate(dateStr);
+  return formatDateTime(dateStr);
 };
 
 const getJobSeverity = (status: string) => {
