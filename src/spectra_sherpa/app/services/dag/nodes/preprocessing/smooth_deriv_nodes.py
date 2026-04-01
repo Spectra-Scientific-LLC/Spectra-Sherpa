@@ -20,6 +20,7 @@ from ._shared import (
     add_processing_step,
     build_dataset_like,
     coerce_to_sherpa,
+    estimate_snr,
     gaussian_smooth,
     norris_williams,
     register_node,
@@ -163,7 +164,9 @@ class SmoothNode(Node):
         )
         params = self._resolve_params()
         data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
+        snr_before = estimate_snr(data)
         smoothed = _smooth_dispatch(data, **params)
+        snr_after = estimate_snr(smoothed)
         result = build_dataset_like(smoothed, input_ds)
         add_processing_step(
             result,
@@ -172,6 +175,9 @@ class SmoothNode(Node):
             node_id=self.node_id,
             state_effects=[EFFECT_SMOOTHED],
         )
+        result.meta["snr_before_db"] = snr_before
+        result.meta["snr_after_db"] = snr_after
+        result.meta["snr_improvement_db"] = snr_after - snr_before
         return result
 
     def supports_python_export(self) -> bool:

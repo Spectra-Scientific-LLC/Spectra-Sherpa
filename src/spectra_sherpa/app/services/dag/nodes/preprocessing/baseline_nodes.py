@@ -188,6 +188,16 @@ class BaselinePenalizedLSNode(TransformSpecNode):
             tol=params.get("tol", 1e-6),
         )
 
+        # Compute baseline as the difference between original and corrected
+        baseline = data - result_data
+        baseline_diagnostics = {
+            "baseline_mean": float(np.mean(baseline)),
+            "baseline_std": float(np.std(baseline)),
+            "baseline_max": float(np.max(np.abs(baseline))),
+            "residual_rms": float(np.sqrt(np.mean(result_data**2))),
+            "correction_magnitude_pct": float(100 * np.mean(np.abs(baseline)) / (np.mean(np.abs(data)) + 1e-12)),
+        }
+
         result = build_dataset_like(result_data, input_ds, units=None)
         recorded_params = dict(params)
         recorded_params["lam"] = effective_lam
@@ -200,6 +210,7 @@ class BaselinePenalizedLSNode(TransformSpecNode):
             node_id=self.node_id,
             state_effects=[EFFECT_BASELINE_CORRECTED],
         )
+        result.meta["baseline_diagnostics"] = baseline_diagnostics
         return result
 
 

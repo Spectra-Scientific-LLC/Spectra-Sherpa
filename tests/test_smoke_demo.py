@@ -30,6 +30,7 @@ from sqlalchemy.orm import sessionmaker
 from starlette.testclient import TestClient
 
 import spectra_sherpa.app.main as app_main
+import spectra_sherpa.app.services.ws_auth as ws_auth_mod
 from spectra_sherpa.app.api.deps import get_current_user, get_session
 from spectra_sherpa.app.core.config import app_config
 from spectra_sherpa.app.db.base import Base
@@ -307,11 +308,12 @@ class TestWebSocket:
             return _NullAsyncSessionContext()
 
         monkeypatch.setattr(app_main, "async_session", _factory)
+        monkeypatch.setattr(ws_auth_mod, "async_session", _factory)
 
         async def _resolve_user(_session, api_key=None, token=None, client_host=None):
             return SimpleNamespace(id=1, is_superuser=False, is_active=True)
 
-        monkeypatch.setattr(app_main, "get_user_from_credentials", _resolve_user)
+        monkeypatch.setattr(ws_auth_mod, "get_user_from_credentials", _resolve_user)
 
         with ws_client.websocket_connect("/ws") as ws:
             ws.send_json({"action": "subscribe", "channel": "jobs"})
@@ -327,11 +329,12 @@ class TestWebSocket:
             return _NullAsyncSessionContext()
 
         monkeypatch.setattr(app_main, "async_session", _factory)
+        monkeypatch.setattr(ws_auth_mod, "async_session", _factory)
 
         async def _resolve_user(_session, api_key=None, token=None, client_host=None):
             return SimpleNamespace(id=1, is_superuser=False, is_active=True)
 
-        monkeypatch.setattr(app_main, "get_user_from_credentials", _resolve_user)
+        monkeypatch.setattr(ws_auth_mod, "get_user_from_credentials", _resolve_user)
 
         with ws_client.websocket_connect("/ws") as ws:
             ws.send_json(

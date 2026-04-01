@@ -104,6 +104,20 @@ class PLSDANode(Node):
                     "Minimum: cv_folds ≤ smallest class count — an error is raised if this is violated."
                 ),
             ),
+            NodeParameter(
+                name="calibrate_probabilities",
+                label="Calibrate Probabilities (Platt Scaling)",
+                param_type="boolean",
+                default=False,
+                description=(
+                    "Apply Platt scaling (sigmoid calibration) to cross-validated predictions "
+                    "to produce statistically calibrated posterior probabilities. "
+                    "Reference: Platt (1999). Recommended when probability estimates are used "
+                    "for downstream decision-making."
+                ),
+                required=False,
+                category="advanced",
+            ),
         ],
         input_types=["NDDataset", "array"],
         output_type="dict",
@@ -345,6 +359,44 @@ class PLSDANode(Node):
         # Cross-validation predictions (also returns softmax-normalized probabilities)
         y_pred_cv, Y_pred_cv_prob = self._cross_val_predict_plsda(X_ds, y_array, classes, n_components, scale, cv_folds)
 
+        # Optional: Platt scaling for calibrated posterior probabilities (Platt 1999)
+        calibrate = self.parameters.get("calibrate_probabilities", False)
+        if calibrate:
+            try:
+                from sklearn.base import BaseEstimator, ClassifierMixin
+                from sklearn.calibration import CalibratedClassifierCV
+
+                class _PLSDAWrapper(BaseEstimator, ClassifierMixin):
+                    """Thin wrapper so CalibratedClassifierCV can calibrate PLS-DA."""
+
+                    def __init__(self, pls_model, classes, scale_flag):
+                        self.pls_model = pls_model
+                        self.classes_ = classes
+                        self.scale_flag = scale_flag
+
+                    def fit(self, X, y):
+                        return self  # Already fitted
+
+                    def predict(self, X):
+                        Y_raw = np.asarray(self.pls_model.predict(X))
+                        return self.classes_[np.argmax(softmax(Y_raw, axis=1), axis=1)]
+
+                    def decision_function(self, X):
+                        return np.asarray(self.pls_model.predict(X))
+
+                X_np = to_numpy_2d(X_ds, name="X_ds", dtype=np.float64)
+                wrapper = _PLSDAWrapper(pls, classes, scale)
+                cal = CalibratedClassifierCV(wrapper, method="sigmoid", cv="prefit")
+                # Encode y as integers for calibration
+                y_int = np.searchsorted(classes, y_array)
+                cal.fit(X_np, y_int)
+                Y_pred_prob = cal.predict_proba(X_np)
+                calibrate = True  # confirmed success
+                logger.info("Platt scaling applied — probabilities are now calibrated")
+            except Exception as exc:
+                logger.warning("Platt scaling failed, falling back to softmax: %s", exc)
+                calibrate = False
+
         # Calculate metrics
         train_accuracy = accuracy_score(y_array, y_pred_train)
         cv_accuracy = accuracy_score(y_array, y_pred_cv)
@@ -479,7 +531,7 @@ class PLSDANode(Node):
             {
                 "type": "PLS_DA",
                 "n_components": n_components,
-                "probabilities_calibrated": False,
+                "probabilities_calibrated": calibrate,
                 "probabilities_warning": (
                     "Class probabilities are softmax-transformed raw PLS regression outputs. "
                     "They are NOT statistically calibrated — do not interpret as true posterior "

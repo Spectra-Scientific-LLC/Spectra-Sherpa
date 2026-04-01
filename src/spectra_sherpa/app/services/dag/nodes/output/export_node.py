@@ -118,8 +118,21 @@ class ExportNode(Node):
             lines.append(f"{indent}import json as _json")
             lines.append(f"{indent}with open(_export_path, 'w') as _f:")
             lines.append(f"{indent}    _json.dump(_export_data.tolist(), _f)")
+        elif fmt == "jdx":
+            lines.append(f"{indent}# JCAMP-DX export")
+            lines.append(f"{indent}with open(_export_path, 'w') as _f:")
+            lines.append(f"{indent}    _f.write('##TITLE=SpectraSherpa Export\\n')")
+            lines.append(f"{indent}    _f.write('##JCAMP-DX=5.00\\n')")
+            lines.append(f"{indent}    _f.write('##DATA TYPE=INFRARED SPECTRUM\\n')")
+            lines.append(f"{indent}    _n = _export_data.shape[-1] if _export_data.ndim > 1 else len(_export_data)")
+            lines.append(f"{indent}    _f.write(f'##NPOINTS={{_n}}\\n')")
+            lines.append(f"{indent}    _f.write('##XYDATA=(X++(Y..Y))\\n')")
+            lines.append(f"{indent}    _row = _export_data[0] if _export_data.ndim > 1 else _export_data")
+            lines.append(f"{indent}    for _i, _v in enumerate(_row):")
+            lines.append(f"{indent}        _f.write(f'{{_i}} {{_v:.6g}}\\n')")
+            lines.append(f"{indent}    _f.write('##END=\\n')")
         else:
-            # jdx or fallback
+            # Unknown format fallback to CSV
             lines.append(f"{indent}if _export_is_numeric:")
             lines.append(f"{indent}    np.savetxt(_export_path, _export_data, delimiter=',')")
             lines.append(f"{indent}else:")

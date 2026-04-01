@@ -1140,6 +1140,99 @@
             </template>
 
             <!-- STATS Plots -->
+            <!-- Cluster Scatter (KMeans / DBSCAN) -->
+            <template v-if="nodeTypeKey === 'model.kmeans' || nodeTypeKey === 'model.dbscan'">
+              <div class="plot-subsection">
+                <div class="plot-subsection-header" @click="togglePlot('clusterScatter')">
+                  <i :class="plotSections.clusterScatter ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                  <span>Cluster Scatter</span>
+                </div>
+                <Transition name="collapse">
+                  <div v-if="plotSections.clusterScatter" class="plot-container">
+                    <div v-if="clusterScatterData.length > 0">
+                      <PlotlyChart :data="clusterScatterData" :layout="clusterScatterLayout" />
+                    </div>
+                    <div v-else class="no-plot-message">
+                      Execute the node to see cluster assignments.
+                    </div>
+                  </div>
+                </Transition>
+              </div>
+            </template>
+
+            <!-- NMF / ICA — reuse MCR-style concentration + spectra plots -->
+            <template v-if="nodeTypeKey === 'model.nmf' || nodeTypeKey === 'model.ica'">
+              <div class="plot-subsection">
+                <div class="plot-subsection-header" @click="togglePlot('mcrConcentrations')">
+                  <i :class="plotSections.mcrConcentrations ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                  <span>{{ nodeTypeKey === 'model.nmf' ? 'Basis Weights (W)' : 'Source Signals (S)' }}</span>
+                </div>
+                <Transition name="collapse">
+                  <div v-if="plotSections.mcrConcentrations" class="plot-container">
+                    <PlotlyChart :data="mcrConcentrationData" :layout="mcrConcentrationLayout" />
+                  </div>
+                </Transition>
+              </div>
+              <div class="plot-subsection">
+                <div class="plot-subsection-header" @click="togglePlot('mcrSpectra')">
+                  <i :class="plotSections.mcrSpectra ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                  <span>{{ nodeTypeKey === 'model.nmf' ? 'Basis Spectra (H)' : 'Spectral Components' }}</span>
+                </div>
+                <Transition name="collapse">
+                  <div v-if="plotSections.mcrSpectra" class="plot-container">
+                    <PlotlyChart :data="mcrSpectraData" :layout="mcrSpectraLayout" />
+                  </div>
+                </Transition>
+              </div>
+            </template>
+
+            <!-- Outlier Detection: T² vs Q Control Chart -->
+            <template v-if="nodeTypeKey === 'diagnostics.outliers'">
+              <div class="plot-subsection">
+                <div class="plot-subsection-header" @click="togglePlot('outlierChart')">
+                  <i :class="plotSections.outlierChart ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                  <span>T² vs Q Control Chart</span>
+                </div>
+                <Transition name="collapse">
+                  <div v-if="plotSections.outlierChart" class="plot-container">
+                    <div v-if="outlierChartData.length > 0">
+                      <PlotlyChart :data="outlierChartData" :layout="outlierChartLayout" />
+                    </div>
+                    <div v-else class="no-plot-message">
+                      Execute the node to see outlier diagnostics.
+                    </div>
+                  </div>
+                </Transition>
+              </div>
+            </template>
+
+            <!-- Holdout / Cross-Validation Evaluation -->
+            <template v-if="nodeTypeKey === 'diagnostics.holdout_evaluation' || nodeTypeKey === 'diagnostics.cross_validation'">
+              <div class="plot-subsection">
+                <div class="plot-subsection-header" @click="togglePlot('evaluationResults')">
+                  <i :class="plotSections.evaluationResults ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                  <span>Evaluation Results</span>
+                </div>
+                <Transition name="collapse">
+                  <div v-if="plotSections.evaluationResults" class="plot-container">
+                    <div v-if="holdoutVisualization" class="evaluation-viz">
+                      <!-- Confusion Matrix (classification) -->
+                      <template v-if="holdoutVisualization.type === 'confusion_matrix'">
+                        <PlotlyChart :data="holdoutConfusionData" :layout="holdoutConfusionLayout" />
+                      </template>
+                      <!-- Predicted vs Actual (regression) -->
+                      <template v-else-if="holdoutVisualization.type === 'predicted_vs_actual'">
+                        <PlotlyChart :data="holdoutRegressionData" :layout="holdoutRegressionLayout" />
+                      </template>
+                    </div>
+                    <div v-else class="no-plot-message">
+                      Execute the node to see evaluation results.
+                    </div>
+                  </div>
+                </Transition>
+              </div>
+            </template>
+
             <template v-if="nodeTypeKey === 'stats.summary'">
               <div class="plot-subsection">
                 <div class="plot-subsection-header" @click="togglePlot('statsDistribution')">
@@ -1379,6 +1472,9 @@ const plotSections = ref<Record<string, boolean>>({
   peakFinding: false,
   plotVisualization: false,
   efaEigenvalues: false,
+  evaluationResults: true,
+  clusterScatter: true,
+  outlierChart: true,
 });
 
 // PLS-DA loadings view mode (lines or biplot)
@@ -2155,10 +2251,27 @@ const availablePlots = computed(() => {
       plots.push("Scores Plot (with confidence ellipses)", "Loadings Plot", "VIP Scores", "Class Accuracy");
       break;
     case "classification.simca":
-      plots.push("Scores Plot", "Class Accuracy");
+      plots.push("Scores Plot", "Confusion Matrix", "Per-Class Accuracy");
       break;
     case "classification.knn":
-      plots.push("Scores Plot", "Class Accuracy");
+      plots.push("Feature Space Plot", "K-Optimization", "Confusion Matrix", "Per-Class Accuracy");
+      break;
+    case "diagnostics.outliers":
+      plots.push("T² vs Q Control Chart");
+      break;
+    case "diagnostics.holdout_evaluation":
+      plots.push("Evaluation Results");
+      break;
+    case "diagnostics.cross_validation":
+      plots.push("Evaluation Results");
+      break;
+    case "model.kmeans":
+    case "model.dbscan":
+      plots.push("Cluster Scatter");
+      break;
+    case "model.nmf":
+    case "model.ica":
+      plots.push("Concentration Profiles", "Pure Spectra");
       break;
     case "model.hca":
       plots.push("Dendrogram");
@@ -4169,6 +4282,188 @@ const verticalSliceLayout = computed(() => ({
 }));
 
 // ============================================================================
+// CLUSTER SCATTER (KMeans / DBSCAN)
+// ============================================================================
+
+const CLUSTER_COLORS = ["#3b82f6", "#ef4444", "#22c55e", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316", "#6366f1", "#14b8a6"];
+
+const clusterScatterData = computed(() => {
+  if (!["model.kmeans", "model.dbscan"].includes(nodeTypeKey.value) || !hasOutput.value) return [];
+  const result = nodeOutput.value?.ports?.default?.value as Record<string, unknown> | undefined;
+  if (!result) return [];
+  const embedding = result.data as number[][] | undefined;
+  const labels = result.labels as number[] | undefined;
+  if (!embedding || !labels) return [];
+
+  const uniqueLabels = [...new Set(labels)].sort((a, b) => a - b);
+  return uniqueLabels.map((label) => {
+    const indices = labels.map((l, i) => (l === label ? i : -1)).filter((i) => i >= 0);
+    const isNoise = label === -1;
+    return {
+      x: indices.map((i) => embedding[i][0]),
+      y: indices.map((i) => embedding[i][1]),
+      mode: "markers" as const,
+      type: "scatter" as const,
+      name: isNoise ? "Noise" : `Cluster ${label}`,
+      marker: {
+        color: isNoise ? "#6b7280" : CLUSTER_COLORS[label % CLUSTER_COLORS.length],
+        size: isNoise ? 5 : 8,
+        symbol: isNoise ? "x" : "circle",
+        opacity: isNoise ? 0.5 : 0.8,
+      },
+    };
+  });
+});
+
+const clusterScatterLayout = computed(() => ({
+  ...basePlotLayout,
+  title: { text: "Cluster Assignments", font: { color: "#e2e8f0", size: 14 } },
+  xaxis: { title: "Component 1", color: "#94a3b8" },
+  yaxis: { title: "Component 2", color: "#94a3b8" },
+  showlegend: true,
+  legend: { font: { color: "#94a3b8" } },
+}));
+
+// OUTLIER DETECTION: T² vs Q Control Chart
+// ============================================================================
+
+const outlierChartData = computed(() => {
+  if (nodeTypeKey.value !== "diagnostics.outliers" || !hasOutput.value) return [];
+  const result = nodeOutput.value?.ports?.default?.value as Record<string, unknown> | undefined;
+  if (!result) return [];
+  const T2 = result.T2 as number[] | undefined;
+  const Q = result.Q as number[] | undefined;
+  const T2_limit = result.T2_limit as number | undefined;
+  const Q_limit = result.Q_limit as number | undefined;
+  const outliers = result.outliers as boolean[] | undefined;
+  if (!T2 || !Q) return [];
+
+  const normal_T2: number[] = [];
+  const normal_Q: number[] = [];
+  const normal_labels: string[] = [];
+  const outlier_T2: number[] = [];
+  const outlier_Q: number[] = [];
+  const outlier_labels: string[] = [];
+
+  for (let i = 0; i < T2.length; i++) {
+    const label = `Sample ${i + 1}`;
+    if (outliers && outliers[i]) {
+      outlier_T2.push(T2[i]);
+      outlier_Q.push(Q[i]);
+      outlier_labels.push(label);
+    } else {
+      normal_T2.push(T2[i]);
+      normal_Q.push(Q[i]);
+      normal_labels.push(label);
+    }
+  }
+
+  const traces: Record<string, unknown>[] = [
+    {
+      x: normal_T2, y: normal_Q, text: normal_labels,
+      mode: "markers", type: "scatter", name: "Normal",
+      marker: { color: "#3b82f6", size: 7 },
+      hovertemplate: "%{text}<br>T²: %{x:.2f}<br>Q: %{y:.2f}<extra></extra>",
+    },
+  ];
+  if (outlier_T2.length > 0) {
+    traces.push({
+      x: outlier_T2, y: outlier_Q, text: outlier_labels,
+      mode: "markers", type: "scatter", name: "Outlier",
+      marker: { color: "#ef4444", size: 9, symbol: "diamond" },
+      hovertemplate: "%{text}<br>T²: %{x:.2f}<br>Q: %{y:.2f}<extra></extra>",
+    });
+  }
+  // T² limit line (vertical)
+  if (T2_limit != null) {
+    const maxQ = Math.max(...Q) * 1.1;
+    traces.push({
+      x: [T2_limit, T2_limit], y: [0, maxQ],
+      mode: "lines", type: "scatter", name: `T² limit`,
+      line: { dash: "dash", color: "#f59e0b", width: 2 },
+      showlegend: true,
+    });
+  }
+  // Q limit line (horizontal)
+  if (Q_limit != null) {
+    const maxT2 = Math.max(...T2) * 1.1;
+    traces.push({
+      x: [0, maxT2], y: [Q_limit, Q_limit],
+      mode: "lines", type: "scatter", name: `Q limit`,
+      line: { dash: "dash", color: "#f59e0b", width: 2 },
+      showlegend: true,
+    });
+  }
+  return traces;
+});
+
+const outlierChartLayout = computed(() => ({
+  ...basePlotLayout,
+  title: { text: "T² vs Q Residuals (Control Chart)", font: { color: "#e2e8f0", size: 14 } },
+  xaxis: { title: "Hotelling T²", color: "#94a3b8", zeroline: false },
+  yaxis: { title: "Q Residuals (SPE)", color: "#94a3b8", zeroline: false },
+  showlegend: true,
+  legend: { font: { color: "#94a3b8" } },
+}));
+
+// HOLDOUT / CROSS-VALIDATION Evaluation Plots
+// ============================================================================
+
+const holdoutVisualization = computed(() => {
+  if (!hasOutput.value) return null;
+  const result = nodeOutput.value?.ports?.default?.value as Record<string, unknown> | undefined;
+  return (result?.visualization as Record<string, unknown>) || null;
+});
+
+const holdoutConfusionData = computed(() => {
+  const viz = holdoutVisualization.value;
+  if (!viz || viz.type !== "confusion_matrix") return [];
+  const cm = viz.data as number[][];
+  if (!cm || !cm.length) return [];
+  const labels = (viz.metadata as Record<string, unknown>)?.classes as string[] ||
+    cm.map((_: unknown, i: number) => `Class ${i}`);
+  return [{
+    z: cm,
+    x: labels,
+    y: labels,
+    type: "heatmap" as const,
+    colorscale: "Blues",
+    showscale: true,
+    text: cm.map((row: number[]) => row.map((v: number) => String(v))),
+    texttemplate: "%{text}",
+    hovertemplate: "True: %{y}<br>Predicted: %{x}<br>Count: %{z}<extra></extra>",
+  }];
+});
+
+const holdoutConfusionLayout = computed(() => ({
+  ...basePlotLayout,
+  title: { text: "Confusion Matrix", font: { color: "#e2e8f0", size: 14 } },
+  xaxis: { title: "Predicted", color: "#94a3b8" },
+  yaxis: { title: "True", color: "#94a3b8", autorange: "reversed" as const },
+}));
+
+const holdoutRegressionData = computed(() => {
+  const viz = holdoutVisualization.value;
+  if (!viz || viz.type !== "predicted_vs_actual") return [];
+  const predicted = (viz as Record<string, unknown>).predicted as number[] || [];
+  const actual = (viz as Record<string, unknown>).actual as number[] || [];
+  if (!predicted.length) return [];
+  const minVal = Math.min(...actual, ...predicted);
+  const maxVal = Math.max(...actual, ...predicted);
+  return [
+    { x: actual, y: predicted, mode: "markers" as const, type: "scatter" as const, name: "Samples", marker: { color: "#3b82f6" } },
+    { x: [minVal, maxVal], y: [minVal, maxVal], mode: "lines" as const, type: "scatter" as const, name: "1:1 Line", line: { dash: "dash" as const, color: "#94a3b8" } },
+  ];
+});
+
+const holdoutRegressionLayout = computed(() => ({
+  ...basePlotLayout,
+  title: { text: "Predicted vs Actual", font: { color: "#e2e8f0", size: 14 } },
+  xaxis: { title: "Actual", color: "#94a3b8" },
+  yaxis: { title: "Predicted", color: "#94a3b8" },
+  showlegend: false,
+}));
+
 // STATS Plots (adaptive: PeakFinding → bar chart, otherwise → histogram)
 // ============================================================================
 

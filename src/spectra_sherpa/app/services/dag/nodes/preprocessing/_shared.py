@@ -86,6 +86,27 @@ def _wrap_result_lines(
     return wrap_result_lines(node_id, data_expr, input_expr, indent, use_scp)
 
 
+import numpy as np  # noqa: F811 — re-import for local use
+
+
+def estimate_snr(data: "np.ndarray") -> float:
+    """Estimate signal-to-noise ratio from spectral data.
+
+    Uses the ratio of overall signal RMS to noise estimated from the
+    second-difference (Savitzky-Golay-inspired noise estimator).
+    Returns SNR in dB.  Works on 2D (n_samples, n_features) arrays.
+    """
+    if data.size == 0 or data.ndim < 2 or data.shape[1] < 3:
+        return 0.0
+    signal_rms = float(np.sqrt(np.mean(data**2)))
+    # Second-difference noise estimate (robust to baseline trends)
+    diff2 = data[:, 2:] - 2 * data[:, 1:-1] + data[:, :-2]
+    noise_std = float(np.std(diff2) / np.sqrt(6))  # scale factor for 2nd diff
+    if noise_std < 1e-15:
+        return 100.0  # effectively noiseless
+    return float(20 * np.log10(signal_rms / noise_std))
+
+
 # ---------------------------------------------------------------------------
 # Technology-aware baseline lambda defaults
 # ---------------------------------------------------------------------------

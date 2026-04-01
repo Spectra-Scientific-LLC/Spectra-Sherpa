@@ -24,7 +24,6 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
-from spectra_sherpa.app.api.deps import get_user_from_credentials
 from spectra_sherpa.app.api.v1.api import build_api_router
 from spectra_sherpa.app.core.app_paths import get_app_data_paths
 from spectra_sherpa.app.core.config import app_config, settings
@@ -33,8 +32,6 @@ from spectra_sherpa.app.core.rate_limit_middleware import RateLimitMiddleware
 from spectra_sherpa.app.core.security import (
     api_key_middleware,
     get_client_host,
-    is_valid_api_key,
-    is_valid_bearer_token,
 )
 from spectra_sherpa.app.core.startup import (
     ensure_data_dirs,
@@ -406,71 +403,40 @@ def _mount_frontend(app: FastAPI) -> None:
 async def websocket_endpoint(websocket: WebSocket) -> None:
     # Import rate limiter here to avoid circular imports
     from spectra_sherpa.app.api.v1.routes.llm import _llm_rate_limiter
-    from spectra_sherpa.app.services.ws_handlers import handle_subscribe, handle_unsubscribe
-
-    api_key = websocket.headers.get("x-api-key") or websocket.query_params.get("api_key")
-    auth_header = websocket.headers.get("authorization", "")
-    token = auth_header[7:] if auth_header.startswith("Bearer ") else websocket.query_params.get("token")
-    has_credentials = bool(token or api_key)
 
     # Determine if auth is required for this connection (mode-dependent).
     from spectra_sherpa.app.core.mode_policy import requires_ws_auth as _requires_ws_auth
+    from spectra_sherpa.app.services.ws_auth import (
+        authenticate_ws_message,
+        require_authenticated_action,
+        resolve_initial_ws_user,
+        stamp_last_active,
+    )
+    from spectra_sherpa.app.services.ws_handlers import handle_subscribe, handle_unsubscribe
 
     ws_client_host = get_client_host(websocket)
     requires_ws_auth = _requires_ws_auth(ws_client_host)
 
-    if requires_ws_auth and has_credentials:
-        token_valid = bool(token) and is_valid_bearer_token(token)
-        api_key_valid = bool(api_key) and await is_valid_api_key(api_key)
-        if not (token_valid or api_key_valid):
-            await websocket.accept()
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
+    # ── Phase 1: resolve user from connection-time credentials ──
+    # Supports headers + query params (compat) and implicit loopback identity.
+    ws_user, has_credentials = await resolve_initial_ws_user(
+        websocket,
+        client_host=ws_client_host,
+        requires_auth=requires_ws_auth,
+    )
 
-    # Resolve user for LLM operations (needed for rate limiting and egress)
-    ws_user = None
-    async with async_session() as session:
-        # Prefer user JWT identity over machine API key when both are present.
-        if token:
-            ws_user = await get_user_from_credentials(session, token=token, client_host=ws_client_host)
-        if ws_user is None and api_key:
-            ws_user = await get_user_from_credentials(session, api_key=api_key, client_host=ws_client_host)
-        if ws_user is None and not has_credentials:
-            ws_user = await get_user_from_credentials(session, client_host=ws_client_host)
-
-    # Credentials were provided but didn't resolve to a user.
-    if has_credentials and ws_user is None:
-        if requires_ws_auth:
-            # Non-loopback / enterprise: reject invalid credentials.
-            await websocket.accept()
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
-        # Loopback local/hybrid: stale credentials from prior session
-        # shouldn't block the implicit user. Fall back gracefully.
-        logger.debug("Stale WS credentials on loopback — falling back to implicit identity")
-        async with async_session() as session:
-            ws_user = await get_user_from_credentials(session, client_host=ws_client_host)
+    # Invalid credentials on an auth-required connection → reject early
+    if has_credentials and ws_user is None and requires_ws_auth:
+        await websocket.accept()
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
 
     if ws_user is not None and hasattr(ws_user, "is_active") and not ws_user.is_active:
         await websocket.accept()
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
-    # Update last_active timestamp (fire-and-forget, non-blocking)
-    if ws_user is not None and ws_user.id is not None:
-        try:
-            async with async_session() as _activity_session:
-                from sqlalchemy import func as _sa_func
-                from sqlalchemy import update as _sa_update
-
-                from spectra_sherpa.app.models.user import User as _UserModel
-
-                await _activity_session.execute(
-                    _sa_update(_UserModel).where(_UserModel.id == ws_user.id).values(last_active=_sa_func.now())
-                )
-                await _activity_session.commit()
-        except Exception:
-            pass  # Non-critical — don't block WS connection
+    await stamp_last_active(ws_user)
 
     job_channel = f"jobs:{ws_user.id}" if ws_user and ws_user.id is not None else None
     ws_registry = getattr(websocket.app.state, "ws_action_registry", None)
@@ -519,41 +485,26 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             if action == "pong":
                 continue
 
-            # First-message authentication: clients may send credentials
-            # as the first WebSocket frame instead of via URL query params.
-            # This keeps tokens out of server logs and browser history.
+            # ── First-message auth (canonical path for browsers) ──
+            # Clients send credentials as the first WebSocket frame instead
+            # of via URL query params.  Preferred because it keeps tokens
+            # out of server logs and browser history.
             if action == "authenticate":
-                auth_token = payload.get("token")
-                auth_api_key = payload.get("api_key")
-                if auth_token or auth_api_key:
-                    async with async_session() as _auth_session:
-                        if auth_token:
-                            ws_user = (
-                                await get_user_from_credentials(
-                                    _auth_session, token=auth_token, client_host=ws_client_host
-                                )
-                                or ws_user
-                            )
-                        if ws_user is None and auth_api_key:
-                            ws_user = (
-                                await get_user_from_credentials(
-                                    _auth_session, api_key=auth_api_key, client_host=ws_client_host
-                                )
-                                or ws_user
-                            )
-                    # Refresh the job channel with the newly resolved user
-                    if ws_user and ws_user.id is not None:
-                        job_channel = f"jobs:{ws_user.id}"
-                if requires_ws_auth and ws_user is None:
+                ws_user = await authenticate_ws_message(
+                    payload,
+                    client_host=ws_client_host,
+                    current_user=ws_user,
+                )
+                if ws_user and ws_user.id is not None:
+                    job_channel = f"jobs:{ws_user.id}"
+                if require_authenticated_action(requires_auth=requires_ws_auth, ws_user=ws_user):
                     await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
                     break
                 await websocket.send_json({"type": "authenticated", "user_id": ws_user.id if ws_user else None})
                 continue
 
-            # Remote hybrid/enterprise sockets may connect before sending the
-            # first-frame auth message. Reject any privileged action until the
-            # connection has authenticated.
-            if requires_ws_auth and ws_user is None:
+            # Guard: reject any action before auth on enterprise connections
+            if require_authenticated_action(requires_auth=requires_ws_auth, ws_user=ws_user):
                 await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
                 break
 

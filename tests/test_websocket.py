@@ -6,6 +6,7 @@ import pytest
 from starlette.websockets import WebSocketDisconnect
 
 import spectra_sherpa.app.main as app_main
+import spectra_sherpa.app.services.ws_auth as ws_auth_mod
 import spectra_sherpa.app.services.ws_handlers as ws_handlers_mod
 from spectra_sherpa.app.core.config import app_config
 from spectra_sherpa.app.services.websocket_manager import ws_manager
@@ -25,6 +26,7 @@ def _install_noop_async_session(monkeypatch: pytest.MonkeyPatch) -> None:
         return _NullAsyncSessionContext()
 
     monkeypatch.setattr(app_main, "async_session", _factory)
+    monkeypatch.setattr(ws_auth_mod, "async_session", _factory)
 
 
 @pytest.fixture(autouse=True)
@@ -49,7 +51,7 @@ def test_ws_local_mode_allows_anonymous_and_maps_jobs_alias(ws_client, monkeypat
     async def _resolve_user(_session, api_key=None, token=None, client_host=None):
         return SimpleNamespace(id=42, is_superuser=False, is_active=True)
 
-    monkeypatch.setattr(app_main, "get_user_from_credentials", _resolve_user)
+    monkeypatch.setattr(ws_auth_mod, "get_user_from_credentials", _resolve_user)
 
     with ws_client.websocket_connect("/ws") as ws:
         ws.send_json({"action": "subscribe", "channel": "jobs"})
@@ -73,14 +75,14 @@ def test_ws_hybrid_non_loopback_accepts_first_frame_authentication(ws_client, mo
     app_config.mode = "hybrid"
     _install_noop_async_session(monkeypatch)
 
-    monkeypatch.setattr(app_main, "is_valid_bearer_token", lambda token: token == "jwt-1")
+    monkeypatch.setattr(ws_auth_mod, "is_valid_bearer_token", lambda token: token == "jwt-1")
 
     async def _resolve_user(_session, api_key=None, token=None, client_host=None):
         if token == "jwt-1":
             return SimpleNamespace(id=11, is_superuser=False, is_active=True)
         return None
 
-    monkeypatch.setattr(app_main, "get_user_from_credentials", _resolve_user)
+    monkeypatch.setattr(ws_auth_mod, "get_user_from_credentials", _resolve_user)
 
     with ws_client.websocket_connect("/ws") as ws:
         ws.send_json({"action": "authenticate", "token": "jwt-1"})
@@ -100,7 +102,7 @@ def test_ws_hybrid_loopback_allows_anonymous(ws_client, monkeypatch):
     async def _resolve_user(_session, api_key=None, token=None, client_host=None):
         return SimpleNamespace(id=7, is_superuser=False, is_active=True)
 
-    monkeypatch.setattr(app_main, "get_user_from_credentials", _resolve_user)
+    monkeypatch.setattr(ws_auth_mod, "get_user_from_credentials", _resolve_user)
 
     with ws_client.websocket_connect("/ws") as ws:
         ws.send_json({"action": "subscribe", "channel": "jobs"})
@@ -115,8 +117,8 @@ def test_ws_enterprise_mode_rejects_invalid_credentials(ws_client, monkeypatch):
     async def _invalid_api_key(_api_key):
         return False
 
-    monkeypatch.setattr(app_main, "is_valid_api_key", _invalid_api_key)
-    monkeypatch.setattr(app_main, "is_valid_bearer_token", lambda _token: False)
+    monkeypatch.setattr(ws_auth_mod, "is_valid_api_key", _invalid_api_key)
+    monkeypatch.setattr(ws_auth_mod, "is_valid_bearer_token", lambda _token: False)
 
     with ws_client.websocket_connect("/ws?api_key=bad-key") as ws:
         _policy_violation_on_receive(ws)
@@ -126,12 +128,12 @@ def test_ws_enterprise_rejects_invalid_first_frame_authentication(ws_client, mon
     app_config.mode = "enterprise"
     _install_noop_async_session(monkeypatch)
 
-    monkeypatch.setattr(app_main, "is_valid_bearer_token", lambda _token: False)
+    monkeypatch.setattr(ws_auth_mod, "is_valid_bearer_token", lambda _token: False)
 
     async def _resolve_user(_session, api_key=None, token=None, client_host=None):
         return None
 
-    monkeypatch.setattr(app_main, "get_user_from_credentials", _resolve_user)
+    monkeypatch.setattr(ws_auth_mod, "get_user_from_credentials", _resolve_user)
 
     with ws_client.websocket_connect("/ws") as ws:
         ws.send_json({"action": "authenticate", "token": "bad-jwt"})
@@ -150,8 +152,8 @@ def test_ws_enterprise_user_cannot_subscribe_other_users_jobs(ws_client, monkeyp
             return SimpleNamespace(id=1, is_superuser=False, is_active=True)
         return None
 
-    monkeypatch.setattr(app_main, "is_valid_api_key", _valid_api_key)
-    monkeypatch.setattr(app_main, "get_user_from_credentials", _resolve_user)
+    monkeypatch.setattr(ws_auth_mod, "is_valid_api_key", _valid_api_key)
+    monkeypatch.setattr(ws_auth_mod, "get_user_from_credentials", _resolve_user)
 
     with ws_client.websocket_connect("/ws?api_key=k1") as ws:
         ws.send_json({"action": "subscribe", "channel": "jobs:2"})
@@ -176,8 +178,8 @@ def test_ws_enterprise_superuser_can_subscribe_any_jobs_channel(ws_client, monke
             return SimpleNamespace(id=99, is_superuser=True, is_active=True)
         return None
 
-    monkeypatch.setattr(app_main, "is_valid_api_key", _valid_api_key)
-    monkeypatch.setattr(app_main, "get_user_from_credentials", _resolve_user)
+    monkeypatch.setattr(ws_auth_mod, "is_valid_api_key", _valid_api_key)
+    monkeypatch.setattr(ws_auth_mod, "get_user_from_credentials", _resolve_user)
 
     with ws_client.websocket_connect("/ws?api_key=root-key") as ws:
         ws.send_json({"action": "subscribe", "channel": "jobs:2"})
@@ -197,8 +199,8 @@ def test_ws_data_import_action_is_no_longer_supported(ws_client, monkeypatch):
             return SimpleNamespace(id=1, is_superuser=False, is_active=True)
         return None
 
-    monkeypatch.setattr(app_main, "is_valid_api_key", _valid_api_key)
-    monkeypatch.setattr(app_main, "get_user_from_credentials", _resolve_user)
+    monkeypatch.setattr(ws_auth_mod, "is_valid_api_key", _valid_api_key)
+    monkeypatch.setattr(ws_auth_mod, "get_user_from_credentials", _resolve_user)
 
     with ws_client.websocket_connect("/ws?api_key=k1") as ws:
         ws.send_json({"action": "llm_data_import", "message": "inspect /etc/hosts"})
@@ -213,7 +215,7 @@ def test_ws_unregistered_sherpa_action_returns_unknown_action(ws_client, monkeyp
     async def _resolve_user(_session, api_key=None, token=None, client_host=None):
         return SimpleNamespace(id=1, is_superuser=False, is_active=True)
 
-    monkeypatch.setattr(app_main, "get_user_from_credentials", _resolve_user)
+    monkeypatch.setattr(ws_auth_mod, "get_user_from_credentials", _resolve_user)
     original_registry = app_main.app.state.ws_action_registry
     app_main.app.state.ws_action_registry = app_main.create_app(include_server_routers=False).state.ws_action_registry
     try:
@@ -240,4 +242,4 @@ def _setup_local_ws(monkeypatch, *, is_superuser: bool = False, user_id: int = 1
     async def _resolve_user(_session, api_key=None, token=None, client_host=None):
         return SimpleNamespace(id=user_id, is_superuser=is_superuser, is_active=True)
 
-    monkeypatch.setattr(app_main, "get_user_from_credentials", _resolve_user)
+    monkeypatch.setattr(ws_auth_mod, "get_user_from_credentials", _resolve_user)

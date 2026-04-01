@@ -581,6 +581,25 @@ class CrossValidationNode(Node):
                 zero_division=0,
             )
 
+            # Per-class sensitivity (recall) and specificity
+            cv_per_class: list[dict[str, Any]] = []
+            for i, cls in enumerate(unique_classes):
+                tp = cm[i, i]
+                fn = cm[i, :].sum() - tp
+                fp = cm[:, i].sum() - tp
+                tn = cm.sum() - tp - fn - fp
+                sensitivity = float(tp / (tp + fn)) if (tp + fn) > 0 else 0.0
+                specificity = float(tn / (tn + fp)) if (tn + fp) > 0 else 0.0
+                cv_per_class.append(
+                    {
+                        "class": str(cls),
+                        "sensitivity": sensitivity,
+                        "specificity": specificity,
+                        "precision": float(class_report.get(str(cls), {}).get("precision", 0)),
+                        "f1": float(class_report.get(str(cls), {}).get("f1-score", 0)),
+                    }
+                )
+
             result.update(
                 {
                     "accuracy": accuracy,
@@ -589,6 +608,7 @@ class CrossValidationNode(Node):
                     "n_classes": len(unique_classes),
                     "classes": unique_classes.tolist(),
                     "task_type": "classification",
+                    "per_class": cv_per_class,
                     "metadata": {
                         "type": "ClassificationCV",
                         "accuracy": accuracy,
@@ -1034,6 +1054,25 @@ class HoldoutEvaluationNode(Node):
             zero_division=0,
         )
 
+        # Per-class sensitivity (recall) and specificity
+        per_class_metrics: list[dict[str, Any]] = []
+        for i, cls in enumerate(unique_classes):
+            tp = cm[i, i]
+            fn = cm[i, :].sum() - tp
+            fp = cm[:, i].sum() - tp
+            tn = cm.sum() - tp - fn - fp
+            sensitivity = float(tp / (tp + fn)) if (tp + fn) > 0 else 0.0
+            specificity = float(tn / (tn + fp)) if (tn + fp) > 0 else 0.0
+            per_class_metrics.append(
+                {
+                    "class": str(cls),
+                    "sensitivity": sensitivity,
+                    "specificity": specificity,
+                    "precision": float(class_report.get(str(cls), {}).get("precision", 0)),
+                    "f1": float(class_report.get(str(cls), {}).get("f1-score", 0)),
+                }
+            )
+
         metrics = {
             "accuracy": accuracy,
             "n_classes": len(unique_classes),
@@ -1041,6 +1080,7 @@ class HoldoutEvaluationNode(Node):
             "n_samples": n_samples,
             "task_type": "classification",
             "classification_report": class_report,
+            "per_class": per_class_metrics,
         }
 
         evaluation = EvaluationResult(
