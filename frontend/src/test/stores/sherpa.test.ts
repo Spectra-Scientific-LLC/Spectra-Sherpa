@@ -111,4 +111,21 @@ describe("Sherpa Store communication state", () => {
 
     sherpa.dispose();
   });
+
+  it("does not send Sherpa chat when no workflow is loaded", async () => {
+    const sherpa = useSherpaStore();
+    const notifications = useNotificationStore();
+    mockWorkflowStore.workflowId = null;
+
+    await sherpa.sendMessage("tell me about PCA");
+
+    expect(mockLlmStore.connect).not.toHaveBeenCalled();
+    expect(mockWs.send).not.toHaveBeenCalled();
+    expect(sherpa.messages.at(-1)?.content).toBe(
+      "Load or create a workflow before asking Sherpa Advisor a question."
+    );
+    expect(notifications.notifications[0]?.message).toBe(
+      "Load or create a workflow before asking Sherpa Advisor a question."
+    );
+  });
 });

@@ -247,6 +247,23 @@ export const useSherpaStore = defineStore("sherpa", () => {
   async function sendMessage(message: string, useTools = false): Promise<void> {
     if (!message.trim()) return;
 
+    const workflow = useWorkflowStore();
+    if (!workflow.workflowId) {
+      const detail = "Load or create a workflow before asking Sherpa Advisor a question.";
+      lastSyncError.value = detail;
+      notifications.add({
+        source: "system",
+        severity: "info",
+        title: "Sherpa Advisor",
+        message: detail,
+      });
+      messages.value.push({
+        role: "system",
+        content: detail,
+      });
+      return;
+    }
+
     const llm = useLlmStore();
     try {
       await llm.connect();
@@ -260,7 +277,6 @@ export const useSherpaStore = defineStore("sherpa", () => {
 
     messages.value.push({ role: "user", content: message });
 
-    const workflow = useWorkflowStore();
     const ws = getWs();
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       messages.value.push({

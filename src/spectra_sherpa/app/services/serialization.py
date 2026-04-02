@@ -8,9 +8,11 @@ the API route layer.
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Any
 
 import numpy as np
+from pydantic import BaseModel
 
 from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset
@@ -81,6 +83,10 @@ def serialize_result(obj: Any, *, owner_user_id: int | None = None) -> Any:
     if isinstance(obj, np.ndarray):
         return obj.tolist()
 
+    # 4. Pydantic models — dump to plain JSON-safe dict/list first, then recurse
+    if isinstance(obj, BaseModel):
+        return serialize_result(obj.model_dump(mode="json"), owner_user_id=owner_user_id)
+
     # 5. Dicts — recursive serialization (handles multi-output node results)
     if isinstance(obj, dict):
         result_dict = {}
@@ -137,5 +143,9 @@ def serialize_result(obj: Any, *, owner_user_id: int | None = None) -> Any:
     if isinstance(obj, (frozenset, set)):
         return sorted(serialize_result(v, owner_user_id=owner_user_id) for v in obj)
 
-    # 9. Pass through (str, int, float, bool, None)
+    # 9. datetime/date — normalize to ISO strings for JSON storage
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+
+    # 10. Pass through (str, int, float, bool, None)
     return obj

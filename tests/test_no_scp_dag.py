@@ -434,6 +434,25 @@ def test_serialize_result_with_nested_sherpa_dataset(iris_dataset):
     assert result["score"] == 0.95
 
 
+def test_serialize_result_with_pydantic_evaluation_result():
+    """serialize_result should convert EvaluationResult to a plain JSON-safe dict."""
+    from spectra_sherpa.app.lib.sherpa_dataset import EvaluationResult
+    from spectra_sherpa.app.services.serialization import serialize_result
+
+    evaluation = EvaluationResult(
+        evaluation_id="eval-1",
+        model_type="PCA",
+        r2=0.95,
+        confusion_matrix=[[5.0, 1.0], [0.0, 6.0]],
+    )
+
+    result = serialize_result({"evaluation": evaluation})
+    assert result["evaluation"]["evaluation_id"] == "eval-1"
+    assert result["evaluation"]["model_type"] == "PCA"
+    assert result["evaluation"]["r2"] == 0.95
+    assert result["evaluation"]["confusion_matrix"] == [[5.0, 1.0], [0.0, 6.0]]
+
+
 # ---------------------------------------------------------------------------
 # 9. _is_dataset helper
 # ---------------------------------------------------------------------------

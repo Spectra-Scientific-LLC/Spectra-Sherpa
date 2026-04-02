@@ -445,4 +445,21 @@ describe("ChatPanel", () => {
     expect(wrapper.text()).toContain("Sherpa Advisor is preparing a response...");
     expect(wrapper.findAll(".chat-message.assistant .chat-bubble")).toHaveLength(1);
   });
+
+  it("disables Sherpa input when no workflow is loaded", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.isDemoMode.value = true;
+    mocks.appConfig.value = { subscription: { plan: "demo" } };
+    mocks.featureFlags.sherpaAdvisor = true;
+    mocks.workflowStore.workflowId = null;
+
+    const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    expect(input.attributes("placeholder")).toBe(
+      "Load a workflow to ask Sherpa Advisor questions..."
+    );
+    expect(input.attributes("disabled")).toBeDefined();
+  });
 });
