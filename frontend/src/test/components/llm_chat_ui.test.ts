@@ -345,6 +345,9 @@ describe("ChatPanel", () => {
     mocks.llmStore.conversations = [];
     mocks.llmStore.loading = false;
     mocks.llmStore.streaming = false;
+    mocks.sherpaStore.messages = [];
+    mocks.sherpaStore.state = "idle";
+    mocks.sherpaStore.activeTools = [];
     mocks.authStore.user = { id: 7, username: "alice" };
   });
 
@@ -407,5 +410,39 @@ describe("ChatPanel", () => {
 
     expect(wrapper.text()).toContain("Sherpa Advisor");
     expect(wrapper.text()).not.toContain("LLM Chat");
+  });
+
+  it("shows a contacting status while Sherpa chat is waiting for acceptance", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.isDemoMode.value = true;
+    mocks.appConfig.value = { subscription: { plan: "demo" } };
+    mocks.featureFlags.sherpaAdvisor = true;
+    mocks.sherpaStore.state = "chatting";
+    mocks.sherpaStore.messages = [{ role: "user", content: "tell me about PCA" }];
+    mocks.sherpaStore.activeTools = [];
+
+    const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("Contacting Sherpa Advisor...");
+  });
+
+  it("shows a preparing status instead of an empty assistant bubble", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.isDemoMode.value = true;
+    mocks.appConfig.value = { subscription: { plan: "demo" } };
+    mocks.featureFlags.sherpaAdvisor = true;
+    mocks.sherpaStore.state = "chatting";
+    mocks.sherpaStore.messages = [
+      { role: "user", content: "tell me about PCA" },
+      { role: "assistant", content: "" },
+    ];
+    mocks.sherpaStore.activeTools = [];
+
+    const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("Sherpa Advisor is preparing a response...");
+    expect(wrapper.findAll(".chat-message.assistant .chat-bubble")).toHaveLength(1);
   });
 });

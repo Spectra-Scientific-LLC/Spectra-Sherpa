@@ -146,7 +146,7 @@
                   <div v-if="message.role === 'system'" class="system-notification">
                     {{ message.content }}
                   </div>
-                  <div v-else class="chat-bubble">{{ message.content }}</div>
+                  <div v-else-if="message.content" class="chat-bubble">{{ message.content }}</div>
                 </div>
                 <div
                   v-for="(tool, tidx) in sherpaStore.activeTools"
@@ -163,8 +163,8 @@
                 <div v-if="sherpaStore.state === 'syncing'" class="chat-message assistant">
                   <div class="chat-bubble">Analyzing workflow...</div>
                 </div>
-                <div v-if="sherpaStore.state === 'chatting'" class="chat-message assistant">
-                  <div class="chat-bubble">Thinking...</div>
+                <div v-if="sherpaStatusMessage" class="chat-message assistant">
+                  <div class="chat-bubble">{{ sherpaStatusMessage }}</div>
                 </div>
               </template>
             </div>
@@ -282,6 +282,30 @@ const inputPlaceholder = computed(() => {
 const inputDisabled = computed(() => {
   if (activeTab.value === "llm") return !llmChatEnabled.value || !llmChatAllowed.value;
   return false;
+});
+
+const sherpaStatusMessage = computed(() => {
+  if (sherpaStore.state !== "chatting") {
+    return null;
+  }
+
+  const lastMessage =
+    sherpaStore.messages.length > 0
+      ? sherpaStore.messages[sherpaStore.messages.length - 1]
+      : null;
+  const hasRunningTools = sherpaStore.activeTools.some((tool) => tool.status === "started");
+
+  if (!lastMessage || lastMessage.role !== "assistant") {
+    return "Contacting Sherpa Advisor...";
+  }
+
+  if (!lastMessage.content.trim()) {
+    return hasRunningTools
+      ? "Sherpa Advisor is working through the workflow..."
+      : "Sherpa Advisor is preparing a response...";
+  }
+
+  return null;
 });
 
 // ── LLM Provider Menu ────────────────────────────────────────
