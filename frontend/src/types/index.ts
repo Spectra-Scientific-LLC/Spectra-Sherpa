@@ -209,6 +209,8 @@ export interface SherpaRecommendationPayload {
   title: string;
   explanation: string;
   confidence: number;
+  status: string;
+  created_at: string;
   has_patch: boolean;
 }
 

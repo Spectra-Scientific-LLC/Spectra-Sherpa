@@ -162,11 +162,15 @@ OSS owns the host. Extensions register implementations.
 
 Real-time communication uses a single WebSocket endpoint at `/ws`. Clients send JSON messages with an `"action"` key; the server responds with messages using a `"type"` key.
 
-1. **Connect** — Client opens `/ws` with auth token (if hybrid/enterprise mode)
+1. **Connect** — Client opens `/ws`
+   In current hybrid/enterprise mode, explicit remote WebSocket auth is completed by sending an initial `{"action": "authenticate", ...}` message rather than relying on query parameters or request headers.
 2. **Subscribe** — Client sends `{"action": "subscribe", "workflow_id": "..."}` to watch a workflow
 3. **Unsubscribe** — Client sends `{"action": "unsubscribe", "workflow_id": "..."}`
 4. **LLM Chat** — Client sends `{"action": "llm_chat", ...}` → server streams `llm_start`, `llm_chunk`, `llm_done` responses
-5. **Sherpa AI** — `{"action": "sherpa_chat" | "sherpa_sync" | "sherpa_decide", ...}`
+5. **Sherpa AI** — clients use the canonical Sherpa action set from `app/ws_actions.py`, including:
+   `sherpa_sync`, `sherpa_decide`, `sherpa_chat`, `sherpa_identify_peaks`,
+   `sherpa_generate_code`, `sherpa_write_report`, `sherpa_data_story`,
+   and `sherpa_chat_with_tools`
 6. **MCP Tools** — `{"action": "tool_list"}` or `{"action": "tool_invoke", ...}`
 7. **Errors** — Server sends `{"type": "error", "detail": "..."}` for unknown actions or failures
 

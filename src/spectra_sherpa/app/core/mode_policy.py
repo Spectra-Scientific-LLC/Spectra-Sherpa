@@ -4,6 +4,25 @@ Shared mode policy for local / hybrid / enterprise runtime behavior.
 This module captures cross-cutting, request-time policy decisions used in
 multiple places (HTTP auth, WebSocket auth, client config gating). One-shot
 startup validation can still read ``app_config`` directly.
+
+Mode summary for developers:
+
+- **local** — Single user on localhost. No auth. BYOK LLM only. No Sherpa
+  advisor (``DisabledAIProvider``). Egress gates never reached because the
+  advisor stub returns before any network call.
+
+- **hybrid** — Local user + optional cloud features. The local spectra-sherpa
+  instance calls the cloud spectrasherpa-server via ``DeploymentAIProvider``
+  (HTTP with ``X-Deployment-Key``). Loopback browser connections need no auth;
+  non-loopback connections (defense-in-depth if bound to 0.0.0.0) require
+  first-message WebSocket auth. Egress permission
+  ``allow_spectrasherpa_sync`` gates whether workflow data is sent to the
+  cloud — must be True in the user's ``UserEgressDefaults`` row.
+
+- **enterprise** — Cloud-hosted multi-user deployment. All connections require
+  first-message WebSocket auth with a valid JWT. Sherpa advisor runs
+  in-process via ``ServerAIProvider`` (injected by spectra-server).
+  Subscriptions gate individual features via entitlements.
 """
 
 from __future__ import annotations

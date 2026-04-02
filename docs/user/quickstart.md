@@ -156,6 +156,8 @@ If you are running a shared or managed deployment:
 
 In configured enterprise/demo deployments, this check appears as **Validate Connection** rather than **Test Connection**.
 
+Sherpa Advisor can answer general chemistry or data-interpretation questions even when no workflow is loaded. Workflow-specific recommendations and refresh/sync behavior still require an active workflow.
+
 ### Data Story Context
 
 On the **Data** page, the Data Story panel includes an **Additional Context** text box. Use it to supply short domain context such as instrument type, plasma source, sample matrix, or what the story should emphasize.

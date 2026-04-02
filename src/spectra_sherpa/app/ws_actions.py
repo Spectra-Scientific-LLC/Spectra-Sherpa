@@ -1,7 +1,14 @@
 """Canonical WebSocket action vocabulary shared across the platform.
 
-OSS owns the action names. Specific distributions decide which actions are
-actually registered on a given app instance.
+**Source of truth for all WS actions.**  Both the frontend (``sherpaWs.ts``)
+and the server (``register_sherpa_ws_actions``) reference these constants.
+
+To add a new Sherpa action:
+1. Define the constant here.
+2. Add it to ``SHERPA_WS_ACTIONS``.
+3. Add the matching key in ``frontend/src/lib/sherpaWs.ts → SHERPA_WS_ACTION``.
+4. Register the handler in ``spectra-server/ws_handlers.py → register_sherpa_ws_actions()``.
+5. Run ``pytest tests/test_ws_contract.py`` — it will fail until all three are in sync.
 """
 
 LLM_CHAT = "llm_chat"

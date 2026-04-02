@@ -10,6 +10,13 @@ WebSocket auth is intentionally narrower than HTTP auth:
 Connection-time credentials in WS headers or query params are no longer
 accepted. This keeps the runtime model simple and avoids token leakage via
 URLs, server logs, and proxy metadata.
+
+**Why this file exists in the OSS repo:**  The hybrid and enterprise auth
+paths are exercised only when spectra-server is installed. In a pure OSS
+local deployment, ``requires_auth`` is always False and the implicit user
+is resolved immediately — the ``authenticate`` message path is never
+reached. The code lives here so that all three modes are tested together
+and spectra-server extends without forking.
 """
 
 from __future__ import annotations

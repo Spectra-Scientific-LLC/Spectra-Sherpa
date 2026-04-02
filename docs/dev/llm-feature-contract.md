@@ -136,6 +136,8 @@ Loaded from `/api/v1/config` at startup. Maps to server entitlement.
 ### 3b. WS send + listen pattern
 
 ```typescript
+import { SHERPA_WS_ACTION, SHERPA_WS_EVENT } from "@/lib/sherpaWs"
+
 // Gate the feature first
 const { isFeatureEnabled } = useAppConfig()
 if (!isFeatureEnabled("sherpaMyFeature")) {
@@ -153,17 +155,27 @@ const result = await new Promise<string>((resolve, reject) => {
   const timeout = setTimeout(() => { cleanup(); reject(new Error("Timed out")); }, 60_000);
   const handler = (event: Event) => {
     const p = (event as CustomEvent).detail;
-    if (p.type === "sherpa_my_feature_result") { cleanup(); resolve(p.response); }
-    else if (p.type === "sherpa_my_feature_error") { cleanup(); reject(new Error(p.detail)); }
-    else if (p.type === "sherpa_subscription_required") { cleanup(); reject(new Error("Subscription required")); }
+    if (p.type === SHERPA_WS_EVENT.myFeatureResult) { cleanup(); resolve(p.response); }
+    else if (p.type === SHERPA_WS_EVENT.myFeatureError) { cleanup(); reject(new Error(p.detail)); }
+    else if (p.type === SHERPA_WS_EVENT.subscriptionRequired) { cleanup(); reject(new Error("Subscription required")); }
   };
   const cleanup = () => { clearTimeout(timeout); window.removeEventListener("sherpa-ws-message", handler); };
   window.addEventListener("sherpa-ws-message", handler);
-  ws.send(JSON.stringify({ action: "sherpa_my_feature", payload: { dataset_info } }));
+  ws.send(JSON.stringify({ action: SHERPA_WS_ACTION.myFeature, payload: { dataset_info } }));
 });
 ```
 
 Register listener **before** sending to avoid race conditions.
+Use the canonical `SHERPA_WS_ACTION` and `SHERPA_WS_EVENT` constants rather than hardcoded strings so frontend and backend action vocabularies stay in sync.
+
+When you add a new Sherpa feature, update:
+
+- `frontend/src/lib/sherpaWs.ts`
+- `src/spectra_sherpa/app/ws_actions.py`
+- `src/spectra_sherpa/app/ws_events.py` if the feature emits new events
+- `tests/test_ws_contract.py`
+
+The contract test must verify completeness against the backend-exported action/event sets, not only the subset already declared on the frontend.
 
 ---
 

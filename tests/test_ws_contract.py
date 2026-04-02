@@ -15,8 +15,12 @@ from spectra_sherpa.app.ws_actions import (
     SHERPA_CHAT,
     SHERPA_CHAT_WITH_TOOLS,
     SHERPA_DATA_STORY,
+    SHERPA_DECIDE,
+    SHERPA_GENERATE_CODE,
+    SHERPA_IDENTIFY_PEAKS,
     SHERPA_SYNC,
     SHERPA_WRITE_REPORT,
+    SHERPA_WS_ACTIONS,
 )
 from spectra_sherpa.app.ws_events import (
     SHERPA_CHAT_CHUNK,
@@ -27,6 +31,7 @@ from spectra_sherpa.app.ws_events import (
     SHERPA_DATA_STORY_CHUNK,
     SHERPA_DATA_STORY_ERROR,
     SHERPA_DATA_STORY_RESULT,
+    SHERPA_DECISION_ACK,
     SHERPA_ERROR,
     SHERPA_PEAKS_ERROR,
     SHERPA_PEAKS_RESULT,
@@ -37,6 +42,7 @@ from spectra_sherpa.app.ws_events import (
     SHERPA_SUBSCRIPTION_REQUIRED,
     SHERPA_TOOL_RESULT,
     SHERPA_TOOL_START,
+    SHERPA_WS_EVENTS,
 )
 
 
@@ -60,14 +66,19 @@ def test_frontend_sherpa_ws_contract_matches_backend_constants():
 
     assert frontend_actions == {
         "sync": SHERPA_SYNC,
+        "decide": SHERPA_DECIDE,
         "chat": SHERPA_CHAT,
+        "identifyPeaks": SHERPA_IDENTIFY_PEAKS,
+        "generateCode": SHERPA_GENERATE_CODE,
         "chatWithTools": SHERPA_CHAT_WITH_TOOLS,
         "writeReport": SHERPA_WRITE_REPORT,
         "dataStory": SHERPA_DATA_STORY,
     }
+    assert set(frontend_actions.values()) == set(SHERPA_WS_ACTIONS)
 
     assert frontend_events == {
         "recommendations": SHERPA_RECOMMENDATIONS,
+        "decisionAck": SHERPA_DECISION_ACK,
         "chatStart": SHERPA_CHAT_START,
         "chatChunk": SHERPA_CHAT_CHUNK,
         "chatDone": SHERPA_CHAT_DONE,
@@ -86,6 +97,7 @@ def test_frontend_sherpa_ws_contract_matches_backend_constants():
         "dataStoryResult": SHERPA_DATA_STORY_RESULT,
         "dataStoryError": SHERPA_DATA_STORY_ERROR,
     }
+    assert set(frontend_events.values()) == set(SHERPA_WS_EVENTS)
 
 
 def test_contract_exports_do_not_shadow_capability_names():

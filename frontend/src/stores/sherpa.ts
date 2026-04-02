@@ -345,6 +345,8 @@ export const useSherpaStore = defineStore("sherpa", () => {
         title: r.title,
         explanation: r.explanation,
         confidence: r.confidence,
+        status: r.status,
+        created_at: r.created_at,
         has_patch: !!r.patch,
       }));
 
@@ -364,6 +366,26 @@ export const useSherpaStore = defineStore("sherpa", () => {
           });
         }
       }
+    } else if (payload.type === SHERPA_WS_EVENT.decisionAck) {
+      if (payload.payload?.delivered) {
+        messages.value.push({
+          role: "system",
+          content: "Sherpa Advisor recorded your decision.",
+        });
+      } else {
+        const message =
+          payload.detail || "Sherpa Advisor could not confirm your decision.";
+        notifications.add({
+          source: "system",
+          severity: "warning",
+          title: "Sherpa Advisor",
+          message,
+        });
+        messages.value.push({
+          role: "system",
+          content: message,
+        });
+      }
     } else if (payload.type === SHERPA_WS_EVENT.chatStart) {
       finalizeCommunication();
       // Transition from "syncing" to "chatting" so the sync timeout is cleared
@@ -382,7 +404,9 @@ export const useSherpaStore = defineStore("sherpa", () => {
       streamingIndex.value = null;
     } else if (payload.type === SHERPA_WS_EVENT.status) {
       const connected = payload.payload?.connected;
-      if (!connected) {
+      if (connected && payload.payload?.stage === "analyzing" && state.value === "idle") {
+        state.value = "syncing";
+      } else if (!connected) {
         finalizeCommunication();
         const reason = payload.payload?.reason || "unknown";
         lastSyncError.value = `Sherpa unavailable: ${reason}`;

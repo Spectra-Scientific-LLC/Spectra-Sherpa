@@ -155,4 +155,48 @@ describe("Sherpa Store communication state", () => {
 
     sherpa.dispose();
   });
+
+  it("handles Sherpa decision acknowledgements explicitly", () => {
+    const sherpa = useSherpaStore();
+    sherpa.init();
+
+    window.dispatchEvent(
+      new CustomEvent("sherpa-ws-message", {
+        detail: {
+          type: SHERPA_WS_EVENT.decisionAck,
+          payload: {
+            delivered: true,
+            suggestion_id: "rec-1",
+          },
+        },
+      })
+    );
+
+    expect(sherpa.messages.at(-1)?.content).toBe(
+      "Sherpa Advisor recorded your decision."
+    );
+
+    sherpa.dispose();
+  });
+
+  it("accepts positive Sherpa status events as active sync state", () => {
+    const sherpa = useSherpaStore();
+    sherpa.init();
+
+    window.dispatchEvent(
+      new CustomEvent("sherpa-ws-message", {
+        detail: {
+          type: SHERPA_WS_EVENT.status,
+          payload: {
+            connected: true,
+            stage: "analyzing",
+          },
+        },
+      })
+    );
+
+    expect(sherpa.state).toBe("syncing");
+
+    sherpa.dispose();
+  });
 });

@@ -8,7 +8,14 @@ describe("sherpaWs contract", () => {
     expect(getSherpaChatAction(true)).toBe(SHERPA_WS_ACTION.chatWithTools);
   });
 
+  it("exports the full canonical Sherpa action set", () => {
+    expect(SHERPA_WS_ACTION.decide).toBe("sherpa_decide");
+    expect(SHERPA_WS_ACTION.identifyPeaks).toBe("sherpa_identify_peaks");
+    expect(SHERPA_WS_ACTION.generateCode).toBe("sherpa_generate_code");
+  });
+
   it("keeps the canonical Sherpa event names stable", () => {
+    expect(SHERPA_WS_EVENT.decisionAck).toBe("sherpa_decision_ack");
     expect(SHERPA_WS_EVENT.subscriptionRequired).toBe("sherpa_subscription_required");
     expect(SHERPA_WS_EVENT.dataStoryResult).toBe("sherpa_data_story_result");
   });
