@@ -112,21 +112,19 @@ describe("Sherpa Store communication state", () => {
     sherpa.dispose();
   });
 
-  it("does not send Sherpa chat when no workflow is loaded", async () => {
+  it("allows Sherpa chat without a workflow for general questions", async () => {
     const sherpa = useSherpaStore();
-    const notifications = useNotificationStore();
     mockWorkflowStore.workflowId = null;
+    mockWorkflowStore.workflowName = "Untitled";
 
     await sherpa.sendMessage("tell me about PCA");
 
-    expect(mockLlmStore.connect).not.toHaveBeenCalled();
-    expect(mockWs.send).not.toHaveBeenCalled();
-    expect(sherpa.messages.at(-1)?.content).toBe(
-      "Load or create a workflow before asking Sherpa Advisor a question."
-    );
-    expect(notifications.notifications[0]?.message).toBe(
-      "Load or create a workflow before asking Sherpa Advisor a question."
-    );
+    expect(mockLlmStore.connect).toHaveBeenCalledOnce();
+    expect(mockWs.send).toHaveBeenCalledOnce();
+    const payload = JSON.parse(mockWs.send.mock.calls[0][0] as string);
+    expect(payload.action).toBe("sherpa_chat");
+    expect(payload.payload.workflow_id).toBeNull();
+    expect(payload.payload.workflow_context.workflow_id).toBeNull();
   });
 
   it("surfaces demo Sherpa limit errors even when upgrade_url is empty", () => {

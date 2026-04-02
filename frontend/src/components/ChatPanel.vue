@@ -278,14 +278,14 @@ const inputPlaceholder = computed(() => {
   if (activeTab.value === "sherpa") {
     return workflowStore.workflowId
       ? "Ask Sherpa about your workflow..."
-      : "Load a workflow to ask Sherpa Advisor questions...";
+      : "Ask Sherpa about chemistry, datasets, or your next workflow step...";
   }
   return "Ask about spectra, exports, or processing... (Type '/' to clear chat)";
 });
 
 const inputDisabled = computed(() => {
   if (activeTab.value === "llm") return !llmChatEnabled.value || !llmChatAllowed.value;
-  return !workflowStore.workflowId;
+  return false;
 });
 
 const sherpaStatusMessage = computed(() => {

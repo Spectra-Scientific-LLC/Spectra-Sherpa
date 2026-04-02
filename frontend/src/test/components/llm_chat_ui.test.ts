@@ -446,7 +446,7 @@ describe("ChatPanel", () => {
     expect(wrapper.findAll(".chat-message.assistant .chat-bubble")).toHaveLength(1);
   });
 
-  it("disables Sherpa input when no workflow is loaded", async () => {
+  it("keeps Sherpa input available for general questions when no workflow is loaded", async () => {
     mocks.appMode.value = "enterprise";
     mocks.isDemoMode.value = true;
     mocks.appConfig.value = { subscription: { plan: "demo" } };
@@ -458,8 +458,8 @@ describe("ChatPanel", () => {
 
     const input = wrapper.find("input");
     expect(input.attributes("placeholder")).toBe(
-      "Load a workflow to ask Sherpa Advisor questions..."
+      "Ask Sherpa about chemistry, datasets, or your next workflow step..."
     );
-    expect(input.attributes("disabled")).toBeDefined();
+    expect(input.attributes("disabled")).toBeUndefined();
   });
 });

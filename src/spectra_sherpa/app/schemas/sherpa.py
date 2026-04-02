@@ -136,6 +136,7 @@ class WorkflowStateSync(BaseModel):
     spectral_technique: str | None = None  # "IR", "NIR", "Raman", "UV-Vis"
     n_samples: int | None = None
     n_features: int | None = None
+    dataset_context: dict[str, Any] | None = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
