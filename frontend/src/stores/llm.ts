@@ -27,6 +27,14 @@ const persistConversations = (items: ConversationSummary[]) => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
 };
 
+const emitWsTransport = (kind: string, detail?: string) => {
+  window.dispatchEvent(
+    new CustomEvent("app-ws-transport", {
+      detail: { kind, detail: detail || null },
+    })
+  );
+};
+
 interface LlmConfig {
   provider: string;
   base_url: string;
@@ -127,10 +135,12 @@ export const useLlmStore = defineStore("llm", () => {
         } else if (payload.type === "error" || payload.type === "llm_error") {
           streaming.value = false;
           loading.value = false;
+          const detail = payload.detail || "Streaming error.";
           messages.value.push({
             role: "assistant",
-            content: payload.detail || "Streaming error.",
+            content: detail,
           });
+          emitWsTransport("message_error", detail);
         } else if (payload.type?.startsWith("sherpa_")) {
           // Forward Sherpa messages to the sherpa store via event bus
           window.dispatchEvent(
@@ -152,6 +162,7 @@ export const useLlmStore = defineStore("llm", () => {
 
     wsRef.value.addEventListener("error", () => {
       lastError.value = "WebSocket error.";
+      emitWsTransport("socket_error", "Connection error while talking to the server.");
     });
 
     wsRef.value.addEventListener("close", (event) => {
@@ -181,8 +192,10 @@ export const useLlmStore = defineStore("llm", () => {
         }
         lastError.value = "Unauthorized. Check your credentials.";
         allowReconnect = false;
+        emitWsTransport("unauthorized", "Authorization failed for the live connection.");
         return;
       }
+      emitWsTransport("closed", "Connection lost while communicating with the server.");
       scheduleReconnect();
     });
 

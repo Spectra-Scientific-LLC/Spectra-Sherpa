@@ -1,9 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- assistant sync payloads intentionally preserve flexible node parameter/result shapes. */
 import { defineStore } from "pinia";
-import { ref, watch } from "vue";
+import { ref, watch, type WatchStopHandle } from "vue";
 import { SHERPA_WS_ACTION, SHERPA_WS_EVENT, getSherpaChatAction } from "@/lib/sherpaWs";
 import { useDataStore } from "@/stores/data";
 import { useLlmStore } from "@/stores/llm";
+import { useNotificationStore } from "@/stores/notification";
 import { useWorkflowStore } from "@/stores/workflow";
 import type { SherpaMessage, SherpaRecommendationPayload } from "@/types";
 
@@ -35,12 +36,16 @@ export const useSherpaStore = defineStore("sherpa", () => {
   const state = ref<SherpaState>("idle");
   const lastSyncError = ref<string | null>(null);
   const streamingIndex = ref<number | null>(null);
+  const notifications = useNotificationStore();
 
   // Subscription-gated feature results
   const lastPeaksResult = ref<PeaksResult | null>(null);
   const lastCodeResult = ref<CodeResult | null>(null);
   const activeTools = ref<ToolEvent[]>([]);
   const subscriptionRequired = ref<string | null>(null);
+  let communicationTimer: ReturnType<typeof setTimeout> | null = null;
+  let stopLlmWatch: WatchStopHandle | null = null;
+  let isInitialized = false;
 
   // ── helpers ────────────────────────────────────────────────
 
@@ -53,6 +58,58 @@ export const useSherpaStore = defineStore("sherpa", () => {
   function getWs(): WebSocket | null {
     const llm = useLlmStore();
     return llm.wsRef;
+  }
+
+  function clearCommunicationTimer(): void {
+    if (communicationTimer !== null) {
+      clearTimeout(communicationTimer);
+      communicationTimer = null;
+    }
+  }
+
+  function scheduleCommunicationNotice(kind: "sync" | "chat"): void {
+    clearCommunicationTimer();
+    communicationTimer = window.setTimeout(() => {
+      if (kind === "sync" && state.value === "syncing") {
+        notifications.add({
+          source: "system",
+          severity: "info",
+          title: "Sherpa Advisor",
+          message: "Sherpa Advisor is reviewing the workflow.",
+        });
+      } else if (kind === "chat" && state.value === "chatting" && streamingIndex.value === null) {
+        notifications.add({
+          source: "system",
+          severity: "info",
+          title: "Sherpa Advisor",
+          message: "Sherpa Advisor is preparing a response.",
+        });
+      }
+    }, 4000);
+  }
+
+  function finalizeCommunication(): void {
+    clearCommunicationTimer();
+  }
+
+  function recoverFromTransport(detail: string): void {
+    if (state.value !== "chatting" && state.value !== "syncing") {
+      return;
+    }
+    finalizeCommunication();
+    state.value = "idle";
+    streamingIndex.value = null;
+    lastSyncError.value = detail;
+    messages.value.push({
+      role: "system",
+      content: detail,
+    });
+    notifications.add({
+      source: "system",
+      severity: "warning",
+      title: "Sherpa Advisor",
+      message: detail,
+    });
   }
 
   function buildSyncPayload() {
@@ -143,6 +200,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
 
     state.value = "syncing";
     lastSyncError.value = null;
+    scheduleCommunicationNotice("sync");
 
     const ws = getWs();
     if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -214,12 +272,20 @@ export const useSherpaStore = defineStore("sherpa", () => {
 
     state.value = "chatting";
     activeTools.value = [];
+    scheduleCommunicationNotice("chat");
 
     // Safety timeout: if no chatDone arrives within 120s, reset state
     const chatTimeout = window.setTimeout(() => {
       if (state.value === "chatting") {
+        finalizeCommunication();
         state.value = "idle";
         streamingIndex.value = null;
+        notifications.add({
+          source: "system",
+          severity: "warning",
+          title: "Sherpa Advisor",
+          message: "Sherpa Advisor is taking longer than expected. Please try again.",
+        });
         messages.value.push({
           role: "system",
           content: "Chat response timed out. The server may be processing a complex request — check the workflow and try again.",
@@ -252,6 +318,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
   }
 
   function clearMessages(): void {
+    finalizeCommunication();
     messages.value = [];
     state.value = "idle";
     lastSyncError.value = null;
@@ -267,6 +334,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
    
   function handleWsMessage(payload: any): void {
     if (payload.type === SHERPA_WS_EVENT.recommendations) {
+      finalizeCommunication();
       state.value = "idle";
       const recs: SherpaRecommendationPayload[] = (
         payload.payload || []
@@ -297,6 +365,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
         }
       }
     } else if (payload.type === SHERPA_WS_EVENT.chatStart) {
+      finalizeCommunication();
       // Transition from "syncing" to "chatting" so the sync timeout is cleared
       if (state.value === "syncing" || state.value === "idle") {
         state.value = "chatting";
@@ -308,14 +377,22 @@ export const useSherpaStore = defineStore("sherpa", () => {
         messages.value[streamingIndex.value].content += payload.chunk;
       }
     } else if (payload.type === SHERPA_WS_EVENT.chatDone) {
+      finalizeCommunication();
       state.value = "idle";
       streamingIndex.value = null;
     } else if (payload.type === SHERPA_WS_EVENT.status) {
       const connected = payload.payload?.connected;
       if (!connected) {
+        finalizeCommunication();
         const reason = payload.payload?.reason || "unknown";
         lastSyncError.value = `Sherpa unavailable: ${reason}`;
         state.value = "error";
+        notifications.add({
+          source: "system",
+          severity: "warning",
+          title: "Sherpa Advisor",
+          message: `Sherpa Advisor is unavailable (${reason}).`,
+        });
         messages.value.push({
           role: "system",
           content: `Sherpa Advisor is not available (${reason}). Configure the cloud connection in Settings > Integrations.`,
@@ -365,23 +442,43 @@ export const useSherpaStore = defineStore("sherpa", () => {
         };
       }
     } else if (payload.type === SHERPA_WS_EVENT.subscriptionRequired) {
+      finalizeCommunication();
       subscriptionRequired.value = payload.detail || "This feature requires a subscription.";
       state.value = "idle";
+      notifications.add({
+        source: "system",
+        severity: "warning",
+        title: "Sherpa Advisor",
+        message: payload.detail || "This feature requires a Sherpa subscription.",
+      });
       messages.value.push({
         role: "system",
         content: payload.detail || "This feature requires a Sherpa subscription. Upgrade your plan to unlock it.",
       });
     } else if (payload.type === SHERPA_WS_EVENT.error) {
+      finalizeCommunication();
       state.value = "error";
       // Demo limit error: has upgrade_url (sent by _check_demo_sherpa_limit)
       if (payload.upgrade_url) {
         lastSyncError.value = payload.message || "Demo limit reached";
+        notifications.add({
+          source: "system",
+          severity: "warning",
+          title: "Sherpa Advisor",
+          message: payload.message || "Sherpa interaction limit reached for this session.",
+        });
         messages.value.push({
           role: "system",
           content: payload.message || "Sherpa interaction limit reached for this session.",
         });
       } else {
         lastSyncError.value = payload.detail || "Sherpa error";
+        notifications.add({
+          source: "system",
+          severity: "warning",
+          title: "Sherpa Advisor",
+          message: payload.detail || "An error occurred communicating with Sherpa.",
+        });
         messages.value.push({
           role: "system",
           content: payload.detail || "An error occurred communicating with Sherpa.",
@@ -397,12 +494,40 @@ export const useSherpaStore = defineStore("sherpa", () => {
     handleWsMessage((event as CustomEvent).detail);
   }
 
+  function _onTransportEvent(event: Event): void {
+    const detail = (event as CustomEvent).detail as { kind?: string; detail?: string | null };
+    const message = detail.detail
+      || (detail.kind === "unauthorized"
+        ? "Authorization failed while contacting Sherpa Advisor."
+        : "Connection lost during Sherpa request. Please try again.");
+    recoverFromTransport(message);
+  }
+
   function init(): void {
+    if (isInitialized) {
+      return;
+    }
+    isInitialized = true;
     window.addEventListener("sherpa-ws-message", _onSherpaEvent);
+    window.addEventListener("app-ws-transport", _onTransportEvent);
+    const llm = useLlmStore();
+    stopLlmWatch = watch(
+      () => llm.connectionStatus,
+      (newStatus) => {
+        if (newStatus === "disconnected") {
+          recoverFromTransport("Connection lost during Sherpa request. Please try again.");
+        }
+      }
+    );
   }
 
   function dispose(): void {
+    finalizeCommunication();
+    isInitialized = false;
     window.removeEventListener("sherpa-ws-message", _onSherpaEvent);
+    window.removeEventListener("app-ws-transport", _onTransportEvent);
+    stopLlmWatch?.();
+    stopLlmWatch = null;
   }
 
   return {
