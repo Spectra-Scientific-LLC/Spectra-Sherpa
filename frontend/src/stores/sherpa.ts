@@ -44,6 +44,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
   const activeTools = ref<ToolEvent[]>([]);
   const subscriptionRequired = ref<string | null>(null);
   let communicationTimer: ReturnType<typeof setTimeout> | null = null;
+  let activeChatTimeout: ReturnType<typeof setTimeout> | null = null;
   let stopLlmWatch: WatchStopHandle | null = null;
   let isInitialized = false;
 
@@ -64,6 +65,41 @@ export const useSherpaStore = defineStore("sherpa", () => {
     if (communicationTimer !== null) {
       clearTimeout(communicationTimer);
       communicationTimer = null;
+    }
+  }
+
+  function clearActiveChatTimeout(): void {
+    if (activeChatTimeout !== null) {
+      clearTimeout(activeChatTimeout);
+      activeChatTimeout = null;
+    }
+  }
+
+  function scheduleActiveChatTimeout(): void {
+    clearActiveChatTimeout();
+    activeChatTimeout = window.setTimeout(() => {
+      if (state.value === "chatting") {
+        finalizeCommunication();
+        state.value = "idle";
+        streamingIndex.value = null;
+        notifications.add({
+          source: "system",
+          severity: "warning",
+          title: "Sherpa Advisor",
+          message: "Sherpa Advisor is taking longer than expected. Please try again.",
+        });
+        messages.value.push({
+          role: "system",
+          content:
+            "Chat response timed out. The server may be processing a complex request — check the workflow and try again.",
+        });
+      }
+    }, 120_000);
+  }
+
+  function noteChatActivity(): void {
+    if (state.value === "chatting") {
+      scheduleActiveChatTimeout();
     }
   }
 
@@ -90,6 +126,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
 
   function finalizeCommunication(): void {
     clearCommunicationTimer();
+    clearActiveChatTimeout();
   }
 
   function recoverFromTransport(detail: string): void {
@@ -273,34 +310,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
     state.value = "chatting";
     activeTools.value = [];
     scheduleCommunicationNotice("chat");
-
-    // Safety timeout: if no chatDone arrives within 120s, reset state
-    const chatTimeout = window.setTimeout(() => {
-      if (state.value === "chatting") {
-        finalizeCommunication();
-        state.value = "idle";
-        streamingIndex.value = null;
-        notifications.add({
-          source: "system",
-          severity: "warning",
-          title: "Sherpa Advisor",
-          message: "Sherpa Advisor is taking longer than expected. Please try again.",
-        });
-        messages.value.push({
-          role: "system",
-          content: "Chat response timed out. The server may be processing a complex request — check the workflow and try again.",
-        });
-      }
-    }, 120_000);
-    const unwatchChat = watch(
-      () => state.value,
-      (newState) => {
-        if (newState !== "chatting") {
-          clearTimeout(chatTimeout);
-          unwatchChat();
-        }
-      }
-    );
+    scheduleActiveChatTimeout();
 
     ws.send(
       JSON.stringify({
@@ -392,12 +402,14 @@ export const useSherpaStore = defineStore("sherpa", () => {
       if (state.value === "syncing" || state.value === "idle") {
         state.value = "chatting";
       }
+      scheduleActiveChatTimeout();
       streamingIndex.value = messages.value.length;
       messages.value.push({ role: "assistant", content: "" });
     } else if (payload.type === SHERPA_WS_EVENT.chatChunk) {
       if (streamingIndex.value !== null) {
         messages.value[streamingIndex.value].content += payload.chunk;
       }
+      noteChatActivity();
     } else if (payload.type === SHERPA_WS_EVENT.chatDone) {
       finalizeCommunication();
       state.value = "idle";
@@ -454,6 +466,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
         tool_name: payload.tool_name || "unknown",
         status: "started",
       });
+      noteChatActivity();
     } else if (payload.type === SHERPA_WS_EVENT.toolResult) {
       const idx = activeTools.value.findIndex(
         (t) => t.tool_name === payload.tool_name && t.status === "started"
@@ -465,6 +478,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
           result: payload.result,
         };
       }
+      noteChatActivity();
     } else if (payload.type === SHERPA_WS_EVENT.subscriptionRequired) {
       finalizeCommunication();
       subscriptionRequired.value = payload.detail || "This feature requires a subscription.";

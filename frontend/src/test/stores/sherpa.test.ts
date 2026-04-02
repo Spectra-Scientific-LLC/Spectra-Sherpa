@@ -89,6 +89,31 @@ describe("Sherpa Store communication state", () => {
     sherpa.dispose();
   });
 
+  it("resets the chat timeout when Sherpa activity continues", async () => {
+    const sherpa = useSherpaStore();
+    sherpa.init();
+
+    await sherpa.sendMessage("Does it make sense to use MCR-ALS upon non-time-series spectra data?");
+    window.dispatchEvent(new CustomEvent("sherpa-ws-message", { detail: { type: SHERPA_WS_EVENT.chatStart } }));
+
+    await vi.advanceTimersByTimeAsync(119_000);
+    window.dispatchEvent(
+      new CustomEvent("sherpa-ws-message", {
+        detail: { type: SHERPA_WS_EVENT.chatChunk, chunk: "Yes, it can." },
+      })
+    );
+
+    await vi.advanceTimersByTimeAsync(119_000);
+    expect(sherpa.state).toBe("chatting");
+    expect(sherpa.messages.some((m) => m.content.includes("timed out"))).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(sherpa.state).toBe("idle");
+    expect(sherpa.messages.at(-1)?.content).toContain("Chat response timed out");
+
+    sherpa.dispose();
+  });
+
   it("recovers Sherpa chat state on shared socket transport failure", async () => {
     const sherpa = useSherpaStore();
     const notifications = useNotificationStore();
