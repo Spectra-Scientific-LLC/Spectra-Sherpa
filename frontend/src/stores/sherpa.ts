@@ -214,6 +214,28 @@ export const useSherpaStore = defineStore("sherpa", () => {
 
     state.value = "chatting";
     activeTools.value = [];
+
+    // Safety timeout: if no chatDone arrives within 120s, reset state
+    const chatTimeout = window.setTimeout(() => {
+      if (state.value === "chatting") {
+        state.value = "idle";
+        streamingIndex.value = null;
+        messages.value.push({
+          role: "system",
+          content: "Chat response timed out. The server may be processing a complex request — check the workflow and try again.",
+        });
+      }
+    }, 120_000);
+    const unwatchChat = watch(
+      () => state.value,
+      (newState) => {
+        if (newState !== "chatting") {
+          clearTimeout(chatTimeout);
+          unwatchChat();
+        }
+      }
+    );
+
     ws.send(
       JSON.stringify({
         action: getSherpaChatAction(useTools),
