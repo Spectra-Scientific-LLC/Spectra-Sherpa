@@ -128,4 +128,33 @@ describe("Sherpa Store communication state", () => {
       "Load or create a workflow before asking Sherpa Advisor a question."
     );
   });
+
+  it("surfaces demo Sherpa limit errors even when upgrade_url is empty", () => {
+    const sherpa = useSherpaStore();
+    const notifications = useNotificationStore();
+    sherpa.init();
+
+    window.dispatchEvent(
+      new CustomEvent("sherpa-ws-message", {
+        detail: {
+          type: SHERPA_WS_EVENT.error,
+          limit_type: "sherpa",
+          message: "Demo Sherpa interaction limit reached (200 interactions per session)",
+          upgrade_url: "",
+        },
+      })
+    );
+
+    expect(sherpa.lastSyncError).toBe(
+      "Demo Sherpa interaction limit reached (200 interactions per session)"
+    );
+    expect(sherpa.messages.at(-1)?.content).toBe(
+      "Demo Sherpa interaction limit reached (200 interactions per session)"
+    );
+    expect(notifications.notifications[0]?.message).toBe(
+      "Demo Sherpa interaction limit reached (200 interactions per session)"
+    );
+
+    sherpa.dispose();
+  });
 });

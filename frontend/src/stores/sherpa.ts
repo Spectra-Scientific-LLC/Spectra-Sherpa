@@ -474,18 +474,22 @@ export const useSherpaStore = defineStore("sherpa", () => {
     } else if (payload.type === SHERPA_WS_EVENT.error) {
       finalizeCommunication();
       state.value = "error";
-      // Demo limit error: has upgrade_url (sent by _check_demo_sherpa_limit)
-      if (payload.upgrade_url) {
-        lastSyncError.value = payload.message || "Demo limit reached";
+      const isDemoLimitError =
+        payload.limit_type === "sherpa"
+        || payload.limit_type === "execution"
+        || typeof payload.message === "string";
+      if (isDemoLimitError) {
+        const message = payload.message || "Demo limit reached";
+        lastSyncError.value = message;
         notifications.add({
           source: "system",
           severity: "warning",
           title: "Sherpa Advisor",
-          message: payload.message || "Sherpa interaction limit reached for this session.",
+          message,
         });
         messages.value.push({
           role: "system",
-          content: payload.message || "Sherpa interaction limit reached for this session.",
+          content: message,
         });
       } else {
         lastSyncError.value = payload.detail || "Sherpa error";
