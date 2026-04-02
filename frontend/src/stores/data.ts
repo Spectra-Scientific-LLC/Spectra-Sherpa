@@ -391,11 +391,16 @@ export const useDataStore = defineStore("data", () => {
       const result = await new Promise<string>((resolve, reject) => {
         const timeout = window.setTimeout(() => {
           cleanup();
-          // If we already have partial text, resolve with what we have
-          if (dataStoryText.value) {
-            resolve(dataStoryText.value);
+          const partial = dataStoryText.value;
+          if (partial) {
+            // Got partial text — resolve with what we have
+            console.warn(`Data story timeout after 180s, returning ${partial.length} chars of partial text`);
+            resolve(partial);
           } else {
-            reject(new Error("Data story generation timed out"));
+            reject(new Error(
+              "Data story generation timed out (180s, 0 chunks received). " +
+              "Check server logs: docker compose logs backend | grep data_story"
+            ));
           }
         }, 180_000);
 
@@ -409,7 +414,13 @@ export const useDataStore = defineStore("data", () => {
             resolve(payload.response || dataStoryText.value || "");
           } else if (payload.type === SHERPA_WS_EVENT.dataStoryError) {
             cleanup();
-            reject(new Error(payload.detail || "Data story generation failed"));
+            const diag = payload.diagnostics;
+            const detail = payload.detail || "Data story generation failed";
+            const diagSummary = diag
+              ? ` [stage=${diag.stage}, elapsed=${diag.elapsed_s}s, provider=${diag.provider || "?"}]`
+              : "";
+            console.error("Data story error:", detail, diag);
+            reject(new Error(detail + diagSummary));
           } else if (payload.type === SHERPA_WS_EVENT.subscriptionRequired) {
             cleanup();
             reject(new Error("Subscription required for Data Story generation."));
