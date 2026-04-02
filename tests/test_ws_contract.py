@@ -24,6 +24,7 @@ from spectra_sherpa.app.ws_events import (
     SHERPA_CHAT_START,
     SHERPA_CODE_ERROR,
     SHERPA_CODE_RESULT,
+    SHERPA_DATA_STORY_CHUNK,
     SHERPA_DATA_STORY_ERROR,
     SHERPA_DATA_STORY_RESULT,
     SHERPA_ERROR,
@@ -81,6 +82,7 @@ def test_frontend_sherpa_ws_contract_matches_backend_constants():
         "error": SHERPA_ERROR,
         "reportResult": SHERPA_REPORT_RESULT,
         "reportError": SHERPA_REPORT_ERROR,
+        "dataStoryChunk": SHERPA_DATA_STORY_CHUNK,
         "dataStoryResult": SHERPA_DATA_STORY_RESULT,
         "dataStoryError": SHERPA_DATA_STORY_ERROR,
     }
