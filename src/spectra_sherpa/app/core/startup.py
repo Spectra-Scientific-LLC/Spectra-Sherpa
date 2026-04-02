@@ -449,6 +449,7 @@ async def ensure_egress_defaults() -> None:
                         allow_export=False,  # Local file export disabled by default
                         allow_nist_queries=False,  # NIST queries disabled by default
                         allow_llm_context=enable_llm_defaults,  # On by default in local & demo
+                        allow_spectrasherpa_sync=force_llm_defaults,  # On in demo mode
                     )
                 )
 
@@ -465,9 +466,11 @@ async def ensure_egress_defaults() -> None:
                 updated_at = getattr(mutable_defaults, "updated_at", None)
                 untouched_row = created_at is not None and updated_at == created_at
                 if force_llm_defaults:
-                    if not allow_llm_chat or not allow_llm_context:
+                    allow_sync = bool(getattr(mutable_defaults, "allow_spectrasherpa_sync", False))
+                    if not allow_llm_chat or not allow_llm_context or not allow_sync:
                         setattr(mutable_defaults, "allow_llm_chat", True)
                         setattr(mutable_defaults, "allow_llm_context", True)
+                        setattr(mutable_defaults, "allow_spectrasherpa_sync", True)
                         normalized_users += 1
                 elif enable_llm_defaults and untouched_row and not allow_llm_chat and not allow_llm_context:
                     setattr(mutable_defaults, "allow_llm_chat", True)

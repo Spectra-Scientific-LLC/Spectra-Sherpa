@@ -552,7 +552,7 @@ async def check_egress_permission(
         "allow_llm_context": _llm_default,  # On by default in local & demo
         "allow_nist_queries": False,  # Explicit opt-in required
         "allow_export": False,  # Explicit opt-in required
-        "allow_spectrasherpa_sync": False,
+        "allow_spectrasherpa_sync": False,  # Set via DB row; demo startup forces it on
     }
     return DEFAULT_PERMISSIONS.get(permission, False)
 
