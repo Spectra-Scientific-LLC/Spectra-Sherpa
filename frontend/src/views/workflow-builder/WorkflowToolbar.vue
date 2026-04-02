@@ -22,7 +22,10 @@
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
+            <span v-if="config.description" class="node-desc">
+              <span class="node-desc-title">{{ config.label }}</span>
+              <span class="node-desc-body">{{ config.description }}</span>
+            </span>
           </div>
         </div>
       </div>
@@ -44,7 +47,10 @@
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
+            <span v-if="config.description" class="node-desc">
+              <span class="node-desc-title">{{ config.label }}</span>
+              <span class="node-desc-body">{{ config.description }}</span>
+            </span>
           </div>
         </div>
       </div>
@@ -66,7 +72,10 @@
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
+            <span v-if="config.description" class="node-desc">
+              <span class="node-desc-title">{{ config.label }}</span>
+              <span class="node-desc-body">{{ config.description }}</span>
+            </span>
           </div>
         </div>
       </div>
@@ -88,7 +97,10 @@
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
+            <span v-if="config.description" class="node-desc">
+              <span class="node-desc-title">{{ config.label }}</span>
+              <span class="node-desc-body">{{ config.description }}</span>
+            </span>
           </div>
         </div>
       </div>
@@ -110,7 +122,10 @@
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
+            <span v-if="config.description" class="node-desc">
+              <span class="node-desc-title">{{ config.label }}</span>
+              <span class="node-desc-body">{{ config.description }}</span>
+            </span>
           </div>
         </div>
       </div>
@@ -132,7 +147,10 @@
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
+            <span v-if="config.description" class="node-desc">
+              <span class="node-desc-title">{{ config.label }}</span>
+              <span class="node-desc-body">{{ config.description }}</span>
+            </span>
           </div>
         </div>
       </div>
@@ -154,7 +172,10 @@
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
+            <span v-if="config.description" class="node-desc">
+              <span class="node-desc-title">{{ config.label }}</span>
+              <span class="node-desc-body">{{ config.description }}</span>
+            </span>
           </div>
         </div>
       </div>
@@ -176,7 +197,10 @@
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
+            <span v-if="config.description" class="node-desc">
+              <span class="node-desc-title">{{ config.label }}</span>
+              <span class="node-desc-body">{{ config.description }}</span>
+            </span>
           </div>
         </div>
       </div>
@@ -198,7 +222,10 @@
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
+            <span v-if="config.description" class="node-desc">
+              <span class="node-desc-title">{{ config.label }}</span>
+              <span class="node-desc-body">{{ config.description }}</span>
+            </span>
           </div>
         </div>
       </div>
@@ -220,7 +247,10 @@
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
+            <span v-if="config.description" class="node-desc">
+              <span class="node-desc-title">{{ config.label }}</span>
+              <span class="node-desc-body">{{ config.description }}</span>
+            </span>
           </div>
         </div>
       </div>
@@ -242,7 +272,10 @@
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
+            <span v-if="config.description" class="node-desc">
+              <span class="node-desc-title">{{ config.label }}</span>
+              <span class="node-desc-body">{{ config.description }}</span>
+            </span>
           </div>
         </div>
       </div>
@@ -429,6 +462,27 @@ const CATEGORY_LABELS: Record<string, string> = {
   deploy: 'Deployment',
 };
 
+const summarizePurpose = (description: string): string => {
+  const normalized = description.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+
+  const firstSentence = normalized.match(/(.+?[.!?])(?:\s|$)/);
+  if (firstSentence) {
+    return firstSentence[1];
+  }
+
+  const clause = normalized.match(/^(.+?)(?:;|,|\s+-\s+)/);
+  if (clause) {
+    return `${clause[1]}.`;
+  }
+
+  if (normalized.length <= 100) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, 97).trimEnd()}...`;
+};
+
 // Convert backend metadata to NodeConfig
 const metadataToConfig = (metadata: NodeTypeMetadata): NodeConfig => {
   const baseColor = CATEGORY_COLOR[metadata.category] || 'node-plugin';
@@ -437,7 +491,7 @@ const metadataToConfig = (metadata: NodeTypeMetadata): NodeConfig => {
     label: metadata.label,
     icon: NODE_ICONS[metadata.node_type] || '📦',
     colorClass,
-    description: metadata.description,
+    description: summarizePurpose(metadata.description),
   };
 };
 
@@ -624,14 +678,25 @@ const addNode = (nodeType: string) => {
 .node-desc {
   display: none;
   width: 100%;
-  font-size: 0.7rem;
-  font-weight: 400;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.72rem;
   color: rgba(255, 255, 255, 0.8);
   line-height: 1.3;
 }
 
 .node-button:hover .node-desc {
-  display: block;
+  display: flex;
+}
+
+.node-desc-title {
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.node-desc-body {
+  font-weight: 400;
 }
 
 .node-icon {
