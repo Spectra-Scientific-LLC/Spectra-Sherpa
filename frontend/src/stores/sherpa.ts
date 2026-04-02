@@ -2,6 +2,7 @@
 import { defineStore } from "pinia";
 import { ref, watch } from "vue";
 import { SHERPA_WS_ACTION, SHERPA_WS_EVENT, getSherpaChatAction } from "@/lib/sherpaWs";
+import { useDataStore } from "@/stores/data";
 import { useLlmStore } from "@/stores/llm";
 import { useWorkflowStore } from "@/stores/workflow";
 import type { SherpaMessage, SherpaRecommendationPayload } from "@/types";
@@ -56,6 +57,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
 
   function buildSyncPayload() {
     const workflow = useWorkflowStore();
+    const dataStore = useDataStore();
 
     // Collect per-node execution results (shape, type) when available
     const nodes = workflow.nodes.map((n) => {
@@ -82,6 +84,20 @@ export const useSherpaStore = defineStore("sherpa", () => {
       }
     }
 
+    // Include dataset metadata so the LLM knows the data context
+    const dsInfo = dataStore.catalogDatasetInfo as Record<string, unknown> | null;
+    const dsMeta = dsInfo?.metadata as Record<string, unknown> | undefined;
+    const dataset_context = dsInfo ? {
+      is_time_series: dsInfo.is_time_series ?? dsMeta?.is_time_series ?? null,
+      is_spectra: dsInfo.is_spectra ?? dsMeta?.is_spectra ?? null,
+      technique: dsInfo.technique ?? dsMeta?.spectral_technique ?? null,
+      x_title: dsInfo.x_title ?? dsMeta?.x_title ?? null,
+      x_units: dsInfo.x_units ?? dsMeta?.x_units ?? null,
+      data_quantity: dsInfo.data_quantity ?? dsMeta?.data_quantity ?? null,
+      value_units: dsMeta?.value_units ?? null,
+      description: dsInfo.description ?? null,
+    } : null;
+
     return {
       workflow_id: workflow.workflowId,
       workflow_name: workflow.workflowName,
@@ -95,6 +111,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
       })),
       n_samples,
       n_features,
+      dataset_context,
     };
   }
 
