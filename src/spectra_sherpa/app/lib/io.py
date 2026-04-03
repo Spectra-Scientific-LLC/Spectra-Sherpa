@@ -672,15 +672,6 @@ def load_csv_as_sherpa(filepath: Union[str, Path]) -> "SherpaDataset":
                     "properties": {col: df[col].tolist() for col in prop_cols},
                 }
 
-        # When wavelengths are not strictly monotonic (e.g. 43 wavelengths
-        # repeated at 3 spatial positions in OES data), duplicate x-values
-        # cause chart artifacts.  Use sequential channel indices so every
-        # feature gets a unique x position and the spectral shape is preserved.
-        if len(wavelengths) > 1 and not (
-            bool(np.all(np.diff(wavelengths) > 0)) or bool(np.all(np.diff(wavelengths) < 0))
-        ):
-            wavelengths = np.arange(len(wavelengths), dtype=np.float64)
-
         return SherpaDataset(
             X=data,
             feature_axis=SpectralAxis(values=wavelengths, title="Wavenumber"),
