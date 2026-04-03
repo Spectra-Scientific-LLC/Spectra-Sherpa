@@ -672,6 +672,27 @@ def load_csv_as_sherpa(filepath: Union[str, Path]) -> "SherpaDataset":
                     "properties": {col: df[col].tolist() for col in prop_cols},
                 }
 
+        # Ensure wavelengths are strictly monotonic for charting.
+        # Datasets like Metal Etch OES have 43 wavelengths repeated at
+        # 3 spatial positions (129 total).  Duplicate x-values cause
+        # Plotly to draw diagonal jump lines.  Make them monotonic by
+        # adding a cumulative offset that preserves the original values
+        # at position 1 and shifts subsequent repeats just past the
+        # previous group's maximum.
+        if len(wavelengths) > 1 and not (
+            bool(np.all(np.diff(wavelengths) > 0)) or bool(np.all(np.diff(wavelengths) < 0))
+        ):
+            mono = np.empty_like(wavelengths)
+            offset = 0.0
+            prev = wavelengths[0] - 1  # force first value to be "increasing"
+            for i, v in enumerate(wavelengths):
+                if v <= prev:
+                    # New group detected — shift past the previous maximum
+                    offset = mono[i - 1] + 1.0 if i > 0 else 0.0
+                mono[i] = v + offset
+                prev = v
+            wavelengths = mono
+
         return SherpaDataset(
             X=data,
             feature_axis=SpectralAxis(values=wavelengths, title="Wavenumber"),
