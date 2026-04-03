@@ -316,16 +316,20 @@ class TestTrackedLegacyAuthSplit:
             user = User(username="after-upgrade")
             session.add(user)
             session.flush()
-            row = session.execute(
-                text(
-                    """
+            row = (
+                session.execute(
+                    text(
+                        """
                     SELECT username, password_hash, is_superuser, login_count
                     FROM "user"
                     WHERE username = :username
                     """
-                ),
-                {"username": "after-upgrade"},
-            ).mappings().one()
+                    ),
+                    {"username": "after-upgrade"},
+                )
+                .mappings()
+                .one()
+            )
             assert row["username"] == "after-upgrade"
             assert row["password_hash"] is None
             assert row["is_superuser"] in (None, 0, False)
@@ -367,16 +371,20 @@ class TestLegacyAuthDefaults:
         with Session(sync_engine) as session:
             session.add(User(username="password-hash-only"))
             session.flush()
-            row = session.execute(
-                text(
-                    """
+            row = (
+                session.execute(
+                    text(
+                        """
                     SELECT password_hash, is_superuser, login_count
                     FROM "user"
                     WHERE username = :username
                     """
-                ),
-                {"username": "password-hash-only"},
-            ).mappings().one()
+                    ),
+                    {"username": "password-hash-only"},
+                )
+                .mappings()
+                .one()
+            )
             assert row["password_hash"] is None
             assert row["is_superuser"] == 0
             assert row["login_count"] == 0
