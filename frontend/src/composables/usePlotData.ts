@@ -1436,6 +1436,16 @@ export function usePlotData(
       return plots;
     }
 
+    if (nt === "diagnostics.holdout_evaluation" || nt === "diagnostics.cross_validation") {
+      const vizObj = (nodeOutput.value?.ports?.default?.value as Record<string, unknown>)?.visualization as Record<string, unknown> | undefined;
+      if (vizObj?.type === "confusion_matrix") {
+        plots.push({ key: "holdout_confusion", label: "Confusion Matrix" });
+      } else {
+        plots.push({ key: "holdout_regression", label: "Predicted vs Actual" });
+      }
+      return plots;
+    }
+
     // Data / Preprocess nodes
     if (isDataOrPreprocess.value || plots.length === 0) {
       if (isGenericDataset.value) {
@@ -1603,6 +1613,39 @@ export function usePlotData(
             plot_bgcolor: BASE_PLOT_LAYOUT.plot_bgcolor,
             font: BASE_PLOT_LAYOUT.font,
           },
+        };
+      }
+
+      // Holdout / Cross-Validation evaluation
+      case "holdout_regression": {
+        const vizObj = (output.ports?.default?.value as Record<string, unknown>)?.visualization as Record<string, unknown> | undefined;
+        const pairs = (vizObj?.data as number[][]) || [];
+        if (!pairs.length) return { data: [], layout: BASE_PLOT_LAYOUT };
+        const actual = pairs.map((p: number[]) => p[0]);
+        const predicted = pairs.map((p: number[]) => p[1]);
+        const minVal = Math.min(...actual, ...predicted);
+        const maxVal = Math.max(...actual, ...predicted);
+        return {
+          data: [
+            { x: actual, y: predicted, mode: "markers", type: "scatter", name: "Samples", marker: { color: "#3b82f6" } },
+            { x: [minVal, maxVal], y: [minVal, maxVal], mode: "lines", type: "scatter", name: "1:1 Line", line: { dash: "dash", color: "#94a3b8" } },
+          ],
+          layout: { ...BASE_PLOT_LAYOUT, title: { text: "Predicted vs Actual", font: { color: "#e2e8f0", size: 14 } }, xaxis: { title: "Actual", color: "#94a3b8" }, yaxis: { title: "Predicted", color: "#94a3b8" }, showlegend: false },
+        };
+      }
+      case "holdout_confusion": {
+        const vizObj = (output.ports?.default?.value as Record<string, unknown>)?.visualization as Record<string, unknown> | undefined;
+        const cm = (vizObj?.data as number[][]) || [];
+        if (!cm.length) return { data: [], layout: BASE_PLOT_LAYOUT };
+        const labels = ((vizObj?.metadata as Record<string, unknown>)?.classes as string[]) || cm.map((_: unknown, i: number) => `Class ${i}`);
+        return {
+          data: [{
+            z: cm, x: labels, y: labels, type: "heatmap", colorscale: "Blues", showscale: true,
+            text: cm.map((row: number[]) => row.map((v: number) => String(v))),
+            texttemplate: "%{text}",
+            hovertemplate: "True: %{y}<br>Predicted: %{x}<br>Count: %{z}<extra></extra>",
+          }],
+          layout: { ...BASE_PLOT_LAYOUT, title: { text: "Confusion Matrix", font: { color: "#e2e8f0", size: 14 } }, xaxis: { title: "Predicted", color: "#94a3b8" }, yaxis: { title: "True", color: "#94a3b8", autorange: "reversed" } },
         };
       }
 

@@ -146,20 +146,12 @@
                   <div v-if="message.role === 'system'" class="system-notification">
                     {{ message.content }}
                   </div>
-                  <div v-else-if="message.content" class="chat-bubble">{{ message.content }}</div>
+                  <div v-else-if="message.content" class="chat-bubble" :class="{ 'chat-bubble--md': message.role === 'assistant' }">
+                    <VueMarkdown v-if="message.role === 'assistant'" :source="message.content" />
+                    <template v-else>{{ message.content }}</template>
+                  </div>
                 </div>
-                <div
-                  v-for="(tool, tidx) in sherpaStore.activeTools"
-                  :key="'tool-' + tidx"
-                  class="tool-progress"
-                >
-                  <i
-                    :class="tool.status === 'started' ? 'pi pi-spin pi-spinner' : 'pi pi-check-circle'"
-                    :style="{ color: tool.status === 'started' ? '#3b82f6' : '#22c55e' }"
-                  ></i>
-                  <span v-if="tool.status === 'started'">Using {{ tool.tool_name }}...</span>
-                  <span v-else>{{ tool.tool_name }} complete</span>
-                </div>
+                <!-- Tool progress is tracked internally but not shown to the user -->
                 <div v-if="sherpaStore.state === 'syncing'" class="chat-message assistant">
                   <div class="chat-bubble">Analyzing workflow...</div>
                 </div>
@@ -200,6 +192,7 @@ import InputText from "primevue/inputtext";
 import Menu from "primevue/menu";
 import { useToast } from "primevue/usetoast";
 
+import VueMarkdown from "vue-markdown-render";
 import { useLlmStore } from "@/stores/llm";
 import { useSherpaStore } from "@/stores/sherpa";
 import { useExperimentStore } from "@/stores/experiment";
@@ -1059,6 +1052,68 @@ const collapsed = computed(() => props.collapsed);
 .chat-message.user .chat-bubble {
   background: #2563eb;
   color: white;
+}
+
+.chat-bubble--md {
+  white-space: normal;
+}
+
+.chat-bubble--md :deep(p) {
+  margin: 0.4em 0;
+}
+
+.chat-bubble--md :deep(p:first-child) {
+  margin-top: 0;
+}
+
+.chat-bubble--md :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.chat-bubble--md :deep(ul),
+.chat-bubble--md :deep(ol) {
+  margin: 0.4em 0;
+  padding-left: 1.4em;
+}
+
+.chat-bubble--md :deep(code) {
+  background: rgba(0, 0, 0, 0.08);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+
+.chat-bubble--md :deep(pre) {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 8px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 0.4em 0;
+}
+
+.chat-bubble--md :deep(pre code) {
+  background: none;
+  padding: 0;
+}
+
+.chat-bubble--md :deep(h1),
+.chat-bubble--md :deep(h2),
+.chat-bubble--md :deep(h3) {
+  margin: 0.5em 0 0.3em;
+  font-size: 1em;
+  font-weight: 600;
+}
+
+.chat-bubble--md :deep(table) {
+  border-collapse: collapse;
+  margin: 0.4em 0;
+  font-size: 0.9em;
+}
+
+.chat-bubble--md :deep(th),
+.chat-bubble--md :deep(td) {
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  padding: 3px 8px;
 }
 
 .chat-input {

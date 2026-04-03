@@ -625,17 +625,29 @@ def load_csv_as_sherpa(filepath: Union[str, Path]) -> "SherpaDataset":
     if df.empty:
         raise ValueError(f"Empty CSV file: {filepath}")
 
-    # Partition columns: float-parseable headers vs string headers
+    # Partition columns: float-parseable headers vs string headers.
+    # Pandas mangles duplicate column names by appending ".N" suffixes
+    # (e.g. "250.0" → "250.0", "250.0.1", "250.0.2").  Strip the
+    # trailing ".N" before the float test so mangled duplicates are
+    # still recognised as spectral columns.
     spectral_cols: list[str] = []
     x_vals: list[float] = []
     label_cols: list[str] = []
+
+    _MANGLED_SUFFIX = re.compile(r"\.\d+$")
 
     for col in df.columns:
         try:
             x_vals.append(float(col))
             spectral_cols.append(col)
         except (ValueError, TypeError):
-            label_cols.append(col)
+            # Check for pandas-mangled duplicate: strip trailing ".N"
+            stripped = _MANGLED_SUFFIX.sub("", col)
+            try:
+                x_vals.append(float(stripped))
+                spectral_cols.append(col)
+            except (ValueError, TypeError):
+                label_cols.append(col)
 
     # Extract sample labels from the first string column (if any)
     sample_labels: list[str] | None = None

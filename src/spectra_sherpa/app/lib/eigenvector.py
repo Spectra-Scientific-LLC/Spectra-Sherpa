@@ -89,7 +89,13 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
         "technique": "NIR",
         "x_title": "Wavelength",
         "x_units": "nm",
-        "description": "SWRI Diesel fuels — NIR spectra with 7 reference properties",
+        "description": (
+            "Near-infrared spectra of diesel fuels from Southwest Research Institute "
+            "(U.S. Army sponsored). Reference properties include BP50 (boiling point), "
+            "CN (cetane number), D4052 (density), FLASH (flash point), FREEZE (freezing "
+            "temperature), TOTAL (total aromatics), and VISC (viscosity). Widely used "
+            "for NIR calibration benchmarking and PLS regression development."
+        ),
     },
     # --- SWRI Diesel NIR (.mat format) ---
     "diesel_nir_mat": {
@@ -102,7 +108,13 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
         "technique": "NIR",
         "x_title": "Wavelength",
         "x_units": "nm",
-        "description": "SWRI Diesel fuels — NIR spectra (.mat format) with 7 reference properties",
+        "description": (
+            "Near-infrared spectra of diesel fuels from Southwest Research Institute "
+            "(U.S. Army sponsored). Reference properties include BP50 (boiling point), "
+            "CN (cetane number), D4052 (density), FLASH (flash point), FREEZE (freezing "
+            "temperature), TOTAL (total aromatics), and VISC (viscosity). Widely used "
+            "for NIR calibration benchmarking and PLS regression development."
+        ),
     },
     # --- Corn instrument standardization ---
     "corn_m5": {
@@ -116,7 +128,13 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
         "technique": "NIR",
         "x_title": "Channel",
         "x_units": None,
-        "description": "Corn NIR (Infratec M5) — moisture, oil, protein, starch",
+        "description": (
+            "80 samples of corn measured on the Infratec M5 NIR spectrometer. "
+            "Wavelength range 1100-2498 nm at 2 nm intervals (700 channels). "
+            "Reference properties: moisture, oil, protein, and starch. Data "
+            "originally from Cargill, commonly used for instrument standardization "
+            "and transfer benchmarking."
+        ),
     },
     "corn_mp5": {
         "label": "Corn MP5 NIR (80 samples, 700 channels)",
@@ -128,7 +146,13 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
         "technique": "NIR",
         "x_title": "Channel",
         "x_units": None,
-        "description": "Corn NIR (Infratec MP5) — moisture, oil, protein, starch",
+        "description": (
+            "80 samples of corn measured on the Infratec MP5 NIR spectrometer. "
+            "Wavelength range 1100-2498 nm at 2 nm intervals (700 channels). "
+            "Reference properties: moisture, oil, protein, and starch. Data "
+            "originally from Cargill, commonly used for instrument standardization "
+            "and transfer benchmarking."
+        ),
     },
     "corn_mp6": {
         "label": "Corn MP6 NIR (80 samples, 700 channels)",
@@ -140,7 +164,13 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
         "technique": "NIR",
         "x_title": "Channel",
         "x_units": None,
-        "description": "Corn NIR (Infratec MP6) — moisture, oil, protein, starch",
+        "description": (
+            "80 samples of corn measured on the Infratec MP6 NIR spectrometer. "
+            "Wavelength range 1100-2498 nm at 2 nm intervals (700 channels). "
+            "Reference properties: moisture, oil, protein, and starch. Data "
+            "originally from Cargill, commonly used for instrument standardization "
+            "and transfer benchmarking."
+        ),
     },
     # --- CGL grain protein NIR ---
     "cgl_nir": {
@@ -154,8 +184,10 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
         "x_title": "Wavelength",
         "x_units": "nm",
         "description": (
-            "CGL grain NIR — 117 wavelengths (1104-2496 nm), "
-            "4 reference properties (dry/wet gluten, moisture, protein)"
+            "Full three-component mixture design DOE for prediction of casein, "
+            "glucose, lactate and moisture (wt%) from NIR. 231 samples, 117 "
+            "wavelengths (1104-2496 nm). Data from Tormod Naes and Tomas Isaksson. "
+            "Reference properties: dry gluten, moisture, protein, wet gluten."
         ),
     },
     # --- NIR Shootout 2002 (pharmaceutical tablets) ---
@@ -171,8 +203,11 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
         "x_title": "Wavelength",
         "x_units": "nm",
         "description": (
-            "NIR Shootout 2002 — calibration set, instrument 1. "
-            "Pharmaceutical tablet NIR with active ingredient, hardness, weight."
+            "2002 International Diffuse Reflectance Conference (IDRC) Shootout "
+            "data set — calibration set, instrument 1. 654 pharmaceutical tablets "
+            "from two spectrometers divided into calibration, validation, and test "
+            "sets. Reference properties: active ingredient concentration, hardness, "
+            "and tablet weight."
         ),
     },
     "nir_shootout_cal2": {
@@ -186,8 +221,11 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
         "x_title": "Wavelength",
         "x_units": "nm",
         "description": (
-            "NIR Shootout 2002 — calibration set, instrument 2. "
-            "Pharmaceutical tablet NIR with active ingredient, hardness, weight."
+            "2002 International Diffuse Reflectance Conference (IDRC) Shootout "
+            "data set — calibration set, instrument 2. 654 pharmaceutical tablets "
+            "from two spectrometers divided into calibration, validation, and test "
+            "sets. Reference properties: active ingredient concentration, hardness, "
+            "and tablet weight."
         ),
     },
     "nir_shootout_test1": {
@@ -202,8 +240,11 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
         "x_title": "Wavelength",
         "x_units": "nm",
         "description": (
-            "NIR Shootout 2002 — test set, instrument 1. "
-            "Pharmaceutical tablet NIR with active ingredient, hardness, weight."
+            "2002 International Diffuse Reflectance Conference (IDRC) Shootout "
+            "data set — test set, instrument 1. 654 pharmaceutical tablets "
+            "from two spectrometers divided into calibration, validation, and test "
+            "sets. Reference properties: active ingredient concentration, hardness, "
+            "and tablet weight."
         ),
     },
     "nir_shootout_test2": {
@@ -217,8 +258,11 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
         "x_title": "Wavelength",
         "x_units": "nm",
         "description": (
-            "NIR Shootout 2002 — test set, instrument 2. "
-            "Pharmaceutical tablet NIR with active ingredient, hardness, weight."
+            "2002 International Diffuse Reflectance Conference (IDRC) Shootout "
+            "data set — test set, instrument 2. 654 pharmaceutical tablets "
+            "from two spectrometers divided into calibration, validation, and test "
+            "sets. Reference properties: active ingredient concentration, hardness, "
+            "and tablet weight."
         ),
     },
     # --- Metal Etch process monitoring ---
@@ -233,9 +277,13 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
         "x_title": "Wavelength",
         "x_units": "nm",
         "description": (
-            "LAM 9600 Metal Etcher — Optical Emission Spectroscopy. "
-            "126 wafers (106 normal + 20 fault), 129 wavelengths (250-792 nm). "
-            "Per-wafer time-averaged spectra."
+            "Optical Emission Spectroscopy data from a LAM 9600 Metal Etcher. "
+            "Integrated peak areas at 43 wavelengths measured at 3 different "
+            "positions perpendicular to gas flow (129 total features). 126 wafers "
+            "(106 normal from 3 experiments + 20 with intentionally induced faults). "
+            "Per-wafer time-averaged. Originally from Texas Instruments as part of "
+            "the SEMATECH J-88 project. See: Wise et al., J. Chemometrics, 13, "
+            "379-396 (1999)."
         ),
     },
     "metal_etch_machine": {
@@ -248,9 +296,12 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
         "x_title": "Variable",
         "x_units": None,
         "description": (
-            "LAM 9600 Metal Etcher — machine sensor data. "
-            "129 wafers (108 normal + 21 fault), 21 process variables "
-            "(BCl3/Cl2 flow, RF power, pressure, etc.). Per-wafer time-averaged."
+            "Engineering sensor data from a LAM 9600 Metal Etcher. "
+            "21 process variables (BCl3/Cl2 flow, RF power, pressure, TCP tuner, "
+            "vat valve, etc.). 129 wafers (108 normal + 21 fault) from 3 experiments "
+            "run several weeks apart. Per-wafer time-averaged. Originally from Texas "
+            "Instruments as part of the SEMATECH J-88 project. See: Wise et al., "
+            "J. Chemometrics, 13, 379-396 (1999)."
         ),
     },
     "metal_etch_rfm": {
@@ -263,9 +314,12 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
         "x_title": "Variable",
         "x_units": None,
         "description": (
-            "LAM 9600 Metal Etcher — RF Monitor data. "
-            "126 wafers (106 normal + 20 fault), 19 RF variables "
-            "(voltage, current, phase). Per-wafer time-averaged."
+            "RF Monitor data from a LAM 9600 Metal Etcher. "
+            "71 RF variables (voltages, currents, phases across sensor stages). "
+            "126 wafers (106 normal + 20 fault) from 3 experiments run several "
+            "weeks apart. Per-wafer time-averaged. Originally from Texas Instruments "
+            "as part of the SEMATECH J-88 project. See: Wise et al., "
+            "J. Chemometrics, 13, 379-396 (1999)."
         ),
     },
 }

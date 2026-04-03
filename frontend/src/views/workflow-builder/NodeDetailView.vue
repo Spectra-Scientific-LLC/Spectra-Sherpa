@@ -1609,7 +1609,7 @@ const mapMetadataParams = (_nodeType: string, parameters: any[]): any[] => {
       min: param.min_value,
       max: param.max_value,
       step: param.step,
-      options: param.options,
+      options: param.options?.map((opt: any) => typeof opt === 'string' ? { label: opt, value: opt } : opt),
       description: param.description,
       default: param.default,
       required: param.required,
@@ -4445,9 +4445,10 @@ const holdoutConfusionLayout = computed(() => ({
 const holdoutRegressionData = computed(() => {
   const viz = holdoutVisualization.value;
   if (!viz || viz.type !== "predicted_vs_actual") return [];
-  const predicted = (viz as Record<string, unknown>).predicted as number[] || [];
-  const actual = (viz as Record<string, unknown>).actual as number[] || [];
-  if (!predicted.length) return [];
+  const pairs = viz.data as number[][] || [];
+  if (!pairs.length) return [];
+  const actual = pairs.map((p: number[]) => p[0]);
+  const predicted = pairs.map((p: number[]) => p[1]);
   const minVal = Math.min(...actual, ...predicted);
   const maxVal = Math.max(...actual, ...predicted);
   return [

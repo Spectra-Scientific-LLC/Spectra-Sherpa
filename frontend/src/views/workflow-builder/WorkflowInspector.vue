@@ -496,7 +496,7 @@
                 <template v-else-if="param.param_type === 'select' && param.options">
                   <Dropdown
                     v-model="localParams[param.name]"
-                    :options="param.options"
+                    :options="normalizeOptions(param.options)"
                     optionLabel="label"
                     optionValue="value"
                     :placeholder="`Select ${param.label.toLowerCase()}`"
@@ -573,7 +573,7 @@
                     <template v-else-if="param.param_type === 'select' && param.options">
                       <Dropdown
                         v-model="localParams[param.name]"
-                        :options="param.options"
+                        :options="normalizeOptions(param.options)"
                         optionLabel="label"
                         optionValue="value"
                         :placeholder="`Select ${param.label.toLowerCase()}`"
@@ -1611,6 +1611,11 @@ const nodeMetadata = computed(() => {
   if (!props.selectedNode) return null;
   return workflowStore.getNodeMetadata(props.selectedNode.type);
 });
+
+const normalizeOptions = (options: any[] | undefined): any[] | undefined => {
+  if (!options) return options;
+  return options.map((opt: any) => typeof opt === 'string' ? { label: opt, value: opt } : opt);
+};
 
 const mapMetadataParamNames = (
   _nodeType: string,
@@ -2683,7 +2688,7 @@ const mapMetadataParams = (
       min: param.min_value,
       max: param.max_value,
       step: param.step,
-      options: param.options,
+      options: normalizeOptions(param.options),
       description: param.description,
       default: param.default,
       required: param.required,
