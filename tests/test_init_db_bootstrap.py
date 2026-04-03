@@ -11,13 +11,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
+from spectra_sherpa.app import models  # noqa: F401  # Ensure metadata is populated for create_all paths.
 from spectra_sherpa.app.db.base import Base
+from spectra_sherpa.app.models.user import User
 
 
 def _alembic_cfg() -> Config:
@@ -36,6 +41,11 @@ def _alembic_cfg() -> Config:
 
 def _run_upgrade_head(async_url: str) -> None:
     """Run alembic upgrade head with settings.database_url overridden."""
+    _run_upgrade(async_url, "head")
+
+
+def _run_upgrade(async_url: str, revision: str) -> None:
+    """Run alembic upgrade to a specific revision with settings overridden."""
     from spectra_sherpa.app.core.config import settings
 
     original = settings.database_url
@@ -43,7 +53,7 @@ def _run_upgrade_head(async_url: str) -> None:
     object.__setattr__(settings, "database_url", async_url)
     try:
         cfg = _alembic_cfg()
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, revision)
     finally:
         object.__setattr__(settings, "database_url", original)
 
@@ -235,5 +245,141 @@ class TestBootstrapLegacyWithOldCustomAlgo:
         # Verify custom_algo has been dropped
         inspector = sa_inspect(sync_engine)
         assert "custom_algo" not in inspector.get_table_names()
+
+        sync_engine.dispose()
+
+
+class TestTrackedLegacyAuthSplit:
+    """Scenario: tracked DB still has the pre-split user.password_hash constraint."""
+
+    def test_upgrade_head_unblocks_legacy_user_insert(self, tmp_path):
+        db_path = tmp_path / "tracked_legacy_auth.db"
+        sync_url = _sync_url(db_path)
+        async_url = _async_url(db_path)
+
+        sync_engine = sa.create_engine(sync_url)
+        with sync_engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                CREATE TABLE "user" (
+                    id INTEGER PRIMARY KEY,
+                    username VARCHAR(100) NOT NULL UNIQUE,
+                    password_hash VARCHAR(255) NOT NULL,
+                    is_superuser BOOLEAN NOT NULL DEFAULT 0,
+                    api_key_hash VARCHAR(255),
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                    is_active BOOLEAN NOT NULL DEFAULT 1,
+                    email VARCHAR(255),
+                    last_active DATETIME,
+                    last_login_at DATETIME,
+                    login_count INTEGER NOT NULL DEFAULT 0
+                )
+            """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                CREATE TABLE alembic_version (
+                    version_num VARCHAR(32) NOT NULL PRIMARY KEY
+                )
+            """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                INSERT INTO alembic_version (version_num)
+                VALUES ('r8s0t2u4v037')
+            """
+                )
+            )
+
+        with Session(sync_engine) as session:
+            session.add(User(username="before-upgrade"))
+            with pytest.raises(IntegrityError):
+                session.flush()
+            session.rollback()
+
+        _run_upgrade_head(async_url)
+
+        inspector = sa_inspect(sync_engine)
+        columns = {column["name"]: column for column in inspector.get_columns("user")}
+        assert columns["password_hash"]["nullable"] is True
+        assert columns["is_superuser"]["nullable"] is True
+        assert columns["login_count"]["nullable"] is True
+        assert columns["email"]["nullable"] is True
+
+        with Session(sync_engine) as session:
+            user = User(username="after-upgrade")
+            session.add(user)
+            session.flush()
+            row = session.execute(
+                text(
+                    """
+                    SELECT username, password_hash, is_superuser, login_count
+                    FROM "user"
+                    WHERE username = :username
+                    """
+                ),
+                {"username": "after-upgrade"},
+            ).mappings().one()
+            assert row["username"] == "after-upgrade"
+            assert row["password_hash"] is None
+            assert row["is_superuser"] in (None, 0, False)
+            assert row["login_count"] in (None, 0)
+            session.rollback()
+
+        sync_engine.dispose()
+
+
+class TestLegacyAuthDefaults:
+    """Validate the narrower production hotfix behavior directly."""
+
+    def test_password_hash_relaxation_alone_unblocks_current_user_insert(self, tmp_path):
+        db_path = tmp_path / "legacy_defaults.db"
+        sync_engine = sa.create_engine(_sync_url(db_path))
+
+        with sync_engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                CREATE TABLE "user" (
+                    id INTEGER PRIMARY KEY,
+                    username VARCHAR(100) NOT NULL UNIQUE,
+                    password_hash VARCHAR(255),
+                    is_superuser BOOLEAN NOT NULL DEFAULT 0,
+                    api_key_hash VARCHAR(255),
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                    is_active BOOLEAN NOT NULL DEFAULT 1,
+                    email VARCHAR(255),
+                    last_active DATETIME,
+                    last_login_at DATETIME,
+                    login_count INTEGER NOT NULL DEFAULT 0
+                )
+            """
+                )
+            )
+
+        with Session(sync_engine) as session:
+            session.add(User(username="password-hash-only"))
+            session.flush()
+            row = session.execute(
+                text(
+                    """
+                    SELECT password_hash, is_superuser, login_count
+                    FROM "user"
+                    WHERE username = :username
+                    """
+                ),
+                {"username": "password-hash-only"},
+            ).mappings().one()
+            assert row["password_hash"] is None
+            assert row["is_superuser"] == 0
+            assert row["login_count"] == 0
+            session.rollback()
 
         sync_engine.dispose()
