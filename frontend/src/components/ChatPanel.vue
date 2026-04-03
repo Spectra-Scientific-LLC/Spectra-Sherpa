@@ -251,6 +251,14 @@ const activeTabLabel = computed(() => (activeTab.value === "sherpa" ? "Sherpa Ad
 const hasSherpaSubscription = computed(
   () => (appConfig.value?.subscription?.plan || "none") !== "none"
 );
+const hasExecutionResults = computed(
+  () => Object.keys(workflowStore.lastExecutionResults || {}).length > 0
+);
+
+const DEMO_WELCOME_MESSAGE =
+  "Recommended flow: 1. Create a project. 2. Pick a template. 3. Load an example dataset. 4. Review the data. 5. Run the workflow. 6. Analyze the results with Sherpa Advisor.";
+const RUN_WORKFLOW_HINT =
+  "Run the workflow first, then ask Sherpa about accuracy, diagnostics, predictions, or next steps.";
 
 const switchToSherpa = () => {
   activeTab.value = "sherpa";
@@ -258,9 +266,19 @@ const switchToSherpa = () => {
   if (isDemoMode.value && sherpaStore.messages.length === 0) {
     sherpaStore.messages.push({
       role: "system",
-      content:
-        "Welcome to Sherpa Advisor! Try loading a Demo Pick template, " +
-        "then click the refresh button to get AI-powered analysis recommendations.",
+      content: DEMO_WELCOME_MESSAGE,
+    });
+  }
+  if (
+    workflowStore.workflowId &&
+    !hasExecutionResults.value &&
+    !sherpaStore.messages.some(
+      (message) => message.role === "system" && message.content === RUN_WORKFLOW_HINT
+    )
+  ) {
+    sherpaStore.messages.push({
+      role: "system",
+      content: RUN_WORKFLOW_HINT,
     });
   }
   // Auto-sync on switch (proactive assessment)
@@ -269,8 +287,11 @@ const switchToSherpa = () => {
 
 const inputPlaceholder = computed(() => {
   if (activeTab.value === "sherpa") {
+    if (workflowStore.workflowId && !hasExecutionResults.value) {
+      return "Run the workflow first, then ask Sherpa about the results...";
+    }
     return workflowStore.workflowId
-      ? "Ask Sherpa about your workflow..."
+      ? "Ask Sherpa about your workflow results, diagnostics, or next steps..."
       : "Ask Sherpa about chemistry, datasets, or your next workflow step...";
   }
   return "Ask about spectra, exports, or processing... (Type '/' to clear chat)";

@@ -153,28 +153,98 @@ export const useSherpaStore = defineStore("sherpa", () => {
     const workflow = useWorkflowStore();
     const dataStore = useDataStore();
 
-    // Collect per-node execution results (shape, type) when available
     const nodes = workflow.nodes.map((n) => {
+      const meta = workflow.getNodeMetadata(n.type);
       const exec = n.executionState;
+      const paramKeys = new Set(Object.keys(n.params || {}));
+      const paramDescriptions =
+        meta?.parameters
+          ?.filter((param) => paramKeys.has(param.name))
+          .map((param) => ({
+            name: param.name,
+            label: param.label,
+            description: param.description || null,
+          })) ?? null;
+
       return {
         node_id: String(n.id),
         node_type: n.type,
-        label: n.type,
+        label: meta?.label ?? n.type,
         parameters: n.params || {},
         result_shape: exec?.output_shape ?? null,
         result_statistics: null,
+        description: meta?.description ?? null,
+        param_descriptions: paramDescriptions,
+        output_type: exec?.output_type ?? meta?.output_type ?? null,
+        execution_status: exec?.status ?? null,
       };
     });
 
-    // Derive top-level data dimensions from the first DATA node with results
+    const edges = workflow.edges.map((e) => ({
+      from_node_id: String(e.from),
+      to_node_id: String(e.to),
+      from_output: e.fromPort || "default",
+      to_input: e.toPort || "default",
+    }));
+
+    // Derive top-level data dimensions from the first data node with results
     let n_samples: number | null = null;
     let n_features: number | null = null;
+    const lastExecutionResults = workflow.lastExecutionResults as Record<
+      string,
+      Record<string, unknown>
+    > | null;
     for (const n of workflow.nodes) {
-      if (n.type === "DATA" && n.executionState?.output_shape) {
+      if (!n.type.startsWith("data.")) {
+        continue;
+      }
+
+      const result = lastExecutionResults?.[String(n.id)];
+      if (result?.n_samples != null) {
+        n_samples = Number(result.n_samples);
+      }
+      if (result?.n_features != null) {
+        n_features = Number(result.n_features);
+      }
+      if (n_samples != null || n_features != null) {
+        break;
+      }
+
+      if (n.executionState?.output_shape) {
         const shape = n.executionState.output_shape;
         n_samples = shape[0] ?? null;
         n_features = shape[1] ?? null;
         break;
+      }
+    }
+
+    let results_summary: Record<string, Record<string, unknown>> | null = null;
+    if (lastExecutionResults) {
+      results_summary = {};
+      for (const [nodeId, rawResult] of Object.entries(lastExecutionResults)) {
+        if (!rawResult || typeof rawResult !== "object") {
+          continue;
+        }
+        const result = rawResult as Record<string, unknown>;
+        const metadata = result.metadata;
+        results_summary[nodeId] = {
+          type: result.type ?? null,
+          shape: result.shape ?? null,
+          n_samples: result.n_samples ?? null,
+          n_features: result.n_features ?? null,
+          metadata:
+            metadata && typeof metadata === "object"
+              ? Object.fromEntries(
+                  Object.entries(metadata as Record<string, unknown>).filter(
+                    ([, value]) =>
+                      value == null ||
+                      typeof value === "string" ||
+                      typeof value === "number" ||
+                      typeof value === "boolean"
+                  )
+                )
+              : null,
+        };
       }
     }
 
@@ -195,16 +265,18 @@ export const useSherpaStore = defineStore("sherpa", () => {
     return {
       workflow_id: workflow.workflowId,
       workflow_name: workflow.workflowName,
+      workflow_description: workflow.workflowDescription || null,
+      template_id: workflow.currentTemplateId ?? null,
       tier: "summaries",
       nodes,
-      edges: workflow.edges.map((e) => ({
-        from_node_id: String(e.from),
-        to_node_id: String(e.to),
-        from_output: e.fromPort || "default",
-        to_input: e.toPort || "default",
-      })),
+      edges,
       n_samples,
       n_features,
+      diagnostics:
+        Object.keys(workflow.lastExecutionDiagnostics || {}).length > 0
+          ? workflow.lastExecutionDiagnostics
+          : null,
+      results_summary,
       dataset_context,
     };
   }
