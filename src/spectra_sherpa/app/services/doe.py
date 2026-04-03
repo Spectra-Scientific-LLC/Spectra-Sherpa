@@ -766,8 +766,7 @@ def export_xml(
         if batch:
             ET.SubElement(a_elem, "batch").text = str(batch)
 
-    # nosec B318 — self-generated XML
-    xml_str = minidom.parseString(ET.tostring(root)).toprettyxml(indent="  ")
+    xml_str = minidom.parseString(ET.tostring(root)).toprettyxml(indent="  ")  # nosec B318
     return xml_str
 
 
