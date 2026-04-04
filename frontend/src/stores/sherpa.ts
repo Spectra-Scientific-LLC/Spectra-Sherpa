@@ -110,6 +110,29 @@ export const useSherpaStore = defineStore("sherpa", () => {
     }
   }
 
+  function _formatDemoLimitDetail(payload: Record<string, unknown>): string | undefined {
+    const details: string[] = [];
+    if (typeof payload.remaining === "number" && Number.isFinite(payload.remaining)) {
+      details.push(`Remaining: ${payload.remaining}`);
+    }
+    if (
+      typeof payload.session_expiry_hours === "number"
+      && Number.isFinite(payload.session_expiry_hours)
+    ) {
+      details.push(
+        `Usage resets after ${payload.session_expiry_hours} hour${payload.session_expiry_hours === 1 ? "" : "s"} of inactivity.`
+      );
+    }
+    return details.length > 0 ? details.join("\n") : undefined;
+  }
+
+  function _inlineNotificationDetail(detail: string | undefined): string {
+    if (!detail) {
+      return "";
+    }
+    return ` ${detail.replace(/\n+/g, " ")}`;
+  }
+
   function clearCommunicationTimer(): void {
     if (communicationTimer !== null) {
       clearTimeout(communicationTimer);
@@ -659,10 +682,16 @@ export const useSherpaStore = defineStore("sherpa", () => {
       if (isDemoLimitError) {
         const message = payload.message || "Demo limit reached";
         lastSyncError.value = message;
-        _recordActivity(message, { notify: true, severity: "warning" });
+        const detail = _formatDemoLimitDetail(payload as Record<string, unknown>);
+        _recordActivity(message);
+        _notifySherpa(
+          `${message}${_inlineNotificationDetail(detail)}`,
+          "warning",
+          detail,
+        );
         messages.value.push({
           role: "system",
-          content: message,
+          content: detail ? `${message}\n${detail}` : message,
         });
       } else {
         lastSyncError.value = payload.detail || "Sherpa error";

@@ -388,6 +388,8 @@ describe("Sherpa Store communication state", () => {
           limit_type: "sherpa",
           message: "Demo Sherpa interaction limit reached (200 interactions per session)",
           upgrade_url: "",
+          remaining: 0,
+          session_expiry_hours: 24,
         },
       })
     );
@@ -396,10 +398,13 @@ describe("Sherpa Store communication state", () => {
       "Demo Sherpa interaction limit reached (200 interactions per session)"
     );
     expect(sherpa.messages.at(-1)?.content).toBe(
-      "Demo Sherpa interaction limit reached (200 interactions per session)"
+      "Demo Sherpa interaction limit reached (200 interactions per session)\nRemaining: 0\nUsage resets after 24 hours of inactivity."
     );
     expect(notifications.notifications[0]?.message).toBe(
-      "Demo Sherpa interaction limit reached (200 interactions per session)"
+      "Demo Sherpa interaction limit reached (200 interactions per session) Remaining: 0 Usage resets after 24 hours of inactivity."
+    );
+    expect(notifications.notifications[0]?.detail).toBe(
+      "Remaining: 0\nUsage resets after 24 hours of inactivity."
     );
 
     sherpa.dispose();

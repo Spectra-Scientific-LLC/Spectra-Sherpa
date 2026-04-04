@@ -710,7 +710,28 @@
                 <span>{{ outputMetadata.summary?.n_peaks ?? 0 }} consensus peaks from {{ outputMetadata.summary?.n_samples ?? 0 }} spectra</span>
               </div>
             </template>
-            <!-- Standard spectral/array stats -->
+            <!-- Spectral stats: mean ± std per wavelength -->
+            <template v-else-if="statsPlotPaths">
+              <div class="stats-inline-plot">
+                <svg viewBox="0 0 400 160" preserveAspectRatio="xMidYMid meet" class="stats-svg">
+                  <!-- Std band (mean ± std) -->
+                  <path v-if="statsPlotPaths.band" :d="statsPlotPaths.band" fill="rgba(59,130,246,0.15)" stroke="none" />
+                  <!-- Mean line -->
+                  <path :d="statsPlotPaths.mean" fill="none" stroke="#3b82f6" stroke-width="1.5" />
+                  <!-- Std line -->
+                  <path v-if="statsPlotPaths.std" :d="statsPlotPaths.std" fill="none" stroke="#f59e0b" stroke-width="1" stroke-dasharray="4,3" />
+                </svg>
+                <div class="stats-plot-legend">
+                  <span><span style="color:#3b82f6">―</span> Mean</span>
+                  <span><span style="color:#f59e0b">- -</span> Std</span>
+                </div>
+              </div>
+              <div v-if="outputMetadata.summary" class="stats-summary">
+                <span class="summary-label">Overall:</span>
+                <span>{{ outputMetadata.summary.n_samples ?? 0 }} samples × {{ outputMetadata.summary.n_features ?? 0 }} features</span>
+              </div>
+            </template>
+            <!-- Fallback: generic table -->
             <template v-else>
               <div class="stats-table" style="max-height: 200px; overflow-y: auto;">
                 <div
@@ -718,15 +739,10 @@
                   :key="index"
                   class="stat-row"
                 >
-                  <span class="stat-sample">Sample {{ stat.sample }}</span>
+                  <span class="stat-sample">{{ stat.wavelength != null ? `λ ${stat.wavelength}` : `#${index + 1}` }}</span>
                   <span class="stat-value">μ: {{ typeof stat.mean === 'number' ? stat.mean.toFixed(4) : '—' }}</span>
                   <span class="stat-value">σ: {{ typeof stat.std === 'number' ? stat.std.toFixed(4) : '—' }}</span>
-                  <span class="stat-value">min: {{ typeof stat.min === 'number' ? stat.min.toFixed(4) : '—' }}</span>
-                  <span class="stat-value">max: {{ typeof stat.max === 'number' ? stat.max.toFixed(4) : '—' }}</span>
                 </div>
-                <span v-if="nodeOutput.data.length > 5" class="stats-more">
-                  +{{ nodeOutput.data.length - 5 }} more samples
-                </span>
               </div>
               <div v-if="outputMetadata.summary" class="stats-summary">
                 <span class="summary-label">Overall:</span>
@@ -1416,6 +1432,49 @@ const getStringArray = (value: unknown): string[] => {
 const outputMetadata = computed<InspectorMetadata>(() => {
   const metadata = asObject(props.nodeOutput?.metadata);
   return (metadata as InspectorMetadata) ?? {};
+});
+
+const statsPlotPaths = computed<{ mean: string; std: string; band: string } | null>(() => {
+  if (selectedNodeType.value !== "stats.summary") return null;
+  const raw = props.nodeOutput?.plots as Record<string, Record<string, number[]>> | undefined;
+  if (!raw?.mean_spectrum?.x?.length || !raw?.mean_spectrum?.y?.length) return null;
+
+  const xs: number[] = raw.mean_spectrum.x;
+  const means: number[] = raw.mean_spectrum.y;
+  const stds: number[] = raw.std_spectrum?.y ?? [];
+  const n = xs.length;
+  if (n < 2) return null;
+
+  const ml = 30, mr = 10, mt = 10, mb = 10;
+  const w = 400 - ml - mr;
+  const h = 160 - mt - mb;
+
+  const xMin = xs[0], xMax = xs[n - 1];
+  const allVals = means.concat(means.map((v, i) => v + (stds[i] ?? 0)), means.map((v, i) => v - (stds[i] ?? 0)));
+  const yMin = Math.min(...allVals);
+  const yMax = Math.max(...allVals);
+  const yRange = yMax - yMin || 1;
+  const xRange = xMax - xMin || 1;
+
+  const sx = (v: number) => ml + ((v - xMin) / xRange) * w;
+  const sy = (v: number) => mt + h - ((v - yMin) / yRange) * h;
+
+  const meanPath = means.map((v, i) => `${i === 0 ? "M" : "L"}${sx(xs[i]).toFixed(1)},${sy(v).toFixed(1)}`).join("");
+  const stdPath = stds.length === n
+    ? stds.map((v, i) => `${i === 0 ? "M" : "L"}${sx(xs[i]).toFixed(1)},${sy(v).toFixed(1)}`).join("")
+    : "";
+
+  let bandPath = "";
+  if (stds.length === n) {
+    const upper = means.map((v, i) => `${i === 0 ? "M" : "L"}${sx(xs[i]).toFixed(1)},${sy(v + stds[i]).toFixed(1)}`).join("");
+    const lower = Array.from({ length: n }, (_, i) => {
+      const ri = n - 1 - i;
+      return `L${sx(xs[ri]).toFixed(1)},${sy(means[ri] - stds[ri]).toFixed(1)}`;
+    }).join("");
+    bandPath = upper + lower + "Z";
+  }
+
+  return { mean: meanPath, std: stdPath, band: bandPath };
 });
 
 const isPeakFindingStats = computed(() => {
@@ -3254,6 +3313,26 @@ onUnmounted(() => {
 .stat-value {
   color: #94a3b8;
   font-size: 0.7rem;
+}
+
+.stats-inline-plot {
+  margin-top: 4px;
+}
+
+.stats-svg {
+  width: 100%;
+  height: auto;
+  background: #1a1f2e;
+  border-radius: 6px;
+}
+
+.stats-plot-legend {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  margin-top: 4px;
 }
 
 .stats-summary {

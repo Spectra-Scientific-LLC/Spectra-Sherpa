@@ -163,82 +163,57 @@ class StatsSummaryNode(Node):
         return await self._stats_array(np.array(input_data), None)
 
     async def _stats_dataset(self, dataset: Any) -> Dict[str, Any]:
-        """Compute statistics for SherpaDataset (raw spectra)."""
+        """Compute per-wavelength mean and std for spectral data."""
         data = np.array(dataset.data)
         if data.ndim == 1:
             data = data.reshape(1, -1)
 
         n_samples, n_features = data.shape
 
-        # Global statistics
-        summary = {
-            "n_samples": n_samples,
-            "n_features": n_features,
-            "mean": float(np.mean(data)),
-            "std": float(np.std(data)),
-            "min": float(np.min(data)),
-            "max": float(np.max(data)),
-            "median": float(np.median(data)),
-            "range": float(np.ptp(data)),
-            "q25": float(np.percentile(data, 25)),
-            "q75": float(np.percentile(data, 75)),
-        }
-
-        # Per-sample statistics
-        max_samples = int(self.parameters.get("max_samples", 100))
-        sample_stats = []
-        for i in range(min(n_samples, max_samples)):
-            sample_stats.append(
-                {
-                    "sample": i + 1,
-                    "mean": float(np.mean(data[i])),
-                    "std": float(np.std(data[i])),
-                    "min": float(np.min(data[i])),
-                    "max": float(np.max(data[i])),
-                    "median": float(np.median(data[i])),
-                }
-            )
-
-        # Per-feature statistics (which wavenumbers vary most)
+        # Per-wavelength statistics — the core output
         feature_means = np.mean(data, axis=0)
         feature_stds = np.std(data, axis=0)
-        feature_cv = feature_stds / (feature_means + 1e-10)  # Coefficient of variation
 
-        # Get feature axis if available (wavenumber, time, m/z, etc.)
+        # Get feature axis (wavelength, wavenumber, channel, etc.)
         x_coord = dataset.feature_axis
         if x_coord is not None:
             feature_values = np.array(x_coord.data).tolist()
         else:
             feature_values = list(range(n_features))
 
-        # Build histogram data for distribution visualization
-        hist, bin_edges = np.histogram(data.flatten(), bins=50)
+        # Build per-wavelength table rows for DataTable display
+        table_rows = []
+        for i in range(n_features):
+            table_rows.append(
+                {
+                    "wavelength": feature_values[i],
+                    "mean": float(feature_means[i]),
+                    "std": float(feature_stds[i]),
+                }
+            )
 
         return {
             "statistics": {
                 "input_type": "NDDataset",
-                "summary": summary,
-                "detailed": {
-                    "by_sample": sample_stats,
-                    "by_feature": {
-                        "feature_values": feature_values,
-                        "means": feature_means.tolist(),
-                        "stds": feature_stds.tolist(),
-                        "cv": feature_cv.tolist(),
-                    },
+                "summary": {
+                    "n_samples": n_samples,
+                    "n_features": n_features,
+                    "global_mean": float(np.mean(data)),
+                    "global_std": float(np.std(data)),
                 },
                 "plots": {
-                    "histogram": {
-                        "counts": hist.tolist(),
-                        "bin_edges": bin_edges.tolist(),
+                    "mean_spectrum": {
+                        "x": feature_values,
+                        "y": feature_means.tolist(),
+                        "type": "scatter",
                     },
-                    "feature_variation": {
+                    "std_spectrum": {
                         "x": feature_values,
                         "y": feature_stds.tolist(),
-                        "type": "bar",
+                        "type": "scatter",
                     },
                 },
-                "data": sample_stats,  # For DataTable compatibility
+                "data": table_rows,
                 "metadata": {
                     "type": "NDDataset",
                     "shape": [n_samples, n_features],
