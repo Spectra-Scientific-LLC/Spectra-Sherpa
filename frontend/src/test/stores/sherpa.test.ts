@@ -52,6 +52,7 @@ const mockWorkflowStore = reactive({
 
 const mockDataStore = reactive({
   catalogDatasetInfo: null as Record<string, unknown> | null,
+  fileInfo: null as Record<string, unknown> | null,
 });
 
 vi.mock("@/stores/llm", () => ({
@@ -64,6 +65,81 @@ vi.mock("@/stores/workflow", () => ({
 
 vi.mock("@/stores/data", () => ({
   useDataStore: () => mockDataStore,
+  summarizeDatasetForSherpaContext: (datasetInfo: Record<string, unknown> | null) => {
+    if (!datasetInfo) {
+      return null;
+    }
+    const metadata =
+      datasetInfo.metadata && typeof datasetInfo.metadata === "object"
+        ? (datasetInfo.metadata as Record<string, unknown>)
+        : {};
+    const xAxis =
+      datasetInfo.x_axis && typeof datasetInfo.x_axis === "object"
+        ? (datasetInfo.x_axis as Record<string, unknown>)
+        : {};
+    const xData = Array.isArray(xAxis.data)
+      ? xAxis.data.filter((value): value is number => typeof value === "number")
+      : [];
+    return {
+      label: typeof datasetInfo.label === "string" ? datasetInfo.label : null,
+      source: typeof datasetInfo.source === "string" ? datasetInfo.source : null,
+      description:
+        typeof datasetInfo.description === "string" ? datasetInfo.description : null,
+      n_samples: typeof datasetInfo.n_samples === "number" ? datasetInfo.n_samples : null,
+      n_features: typeof datasetInfo.n_features === "number" ? datasetInfo.n_features : null,
+      is_time_series:
+        typeof datasetInfo.is_time_series === "boolean"
+          ? datasetInfo.is_time_series
+          : typeof metadata.is_time_series === "boolean"
+            ? metadata.is_time_series
+            : null,
+      is_spectra:
+        typeof datasetInfo.is_spectra === "boolean"
+          ? datasetInfo.is_spectra
+          : typeof metadata.is_spectra === "boolean"
+            ? metadata.is_spectra
+            : null,
+      technique:
+        typeof datasetInfo.technique === "string"
+          ? datasetInfo.technique
+          : typeof metadata.spectral_technique === "string"
+            ? metadata.spectral_technique
+            : null,
+      x_title:
+        typeof datasetInfo.x_title === "string"
+          ? datasetInfo.x_title
+          : typeof xAxis.title === "string"
+            ? xAxis.title
+            : null,
+      x_units:
+        typeof datasetInfo.x_units === "string"
+          ? datasetInfo.x_units
+          : typeof xAxis.units === "string"
+            ? xAxis.units
+            : typeof metadata.x_units === "string"
+              ? metadata.x_units
+              : null,
+      x_min: xData.length > 0 ? xData[0] : null,
+      x_max: xData.length > 0 ? xData[xData.length - 1] : null,
+      data_quantity:
+        typeof datasetInfo.data_quantity === "string"
+          ? datasetInfo.data_quantity
+          : typeof metadata.data_quantity === "string"
+            ? metadata.data_quantity
+            : null,
+      value_units:
+        typeof metadata.value_units === "string" ? metadata.value_units : null,
+      metadata_summary: {
+        data_type: typeof metadata.data_type === "string" ? metadata.data_type : null,
+        spectral_technique:
+          typeof metadata.spectral_technique === "string"
+            ? metadata.spectral_technique
+            : null,
+        file_name: null,
+        has_wavenumber_axis: xData.length > 0,
+      },
+    };
+  },
 }));
 
 import { SHERPA_WS_EVENT } from "@/lib/sherpaWs";
@@ -100,6 +176,7 @@ describe("Sherpa Store communication state", () => {
     mockWorkflowStore.lastExecutionDiagnostics = {};
     mockWorkflowStore.getNodeMetadata.mockClear();
     mockDataStore.catalogDatasetInfo = null;
+    mockDataStore.fileInfo = null;
   });
 
   afterEach(() => {
@@ -276,6 +353,61 @@ describe("Sherpa Store communication state", () => {
           accuracy: 0.97,
           model_name: "breast-cancer-pls",
         },
+      },
+    });
+  });
+
+  it("falls back to inspected file metadata for Sherpa dataset context", async () => {
+    const sherpa = useSherpaStore();
+    mockWorkflowStore.nodes = [
+      {
+        id: "data_1",
+        type: "data.source",
+        x: 0,
+        y: 0,
+        params: {},
+        executionState: { output_shape: [120, 2048], status: "completed" },
+      },
+    ];
+    mockDataStore.fileInfo = {
+      n_samples: 120,
+      n_features: 2048,
+      x_axis: {
+        data: [4000, 3998, 3996],
+        title: "Wavenumber",
+        units: "cm^-1",
+      },
+      metadata: {
+        spectral_technique: "FTIR",
+        is_spectra: true,
+        data_quantity: "Absorbance",
+        value_units: "AU",
+      },
+    };
+
+    await sherpa.sendMessage("Explain the PCA result");
+
+    const payload = JSON.parse(mockWs.send.mock.calls[0][0] as string);
+    expect(payload.payload.workflow_context.dataset_context).toEqual({
+      label: null,
+      source: null,
+      description: null,
+      n_samples: 120,
+      n_features: 2048,
+      is_time_series: null,
+      is_spectra: true,
+      technique: "FTIR",
+      x_title: "Wavenumber",
+      x_units: "cm^-1",
+      x_min: 4000,
+      x_max: 3996,
+      data_quantity: "Absorbance",
+      value_units: "AU",
+      metadata_summary: {
+        data_type: null,
+        spectral_technique: "FTIR",
+        file_name: null,
+        has_wavenumber_axis: true,
       },
     });
   });

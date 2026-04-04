@@ -74,6 +74,9 @@ export const useLlmStore = defineStore("llm", () => {
   let configPollTimer: ReturnType<typeof setInterval> | null = null;
   const SOCKET_OPEN_TIMEOUT_MS = 5000;
   const AUTH_ACK_TIMEOUT_MS = 5000;
+  const CONNECT_RETRY_ATTEMPTS = 3;
+  let connectAttempt = 0;
+  let authFallbackRetried = false;
 
   const clearReconnect = () => {
     if (reconnectTimer !== null) {
@@ -99,24 +102,14 @@ export const useLlmStore = defineStore("llm", () => {
   const resolvePendingConnect = () => {
     clearSocketOpenTimer();
     clearAuthAckTimer();
+    connectAttempt = 0;
+    authFallbackRetried = false;
     if (pendingConnectResolve) {
       const resolve = pendingConnectResolve;
       pendingConnect = null;
       pendingConnectResolve = null;
       pendingConnectReject = null;
       resolve();
-    }
-  };
-
-  const rejectPendingConnect = (error: Error) => {
-    clearSocketOpenTimer();
-    clearAuthAckTimer();
-    if (pendingConnectReject) {
-      const reject = pendingConnectReject;
-      pendingConnect = null;
-      pendingConnectResolve = null;
-      pendingConnectReject = null;
-      reject(error);
     }
   };
 
@@ -140,18 +133,42 @@ export const useLlmStore = defineStore("llm", () => {
     }, delay);
   };
 
-  const connect = (): Promise<void> => {
-    if (wsRef.value && wsRef.value.readyState === WebSocket.OPEN) {
-      connectionStatus.value = "connected";
-      return Promise.resolve();
+  const rejectPendingConnect = (error: Error) => {
+    clearSocketOpenTimer();
+    clearAuthAckTimer();
+    connectAttempt = 0;
+    authFallbackRetried = false;
+    if (pendingConnectReject) {
+      const reject = pendingConnectReject;
+      pendingConnect = null;
+      pendingConnectResolve = null;
+      pendingConnectReject = null;
+      reject(error);
     }
-    if (wsRef.value && wsRef.value.readyState === WebSocket.CONNECTING) {
-      return pendingConnect || Promise.resolve();
+  };
+
+  const schedulePendingConnectRetry = (detail: string): boolean => {
+    if (!pendingConnect || connectAttempt >= CONNECT_RETRY_ATTEMPTS) {
+      return false;
     }
-    clearReconnect();
-    allowReconnect = true;
+    emitWsTransport(
+      "connect_retry",
+      `${detail} Retrying live connection (attempt ${connectAttempt + 1} of ${CONNECT_RETRY_ATTEMPTS}).`
+    );
+    window.setTimeout(() => {
+      if (!pendingConnect) {
+        return;
+      }
+      startConnectAttempt();
+    }, 250);
+    return true;
+  };
+
+  const startConnectAttempt = () => {
+    clearSocketOpenTimer();
+    clearAuthAckTimer();
+    connectAttempt += 1;
     connectionStatus.value = "connecting";
-    lastError.value = null;
     const wsUrl = withCredentials(buildWsUrl());
     wsRef.value = new WebSocket(wsUrl);
 
@@ -195,25 +212,27 @@ export const useLlmStore = defineStore("llm", () => {
           dispatchSherpaEvent(payload);
         }
       } catch (error) {
-        // Ignore malformed messages but log them
-        console.warn('Received malformed WebSocket message:', error);
+        console.warn("Received malformed WebSocket message:", error);
         emitWsTransport("malformed_message", "Received a malformed WebSocket message.");
       }
     });
 
     wsRef.value.addEventListener("open", () => {
       clearSocketOpenTimer();
-      emitWsTransport("socket_open", "Live connection opened.");
+      emitWsTransport(
+        "socket_open",
+        connectAttempt > 1
+          ? `Live connection opened on retry ${connectAttempt}.`
+          : "Live connection opened."
+      );
       reconnectAttempts.value = 0;
-      // Authenticate via first message instead of URL query params
       wsRef.value?.send(buildAuthMessage());
       emitWsTransport("auth_sent", "WebSocket authentication sent.");
       clearAuthAckTimer();
       authAckTimer = window.setTimeout(() => {
         lastError.value = "WebSocket authentication timed out.";
         emitWsTransport("auth_timeout", "Server did not acknowledge WebSocket authentication.");
-        rejectPendingConnect(new Error("WebSocket authentication timed out."));
-        wsRef.value?.close(1008, "Authentication timeout");
+        wsRef.value?.close(4001, "Authentication timeout");
       }, AUTH_ACK_TIMEOUT_MS);
     });
 
@@ -223,13 +242,48 @@ export const useLlmStore = defineStore("llm", () => {
     });
 
     wsRef.value.addEventListener("close", (event) => {
+      const awaitingAuth = !!pendingConnect;
       wsRef.value = null;
       connectionStatus.value = "disconnected";
-      rejectPendingConnect(
-        new Error(
-          event.code === 1008 ? "Unauthorized WebSocket connection." : "WebSocket closed."
-        )
-      );
+
+      if (awaitingAuth) {
+        if (
+          event.code === 1008 &&
+          !authFallbackRetried &&
+          localStorage.getItem("token") &&
+          localStorage.getItem("api_key")
+        ) {
+          localStorage.removeItem("token");
+          authFallbackRetried = true;
+          emitWsTransport(
+            "auth_retry",
+            "Retrying WebSocket authentication with API key fallback."
+          );
+          startConnectAttempt();
+          return;
+        }
+        if (event.code !== 1008 && schedulePendingConnectRetry("Initial connection failed.")) {
+          return;
+        }
+        if (event.code === 1008) {
+          lastError.value = "Unauthorized. Check your credentials.";
+          allowReconnect = false;
+          emitWsTransport("unauthorized", "Authorization failed for the live connection.");
+          rejectPendingConnect(new Error("Unauthorized WebSocket connection."));
+          return;
+        }
+        rejectPendingConnect(
+          new Error(
+            event.code === 4001
+              ? "WebSocket authentication timed out."
+              : event.code === 4000
+                ? "WebSocket connection timed out."
+                : "WebSocket closed."
+          )
+        );
+        return;
+      }
+
       if (streaming.value || loading.value) {
         streaming.value = false;
         loading.value = false;
@@ -240,14 +294,11 @@ export const useLlmStore = defineStore("llm", () => {
         });
       }
       if (event.code === 1008) {
-        // Stale token may have caused the rejection.  Clear it and retry
-        // once if an api_key is still available as fallback credential.
         const hadToken = !!localStorage.getItem("token");
         if (hadToken) {
           localStorage.removeItem("token");
         }
         if (hadToken && localStorage.getItem("api_key")) {
-          // One retry with api_key only
           reconnectAttempts.value = 0;
           scheduleReconnect();
           return;
@@ -261,16 +312,32 @@ export const useLlmStore = defineStore("llm", () => {
       scheduleReconnect();
     });
 
+    socketOpenTimer = window.setTimeout(() => {
+      lastError.value = "WebSocket connection timed out.";
+      emitWsTransport("socket_timeout", "Live connection timed out before the socket opened.");
+      wsRef.value?.close(4000, "Connection timeout");
+    }, SOCKET_OPEN_TIMEOUT_MS);
+  };
+
+  const connect = (): Promise<void> => {
+    if (wsRef.value && wsRef.value.readyState === WebSocket.OPEN) {
+      connectionStatus.value = "connected";
+      return Promise.resolve();
+    }
+    if (wsRef.value && wsRef.value.readyState === WebSocket.CONNECTING) {
+      return pendingConnect || Promise.resolve();
+    }
+    clearReconnect();
+    allowReconnect = true;
+    connectionStatus.value = "connecting";
+    lastError.value = null;
+    connectAttempt = 0;
+    authFallbackRetried = false;
     pendingConnect = new Promise((resolve, reject) => {
       pendingConnectResolve = resolve;
       pendingConnectReject = reject;
     });
-    socketOpenTimer = window.setTimeout(() => {
-      lastError.value = "WebSocket connection timed out.";
-      emitWsTransport("socket_timeout", "Live connection timed out before the socket opened.");
-      rejectPendingConnect(new Error("WebSocket connection timed out."));
-      wsRef.value?.close(4000, "Connection timeout");
-    }, SOCKET_OPEN_TIMEOUT_MS);
+    startConnectAttempt();
 
     return pendingConnect;
   };

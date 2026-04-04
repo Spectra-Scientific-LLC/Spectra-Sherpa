@@ -569,6 +569,19 @@ class TestHttpLlmRateLimits:
 
 
 class TestDeploymentAIProvider:
+    def test_has_feature_matches_managed_server_capabilities(self) -> None:
+        from spectra_sherpa.app.services.deployment_ai_provider import DeploymentAIProvider
+
+        advisor = DeploymentAIProvider()
+
+        assert advisor.has_feature("full_dag_context") is True
+        assert advisor.has_feature("identify_peaks") is True
+        assert advisor.has_feature("generate_code") is True
+        assert advisor.has_feature("write_report") is True
+        assert advisor.has_feature("data_story") is True
+        assert advisor.has_feature("agentic_tools") is True
+        assert advisor.has_feature("nonexistent_feature") is False
+
     @pytest.mark.asyncio
     async def test_chat_followup_streams_chunks_from_server(
         self,

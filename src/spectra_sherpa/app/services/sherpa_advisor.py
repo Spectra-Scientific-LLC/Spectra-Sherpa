@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 class DisabledAIProvider:
     """OSS-safe fallback provider when no deployment-backed AI is configured."""
 
+    _detail = "AI provider not configured"
+
     @property
     def is_available(self) -> bool:
         return False
@@ -37,7 +39,7 @@ class DisabledAIProvider:
         local_user_id: int | None = None,
         project_id: int | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
-        yield {"type": "error", "detail": "AI provider not configured"}
+        yield {"type": "error", "detail": self._detail}
 
     async def sync_workflow(self, sync_msg: Any, *, tier: Any) -> list[Any]:
         return []
@@ -60,7 +62,7 @@ class DisabledAIProvider:
         dataset_info: dict[str, Any],
         additional_context: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
-        yield {"type": "error", "detail": "AI provider not configured"}
+        yield {"type": "error", "detail": self._detail}
 
     async def chat_followup(
         self,
@@ -70,9 +72,9 @@ class DisabledAIProvider:
         history: list[dict[str, str]] | None = None,
         workflow_context: dict[str, Any] | None = None,
     ) -> AsyncIterator[str]:
+        raise RuntimeError(self._detail)
         if False:
             yield ""
-        return
 
     async def chat_with_tools(
         self,
@@ -81,9 +83,7 @@ class DisabledAIProvider:
         history: list[dict[str, str]] | None = None,
         workflow_context: dict[str, Any] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
-        if False:
-            yield {}
-        return
+        yield {"type": "error", "detail": self._detail}
 
 
 # Global singleton instance

@@ -703,10 +703,8 @@ async def import_project(
     from spectra_sherpa.app.core.config import settings
 
     max_bytes = settings.max_file_size_mb * 1024 * 1024
-    upload_stream = file.file
-    upload_stream.seek(0, io.SEEK_END)
-    upload_size = upload_stream.tell()
-    upload_stream.seek(0)
+    upload_bytes = await file.read(max_bytes + 1)
+    upload_size = len(upload_bytes)
 
     # Enforce upload size limit (same as experiment uploads) before reading ZIP content.
     if upload_size > max_bytes:
@@ -720,12 +718,14 @@ async def import_project(
     models_imported = 0
 
     try:
+        upload_stream = io.BytesIO(upload_bytes)
         with zipfile.ZipFile(upload_stream, "r") as zf:
             project_json = json.loads(zf.read("project.json"))
             zip_names = set(zf.namelist())
 
             # Restore model artifacts from ZIP (if present)
             import uuid as _uuid
+            import numpy as np
 
             max_member_bytes = settings.max_file_size_mb * 1024 * 1024  # per-file limit
             max_total_model_bytes = max_member_bytes * 5  # total budget across all models
@@ -734,7 +734,7 @@ async def import_project(
 
             # Pre-scan: validate all model entries and compute total uncompressed size
             # before extracting anything (fail-fast on budget overflow).
-            model_entries: list[tuple[str, dict, str, str]] = []  # (uid, m_data, manifest_path, arrays_path)
+            model_entries: list[tuple[str, dict, bytes, bytes]] = []  # (uid, m_data, manifest_bytes, arrays_bytes)
             for m_data in project_json.get("models", []):
                 uid = m_data.get("artifact_uid")
                 if not uid:
@@ -782,8 +782,20 @@ async def import_project(
                 if skip:
                     continue
 
-                total_model_bytes_extracted += member_sizes
-                model_entries.append((uid, m_data, manifest_zip_path, arrays_zip_path))
+                manifest_bytes = zf.read(manifest_zip_path)
+                arrays_bytes = zf.read(arrays_zip_path)
+
+                try:
+                    with np.load(io.BytesIO(arrays_bytes), allow_pickle=False) as npz:
+                        arrays_nbytes = sum(
+                            int(getattr(array, "nbytes", 0)) for array in npz.values()
+                        )
+                except Exception as exc:
+                    logger.warning("Invalid model array archive %s: %s", arrays_zip_path, exc)
+                    continue
+
+                total_model_bytes_extracted += len(manifest_bytes) + arrays_nbytes
+                model_entries.append((uid, m_data, manifest_bytes, arrays_bytes))
 
             # Total budget check across all models
             if total_model_bytes_extracted > max_total_model_bytes:
@@ -819,16 +831,11 @@ async def import_project(
                 session.add(script)
 
             # Extract and import validated models
-            for uid, m_data, manifest_zip_path, arrays_zip_path in model_entries:
+            for uid, m_data, manifest_bytes, arrays_bytes in model_entries:
                 try:
                     from spectra_sherpa.app.services.model_store import get_model_store
 
                     store = get_model_store()
-
-                    import numpy as np
-
-                    manifest_bytes = zf.read(manifest_zip_path)
-                    arrays_bytes = zf.read(arrays_zip_path)
 
                     manifest = json.loads(manifest_bytes)
 

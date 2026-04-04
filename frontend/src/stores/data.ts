@@ -62,6 +62,24 @@ export interface ReferenceCatalog {
   sklearn: ReferenceDatasetOption[];
 }
 
+export interface SherpaDatasetContext {
+  label: string | null;
+  source: string | null;
+  description: string | null;
+  n_samples: number | null;
+  n_features: number | null;
+  is_time_series: boolean | null;
+  is_spectra: boolean | null;
+  technique: string | null;
+  x_title: string | null;
+  x_units: string | null;
+  x_min: number | null;
+  x_max: number | null;
+  data_quantity: string | null;
+  value_units: string | null;
+  metadata_summary: StoryObject | null;
+}
+
 function asObject(value: unknown): StoryObject {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as StoryObject)
@@ -128,6 +146,113 @@ function summarizeForDataStory(datasetInfo: StoryObject): StoryObject {
       value_units: metadata.value_units ?? null,
       prop_names: propNames,
       sample_labels: labels,
+    },
+  };
+}
+
+export function summarizeDatasetForSherpaContext(
+  datasetInfo: StoryObject | null | undefined
+): SherpaDatasetContext | null {
+  if (!datasetInfo) {
+    return null;
+  }
+
+  const metadata = asObject(datasetInfo.metadata);
+  const xAxis = asObject(datasetInfo.x_axis);
+  const fileMetadata = asObject(datasetInfo.file_metadata);
+  const xData = Array.isArray(xAxis.data)
+    ? xAxis.data.filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+    : [];
+  const source =
+    datasetInfo.source ??
+    datasetInfo.name ??
+    fileMetadata.name ??
+    null;
+  const technique =
+    datasetInfo.technique ??
+    metadata.spectral_technique ??
+    metadata.domain_technique ??
+    null;
+  const xTitle =
+    datasetInfo.x_title ??
+    xAxis.title ??
+    metadata.x_title ??
+    metadata.spectral_x_title ??
+    null;
+  const xUnits =
+    datasetInfo.x_units ??
+    xAxis.units ??
+    metadata.x_units ??
+    metadata.spectral_x_units ??
+    null;
+  const dataQuantity =
+    datasetInfo.data_quantity ??
+    datasetInfo.units ??
+    metadata.data_quantity ??
+    metadata.y_title ??
+    null;
+  const valueUnits =
+    metadata.value_units ??
+    metadata.y_units ??
+    null;
+
+  return {
+    label:
+      typeof datasetInfo.label === "string"
+        ? datasetInfo.label
+        : typeof datasetInfo.title === "string"
+          ? datasetInfo.title
+          : typeof fileMetadata.name === "string"
+            ? fileMetadata.name
+            : null,
+    source: typeof source === "string" ? source : null,
+    description:
+      typeof datasetInfo.description === "string" ? datasetInfo.description : null,
+    n_samples:
+      typeof datasetInfo.n_samples === "number" ? datasetInfo.n_samples : null,
+    n_features:
+      typeof datasetInfo.n_features === "number" ? datasetInfo.n_features : null,
+    is_time_series:
+      typeof datasetInfo.is_time_series === "boolean"
+        ? datasetInfo.is_time_series
+        : typeof metadata.is_time_series === "boolean"
+          ? (metadata.is_time_series as boolean)
+          : null,
+    is_spectra:
+      typeof datasetInfo.is_spectra === "boolean"
+        ? datasetInfo.is_spectra
+        : typeof datasetInfo.is_spectroscopic === "boolean"
+          ? (datasetInfo.is_spectroscopic as boolean)
+          : typeof metadata.is_spectra === "boolean"
+            ? (metadata.is_spectra as boolean)
+            : null,
+    technique: typeof technique === "string" ? technique : null,
+    x_title: typeof xTitle === "string" ? xTitle : null,
+    x_units: typeof xUnits === "string" ? xUnits : null,
+    x_min:
+      xData.length > 0
+        ? xData[0]
+        : typeof datasetInfo.wavelength_min === "number"
+          ? datasetInfo.wavelength_min
+          : null,
+    x_max:
+      xData.length > 0
+        ? xData[xData.length - 1]
+        : typeof datasetInfo.wavelength_max === "number"
+          ? datasetInfo.wavelength_max
+          : null,
+    data_quantity: typeof dataQuantity === "string" ? dataQuantity : null,
+    value_units: typeof valueUnits === "string" ? valueUnits : null,
+    metadata_summary: {
+      data_type:
+        typeof metadata.data_type === "string" ? metadata.data_type : null,
+      spectral_technique:
+        typeof metadata.spectral_technique === "string"
+          ? metadata.spectral_technique
+          : null,
+      file_name:
+        typeof fileMetadata.name === "string" ? fileMetadata.name : null,
+      has_wavenumber_axis: xData.length > 0,
     },
   };
 }

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from collections.abc import AsyncGenerator, AsyncIterator
 from typing import Any
 
@@ -15,16 +16,54 @@ from spectra_sherpa.app.services.ai_provider_errors import (
 logger = logging.getLogger(__name__)
 
 
+def _timeout_env(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning("Ignoring invalid %s=%r; using %.1fs", name, raw, default)
+        return default
+    if value <= 0:
+        logger.warning("Ignoring non-positive %s=%r; using %.1fs", name, raw, default)
+        return default
+    return value
+
+
 class DeploymentAIProvider:
     """Remote deployment-key-backed AI provider for OSS hybrid clients."""
 
-    UNARY_TIMEOUT = httpx.Timeout(connect=30.0, read=120.0, write=30.0, pool=30.0)
-    STREAM_TIMEOUT = httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=30.0)
+    _SUPPORTED_FEATURES = frozenset(
+        {
+            "full_dag_context",
+            "identify_peaks",
+            "generate_code",
+            "write_report",
+            "data_story",
+            "agentic_tools",
+        }
+    )
+    _CONNECT_TIMEOUT_SEC = _timeout_env("SPECTRASHERPA_CONNECT_TIMEOUT_SEC", 30.0)
+    _WRITE_TIMEOUT_SEC = _timeout_env("SPECTRASHERPA_WRITE_TIMEOUT_SEC", 30.0)
+    _POOL_TIMEOUT_SEC = _timeout_env("SPECTRASHERPA_POOL_TIMEOUT_SEC", 30.0)
+    UNARY_TIMEOUT = httpx.Timeout(
+        connect=_CONNECT_TIMEOUT_SEC,
+        read=_timeout_env("SPECTRASHERPA_UNARY_READ_TIMEOUT_SEC", 120.0),
+        write=_WRITE_TIMEOUT_SEC,
+        pool=_POOL_TIMEOUT_SEC,
+    )
+    STREAM_TIMEOUT = httpx.Timeout(
+        connect=_CONNECT_TIMEOUT_SEC,
+        read=_timeout_env("SPECTRASHERPA_STREAM_READ_TIMEOUT_SEC", 300.0),
+        write=_WRITE_TIMEOUT_SEC,
+        pool=_POOL_TIMEOUT_SEC,
+    )
 
     def __init__(self):
         from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
 
-        self._features: set[str] = set()
+        self._features = set(self._SUPPORTED_FEATURES)
         self._config = spectrasherpa_config
         self._client: httpx.AsyncClient | None = None
         logger.debug("DeploymentAIProvider initialized")

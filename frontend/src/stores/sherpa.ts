@@ -7,7 +7,7 @@ import {
   type SherpaEventPayload,
 } from "@/lib/sherpaEvents";
 import { SHERPA_WS_ACTION, SHERPA_WS_EVENT, getSherpaChatAction } from "@/lib/sherpaWs";
-import { useDataStore } from "@/stores/data";
+import { summarizeDatasetForSherpaContext, useDataStore } from "@/stores/data";
 import { useLlmStore } from "@/stores/llm";
 import { useNotificationStore } from "@/stores/notification";
 import { useWorkflowStore } from "@/stores/workflow";
@@ -455,19 +455,15 @@ export const useSherpaStore = defineStore("sherpa", () => {
       }
     }
 
-    // Include dataset metadata so the LLM knows the data context
-    const dsInfo = dataStore.catalogDatasetInfo as Record<string, unknown> | null;
-    const dsMeta = dsInfo?.metadata as Record<string, unknown> | undefined;
-    const dataset_context = dsInfo ? {
-      is_time_series: dsInfo.is_time_series ?? dsMeta?.is_time_series ?? null,
-      is_spectra: dsInfo.is_spectra ?? dsMeta?.is_spectra ?? null,
-      technique: dsInfo.technique ?? dsMeta?.spectral_technique ?? null,
-      x_title: dsInfo.x_title ?? dsMeta?.x_title ?? null,
-      x_units: dsInfo.x_units ?? dsMeta?.x_units ?? null,
-      data_quantity: dsInfo.data_quantity ?? dsMeta?.data_quantity ?? null,
-      value_units: dsMeta?.value_units ?? null,
-      description: dsInfo.description ?? null,
-    } : null;
+    // Prefer explicitly explored catalog metadata, but fall back to the active file
+    // inspection so Sherpa still gets technique/axis context for CSV/manual loads.
+    const dataset_context =
+      summarizeDatasetForSherpaContext(
+        dataStore.catalogDatasetInfo as Record<string, unknown> | null
+      )
+      ?? summarizeDatasetForSherpaContext(
+        dataStore.fileInfo as unknown as Record<string, unknown> | null
+      );
 
     return {
       workflow_id: workflow.workflowId,

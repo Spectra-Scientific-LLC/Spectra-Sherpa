@@ -109,6 +109,7 @@ describe("LLM Store WebSocket handshake", () => {
     const connectPromise = llm.connect().then(() => {
       resolved = true;
     });
+    await Promise.resolve();
 
     expect(llm.connectionStatus).toBe("connecting");
     expect(sockets).toHaveLength(1);
@@ -151,11 +152,46 @@ describe("LLM Store WebSocket handshake", () => {
 
     const connectPromise = llm.connect();
     void connectPromise.catch(() => undefined);
+    await Promise.resolve();
     sockets[0].dispatch("open");
-    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(5250);
+    sockets[1].dispatch("open");
+    await vi.advanceTimersByTimeAsync(5500);
+    sockets[2].dispatch("open");
+    await vi.advanceTimersByTimeAsync(6000);
 
     await expect(connectPromise).rejects.toThrow("WebSocket authentication timed out.");
     expect(transportEvents.map((event) => event.kind)).toContain("auth_timeout");
+    expect(transportEvents.map((event) => event.kind)).toContain("connect_retry");
+
+    window.removeEventListener("app-ws-transport", handler);
+  });
+
+  it("retries the initial connection after auth timeout and succeeds on the next socket", async () => {
+    const llm = useLlmStore();
+    const transportEvents: Array<{ kind?: string; detail?: string | null }> = [];
+    const handler = (event: Event) => {
+      transportEvents.push((event as CustomEvent).detail);
+    };
+    window.addEventListener("app-ws-transport", handler);
+
+    const connectPromise = llm.connect();
+    await Promise.resolve();
+    sockets[0].dispatch("open");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(sockets[0].readyState).toBe(MockWebSocket.CLOSED);
+
+    await vi.advanceTimersByTimeAsync(250);
+    expect(sockets).toHaveLength(2);
+
+    sockets[1].dispatch("open");
+    sockets[1].dispatch("message", {
+      data: JSON.stringify({ type: "authenticated", user_id: 1 }),
+    });
+    await connectPromise;
+
+    expect(llm.connectionStatus).toBe("connected");
+    expect(transportEvents.map((event) => event.kind)).toContain("connect_retry");
 
     window.removeEventListener("app-ws-transport", handler);
   });
