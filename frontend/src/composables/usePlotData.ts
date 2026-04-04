@@ -1492,7 +1492,7 @@ export function usePlotData(
     }
 
     if (nt === "stats.summary") {
-      const statsPlots = output?.plots;
+      const statsPlots = (nodeOutput.value as any)?.plots;
       if (statsPlots?.mean_spectrum) {
         plots.push({ key: "stats_mean_std", label: "Mean & Std Spectrum" });
       } else {
