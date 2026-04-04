@@ -91,6 +91,7 @@ Vite is configured to build directly into `src/spectra_sherpa/static/` — no ma
 ## Environment Variables
 
 Copy `.env.example` to `.env` for local configuration. The defaults work with zero changes.
+For direct Python launches, the app also loads `~/.env` as a shared base layer and then lets the repo-local `.env` override it. Docker Compose deployments are separate: they read the compose env file, not `~/.env`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
