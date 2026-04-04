@@ -787,9 +787,7 @@ async def import_project(
 
                 try:
                     with np.load(io.BytesIO(arrays_bytes), allow_pickle=False) as npz:
-                        arrays_nbytes = sum(
-                            int(getattr(array, "nbytes", 0)) for array in npz.values()
-                        )
+                        arrays_nbytes = sum(int(getattr(array, "nbytes", 0)) for array in npz.values())
                 except Exception as exc:
                     logger.warning("Invalid model array archive %s: %s", arrays_zip_path, exc)
                     continue
