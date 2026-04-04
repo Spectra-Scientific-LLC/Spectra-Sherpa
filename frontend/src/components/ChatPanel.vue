@@ -48,7 +48,7 @@
             v-if="activeTab === 'sherpa'"
             icon="pi pi-refresh"
             class="p-button-text p-button-sm llm-settings-btn"
-            :loading="sherpaStore.state === 'syncing'"
+            :loading="sherpaStore.isSyncing"
             aria-label="Re-sync workflow"
             @click="sherpaStore.syncWorkflow()"
             v-tooltip.bottom="'Re-sync workflow'"
@@ -146,14 +146,26 @@
                   <div v-if="message.role === 'system'" class="system-notification">
                     {{ message.content }}
                   </div>
-                  <div v-else-if="message.content" class="chat-bubble" :class="{ 'chat-bubble--md': message.role === 'assistant' }">
+                  <div
+                    v-else-if="message.role !== 'assistant' || message.content"
+                    class="chat-bubble"
+                    :class="{ 'chat-bubble--md': message.role === 'assistant' }"
+                  >
                     <VueMarkdown v-if="message.role === 'assistant'" :source="message.content" />
                     <template v-else>{{ message.content }}</template>
                   </div>
                 </div>
-                <!-- Tool progress is tracked internally but not shown to the user -->
-                <div v-if="sherpaStore.state === 'syncing'" class="chat-message assistant">
+                <div v-if="sherpaStore.isSyncing" class="chat-message assistant">
                   <div class="chat-bubble">Analyzing workflow...</div>
+                </div>
+                <div
+                  v-for="tool in activeSherpaTools"
+                  :key="`${tool.tool_name}-${tool.status}`"
+                  class="chat-message assistant"
+                >
+                  <div class="chat-bubble">
+                    {{ tool.status === "started" ? `Running tool: ${tool.tool_name}...` : `Completed tool: ${tool.tool_name}.` }}
+                  </div>
                 </div>
                 <div v-if="sherpaStatusMessage" class="chat-message assistant">
                   <div class="chat-bubble">{{ sherpaStatusMessage }}</div>
@@ -162,6 +174,17 @@
             </div>
 
             <div class="chat-input-shell">
+              <div
+                v-if="activeTab === 'sherpa' && sherpaStore.subscriptionRequired && sherpaStore.subscriptionUpgradeUrl"
+                class="chat-upgrade-row"
+              >
+                <Button
+                  label="Upgrade Plan"
+                  size="small"
+                  outlined
+                  @click="sherpaStore.openSubscriptionUpgrade()"
+                />
+              </div>
               <div class="chat-input">
                 <InputText
                   v-model="userMessage"
@@ -303,7 +326,7 @@ const inputDisabled = computed(() => {
 });
 
 const sherpaStatusMessage = computed(() => {
-  if (sherpaStore.state !== "chatting") {
+  if (!sherpaStore.isChatting) {
     return null;
   }
 
@@ -314,17 +337,23 @@ const sherpaStatusMessage = computed(() => {
   const hasRunningTools = sherpaStore.activeTools.some((tool) => tool.status === "started");
 
   if (!lastMessage || lastMessage.role !== "assistant") {
-    return "Contacting Sherpa Advisor...";
+    return hasRunningTools
+      ? `Sherpa Advisor is running ${sherpaStore.activeTools.find((tool) => tool.status === "started")?.tool_name || "a tool"}...`
+      : "Contacting Sherpa Advisor...";
   }
 
   if (!lastMessage.content.trim()) {
     return hasRunningTools
-      ? "Sherpa Advisor is working through the workflow..."
+      ? `Sherpa Advisor is running ${sherpaStore.activeTools.find((tool) => tool.status === "started")?.tool_name || "a tool"}...`
       : "Sherpa Advisor is preparing a response...";
   }
 
   return null;
 });
+
+const activeSherpaTools = computed(() =>
+  sherpaStore.activeTools.filter((tool) => tool.status === "started")
+);
 
 // ── LLM Provider Menu ────────────────────────────────────────
 
@@ -452,7 +481,7 @@ watch(
 // ── Auto-scroll for active tab messages ───────────────────────
 
 watch(
-  () => [activeTab.value, store.loading, store.streaming, sherpaStore.state],
+  () => [activeTab.value, store.loading, store.streaming, sherpaStore.isSyncing, sherpaStore.isChatting],
   async () => {
     await scrollToBottom();
   }
@@ -1052,6 +1081,12 @@ const collapsed = computed(() => props.collapsed);
   flex-shrink: 0;
   border-top: 1px solid #e2e8f0;
   background: #ffffff;
+}
+
+.chat-upgrade-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 8px 0;
 }
 
 .chat-message {

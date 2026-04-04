@@ -1406,7 +1406,7 @@ const dataStoryButtonLabel = computed(() =>
 );
 
 const isDataStoryButtonDisabled = computed(() =>
-  sherpaStore.state === "syncing" || sherpaStore.state === "chatting"
+  sherpaStore.isSyncing || sherpaStore.isChatting
 );
 
 const dataStoryButtonHoverText = computed(() =>

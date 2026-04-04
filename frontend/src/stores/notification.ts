@@ -3,7 +3,7 @@ import { computed, ref } from "vue";
 
 export interface AppNotification {
   id: string;
-  source: "job" | "deploy" | "batch" | "system";
+  source: "job" | "deploy" | "batch" | "system" | "sherpa";
   severity: "info" | "success" | "warning" | "error";
   title: string;
   message: string;

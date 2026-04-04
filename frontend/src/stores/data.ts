@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import api from "@/api/client";
+import { createSherpaRequestId, subscribeSherpaEvents } from "@/lib/sherpaEvents";
 import { SHERPA_WS_ACTION, SHERPA_WS_EVENT } from "@/lib/sherpaWs";
 import { getErrorMessage } from "@/utils/errors";
 import type {
@@ -380,7 +381,7 @@ export const useDataStore = defineStore("data", () => {
     try {
       const { useSherpaStore } = await import("@/stores/sherpa");
       const sherpa = useSherpaStore();
-      if (sherpa.state === "syncing" || sherpa.state === "chatting") {
+      if (sherpa.isSyncing || sherpa.isChatting) {
         return;
       }
       dataStoryLoading.value = true;
@@ -398,6 +399,7 @@ export const useDataStore = defineStore("data", () => {
       dataStoryText.value = "";  // Show progressive text as chunks arrive
 
       const result = await new Promise<string>((resolve, reject) => {
+        const requestId = createSherpaRequestId();
         const timeout = window.setTimeout(() => {
           cleanup();
           const partial = dataStoryText.value;
@@ -413,20 +415,25 @@ export const useDataStore = defineStore("data", () => {
           }
         }, 180_000);
 
-        const handler = (event: Event) => {
-          const payload = (event as CustomEvent).detail;
+        const unsubscribe = subscribeSherpaEvents((payload) => {
           if (payload.type === SHERPA_WS_EVENT.dataStoryChunk) {
             // Stream chunks progressively into the UI
-            dataStoryText.value += payload.text || "";
+            dataStoryText.value = `${dataStoryText.value ?? ""}${typeof payload.text === "string" ? payload.text : ""}`;
           } else if (payload.type === SHERPA_WS_EVENT.dataStoryResult) {
             cleanup();
-            resolve(payload.response || dataStoryText.value || "");
+            resolve(
+              typeof payload.response === "string"
+                ? payload.response
+                : (dataStoryText.value ?? "")
+            );
           } else if (payload.type === SHERPA_WS_EVENT.dataStoryError) {
             cleanup();
             const diag = payload.diagnostics;
             const detail = payload.detail || "Data story generation failed";
+            const diagRecord =
+              diag && typeof diag === "object" ? diag : null;
             const diagSummary = diag
-              ? ` [stage=${diag.stage}, elapsed=${diag.elapsed_s}s, provider=${diag.provider || "?"}]`
+              ? ` [stage=${String(diagRecord?.stage ?? "?")}, elapsed=${String(diagRecord?.elapsed_s ?? "?")}s, provider=${String(diagRecord?.provider ?? "?")}]`
               : "";
             console.error("Data story error:", detail, diag);
             reject(new Error(detail + diagSummary));
@@ -434,18 +441,26 @@ export const useDataStore = defineStore("data", () => {
             cleanup();
             reject(new Error("Subscription required for Data Story generation."));
           }
-        };
+        }, {
+          requestId,
+          types: [
+            SHERPA_WS_EVENT.dataStoryChunk,
+            SHERPA_WS_EVENT.dataStoryResult,
+            SHERPA_WS_EVENT.dataStoryError,
+            SHERPA_WS_EVENT.subscriptionRequired,
+          ],
+        });
 
         const cleanup = () => {
           clearTimeout(timeout);
-          window.removeEventListener("sherpa-ws-message", handler);
+          unsubscribe();
         };
 
-        window.addEventListener("sherpa-ws-message", handler);
         ws.send(
           JSON.stringify({
             action: SHERPA_WS_ACTION.dataStory,
             payload: {
+              request_id: requestId,
               dataset_info: summarized,
               additional_context: dataStoryContext.value.trim() || null,
             },

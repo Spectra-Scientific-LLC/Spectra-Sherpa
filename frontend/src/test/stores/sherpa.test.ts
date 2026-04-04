@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { reactive } from "vue";
+import { dispatchSherpaEvent } from "@/lib/sherpaEvents";
 
 const mockWs = {
   readyState: WebSocket.OPEN,
@@ -69,6 +70,18 @@ import { SHERPA_WS_EVENT } from "@/lib/sherpaWs";
 import { useNotificationStore } from "@/stores/notification";
 import { useSherpaStore } from "@/stores/sherpa";
 
+const lastRequestId = (): string | null => {
+  if (!mockWs.send.mock.calls.length) {
+    return null;
+  }
+  const payload = JSON.parse(mockWs.send.mock.calls.at(-1)?.[0] as string);
+  return payload?.payload?.request_id ?? null;
+};
+
+const emitSherpa = (payload: Record<string, unknown>) => {
+  dispatchSherpaEvent(payload as { type: string; request_id?: string | null });
+};
+
 describe("Sherpa Store communication state", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -104,7 +117,7 @@ describe("Sherpa Store communication state", () => {
     expect(sherpa.state).toBe("chatting");
     expect(notifications.notifications[0]?.title).toBe("Sherpa Advisor");
     expect(notifications.notifications[0]?.message).toBe(
-      "Sherpa Advisor is preparing a response."
+      "Sherpa request sent. Waiting for server acknowledgement."
     );
   });
 
@@ -114,7 +127,7 @@ describe("Sherpa Store communication state", () => {
     sherpa.init();
 
     await sherpa.sendMessage("tell me about PCA");
-    window.dispatchEvent(new CustomEvent("sherpa-ws-message", { detail: { type: SHERPA_WS_EVENT.chatStart } }));
+    emitSherpa({ type: SHERPA_WS_EVENT.chatStart, request_id: lastRequestId() });
     await vi.advanceTimersByTimeAsync(4000);
 
     expect(sherpa.messages.at(-1)?.role).toBe("assistant");
@@ -132,14 +145,14 @@ describe("Sherpa Store communication state", () => {
     sherpa.init();
 
     await sherpa.sendMessage("Does it make sense to use MCR-ALS upon non-time-series spectra data?");
-    window.dispatchEvent(new CustomEvent("sherpa-ws-message", { detail: { type: SHERPA_WS_EVENT.chatStart } }));
+    emitSherpa({ type: SHERPA_WS_EVENT.chatStart, request_id: lastRequestId() });
 
     await vi.advanceTimersByTimeAsync(119_000);
-    window.dispatchEvent(
-      new CustomEvent("sherpa-ws-message", {
-        detail: { type: SHERPA_WS_EVENT.chatChunk, chunk: "Yes, it can." },
-      })
-    );
+    emitSherpa({
+      type: SHERPA_WS_EVENT.chatChunk,
+      request_id: lastRequestId(),
+      chunk: "Yes, it can.",
+    });
 
     await vi.advanceTimersByTimeAsync(119_000);
     expect(sherpa.state).toBe("chatting");
@@ -273,56 +286,45 @@ describe("Sherpa Store communication state", () => {
     sherpa.init();
 
     await sherpa.sendMessage("Explain the test result", true);
+    const requestId = lastRequestId();
 
-    window.dispatchEvent(new CustomEvent("sherpa-ws-message", { detail: { type: SHERPA_WS_EVENT.chatStart } }));
-    window.dispatchEvent(
-      new CustomEvent("sherpa-ws-message", {
-        detail: {
-          type: SHERPA_WS_EVENT.toolStart,
-          tool_name: "describe_node",
-          timing: {
-            elapsed_ms: 4200,
-            since_last_event_ms: 4200,
-          },
-        },
-      })
-    );
-    window.dispatchEvent(
-      new CustomEvent("sherpa-ws-message", {
-        detail: {
-          type: SHERPA_WS_EVENT.toolResult,
-          tool_name: "describe_node",
-          summary: "Node details loaded",
-          timing: {
-            elapsed_ms: 5100,
-            since_last_event_ms: 900,
-          },
-        },
-      })
-    );
-    window.dispatchEvent(
-      new CustomEvent("sherpa-ws-message", {
-        detail: {
-          type: SHERPA_WS_EVENT.chatChunk,
-          chunk: "The model accuracy is 97%.",
-          timing: {
-            elapsed_ms: 5600,
-            since_last_event_ms: 500,
-          },
-        },
-      })
-    );
-    window.dispatchEvent(
-      new CustomEvent("sherpa-ws-message", {
-        detail: {
-          type: SHERPA_WS_EVENT.chatDone,
-          timing: {
-            elapsed_ms: 6200,
-            since_last_event_ms: 600,
-          },
-        },
-      })
-    );
+    emitSherpa({ type: SHERPA_WS_EVENT.chatStart, request_id: requestId });
+    emitSherpa({
+      type: SHERPA_WS_EVENT.toolStart,
+      request_id: requestId,
+      tool_name: "describe_node",
+      timing: {
+        elapsed_ms: 4200,
+        since_last_event_ms: 4200,
+      },
+    });
+    emitSherpa({
+      type: SHERPA_WS_EVENT.toolResult,
+      request_id: requestId,
+      tool_name: "describe_node",
+      summary: "Node details loaded",
+      timing: {
+        elapsed_ms: 5100,
+        since_last_event_ms: 900,
+      },
+    });
+    emitSherpa({
+      type: SHERPA_WS_EVENT.chatChunk,
+      request_id: requestId,
+      chunk: "The model accuracy is 97%.",
+      timing: {
+        elapsed_ms: 5600,
+        since_last_event_ms: 500,
+      },
+    });
+    emitSherpa({
+      type: SHERPA_WS_EVENT.chatDone,
+      request_id: requestId,
+      timing: {
+        elapsed_ms: 6200,
+        since_last_event_ms: 600,
+      },
+    });
 
     await vi.advanceTimersByTimeAsync(121_000);
 
@@ -338,12 +340,16 @@ describe("Sherpa Store communication state", () => {
     ]);
     expect(
       notifications.notifications.some((notification) =>
-        notification.message.includes("Sherpa tool started: describe_node (server 4.2s, +4.2s)")
+        notification.message.includes("Sherpa tool started")
+        && notification.message.includes("describe_node")
+        && notification.message.includes("server 4.2s, +4.2s")
       )
     ).toBe(true);
     expect(
       notifications.notifications.some((notification) =>
-        notification.message.includes("Sherpa response received: The model accuracy is 97%. (server 6.2s, +0.6s)")
+        notification.message.includes("Sherpa response received")
+        && notification.message.includes("The model accuracy is 97%.")
+        && notification.message.includes("server 6.2s, +0.6s")
       )
     ).toBe(true);
 
@@ -356,43 +362,87 @@ describe("Sherpa Store communication state", () => {
     sherpa.init();
 
     await sherpa.sendMessage("Why is this taking so long?", true);
-    window.dispatchEvent(new CustomEvent("sherpa-ws-message", { detail: { type: SHERPA_WS_EVENT.chatStart } }));
-    window.dispatchEvent(
-      new CustomEvent("sherpa-ws-message", {
-        detail: {
-          type: SHERPA_WS_EVENT.toolStart,
-          tool_name: "describe_node",
-        },
-      })
-    );
+    const requestId = lastRequestId();
+    emitSherpa({ type: SHERPA_WS_EVENT.chatStart, request_id: requestId });
+    emitSherpa({
+      type: SHERPA_WS_EVENT.toolStart,
+      request_id: requestId,
+      tool_name: "describe_node",
+    });
 
     await vi.advanceTimersByTimeAsync(120_000);
 
     expect(sherpa.state).toBe("idle");
-    expect(notifications.notifications[0]?.message).toBe(
-      "Sherpa Advisor timed out. Last activity: Sherpa tool started: describe_node"
+    expect(notifications.notifications[0]?.message).toContain(
+      "Sherpa Advisor timed out while waiting for tool: describe_node"
     );
 
     sherpa.dispose();
   });
 
-  it("surfaces demo Sherpa limit errors even when upgrade_url is empty", () => {
+  it("reports a timeout before server acknowledgement when no chat start arrives", async () => {
+    const sherpa = useSherpaStore();
+    const notifications = useNotificationStore();
+
+    await sherpa.sendMessage("Explain my PCA result");
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(sherpa.state).toBe("idle");
+    expect(notifications.notifications[0]?.message).toContain(
+      "Sherpa Advisor timed out before the server acknowledged the request."
+    );
+  });
+
+  it("treats an authorizing status event as a server acknowledgement", async () => {
     const sherpa = useSherpaStore();
     const notifications = useNotificationStore();
     sherpa.init();
 
-    window.dispatchEvent(
-      new CustomEvent("sherpa-ws-message", {
-        detail: {
-          type: SHERPA_WS_EVENT.error,
-          limit_type: "sherpa",
-          message: "Demo Sherpa interaction limit reached (200 interactions per session)",
-          upgrade_url: "",
-          remaining: 0,
-          session_expiry_hours: 24,
-        },
-      })
+    await sherpa.sendMessage("Explain my PCA result");
+    emitSherpa({
+      type: SHERPA_WS_EVENT.status,
+      request_id: lastRequestId(),
+      payload: {
+        connected: true,
+        stage: "authorizing",
+      },
+      timing: {
+        elapsed_ms: 1200,
+        since_last_event_ms: 1200,
+      },
+    });
+
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(sherpa.state).toBe("idle");
+    expect(
+      notifications.notifications.some((notification) =>
+        notification.message.includes("Sherpa server acknowledged the request.")
+        && notification.message.includes("server 1.2s, +1.2s")
+      )
+    ).toBe(true);
+    expect(notifications.notifications[0]?.message).toContain(
+      "Sherpa Advisor timed out. Last activity: Sherpa server acknowledged the request."
     );
+
+    sherpa.dispose();
+  });
+
+  it("surfaces demo Sherpa limit errors even when upgrade_url is empty", async () => {
+    const sherpa = useSherpaStore();
+    const notifications = useNotificationStore();
+    await sherpa.syncWorkflow();
+    const requestId = lastRequestId();
+
+    emitSherpa({
+      type: SHERPA_WS_EVENT.error,
+      request_id: requestId,
+      limit_type: "sherpa",
+      message: "Demo Sherpa interaction limit reached (200 interactions per session)",
+      upgrade_url: "",
+      remaining: 0,
+      session_expiry_hours: 24,
+    });
 
     expect(sherpa.lastSyncError).toBe(
       "Demo Sherpa interaction limit reached (200 interactions per session)"
@@ -406,25 +456,19 @@ describe("Sherpa Store communication state", () => {
     expect(notifications.notifications[0]?.detail).toBe(
       "Remaining: 0\nUsage resets after 24 hours of inactivity."
     );
-
-    sherpa.dispose();
   });
 
   it("handles Sherpa decision acknowledgements explicitly", () => {
     const sherpa = useSherpaStore();
     sherpa.init();
 
-    window.dispatchEvent(
-      new CustomEvent("sherpa-ws-message", {
-        detail: {
-          type: SHERPA_WS_EVENT.decisionAck,
-          payload: {
-            delivered: true,
-            suggestion_id: "rec-1",
-          },
-        },
-      })
-    );
+    emitSherpa({
+      type: SHERPA_WS_EVENT.decisionAck,
+      payload: {
+        delivered: true,
+        suggestion_id: "rec-1",
+      },
+    });
 
     expect(sherpa.messages.at(-1)?.content).toBe(
       "Sherpa Advisor recorded your decision."
@@ -433,24 +477,123 @@ describe("Sherpa Store communication state", () => {
     sherpa.dispose();
   });
 
-  it("accepts positive Sherpa status events as active sync state", () => {
+  it("accepts positive Sherpa status events as active sync state", async () => {
+    const sherpa = useSherpaStore();
+    await sherpa.syncWorkflow();
+    emitSherpa({
+      type: SHERPA_WS_EVENT.status,
+      request_id: lastRequestId(),
+      payload: {
+        connected: true,
+        stage: "analyzing",
+      },
+    });
+
+    expect(sherpa.state).toBe("syncing");
+  });
+
+  it("creates an assistant bubble if a Sherpa chunk arrives before chatStart", async () => {
+    const sherpa = useSherpaStore();
+    const notifications = useNotificationStore();
+    sherpa.init();
+
+    await sherpa.sendMessage("Explain PCA");
+    const payload = JSON.parse(mockWs.send.mock.calls[0][0] as string);
+
+    emitSherpa({
+      type: SHERPA_WS_EVENT.chatChunk,
+      request_id: payload.payload.request_id,
+      chunk: "PC1 explains most of the variance.",
+    });
+
+    expect(sherpa.messages.at(-1)?.role).toBe("assistant");
+    expect(sherpa.messages.at(-1)?.content).toBe("PC1 explains most of the variance.");
+    expect(
+      notifications.notifications.some((notification) =>
+        notification.message.includes("Sherpa recovered a missing response start")
+      )
+    ).toBe(true);
+
+    sherpa.dispose();
+  });
+
+  it("adds a chat-visible system message when a Sherpa tool fails", async () => {
     const sherpa = useSherpaStore();
     sherpa.init();
 
-    window.dispatchEvent(
-      new CustomEvent("sherpa-ws-message", {
-        detail: {
-          type: SHERPA_WS_EVENT.status,
-          payload: {
-            connected: true,
-            stage: "analyzing",
-          },
-        },
-      })
+    await sherpa.sendMessage("Explain this workflow", true);
+    const payload = JSON.parse(mockWs.send.mock.calls[0][0] as string);
+
+    emitSherpa({
+      type: SHERPA_WS_EVENT.toolResult,
+      request_id: payload.payload.request_id,
+      tool_name: "describe_node",
+      success: false,
+      summary: "Node metadata lookup timed out.",
+      error_category: "timeout",
+    });
+
+    expect(sherpa.messages.at(-1)?.content).toContain(
+      "Sherpa tool failed (timeout): describe_node."
     );
 
-    expect(sherpa.state).toBe("syncing");
+    sherpa.dispose();
+  });
+
+  it("shows a system message when Sherpa reaches the tool round limit", async () => {
+    const sherpa = useSherpaStore();
+    sherpa.init();
+
+    await sherpa.sendMessage("Explain this workflow", true);
+    const payload = JSON.parse(mockWs.send.mock.calls[0][0] as string);
+
+    emitSherpa({
+      type: SHERPA_WS_EVENT.status,
+      request_id: payload.payload.request_id,
+      payload: {
+        connected: true,
+        stage: "tool_round_limit",
+        detail: "Sherpa exhausted 2 tool rounds and is making a final response without more tool calls.",
+      },
+    });
+
+    expect(sherpa.messages.at(-1)?.content).toContain(
+      "Sherpa exhausted 2 tool rounds"
+    );
 
     sherpa.dispose();
+  });
+
+  it("surfaces Sherpa sync timeouts in notifications", async () => {
+    const sherpa = useSherpaStore();
+    const notifications = useNotificationStore();
+
+    await sherpa.syncWorkflow();
+    await vi.advanceTimersByTimeAsync(180_000);
+
+    expect(sherpa.state).toBe("idle");
+    expect(notifications.notifications[0]?.message).toBe(
+      "Sherpa sync timed out. The service may be unavailable."
+    );
+  });
+
+  it("fails closed on malformed Sherpa events instead of leaving the store stuck", async () => {
+    const sherpa = useSherpaStore();
+    const notifications = useNotificationStore();
+    await sherpa.sendMessage("Malformed event test");
+
+    emitSherpa({
+      type: SHERPA_WS_EVENT.chatChunk,
+      request_id: lastRequestId(),
+      chunk: null,
+    });
+
+    expect(sherpa.state).toBe("error");
+    expect(sherpa.messages.at(-1)?.content).toContain(
+      "Sherpa event handling failed: Sherpa chat chunk payload was missing text."
+    );
+    expect(notifications.notifications[0]?.message).toContain(
+      "Sherpa event handling failed: Sherpa chat chunk payload was missing text."
+    );
   });
 });

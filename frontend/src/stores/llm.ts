@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import axios from "axios";
 import { computed, ref } from "vue";
 import api from "@/api/client";
+import { dispatchSherpaEvent } from "@/lib/sherpaEvents";
 import type { ConversationSummary, LlmMessage } from "@/types";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useAuthStore } from "@/stores/auth";
@@ -66,12 +67,56 @@ export const useLlmStore = defineStore("llm", () => {
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let allowReconnect = true;
   let pendingConnect: Promise<void> | null = null;
+  let pendingConnectResolve: (() => void) | null = null;
+  let pendingConnectReject: ((error: Error) => void) | null = null;
+  let socketOpenTimer: ReturnType<typeof setTimeout> | null = null;
+  let authAckTimer: ReturnType<typeof setTimeout> | null = null;
   let configPollTimer: ReturnType<typeof setInterval> | null = null;
+  const SOCKET_OPEN_TIMEOUT_MS = 5000;
+  const AUTH_ACK_TIMEOUT_MS = 5000;
 
   const clearReconnect = () => {
     if (reconnectTimer !== null) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
+    }
+  };
+
+  const clearAuthAckTimer = () => {
+    if (authAckTimer !== null) {
+      clearTimeout(authAckTimer);
+      authAckTimer = null;
+    }
+  };
+
+  const clearSocketOpenTimer = () => {
+    if (socketOpenTimer !== null) {
+      clearTimeout(socketOpenTimer);
+      socketOpenTimer = null;
+    }
+  };
+
+  const resolvePendingConnect = () => {
+    clearSocketOpenTimer();
+    clearAuthAckTimer();
+    if (pendingConnectResolve) {
+      const resolve = pendingConnectResolve;
+      pendingConnect = null;
+      pendingConnectResolve = null;
+      pendingConnectReject = null;
+      resolve();
+    }
+  };
+
+  const rejectPendingConnect = (error: Error) => {
+    clearSocketOpenTimer();
+    clearAuthAckTimer();
+    if (pendingConnectReject) {
+      const reject = pendingConnectReject;
+      pendingConnect = null;
+      pendingConnectResolve = null;
+      pendingConnectReject = null;
+      reject(error);
     }
   };
 
@@ -117,6 +162,11 @@ export const useLlmStore = defineStore("llm", () => {
           wsRef.value?.send(JSON.stringify({ action: "pong" }));
         } else if (payload.type === "pong") {
           return;
+        } else if (payload.type === "authenticated") {
+          connectionStatus.value = "connected";
+          emitWsTransport("auth_ack", "Server acknowledged WebSocket authentication.");
+          resolvePendingConnect();
+          return;
         } else if (payload.type === "llm_start") {
           currentConversationId.value = payload.conversation_id;
           streamingIndex.value = messages.value.length;
@@ -142,22 +192,29 @@ export const useLlmStore = defineStore("llm", () => {
           });
           emitWsTransport("message_error", detail);
         } else if (payload.type?.startsWith("sherpa_")) {
-          // Forward Sherpa messages to the sherpa store via event bus
-          window.dispatchEvent(
-            new CustomEvent("sherpa-ws-message", { detail: payload })
-          );
+          dispatchSherpaEvent(payload);
         }
       } catch (error) {
         // Ignore malformed messages but log them
         console.warn('Received malformed WebSocket message:', error);
+        emitWsTransport("malformed_message", "Received a malformed WebSocket message.");
       }
     });
 
     wsRef.value.addEventListener("open", () => {
-      connectionStatus.value = "connected";
+      clearSocketOpenTimer();
+      emitWsTransport("socket_open", "Live connection opened.");
       reconnectAttempts.value = 0;
       // Authenticate via first message instead of URL query params
       wsRef.value?.send(buildAuthMessage());
+      emitWsTransport("auth_sent", "WebSocket authentication sent.");
+      clearAuthAckTimer();
+      authAckTimer = window.setTimeout(() => {
+        lastError.value = "WebSocket authentication timed out.";
+        emitWsTransport("auth_timeout", "Server did not acknowledge WebSocket authentication.");
+        rejectPendingConnect(new Error("WebSocket authentication timed out."));
+        wsRef.value?.close(1008, "Authentication timeout");
+      }, AUTH_ACK_TIMEOUT_MS);
     });
 
     wsRef.value.addEventListener("error", () => {
@@ -168,6 +225,11 @@ export const useLlmStore = defineStore("llm", () => {
     wsRef.value.addEventListener("close", (event) => {
       wsRef.value = null;
       connectionStatus.value = "disconnected";
+      rejectPendingConnect(
+        new Error(
+          event.code === 1008 ? "Unauthorized WebSocket connection." : "WebSocket closed."
+        )
+      );
       if (streaming.value || loading.value) {
         streaming.value = false;
         loading.value = false;
@@ -200,21 +262,15 @@ export const useLlmStore = defineStore("llm", () => {
     });
 
     pendingConnect = new Promise((resolve, reject) => {
-      const handleOpen = () => {
-        pendingConnect = null;
-        resolve();
-      };
-      const handleClose = (event: CloseEvent) => {
-        pendingConnect = null;
-        reject(
-          new Error(
-            event.code === 1008 ? "Unauthorized WebSocket connection." : "WebSocket closed."
-          )
-        );
-      };
-      wsRef.value?.addEventListener("open", handleOpen, { once: true });
-      wsRef.value?.addEventListener("close", handleClose, { once: true });
+      pendingConnectResolve = resolve;
+      pendingConnectReject = reject;
     });
+    socketOpenTimer = window.setTimeout(() => {
+      lastError.value = "WebSocket connection timed out.";
+      emitWsTransport("socket_timeout", "Live connection timed out before the socket opened.");
+      rejectPendingConnect(new Error("WebSocket connection timed out."));
+      wsRef.value?.close(4000, "Connection timeout");
+    }, SOCKET_OPEN_TIMEOUT_MS);
 
     return pendingConnect;
   };
@@ -349,7 +405,10 @@ export const useLlmStore = defineStore("llm", () => {
 
   const disconnect = () => {
     clearReconnect();
+    clearSocketOpenTimer();
+    clearAuthAckTimer();
     allowReconnect = false;
+    rejectPendingConnect(new Error("WebSocket disconnected."));
     if (wsRef.value) {
       wsRef.value.close(1000, "Manual disconnect");
       wsRef.value = null;

@@ -40,12 +40,17 @@ const mocks = vi.hoisted(() => ({
   sherpaStore: {
     messages: [] as Array<Record<string, unknown>>,
     state: "idle",
+    isSyncing: false,
+    isChatting: false,
     activeTools: [] as Array<Record<string, unknown>>,
+    subscriptionRequired: null as string | null,
+    subscriptionUpgradeUrl: null as string | null,
     init: vi.fn(),
     dispose: vi.fn(),
     syncWorkflow: vi.fn(),
     sendMessage: vi.fn(),
     clearMessages: vi.fn(),
+    openSubscriptionUpgrade: vi.fn(),
   },
   experimentStore: {
     experiments: [] as Array<Record<string, unknown>>,
@@ -141,11 +146,12 @@ const ButtonStub = defineComponent({
   inheritAttrs: false,
   props: {
     disabled: { type: Boolean, default: false },
+    label: { type: String, default: "" },
   },
   emits: ["click"],
   template: `
     <button v-bind="$attrs" :disabled="disabled" @click="$emit('click', $event)">
-      <slot />
+      <slot>{{ label }}</slot>
     </button>
   `,
 });
@@ -347,7 +353,11 @@ describe("ChatPanel", () => {
     mocks.llmStore.streaming = false;
     mocks.sherpaStore.messages = [];
     mocks.sherpaStore.state = "idle";
+    mocks.sherpaStore.isSyncing = false;
+    mocks.sherpaStore.isChatting = false;
     mocks.sherpaStore.activeTools = [];
+    mocks.sherpaStore.subscriptionRequired = null;
+    mocks.sherpaStore.subscriptionUpgradeUrl = null;
     mocks.workflowStore.workflowId = null;
     mocks.workflowStore.lastExecutionResults = {};
     mocks.authStore.user = { id: 7, username: "alice" };
@@ -423,6 +433,7 @@ describe("ChatPanel", () => {
     mocks.appConfig.value = { subscription: { plan: "demo" } };
     mocks.featureFlags.sherpaAdvisor = true;
     mocks.sherpaStore.state = "chatting";
+    mocks.sherpaStore.isChatting = true;
     mocks.sherpaStore.messages = [{ role: "user", content: "tell me about PCA" }];
     mocks.sherpaStore.activeTools = [];
 
@@ -438,6 +449,7 @@ describe("ChatPanel", () => {
     mocks.appConfig.value = { subscription: { plan: "demo" } };
     mocks.featureFlags.sherpaAdvisor = true;
     mocks.sherpaStore.state = "chatting";
+    mocks.sherpaStore.isChatting = true;
     mocks.sherpaStore.messages = [
       { role: "user", content: "tell me about PCA" },
       { role: "assistant", content: "" },
@@ -491,5 +503,26 @@ describe("ChatPanel", () => {
       "Run the workflow first, then ask Sherpa about accuracy, diagnostics, predictions, or next steps."
     );
     expect(mocks.sherpaStore.syncWorkflow).toHaveBeenCalled();
+  });
+
+  it("shows an upgrade action when Sherpa reports a subscription upgrade URL", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.featureFlags.sherpaAdvisor = true;
+    mocks.sherpaStore.subscriptionRequired = "Upgrade required.";
+    mocks.sherpaStore.subscriptionUpgradeUrl = "https://example.com/upgrade";
+
+    const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+
+    const sherpaTab = wrapper.findAll("button").find((button) => button.text() === "Sherpa Advisor");
+    expect(sherpaTab).toBeTruthy();
+    await sherpaTab!.trigger("click");
+    await flushPromises();
+
+    const upgradeButton = wrapper.findAll("button").find((button) => button.text() === "Upgrade Plan");
+    expect(upgradeButton).toBeTruthy();
+
+    await upgradeButton!.trigger("click");
+    expect(mocks.sherpaStore.openSubscriptionUpgrade).toHaveBeenCalled();
   });
 });

@@ -1061,7 +1061,7 @@ function featureScatterLayout(metadata: any, xIdx: number, yIdx: number): Record
 }
 
 // ============================================================================
-// Stats distribution builder
+// Stats distribution builder (fallback for non-spectral data)
 // ============================================================================
 
 function buildStatsDistributionTraces(output: any): any[] {
@@ -1089,6 +1089,76 @@ function statsDistributionLayout(): Record<string, any> {
     xaxis: { ...BASE_PLOT_LAYOUT.xaxis, title: "Value" },
     yaxis: { ...BASE_PLOT_LAYOUT.yaxis, title: "Count" },
     bargap: 0.05,
+  };
+}
+
+// Stats mean & std spectrum builder
+// ============================================================================
+
+function buildStatsMeanStdTraces(output: any): any[] {
+  const plots = output.plots || {};
+  const meanSpec = plots.mean_spectrum;
+  const stdSpec = plots.std_spectrum;
+  if (!meanSpec?.x?.length || !meanSpec?.y?.length) return [];
+
+  const x: number[] = meanSpec.x;
+  const means: number[] = meanSpec.y;
+  const stds: number[] = stdSpec?.y ?? [];
+  const traces: any[] = [];
+
+  // Mean ± std shaded band
+  if (stds.length === x.length) {
+    const upperY = means.map((m: number, i: number) => m + stds[i]);
+    const lowerY = means.map((m: number, i: number) => m - stds[i]);
+    traces.push({
+      x: [...x, ...[...x].reverse()],
+      y: [...upperY, ...[...lowerY].reverse()],
+      type: "scatter",
+      fill: "toself",
+      fillcolor: "rgba(59,130,246,0.15)",
+      line: { color: "transparent" },
+      showlegend: false,
+      hoverinfo: "skip",
+    });
+  }
+
+  // Mean line
+  traces.push({
+    x, y: means,
+    type: "scatter", mode: "lines",
+    name: "Mean",
+    line: { color: "#3b82f6", width: 2 },
+    hovertemplate: "x: %{x:.1f}<br>Mean: %{y:.4f}<extra></extra>",
+  });
+
+  // Std line
+  if (stds.length === x.length) {
+    traces.push({
+      x, y: stds,
+      type: "scatter", mode: "lines",
+      name: "Std Dev",
+      line: { color: "#f59e0b", width: 1.5, dash: "dash" },
+      yaxis: "y2",
+      hovertemplate: "x: %{x:.1f}<br>Std: %{y:.4f}<extra></extra>",
+    });
+  }
+
+  return traces;
+}
+
+function statsMeanStdLayout(): Record<string, any> {
+  return {
+    ...BASE_PLOT_LAYOUT,
+    xaxis: { ...BASE_PLOT_LAYOUT.xaxis, title: "Wavelength / Channel" },
+    yaxis: { ...BASE_PLOT_LAYOUT.yaxis, title: "Mean Intensity", side: "left" },
+    yaxis2: {
+      title: "Std Dev",
+      overlaying: "y",
+      side: "right",
+      gridcolor: "transparent",
+      color: "#f59e0b",
+    },
+    legend: { x: 0.01, y: 0.99, bgcolor: "rgba(0,0,0,0.3)", font: { size: 11 } },
   };
 }
 
@@ -1422,7 +1492,12 @@ export function usePlotData(
     }
 
     if (nt === "stats.summary") {
-      plots.push({ key: "stats_distribution", label: "Distribution Plot" });
+      const statsPlots = output?.plots;
+      if (statsPlots?.mean_spectrum) {
+        plots.push({ key: "stats_mean_std", label: "Mean & Std Spectrum" });
+      } else {
+        plots.push({ key: "stats_distribution", label: "Distribution Plot" });
+      }
       return plots;
     }
 
@@ -1650,6 +1725,8 @@ export function usePlotData(
       }
 
       // Stats
+      case "stats_mean_std":
+        return { data: buildStatsMeanStdTraces(output), layout: statsMeanStdLayout() };
       case "stats_distribution":
         return { data: buildStatsDistributionTraces(output), layout: statsDistributionLayout() };
 
@@ -1784,6 +1861,8 @@ export {
   featureScatterLayout,
   buildStatsDistributionTraces,
   statsDistributionLayout,
+  buildStatsMeanStdTraces,
+  statsMeanStdLayout,
   prebuiltPlot,
   getLabelArray,
   getCategoryArray,

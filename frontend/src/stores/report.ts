@@ -2,6 +2,7 @@
 import { defineStore } from "pinia";
 import { ref, reactive, computed } from "vue";
 import api from "@/api/client";
+import { createSherpaRequestId, subscribeSherpaEvents } from "@/lib/sherpaEvents";
 import { SHERPA_WS_ACTION, SHERPA_WS_EVENT } from "@/lib/sherpaWs";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useLlmStore } from "@/stores/llm";
@@ -221,16 +222,20 @@ export const useReportStore = defineStore("report", () => {
       }
 
       const result = await new Promise<string>((resolve, reject) => {
+        const requestId = createSherpaRequestId();
         const timeout = window.setTimeout(() => {
           cleanup();
           reject(new Error("Report generation timed out"));
         }, 60_000);
 
-        const handler = (event: Event) => {
-          const payload = (event as CustomEvent).detail;
+        const unsubscribe = subscribeSherpaEvents((payload) => {
           if (payload.type === SHERPA_WS_EVENT.reportResult) {
             cleanup();
-            resolve(payload.report || payload.response || "");
+            resolve(
+              typeof payload.report === "string"
+                ? payload.report
+                : (payload.response ?? "")
+            );
           } else if (payload.type === SHERPA_WS_EVENT.reportError) {
             cleanup();
             reject(new Error(payload.detail || "Report generation failed"));
@@ -238,17 +243,23 @@ export const useReportStore = defineStore("report", () => {
             cleanup();
             reject(new Error("Subscription required for AI reports"));
           }
-        };
+        }, {
+          requestId,
+          types: [
+            SHERPA_WS_EVENT.reportResult,
+            SHERPA_WS_EVENT.reportError,
+            SHERPA_WS_EVENT.subscriptionRequired,
+          ],
+        });
 
         const cleanup = () => {
           clearTimeout(timeout);
-          window.removeEventListener("sherpa-ws-message", handler);
+          unsubscribe();
         };
 
-        window.addEventListener("sherpa-ws-message", handler);
         ws.send(JSON.stringify({
           action: SHERPA_WS_ACTION.writeReport,
-          payload: { experiment },
+          payload: { request_id: requestId, experiment },
         }));
       });
 
