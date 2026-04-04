@@ -6,14 +6,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional
 
-from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 from spectra_sherpa._paths import (
     get_default_data_dir,
-    get_env_file_search_paths,
     get_package_root,
     get_project_root,
+    load_layered_env_files,
 )
 from spectra_sherpa.app.contracts.capabilities import (
     ALL_SHERPA_CAPABILITIES,
@@ -39,11 +38,8 @@ def _get_bool(name: str, default: bool) -> bool:
 PROJECT_ROOT = get_project_root() or get_package_root().parent.parent
 BACKEND_ROOT = get_package_root()  # spectra_sherpa/ contains app/, libs/, etc.
 
-# Load .env from the first location that exists
-for _env_candidate in get_env_file_search_paths():
-    if _env_candidate.is_file():
-        load_dotenv(_env_candidate)
-        break
+# Load shared ~/.env first, then allow repo/local .env files to override it.
+load_layered_env_files()
 
 DATA_DIR = get_default_data_dir()
 APP_DATA_PATHS = get_app_data_paths(DATA_DIR)

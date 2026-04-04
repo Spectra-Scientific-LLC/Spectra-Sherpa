@@ -422,9 +422,6 @@ describe("ChatPanel", () => {
 
     expect(wrapper.text()).toContain("Sherpa Advisor");
     expect(wrapper.text()).not.toContain("LLM Chat");
-    expect(wrapper.text()).toContain(
-      "Recommended flow: 1. Create a project. 2. Pick a template. 3. Load an example dataset. 4. Review the data. 5. Run the workflow. 6. Analyze the results with Sherpa Advisor."
-    );
   });
 
   it("shows a contacting status while Sherpa chat is waiting for acceptance", async () => {
@@ -465,12 +462,17 @@ describe("ChatPanel", () => {
 
   it("keeps Sherpa input available for general questions when no workflow is loaded", async () => {
     mocks.appMode.value = "enterprise";
-    mocks.isDemoMode.value = true;
     mocks.appConfig.value = { subscription: { plan: "demo" } };
+    mocks.featureFlags.chatAssistant = true;
     mocks.featureFlags.sherpaAdvisor = true;
     mocks.workflowStore.workflowId = null;
 
     const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+
+    const sherpaTab = wrapper.findAll("button").find((button) => button.text() === "Sherpa Advisor");
+    expect(sherpaTab).toBeTruthy();
+    await sherpaTab!.trigger("click");
     await flushPromises();
 
     const input = wrapper.find("input");
@@ -478,6 +480,8 @@ describe("ChatPanel", () => {
       "Ask Sherpa about chemistry, datasets, or your next workflow step..."
     );
     expect(input.attributes("disabled")).toBeUndefined();
+
+    expect(mocks.sherpaStore.syncWorkflow).not.toHaveBeenCalled();
   });
 
   it("prompts users to run the workflow before asking Sherpa about results", async () => {
@@ -498,9 +502,6 @@ describe("ChatPanel", () => {
     const input = wrapper.find("input");
     expect(input.attributes("placeholder")).toBe(
       "Run the workflow first, then ask Sherpa about the results..."
-    );
-    expect(wrapper.text()).toContain(
-      "Run the workflow first, then ask Sherpa about accuracy, diagnostics, predictions, or next steps."
     );
     expect(mocks.sherpaStore.syncWorkflow).toHaveBeenCalled();
   });

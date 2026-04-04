@@ -195,20 +195,15 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     # Load .env before setting defaults, so .env values take precedence.
-    from dotenv import dotenv_values, load_dotenv
+    from dotenv import dotenv_values
 
-    from spectra_sherpa._paths import get_env_file_search_paths
+    from spectra_sherpa._paths import load_layered_env_files
 
-    _env_file_used = None
-    for _env_candidate in get_env_file_search_paths():
-        if _env_candidate.is_file():
-            load_dotenv(_env_candidate)
-            _env_file_used = _env_candidate
-            break
+    _env_files_used = load_layered_env_files()
+    _env_file_used = _env_files_used[-1] if _env_files_used else None
 
     # Detect when a shell/direnv env var silently overrides the .env file.
-    # load_dotenv() won't override existing env vars, so if someone exported
-    # APP_MODE in their shell, the .env value is ignored — a common footgun.
+    # Shell/direnv values still win over file layers, which is a common footgun.
     if _env_file_used is not None:
         _file_vals = dotenv_values(_env_file_used)
         for _key in ("APP_MODE", "SITE_PROFILE"):

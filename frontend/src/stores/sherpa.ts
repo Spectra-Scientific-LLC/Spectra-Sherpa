@@ -491,6 +491,9 @@ export const useSherpaStore = defineStore("sherpa", () => {
   // ── actions ────────────────────────────────────────────────
 
   async function syncWorkflow(): Promise<void> {
+    if (syncState.value === "syncing") {
+      return;
+    }
     const llm = useLlmStore();
     finalizeSyncCommunication();
     unsubscribeSyncEvents?.();

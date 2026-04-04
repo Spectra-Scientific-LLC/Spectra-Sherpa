@@ -278,34 +278,12 @@ const hasExecutionResults = computed(
   () => Object.keys(workflowStore.lastExecutionResults || {}).length > 0
 );
 
-const DEMO_WELCOME_MESSAGE =
-  "Recommended flow: 1. Create a project. 2. Pick a template. 3. Load an example dataset. 4. Review the data. 5. Run the workflow. 6. Analyze the results with Sherpa Advisor.";
-const RUN_WORKFLOW_HINT =
-  "Run the workflow first, then ask Sherpa about accuracy, diagnostics, predictions, or next steps.";
-
 const switchToSherpa = () => {
   activeTab.value = "sherpa";
-  // In demo mode, show a one-time welcome message
-  if (isDemoMode.value && sherpaStore.messages.length === 0) {
-    sherpaStore.messages.push({
-      role: "system",
-      content: DEMO_WELCOME_MESSAGE,
-    });
-  }
-  if (
-    workflowStore.workflowId &&
-    !hasExecutionResults.value &&
-    !sherpaStore.messages.some(
-      (message) => message.role === "system" && message.content === RUN_WORKFLOW_HINT
-    )
-  ) {
-    sherpaStore.messages.push({
-      role: "system",
-      content: RUN_WORKFLOW_HINT,
-    });
-  }
   // Auto-sync on switch (proactive assessment)
-  sherpaStore.syncWorkflow();
+  if (workflowStore.workflowId) {
+    sherpaStore.syncWorkflow();
+  }
 };
 
 const inputPlaceholder = computed(() => {

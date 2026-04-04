@@ -441,9 +441,13 @@ class ActivateHybridRequest(BaseModel):
 
 def _find_or_create_env_path() -> str:
     """Return path to the .env file, creating one if none exists."""
-    from spectra_sherpa._paths import get_default_data_dir, get_env_file_search_paths, get_project_root
+    from spectra_sherpa._paths import (
+        get_default_data_dir,
+        get_local_env_file_search_paths,
+        get_project_root,
+    )
 
-    for candidate in get_env_file_search_paths():
+    for candidate in get_local_env_file_search_paths():
         if candidate.is_file():
             return str(candidate)
 
@@ -592,10 +596,10 @@ async def deactivate_hybrid(http_request: Request):
     from dotenv import set_key as dotenv_set_key
 
     # ── 1. Update .env ──
-    from spectra_sherpa._paths import get_env_file_search_paths
+    from spectra_sherpa._paths import get_local_env_file_search_paths
 
     env_path = None
-    for candidate in get_env_file_search_paths():
+    for candidate in get_local_env_file_search_paths():
         if candidate.is_file():
             env_path = str(candidate)
             break

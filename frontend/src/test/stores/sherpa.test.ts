@@ -577,6 +577,15 @@ describe("Sherpa Store communication state", () => {
     );
   });
 
+  it("does not send duplicate sync requests while a sync is already running", async () => {
+    const sherpa = useSherpaStore();
+
+    await sherpa.syncWorkflow();
+    await sherpa.syncWorkflow();
+
+    expect(mockWs.send).toHaveBeenCalledTimes(1);
+  });
+
   it("fails closed on malformed Sherpa events instead of leaving the store stuck", async () => {
     const sherpa = useSherpaStore();
     const notifications = useNotificationStore();
