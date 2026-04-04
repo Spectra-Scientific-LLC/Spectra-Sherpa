@@ -55,6 +55,25 @@ def _safe_parse_metrics(metrics_json: str | None) -> dict | None:
         return None
 
 
+async def _read_upload_with_limit(file: UploadFile, *, max_bytes: int, chunk_size: int = 1024 * 1024) -> bytes:
+    """Read an upload deterministically until EOF or size limit is exceeded."""
+    chunks: list[bytes] = []
+    total = 0
+    limit = max_bytes + 1
+
+    while total <= max_bytes:
+        to_read = min(chunk_size, limit - total)
+        if to_read <= 0:
+            break
+        chunk = await file.read(to_read)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+
+    return b"".join(chunks)
+
+
 async def _project_to_summary(project: Project, session: AsyncSession) -> ProjectSummary:
     """Build a ProjectSummary with aggregated counts."""
     exp_count = await session.scalar(select(func.count(Experiment.id)).where(Experiment.project_id == project.id))
@@ -703,7 +722,7 @@ async def import_project(
     from spectra_sherpa.app.core.config import settings
 
     max_bytes = settings.max_file_size_mb * 1024 * 1024
-    upload_bytes = await file.read(max_bytes + 1)
+    upload_bytes = await _read_upload_with_limit(file, max_bytes=max_bytes)
     upload_size = len(upload_bytes)
 
     # Enforce upload size limit (same as experiment uploads) before reading ZIP content.
@@ -725,6 +744,7 @@ async def import_project(
 
             # Restore model artifacts from ZIP (if present)
             import uuid as _uuid
+
             import numpy as np
 
             max_member_bytes = settings.max_file_size_mb * 1024 * 1024  # per-file limit
