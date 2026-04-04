@@ -47,8 +47,8 @@ APP_DATA_PATHS = get_app_data_paths(DATA_DIR)
 DATABASE_URL = os.getenv("DATABASE_URL") or f"sqlite+aiosqlite:///{APP_DATA_PATHS.database}"
 APP_API_KEY = os.getenv("APP_API_KEY", "default-local-key")
 
-_PREVIOUS_SETTINGS = globals().get("settings")
-_PREVIOUS_APP_CONFIG = globals().get("app_config")
+_PREVIOUS_SETTINGS: Settings | None = globals().get("settings")
+_PREVIOUS_APP_CONFIG: AppConfig | None = globals().get("app_config")
 
 
 @dataclass(frozen=True)
