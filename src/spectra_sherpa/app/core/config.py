@@ -47,6 +47,9 @@ APP_DATA_PATHS = get_app_data_paths(DATA_DIR)
 DATABASE_URL = os.getenv("DATABASE_URL") or f"sqlite+aiosqlite:///{APP_DATA_PATHS.database}"
 APP_API_KEY = os.getenv("APP_API_KEY", "default-local-key")
 
+_PREVIOUS_SETTINGS = globals().get("settings")
+_PREVIOUS_APP_CONFIG = globals().get("app_config")
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -186,7 +189,14 @@ def get_reader_for_extension(ext: str) -> str:
     return EXTENSION_READER_MAP[ext_lower]
 
 
-settings = Settings()
+def _refresh_settings_singleton() -> Settings:
+    fresh = Settings()
+    existing = _PREVIOUS_SETTINGS
+    if existing is not None and all(hasattr(existing, field_name) for field_name in Settings.__dataclass_fields__):
+        for field_name in Settings.__dataclass_fields__:
+            object.__setattr__(existing, field_name, getattr(fresh, field_name))
+        return existing
+    return fresh
 
 
 # ============================================================================
@@ -453,5 +463,17 @@ class AppConfig(BaseModel):
         return result
 
 
-# Global app config instance
-app_config = AppConfig.from_env()
+def _refresh_app_config_singleton() -> AppConfig:
+    fresh = AppConfig.from_env()
+    existing = _PREVIOUS_APP_CONFIG
+    if existing is not None and all(hasattr(existing, field_name) for field_name in AppConfig.model_fields):
+        for field_name in AppConfig.model_fields:
+            setattr(existing, field_name, getattr(fresh, field_name))
+        return existing
+    return fresh
+
+
+# Global config singletons. Preserve object identity across importlib.reload()
+# so modules/tests holding older references still observe refreshed values.
+settings = _refresh_settings_singleton()
+app_config = _refresh_app_config_singleton()

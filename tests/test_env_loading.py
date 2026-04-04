@@ -101,3 +101,20 @@ def test_core_config_loads_layered_env_files(monkeypatch):
     monkeypatch.undo()
     importlib.reload(_paths)
     importlib.reload(config)
+
+
+def test_core_config_reload_preserves_settings_identity(monkeypatch):
+    import spectra_sherpa.app.core.config as config
+
+    original_settings = config.settings
+    original_app_config = config.app_config
+
+    monkeypatch.setenv("MAX_FILE_SIZE_MB", "123")
+    monkeypatch.setenv("APP_MODE", "hybrid")
+
+    importlib.reload(config)
+
+    assert config.settings is original_settings
+    assert config.settings.max_file_size_mb == 123
+    assert config.app_config is original_app_config
+    assert config.app_config.mode == "hybrid"
