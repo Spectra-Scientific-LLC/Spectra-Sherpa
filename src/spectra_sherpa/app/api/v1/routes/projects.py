@@ -722,6 +722,14 @@ async def import_project(
     from spectra_sherpa.app.core.config import settings
 
     max_bytes = settings.max_file_size_mb * 1024 * 1024
+    declared_size = getattr(file, "size", None)
+    if isinstance(declared_size, int) and declared_size > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Archive too large ({declared_size / (1024*1024):.1f} MB). "
+            f"Maximum is {settings.max_file_size_mb} MB.",
+        )
+
     upload_bytes = await _read_upload_with_limit(file, max_bytes=max_bytes)
     upload_size = len(upload_bytes)
 
@@ -751,6 +759,7 @@ async def import_project(
             max_total_model_bytes = max_member_bytes * 5  # total budget across all models
             max_compression_ratio = 200  # reject members with > 200:1 ratio (zip bomb indicator)
             total_model_bytes_extracted = 0
+            total_model_member_bytes = 0
 
             # Pre-scan: validate all model entries and compute total uncompressed size
             # before extracting anything (fail-fast on budget overflow).
@@ -801,6 +810,16 @@ async def import_project(
                     member_sizes += info.file_size
                 if skip:
                     continue
+
+                total_model_member_bytes += member_sizes
+                if total_model_member_bytes > max_total_model_bytes:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=(
+                            f"Total model data too large ({total_model_member_bytes / (1024*1024):.1f} MB). "
+                            f"Maximum is {max_total_model_bytes / (1024*1024):.0f} MB."
+                        ),
+                    )
 
                 manifest_bytes = zf.read(manifest_zip_path)
                 arrays_bytes = zf.read(arrays_zip_path)
