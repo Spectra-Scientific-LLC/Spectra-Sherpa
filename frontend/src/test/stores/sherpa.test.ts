@@ -118,7 +118,11 @@ describe("Sherpa Store communication state", () => {
     await vi.advanceTimersByTimeAsync(4000);
 
     expect(sherpa.messages.at(-1)?.role).toBe("assistant");
-    expect(notifications.notifications).toHaveLength(0);
+    expect(
+      notifications.notifications.some(
+        (notification) => notification.message === "Sherpa Advisor is preparing a response."
+      )
+    ).toBe(false);
 
     sherpa.dispose();
   });
@@ -265,6 +269,7 @@ describe("Sherpa Store communication state", () => {
 
   it("completes a Sherpa agentic round trip without leaving the chat in a timeout state", async () => {
     const sherpa = useSherpaStore();
+    const notifications = useNotificationStore();
     sherpa.init();
 
     await sherpa.sendMessage("Explain the test result", true);
@@ -275,6 +280,10 @@ describe("Sherpa Store communication state", () => {
         detail: {
           type: SHERPA_WS_EVENT.toolStart,
           tool_name: "describe_node",
+          timing: {
+            elapsed_ms: 4200,
+            since_last_event_ms: 4200,
+          },
         },
       })
     );
@@ -284,6 +293,10 @@ describe("Sherpa Store communication state", () => {
           type: SHERPA_WS_EVENT.toolResult,
           tool_name: "describe_node",
           summary: "Node details loaded",
+          timing: {
+            elapsed_ms: 5100,
+            since_last_event_ms: 900,
+          },
         },
       })
     );
@@ -292,10 +305,24 @@ describe("Sherpa Store communication state", () => {
         detail: {
           type: SHERPA_WS_EVENT.chatChunk,
           chunk: "The model accuracy is 97%.",
+          timing: {
+            elapsed_ms: 5600,
+            since_last_event_ms: 500,
+          },
         },
       })
     );
-    window.dispatchEvent(new CustomEvent("sherpa-ws-message", { detail: { type: SHERPA_WS_EVENT.chatDone } }));
+    window.dispatchEvent(
+      new CustomEvent("sherpa-ws-message", {
+        detail: {
+          type: SHERPA_WS_EVENT.chatDone,
+          timing: {
+            elapsed_ms: 6200,
+            since_last_event_ms: 600,
+          },
+        },
+      })
+    );
 
     await vi.advanceTimersByTimeAsync(121_000);
 
@@ -309,6 +336,42 @@ describe("Sherpa Store communication state", () => {
         result: undefined,
       },
     ]);
+    expect(
+      notifications.notifications.some((notification) =>
+        notification.message.includes("Sherpa tool started: describe_node (server 4.2s, +4.2s)")
+      )
+    ).toBe(true);
+    expect(
+      notifications.notifications.some((notification) =>
+        notification.message.includes("Sherpa response received: The model accuracy is 97%. (server 6.2s, +0.6s)")
+      )
+    ).toBe(true);
+
+    sherpa.dispose();
+  });
+
+  it("logs the last visible Sherpa activity when chat times out", async () => {
+    const sherpa = useSherpaStore();
+    const notifications = useNotificationStore();
+    sherpa.init();
+
+    await sherpa.sendMessage("Why is this taking so long?", true);
+    window.dispatchEvent(new CustomEvent("sherpa-ws-message", { detail: { type: SHERPA_WS_EVENT.chatStart } }));
+    window.dispatchEvent(
+      new CustomEvent("sherpa-ws-message", {
+        detail: {
+          type: SHERPA_WS_EVENT.toolStart,
+          tool_name: "describe_node",
+        },
+      })
+    );
+
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(sherpa.state).toBe("idle");
+    expect(notifications.notifications[0]?.message).toBe(
+      "Sherpa Advisor timed out. Last activity: Sherpa tool started: describe_node"
+    );
 
     sherpa.dispose();
   });

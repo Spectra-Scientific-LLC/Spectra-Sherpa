@@ -43,6 +43,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
   const lastCodeResult = ref<CodeResult | null>(null);
   const activeTools = ref<ToolEvent[]>([]);
   const subscriptionRequired = ref<string | null>(null);
+  const lastActivitySummary = ref<string | null>(null);
   let communicationTimer: ReturnType<typeof setTimeout> | null = null;
   let activeChatTimeout: ReturnType<typeof setTimeout> | null = null;
   let stopLlmWatch: WatchStopHandle | null = null;
@@ -59,6 +60,54 @@ export const useSherpaStore = defineStore("sherpa", () => {
   function getWs(): WebSocket | null {
     const llm = useLlmStore();
     return llm.wsRef;
+  }
+
+  function _truncateForLog(text: string, max = 180): string {
+    const normalized = text.replace(/\s+/g, " ").trim();
+    if (normalized.length <= max) {
+      return normalized;
+    }
+    return `${normalized.slice(0, max - 1)}…`;
+  }
+
+  function _notifySherpa(message: string, severity: "info" | "success" | "warning" | "error" = "info", detail?: string): void {
+    notifications.add({
+      source: "system",
+      severity,
+      title: "Sherpa Advisor",
+      message,
+      detail,
+    });
+  }
+
+  function _formatTimingSuffix(timing: unknown): string {
+    if (!timing || typeof timing !== "object") {
+      return "";
+    }
+    const timingRecord = timing as Record<string, unknown>;
+    const elapsedMs = timingRecord.elapsed_ms;
+    const sinceLastMs = timingRecord.since_last_event_ms;
+    const parts: string[] = [];
+
+    if (typeof elapsedMs === "number" && Number.isFinite(elapsedMs)) {
+      parts.push(`server ${(elapsedMs / 1000).toFixed(1)}s`);
+    }
+    if (typeof sinceLastMs === "number" && Number.isFinite(sinceLastMs)) {
+      parts.push(`+${(sinceLastMs / 1000).toFixed(1)}s`);
+    }
+
+    return parts.length > 0 ? ` (${parts.join(", ")})` : "";
+  }
+
+  function _recordActivity(summary: string, options?: {
+    notify?: boolean;
+    severity?: "info" | "success" | "warning" | "error";
+    detail?: string;
+  }): void {
+    lastActivitySummary.value = summary;
+    if (options?.notify) {
+      _notifySherpa(summary, options.severity ?? "info", options.detail);
+    }
   }
 
   function clearCommunicationTimer(): void {
@@ -82,12 +131,10 @@ export const useSherpaStore = defineStore("sherpa", () => {
         finalizeCommunication();
         state.value = "idle";
         streamingIndex.value = null;
-        notifications.add({
-          source: "system",
-          severity: "warning",
-          title: "Sherpa Advisor",
-          message: "Sherpa Advisor is taking longer than expected. Please try again.",
-        });
+        const timeoutMessage = lastActivitySummary.value
+          ? `Sherpa Advisor timed out. Last activity: ${lastActivitySummary.value}`
+          : "Sherpa Advisor is taking longer than expected. Please try again.";
+        _notifySherpa(timeoutMessage, "warning");
         messages.value.push({
           role: "system",
           content:
@@ -107,19 +154,9 @@ export const useSherpaStore = defineStore("sherpa", () => {
     clearCommunicationTimer();
     communicationTimer = window.setTimeout(() => {
       if (kind === "sync" && state.value === "syncing") {
-        notifications.add({
-          source: "system",
-          severity: "info",
-          title: "Sherpa Advisor",
-          message: "Sherpa Advisor is reviewing the workflow.",
-        });
+        _notifySherpa("Sherpa Advisor is reviewing the workflow.");
       } else if (kind === "chat" && state.value === "chatting" && streamingIndex.value === null) {
-        notifications.add({
-          source: "system",
-          severity: "info",
-          title: "Sherpa Advisor",
-          message: "Sherpa Advisor is preparing a response.",
-        });
+        _notifySherpa("Sherpa Advisor is preparing a response.");
       }
     }, 4000);
   }
@@ -137,15 +174,10 @@ export const useSherpaStore = defineStore("sherpa", () => {
     state.value = "idle";
     streamingIndex.value = null;
     lastSyncError.value = detail;
+    _recordActivity(_truncateForLog(detail), { notify: true, severity: "warning" });
     messages.value.push({
       role: "system",
       content: detail,
-    });
-    notifications.add({
-      source: "system",
-      severity: "warning",
-      title: "Sherpa Advisor",
-      message: detail,
     });
   }
 
@@ -309,6 +341,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
 
     state.value = "syncing";
     lastSyncError.value = null;
+    _recordActivity("Workflow sync requested.", { notify: true });
     scheduleCommunicationNotice("sync");
 
     const ws = getWs();
@@ -368,6 +401,10 @@ export const useSherpaStore = defineStore("sherpa", () => {
     }
 
     messages.value.push({ role: "user", content: message });
+    _recordActivity(`User asked Sherpa: ${_truncateForLog(message)}`, {
+      notify: true,
+      detail: message,
+    });
 
     const workflow = useWorkflowStore();
     const ws = getWs();
@@ -381,6 +418,9 @@ export const useSherpaStore = defineStore("sherpa", () => {
 
     state.value = "chatting";
     activeTools.value = [];
+    _recordActivity(`Sherpa request sent via ${useTools ? "agentic chat" : "chat"}.`, {
+      notify: true,
+    });
     scheduleCommunicationNotice("chat");
     scheduleActiveChatTimeout();
 
@@ -409,6 +449,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
     lastCodeResult.value = null;
     activeTools.value = [];
     subscriptionRequired.value = null;
+    lastActivitySummary.value = null;
   }
 
   // ── WebSocket message handler ──────────────────────────────
@@ -418,6 +459,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
     if (payload.type === SHERPA_WS_EVENT.recommendations) {
       finalizeCommunication();
       state.value = "idle";
+      _recordActivity("Sherpa workflow review completed.");
       const recs: SherpaRecommendationPayload[] = (
         payload.payload || []
       ).map((r: any) => ({
@@ -450,6 +492,10 @@ export const useSherpaStore = defineStore("sherpa", () => {
       }
     } else if (payload.type === SHERPA_WS_EVENT.decisionAck) {
       if (payload.payload?.delivered) {
+        _recordActivity("Sherpa Advisor recorded your decision.", {
+          notify: true,
+          severity: "success",
+        });
         messages.value.push({
           role: "system",
           content: "Sherpa Advisor recorded your decision.",
@@ -476,30 +522,54 @@ export const useSherpaStore = defineStore("sherpa", () => {
       }
       scheduleActiveChatTimeout();
       streamingIndex.value = messages.value.length;
+      _recordActivity(`Sherpa started responding${_formatTimingSuffix(payload.timing)}.`, {
+        notify: true,
+      });
       messages.value.push({ role: "assistant", content: "" });
     } else if (payload.type === SHERPA_WS_EVENT.chatChunk) {
       if (streamingIndex.value !== null) {
         messages.value[streamingIndex.value].content += payload.chunk;
       }
+      _recordActivity(
+        `Sherpa streamed response: ${_truncateForLog(payload.chunk || "")}${_formatTimingSuffix(payload.timing)}`
+      );
       noteChatActivity();
     } else if (payload.type === SHERPA_WS_EVENT.chatDone) {
+      const response =
+        streamingIndex.value !== null ? messages.value[streamingIndex.value]?.content ?? "" : "";
       finalizeCommunication();
       state.value = "idle";
       streamingIndex.value = null;
+      if (response.trim()) {
+        _recordActivity(
+          `Sherpa response received: ${_truncateForLog(response)}${_formatTimingSuffix(payload.timing)}`,
+          {
+          notify: true,
+          severity: "success",
+          detail: response,
+          }
+        );
+      } else {
+        _recordActivity(`Sherpa response completed${_formatTimingSuffix(payload.timing)}.`, {
+          notify: true,
+          severity: "success",
+        });
+      }
     } else if (payload.type === SHERPA_WS_EVENT.status) {
       const connected = payload.payload?.connected;
       if (connected && payload.payload?.stage === "analyzing" && state.value === "idle") {
         state.value = "syncing";
+        _recordActivity("Sherpa connection established. Reviewing workflow.", {
+          notify: true,
+        });
       } else if (!connected) {
         finalizeCommunication();
         const reason = payload.payload?.reason || "unknown";
         lastSyncError.value = `Sherpa unavailable: ${reason}`;
         state.value = "error";
-        notifications.add({
-          source: "system",
+        _recordActivity(`Sherpa Advisor is unavailable (${reason}).`, {
+          notify: true,
           severity: "warning",
-          title: "Sherpa Advisor",
-          message: `Sherpa Advisor is unavailable (${reason}).`,
         });
         messages.value.push({
           role: "system",
@@ -538,6 +608,12 @@ export const useSherpaStore = defineStore("sherpa", () => {
         tool_name: payload.tool_name || "unknown",
         status: "started",
       });
+      _recordActivity(
+        `Sherpa tool started: ${payload.tool_name || "unknown"}${_formatTimingSuffix(payload.timing)}`,
+        {
+        notify: true,
+        }
+      );
       noteChatActivity();
     } else if (payload.type === SHERPA_WS_EVENT.toolResult) {
       const idx = activeTools.value.findIndex(
@@ -550,16 +626,24 @@ export const useSherpaStore = defineStore("sherpa", () => {
           result: payload.result,
         };
       }
+      _recordActivity(
+        payload.success === false
+          ? `Sherpa tool failed: ${payload.tool_name || "unknown"}${_formatTimingSuffix(payload.timing)}`
+          : `Sherpa tool completed: ${payload.tool_name || "unknown"}${_formatTimingSuffix(payload.timing)}`,
+        {
+          notify: true,
+          severity: payload.success === false ? "warning" : "success",
+          detail: typeof payload.summary === "string" ? payload.summary : undefined,
+        }
+      );
       noteChatActivity();
     } else if (payload.type === SHERPA_WS_EVENT.subscriptionRequired) {
       finalizeCommunication();
       subscriptionRequired.value = payload.detail || "This feature requires a subscription.";
       state.value = "idle";
-      notifications.add({
-        source: "system",
+      _recordActivity(payload.detail || "This feature requires a Sherpa subscription.", {
+        notify: true,
         severity: "warning",
-        title: "Sherpa Advisor",
-        message: payload.detail || "This feature requires a Sherpa subscription.",
       });
       messages.value.push({
         role: "system",
@@ -575,23 +659,16 @@ export const useSherpaStore = defineStore("sherpa", () => {
       if (isDemoLimitError) {
         const message = payload.message || "Demo limit reached";
         lastSyncError.value = message;
-        notifications.add({
-          source: "system",
-          severity: "warning",
-          title: "Sherpa Advisor",
-          message,
-        });
+        _recordActivity(message, { notify: true, severity: "warning" });
         messages.value.push({
           role: "system",
           content: message,
         });
       } else {
         lastSyncError.value = payload.detail || "Sherpa error";
-        notifications.add({
-          source: "system",
+        _recordActivity(payload.detail || "An error occurred communicating with Sherpa.", {
+          notify: true,
           severity: "warning",
-          title: "Sherpa Advisor",
-          message: payload.detail || "An error occurred communicating with Sherpa.",
         });
         messages.value.push({
           role: "system",

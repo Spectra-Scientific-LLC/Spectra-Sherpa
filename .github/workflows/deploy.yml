@@ -1,0 +1,57 @@
+# Auto-deploy to DigitalOcean droplet on push.
+#
+# - Push to main  → deploys to production (ports 80/443)
+# - Push to develop → deploys to staging (port 8080)
+#
+# Required GitHub Secrets (set in spectra-sherpa repo → Settings → Secrets):
+#   DROPLET_IP        — your DigitalOcean droplet IP address
+#   SSH_PRIVATE_KEY   — private key for the 'spectra' user on the droplet
+
+name: Deploy
+
+on:
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deploy target'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      # Only one deploy per environment at a time
+      group: deploy-${{ github.ref_name == 'main' && 'production' || 'staging' }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Determine environment
+        id: env
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "target=${{ inputs.environment }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref_name }}" = "main" ]; then
+            echo "target=production" >> "$GITHUB_OUTPUT"
+          else
+            echo "target=staging" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: spectra
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 12m
+          script: |
+            bash ~/spectra-platform/spectra-ops/scripts/deploy.sh \
+              ${{ steps.env.outputs.target }} \
+              ${{ github.ref_name }}
