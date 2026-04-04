@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from spectra_sherpa.app.api.deps import demo_guard, get_current_user, get_session, require_project
+from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.model_artifact import ModelArtifact
 from spectra_sherpa.app.models.project import Project, ProjectVersion
@@ -719,8 +720,6 @@ async def import_project(
     current_user: User = Depends(get_current_user),
 ) -> ProjectDetail:
     """Import a .spectrapy archive to create a new project."""
-    from spectra_sherpa.app.core.config import settings
-
     max_bytes = settings.max_file_size_mb * 1024 * 1024
     declared_size = getattr(file, "size", None)
     if isinstance(declared_size, int) and declared_size > max_bytes:
