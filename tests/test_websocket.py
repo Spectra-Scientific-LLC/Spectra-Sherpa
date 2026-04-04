@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from starlette.websockets import WebSocketDisconnect
@@ -281,3 +283,49 @@ def _setup_local_ws(monkeypatch, *, is_superuser: bool = False, user_id: int = 1
         return SimpleNamespace(id=user_id, is_superuser=is_superuser, is_active=True)
 
     monkeypatch.setattr(ws_auth_mod, "get_user_from_credentials", _resolve_user)
+
+
+@pytest.mark.asyncio
+async def test_websocket_endpoint_uses_configured_idle_timeout(monkeypatch: pytest.MonkeyPatch):
+    class _FakeWebSocket:
+        def __init__(self):
+            self.app = SimpleNamespace(
+                state=SimpleNamespace(ws_action_registry=SimpleNamespace(dispatch=AsyncMock(return_value=False)))
+            )
+            self.sent: list[dict] = []
+
+        async def receive_json(self):
+            return {"action": "noop"}
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+            raise RuntimeError("socket gone")
+
+    async def _resolve_initial_ws_user(*args, **kwargs):
+        return SimpleNamespace(id=7, is_superuser=False, is_active=True)
+
+    async def _stamp_last_active(_user):
+        return None
+
+    async def _wait_for(awaitable, timeout):
+        captured["timeout"] = timeout
+        awaitable.close()
+        raise asyncio.TimeoutError
+
+    captured: dict[str, float] = {}
+    ws = _FakeWebSocket()
+
+    monkeypatch.setattr(app_main, "get_client_host", lambda _request_or_ws: "127.0.0.1")
+    monkeypatch.setattr(ws_auth_mod, "resolve_initial_ws_user", _resolve_initial_ws_user)
+    monkeypatch.setattr(ws_auth_mod, "stamp_last_active", _stamp_last_active)
+    monkeypatch.setattr(app_main.ws_manager, "connect", AsyncMock())
+    monkeypatch.setattr(app_main.asyncio, "wait_for", _wait_for)
+    original_timeout = app_main.settings.ws_idle_timeout_sec
+    object.__setattr__(app_main.settings, "ws_idle_timeout_sec", 9)
+    try:
+        await app_main.websocket_endpoint(ws)
+    finally:
+        object.__setattr__(app_main.settings, "ws_idle_timeout_sec", original_timeout)
+
+    assert captured["timeout"] == 9.0
+    assert ws.sent == [{"type": "ping"}]

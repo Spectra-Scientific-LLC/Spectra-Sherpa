@@ -456,7 +456,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     # Send a server-side ping when the connection is idle for this many seconds.
     # Clients may respond with {"action": "pong"} (or simply send any message).
     # If the write fails the connection is broken and we clean up immediately.
-    _WS_IDLE_TIMEOUT = 120.0
+    _WS_IDLE_TIMEOUT = max(1.0, float(settings.ws_idle_timeout_sec))
 
     await ws_manager.connect(websocket)
     try:

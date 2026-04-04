@@ -4,9 +4,11 @@ Workflow API endpoints for DAG-based analysis pipelines.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
@@ -76,7 +78,7 @@ async def _auto_persist_run(
     error_msg: str | None,
     integrity_hash: str | None,
     model_ids: list[str] | None,
-) -> None:
+) -> bool:
     """Upsert an auto-saved ``ExecutionRun`` so results survive page refresh."""
     try:
         existing = (
@@ -114,12 +116,26 @@ async def _auto_persist_run(
             session.add(ExecutionRun(**run_data))
 
         await session.commit()
+        return True
     except Exception:
         logger.warning("Failed to auto-persist execution run", exc_info=True)
         try:
             await session.rollback()
         except Exception:
             pass
+        return False
+
+
+def _raise_execution_persistence_error() -> None:
+    request_id = uuid4().hex[:8]
+    logger.error(
+        "Workflow execution completed but results could not be persisted [req %s]",
+        request_id,
+    )
+    raise HTTPException(
+        status_code=500,
+        detail=("Workflow execution completed but results could not be saved. " f"Reference request ID: {request_id}"),
+    )
 
 
 def _validate_edge_refs(
@@ -1166,15 +1182,19 @@ async def execute_workflow(
                 pass  # Never let broadcast failure affect execution
 
         # Execute
-        if payload.node_id:
-            # Execute single node and its dependencies (with initial_data for DATA nodes)
-            results = await executor.execute_node(payload.node_id, initial_data=payload.initial_data)
-        else:
-            # Execute entire workflow
-            results = await executor.execute(
-                initial_data=payload.initial_data,
-                status_callback=_broadcast_node_status,
-            )
+        execution_timeout = max(1, int(settings.max_job_duration_sec))
+        timeout_ctx = asyncio.timeout(execution_timeout)
+
+        async with timeout_ctx:
+            if payload.node_id:
+                # Execute single node and its dependencies (with initial_data for DATA nodes)
+                results = await executor.execute_node(payload.node_id, initial_data=payload.initial_data)
+            else:
+                # Execute entire workflow
+                results = await executor.execute(
+                    initial_data=payload.initial_data,
+                    status_callback=_broadcast_node_status,
+                )
 
         # Serialize results to JSON-safe format (per-node, so one failure doesn't lose all)
         logger.debug("[Serialization] Starting serialization of %s node results...", len(results))
@@ -1233,7 +1253,7 @@ async def execute_workflow(
         diagnostics_serialized = serialize_result(getattr(executor, "diagnostics", {}), owner_user_id=user_id)
 
         # Auto-persist results so they survive page refresh
-        await _auto_persist_run(
+        persisted = await _auto_persist_run(
             session,
             workflow_id=workflow_id,
             user_id=user_id,
@@ -1247,6 +1267,8 @@ async def execute_workflow(
             integrity_hash=wf_integrity_hash,
             model_ids=[a["artifact_uid"] for a in (executor.saved_artifacts or [])],
         )
+        if not persisted:
+            _raise_execution_persistence_error()
 
         return WorkflowExecuteResponse(
             workflow_id=workflow_id,
@@ -1258,6 +1280,17 @@ async def execute_workflow(
             error=error_msg,
             integrity_hash=wf_integrity_hash,
         )
+
+    except asyncio.TimeoutError as e:
+        logger.warning(
+            "Workflow execution timed out for workflow_id=%s after %ss",
+            workflow_id,
+            settings.max_job_duration_sec,
+        )
+        raise HTTPException(
+            status_code=504,
+            detail=("Workflow execution timed out. " f"Reference limit: {settings.max_job_duration_sec}s"),
+        ) from e
 
     except Exception as e:
         logger.debug("Workflow execution failed for workflow_id=%s", workflow_id, exc_info=True)
@@ -1316,7 +1349,7 @@ async def execute_workflow(
         partial_node_statuses = executor.get_status()["node_statuses"] if executor else {}
 
         # Auto-persist partial/error results too
-        await _auto_persist_run(
+        persisted = await _auto_persist_run(
             session,
             workflow_id=workflow_id,
             user_id=user_id,
@@ -1330,6 +1363,8 @@ async def execute_workflow(
             integrity_hash=wf_integrity_hash,
             model_ids=[a["artifact_uid"] for a in (getattr(executor, "saved_artifacts", None) or [])],
         )
+        if not persisted:
+            _raise_execution_persistence_error()
 
         return WorkflowExecuteResponse(
             workflow_id=workflow_id,

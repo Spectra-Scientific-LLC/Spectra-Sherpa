@@ -162,6 +162,32 @@ class TestLocalModeE2E:
         assert result["workflow_id"] == wf_id
         assert result["status"] in ("success", "completed", "partial")
 
+    async def test_execute_returns_500_when_auto_persist_fails(
+        self,
+        client: AsyncClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        import spectra_sherpa.app.api.v1.routes.workflows as workflow_routes
+
+        resp = await client.post(
+            "/api/v1/workflows",
+            json={"name": "Persist Failure"},
+        )
+        assert resp.status_code == 201
+        wf_id = resp.json()["id"]
+
+        async def _persist_failure(*args, **kwargs):
+            return False
+
+        monkeypatch.setattr(workflow_routes, "_auto_persist_run", _persist_failure)
+
+        resp = await client.post(
+            f"/api/v1/workflows/{wf_id}/execute",
+            json={},
+        )
+        assert resp.status_code == 500
+        assert "results could not be saved" in resp.json()["detail"]
+
     async def test_execute_nonexistent_workflow_404(self, client: AsyncClient):
         """Executing a workflow that doesn't exist returns 404."""
         resp = await client.post(

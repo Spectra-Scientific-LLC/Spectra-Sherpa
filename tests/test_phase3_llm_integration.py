@@ -454,6 +454,57 @@ class TestHttpLlmRateLimits:
         ]
 
     @pytest.mark.asyncio
+    async def test_proxy_server_chat_forwards_warning_events_without_stopping_stream(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from spectra_sherpa.app.services import ws_handlers
+
+        ws = SimpleNamespace(send_json=AsyncMock())
+
+        async def _fake_stream_llm_chat(self, **_kwargs):
+            yield {"type": "start", "conversation_id": "conv-1"}
+            yield {
+                "type": "warning",
+                "conversation_id": "conv-1",
+                "code": "history_load_failed",
+                "message": "Conversation history could not be loaded.",
+            }
+            yield {"type": "chunk", "conversation_id": "conv-1", "text": "Hello"}
+            yield {"type": "done", "conversation_id": "conv-1"}
+
+        class _Advisor:
+            is_available = True
+            stream_llm_chat = _fake_stream_llm_chat
+
+        monkeypatch.setattr(
+            "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
+            lambda: _Advisor(),
+        )
+
+        await ws_handlers._proxy_server_chat(
+            ws,
+            "hello",
+            "conv-1",
+            {"project_id": 42},
+            SimpleNamespace(id=7),
+        )
+
+        assert ws.send_json.await_args_list == [
+            call({"type": "llm_start", "conversation_id": "conv-1"}),
+            call(
+                {
+                    "type": "llm_warning",
+                    "conversation_id": "conv-1",
+                    "detail": "Conversation history could not be loaded.",
+                    "code": "history_load_failed",
+                }
+            ),
+            call({"type": "llm_chunk", "conversation_id": "conv-1", "chunk": "Hello"}),
+            call({"type": "llm_done", "conversation_id": "conv-1"}),
+        ]
+
+    @pytest.mark.asyncio
     async def test_proxy_server_chat_surfaces_upstream_error_detail(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -518,6 +569,67 @@ class TestHttpLlmRateLimits:
             {"project_id": 42},
             SimpleNamespace(id=7),
         )
+
+    @pytest.mark.asyncio
+    async def test_local_llm_chat_closes_stream_after_completion(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from spectra_sherpa.app.services import ws_handlers
+
+        class _NullAsyncSessionContext:
+            async def __aenter__(self):
+                return None
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        class _Stream:
+            def __init__(self) -> None:
+                self._chunks = iter(["Hello"])
+                self.closed = False
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                try:
+                    return next(self._chunks)
+                except StopIteration:
+                    raise StopAsyncIteration
+
+            async def aclose(self) -> None:
+                self.closed = True
+
+        stream = _Stream()
+
+        class _LLMService:
+            def __init__(self, _session, user=None) -> None:
+                self.user = user
+
+            async def stream_chat(self, *, message, conversation_id=None, metadata=None):
+                assert message == "hello"
+                return ("conv-1", stream)
+
+        monkeypatch.setattr(ws_handlers, "async_session", lambda: _NullAsyncSessionContext())
+        monkeypatch.setattr(ws_handlers, "LLMService", _LLMService)
+
+        ws = SimpleNamespace(send_json=AsyncMock())
+
+        await ws_handlers._local_llm_chat(
+            ws,
+            "hello",
+            "conv-1",
+            {"project_id": 42},
+            SimpleNamespace(id=7),
+        )
+
+        assert stream.closed is True
+        assert ws.send_json.await_args_list == [
+            call({"type": "llm_start", "conversation_id": "conv-1"}),
+            call({"type": "llm_chunk", "conversation_id": "conv-1", "chunk": "Hello"}),
+            call({"type": "llm_done", "conversation_id": "conv-1"}),
+        ]
 
     @pytest.mark.asyncio
     async def test_llm_server_proxy_maps_upstream_auth_failure_to_service_error(

@@ -6,6 +6,7 @@ import { dispatchSherpaEvent } from "@/lib/sherpaEvents";
 import type { ConversationSummary, LlmMessage } from "@/types";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useAuthStore } from "@/stores/auth";
+import { useNotificationStore } from "@/stores/notification";
 import { useProjectStore } from "@/stores/project";
 import { buildAuthMessage, buildWsUrl, withCredentials } from "@/utils/ws";
 
@@ -46,6 +47,7 @@ interface LlmConfig {
 export const useLlmStore = defineStore("llm", () => {
   const { appMode } = useAppConfig();
   const authStore = useAuthStore();
+  const notifications = useNotificationStore();
   const projectStore = useProjectStore();
   const isServerBacked = computed(() => appMode.value !== "local");
   const messages = ref<LlmMessage[]>([]);
@@ -77,6 +79,32 @@ export const useLlmStore = defineStore("llm", () => {
   const CONNECT_RETRY_ATTEMPTS = 3;
   let connectAttempt = 0;
   let authFallbackRetried = false;
+
+  const formatChatWarning = (
+    payload: Record<string, unknown>
+  ): { message: string; detail?: string } => {
+    const code = typeof payload.code === "string" ? payload.code : null;
+    const detail =
+      typeof payload.detail === "string" && payload.detail.trim()
+        ? payload.detail.trim()
+        : typeof payload.message === "string" && payload.message.trim()
+          ? payload.message.trim()
+          : "The server reported a chat warning.";
+
+    if (code === "persistence_failed") {
+      return {
+        message: "Chat response was delivered but could not be saved to history.",
+        detail,
+      };
+    }
+    if (code === "history_load_failed") {
+      return {
+        message: "Conversation history could not be loaded. Continuing without prior chat context.",
+        detail,
+      };
+    }
+    return { message: detail, detail };
+  };
 
   const clearReconnect = () => {
     if (reconnectTimer !== null) {
@@ -199,6 +227,19 @@ export const useLlmStore = defineStore("llm", () => {
           loading.value = false;
           streamingIndex.value = null;
           updateConversationSummary(payload.conversation_id);
+        } else if (payload.type === "warning" || payload.type === "llm_warning") {
+          const { message, detail } = formatChatWarning(payload as Record<string, unknown>);
+          messages.value.push({
+            role: "system",
+            content: message,
+          });
+          notifications.add({
+            source: "system",
+            severity: "warning",
+            title: "AI Chat",
+            message,
+            detail,
+          });
         } else if (payload.type === "error" || payload.type === "llm_error") {
           streaming.value = false;
           loading.value = false;

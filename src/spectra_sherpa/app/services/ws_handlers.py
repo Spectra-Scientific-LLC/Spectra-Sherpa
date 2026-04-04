@@ -179,6 +179,17 @@ async def _proxy_server_chat(
                         {"type": "llm_done", "conversation_id": event.get("conversation_id")},
                     )
                     return
+                elif etype == "warning":
+                    if not await _safe_ws_send_json(
+                        ws,
+                        {
+                            "type": "llm_warning",
+                            "conversation_id": event.get("conversation_id"),
+                            "detail": event.get("message", event.get("detail", "")),
+                            "code": event.get("code"),
+                        },
+                    ):
+                        return
                 elif etype == "error":
                     await _safe_ws_send_json(ws, {"type": "error", "detail": event.get("detail", "")})
                     return
@@ -206,6 +217,7 @@ async def _local_llm_chat(
     """Local LLM chat via BYOK provider (OSS / local mode)."""
     async with async_session() as session:
         service = LLMService(session, user=user)
+        stream = None
         try:
             convo_id, stream = await service.stream_chat(
                 message=message,
@@ -215,12 +227,17 @@ async def _local_llm_chat(
         except ValueError as exc:
             await _safe_ws_send_json(ws, {"type": "error", "detail": str(exc)})
             return
-        if not await _safe_ws_send_json(ws, {"type": "llm_start", "conversation_id": convo_id}):
-            return
-        async for chunk in stream:
-            if not await _safe_ws_send_json(ws, {"type": "llm_chunk", "conversation_id": convo_id, "chunk": chunk}):
+        try:
+            if not await _safe_ws_send_json(ws, {"type": "llm_start", "conversation_id": convo_id}):
                 return
-        await _safe_ws_send_json(ws, {"type": "llm_done", "conversation_id": convo_id})
+            async for chunk in stream:
+                if not await _safe_ws_send_json(ws, {"type": "llm_chunk", "conversation_id": convo_id, "chunk": chunk}):
+                    return
+            await _safe_ws_send_json(ws, {"type": "llm_done", "conversation_id": convo_id})
+        finally:
+            aclose = getattr(stream, "aclose", None)
+            if callable(aclose):
+                await aclose()
 
 
 async def handle_llm_chat(

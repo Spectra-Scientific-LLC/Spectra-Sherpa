@@ -80,6 +80,7 @@ class Settings:
 
     max_file_size_mb: int = _get_int("MAX_FILE_SIZE_MB", 200)
     max_job_duration_sec: int = _get_int("MAX_JOB_DURATION_SEC", 3600)
+    ws_idle_timeout_sec: int = _get_int("WS_IDLE_TIMEOUT_SEC", 120)
     dag_worker_pool_size: int = _get_int("DAG_WORKER_POOL_SIZE", min(4, os.cpu_count() or 2))
     parallel_threshold: int = _get_int("PARALLEL_THRESHOLD", 100)  # min spectra to enable multi-core preprocessing
     max_export_size_mb: int = _get_int("MAX_EXPORT_SIZE_MB", 1024)

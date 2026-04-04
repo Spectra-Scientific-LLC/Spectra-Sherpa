@@ -31,6 +31,7 @@ vi.mock("@/stores/project", () => ({
 }));
 
 import { useLlmStore } from "@/stores/llm";
+import { useNotificationStore } from "@/stores/notification";
 
 class MockWebSocket {
   static OPEN = 1;
@@ -76,6 +77,7 @@ describe("LLM Store WebSocket handshake", () => {
     vi.useFakeTimers();
     setActivePinia(createPinia());
     apiGet.mockReset();
+    apiGet.mockResolvedValue({ data: [] });
     sockets = [];
     OriginalWebSocket = globalThis.WebSocket;
     class TestWebSocket extends MockWebSocket {
@@ -194,5 +196,44 @@ describe("LLM Store WebSocket handshake", () => {
     expect(transportEvents.map((event) => event.kind)).toContain("connect_retry");
 
     window.removeEventListener("app-ws-transport", handler);
+  });
+
+  it("surfaces streaming warning events in chat and notifications", async () => {
+    const llm = useLlmStore();
+    const notifications = useNotificationStore();
+
+    const connectPromise = llm.connect();
+    await Promise.resolve();
+    sockets[0].dispatch("open");
+    sockets[0].dispatch("message", {
+      data: JSON.stringify({ type: "authenticated", user_id: 1 }),
+    });
+    await connectPromise;
+
+    await llm.sendMessage("Explain this");
+
+    sockets[0].dispatch("message", {
+      data: JSON.stringify({ type: "llm_start", conversation_id: "conv-1" }),
+    });
+    sockets[0].dispatch("message", {
+      data: JSON.stringify({
+        type: "llm_warning",
+        conversation_id: "conv-1",
+        code: "history_load_failed",
+        detail: "Conversation history could not be loaded. Sherpa is replying without prior chat context.",
+      }),
+    });
+
+    expect(llm.messages.at(-1)?.role).toBe("system");
+    expect(llm.messages.at(-1)?.content).toBe(
+      "Conversation history could not be loaded. Continuing without prior chat context."
+    );
+    expect(notifications.notifications[0]?.title).toBe("AI Chat");
+    expect(notifications.notifications[0]?.message).toBe(
+      "Conversation history could not be loaded. Continuing without prior chat context."
+    );
+    expect(notifications.notifications[0]?.detail).toBe(
+      "Conversation history could not be loaded. Sherpa is replying without prior chat context."
+    );
   });
 });

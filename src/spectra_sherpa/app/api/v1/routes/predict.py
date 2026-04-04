@@ -10,8 +10,10 @@ exit-node results are returned.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException
@@ -27,6 +29,7 @@ from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
 
 router = APIRouter(prefix="/workflows")
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -193,8 +196,13 @@ async def predict(
     # --- 6. Execute the DAG ----------------------------------------------
     try:
         results = await executor.execute()
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Execution error: {exc}")
+    except Exception:
+        request_id = uuid4().hex[:8]
+        logger.exception("Prediction execution failed [req %s]", request_id)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Execution failed. Reference request ID: {request_id}",
+        )
 
     # --- 7. Collect and serialize exit-node results ----------------------
     from spectra_sherpa.app.services.serialization import serialize_result
