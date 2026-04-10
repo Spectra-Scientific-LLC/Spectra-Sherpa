@@ -391,6 +391,18 @@ export const useWorkflowStore = defineStore("workflow", () => {
   async function loadWorkflow(id: number): Promise<void> {
     isLoading.value = true;
     try {
+      // Ensure the node library and type registry are loaded BEFORE we
+      // validate the workflow's edges. Otherwise validateAllEdges runs
+      // with an empty library, every edge resolves to "metadata missing"
+      // and turns red in the canvas. This race is visible after a
+      // frontend container rebuild: the initial fetchNodeLibrary in
+      // main.ts is still in flight when the workflow auto-loads.
+      if (nodeLibrary.value.size === 0) {
+        await fetchNodeLibrary();
+      } else if (!typeRegistry.value) {
+        await fetchTypeRegistry();
+      }
+
       const response = await api.get(`/workflows/${id}`);
       const data = response.data;
 
