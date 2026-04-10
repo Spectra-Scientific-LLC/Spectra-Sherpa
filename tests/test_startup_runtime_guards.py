@@ -91,10 +91,14 @@ def test_hybrid_security_rejects_default_secret(monkeypatch: pytest.MonkeyPatch)
     assert exc_info.value.code == 1
 
 
-def test_hybrid_security_warns_on_default_api_key_when_system_auth_enabled(
+def test_hybrid_security_rejects_default_api_key_when_system_auth_enabled(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """Hybrid/enterprise mode must refuse to start when both the default
+    APP_API_KEY is in use AND system key auth is enabled — that combination
+    exposes every endpoint to anyone who knows the published default.
+    """
     _patch_runtime(
         monkeypatch,
         mode="hybrid",
@@ -102,13 +106,16 @@ def test_hybrid_security_warns_on_default_api_key_when_system_auth_enabled(
         api_key=startup.DEFAULT_API_KEY,
     )
     monkeypatch.setenv("ALLOW_SYSTEM_API_KEY_AUTH", "true")
-    monkeypatch.delenv("MASTER_ENCRYPTION_KEY", raising=False)
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", "a" * 32)
 
-    with caplog.at_level("WARNING"):
-        startup.validate_security_settings()
+    with pytest.raises(SystemExit) as exc_info:
+        with caplog.at_level("CRITICAL"):
+            startup.validate_security_settings()
 
+    assert exc_info.value.code == 1
     assert "APP_API_KEY is set to the default value" in caplog.text
-    assert "MASTER_ENCRYPTION_KEY not set" in caplog.text
+
+
 
 
 def test_hybrid_security_rejects_short_master_encryption_key(monkeypatch: pytest.MonkeyPatch) -> None:

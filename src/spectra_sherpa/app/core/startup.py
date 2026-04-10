@@ -152,12 +152,18 @@ def _validate_security() -> list[ConfigIssue]:
         "yes",
     }
     if settings.api_key == DEFAULT_API_KEY and system_key_auth_enabled:
+        # In enterprise/hybrid mode this is a hard failure — leaving the
+        # default key while accepting it for authentication exposes every
+        # endpoint to anyone who knows the published default. Local mode
+        # already bypasses auth, so the default is harmless there.
+        level = "error" if app_config.mode in ("enterprise", "hybrid") else "warning"
         issues.append(
             ConfigIssue(
-                "warning",
+                level,
                 "security",
-                "APP_API_KEY is set to the default value while ALLOW_SYSTEM_API_KEY_AUTH "
-                "is enabled. Set a strong random APP_API_KEY.",
+                f"APP_API_KEY is set to the default value while ALLOW_SYSTEM_API_KEY_AUTH "
+                f"is enabled in {app_config.mode} mode. Set a strong random APP_API_KEY "
+                f"before starting.",
             )
         )
 
