@@ -1,9 +1,10 @@
 import { test as base, expect, type Page } from "@playwright/test";
-import * as fs from "fs";
+import { fileURLToPath } from "url";
 import * as path from "path";
 import * as dotenv from "dotenv";
 
 // Load e2e credentials
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, "../.env.e2e") });
 
 const E2E_USERNAME = process.env.E2E_USERNAME!;
