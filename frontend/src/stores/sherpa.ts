@@ -363,7 +363,25 @@ export const useSherpaStore = defineStore("sherpa", () => {
     const nodes = workflow.nodes.map((n) => {
       const meta = workflow.getNodeMetadata(n.type);
       const exec = n.executionState;
-      const paramKeys = new Set(Object.keys(n.params || {}));
+      const userParams = (n.params || {}) as Record<string, unknown>;
+
+      // Build EFFECTIVE parameters = metadata defaults overlaid with user overrides.
+      // Without this the Pipeline Nodes "Params: {...}" line sent to Sherpa is
+      // often empty or partial, and the LLM falls back on describe_node (which
+      // returns type-level defaults) and conflates "node type default" with
+      // "this node's actual setting". Always sending the effective value
+      // removes that ambiguity.
+      const effectiveParams: Record<string, unknown> = {};
+      if (meta?.parameters) {
+        for (const p of meta.parameters) {
+          if (p.default !== undefined) {
+            effectiveParams[p.name] = p.default;
+          }
+        }
+      }
+      Object.assign(effectiveParams, userParams);
+
+      const paramKeys = new Set(Object.keys(effectiveParams));
       const paramDescriptions =
         meta?.parameters
           ?.filter((param) => paramKeys.has(param.name))
@@ -377,7 +395,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
         node_id: String(n.id),
         node_type: n.type,
         label: meta?.label ?? n.type,
-        parameters: n.params || {},
+        parameters: effectiveParams,
         result_shape: exec?.output_shape ?? null,
         result_statistics: null,
         description: meta?.description ?? null,
