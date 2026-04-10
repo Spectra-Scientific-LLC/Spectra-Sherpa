@@ -18,7 +18,7 @@ from ...io_contracts import (
     bind_y,
     to_numpy_2d,
 )
-from ...node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
+from ...node_base import Node, NodeMetadata, NodeParameter, NodeResult, PortMetadata, register_node
 from ..modeling import create_spectral_dataset
 from ..visualization import generate_confusion_matrix_heatmap
 from .core_utils import (
@@ -557,16 +557,27 @@ class PLSDANode(Node):
         )
 
         # SherpaDataset-only return: one serialization boundary at API layer
-        return {
-            "default": scores_dataset,  # SherpaDataset: scores (n_samples, n_components)
-            "loadings": loadings_dataset,  # SherpaDataset: loadings (n_components, n_features)
-            "model": {  # Wrapped model dict for ClassifierPredictNode
-                "model": pls,
-                "classes": classes.tolist(),
-                "type": "plsda",
+        return NodeResult(
+            outputs={
+                "default": scores_dataset,  # SherpaDataset: scores (n_samples, n_components)
+                "loadings": loadings_dataset,  # SherpaDataset: loadings (n_components, n_features)
+                "model": {  # Wrapped model dict for ClassifierPredictNode
+                    "model": pls,
+                    "classes": classes.tolist(),
+                    "type": "plsda",
+                },
+                "plots": plots,  # Pre-built Plotly traces (legitimate visualization output)
             },
-            "plots": plots,  # Pre-built Plotly traces (legitimate visualization output)
-        }
+            diagnostics={
+                "accuracy": cv_accuracy,
+                "train_accuracy": train_accuracy,
+                "cv_balanced_accuracy": cv_balanced_accuracy,
+                "f1_score": cv_f1_macro,
+                "n_components": n_components,
+                "n_classes": len(classes),
+                "confusion_matrix_cv": cm_cv.tolist(),
+            },
+        )
 
     def _cross_val_predict_plsda(self, X, y, classes, n_components, scale, cv_folds):
         """

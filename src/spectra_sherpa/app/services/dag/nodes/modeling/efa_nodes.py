@@ -16,6 +16,7 @@ from ...node_base import (
     Node,
     NodeMetadata,
     NodeParameter,
+    NodeResult,
     PortMetadata,
     register_node,
 )
@@ -240,9 +241,18 @@ class EFANode(Node):
                 }
             )
 
-        return {
-            "default": default_dataset,  # SherpaDataset: forward eigenvalues (primary output)
-            "forward_eigenvalues": forward_ev_dataset,  # SherpaDataset: forward eigenvalues (n_samples, n_components)
-            "backward_eigenvalues": backward_ev_dataset,  # SherpaDataset: backward eigenvalues
-            "model": efa,  # Model port
-        }
+        efa_diagnostics: dict[str, Any] = {"n_components": int(n_components)}
+        if forward_ev is not None:
+            efa_diagnostics["n_eigenvalues_forward"] = int(forward_ev.shape[1])
+        if backward_ev is not None:
+            efa_diagnostics["n_eigenvalues_backward"] = int(backward_ev.shape[1])
+
+        return NodeResult(
+            outputs={
+                "default": default_dataset,  # SherpaDataset: forward eigenvalues (primary output)
+                "forward_eigenvalues": forward_ev_dataset,  # SherpaDataset: (n_samples, n_components)
+                "backward_eigenvalues": backward_ev_dataset,  # SherpaDataset: backward eigenvalues
+                "model": efa,  # Model port
+            },
+            diagnostics=efa_diagnostics,
+        )

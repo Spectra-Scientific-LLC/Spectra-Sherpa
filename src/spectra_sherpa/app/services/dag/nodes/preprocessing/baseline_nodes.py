@@ -16,6 +16,7 @@ from ._shared import (
     Node,
     NodeMetadata,
     NodeParameter,
+    NodeResult,
     PortMetadata,
     SherpaDataset,
     TransformSpec,
@@ -211,7 +212,7 @@ class BaselinePenalizedLSNode(TransformSpecNode):
             state_effects=[EFFECT_BASELINE_CORRECTED],
         )
         result.meta["baseline_diagnostics"] = baseline_diagnostics
-        return result
+        return NodeResult(outputs={"default": result}, diagnostics=baseline_diagnostics)
 
 
 @register_node

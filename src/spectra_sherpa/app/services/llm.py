@@ -269,9 +269,7 @@ class LLMService:
 
         # Use appropriate API format based on client type
         if provider_meta["client_type"] == "anthropic":
-            # Anthropic format: separate system message from conversation
-            system_msg = next((m["content"] for m in payload if m["role"] == "system"), DEFAULT_SYSTEM_PROMPT)
-            user_msgs = [m for m in payload if m["role"] != "system"]
+            system_msg, user_msgs = self._split_anthropic_payload(payload)
 
             response = await client.messages.create(
                 model=config["model"], max_tokens=4096, system=system_msg, messages=user_msgs
@@ -314,9 +312,7 @@ class LLMService:
 
         # Create appropriate stream based on client type
         if provider_meta["client_type"] == "anthropic":
-            # Anthropic streaming format
-            system_msg = next((m["content"] for m in payload if m["role"] == "system"), DEFAULT_SYSTEM_PROMPT)
-            user_msgs = [m for m in payload if m["role"] != "system"]
+            system_msg, user_msgs = self._split_anthropic_payload(payload)
 
             stream = await client.messages.create(
                 model=config["model"], max_tokens=4096, system=system_msg, messages=user_msgs, stream=True
@@ -693,6 +689,19 @@ class LLMService:
 
         messages.extend(history[-MAX_HISTORY_MESSAGES:])
         return messages
+
+    @staticmethod
+    def _split_anthropic_payload(payload: list[dict[str, str]]) -> tuple[str, list[dict[str, str]]]:
+        system_parts = [
+            message["content"].strip()
+            for message in payload
+            if message.get("role") == "system"
+            and isinstance(message.get("content"), str)
+            and message["content"].strip()
+        ]
+        system_msg = "\n\n".join(system_parts) if system_parts else DEFAULT_SYSTEM_PROMPT
+        user_msgs = [message for message in payload if message.get("role") != "system"]
+        return system_msg, user_msgs
 
     def _load_reference_pdf(self, pdf_path: str | Path | None) -> Optional[str]:
         """Load a reference PDF from an explicit path."""

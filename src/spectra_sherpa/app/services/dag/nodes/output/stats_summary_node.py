@@ -142,7 +142,9 @@ class StatsSummaryNode(Node):
         """
         # Detect input type and route to appropriate handler
         if isinstance(input_data, dict):
-            if "scores" in input_data or "isPCA" in input_data.get("metadata", {}):
+            if "accuracy" in input_data or input_data.get("task_type") in ("classification", "regression"):
+                return await self._stats_evaluation(input_data)
+            elif "scores" in input_data or "isPCA" in input_data.get("metadata", {}):
                 return await self._stats_pca(input_data)
             elif "C" in input_data or "St" in input_data:
                 return await self._stats_mcr(input_data)
@@ -493,6 +495,66 @@ class StatsSummaryNode(Node):
                 "metadata": metadata,
             }
         }
+
+    async def _stats_evaluation(self, metrics: dict) -> Dict[str, Any]:
+        """Summarize holdout evaluation metrics (classification or regression)."""
+        task_type = metrics.get("task_type", "unknown")
+
+        if task_type == "classification":
+            table_rows = []
+            per_class = metrics.get("per_class", [])
+            for entry in per_class:
+                table_rows.append(
+                    {
+                        "class": entry.get("class", "?"),
+                        "sensitivity": round(float(entry.get("sensitivity", 0)), 4),
+                        "specificity": round(float(entry.get("specificity", 0)), 4),
+                        "precision": round(float(entry.get("precision", 0)), 4),
+                        "f1": round(float(entry.get("f1", 0)), 4),
+                    }
+                )
+
+            summary = {
+                "task_type": "classification",
+                "accuracy": metrics.get("accuracy"),
+                "n_classes": metrics.get("n_classes"),
+                "classes": metrics.get("classes"),
+                "n_samples": metrics.get("n_samples"),
+            }
+
+            return {
+                "statistics": {
+                    "input_type": "EvaluationClassification",
+                    "summary": summary,
+                    "data": table_rows if table_rows else [summary],
+                    "metadata": {"type": "EvaluationClassification"},
+                }
+            }
+        else:
+            # Regression metrics
+            scalar_keys = (
+                "RMSEP",
+                "R2",
+                "MAE",
+                "bias",
+                "SEP",
+                "RER",
+                "n_samples",
+                "n_valid_samples",
+                "n_invalid_predictions",
+                "status",
+            )
+            summary = {k: metrics[k] for k in scalar_keys if k in metrics}
+            summary["task_type"] = "regression"
+
+            return {
+                "statistics": {
+                    "input_type": "EvaluationRegression",
+                    "summary": summary,
+                    "data": [summary],
+                    "metadata": {"type": "EvaluationRegression"},
+                }
+            }
 
     async def _stats_array(self, data: np.ndarray, metadata: Optional[dict]) -> Dict[str, Any]:
         """Compute basic statistics for generic array data."""

@@ -8,7 +8,7 @@
             v-if="showLlmTab"
             class="tab-btn"
             :class="{ active: activeTab === 'llm' }"
-            @click="activeTab = 'llm'"
+            @click="setActiveTab('llm')"
           >
             LLM Chat
           </button>
@@ -25,6 +25,41 @@
           <span class="tab-label">{{ activeTabLabel }}</span>
         </div>
         <div class="panel-topbar-actions">
+          <div v-if="activeTab === 'sherpa'" class="sherpa-conversation-picker">
+            <Button
+              icon="pi pi-list"
+              label="Topics"
+              class="p-button-text p-button-sm sherpa-topics-btn"
+              aria-label="Sherpa topics"
+              @click="toggleSherpaConversationMenu"
+              v-tooltip.bottom="'Sherpa topics'"
+            />
+            <Menu ref="sherpaConversationMenu" :model="sherpaConversationMenuItems" :popup="true" class="sherpa-menu">
+              <template #item="{ item }">
+                <div
+                  class="sherpa-menu-item"
+                  :class="{
+                    active: item.active,
+                    'sherpa-menu-item--disabled': item.disabled,
+                    'sherpa-menu-item--action': item.isAction,
+                  }"
+                >
+                  <i v-if="item.icon" :class="item.icon"></i>
+                  <div class="sherpa-menu-copy">
+                    <span class="sherpa-menu-title">{{ item.label }}</span>
+                    <span v-if="item.updatedAt" class="sherpa-menu-meta">{{ item.updatedAt }}</span>
+                  </div>
+                </div>
+              </template>
+            </Menu>
+            <Button
+              icon="pi pi-plus"
+              class="p-button-text p-button-sm llm-settings-btn"
+              aria-label="Start new Sherpa conversation"
+              @click="startNewSherpaConversation"
+              v-tooltip.bottom="'New Sherpa conversation'"
+            />
+          </div>
           <!-- LLM settings (only on LLM tab, local mode only — server owns model selection) -->
           <Button
             v-if="activeTab === 'llm' && appMode === 'local'"
@@ -209,7 +244,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
 import Menu from "primevue/menu";
@@ -240,6 +275,7 @@ const props = withDefaults(
 );
 
 const router = useRouter();
+const route = useRoute();
 const store = useLlmStore();
 const sherpaStore = useSherpaStore();
 const experimentStore = useExperimentStore();
@@ -265,7 +301,8 @@ const scrollToBottom = async () => {
 
 // ── Tab toggle ───────────────────────────────────────────────
 
-const activeTab = ref<"llm" | "sherpa">("llm");
+type ChatTab = "llm" | "sherpa";
+
 const sherpaEnabled = computed(() => isFeatureEnabled("sherpaAdvisor"));
 const llmChatEnabled = computed(() => isFeatureEnabled("chatAssistant"));
 const showLlmTab = computed(() => !(isDemoMode.value && sherpaEnabled.value));
@@ -278,12 +315,41 @@ const hasExecutionResults = computed(
   () => Object.keys(workflowStore.lastExecutionResults || {}).length > 0
 );
 
-const switchToSherpa = () => {
-  activeTab.value = "sherpa";
-  // Auto-sync on switch (proactive assessment)
-  if (workflowStore.workflowId) {
-    sherpaStore.syncWorkflow();
+const requestedTab = computed<ChatTab | null>(() => {
+  const rawTab = route.query.tab;
+  if (rawTab === "sherpa" || rawTab === "llm") {
+    return rawTab;
   }
+  return null;
+});
+
+const resolveInitialTab = (): ChatTab => {
+  if (requestedTab.value === "sherpa" && sherpaEnabled.value) {
+    return "sherpa";
+  }
+  if (requestedTab.value === "llm" && showLlmTab.value) {
+    return "llm";
+  }
+  if (!showLlmTab.value && sherpaEnabled.value) {
+    return "sherpa";
+  }
+  return "llm";
+};
+
+const activeTab = ref<ChatTab>(resolveInitialTab());
+
+const setActiveTab = (tab: ChatTab) => {
+  if (tab === "sherpa" && !sherpaEnabled.value) {
+    return;
+  }
+  if (tab === "llm" && !showLlmTab.value) {
+    return;
+  }
+  activeTab.value = tab;
+};
+
+const switchToSherpa = () => {
+  setActiveTab("sherpa");
 };
 
 const inputPlaceholder = computed(() => {
@@ -336,6 +402,7 @@ const activeSherpaTools = computed(() =>
 // ── LLM Provider Menu ────────────────────────────────────────
 
 const llmMenu = ref();
+const sherpaConversationMenu = ref();
 const selectedProvider = ref<string>("deepseek");
 
 const llmProviders = [
@@ -357,6 +424,45 @@ const toggleLlmMenu = (event: Event) => {
   llmMenu.value.toggle(event);
 };
 
+const sherpaConversationMenuItems = computed(() => {
+  const items: Array<Record<string, unknown>> = [
+    {
+      label: "New conversation",
+      icon: "pi pi-plus",
+      isAction: true,
+      command: () => startNewSherpaConversation(),
+    },
+  ];
+
+  if (sherpaStore.conversations.length > 0) {
+    items.push({ separator: true });
+    items.push(
+      ...sherpaStore.conversations.map((conversation) => ({
+        label: conversation.title,
+        updatedAt: formatDateTime(conversation.updatedAt),
+        icon: conversation.id === sherpaStore.currentConversationId ? "pi pi-check" : "pi pi-comment",
+        active: conversation.id === sherpaStore.currentConversationId,
+        command: () => {
+          void onSherpaConversationSelect(conversation.id);
+        },
+      }))
+    );
+  } else {
+    items.push({ separator: true });
+    items.push({
+      label: "No saved topics yet",
+      icon: "pi pi-info-circle",
+      disabled: true,
+    });
+  }
+
+  return items;
+});
+
+const toggleSherpaConversationMenu = (event: Event) => {
+  sherpaConversationMenu.value?.toggle(event);
+};
+
 const switchProvider = async (provider: string) => {
   selectedProvider.value = provider;
   await onProviderChange();
@@ -364,10 +470,22 @@ const switchProvider = async (provider: string) => {
 
 // Sync with current config
 watch(
-  () => [showLlmTab.value, sherpaEnabled.value] as const,
-  ([llmVisible, sherpaVisible]) => {
-    if (!llmVisible && sherpaVisible && activeTab.value !== "sherpa") {
-      switchToSherpa();
+  () => [showLlmTab.value, sherpaEnabled.value, requestedTab.value] as const,
+  ([llmVisible, sherpaVisible, tabFromRoute]) => {
+    if (tabFromRoute === "sherpa" && sherpaVisible) {
+      setActiveTab("sherpa");
+      return;
+    }
+    if (tabFromRoute === "llm" && llmVisible) {
+      setActiveTab("llm");
+      return;
+    }
+    if (!llmVisible && sherpaVisible) {
+      setActiveTab("sherpa");
+      return;
+    }
+    if (activeTab.value === "sherpa" && !sherpaVisible && llmVisible) {
+      setActiveTab("llm");
     }
   },
   { immediate: true }
@@ -408,6 +526,7 @@ onMounted(async () => {
     experimentStore.fetchExperiments();
     sherpaStore.init();
     await loadEgressDefaults();
+    await sherpaStore.refreshConversations(projectStore.currentProjectId);
     if (appMode.value === "local") {
       // Fetch initial config only when authenticated (requires /llm/debug/config)
       await store.checkConfigChange();
@@ -468,6 +587,7 @@ watch(
 watch(
   () => projectStore.currentProjectId,
   async (projectId) => {
+    await sherpaStore.refreshConversations(projectId);
     if (appMode.value !== "local") {
       await store.refreshConversations(projectId);
     }
@@ -509,10 +629,44 @@ function buildWorkflowChatContext(): Record<string, unknown> | null {
 
   if (nodes.length === 0) return null;
 
+  const deriveShapeAndType = (
+    result: Record<string, unknown> | null | undefined
+  ): { resultShape: number[] | null; outputType: string | null } => {
+    let resultShape: number[] | null = null;
+    let outputType: string | null = null;
+
+    if (!result || typeof result !== "object") {
+      return { resultShape, outputType };
+    }
+
+    const primary =
+      result.default && typeof result.default === "object"
+        ? (result.default as Record<string, unknown>)
+        : result;
+
+    if (typeof primary.type === "string" && primary.type.trim()) {
+      outputType = primary.type;
+    }
+
+    if (Array.isArray(primary.shape) && primary.shape.every((value) => typeof value === "number")) {
+      resultShape = primary.shape as number[];
+    } else if (typeof primary.n_samples === "number" && typeof primary.n_features === "number") {
+      resultShape = [primary.n_samples, primary.n_features];
+    }
+
+    return { resultShape, outputType };
+  };
+
   // Build V2 node list with library metadata
   const contextNodes = nodes.map((n) => {
     const meta = getNodeMetadata(n.type);
     const execState = n.executionState;
+    const rawResult =
+      lastExecutionResults && typeof lastExecutionResults === "object"
+        ? (lastExecutionResults[n.id] as Record<string, unknown> | undefined)
+        : undefined;
+    const inferredResult = deriveShapeAndType(rawResult);
+    const hasPersistedResult = rawResult !== undefined;
 
     // Filter param_descriptions to params actually set on this node
     const setParamNames = new Set(Object.keys(n.params || {}));
@@ -522,8 +676,14 @@ function buildWorkflowChatContext(): Record<string, unknown> | null {
       ?? null;
 
     // Result summary for this node (strip raw arrays, keep scalars + shapes)
-    const resultShape = execState?.output_shape ?? null;
+    const resultShape = execState?.output_shape ?? inferredResult.resultShape;
     const resultStatistics: Record<string, number> | null = null;
+    const executionStatus =
+      execState?.status && execState.status !== "pending"
+        ? execState.status
+        : hasPersistedResult
+          ? "completed"
+          : execState?.status ?? null;
 
     return {
       node_id: n.id,
@@ -535,8 +695,8 @@ function buildWorkflowChatContext(): Record<string, unknown> | null {
       // V2 fields
       description: meta?.description ?? null,
       param_descriptions: paramDescriptions,
-      output_type: execState?.output_type ?? meta?.output_type ?? null,
-      execution_status: execState?.status ?? null,
+      output_type: execState?.output_type ?? inferredResult.outputType ?? meta?.output_type ?? null,
+      execution_status: executionStatus,
     };
   });
 
@@ -618,11 +778,11 @@ const sendMessage = async () => {
   if (activeTab.value === "sherpa") {
     // Handle "/" clear in Sherpa tab too
     if (userMessage.value.trim() === "/") {
-      sherpaStore.clearMessages();
+      sherpaStore.startNewConversation();
       toast.add({
         severity: "success",
-        summary: "Sherpa Chat Cleared",
-        detail: "Cleared Sherpa conversation",
+        summary: "New Sherpa Conversation",
+        detail: "Started a new Sherpa conversation",
         life: 2000,
       });
       userMessage.value = "";
@@ -707,8 +867,55 @@ const deleteConversation = async (conversationId: string) => {
   }
 };
 
+const onSherpaConversationSelect = async (conversationId: string | null) => {
+  if (!conversationId) {
+    return;
+  }
+  try {
+    await sherpaStore.loadConversation(conversationId);
+    toast.add({
+      severity: "success",
+      summary: "Sherpa Conversation Loaded",
+      detail: "Previous Sherpa conversation restored",
+      life: 2000,
+    });
+  } catch (error: unknown) {
+    console.error("Failed to load Sherpa conversation:", error);
+    toast.add({
+      severity: "error",
+      summary: "Sherpa Load Failed",
+      detail: getErrorMessage(error, "Unknown error"),
+      life: 3000,
+    });
+  }
+};
+
+const startNewSherpaConversation = () => {
+  sherpaStore.startNewConversation();
+  userMessage.value = "";
+  toast.add({
+    severity: "success",
+    summary: "New Sherpa Conversation",
+    detail: "Started a new Sherpa conversation",
+    life: 2000,
+  });
+};
+
 const openInNewTab = () => {
-  router.push('/llm-chat');
+  const target = router.resolve({
+    path: "/llm-chat",
+    query: { tab: activeTab.value },
+  });
+  if (typeof window !== "undefined") {
+    const opened = window.open(target.href, "_blank", "noopener,noreferrer");
+    if (opened) {
+      return;
+    }
+  }
+  router.push({
+    path: "/llm-chat",
+    query: { tab: activeTab.value },
+  });
 };
 
 const onProviderChange = async () => {
@@ -800,6 +1007,7 @@ const collapsed = computed(() => props.collapsed);
 .panel-topbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 8px 12px;
   background: #f8fafc;
@@ -823,8 +1031,68 @@ const collapsed = computed(() => props.collapsed);
 .panel-topbar-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-left: auto;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.sherpa-conversation-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 0 1 auto;
+  justify-content: flex-end;
+}
+
+.sherpa-topics-btn {
+  color: #475569;
+}
+
+.sherpa-menu {
+  min-width: 260px;
+}
+
+.sherpa-menu-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sherpa-menu-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.sherpa-menu-item--action {
+  font-weight: 600;
+}
+
+.sherpa-menu-item--disabled {
+  color: #94a3b8;
+  cursor: default;
+}
+
+.sherpa-menu-item.active {
+  background: #e0f2fe;
+}
+
+.sherpa-menu-title {
+  color: #1e293b;
+  font-size: 0.85rem;
+  line-height: 1.2;
+}
+
+.sherpa-menu-meta {
+  color: #64748b;
+  font-size: 0.72rem;
 }
 
 /* Tab Toggle */

@@ -198,6 +198,38 @@ describe("Sherpa Store communication state", () => {
     );
   });
 
+  it("seeds a welcome checklist the first time Sherpa initializes", () => {
+    const sherpa = useSherpaStore();
+
+    sherpa.init();
+
+    expect(sherpa.messages).toHaveLength(1);
+    expect(sherpa.messages[0]).toEqual({
+      role: "assistant",
+      content: [
+        "Sherpa Advisor is ready.",
+        "",
+        "1. Create a project.",
+        "2. Pick a template or build a workflow.",
+        "3. Run the workflow to generate results.",
+        "4. Ask Sherpa about the outputs, diagnostics, or next steps.",
+      ].join("\n"),
+    });
+
+    sherpa.dispose();
+  });
+
+  it("restores the welcome checklist when starting a new Sherpa conversation", () => {
+    const sherpa = useSherpaStore();
+
+    sherpa.init();
+    sherpa.startNewConversation();
+
+    expect(sherpa.messages).toHaveLength(1);
+    expect(sherpa.messages[0]?.role).toBe("assistant");
+    expect(sherpa.messages[0]?.content).toContain("1. Create a project.");
+  });
+
   it("does not show the delayed preparing notice after chat streaming starts", async () => {
     const sherpa = useSherpaStore();
     const notifications = useNotificationStore();
@@ -215,6 +247,21 @@ describe("Sherpa Store communication state", () => {
     ).toBe(false);
 
     sherpa.dispose();
+  });
+
+  it("clears transient sync state when the Sherpa panel unmounts", async () => {
+    const sherpa = useSherpaStore();
+    sherpa.init();
+
+    await sherpa.syncWorkflow();
+    expect(sherpa.isSyncing).toBe(true);
+
+    sherpa.dispose();
+
+    expect(sherpa.isSyncing).toBe(false);
+    expect(sherpa.isChatting).toBe(false);
+    expect(sherpa.syncState).toBe("idle");
+    expect(sherpa.chatState).toBe("idle");
   });
 
   it("resets the chat timeout when Sherpa activity continues", async () => {
@@ -280,6 +327,21 @@ describe("Sherpa Store communication state", () => {
     expect(payload.payload.workflow_context.workflow_id).toBeNull();
   });
 
+  it("sends the active Sherpa conversation_id and does not replay frontend history", async () => {
+    const { useProjectStore } = await import("@/stores/project");
+    const projectStore = useProjectStore();
+    const sherpa = useSherpaStore();
+    projectStore.currentProjectId = 101;
+    sherpa.currentConversationId = "conv-123";
+
+    await sherpa.sendMessage("continue this thread");
+
+    const payload = JSON.parse(mockWs.send.mock.calls[0][0] as string);
+    expect(payload.payload.conversation_id).toBe("conv-123");
+    expect(payload.payload.project_id).toBe(101);
+    expect(payload.payload.history).toBeUndefined();
+  });
+
   it("includes execution results in Sherpa workflow context for metric questions", async () => {
     const sherpa = useSherpaStore();
     mockWorkflowStore.nodes = [
@@ -336,6 +398,9 @@ describe("Sherpa Store communication state", () => {
         precision: 0.96,
       },
     });
+    // The scientific-keys allowlist promotes 'accuracy' from metadata
+    // to the top level so the server-side context builder can summarize it.
+    // 'model_name' stays only under metadata (not a scientific key).
     expect(payload.payload.workflow_context.results_summary).toEqual({
       data_1: {
         type: "SherpaDataset",
@@ -349,6 +414,7 @@ describe("Sherpa Store communication state", () => {
         shape: [569, 2],
         n_samples: null,
         n_features: null,
+        accuracy: 0.97,
         metadata: {
           accuracy: 0.97,
           model_name: "breast-cancer-pls",
@@ -736,5 +802,199 @@ describe("Sherpa Store communication state", () => {
     expect(notifications.notifications[0]?.message).toContain(
       "Sherpa event handling failed: Sherpa chat chunk payload was missing text."
     );
+  });
+
+  // ----------------------------------------------------------------------
+  // Regression guards for the workflow context payload.
+  //
+  // These tests lock in the contract that buildSyncPayload sends ENOUGH
+  // information for the server-side context builder to answer user
+  // questions without hallucinating. Each assertion corresponds to a
+  // specific real bug we hit during the Sherpa hardening work.
+  // ----------------------------------------------------------------------
+
+  const getLastSyncPayload = (): Record<string, unknown> | null => {
+    const lastCall = mockWs.send.mock.calls.at(-1)?.[0] as string | undefined;
+    if (!lastCall) return null;
+    const parsed = JSON.parse(lastCall);
+    return (parsed?.payload?.workflow_context as Record<string, unknown>) ?? null;
+  };
+
+  it("sends effective node parameters (defaults merged with overrides)", async () => {
+    // Simulate a node with a user override that leaves another param unset.
+    mockWorkflowStore.getNodeMetadata.mockImplementation((nodeType: string) => {
+      if (nodeType === "selection.sample_partition") {
+        return {
+          label: "Sample Partition",
+          description: "Split data",
+          output_type: "Partition",
+          parameters: [
+            { name: "method", label: "Method", description: "Split method", default: "stratified" },
+            { name: "test_size", label: "Test Size", description: "Fraction", default: 0.2 },
+            { name: "random_seed", label: "Seed", description: "RNG seed", default: 42 },
+          ],
+        };
+      }
+      return null;
+    });
+    mockWorkflowStore.nodes = [
+      {
+        id: "partition_1",
+        type: "selection.sample_partition",
+        params: { test_size: 0.25 }, // user override; method and random_seed not set
+        executionState: { status: "completed" },
+      },
+    ];
+
+    const sherpa = useSherpaStore();
+    await sherpa.sendMessage("what is the partition config");
+
+    const ctx = getLastSyncPayload();
+    expect(ctx).toBeTruthy();
+    const nodes = ctx?.nodes as Array<Record<string, unknown>>;
+    const partitionNode = nodes.find((n) => n.node_id === "partition_1");
+    expect(partitionNode).toBeDefined();
+    const params = partitionNode?.parameters as Record<string, unknown>;
+    // User override wins
+    expect(params.test_size).toBe(0.25);
+    // Defaults filled in so the server-side context builder shows all params
+    expect(params.method).toBe("stratified");
+    expect(params.random_seed).toBe(42);
+  });
+
+  it("preserves scientific scalars and salient_features in results_summary", async () => {
+    mockWorkflowStore.nodes = [
+      {
+        id: "plsda_1",
+        type: "classification.plsda",
+        params: { n_components: 2 },
+        executionState: { status: "completed", output_shape: [105, 2] },
+      },
+    ];
+    mockWorkflowStore.lastExecutionResults = {
+      plsda_1: {
+        type: "PLS_DA",
+        n_samples: 105,
+        n_features: 2,
+        accuracy: 0.98,
+        confusion_matrix: [
+          [35, 0, 0],
+          [0, 33, 2],
+          [0, 1, 34],
+        ],
+        salient_features: {
+          method: "vip",
+          features: [{ position: 1720.0, importance: 2.1 }],
+          x_units: "cm-1",
+        },
+        metadata: {
+          n_components: 2,
+          deep_nested: { should_be_dropped: true }, // nested dicts in metadata are NOT preserved
+        },
+      },
+    };
+
+    const sherpa = useSherpaStore();
+    await sherpa.sendMessage("tell me about results");
+
+    const ctx = getLastSyncPayload();
+    const summary = (ctx?.results_summary as Record<string, Record<string, unknown>>)?.plsda_1;
+    expect(summary).toBeTruthy();
+
+    // Scientific scalars preserved from the top level
+    expect(summary.type).toBe("PLS_DA");
+    expect(summary.n_samples).toBe(105);
+    expect(summary.accuracy).toBe(0.98);
+    // Arrays (confusion matrix) preserved
+    expect(summary.confusion_matrix).toEqual([
+      [35, 0, 0],
+      [0, 33, 2],
+      [0, 1, 34],
+    ]);
+    // Salient features: the chemistry-aware path MUST round-trip.
+    // Before the fix this was silently dropped and the server's
+    // extract_salient_features_context() was dead code.
+    expect(summary.salient_features).toBeTruthy();
+    expect((summary.salient_features as Record<string, unknown>).method).toBe("vip");
+    // Nested metadata dicts are NOT preserved (the filter keeps primitives).
+    const metadata = summary.metadata as Record<string, unknown>;
+    expect(metadata.n_components).toBe(2);
+    expect(metadata.deep_nested).toBeUndefined();
+  });
+
+  it("adopts conversation_id from Sherpa chat start events", async () => {
+    const sherpa = useSherpaStore();
+    sherpa.init();
+
+    await sherpa.sendMessage("tell me about PCA");
+    emitSherpa({
+      type: SHERPA_WS_EVENT.chatStart,
+      request_id: lastRequestId(),
+      conversation_id: "conv-42",
+    });
+
+    expect(sherpa.currentConversationId).toBe("conv-42");
+
+    sherpa.dispose();
+  });
+
+  it("treats persisted results as completed when executionState is still pending", async () => {
+    mockWorkflowStore.getNodeMetadata.mockImplementation((nodeType: string) => {
+      if (nodeType === "classification.plsda") {
+        return {
+          label: "PLS-DA",
+          description: "Classification model",
+          output_type: "PLSModel",
+          parameters: [
+            { name: "n_components", label: "Components", description: "Latent variables", default: 2 },
+          ],
+        };
+      }
+      if (nodeType === "data.source") {
+        return {
+          label: "Load Data",
+          description: "Dataset source",
+          output_type: "Dataset",
+          parameters: [],
+        };
+      }
+      return null;
+    });
+    mockWorkflowStore.nodes = [
+      {
+        id: "data_1",
+        type: "data.source",
+        params: {},
+        executionState: { status: "completed", output_shape: [150, 4], output_type: "SherpaDataset" },
+      },
+      {
+        id: "model_1",
+        type: "classification.plsda",
+        params: { n_components: 2 },
+        executionState: { status: "pending" },
+      },
+    ];
+    mockWorkflowStore.lastExecutionResults = {
+      data_1: {
+        type: "SherpaDataset",
+        n_samples: 150,
+        n_features: 4,
+      },
+      model_1: {
+        type: "PLS_DA",
+        shape: [150, 2],
+      },
+    };
+
+    const sherpa = useSherpaStore();
+    await sherpa.sendMessage("tell me all nodes in this workflow");
+
+    const ctx = getLastSyncPayload();
+    const nodes = ctx?.nodes as Array<Record<string, unknown>>;
+    const modelNode = nodes.find((node) => node.node_id === "model_1");
+    expect(modelNode).toBeTruthy();
+    expect(modelNode?.execution_status).toBe("completed");
+    expect(modelNode?.result_shape).toEqual([150, 2]);
+    expect(modelNode?.output_type).toBe("PLS_DA");
   });
 });

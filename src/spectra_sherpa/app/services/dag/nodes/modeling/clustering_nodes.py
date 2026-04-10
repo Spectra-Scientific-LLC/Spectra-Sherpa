@@ -17,6 +17,7 @@ from ...node_base import (
     Node,
     NodeMetadata,
     NodeParameter,
+    NodeResult,
     PortMetadata,
     register_node,
 )
@@ -114,6 +115,13 @@ class HCANode(Node):
                 required=True,
                 label="Linkage Matrix",
                 description="SciPy linkage matrix (Z)",
+            ),
+            PortMetadata(
+                name="embedding",
+                type_ref="spectrasherpa://types/Array2D/1.0",
+                required=True,
+                label="Embedding (2D)",
+                description="2D projection of samples for cluster scatter visualization",
             ),
         ],
     )
@@ -230,28 +238,36 @@ class HCANode(Node):
         # Generate dendrogram plot using pre-computed linkage Z
         dendrogram_plot = self._generate_dendrogram(Z, linkage_method, source_labels, X_data.shape[0])
 
-        return {
-            "model": None,  # Scikit-learn model not used
-            "linkage_matrix": Z.tolist(),
-            "labels": label_list,
-            "n_clusters": int(n_clusters),
-            "data": embedding.tolist(),  # Restore tabular data for Data Table
-            "plots": {
-                "dendrogram": dendrogram_plot,
-                "default": dendrogram_plot,  # Hint for Quick Plot to use this
+        return NodeResult(
+            outputs={
+                "model": None,  # Scikit-learn model not used
+                "linkage_matrix": Z.tolist(),
+                "labels": label_list,
+                "n_clusters": int(n_clusters),
+                "embedding": embedding.tolist(),  # 2D projection for cluster scatter
+                "plots": {
+                    "dendrogram": dendrogram_plot,
+                    "default": dendrogram_plot,  # Hint for Quick Plot to use this
+                },
+                "metadata": {
+                    "type": "HCA",
+                    "output_type": "clustering",
+                    "n_clusters": int(n_clusters),
+                    "linkage": linkage_method,
+                    "metric": metric,
+                    "embedding": embedding_method,
+                    "sample_labels": sample_labels,
+                    "label_categories": label_categories,
+                    "source_labels": source_labels,
+                },
             },
-            "metadata": {
-                "type": "HCA",
-                "output_type": "clustering",
+            diagnostics={
                 "n_clusters": int(n_clusters),
                 "linkage": linkage_method,
                 "metric": metric,
-                "embedding": embedding_method,
-                "sample_labels": sample_labels,
-                "label_categories": label_categories,
-                "source_labels": source_labels,
+                "n_samples": int(X_data.shape[0]),
             },
-        }
+        )
 
     def _generate_dendrogram(self, Z, linkage_method, sample_labels=None, n_samples=None):
         """
@@ -464,6 +480,13 @@ class KMeansNode(Node):
                 label="Centroids",
                 description="Cluster centers coordinates",
             ),
+            PortMetadata(
+                name="embedding",
+                type_ref="spectrasherpa://types/Array2D/1.0",
+                required=True,
+                label="Embedding (2D)",
+                description="2D projection of samples for cluster scatter visualization",
+            ),
         ],
     )
 
@@ -570,23 +593,40 @@ class KMeansNode(Node):
                 data_values = _y_coord.data
                 source_labels = data_values.tolist() if hasattr(data_values, "tolist") else list(data_values)
 
-        return {
-            "model": model,
-            "labels": label_list,
-            "centroids": model.cluster_centers_.tolist(),
-            "inertia": float(model.inertia_),
-            "n_clusters": int(n_clusters),
-            "data": embedding.tolist(),
-            "metadata": {
-                "type": "KMeans",
-                "output_type": "clustering",
+        # Compute silhouette score when meaningful (>1 cluster, >1 unique label)
+        sil_score = None
+        if n_clusters > 1 and len(set(label_list)) > 1:
+            try:
+                from sklearn.metrics import silhouette_score
+
+                sil_score = float(silhouette_score(X_data, labels))
+            except Exception:
+                pass
+
+        return NodeResult(
+            outputs={
+                "model": model,
+                "labels": label_list,
+                "centroids": model.cluster_centers_.tolist(),
+                "inertia": float(model.inertia_),
                 "n_clusters": int(n_clusters),
-                "embedding": embedding_method,
-                "sample_labels": sample_labels,
-                "label_categories": label_categories,
-                "source_labels": source_labels,
+                "embedding": embedding.tolist(),
+                "metadata": {
+                    "type": "KMeans",
+                    "output_type": "clustering",
+                    "n_clusters": int(n_clusters),
+                    "embedding": embedding_method,
+                    "sample_labels": sample_labels,
+                    "label_categories": label_categories,
+                    "source_labels": source_labels,
+                },
             },
-        }
+            diagnostics={
+                "n_clusters": int(n_clusters),
+                "silhouette_score": sil_score,
+                "inertia": float(model.inertia_),
+            },
+        )
 
 
 @register_node
@@ -663,6 +703,13 @@ class DBSCANNode(Node):
                 required=True,
                 label="Cluster Labels",
                 description="Assigned cluster labels (noise=-1)",
+            ),
+            PortMetadata(
+                name="embedding",
+                type_ref="spectrasherpa://types/Array2D/1.0",
+                required=True,
+                label="Embedding (2D)",
+                description="2D projection of samples for cluster scatter visualization",
             ),
         ],
     )
@@ -763,21 +810,34 @@ class DBSCANNode(Node):
                 data_values = _y_coord.data
                 source_labels = data_values.tolist() if hasattr(data_values, "tolist") else list(data_values)
 
-        return {
-            "model": model,
-            "labels": label_list,
-            "n_clusters": int(n_clusters),
-            "data": embedding.tolist(),
-            "metadata": {
-                "type": "DBSCAN",
-                "output_type": "clustering",
+        n_samples_total = int(X_data.shape[0])
+        n_noise = int(np.sum(labels == -1))
+        noise_fraction = float(n_noise / n_samples_total) if n_samples_total > 0 else 0.0
+
+        return NodeResult(
+            outputs={
+                "model": model,
+                "labels": label_list,
                 "n_clusters": int(n_clusters),
-                "eps": eps,
-                "min_samples": min_samples,
-                "metric": metric,
-                "embedding": embedding_method,
-                "sample_labels": sample_labels,
-                "label_categories": label_categories,
-                "source_labels": source_labels,
+                "embedding": embedding.tolist(),
+                "metadata": {
+                    "type": "DBSCAN",
+                    "output_type": "clustering",
+                    "n_clusters": int(n_clusters),
+                    "eps": eps,
+                    "min_samples": min_samples,
+                    "metric": metric,
+                    "embedding": embedding_method,
+                    "sample_labels": sample_labels,
+                    "label_categories": label_categories,
+                    "source_labels": source_labels,
+                },
             },
-        }
+            diagnostics={
+                "n_clusters": int(n_clusters),
+                "eps": float(eps),
+                "min_samples": int(min_samples),
+                "noise_fraction": noise_fraction,
+                "metric": metric,
+            },
+        )

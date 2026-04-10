@@ -175,18 +175,18 @@ class TestPLSArtifactEmission:
 
         node = PLSNode(node_id="pls_1", parameters={"n_components": 3, "scale": True})
         result = _run(node.execute(X=sherpa_dataset, y=sherpa_dataset.target))
-        assert "_model_artifact" in result
-        meta = result["_model_artifact"]["metadata"]
+        assert "_model_artifact" in result.outputs
+        meta = result.outputs["_model_artifact"]["metadata"]
         assert meta["model_type"] == "pls"
         assert meta["n_features"] == 50
-        assert "coef" in result["_model_artifact"]["arrays"]
+        assert "coef" in result.outputs["_model_artifact"]["arrays"]
 
     def test_pls_artifact_has_feature_axis(self, sherpa_dataset):
         from spectra_sherpa.app.services.dag.nodes.modeling.pls_nodes import PLSNode
 
         node = PLSNode(node_id="pls_2", parameters={"n_components": 2})
         result = _run(node.execute(X=sherpa_dataset, y=sherpa_dataset.target))
-        meta = result["_model_artifact"]["metadata"]
+        meta = result.outputs["_model_artifact"]["metadata"]
         assert "feature_axis" in meta
         assert len(meta["feature_axis"]) == 50
         # Check wavenumber values are plausible
@@ -197,7 +197,7 @@ class TestPLSArtifactEmission:
 
         node = PLSNode(node_id="pls_3", parameters={"n_components": 3})
         result = _run(node.execute(X=sherpa_dataset, y=sherpa_dataset.target))
-        metrics = result["_model_artifact"]["metadata"].get("metrics")
+        metrics = result.outputs["_model_artifact"]["metadata"].get("metrics")
         # Random data may or may not give good metrics, but they should exist
         if metrics:
             assert "r2" in metrics or "rmse" in metrics

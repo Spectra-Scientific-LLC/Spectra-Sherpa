@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 from spectra_sherpa.app.lib.sherpa_dataset import EvaluationResult, SherpaDataset
 
 from ..io_contracts import to_numpy_1d, to_numpy_2d
-from ..node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
+from ..node_base import Node, NodeMetadata, NodeParameter, NodeResult, PortMetadata, register_node
 
 
 def _unwrap_data(value: Any) -> Any:
@@ -324,7 +324,16 @@ class OutlierDetectionNode(Node):
             f"({100*n_outliers/n_observations:.1f}%) at {confidence_level*100}% confidence"
         )
 
-        return result
+        return NodeResult(
+            outputs=result,
+            diagnostics={
+                "n_outliers": int(n_outliers),
+                "outlier_percentage": float(100 * n_outliers / n_observations),
+                "t2_limit": T2_limit,
+                "q_limit": Q_limit,
+                "method": "hotelling_t2_q",
+            },
+        )
 
 
 @register_node
@@ -518,6 +527,7 @@ class CrossValidationNode(Node):
             accuracy_score,
             classification_report,
             confusion_matrix,
+            f1_score,
             mean_absolute_error,
             mean_squared_error,
             r2_score,
@@ -701,10 +711,21 @@ class CrossValidationNode(Node):
         result["predictions"] = y_pred.tolist()
         if is_classification:
             result["plots"] = {"confusion_matrix": result["confusion_matrix"]}
+            cv_diagnostics = {
+                "accuracy": result["accuracy"],
+                "f1_score": float(f1_score(y_true, y_pred, average="macro")),
+            }
         else:
             result["plots"] = {"true_vs_pred": result["data"]}
+            cv_diagnostics = {
+                "rmsecv": result["RMSECV"],
+                "q2": result["Q2"],
+                "sep": result["SEP"],
+                "rer": result["RER"],
+                "bias": result["bias"],
+            }
 
-        return result
+        return NodeResult(outputs=result, diagnostics=cv_diagnostics)
 
 
 @register_node
@@ -756,6 +777,13 @@ class HoldoutEvaluationNode(Node):
         ],
         output_ports=[
             PortMetadata(
+                name="visualization",
+                type_ref="spectrasherpa://types/Visualization/1.0",
+                required=False,
+                label="Visualization",
+                description="Plot-ready data (predicted-vs-actual or confusion matrix)",
+            ),
+            PortMetadata(
                 name="metrics",
                 type_ref="spectrasherpa://types/ValidationResult/1.0",
                 required=True,
@@ -768,13 +796,6 @@ class HoldoutEvaluationNode(Node):
                 required=True,
                 label="Predictions",
                 description="Predicted values (pass-through for downstream use)",
-            ),
-            PortMetadata(
-                name="visualization",
-                type_ref="spectrasherpa://types/Visualization/1.0",
-                required=False,
-                label="Visualization Data",
-                description="Plot-ready data (predicted-vs-actual or confusion matrix)",
             ),
         ],
         input_types=["array", "array"],
@@ -939,7 +960,7 @@ class HoldoutEvaluationNode(Node):
         y_pred: np.ndarray,
         n_samples: int,
         uuid: Any,
-    ) -> dict[str, Any]:
+    ) -> NodeResult:
         from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
         y_true = y_true.astype(np.float64)
@@ -984,7 +1005,21 @@ class HoldoutEvaluationNode(Node):
         else:
             status = "invalid_predictions"
 
+        metrics_row = {
+            "RMSEP": rmsep,
+            "R2": r2,
+            "MAE": mae,
+            "bias": bias,
+            "SEP": sep,
+            "RER": rer,
+        }
         metrics = {
+            "data": [metrics_row],
+            "metadata": {
+                "type": "RegressionTest",
+                "n_samples": total_samples,
+                "status": status,
+            },
             "RMSEP": rmsep,
             "R2": r2,
             "MAE": mae,
@@ -1018,16 +1053,19 @@ class HoldoutEvaluationNode(Node):
         else:
             logger.warning("Holdout evaluation (regression): all predictions were non-finite; metrics undefined")
 
-        return {
-            "metrics": metrics,
-            "predictions": y_pred.tolist(),
-            "visualization": {
-                "data": viz_data,
-                "type": "predicted_vs_actual",
-                "metadata": {"type": "RegressionTest", **metrics},
+        return NodeResult(
+            outputs={
+                "metrics": metrics,
+                "predictions": y_pred.tolist(),
+                "visualization": {
+                    "data": viz_data,
+                    "type": "predicted_vs_actual",
+                    "metadata": {"type": "RegressionTest", **metrics},
+                },
+                "evaluation": evaluation,
             },
-            "evaluation": evaluation,
-        }
+            diagnostics=metrics,
+        )
 
     def _evaluate_classification(
         self,
@@ -1035,7 +1073,7 @@ class HoldoutEvaluationNode(Node):
         y_pred: np.ndarray,
         n_samples: int,
         uuid: Any,
-    ) -> dict[str, Any]:
+    ) -> NodeResult:
         from sklearn.metrics import (
             accuracy_score,
             classification_report,
@@ -1074,6 +1112,13 @@ class HoldoutEvaluationNode(Node):
             )
 
         metrics = {
+            "data": per_class_metrics,
+            "metadata": {
+                "type": "ClassificationTest",
+                "accuracy": accuracy,
+                "n_classes": len(unique_classes),
+                "n_samples": n_samples,
+            },
             "accuracy": accuracy,
             "n_classes": len(unique_classes),
             "classes": unique_classes.tolist(),
@@ -1095,17 +1140,27 @@ class HoldoutEvaluationNode(Node):
             len(unique_classes),
         )
 
-        return {
-            "metrics": metrics,
-            "predictions": y_pred.tolist() if hasattr(y_pred, "tolist") else list(y_pred),
-            "visualization": {
-                "data": cm.tolist(),
-                "type": "confusion_matrix",
-                "metadata": {
-                    "type": "ClassificationTest",
-                    **{k: v for k, v in metrics.items() if k != "classification_report"},
+        return NodeResult(
+            outputs={
+                "metrics": metrics,
+                "predictions": y_pred.tolist() if hasattr(y_pred, "tolist") else list(y_pred),
+                "visualization": {
+                    "data": cm.tolist(),
+                    "type": "confusion_matrix",
+                    "metadata": {
+                        "type": "ClassificationTest",
+                        **{k: v for k, v in metrics.items() if k != "classification_report"},
+                    },
                 },
+                "confusion_matrix": cm.tolist(),
+                "evaluation": evaluation,
             },
-            "confusion_matrix": cm.tolist(),
-            "evaluation": evaluation,
-        }
+            diagnostics={
+                "accuracy": accuracy,
+                "n_classes": len(unique_classes),
+                "classes": unique_classes.tolist(),
+                "n_samples": n_samples,
+                "confusion_matrix": cm.tolist(),
+                "per_class": per_class_metrics,
+            },
+        )

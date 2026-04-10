@@ -36,6 +36,7 @@ class DisabledAIProvider:
         message: str,
         conversation_id: str | None = None,
         workflow_context: dict[str, Any] | None = None,
+        history: list[dict[str, str]] | None = None,
         local_user_id: int | None = None,
         project_id: int | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
@@ -68,9 +69,11 @@ class DisabledAIProvider:
         self,
         *,
         message: str,
-        workflow_id: int | None = None,
+        conversation_id: str | None = None,
         history: list[dict[str, str]] | None = None,
         workflow_context: dict[str, Any] | None = None,
+        local_user_id: int | None = None,
+        project_id: int | None = None,
     ) -> AsyncIterator[str]:
         raise RuntimeError(self._detail)
         if False:
@@ -80,8 +83,11 @@ class DisabledAIProvider:
         self,
         *,
         message: str,
+        conversation_id: str | None = None,
         history: list[dict[str, str]] | None = None,
         workflow_context: dict[str, Any] | None = None,
+        local_user_id: int | None = None,
+        project_id: int | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         yield {"type": "error", "detail": self._detail}
 

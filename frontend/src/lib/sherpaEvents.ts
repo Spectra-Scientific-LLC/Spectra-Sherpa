@@ -1,6 +1,7 @@
 export interface SherpaEventPayload {
   type: string;
   request_id?: string | null;
+  conversation_id?: string | null;
   payload?: any;
   detail?: string;
   message?: string;

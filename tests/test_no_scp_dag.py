@@ -286,7 +286,7 @@ async def test_kmeans_node_on_sherpa_dataset(iris_dataset):
     assert "model" in outputs, "KMeans should output 'model'"
     assert "inertia" in outputs, "KMeans should output 'inertia'"
     assert "n_clusters" in outputs
-    assert "data" in outputs, "KMeans should output 'data' (embedding)"
+    assert "embedding" in outputs, "KMeans should output 'embedding' (2D projection)"
     assert "metadata" in outputs
 
     labels = outputs["labels"]

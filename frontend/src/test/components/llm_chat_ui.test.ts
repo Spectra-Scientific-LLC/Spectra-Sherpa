@@ -1,7 +1,7 @@
 /* eslint-disable vue/one-component-per-file */
 import { flushPromises, mount } from "@vue/test-utils";
 import { defineComponent } from "vue";
-import type { Component } from "vue";
+import type { Component, PropType } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -19,6 +19,14 @@ const mocks = vi.hoisted(() => ({
   apiGet: vi.fn(),
   apiPut: vi.fn(),
   routerPush: vi.fn(),
+  routerResolve: vi.fn((target: { path?: string; query?: Record<string, unknown> }) => {
+    const tab = typeof target.query?.tab === "string" ? `?tab=${target.query.tab}` : "";
+    return { href: `${target.path || ""}${tab}` };
+  }),
+  route: {
+    path: "/workflow",
+    query: {} as Record<string, unknown>,
+  },
   toastAdd: vi.fn(),
   llmStore: {
     conversations: [] as Array<Record<string, unknown>>,
@@ -39,6 +47,8 @@ const mocks = vi.hoisted(() => ({
   },
   sherpaStore: {
     messages: [] as Array<Record<string, unknown>>,
+    conversations: [] as Array<Record<string, unknown>>,
+    currentConversationId: null as string | null,
     state: "idle",
     isSyncing: false,
     isChatting: false,
@@ -50,6 +60,10 @@ const mocks = vi.hoisted(() => ({
     syncWorkflow: vi.fn(),
     sendMessage: vi.fn(),
     clearMessages: vi.fn(),
+    refreshConversations: vi.fn(),
+    startNewConversation: vi.fn(),
+    loadConversation: vi.fn(),
+    deleteConversation: vi.fn(),
     openSubscriptionUpgrade: vi.fn(),
   },
   experimentStore: {
@@ -87,7 +101,9 @@ vi.mock("@/api/client", () => ({
 vi.mock("vue-router", () => ({
   useRouter: () => ({
     push: mocks.routerPush,
+    resolve: mocks.routerResolve,
   }),
+  useRoute: () => mocks.route,
 }));
 
 vi.mock("primevue/usetoast", () => ({
@@ -177,6 +193,14 @@ const InputTextStub = defineComponent({
 
 const MenuStub = defineComponent({
   name: "AppMenuStub",
+  props: {
+    model: { type: Array as PropType<Array<Record<string, unknown>>>, default: () => [] },
+  },
+  methods: {
+    toggle() {
+      return undefined;
+    },
+  },
   template: "<div class=\"menu-stub\"><slot /></div>",
 });
 
@@ -200,6 +224,33 @@ const InputSwitchStub = defineComponent({
   `,
 });
 
+const DropdownStub = defineComponent({
+  name: "Dropdown",
+  inheritAttrs: false,
+  props: {
+    modelValue: { type: [String, Number, null] as PropType<string | number | null>, default: null },
+    options: { type: Array as PropType<Array<Record<string, unknown>>>, default: () => [] },
+    optionLabel: { type: String, default: "label" },
+    optionValue: { type: String, default: "value" },
+    placeholder: { type: String, default: "" },
+    disabled: { type: Boolean, default: false },
+  },
+  emits: ["update:modelValue"],
+  template: `
+    <select
+      v-bind="$attrs"
+      :value="modelValue ?? ''"
+      :disabled="disabled"
+      @change="$emit('update:modelValue', $event.target.value || null)"
+    >
+      <option value="">{{ placeholder }}</option>
+      <option v-for="opt in options" :key="opt[optionValue]" :value="opt[optionValue]">
+        {{ opt[optionLabel] }}
+      </option>
+    </select>
+  `,
+});
+
 const mountWithUiStubs = (component: Component) =>
   mount(component, {
     global: {
@@ -208,6 +259,7 @@ const mountWithUiStubs = (component: Component) =>
         InputText: InputTextStub,
         Menu: MenuStub,
         InputSwitch: InputSwitchStub,
+        Dropdown: DropdownStub,
       },
       directives: {
         tooltip: () => undefined,
@@ -346,12 +398,16 @@ describe("ChatPanel", () => {
       }
       return Promise.resolve({ data: [] });
     });
+    mocks.route.path = "/workflow";
+    mocks.route.query = {};
     mocks.llmStore.currentConfig = null;
     mocks.llmStore.messages = [];
     mocks.llmStore.conversations = [];
     mocks.llmStore.loading = false;
     mocks.llmStore.streaming = false;
     mocks.sherpaStore.messages = [];
+    mocks.sherpaStore.conversations = [];
+    mocks.sherpaStore.currentConversationId = null;
     mocks.sherpaStore.state = "idle";
     mocks.sherpaStore.isSyncing = false;
     mocks.sherpaStore.isChatting = false;
@@ -422,6 +478,68 @@ describe("ChatPanel", () => {
 
     expect(wrapper.text()).toContain("Sherpa Advisor");
     expect(wrapper.text()).not.toContain("LLM Chat");
+  });
+
+  it("opens the standalone Sherpa view with the current Sherpa tab preserved", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.appConfig.value = { subscription: { plan: "demo" } };
+    mocks.featureFlags.chatAssistant = true;
+    mocks.featureFlags.sherpaAdvisor = true;
+
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+
+    const sherpaTab = wrapper.findAll("button").find((button) => button.text() === "Sherpa Advisor");
+    expect(sherpaTab).toBeTruthy();
+    await sherpaTab!.trigger("click");
+    await flushPromises();
+
+    await wrapper.find('[aria-label="Open in new tab"]').trigger("click");
+
+    expect(openSpy).toHaveBeenCalledWith("/llm-chat?tab=sherpa", "_blank", "noopener,noreferrer");
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      path: "/llm-chat",
+      query: { tab: "sherpa" },
+    });
+
+    openSpy.mockRestore();
+  });
+
+  it("loads the standalone Sherpa view from route state without auto-syncing the workflow", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.appConfig.value = { subscription: { plan: "demo" } };
+    mocks.featureFlags.chatAssistant = true;
+    mocks.featureFlags.sherpaAdvisor = true;
+    mocks.route.path = "/llm-chat";
+    mocks.route.query = { tab: "sherpa" };
+    mocks.workflowStore.workflowId = 123;
+
+    const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+
+    expect(wrapper.find('[aria-label="Sherpa topics"]').exists()).toBe(true);
+    expect(mocks.sherpaStore.syncWorkflow).not.toHaveBeenCalled();
+  });
+
+  it("shows a Sherpa topics button in the top bar", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.appConfig.value = { subscription: { plan: "demo" } };
+    mocks.featureFlags.sherpaAdvisor = true;
+    mocks.sherpaStore.conversations = [
+      { id: "conv-1", title: "PLS-DA validation", updatedAt: "2026-04-10T12:00:00Z" },
+    ];
+
+    const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+
+    const sherpaTab = wrapper.findAll("button").find((button) => button.text() === "Sherpa Advisor");
+    expect(sherpaTab).toBeTruthy();
+    await sherpaTab!.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[aria-label="Sherpa topics"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain("Topics");
   });
 
   it("shows a contacting status while Sherpa chat is waiting for acceptance", async () => {
@@ -503,7 +621,8 @@ describe("ChatPanel", () => {
     expect(input.attributes("placeholder")).toBe(
       "Run the workflow first, then ask Sherpa about the results..."
     );
-    expect(mocks.sherpaStore.syncWorkflow).toHaveBeenCalled();
+    expect(mocks.sherpaStore.syncWorkflow).not.toHaveBeenCalled();
+    expect(wrapper.find('[aria-label="Re-sync workflow"]').exists()).toBe(true);
   });
 
   it("shows an upgrade action when Sherpa reports a subscription upgrade URL", async () => {

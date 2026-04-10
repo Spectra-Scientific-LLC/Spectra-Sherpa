@@ -162,8 +162,8 @@ class TestSingleWirePLS:
         node = make_node("model.pls", {"n_components": 2, "scale": True})
         result = await node.execute(X=ds)
 
-        assert "default" in result  # X_scores
-        assert "model" in result
+        assert "default" in result.outputs  # X_scores
+        assert "model" in result.outputs
 
     @_skip_no_scp
     @pytest.mark.asyncio
@@ -178,8 +178,8 @@ class TestSingleWirePLS:
         node = make_node("model.pls", {"n_components": 3, "scale": True})
         result = await node.execute(X=ds)
 
-        assert "model" in result
-        assert "default" in result  # X_scores
+        assert "model" in result.outputs
+        assert "default" in result.outputs  # X_scores
 
     @_skip_no_scp
     @pytest.mark.asyncio
@@ -191,7 +191,7 @@ class TestSingleWirePLS:
         node = make_node("model.pls", {"n_components": 2, "scale": True})
         result = await node.execute(X=ds, y=explicit_y)
 
-        assert "model" in result
+        assert "model" in result.outputs
 
     @_skip_no_scp
     @pytest.mark.asyncio
@@ -211,8 +211,8 @@ class TestSingleWirePLS:
         node = make_node("model.pls", {"n_components": 2, "scale": True})
         result = await node.execute(X=ds, y=explicit_y)
 
-        assert result["default"].meta.get("target_names") == ["Moisture", "Oil"]
-        assert list(result["Y_loadings"].sample_axis.labels) == ["Moisture", "Oil"]
+        assert result.outputs["default"].meta.get("target_names") == ["Moisture", "Oil"]
+        assert list(result.outputs["Y_loadings"].sample_axis.labels) == ["Moisture", "Oil"]
 
     @pytest.mark.asyncio
     async def test_pls_no_target_gives_helpful_error(self, make_node):
@@ -239,8 +239,8 @@ class TestSingleWirePCR:
         node = make_node("model.pcr", {"n_components": 2, "scale": True})
         result = await node.execute(X=ds)
 
-        assert "model" in result
-        assert "default" in result  # scores
+        assert "model" in result.outputs
+        assert "default" in result.outputs  # scores
 
 
 # ---------------------------------------------------------------------------
@@ -350,4 +350,4 @@ class TestMyDatasetEmbeddedCsvTargets:
         pls_node = make_node("model.pls", {"n_components": 2, "scale": True}, node_id="pls")
         pls_result = await pls_node.execute(X=ds_with_target)  # No y — inferred from embedded
 
-        assert "model" in pls_result
+        assert "model" in pls_result.outputs

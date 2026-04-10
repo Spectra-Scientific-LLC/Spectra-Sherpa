@@ -158,22 +158,20 @@ class NormalizeNode(Node):
             state_effects=effects,
         )
 
-        # SNV diagnostics
-        if method == "snv":
-            after = np.asarray(result.data, dtype=np.float64)
-            eps = 1e-12
+        after = np.asarray(result.data, dtype=np.float64)
+        eps = 1e-12
+        diagnostics: dict[str, Any] = {"method": method}
+        try:
             snr_before = float(np.mean(np.abs(data)) / (np.std(data) + eps))
             snr_after = float(np.mean(np.abs(after)) / (np.std(after) + eps))
-            return NodeResult(
-                outputs={"default": result},
-                diagnostics={
-                    "snr_before": snr_before,
-                    "snr_after": snr_after,
-                    "mean_spectrum_shift": float(np.mean(after) - np.mean(data)),
-                    "max_absolute_change": float(np.max(np.abs(after - data))),
-                },
-            )
-        return result
+            diagnostics["snr_before"] = snr_before
+            diagnostics["snr_after"] = snr_after
+            diagnostics["mean_spectrum_shift"] = float(np.mean(after) - np.mean(data))
+            diagnostics["max_absolute_change"] = float(np.max(np.abs(after - data)))
+        except Exception:
+            # If diagnostics computation fails, still return NodeResult with method
+            pass
+        return NodeResult(outputs={"default": result}, diagnostics=diagnostics)
 
     def supports_python_export(self) -> bool:
         return True

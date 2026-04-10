@@ -207,3 +207,132 @@ describe("Workflow Store template edge validation", () => {
     expect(store.edges[0].validationError).toBeNull();
   });
 });
+
+/**
+ * Regression guard for the "Sherpa sees all nodes as pending after refresh" bug.
+ *
+ * loadWorkflow() used to restore lastExecutionResults and lastExecutionDiagnostics
+ * from /workflows/{id}/runs/latest, but did NOT restore node.executionState on
+ * the node objects themselves. So after a page refresh, buildSyncPayload()
+ * reported execution_status="pending" and output_shape=null to Sherpa, which
+ * caused the LLM to hallucinate dimensions and say "workflow hasn't been run".
+ */
+describe("Workflow Store execution state restoration on loadWorkflow", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+  });
+
+  it("restores node status and output_shape from the latest run", async () => {
+    const workflowPayload = {
+      id: 42,
+      name: "Iris PLS-DA",
+      description: null,
+      integrity_hash: "abc123",
+      warnings: [],
+      nodes: [
+        { node_id: "data_1", node_type: "data.source", label: "Data", parameters: {}, position_x: 0, position_y: 0 },
+        { node_id: "plsda_1", node_type: "classification.plsda", label: "PLS-DA", parameters: { n_components: 2 }, position_x: 100, position_y: 0 },
+      ],
+      edges: [
+        { from_node_id: "data_1", to_node_id: "plsda_1", from_output: "default", to_input: "X" },
+      ],
+    };
+
+    const latestRunPayload = {
+      integrity_hash: "abc123",
+      executed_at: "2026-04-10T12:00:00Z",
+      node_statuses: {
+        data_1: "completed",
+        plsda_1: "completed",
+      },
+      results_summary: {
+        data_1: { type: "SherpaDataset", n_samples: 150, n_features: 4 },
+        plsda_1: { type: "PLS_DA", default: { type: "SherpaDataset", n_samples: 150, n_features: 2 } },
+      },
+      diagnostics: {
+        plsda_1: { accuracy: 0.98, n_components: 2, n_classes: 3 },
+      },
+    };
+
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url === "/workflows/42") {
+        return { data: workflowPayload };
+      }
+      if (url === "/workflows/42/runs/latest") {
+        return { data: latestRunPayload };
+      }
+      if (url === "/workflows/nodes/library") {
+        return { data: { nodes: [], total: 0 } };
+      }
+      if (url === "/workflows/types/registry") {
+        return { data: typeRegistry };
+      }
+      throw new Error(`Unexpected GET ${url}`);
+    });
+
+    const store = useWorkflowStore();
+    await store.loadWorkflow(42);
+
+    // Both nodes must be marked completed, not pending.
+    const dataNode = store.nodes.find((n) => n.id === "data_1");
+    const plsdaNode = store.nodes.find((n) => n.id === "plsda_1");
+    expect(dataNode).toBeDefined();
+    expect(plsdaNode).toBeDefined();
+    expect(dataNode?.executionState?.status).toBe("completed");
+    expect(plsdaNode?.executionState?.status).toBe("completed");
+
+    // CRITICAL: output_shape must be restored so Sherpa sees the real shapes.
+    // Without this the LLM hallucinates dimensions from common datasets.
+    expect(dataNode?.executionState?.output_shape).toEqual([150, 4]);
+    expect(plsdaNode?.executionState?.output_shape).toEqual([150, 2]);
+
+    // output_type must also be restored.
+    expect(dataNode?.executionState?.output_type).toBe("SherpaDataset");
+
+    // lastExecutionResults and lastExecutionDiagnostics preserved.
+    expect(store.lastExecutionResults).toEqual(latestRunPayload.results_summary);
+    expect(store.lastExecutionDiagnostics).toEqual(latestRunPayload.diagnostics);
+  });
+
+  it("does not restore state when there is no latest run", async () => {
+    const workflowPayload = {
+      id: 43,
+      name: "Unexecuted",
+      description: null,
+      integrity_hash: null,
+      warnings: [],
+      nodes: [
+        { node_id: "data_1", node_type: "data.source", label: "Data", parameters: {}, position_x: 0, position_y: 0 },
+      ],
+      edges: [],
+    };
+
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url === "/workflows/43") {
+        return { data: workflowPayload };
+      }
+      if (url === "/workflows/43/runs/latest") {
+        throw new Error("404 Not Found");
+      }
+      if (url === "/workflows/nodes/library") {
+        return { data: { nodes: [], total: 0 } };
+      }
+      if (url === "/workflows/types/registry") {
+        return { data: typeRegistry };
+      }
+      throw new Error(`Unexpected GET ${url}`);
+    });
+
+    const store = useWorkflowStore();
+    await store.loadWorkflow(43);
+
+    const dataNode = store.nodes.find((n) => n.id === "data_1");
+    expect(dataNode).toBeDefined();
+    // No latest run — executionState is not initialized (no shapes to restore).
+    // The important contract is that we did NOT fabricate a "completed" state.
+    expect(dataNode?.executionState?.status).not.toBe("completed");
+    expect(dataNode?.executionState?.output_shape).toBeFalsy();
+    expect(store.lastExecutionResults).toBeNull();
+  });
+});

@@ -134,7 +134,7 @@ class TestNoNDDatasetContract:
     async def test_mcr_no_nddataset(self, make_node):
         ds = _make_spectral_dataset(n_samples=20, n_features=50)
         node = make_node("model.mcr_als", {"n_components": 2})
-        result = await node.execute(input_data=ds)
+        result = _unwrap_result(await node.execute(input_data=ds))
         _check_no_nddataset(result, "mcr")
 
     @_skip_no_scp
@@ -143,7 +143,7 @@ class TestNoNDDatasetContract:
         # EFA returns (n_samples, n_components) eigenvalues; use matching n_components
         ds = _make_spectral_dataset(n_samples=20, n_features=50)
         node = make_node("model.efa", {"n_components": 20})
-        result = await node.execute(input_data=ds)
+        result = _unwrap_result(await node.execute(input_data=ds))
         _check_no_nddataset(result, "efa")
 
     @_skip_no_scp
@@ -151,7 +151,7 @@ class TestNoNDDatasetContract:
     async def test_simplisma_no_nddataset(self, make_node):
         ds = _make_spectral_dataset(n_samples=20, n_features=50)
         node = make_node("model.simplisma", {"n_components": 2})
-        result = await node.execute(input_data=ds)
+        result = _unwrap_result(await node.execute(input_data=ds))
         _check_no_nddataset(result, "simplisma")
 
 
@@ -189,7 +189,7 @@ class TestShapeConventions:
             target_names=["Target_A", "Target_B"],
         )
         node = make_node("model.pls", {"n_components": n_components})
-        result = await node.execute(X=ds)
+        result = _unwrap_result(await node.execute(X=ds))
 
         # X scores: (n_samples, n_components)
         assert result["default"].shape == (n_samples, n_components)
@@ -213,7 +213,7 @@ class TestShapeConventions:
             target_names=["Moisture", "Oil"],
         )
         node = make_node("model.pls", {"n_components": 2})
-        result = await node.execute(X=ds)
+        result = _unwrap_result(await node.execute(X=ds))
 
         yl = result["Y_loadings"]
         assert isinstance(yl, SherpaDataset)
@@ -226,7 +226,7 @@ class TestShapeConventions:
         n_samples, n_features, n_components = 20, 50, 2
         ds = _make_spectral_dataset(n_samples=n_samples, n_features=n_features)
         node = make_node("model.mcr_als", {"n_components": n_components})
-        result = await node.execute(input_data=ds)
+        result = _unwrap_result(await node.execute(input_data=ds))
 
         # C: (n_samples, n_components)
         assert result["default"].shape == (n_samples, n_components)
@@ -239,7 +239,7 @@ class TestShapeConventions:
         n_samples, n_features, n_components = 20, 50, 2
         ds = _make_spectral_dataset(n_samples=n_samples, n_features=n_features)
         node = make_node("model.simplisma", {"n_components": n_components})
-        result = await node.execute(input_data=ds)
+        result = _unwrap_result(await node.execute(input_data=ds))
 
         # C (concentrations): (n_samples, n_components)
         assert isinstance(result["default"], SherpaDataset)
@@ -256,7 +256,7 @@ class TestShapeConventions:
         n_components = n_samples  # EFA computes up to min(n_samples, n_features)
         ds = _make_spectral_dataset(n_samples=n_samples, n_features=n_features)
         node = make_node("model.efa", {"n_components": n_components})
-        result = await node.execute(input_data=ds)
+        result = _unwrap_result(await node.execute(input_data=ds))
 
         # Forward eigenvalues: (n_samples, n_components)
         fwd = result["forward_eigenvalues"]
@@ -289,7 +289,7 @@ class TestCornMP5Integration:
 
         # Run PLS with 3 components
         pls = make_node("model.pls", {"n_components": 3})
-        result = await pls.execute(X=dataset)
+        result = _unwrap_result(await pls.execute(X=dataset))
 
         # All output ports should be non-None
         for key in ("default", "X_loadings", "Y_scores", "Y_loadings", "coef"):
@@ -329,7 +329,7 @@ class TestExplicitOutputTypes:
             target_names=["Moisture", "Oil"],
         )
         node = make_node("model.pls", {"n_components": 2})
-        result = await node.execute(X=ds)
+        result = _unwrap_result(await node.execute(X=ds))
 
         payload = serialize_result(result["default"])
         assert payload["metadata"]["type"] == "PLS"
@@ -339,7 +339,7 @@ class TestExplicitOutputTypes:
     async def test_mcr_default_output_has_explicit_type(self, make_node):
         ds = _make_spectral_dataset(n_samples=20, n_features=50)
         node = make_node("model.mcr_als", {"n_components": 2})
-        result = await node.execute(input_data=ds)
+        result = _unwrap_result(await node.execute(input_data=ds))
 
         payload = serialize_result(result["default"])
         assert payload["metadata"]["type"] == "MCR_ALS"
@@ -349,7 +349,7 @@ class TestExplicitOutputTypes:
     async def test_simplisma_default_output_has_explicit_type(self, make_node):
         ds = _make_spectral_dataset(n_samples=20, n_features=50)
         node = make_node("model.simplisma", {"n_components": 2})
-        result = await node.execute(input_data=ds)
+        result = _unwrap_result(await node.execute(input_data=ds))
 
         payload = serialize_result(result["default"])
         assert payload["metadata"]["type"] == "SIMPLISMA"
@@ -364,7 +364,7 @@ class TestExplicitOutputTypes:
             target_type="categorical",
         )
         node = make_node("classification.plsda", {"n_components": 2, "cv_folds": 3})
-        result = await node.execute(X=ds)
+        result = _unwrap_result(await node.execute(X=ds))
 
         payload = serialize_result(result["default"])
         assert payload["metadata"]["type"] == "PLS_DA"

@@ -105,6 +105,44 @@ export const useWorkflowStore = defineStore("workflow", () => {
     return null;
   };
 
+  /**
+   * Derive output shape and type from a serialized node result.
+   * Shared between executeWorkflow (live run) and loadWorkflow (restore).
+   */
+  const deriveShapeAndType = (
+    result: unknown
+  ): { output_shape: number[] | null; output_type: string | null } => {
+    let output_shape: number[] | null = null;
+    let output_type: string | null = null;
+
+    if (!result || typeof result !== "object") {
+      return { output_shape, output_type };
+    }
+
+    const resultRec = result as Record<string, unknown>;
+    // Multi-port node: look inside `default` first, then fall back to the top-level result.
+    const primaryRaw = "default" in resultRec ? resultRec.default : resultRec;
+    if (!primaryRaw || typeof primaryRaw !== "object") {
+      return { output_shape, output_type };
+    }
+    const primary = primaryRaw as Record<string, unknown>;
+
+    if (typeof primary.type === "string") {
+      output_type = primary.type;
+    }
+    if (Array.isArray(primary.shape)) {
+      output_shape = primary.shape as number[];
+    }
+    // SherpaDataset/NDDataset expose n_samples/n_features at the top of the serialized dict.
+    if (
+      typeof primary.n_samples === "number" &&
+      typeof primary.n_features === "number"
+    ) {
+      output_shape = [primary.n_samples, primary.n_features];
+    }
+    return { output_shape, output_type };
+  };
+
   const parseTypeRef = (
     typeRef: string
   ): { name: string; major: number; minor: number } | null => {
@@ -353,6 +391,18 @@ export const useWorkflowStore = defineStore("workflow", () => {
   async function loadWorkflow(id: number): Promise<void> {
     isLoading.value = true;
     try {
+      // Ensure the node library and type registry are loaded BEFORE we
+      // validate the workflow's edges. Otherwise validateAllEdges runs
+      // with an empty library, every edge resolves to "metadata missing"
+      // and turns red in the canvas. This race is visible after a
+      // frontend container rebuild: the initial fetchNodeLibrary in
+      // main.ts is still in flight when the workflow auto-loads.
+      if (nodeLibrary.value.size === 0) {
+        await fetchNodeLibrary();
+      } else if (!typeRegistry.value) {
+        await fetchTypeRegistry();
+      }
+
       const response = await api.get(`/workflows/${id}`);
       const data = response.data;
 
@@ -378,6 +428,33 @@ export const useWorkflowStore = defineStore("workflow", () => {
         if (runResp.data) {
           lastExecutionResults.value = runResp.data.results_summary;
           lastExecutionDiagnostics.value = runResp.data.diagnostics || {};
+
+          // Restore node execution states from the persisted run.
+          // CRITICAL: also restore output_shape / output_type so that after a
+          // page refresh, buildSyncPayload() can still report shapes to Sherpa
+          // (otherwise the LLM hallucinates dimensions from common datasets).
+          const savedStatuses = runResp.data.node_statuses || {};
+          const savedResults = runResp.data.results_summary || {};
+          for (const node of nodes.value) {
+            const status = normalizeBackendExecutionStatus(savedStatuses[node.id]);
+            const result = savedResults[node.id];
+            const hasResult = result !== undefined;
+            if (status === "completed" || (status === null && hasResult)) {
+              const { output_shape, output_type } = deriveShapeAndType(result);
+              setNodeExecutionState(node.id, {
+                status: "completed",
+                last_executed: runResp.data.executed_at || null,
+                output_shape,
+                output_type,
+              });
+            } else if (status === "error") {
+              setNodeExecutionState(node.id, {
+                status: "error",
+                error_message: runResp.data.error || null,
+              });
+            }
+          }
+
           // Mark stale if workflow changed since last execution
           if (
             data.integrity_hash &&
@@ -554,31 +631,15 @@ export const useWorkflowStore = defineStore("workflow", () => {
 
         // Update node execution state based on status
         if (normalizedStatus === "completed" || (normalizedStatus === null && hasResult)) {
-          // Extract shape information from result if available
-          let outputShape: number[] | null = null;
-          let outputType: string | null = null;
-
-          if (result) {
-            const primaryResult = (result && typeof result === "object" && "default" in result) ? result.default : result;
-            if (primaryResult?.type) {
-              outputType = primaryResult.type;
-            }
-            if (primaryResult?.shape && Array.isArray(primaryResult.shape)) {
-              outputShape = primaryResult.shape;
-            }
-            // Handle dataset (SherpaDataset/NDDataset) with n_samples and n_features
-            if (primaryResult?.n_samples !== undefined && primaryResult?.n_features !== undefined) {
-              outputShape = [primaryResult.n_samples, primaryResult.n_features];
-            }
-          }
+          const { output_shape, output_type } = deriveShapeAndType(result);
 
           setNodeExecutionState(node.id, {
             status: "completed",
             error_message: null,
             error_details: null,
             last_executed: new Date().toISOString(),
-            output_shape: outputShape,
-            output_type: outputType,
+            output_shape,
+            output_type,
           });
         } else if (normalizedStatus === "error") {
           // Extract error message from response or use generic message
@@ -671,31 +732,15 @@ export const useWorkflowStore = defineStore("workflow", () => {
 
         // Update node execution state based on status
         if (normalizedStatus === "completed" || (normalizedStatus === null && hasResult)) {
-          // Extract shape information from result if available
-          let outputShape: number[] | null = null;
-          let outputType: string | null = null;
-
-          if (result) {
-            const primaryResult = (result && typeof result === "object" && "default" in result) ? result.default : result;
-            if (primaryResult?.type) {
-              outputType = primaryResult.type;
-            }
-            if (primaryResult?.shape && Array.isArray(primaryResult.shape)) {
-              outputShape = primaryResult.shape;
-            }
-            // Handle dataset (SherpaDataset/NDDataset) with n_samples and n_features
-            if (primaryResult?.n_samples !== undefined && primaryResult?.n_features !== undefined) {
-              outputShape = [primaryResult.n_samples, primaryResult.n_features];
-            }
-          }
+          const { output_shape, output_type } = deriveShapeAndType(result);
 
           setNodeExecutionState(node.id, {
             status: "completed",
             error_message: null,
             error_details: null,
             last_executed: new Date().toISOString(),
-            output_shape: outputShape,
-            output_type: outputType,
+            output_shape,
+            output_type,
           });
         } else if (normalizedStatus === "error") {
           const errorMsg = response.data.error || "Node execution failed";

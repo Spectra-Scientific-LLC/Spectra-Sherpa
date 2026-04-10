@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- assistant sync payloads intentionally preserve flexible node parameter/result shapes. */
 import { defineStore } from "pinia";
 import { computed, ref, watch, type WatchStopHandle } from "vue";
+import api from "@/api/client";
+import { useAppConfig } from "@/composables/useAppConfig";
 import {
   createSherpaRequestId,
   subscribeSherpaEvents,
@@ -10,8 +12,9 @@ import { SHERPA_WS_ACTION, SHERPA_WS_EVENT, getSherpaChatAction } from "@/lib/sh
 import { summarizeDatasetForSherpaContext, useDataStore } from "@/stores/data";
 import { useLlmStore } from "@/stores/llm";
 import { useNotificationStore } from "@/stores/notification";
+import { useProjectStore } from "@/stores/project";
 import { useWorkflowStore } from "@/stores/workflow";
-import type { SherpaMessage, SherpaRecommendationPayload } from "@/types";
+import type { ConversationSummary, SherpaMessage, SherpaRecommendationPayload } from "@/types";
 
 type SherpaState = "idle" | "syncing" | "chatting" | "error";
 type SherpaSyncState = "idle" | "syncing" | "error";
@@ -38,8 +41,34 @@ export interface ToolEvent {
   result?: unknown;
 }
 
+const STORAGE_KEY = "sherpa_conversations";
+
+const loadConversations = (): ConversationSummary[] => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+    return JSON.parse(raw) as ConversationSummary[];
+  } catch (error) {
+    console.error("Failed to load Sherpa conversations from localStorage:", error);
+    return [];
+  }
+};
+
+const persistConversations = (items: ConversationSummary[]) => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+};
+
 export const useSherpaStore = defineStore("sherpa", () => {
+  const { appMode } = useAppConfig();
+  const projectStore = useProjectStore();
   const messages = ref<SherpaMessage[]>([]);
+  const isServerBacked = computed(() => appMode.value !== "local");
+  const conversations = ref<ConversationSummary[]>(
+    isServerBacked.value ? [] : loadConversations()
+  );
+  const currentConversationId = ref<string | null>(null);
   const syncState = ref<SherpaSyncState>("idle");
   const chatState = ref<SherpaChatState>("idle");
   const state = computed<SherpaState>(() => {
@@ -157,6 +186,106 @@ export const useSherpaStore = defineStore("sherpa", () => {
     }
   }
 
+  async function refreshConversations(projectId = projectStore.currentProjectId): Promise<void> {
+    if (!isServerBacked.value) {
+      conversations.value = loadConversations();
+      return;
+    }
+
+    if (!projectId) {
+      conversations.value = [];
+      currentConversationId.value = null;
+      messages.value = [];
+      return;
+    }
+
+    const response = await api.get("/llm/conversations", {
+      params: { project_id: projectId },
+    });
+    conversations.value = (response.data as Array<Record<string, unknown>>).map((item) => ({
+      id: String(item.id),
+      title: String(item.title || "Untitled conversation"),
+      updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
+    }));
+
+    if (
+      currentConversationId.value
+      && !conversations.value.some((item) => item.id === currentConversationId.value)
+    ) {
+      currentConversationId.value = null;
+      messages.value = [];
+    }
+  }
+
+  function updateConversationSummary(conversationId: string): void {
+    if (isServerBacked.value) {
+      void refreshConversations(projectStore.currentProjectId);
+      return;
+    }
+
+    const firstUser = messages.value.find((message) => message.role === "user");
+    const title =
+      firstUser?.content.slice(0, 60) || `Sherpa Conversation ${conversations.value.length + 1}`;
+    const updatedAt = new Date().toISOString();
+    const existing = conversations.value.find((item) => item.id === conversationId);
+
+    if (existing) {
+      existing.title = title;
+      existing.updatedAt = updatedAt;
+    } else {
+      conversations.value.unshift({ id: conversationId, title, updatedAt });
+    }
+
+    persistConversations(conversations.value);
+  }
+
+  async function loadConversation(conversationId: string): Promise<void> {
+    const params = isServerBacked.value
+      ? { project_id: projectStore.currentProjectId }
+      : undefined;
+
+    if (isServerBacked.value && projectStore.currentProjectId == null) {
+      throw new Error("Select a project before loading a Sherpa conversation.");
+    }
+
+    const response = await api.get(`/llm/conversation/${conversationId}`, { params });
+    currentConversationId.value = response.data.conversation_id;
+    messages.value = (response.data.messages as Array<{ role: SherpaMessage["role"]; content: string }>)
+      .map((message) => ({
+        role: message.role,
+        content: message.content,
+      }));
+    finalizeChatCommunication();
+    finalizeSyncCommunication();
+    chatState.value = "idle";
+    syncState.value = "idle";
+    streamingIndex.value = null;
+    currentChatRequestId.value = null;
+    currentSyncRequestId.value = null;
+    activeTools.value = [];
+    subscriptionRequired.value = null;
+    subscriptionUpgradeUrl.value = null;
+  }
+
+  async function deleteConversation(conversationId: string): Promise<void> {
+    const params = isServerBacked.value
+      ? { project_id: projectStore.currentProjectId }
+      : undefined;
+
+    if (isServerBacked.value && projectStore.currentProjectId == null) {
+      throw new Error("Select a project before deleting a Sherpa conversation.");
+    }
+
+    await api.delete(`/llm/conversation/${conversationId}`, { params });
+    conversations.value = conversations.value.filter((item) => item.id !== conversationId);
+    if (!isServerBacked.value) {
+      persistConversations(conversations.value);
+    }
+    if (currentConversationId.value === conversationId) {
+      startNewConversation();
+    }
+  }
+
   function _formatDemoLimitDetail(payload: Record<string, unknown>): string | undefined {
     const details: string[] = [];
     if (typeof payload.remaining === "number" && Number.isFinite(payload.remaining)) {
@@ -200,6 +329,54 @@ export const useSherpaStore = defineStore("sherpa", () => {
       role: "system",
       content,
     });
+  }
+
+  function _createWelcomeMessage(): SherpaMessage {
+    return {
+      role: "assistant",
+      content: [
+        "Sherpa Advisor is ready.",
+        "",
+        "1. Create a project.",
+        "2. Pick a template or build a workflow.",
+        "3. Run the workflow to generate results.",
+        "4. Ask Sherpa about the outputs, diagnostics, or next steps.",
+      ].join("\n"),
+    };
+  }
+
+  function _ensureWelcomeMessage(): void {
+    if (messages.value.length > 0) {
+      return;
+    }
+    messages.value = [_createWelcomeMessage()];
+  }
+
+  function _resetTransientState(): void {
+    syncState.value = "idle";
+    chatState.value = "idle";
+    lastSyncError.value = null;
+    streamingIndex.value = null;
+    chatServerAcknowledged.value = false;
+    currentChatRequestId.value = null;
+    currentSyncRequestId.value = null;
+    activeTools.value = [];
+    subscriptionRequired.value = null;
+    subscriptionUpgradeUrl.value = null;
+  }
+
+  function startNewConversation(): void {
+    finalizeChatCommunication();
+    finalizeSyncCommunication();
+    unsubscribeChatEvents?.();
+    unsubscribeChatEvents = null;
+    unsubscribeSyncEvents?.();
+    unsubscribeSyncEvents = null;
+    messages.value = [];
+    _resetTransientState();
+    currentConversationId.value = null;
+    lastActivitySummary.value = null;
+    _ensureWelcomeMessage();
   }
 
   function _currentStartedToolName(): string | null {
@@ -359,11 +536,78 @@ export const useSherpaStore = defineStore("sherpa", () => {
   function buildSyncPayload() {
     const workflow = useWorkflowStore();
     const dataStore = useDataStore();
+    const lastExecutionResults = workflow.lastExecutionResults as Record<
+      string,
+      Record<string, unknown>
+    > | null;
+
+    const deriveShapeAndType = (
+      result: Record<string, unknown> | null | undefined
+    ): { result_shape: number[] | null; output_type: string | null } => {
+      let result_shape: number[] | null = null;
+      let output_type: string | null = null;
+
+      if (!result || typeof result !== "object") {
+        return { result_shape, output_type };
+      }
+
+      const primary =
+        result.default && typeof result.default === "object"
+          ? (result.default as Record<string, unknown>)
+          : result;
+
+      if (typeof primary.type === "string" && primary.type.trim()) {
+        output_type = primary.type;
+      }
+
+      if (
+        Array.isArray(primary.shape)
+        && primary.shape.every((value) => typeof value === "number")
+      ) {
+        result_shape = primary.shape as number[];
+      } else if (
+        typeof primary.n_samples === "number"
+        && typeof primary.n_features === "number"
+      ) {
+        result_shape = [primary.n_samples, primary.n_features];
+      }
+
+      return { result_shape, output_type };
+    };
 
     const nodes = workflow.nodes.map((n) => {
       const meta = workflow.getNodeMetadata(n.type);
       const exec = n.executionState;
-      const paramKeys = new Set(Object.keys(n.params || {}));
+      const userParams = (n.params || {}) as Record<string, unknown>;
+      const rawResult = lastExecutionResults?.[String(n.id)] ?? null;
+      const inferredResult = deriveShapeAndType(rawResult);
+      const hasPersistedResult = rawResult !== null;
+      const executionStatus =
+        exec?.status && exec.status !== "pending"
+          ? exec.status
+          : hasPersistedResult
+            ? "completed"
+            : exec?.status ?? null;
+      const resultShape = exec?.output_shape ?? inferredResult.result_shape;
+      const outputType = exec?.output_type ?? inferredResult.output_type ?? meta?.output_type ?? null;
+
+      // Build EFFECTIVE parameters = metadata defaults overlaid with user overrides.
+      // Without this the Pipeline Nodes "Params: {...}" line sent to Sherpa is
+      // often empty or partial, and the LLM falls back on describe_node (which
+      // returns type-level defaults) and conflates "node type default" with
+      // "this node's actual setting". Always sending the effective value
+      // removes that ambiguity.
+      const effectiveParams: Record<string, unknown> = {};
+      if (meta?.parameters) {
+        for (const p of meta.parameters) {
+          if (p.default !== undefined) {
+            effectiveParams[p.name] = p.default;
+          }
+        }
+      }
+      Object.assign(effectiveParams, userParams);
+
+      const paramKeys = new Set(Object.keys(effectiveParams));
       const paramDescriptions =
         meta?.parameters
           ?.filter((param) => paramKeys.has(param.name))
@@ -377,13 +621,13 @@ export const useSherpaStore = defineStore("sherpa", () => {
         node_id: String(n.id),
         node_type: n.type,
         label: meta?.label ?? n.type,
-        parameters: n.params || {},
-        result_shape: exec?.output_shape ?? null,
+        parameters: effectiveParams,
+        result_shape: resultShape,
         result_statistics: null,
         description: meta?.description ?? null,
         param_descriptions: paramDescriptions,
-        output_type: exec?.output_type ?? meta?.output_type ?? null,
-        execution_status: exec?.status ?? null,
+        output_type: outputType,
+        execution_status: executionStatus,
       };
     });
 
@@ -397,10 +641,6 @@ export const useSherpaStore = defineStore("sherpa", () => {
     // Derive top-level data dimensions from the first data node with results
     let n_samples: number | null = null;
     let n_features: number | null = null;
-    const lastExecutionResults = workflow.lastExecutionResults as Record<
-      string,
-      Record<string, unknown>
-    > | null;
     for (const n of workflow.nodes) {
       if (!n.type.startsWith("data.")) {
         continue;
@@ -425,6 +665,99 @@ export const useSherpaStore = defineStore("sherpa", () => {
       }
     }
 
+    // Scientific scalars and structured fields that Sherpa's context builder
+    // can summarize. Keep this list in sync with the per-node-type summarizers
+    // in spectra-server/src/spectrasherpa_server/context_builder.py.
+    const SCIENTIFIC_KEYS = new Set([
+      // Shapes and identity
+      "type",
+      "shape",
+      "n_samples",
+      "n_features",
+      "n_components",
+      "n_classes",
+      "classes",
+      // Regression metrics
+      "r2",
+      "R2",
+      "rmse",
+      "RMSE",
+      "rmsep",
+      "RMSEP",
+      "rmsecv",
+      "RMSECV",
+      "q2",
+      "Q2",
+      "mae",
+      "MAE",
+      "sep",
+      "SEP",
+      "rer",
+      "RER",
+      "rpd",
+      "bias",
+      // Classification metrics
+      "accuracy",
+      "train_accuracy",
+      "cv_accuracy",
+      "cv_balanced_accuracy",
+      "f1_score",
+      "precision",
+      "recall",
+      "confusion_matrix",
+      "per_class",
+      // Decomposition metrics
+      "explained_variance",
+      "explained_variance_ratio",
+      "cumulative_variance",
+      "reconstruction_error",
+      // Clustering metrics
+      "silhouette_score",
+      "inertia",
+      "n_clusters",
+      // Diagnostics
+      "hotelling_t2",
+      "q_residuals",
+      "t2_critical_95",
+      "q_critical_95",
+      "n_outliers",
+      "outlier_percentage",
+      "t2_limit",
+      "q_limit",
+      // Chemistry-aware context (consumed by extract_salient_features_context)
+      "salient_features",
+      // Status
+      "status",
+      "task_type",
+    ]);
+
+    const isSimpleValue = (v: unknown): boolean =>
+      v == null ||
+      typeof v === "string" ||
+      typeof v === "number" ||
+      typeof v === "boolean";
+
+    const pickScientificFields = (
+      obj: Record<string, unknown>
+    ): Record<string, unknown> => {
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(obj)) {
+        if (!SCIENTIFIC_KEYS.has(k)) {
+          continue;
+        }
+        // Pass through scalars, small arrays, and nested objects as-is.
+        // The server's context builder further compacts these.
+        if (isSimpleValue(v)) {
+          out[k] = v;
+        } else if (Array.isArray(v)) {
+          out[k] = v;
+        } else if (typeof v === "object") {
+          out[k] = v;
+        }
+      }
+      return out;
+    };
+
     let results_summary: Record<string, Record<string, unknown>> | null = null;
     if (lastExecutionResults) {
       results_summary = {};
@@ -433,25 +766,33 @@ export const useSherpaStore = defineStore("sherpa", () => {
           continue;
         }
         const result = rawResult as Record<string, unknown>;
-        const metadata = result.metadata;
-        results_summary[nodeId] = {
+
+        // Always include shape identity fields even if not in SCIENTIFIC_KEYS match.
+        const summary: Record<string, unknown> = {
           type: result.type ?? null,
           shape: result.shape ?? null,
           n_samples: result.n_samples ?? null,
           n_features: result.n_features ?? null,
-          metadata:
-            metadata && typeof metadata === "object"
-              ? Object.fromEntries(
-                  Object.entries(metadata as Record<string, unknown>).filter(
-                    ([, value]) =>
-                      value == null ||
-                      typeof value === "string" ||
-                      typeof value === "number" ||
-                      typeof value === "boolean"
-                  )
-                )
-              : null,
         };
+
+        // Scientific fields from the top level of the result.
+        Object.assign(summary, pickScientificFields(result));
+
+        // Scientific fields from the nested metadata block.
+        const metadata = result.metadata;
+        if (metadata && typeof metadata === "object") {
+          Object.assign(summary, pickScientificFields(metadata as Record<string, unknown>));
+          // Also preserve the raw metadata primitives for backwards compat.
+          summary.metadata = Object.fromEntries(
+            Object.entries(metadata as Record<string, unknown>).filter(([, value]) =>
+              isSimpleValue(value)
+            )
+          );
+        } else {
+          summary.metadata = null;
+        }
+
+        results_summary[nodeId] = summary;
       }
     }
 
@@ -654,37 +995,19 @@ export const useSherpaStore = defineStore("sherpa", () => {
         payload: {
           request_id: requestId,
           message,
+          conversation_id: currentConversationId.value,
+          project_id: projectStore.currentProjectId,
           workflow_id: workflow.workflowId,
           workflow_context: buildSyncPayload(),
-          history: messages.value
-            .slice(-10)
-            .map((m) => ({ role: m.role, content: m.content })),
         },
       })
     );
   }
 
   function clearMessages(): void {
-    finalizeChatCommunication();
-    finalizeSyncCommunication();
-    unsubscribeChatEvents?.();
-    unsubscribeChatEvents = null;
-    unsubscribeSyncEvents?.();
-    unsubscribeSyncEvents = null;
-    messages.value = [];
-    syncState.value = "idle";
-    chatState.value = "idle";
-    lastSyncError.value = null;
-    streamingIndex.value = null;
-    chatServerAcknowledged.value = false;
-    currentChatRequestId.value = null;
-    currentSyncRequestId.value = null;
+    startNewConversation();
     lastPeaksResult.value = null;
     lastCodeResult.value = null;
-    activeTools.value = [];
-    subscriptionRequired.value = null;
-    subscriptionUpgradeUrl.value = null;
-    lastActivitySummary.value = null;
   }
 
   // ── WebSocket message handlers ─────────────────────────────
@@ -848,6 +1171,8 @@ export const useSherpaStore = defineStore("sherpa", () => {
         chatServerAcknowledged.value = true;
         currentChatRequestId.value =
           typeof payload.request_id === "string" ? payload.request_id : currentChatRequestId.value;
+        currentConversationId.value =
+          typeof payload.conversation_id === "string" ? payload.conversation_id : currentConversationId.value;
         scheduleActiveChatTimeout();
         streamingIndex.value = messages.value.length;
         _recordActivity(
@@ -882,6 +1207,8 @@ export const useSherpaStore = defineStore("sherpa", () => {
         chatServerAcknowledged.value = true;
         currentChatRequestId.value =
           typeof payload.request_id === "string" ? payload.request_id : currentChatRequestId.value;
+        currentConversationId.value =
+          typeof payload.conversation_id === "string" ? payload.conversation_id : currentConversationId.value;
         const response =
           streamingIndex.value !== null
             ? messages.value[streamingIndex.value]?.content ?? ""
@@ -892,6 +1219,9 @@ export const useSherpaStore = defineStore("sherpa", () => {
         unsubscribeChatEvents?.();
         unsubscribeChatEvents = null;
         if (response.trim()) {
+          if (currentConversationId.value) {
+            updateConversationSummary(currentConversationId.value);
+          }
           _recordActivity(
             `Sherpa response received${_formatRequestSuffix(payload.request_id)}: ${_truncateForLog(response)}${_formatTimingSuffix(payload.timing)}`,
             {
@@ -1180,6 +1510,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
     if (isInitialized) {
       return;
     }
+    _ensureWelcomeMessage();
     isInitialized = true;
     unsubscribeGeneralEvents = subscribeSherpaEvents(handleGeneralEvent, {
       types: [
@@ -1205,6 +1536,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
   function dispose(): void {
     finalizeChatCommunication();
     finalizeSyncCommunication();
+    _resetTransientState();
     isInitialized = false;
     unsubscribeGeneralEvents?.();
     unsubscribeGeneralEvents = null;
@@ -1223,6 +1555,8 @@ export const useSherpaStore = defineStore("sherpa", () => {
 
   return {
     messages,
+    conversations,
+    currentConversationId,
     state,
     syncState,
     chatState,
@@ -1237,6 +1571,10 @@ export const useSherpaStore = defineStore("sherpa", () => {
     syncWorkflow,
     sendMessage,
     clearMessages,
+    startNewConversation,
+    refreshConversations,
+    loadConversation,
+    deleteConversation,
     openSubscriptionUpgrade,
     init,
     dispose,

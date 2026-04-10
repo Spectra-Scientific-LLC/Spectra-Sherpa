@@ -16,7 +16,7 @@ from ...io_contracts import (
     bind_y,
     to_numpy_2d,
 )
-from ...node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
+from ...node_base import Node, NodeMetadata, NodeParameter, NodeResult, PortMetadata, register_node
 from ..modeling import create_spectral_dataset
 from ..visualization import generate_confusion_matrix_heatmap
 from .core_utils import (
@@ -391,14 +391,22 @@ class KNNNode(Node):
         logger.debug("Train accuracy: %.3f, CV accuracy: %.3f", train_accuracy, cv_accuracy)
 
         # NDDataset-only return: one serialization boundary at API layer
-        return {
-            "default": scores_dataset,  # NDDataset: viz scores + sample labels (y) + feature coords (x)
-            "model": {  # Wrapped model dict for ClassifierPredictNode
-                "model": knn,
-                "type": "knn",
+        return NodeResult(
+            outputs={
+                "default": scores_dataset,  # NDDataset: viz scores + sample labels (y) + feature coords (x)
+                "model": {  # Wrapped model dict for ClassifierPredictNode
+                    "model": knn,
+                    "type": "knn",
+                },
+                "plots": plots,  # Pre-built Plotly traces (legitimate visualization output)
             },
-            "plots": plots,  # Pre-built Plotly traces (legitimate visualization output)
-        }
+            diagnostics={
+                "train_accuracy": train_accuracy,
+                "cv_accuracy": cv_accuracy,
+                "optimal_k": k_tuning_results.get("best_k") if k_tuning_results else None,
+                "n_classes": len(classes),
+            },
+        )
 
     def _optimize_k(self, X, y, max_k=20, folds=5) -> dict:
         """

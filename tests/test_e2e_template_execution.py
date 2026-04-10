@@ -135,7 +135,10 @@ async def test_baseline_penalized_ls_uses_nir_lambda(diesel_nir_dataset: SherpaD
 
     # Result should be a valid SherpaDataset with same shape
     from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset as SD
+    from spectra_sherpa.app.services.dag.node_base import NodeResult
 
+    if isinstance(result, NodeResult):
+        result = result.outputs.get("default", result.outputs)
     assert isinstance(result, SD) or isinstance(result, dict)
 
 
@@ -185,11 +188,13 @@ async def test_outlier_detection_succeeds_with_eigenvalues(diesel_pca_model: dic
 
     result = await node.execute(pca_model=diesel_pca_model)
 
-    assert isinstance(result, dict)
-    assert "T2" in result
-    assert "Q" in result
-    assert "flags" in result
-    t2_arr = np.asarray(result["T2"])
+    from spectra_sherpa.app.services.dag.node_base import NodeResult
+
+    assert isinstance(result, NodeResult)
+    assert "T2" in result.outputs
+    assert "Q" in result.outputs
+    assert "flags" in result.outputs
+    t2_arr = np.asarray(result.outputs["T2"])
     assert t2_arr.shape == (diesel_pca_model["n_observations"],), f"T² array has wrong shape: {t2_arr.shape}"
     # T² values must be non-negative
     assert np.all(t2_arr >= 0), "T² values contain negatives — eigenvalue computation is broken"
@@ -216,7 +221,7 @@ async def test_cross_validation_reports_sep_rer_bias():
 
     result = await node.execute(y_true=y_true, y_pred=y_pred)
 
-    metrics = result.get("cv_metrics", {})
+    metrics = result.outputs.get("cv_metrics", {})
     # Keys are uppercase in the node output (SEP, RER, bias)
     assert "SEP" in metrics, f"SEP missing from CV metrics (fix #5). Keys: {list(metrics)}"
     assert "RER" in metrics, f"RER missing from CV metrics (fix #5). Keys: {list(metrics)}"
@@ -246,7 +251,7 @@ async def test_cross_validation_loocv_applied_for_small_n():
 
     result = await node.execute(y_true=y_true, y_pred=y_pred)
 
-    metrics = result.get("cv_metrics", {})
+    metrics = result.outputs.get("cv_metrics", {})
     # With LOOCV on 30 samples, effective_folds == n_samples (cv_folds_used == 30)
     assert (
         metrics.get("cv_method") == "loocv"
@@ -270,7 +275,7 @@ async def test_cross_validation_honors_explicit_classification_task_type():
         y_pred=np.array(["low", "high", "high", "high"]),
     )
 
-    metrics = result.get("cv_metrics", {})
+    metrics = result.outputs.get("cv_metrics", {})
     assert metrics.get("task_type") == "classification"
     assert metrics.get("accuracy") == pytest.approx(0.75)
     assert metrics.get("n_classes") == 2
@@ -294,13 +299,18 @@ async def test_holdout_evaluation_tolerates_non_finite_regression_predictions():
         y_pred=np.array([1.1, np.nan, 2.9, np.inf]),
     )
 
-    metrics = result["metrics"]
+    # NodeResult: outputs carry the port data, diagnostics carry scalar metrics
+    outputs = result.outputs
+    metrics = outputs["metrics"]
     assert metrics["n_samples"] == 4
     assert metrics["n_valid_samples"] == 2
     assert metrics["n_invalid_predictions"] == 2
     assert metrics["status"] == "contains_non_finite_predictions"
     assert np.isfinite(metrics["RMSEP"])
-    assert len(result["visualization"]["data"]) == 2
+    assert len(outputs["visualization"]["data"]) == 2
+
+    # Diagnostics should mirror the key metrics
+    assert result.diagnostics["RMSEP"] == metrics["RMSEP"]
 
 
 def test_holdout_evaluation_generate_python_matches_runtime_payload_shape():

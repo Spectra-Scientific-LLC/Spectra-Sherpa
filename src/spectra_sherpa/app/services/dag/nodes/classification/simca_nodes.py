@@ -16,7 +16,7 @@ from ...io_contracts import (
     bind_y,
     to_numpy_2d,
 )
-from ...node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
+from ...node_base import Node, NodeMetadata, NodeParameter, NodeResult, PortMetadata, register_node
 from ..modeling import create_spectral_dataset
 from ..visualization import generate_confusion_matrix_heatmap
 from .core_utils import (
@@ -520,18 +520,24 @@ class SIMCANode(Node):
         logger.debug("Train accuracy: %.3f with %d PCs per class", train_accuracy, n_components)
 
         # SherpaDataset-only return: one serialization boundary at API layer
-        return {
-            "default": scores_dataset,  # SherpaDataset: viz scores (n_samples, n_components)
-            "model": {  # Wrapped model dict for ClassifierPredictNode
-                "class_models": serializable_models,
-                "classes": [str(c) for c in classes],
-                "T2_limits": {str(k): float(v) for k, v in T2_limits.items()},
-                "Q_limits": {str(k): float(v) for k, v in Q_limits.items()},
-                "type": "simca",
+        return NodeResult(
+            outputs={
+                "default": scores_dataset,  # SherpaDataset: viz scores (n_samples, n_components)
+                "model": {  # Wrapped model dict for ClassifierPredictNode
+                    "class_models": serializable_models,
+                    "classes": [str(c) for c in classes],
+                    "T2_limits": {str(k): float(v) for k, v in T2_limits.items()},
+                    "Q_limits": {str(k): float(v) for k, v in Q_limits.items()},
+                    "type": "simca",
+                },
+                "predictions": predictions.tolist(),
+                "distances": distances,
+                "train_accuracy": float(train_accuracy),
+                "confusion_matrix": cm.tolist(),
+                "plots": plots,  # Pre-built Plotly traces (legitimate visualization output)
             },
-            "predictions": predictions.tolist(),
-            "distances": distances,
-            "train_accuracy": float(train_accuracy),
-            "confusion_matrix": cm.tolist(),
-            "plots": plots,  # Pre-built Plotly traces (legitimate visualization output)
-        }
+            diagnostics={
+                "accuracy": float(train_accuracy),
+                "n_classes": len(classes),
+            },
+        )

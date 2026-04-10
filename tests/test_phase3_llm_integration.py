@@ -680,6 +680,23 @@ class TestHttpLlmRateLimits:
     # those handlers now live in spectrasherpa_server.ws_handlers.
 
 
+class TestAnthropicPayload:
+    def test_split_anthropic_payload_concatenates_all_system_messages(self) -> None:
+        from spectra_sherpa.app.services.llm import LLMService
+
+        payload = [
+            {"role": "system", "content": "Base prompt"},
+            {"role": "system", "content": "Workflow context"},
+            {"role": "system", "content": "Salient peaks"},
+            {"role": "user", "content": "Explain the result"},
+        ]
+
+        system_msg, user_msgs = LLMService._split_anthropic_payload(payload)
+
+        assert system_msg == "Base prompt\n\nWorkflow context\n\nSalient peaks"
+        assert user_msgs == [{"role": "user", "content": "Explain the result"}]
+
+
 class TestDeploymentAIProvider:
     def test_has_feature_matches_managed_server_capabilities(self) -> None:
         from spectra_sherpa.app.services.deployment_ai_provider import DeploymentAIProvider
@@ -751,9 +768,11 @@ class TestDeploymentAIProvider:
             chunk
             async for chunk in advisor.chat_followup(
                 message="What does this show?",
-                workflow_id=14,
+                conversation_id="conv-14",
                 history=[{"role": "user", "content": "Earlier"}],
                 workflow_context={"nodes": [{"node_id": "n1"}]},
+                local_user_id=7,
+                project_id=14,
             )
         ]
 
@@ -763,9 +782,82 @@ class TestDeploymentAIProvider:
         assert captured["headers"] == {"X-Deployment-Key": "deploy-key"}
         assert captured["json"] == {
             "message": "What does this show?",
-            "workflow_id": 14,
+            "conversation_id": "conv-14",
             "history": [{"role": "user", "content": "Earlier"}],
             "workflow_context": {"nodes": [{"node_id": "n1"}]},
+            "local_user_id": 7,
+            "project_id": 14,
+        }
+
+    @pytest.mark.asyncio
+    async def test_chat_with_tools_sends_scoped_identity_fields(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import httpx
+
+        from spectra_sherpa.app.services import spectrasherpa as sherpa_cfg_mod
+        from spectra_sherpa.app.services.deployment_ai_provider import DeploymentAIProvider
+
+        captured: dict[str, object] = {}
+
+        class _FakeResponse:
+            status_code = 200
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def aiter_lines(self):
+                yield 'data: {"type":"done","conversation_id":"conv-99"}'
+                yield ""
+
+        class _FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            def stream(self, method, url, json, headers):
+                captured["method"] = method
+                captured["url"] = url
+                captured["json"] = json
+                captured["headers"] = headers
+                return _FakeResponse()
+
+        monkeypatch.setattr(httpx, "AsyncClient", lambda *args, **kwargs: _FakeClient())
+        monkeypatch.setattr(
+            sherpa_cfg_mod,
+            "spectrasherpa_config",
+            SimpleNamespace(api_base_url="https://sherpa.example.com", api_key="deploy-key"),
+        )
+
+        advisor = DeploymentAIProvider()
+        events = [
+            event
+            async for event in advisor.chat_with_tools(
+                message="Use tools",
+                conversation_id="conv-99",
+                workflow_context={"nodes": [{"node_id": "n1"}]},
+                local_user_id=7,
+                project_id=14,
+            )
+        ]
+
+        assert events == []
+        assert captured["method"] == "POST"
+        assert captured["url"] == "https://sherpa.example.com/api/v1/sherpa/chat-with-tools"
+        assert captured["headers"] == {"X-Deployment-Key": "deploy-key"}
+        assert captured["json"] == {
+            "message": "Use tools",
+            "conversation_id": "conv-99",
+            "history": [],
+            "workflow_context": {"nodes": [{"node_id": "n1"}]},
+            "local_user_id": 7,
+            "project_id": 14,
         }
 
     @pytest.mark.asyncio

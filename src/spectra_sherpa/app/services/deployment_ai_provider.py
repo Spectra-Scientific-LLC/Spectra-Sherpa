@@ -226,6 +226,7 @@ class DeploymentAIProvider:
         message: str,
         conversation_id: str | None = None,
         workflow_context: dict[str, Any] | None = None,
+        history: list[dict[str, str]] | None = None,
         local_user_id: int | None = None,
         project_id: int | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
@@ -233,13 +234,18 @@ class DeploymentAIProvider:
             "message": message,
             "conversation_id": conversation_id,
             "workflow_context": workflow_context,
+            "history": history or [],
             "local_user_id": local_user_id,
             "project_id": project_id,
         }
-        async for event in self._stream_sse("/sherpa/chat", json_body=body):
-            yield event
-            if event.get("type") in ("done", "error"):
-                return
+        stream = self._stream_sse("/sherpa/chat", json_body=body)
+        try:
+            async for event in stream:
+                yield event
+                if event.get("type") in ("done", "error"):
+                    return
+        finally:
+            await stream.aclose()
 
     async def sync_workflow(self, sync_msg: Any, *, tier: Any) -> list[Any]:
         from spectra_sherpa.app.schemas.sherpa import SherpaRecommendation
@@ -264,28 +270,28 @@ class DeploymentAIProvider:
         self,
         *,
         message: str,
-        workflow_id: int | None = None,
+        conversation_id: str | None = None,
         history: list[dict[str, str]] | None = None,
         workflow_context: dict[str, Any] | None = None,
+        local_user_id: int | None = None,
+        project_id: int | None = None,
     ) -> AsyncIterator[str]:
-        body = {
-            "message": message,
-            "workflow_id": workflow_id,
-            "history": history or [],
-            "workflow_context": workflow_context,
-        }
-        stream = self._stream_sse("/sherpa/chat", json_body=body)
-        try:
-            async for event in stream:
-                event_type = event.get("type")
-                if event_type == "chunk":
-                    yield str(event.get("text", ""))
-                elif event_type == "done":
-                    return
-                elif event_type == "error":
-                    raise RuntimeError(str(event.get("detail", "Sherpa chat failed.")))
-        finally:
-            await stream.aclose()
+        stream = self.stream_llm_chat(
+            message=message,
+            conversation_id=conversation_id,
+            workflow_context=workflow_context,
+            history=history,
+            local_user_id=local_user_id,
+            project_id=project_id,
+        )
+        async for event in stream:
+            event_type = event.get("type")
+            if event_type == "chunk":
+                yield str(event.get("text", ""))
+            elif event_type == "done":
+                return
+            elif event_type == "error":
+                raise RuntimeError(str(event.get("detail", "Sherpa chat failed.")))
 
     async def identify_peaks(self, *, wavenumbers: list[float], absorbance: list[float]) -> dict[str, Any]:
         payload = await self._request_json(
@@ -338,13 +344,19 @@ class DeploymentAIProvider:
         self,
         *,
         message: str,
+        conversation_id: str | None = None,
         history: list[dict[str, str]] | None = None,
         workflow_context: dict[str, Any] | None = None,
+        local_user_id: int | None = None,
+        project_id: int | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         body = {
             "message": message,
+            "conversation_id": conversation_id,
             "history": history or [],
             "workflow_context": workflow_context,
+            "local_user_id": local_user_id,
+            "project_id": project_id,
         }
         stream = self._stream_sse("/sherpa/chat-with-tools", json_body=body)
         try:

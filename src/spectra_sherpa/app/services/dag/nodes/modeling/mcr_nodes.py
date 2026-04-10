@@ -19,6 +19,7 @@ from ...node_base import (
     Node,
     NodeMetadata,
     NodeParameter,
+    NodeResult,
     PortMetadata,
     register_node,
 )
@@ -435,11 +436,40 @@ class MCRNode(Node):
             node_id=self.node_id,
         )
 
-        return {
-            "default": C_dataset,  # SherpaDataset: concentration profiles (n_samples, n_components)
-            "C": C_dataset,  # Alias for concentrations
-            "St": St_dataset,  # SherpaDataset: pure spectra (n_components, n_features)
-            "residuals": residuals_dataset,  # SherpaDataset: residuals (n_samples, n_features)
-            "model": mcr,  # Model port
-            "_model_artifact": artifact,
-        }
+        # Compute diagnostics scalars for Sherpa advisor
+        diagnostics: dict[str, Any] = {"n_components": int(n_components)}
+        try:
+            residual_rms = float(np.sqrt(np.mean(residuals_data**2)))
+            diagnostics["residual_rms"] = residual_rms
+            input_ss = float(np.sum(data**2))
+            if input_ss > 0:
+                lof_percent = float(100.0 * np.sum(residuals_data**2) / input_ss)
+                diagnostics["lof_percent"] = lof_percent
+        except Exception:
+            logger.debug("[MCR-ALS Node] Failed to compute residual diagnostics", exc_info=True)
+        for attr, key in (("n_iter", "n_iter"), ("n_iter_", "n_iter")):
+            if hasattr(mcr, attr):
+                try:
+                    diagnostics[key] = int(getattr(mcr, attr))
+                    break
+                except Exception:
+                    pass
+        for attr in ("converged", "converged_"):
+            if hasattr(mcr, attr):
+                try:
+                    diagnostics["converged"] = bool(getattr(mcr, attr))
+                    break
+                except Exception:
+                    pass
+
+        return NodeResult(
+            outputs={
+                "default": C_dataset,  # SherpaDataset: concentration profiles (n_samples, n_components)
+                "C": C_dataset,  # Alias for concentrations
+                "St": St_dataset,  # SherpaDataset: pure spectra (n_components, n_features)
+                "residuals": residuals_dataset,  # SherpaDataset: residuals (n_samples, n_features)
+                "model": mcr,  # Model port
+                "_model_artifact": artifact,
+            },
+            diagnostics=diagnostics,
+        )

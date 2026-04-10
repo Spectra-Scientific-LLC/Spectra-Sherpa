@@ -16,7 +16,7 @@ async def test_pls_node_accepts_array():
 
     # This should not raise ValueError from bind_X(allow_array=False)
     result = await node.execute(X=X_array, y=y_array)
-    assert "model" in result
+    assert "model" in result.outputs
 
 
 @pytest.mark.asyncio
@@ -31,7 +31,7 @@ async def test_mcr_node_constraints():
     ds = scp.NDDataset(X_array)
 
     result = await node.execute(input_data=ds)
-    mcr_model = result["model"]
+    mcr_model = result.outputs["model"]
 
     # Internal SCP instances should reflect the solver selection
     assert mcr_model.solverConc == "nnls"
