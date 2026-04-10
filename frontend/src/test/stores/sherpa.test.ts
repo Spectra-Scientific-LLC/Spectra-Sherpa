@@ -859,4 +859,64 @@ describe("Sherpa Store communication state", () => {
     expect(metadata.n_components).toBe(2);
     expect(metadata.deep_nested).toBeUndefined();
   });
+
+  it("treats persisted results as completed when executionState is still pending", async () => {
+    mockWorkflowStore.getNodeMetadata.mockImplementation((nodeType: string) => {
+      if (nodeType === "classification.plsda") {
+        return {
+          label: "PLS-DA",
+          description: "Classification model",
+          output_type: "PLSModel",
+          parameters: [
+            { name: "n_components", label: "Components", description: "Latent variables", default: 2 },
+          ],
+        };
+      }
+      if (nodeType === "data.source") {
+        return {
+          label: "Load Data",
+          description: "Dataset source",
+          output_type: "Dataset",
+          parameters: [],
+        };
+      }
+      return null;
+    });
+    mockWorkflowStore.nodes = [
+      {
+        id: "data_1",
+        type: "data.source",
+        params: {},
+        executionState: { status: "completed", output_shape: [150, 4], output_type: "SherpaDataset" },
+      },
+      {
+        id: "model_1",
+        type: "classification.plsda",
+        params: { n_components: 2 },
+        executionState: { status: "pending" },
+      },
+    ];
+    mockWorkflowStore.lastExecutionResults = {
+      data_1: {
+        type: "SherpaDataset",
+        n_samples: 150,
+        n_features: 4,
+      },
+      model_1: {
+        type: "PLS_DA",
+        shape: [150, 2],
+      },
+    };
+
+    const sherpa = useSherpaStore();
+    await sherpa.sendMessage("tell me all nodes in this workflow");
+
+    const ctx = getLastSyncPayload();
+    const nodes = ctx?.nodes as Array<Record<string, unknown>>;
+    const modelNode = nodes.find((node) => node.node_id === "model_1");
+    expect(modelNode).toBeTruthy();
+    expect(modelNode?.execution_status).toBe("completed");
+    expect(modelNode?.result_shape).toEqual([150, 2]);
+    expect(modelNode?.output_type).toBe("PLS_DA");
+  });
 });

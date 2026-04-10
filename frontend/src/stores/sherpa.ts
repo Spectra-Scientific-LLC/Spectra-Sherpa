@@ -359,11 +359,60 @@ export const useSherpaStore = defineStore("sherpa", () => {
   function buildSyncPayload() {
     const workflow = useWorkflowStore();
     const dataStore = useDataStore();
+    const lastExecutionResults = workflow.lastExecutionResults as Record<
+      string,
+      Record<string, unknown>
+    > | null;
+
+    const deriveShapeAndType = (
+      result: Record<string, unknown> | null | undefined
+    ): { result_shape: number[] | null; output_type: string | null } => {
+      let result_shape: number[] | null = null;
+      let output_type: string | null = null;
+
+      if (!result || typeof result !== "object") {
+        return { result_shape, output_type };
+      }
+
+      const primary =
+        result.default && typeof result.default === "object"
+          ? (result.default as Record<string, unknown>)
+          : result;
+
+      if (typeof primary.type === "string" && primary.type.trim()) {
+        output_type = primary.type;
+      }
+
+      if (
+        Array.isArray(primary.shape)
+        && primary.shape.every((value) => typeof value === "number")
+      ) {
+        result_shape = primary.shape as number[];
+      } else if (
+        typeof primary.n_samples === "number"
+        && typeof primary.n_features === "number"
+      ) {
+        result_shape = [primary.n_samples, primary.n_features];
+      }
+
+      return { result_shape, output_type };
+    };
 
     const nodes = workflow.nodes.map((n) => {
       const meta = workflow.getNodeMetadata(n.type);
       const exec = n.executionState;
       const userParams = (n.params || {}) as Record<string, unknown>;
+      const rawResult = lastExecutionResults?.[String(n.id)] ?? null;
+      const inferredResult = deriveShapeAndType(rawResult);
+      const hasPersistedResult = rawResult !== null;
+      const executionStatus =
+        exec?.status && exec.status !== "pending"
+          ? exec.status
+          : hasPersistedResult
+            ? "completed"
+            : exec?.status ?? null;
+      const resultShape = exec?.output_shape ?? inferredResult.result_shape;
+      const outputType = exec?.output_type ?? inferredResult.output_type ?? meta?.output_type ?? null;
 
       // Build EFFECTIVE parameters = metadata defaults overlaid with user overrides.
       // Without this the Pipeline Nodes "Params: {...}" line sent to Sherpa is
@@ -396,12 +445,12 @@ export const useSherpaStore = defineStore("sherpa", () => {
         node_type: n.type,
         label: meta?.label ?? n.type,
         parameters: effectiveParams,
-        result_shape: exec?.output_shape ?? null,
+        result_shape: resultShape,
         result_statistics: null,
         description: meta?.description ?? null,
         param_descriptions: paramDescriptions,
-        output_type: exec?.output_type ?? meta?.output_type ?? null,
-        execution_status: exec?.status ?? null,
+        output_type: outputType,
+        execution_status: executionStatus,
       };
     });
 
@@ -415,10 +464,6 @@ export const useSherpaStore = defineStore("sherpa", () => {
     // Derive top-level data dimensions from the first data node with results
     let n_samples: number | null = null;
     let n_features: number | null = null;
-    const lastExecutionResults = workflow.lastExecutionResults as Record<
-      string,
-      Record<string, unknown>
-    > | null;
     for (const n of workflow.nodes) {
       if (!n.type.startsWith("data.")) {
         continue;

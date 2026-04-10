@@ -509,10 +509,44 @@ function buildWorkflowChatContext(): Record<string, unknown> | null {
 
   if (nodes.length === 0) return null;
 
+  const deriveShapeAndType = (
+    result: Record<string, unknown> | null | undefined
+  ): { resultShape: number[] | null; outputType: string | null } => {
+    let resultShape: number[] | null = null;
+    let outputType: string | null = null;
+
+    if (!result || typeof result !== "object") {
+      return { resultShape, outputType };
+    }
+
+    const primary =
+      result.default && typeof result.default === "object"
+        ? (result.default as Record<string, unknown>)
+        : result;
+
+    if (typeof primary.type === "string" && primary.type.trim()) {
+      outputType = primary.type;
+    }
+
+    if (Array.isArray(primary.shape) && primary.shape.every((value) => typeof value === "number")) {
+      resultShape = primary.shape as number[];
+    } else if (typeof primary.n_samples === "number" && typeof primary.n_features === "number") {
+      resultShape = [primary.n_samples, primary.n_features];
+    }
+
+    return { resultShape, outputType };
+  };
+
   // Build V2 node list with library metadata
   const contextNodes = nodes.map((n) => {
     const meta = getNodeMetadata(n.type);
     const execState = n.executionState;
+    const rawResult =
+      lastExecutionResults && typeof lastExecutionResults === "object"
+        ? (lastExecutionResults[n.id] as Record<string, unknown> | undefined)
+        : undefined;
+    const inferredResult = deriveShapeAndType(rawResult);
+    const hasPersistedResult = rawResult !== undefined;
 
     // Filter param_descriptions to params actually set on this node
     const setParamNames = new Set(Object.keys(n.params || {}));
@@ -522,8 +556,14 @@ function buildWorkflowChatContext(): Record<string, unknown> | null {
       ?? null;
 
     // Result summary for this node (strip raw arrays, keep scalars + shapes)
-    const resultShape = execState?.output_shape ?? null;
+    const resultShape = execState?.output_shape ?? inferredResult.resultShape;
     const resultStatistics: Record<string, number> | null = null;
+    const executionStatus =
+      execState?.status && execState.status !== "pending"
+        ? execState.status
+        : hasPersistedResult
+          ? "completed"
+          : execState?.status ?? null;
 
     return {
       node_id: n.id,
@@ -535,8 +575,8 @@ function buildWorkflowChatContext(): Record<string, unknown> | null {
       // V2 fields
       description: meta?.description ?? null,
       param_descriptions: paramDescriptions,
-      output_type: execState?.output_type ?? meta?.output_type ?? null,
-      execution_status: execState?.status ?? null,
+      output_type: execState?.output_type ?? inferredResult.outputType ?? meta?.output_type ?? null,
+      execution_status: executionStatus,
     };
   });
 
