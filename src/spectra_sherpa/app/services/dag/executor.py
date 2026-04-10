@@ -934,6 +934,7 @@ class DAGExecutor:
                     logger.debug(
                         "Using cached result: %s (%s)", node_id, node.metadata.label if node.metadata else node_id
                     )
+                    node.status = NodeStatus.COMPLETED
                     await _emit(node_id, "completed")
                     continue
 
@@ -944,6 +945,7 @@ class DAGExecutor:
                 node_timeout = settings.max_job_duration_sec
                 label = node.metadata.label if node.metadata else node_id
                 logger.debug("Executing node: %s (%s)", node_id, label)
+                node.status = NodeStatus.RUNNING
                 await _emit(node_id, "running")
                 try:
                     result = await self._run_one_node(node, positional_inputs, named_inputs, node_timeout)
@@ -952,8 +954,18 @@ class DAGExecutor:
                         f"Node '{label}' exceeded {node_timeout}s timeout. "
                         f"Reduce dataset size or simplify parameters."
                     )
+                    node.status = NodeStatus.ERROR
+                    node.error_message = err_msg
                     await _emit(node_id, "error", err_msg)
                     raise ValueError(err_msg)
+                except Exception as exc:
+                    # Pool or in-process execution failure — status on the worker
+                    # copy (if any) never propagates back, so mark the main-process
+                    # node explicitly so get_status() reflects reality.
+                    node.status = NodeStatus.ERROR
+                    node.error_message = str(exc)
+                    await _emit(node_id, "error", str(exc))
+                    raise
 
                 # Unpack NodeResult: store outputs for downstream, diagnostics separately
                 if isinstance(result, NodeResult):
@@ -967,6 +979,10 @@ class DAGExecutor:
                 self._process_model_artifact(node_id)
 
                 self._param_hashes[node_id] = self._compute_param_hash(node_id)
+                # Pool workers mutate their own copy's status; the main-process
+                # node stays in whatever state we set before offloading. Mark
+                # completed explicitly so get_status() reports reality.
+                node.status = NodeStatus.COMPLETED
                 logger.debug("Completed: %s (status: %s)", node_id, node.status.value)
                 await _emit(node_id, "completed")
 
@@ -1028,7 +1044,10 @@ class DAGExecutor:
                 logger.debug(
                     "Using cached result: %s (%s)", dep_node_id, node.metadata.label if node.metadata else dep_node_id
                 )
-                # Still include in results even if cached
+                # Still include in results even if cached, and reflect the
+                # cache hit as COMPLETED so get_status() doesn't report
+                # stale "pending" for reused upstream dependencies.
+                node.status = NodeStatus.COMPLETED
                 if dep_node_id not in executed_in_this_run:
                     executed_in_this_run.append(dep_node_id)
                 continue
@@ -1037,13 +1056,24 @@ class DAGExecutor:
             positional_inputs, named_inputs = self._get_node_inputs(dep_node_id)
             node_timeout = settings.max_job_duration_sec
             logger.debug("Executing node: %s (%s)", dep_node_id, node.metadata.label if node.metadata else dep_node_id)
+            node.status = NodeStatus.RUNNING
             try:
                 result = await self._run_one_node(node, positional_inputs, named_inputs, node_timeout)
             except asyncio.TimeoutError:
                 label = node.metadata.label if node.metadata else dep_node_id
-                raise ValueError(
-                    f"Node '{label}' exceeded {node_timeout}s timeout. " f"Reduce dataset size or simplify parameters."
+                err_msg = (
+                    f"Node '{label}' exceeded {node_timeout}s timeout. "
+                    f"Reduce dataset size or simplify parameters."
                 )
+                node.status = NodeStatus.ERROR
+                node.error_message = err_msg
+                raise ValueError(err_msg)
+            except Exception as exc:
+                # Pool workers mutate a separate node instance; record the
+                # error on the main-process copy so get_status() is truthful.
+                node.status = NodeStatus.ERROR
+                node.error_message = str(exc)
+                raise
 
             # Unpack NodeResult
             if isinstance(result, NodeResult):
@@ -1057,6 +1087,9 @@ class DAGExecutor:
             self._process_model_artifact(dep_node_id)
 
             self._param_hashes[dep_node_id] = self._compute_param_hash(dep_node_id)
+            # Main-process status update: pool worker's status never flows back,
+            # so set COMPLETED here once the result is in self.results.
+            node.status = NodeStatus.COMPLETED
             executed_in_this_run.append(dep_node_id)
             logger.debug("Completed: %s (status: %s)", dep_node_id, node.status.value)
 
