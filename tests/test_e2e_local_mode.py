@@ -167,7 +167,7 @@ class TestLocalModeE2E:
         client: AsyncClient,
         monkeypatch: pytest.MonkeyPatch,
     ):
-        import spectra_sherpa.app.api.v1.routes.workflows as workflow_routes
+        import spectra_sherpa.app.api.v1.routes.workflows.execute as workflow_execute
 
         resp = await client.post(
             "/api/v1/workflows",
@@ -179,7 +179,7 @@ class TestLocalModeE2E:
         async def _persist_failure(*args, **kwargs):
             return False
 
-        monkeypatch.setattr(workflow_routes, "_auto_persist_run", _persist_failure)
+        monkeypatch.setattr(workflow_execute, "_auto_persist_run", _persist_failure)
 
         resp = await client.post(
             f"/api/v1/workflows/{wf_id}/execute",
