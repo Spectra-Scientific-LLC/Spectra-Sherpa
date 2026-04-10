@@ -680,6 +680,23 @@ class TestHttpLlmRateLimits:
     # those handlers now live in spectrasherpa_server.ws_handlers.
 
 
+class TestAnthropicPayload:
+    def test_split_anthropic_payload_concatenates_all_system_messages(self) -> None:
+        from spectra_sherpa.app.services.llm import LLMService
+
+        payload = [
+            {"role": "system", "content": "Base prompt"},
+            {"role": "system", "content": "Workflow context"},
+            {"role": "system", "content": "Salient peaks"},
+            {"role": "user", "content": "Explain the result"},
+        ]
+
+        system_msg, user_msgs = LLMService._split_anthropic_payload(payload)
+
+        assert system_msg == "Base prompt\n\nWorkflow context\n\nSalient peaks"
+        assert user_msgs == [{"role": "user", "content": "Explain the result"}]
+
+
 class TestDeploymentAIProvider:
     def test_has_feature_matches_managed_server_capabilities(self) -> None:
         from spectra_sherpa.app.services.deployment_ai_provider import DeploymentAIProvider
