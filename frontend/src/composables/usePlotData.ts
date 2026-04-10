@@ -1562,6 +1562,17 @@ export function usePlotData(
         ((ports?.default?.value as Record<string, unknown> | undefined)?.visualization as
           | Record<string, unknown>
           | undefined);
+      // Diagnostic: log once per invocation so we can see what the frontend
+      // actually received. Safe to remove after the issue is resolved.
+      // eslint-disable-next-line no-console
+      console.log("[usePlotData] holdout availablePlots detection", {
+        nodeType: nt,
+        hasOutput: !!nodeOutput.value,
+        topLevelKeys: nodeOutput.value ? Object.keys(nodeOutput.value) : null,
+        portKeys: ports ? Object.keys(ports) : null,
+        vizType: vizObj && typeof vizObj === "object" ? (vizObj as Record<string, unknown>).type : "no-vizObj",
+        vizKeys: vizObj && typeof vizObj === "object" ? Object.keys(vizObj) : null,
+      });
       if (vizObj?.type === "confusion_matrix") {
         // Classification: confusion matrix (normalized), per-class metrics,
         // predictions scatter, and metrics table.
@@ -1781,6 +1792,21 @@ export function usePlotData(
             | Record<string, unknown>
             | undefined);
         const cm = (vizObj?.data as number[][]) || [];
+        // Diagnostic: log to help debug "No data to display" on staging.
+        // Safe to remove once we confirm Quick Plot renders the heatmap.
+        // eslint-disable-next-line no-console
+        console.log("[usePlotData] holdout_confusion", {
+          hasOutput: !!output,
+          hasPorts: !!output?.ports,
+          portKeys: output?.ports ? Object.keys(output.ports) : null,
+          vizPortPresent: !!ports?.visualization,
+          vizValueType: vizObj ? typeof vizObj : "undefined",
+          vizValueKeys: vizObj && typeof vizObj === "object" ? Object.keys(vizObj) : null,
+          vizType: (vizObj as Record<string, unknown> | undefined)?.type,
+          cmLength: cm.length,
+          cmShape: cm.length ? [cm.length, Array.isArray(cm[0]) ? cm[0].length : "n/a"] : null,
+          topLevelDataLength: Array.isArray(output?.data) ? output.data.length : "n/a",
+        });
         if (!cm.length) return { data: [], layout: BASE_PLOT_LAYOUT };
         const labels = ((vizObj?.metadata as Record<string, unknown>)?.classes as string[]) || cm.map((_: unknown, i: number) => `Class ${i}`);
         // Row-normalized: each row shows the fraction of true-class samples

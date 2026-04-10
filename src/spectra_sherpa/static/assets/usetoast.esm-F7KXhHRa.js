@@ -1,1 +1,0 @@
-import{R as e}from"./client-Cl0Ouslb.js";var t=Symbol();function n(){var n=e(t);if(!n)throw Error(`No PrimeVue Toast provided!`);return n}export{n,t};
