@@ -378,6 +378,26 @@ export const useWorkflowStore = defineStore("workflow", () => {
         if (runResp.data) {
           lastExecutionResults.value = runResp.data.results_summary;
           lastExecutionDiagnostics.value = runResp.data.diagnostics || {};
+
+          // Restore node execution states from the persisted run
+          const savedStatuses = runResp.data.node_statuses || {};
+          const savedResults = runResp.data.results_summary || {};
+          for (const node of nodes.value) {
+            const status = normalizeBackendExecutionStatus(savedStatuses[node.id]);
+            const hasResult = savedResults[node.id] !== undefined;
+            if (status === "completed" || (status === null && hasResult)) {
+              setNodeExecutionState(node.id, {
+                status: "completed",
+                last_executed: runResp.data.executed_at || null,
+              });
+            } else if (status === "error") {
+              setNodeExecutionState(node.id, {
+                status: "error",
+                error_message: runResp.data.error || null,
+              });
+            }
+          }
+
           // Mark stale if workflow changed since last execution
           if (
             data.integrity_hash &&
