@@ -14,13 +14,13 @@ test.describe("Sherpa Chat Streaming", () => {
     await page.locator(".chat-input__field").fill("What is PCA?");
     await page.locator(".chat-input__field").press("Enter");
 
-    // Wait for a response to appear in the chat messages area.
+    // Wait for an assistant response bubble to appear.
     // Streamed responses arrive progressively — wait for at least some text.
-    const messages = page.locator(".chat-messages .message-content");
-    await expect(messages.last()).toBeVisible({ timeout: 30_000 });
+    const bubbles = page.locator(".chat-message.assistant .chat-bubble");
+    await expect(bubbles.last()).toBeVisible({ timeout: 30_000 });
 
     // Verify the response contains meaningful text (not empty)
-    const responseText = await messages.last().textContent();
+    const responseText = await bubbles.last().textContent();
     expect(responseText!.length).toBeGreaterThan(20);
   });
 });

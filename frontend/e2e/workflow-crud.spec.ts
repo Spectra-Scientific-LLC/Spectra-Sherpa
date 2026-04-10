@@ -11,7 +11,7 @@ test.describe("Workflow CRUD", () => {
     await expect(page).toHaveURL(/\/workflow/);
 
     // Click "New" to create a new workflow
-    await page.getByRole("button", { name: "New" }).click();
+    await page.getByRole("button", { name: "New", exact: true }).click();
 
     // Add a node so the workflow has content worth saving
     await page.locator(".section-header").filter({ hasText: "Data Sources" }).click();

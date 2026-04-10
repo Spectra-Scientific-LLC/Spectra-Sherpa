@@ -10,7 +10,7 @@ test.describe("Workflow Builder Smoke", () => {
     await expect(page.locator("h1")).toContainText("Workflow Builder");
 
     // Click "New" to start a fresh workflow
-    await page.getByRole("button", { name: "New" }).click();
+    await page.getByRole("button", { name: "New", exact: true }).click();
 
     // Expand "Data Sources" section in the toolbar and add a Data Source node
     await page.locator(".section-header").filter({ hasText: "Data Sources" }).click();
@@ -45,7 +45,7 @@ test.describe("Workflow Builder Smoke", () => {
       page.locator(".section-header").filter({ hasText: "Preprocessing" })
     ).toBeVisible();
     await expect(
-      page.locator(".section-header").filter({ hasText: "Modeling" })
+      page.locator(".section-header").filter({ hasText: "Exploratory" })
     ).toBeVisible();
   });
 });
