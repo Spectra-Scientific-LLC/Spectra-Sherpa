@@ -17,6 +17,7 @@ from ...node_base import (
     Node,
     NodeMetadata,
     NodeParameter,
+    NodeResult,
     PortMetadata,
     SalientFeature,
     SalientFeatures,
@@ -559,4 +560,11 @@ class PeakFindingNode(Node):
             n_samples,
         )
 
-        return result
+        return NodeResult(
+            outputs=result,
+            diagnostics={
+                "n_consensus_peaks": len(consensus_rows),
+                "n_total_detections": total_peaks,
+                "technique": technique,
+            },
+        )

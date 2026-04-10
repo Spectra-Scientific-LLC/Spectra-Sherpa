@@ -324,7 +324,16 @@ class OutlierDetectionNode(Node):
             f"({100*n_outliers/n_observations:.1f}%) at {confidence_level*100}% confidence"
         )
 
-        return result
+        return NodeResult(
+            outputs=result,
+            diagnostics={
+                "n_outliers": int(n_outliers),
+                "outlier_percentage": float(100 * n_outliers / n_observations),
+                "t2_limit": T2_limit,
+                "q_limit": Q_limit,
+                "method": "hotelling_t2_q",
+            },
+        )
 
 
 @register_node
@@ -518,6 +527,7 @@ class CrossValidationNode(Node):
             accuracy_score,
             classification_report,
             confusion_matrix,
+            f1_score,
             mean_absolute_error,
             mean_squared_error,
             r2_score,
@@ -701,10 +711,21 @@ class CrossValidationNode(Node):
         result["predictions"] = y_pred.tolist()
         if is_classification:
             result["plots"] = {"confusion_matrix": result["confusion_matrix"]}
+            cv_diagnostics = {
+                "accuracy": result["accuracy"],
+                "f1_score": float(f1_score(y_true, y_pred, average="macro")),
+            }
         else:
             result["plots"] = {"true_vs_pred": result["data"]}
+            cv_diagnostics = {
+                "rmsecv": result["RMSECV"],
+                "q2": result["Q2"],
+                "sep": result["SEP"],
+                "rer": result["RER"],
+                "bias": result["bias"],
+            }
 
-        return result
+        return NodeResult(outputs=result, diagnostics=cv_diagnostics)
 
 
 @register_node

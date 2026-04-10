@@ -27,6 +27,7 @@ from ...node_base import (
     Node,
     NodeMetadata,
     NodeParameter,
+    NodeResult,
     PortMetadata,
     register_node,
 )
@@ -368,11 +369,17 @@ class PCRNode(Node):
 
         logger.debug("[PCR Node] Scores shape: %s, Loadings shape: %s", scores_dataset.shape, loadings_dataset.shape)
 
-        return {
-            "default": scores_dataset,  # NDDataset: scores + sample labels (y) + PC coords (x)
-            "loadings": loadings_dataset,  # NDDataset: loadings + wavenumbers (x) + PC coords (y)
-            "model": model,  # Model port for downstream use
-        }
+        return NodeResult(
+            outputs={
+                "default": scores_dataset,  # NDDataset: scores + sample labels (y) + PC coords (x)
+                "loadings": loadings_dataset,  # NDDataset: loadings + wavenumbers (x) + PC coords (y)
+                "model": model,  # Model port for downstream use
+            },
+            diagnostics={
+                "r2": float(r2),
+                "rmse": rmse,
+            },
+        )
 
 
 def _svr_post_fit(model, X_data, y_array, X_ds, params, node_id):

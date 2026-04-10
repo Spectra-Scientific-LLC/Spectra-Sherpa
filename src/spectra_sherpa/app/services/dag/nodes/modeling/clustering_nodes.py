@@ -17,6 +17,7 @@ from ...node_base import (
     Node,
     NodeMetadata,
     NodeParameter,
+    NodeResult,
     PortMetadata,
     register_node,
 )
@@ -570,23 +571,40 @@ class KMeansNode(Node):
                 data_values = _y_coord.data
                 source_labels = data_values.tolist() if hasattr(data_values, "tolist") else list(data_values)
 
-        return {
-            "model": model,
-            "labels": label_list,
-            "centroids": model.cluster_centers_.tolist(),
-            "inertia": float(model.inertia_),
-            "n_clusters": int(n_clusters),
-            "data": embedding.tolist(),
-            "metadata": {
-                "type": "KMeans",
-                "output_type": "clustering",
+        # Compute silhouette score when meaningful (>1 cluster, >1 unique label)
+        sil_score = None
+        if n_clusters > 1 and len(set(label_list)) > 1:
+            try:
+                from sklearn.metrics import silhouette_score
+
+                sil_score = float(silhouette_score(X_data, labels))
+            except Exception:
+                pass
+
+        return NodeResult(
+            outputs={
+                "model": model,
+                "labels": label_list,
+                "centroids": model.cluster_centers_.tolist(),
+                "inertia": float(model.inertia_),
                 "n_clusters": int(n_clusters),
-                "embedding": embedding_method,
-                "sample_labels": sample_labels,
-                "label_categories": label_categories,
-                "source_labels": source_labels,
+                "data": embedding.tolist(),
+                "metadata": {
+                    "type": "KMeans",
+                    "output_type": "clustering",
+                    "n_clusters": int(n_clusters),
+                    "embedding": embedding_method,
+                    "sample_labels": sample_labels,
+                    "label_categories": label_categories,
+                    "source_labels": source_labels,
+                },
             },
-        }
+            diagnostics={
+                "n_clusters": int(n_clusters),
+                "silhouette_score": sil_score,
+                "inertia": float(model.inertia_),
+            },
+        )
 
 
 @register_node

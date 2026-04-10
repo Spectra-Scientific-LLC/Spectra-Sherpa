@@ -189,7 +189,7 @@ class TestShapeConventions:
             target_names=["Target_A", "Target_B"],
         )
         node = make_node("model.pls", {"n_components": n_components})
-        result = await node.execute(X=ds)
+        result = _unwrap_result(await node.execute(X=ds))
 
         # X scores: (n_samples, n_components)
         assert result["default"].shape == (n_samples, n_components)
@@ -213,7 +213,7 @@ class TestShapeConventions:
             target_names=["Moisture", "Oil"],
         )
         node = make_node("model.pls", {"n_components": 2})
-        result = await node.execute(X=ds)
+        result = _unwrap_result(await node.execute(X=ds))
 
         yl = result["Y_loadings"]
         assert isinstance(yl, SherpaDataset)
@@ -289,7 +289,7 @@ class TestCornMP5Integration:
 
         # Run PLS with 3 components
         pls = make_node("model.pls", {"n_components": 3})
-        result = await pls.execute(X=dataset)
+        result = _unwrap_result(await pls.execute(X=dataset))
 
         # All output ports should be non-None
         for key in ("default", "X_loadings", "Y_scores", "Y_loadings", "coef"):
@@ -329,7 +329,7 @@ class TestExplicitOutputTypes:
             target_names=["Moisture", "Oil"],
         )
         node = make_node("model.pls", {"n_components": 2})
-        result = await node.execute(X=ds)
+        result = _unwrap_result(await node.execute(X=ds))
 
         payload = serialize_result(result["default"])
         assert payload["metadata"]["type"] == "PLS"
@@ -364,7 +364,7 @@ class TestExplicitOutputTypes:
             target_type="categorical",
         )
         node = make_node("classification.plsda", {"n_components": 2, "cv_folds": 3})
-        result = await node.execute(X=ds)
+        result = _unwrap_result(await node.execute(X=ds))
 
         payload = serialize_result(result["default"])
         assert payload["metadata"]["type"] == "PLS_DA"

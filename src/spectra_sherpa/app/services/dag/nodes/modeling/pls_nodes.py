@@ -27,6 +27,7 @@ from ...node_base import (
     Node,
     NodeMetadata,
     NodeParameter,
+    NodeResult,
     PortMetadata,
     register_node,
 )
@@ -566,20 +567,27 @@ class PLSNode(Node):
         if pls_rmse is not None:
             artifact_metrics["rmse"] = pls_rmse
 
-        return {
-            "default": X_scores_dataset,  # SherpaDataset: X scores (n_samples, n_components)
-            "X_loadings": X_loadings_dataset,  # SherpaDataset: loadings (n_components, n_features)
-            "Y_scores": Y_scores_dataset,  # SherpaDataset: Y scores (n_samples, n_components)
-            "Y_loadings": Y_loadings_dataset,  # SherpaDataset: Y loadings (n_targets, n_components)
-            "model": pls,  # SCP PLSRegression for Apply PLS Model
-            "coef": coef_data,  # ndarray: regression coefficients (n_features, n_targets)
-            "_model_artifact": build_model_artifact(
-                extracted,
-                X_ds,
-                node_id=self.node_id,
-                metrics=artifact_metrics or None,
-            ),
-        }
+        return NodeResult(
+            outputs={
+                "default": X_scores_dataset,  # SherpaDataset: X scores (n_samples, n_components)
+                "X_loadings": X_loadings_dataset,  # SherpaDataset: loadings (n_components, n_features)
+                "Y_scores": Y_scores_dataset,  # SherpaDataset: Y scores (n_samples, n_components)
+                "Y_loadings": Y_loadings_dataset,  # SherpaDataset: Y loadings (n_targets, n_components)
+                "model": pls,  # SCP PLSRegression for Apply PLS Model
+                "coef": coef_data,  # ndarray: regression coefficients (n_features, n_targets)
+                "_model_artifact": build_model_artifact(
+                    extracted,
+                    X_ds,
+                    node_id=self.node_id,
+                    metrics=artifact_metrics or None,
+                ),
+            },
+            diagnostics={
+                "r2": pls_r2,
+                "rmse": pls_rmse,
+                "n_components": n_components,
+            },
+        )
 
 
 @register_node
