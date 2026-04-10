@@ -336,6 +336,9 @@ describe("Sherpa Store communication state", () => {
         precision: 0.96,
       },
     });
+    // The scientific-keys allowlist promotes 'accuracy' from metadata
+    // to the top level so the server-side context builder can summarize it.
+    // 'model_name' stays only under metadata (not a scientific key).
     expect(payload.payload.workflow_context.results_summary).toEqual({
       data_1: {
         type: "SherpaDataset",
@@ -349,6 +352,7 @@ describe("Sherpa Store communication state", () => {
         shape: [569, 2],
         n_samples: null,
         n_features: null,
+        accuracy: 0.97,
         metadata: {
           accuracy: 0.97,
           model_name: "breast-cancer-pls",
@@ -736,5 +740,123 @@ describe("Sherpa Store communication state", () => {
     expect(notifications.notifications[0]?.message).toContain(
       "Sherpa event handling failed: Sherpa chat chunk payload was missing text."
     );
+  });
+
+  // ----------------------------------------------------------------------
+  // Regression guards for the workflow context payload.
+  //
+  // These tests lock in the contract that buildSyncPayload sends ENOUGH
+  // information for the server-side context builder to answer user
+  // questions without hallucinating. Each assertion corresponds to a
+  // specific real bug we hit during the Sherpa hardening work.
+  // ----------------------------------------------------------------------
+
+  const getLastSyncPayload = (): Record<string, unknown> | null => {
+    const lastCall = mockWs.send.mock.calls.at(-1)?.[0] as string | undefined;
+    if (!lastCall) return null;
+    const parsed = JSON.parse(lastCall);
+    return (parsed?.payload?.workflow_context as Record<string, unknown>) ?? null;
+  };
+
+  it("sends effective node parameters (defaults merged with overrides)", async () => {
+    // Simulate a node with a user override that leaves another param unset.
+    mockWorkflowStore.getNodeMetadata.mockImplementation((nodeType: string) => {
+      if (nodeType === "selection.sample_partition") {
+        return {
+          label: "Sample Partition",
+          description: "Split data",
+          output_type: "Partition",
+          parameters: [
+            { name: "method", label: "Method", description: "Split method", default: "stratified" },
+            { name: "test_size", label: "Test Size", description: "Fraction", default: 0.2 },
+            { name: "random_seed", label: "Seed", description: "RNG seed", default: 42 },
+          ],
+        };
+      }
+      return null;
+    });
+    mockWorkflowStore.nodes = [
+      {
+        id: "partition_1",
+        type: "selection.sample_partition",
+        params: { test_size: 0.25 }, // user override; method and random_seed not set
+        executionState: { status: "completed" },
+      },
+    ];
+
+    const sherpa = useSherpaStore();
+    await sherpa.sendMessage("what is the partition config");
+
+    const ctx = getLastSyncPayload();
+    expect(ctx).toBeTruthy();
+    const nodes = ctx?.nodes as Array<Record<string, unknown>>;
+    const partitionNode = nodes.find((n) => n.node_id === "partition_1");
+    expect(partitionNode).toBeDefined();
+    const params = partitionNode?.parameters as Record<string, unknown>;
+    // User override wins
+    expect(params.test_size).toBe(0.25);
+    // Defaults filled in so the server-side context builder shows all params
+    expect(params.method).toBe("stratified");
+    expect(params.random_seed).toBe(42);
+  });
+
+  it("preserves scientific scalars and salient_features in results_summary", async () => {
+    mockWorkflowStore.nodes = [
+      {
+        id: "plsda_1",
+        type: "classification.plsda",
+        params: { n_components: 2 },
+        executionState: { status: "completed", output_shape: [105, 2] },
+      },
+    ];
+    mockWorkflowStore.lastExecutionResults = {
+      plsda_1: {
+        type: "PLS_DA",
+        n_samples: 105,
+        n_features: 2,
+        accuracy: 0.98,
+        confusion_matrix: [
+          [35, 0, 0],
+          [0, 33, 2],
+          [0, 1, 34],
+        ],
+        salient_features: {
+          method: "vip",
+          features: [{ position: 1720.0, importance: 2.1 }],
+          x_units: "cm-1",
+        },
+        metadata: {
+          n_components: 2,
+          deep_nested: { should_be_dropped: true }, // nested dicts in metadata are NOT preserved
+        },
+      },
+    };
+
+    const sherpa = useSherpaStore();
+    await sherpa.sendMessage("tell me about results");
+
+    const ctx = getLastSyncPayload();
+    const summary = (ctx?.results_summary as Record<string, Record<string, unknown>>)?.plsda_1;
+    expect(summary).toBeTruthy();
+
+    // Scientific scalars preserved from the top level
+    expect(summary.type).toBe("PLS_DA");
+    expect(summary.n_samples).toBe(105);
+    expect(summary.accuracy).toBe(0.98);
+    // Arrays (confusion matrix) preserved
+    expect(summary.confusion_matrix).toEqual([
+      [35, 0, 0],
+      [0, 33, 2],
+      [0, 1, 34],
+    ]);
+    // Salient features: the chemistry-aware path MUST round-trip.
+    // Before the fix this was silently dropped and the server's
+    // extract_salient_features_context() was dead code.
+    expect(summary.salient_features).toBeTruthy();
+    expect((summary.salient_features as Record<string, unknown>).method).toBe("vip");
+    // Nested metadata dicts are NOT preserved (the filter keeps primitives).
+    const metadata = summary.metadata as Record<string, unknown>;
+    expect(metadata.n_components).toBe(2);
+    expect(metadata.deep_nested).toBeUndefined();
   });
 });
