@@ -19,7 +19,15 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from spectra_sherpa.app.lib.scp_compat import HAS_SCP
 from spectra_sherpa.app.services.dag.node_base import NodeResult, node_registry
+
+# Many nodes wrap their inputs in spectrochempy.NDDataset internally and
+# cannot execute without it (PLSDA, PLS, PCR, MCR, SIMPLISMA, EFA,
+# ClassifierPredict, PLSPredict). Skip the corresponding contract tests
+# in environments without SCP installed — the SCP Compat CI job re-runs
+# them with the full extras.
+_requires_scp = pytest.mark.skipif(not HAS_SCP, reason="spectrochempy not installed")
 
 # ---------------------------------------------------------------------------
 # Nodes that MUST return NodeResult with non-empty diagnostics today.
@@ -94,6 +102,7 @@ async def _assert_node_result(
 
 
 class TestClassificationNodesEmitDiagnostics:
+    @_requires_scp
     @pytest.mark.asyncio
     async def test_plsda_emits_diagnostics(self):
         from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
@@ -111,6 +120,7 @@ class TestClassificationNodesEmitDiagnostics:
             },
         )
 
+    @_requires_scp
     @pytest.mark.asyncio
     async def test_knn_emits_diagnostics(self):
         from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
@@ -123,6 +133,7 @@ class TestClassificationNodesEmitDiagnostics:
             required_diagnostic_keys={"cv_accuracy", "n_classes"},
         )
 
+    @_requires_scp
     @pytest.mark.asyncio
     async def test_simca_emits_diagnostics(self):
         from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
@@ -137,6 +148,7 @@ class TestClassificationNodesEmitDiagnostics:
 
 
 class TestRegressionNodesEmitDiagnostics:
+    @_requires_scp
     @pytest.mark.asyncio
     async def test_pls_emits_diagnostics(self):
         from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
@@ -149,6 +161,7 @@ class TestRegressionNodesEmitDiagnostics:
             required_diagnostic_keys={"r2", "rmse", "n_components"},
         )
 
+    @_requires_scp
     @pytest.mark.asyncio
     async def test_pcr_emits_diagnostics(self):
         from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
@@ -262,6 +275,7 @@ class TestClusteringNodesEmitDiagnostics:
 
 
 class TestDecompositionNodesEmitDiagnostics:
+    @_requires_scp
     @pytest.mark.asyncio
     async def test_mcr_emits_diagnostics(self):
         from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
@@ -275,6 +289,7 @@ class TestDecompositionNodesEmitDiagnostics:
             required_diagnostic_keys={"n_components"},
         )
 
+    @_requires_scp
     @pytest.mark.asyncio
     async def test_simplisma_emits_diagnostics(self):
         from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
@@ -314,6 +329,7 @@ class TestDecompositionNodesEmitDiagnostics:
             required_diagnostic_keys={"n_components"},
         )
 
+    @_requires_scp
     @pytest.mark.asyncio
     async def test_efa_emits_diagnostics(self):
         from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
@@ -329,6 +345,7 @@ class TestDecompositionNodesEmitDiagnostics:
 
 
 class TestPredictionNodesEmitDiagnostics:
+    @_requires_scp
     @pytest.mark.asyncio
     async def test_classifier_predict_plsda_emits_diagnostics(self):
         from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
@@ -416,6 +433,7 @@ class TestPredictionNodesEmitDiagnostics:
             },
         )
 
+    @_requires_scp
     @pytest.mark.asyncio
     async def test_pls_predict_emits_diagnostics(self):
         from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
