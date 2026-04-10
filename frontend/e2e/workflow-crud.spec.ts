@@ -16,7 +16,7 @@ test.describe("Workflow CRUD", () => {
     // Add a node so the workflow has content worth saving
     await page.locator(".section-header").filter({ hasText: "Data Sources" }).click();
     await page.locator(".node-button").filter({ hasText: "Data Source" }).first().click();
-    await expect(page.locator(".workflow-canvas .node")).toHaveCount(1);
+    await expect(page.locator(".workflow-canvas .workflow-node")).toHaveCount(1);
 
     // Save the workflow
     await page.getByRole("button", { name: /Save/ }).click();

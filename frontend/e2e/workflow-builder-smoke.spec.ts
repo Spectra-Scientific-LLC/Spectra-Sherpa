@@ -17,14 +17,14 @@ test.describe("Workflow Builder Smoke", () => {
     await page.locator(".node-button").filter({ hasText: "Data Source" }).first().click();
 
     // Verify a node appeared on the canvas
-    await expect(page.locator(".workflow-canvas .node")).toHaveCount(1);
+    await expect(page.locator(".workflow-canvas .workflow-node")).toHaveCount(1);
 
     // Expand "Preprocessing" section and add an SNV node
     await page.locator(".section-header").filter({ hasText: "Preprocessing" }).click();
     await page.locator(".node-button").filter({ hasText: "SNV" }).first().click();
 
     // Should now have 2 nodes
-    await expect(page.locator(".workflow-canvas .node")).toHaveCount(2);
+    await expect(page.locator(".workflow-canvas .workflow-node")).toHaveCount(2);
 
     // Run button should be enabled with nodes present
     const runButton = page.getByRole("button", { name: /Run/ });
