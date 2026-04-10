@@ -294,13 +294,18 @@ async def test_holdout_evaluation_tolerates_non_finite_regression_predictions():
         y_pred=np.array([1.1, np.nan, 2.9, np.inf]),
     )
 
-    metrics = result["metrics"]
+    # NodeResult: outputs carry the port data, diagnostics carry scalar metrics
+    outputs = result.outputs
+    metrics = outputs["metrics"]
     assert metrics["n_samples"] == 4
     assert metrics["n_valid_samples"] == 2
     assert metrics["n_invalid_predictions"] == 2
     assert metrics["status"] == "contains_non_finite_predictions"
     assert np.isfinite(metrics["RMSEP"])
-    assert len(result["visualization"]["data"]) == 2
+    assert len(outputs["visualization"]["data"]) == 2
+
+    # Diagnostics should mirror the key metrics
+    assert result.diagnostics["RMSEP"] == metrics["RMSEP"]
 
 
 def test_holdout_evaluation_generate_python_matches_runtime_payload_shape():

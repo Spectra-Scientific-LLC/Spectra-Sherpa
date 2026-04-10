@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 from spectra_sherpa.app.lib.sherpa_dataset import EvaluationResult, SherpaDataset
 
 from ..io_contracts import to_numpy_1d, to_numpy_2d
-from ..node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
+from ..node_base import Node, NodeMetadata, NodeParameter, NodeResult, PortMetadata, register_node
 
 
 def _unwrap_data(value: Any) -> Any:
@@ -1018,16 +1018,19 @@ class HoldoutEvaluationNode(Node):
         else:
             logger.warning("Holdout evaluation (regression): all predictions were non-finite; metrics undefined")
 
-        return {
-            "metrics": metrics,
-            "predictions": y_pred.tolist(),
-            "visualization": {
-                "data": viz_data,
-                "type": "predicted_vs_actual",
-                "metadata": {"type": "RegressionTest", **metrics},
+        return NodeResult(
+            outputs={
+                "metrics": metrics,
+                "predictions": y_pred.tolist(),
+                "visualization": {
+                    "data": viz_data,
+                    "type": "predicted_vs_actual",
+                    "metadata": {"type": "RegressionTest", **metrics},
+                },
+                "evaluation": evaluation,
             },
-            "evaluation": evaluation,
-        }
+            diagnostics=metrics,
+        )
 
     def _evaluate_classification(
         self,
@@ -1095,17 +1098,27 @@ class HoldoutEvaluationNode(Node):
             len(unique_classes),
         )
 
-        return {
-            "metrics": metrics,
-            "predictions": y_pred.tolist() if hasattr(y_pred, "tolist") else list(y_pred),
-            "visualization": {
-                "data": cm.tolist(),
-                "type": "confusion_matrix",
-                "metadata": {
-                    "type": "ClassificationTest",
-                    **{k: v for k, v in metrics.items() if k != "classification_report"},
+        return NodeResult(
+            outputs={
+                "metrics": metrics,
+                "predictions": y_pred.tolist() if hasattr(y_pred, "tolist") else list(y_pred),
+                "visualization": {
+                    "data": cm.tolist(),
+                    "type": "confusion_matrix",
+                    "metadata": {
+                        "type": "ClassificationTest",
+                        **{k: v for k, v in metrics.items() if k != "classification_report"},
+                    },
                 },
+                "confusion_matrix": cm.tolist(),
+                "evaluation": evaluation,
             },
-            "confusion_matrix": cm.tolist(),
-            "evaluation": evaluation,
-        }
+            diagnostics={
+                "accuracy": accuracy,
+                "n_classes": len(unique_classes),
+                "classes": unique_classes.tolist(),
+                "n_samples": n_samples,
+                "confusion_matrix": cm.tolist(),
+                "per_class": per_class_metrics,
+            },
+        )
