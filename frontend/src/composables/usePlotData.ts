@@ -1512,7 +1512,16 @@ export function usePlotData(
     }
 
     if (nt === "diagnostics.holdout_evaluation" || nt === "diagnostics.cross_validation") {
-      const vizObj = (nodeOutput.value?.ports?.default?.value as Record<string, unknown>)?.visualization as Record<string, unknown> | undefined;
+      // HoldoutEvaluationNode declares its output ports with `visualization`
+      // first (no `default`). Read the viz payload directly from that port.
+      // Fall back to the legacy `default.visualization` path for cross-validation
+      // and any older saved outputs that still used the bundled shape.
+      const ports = nodeOutput.value?.ports;
+      const vizObj =
+        (ports?.visualization?.value as Record<string, unknown> | undefined) ??
+        ((ports?.default?.value as Record<string, unknown> | undefined)?.visualization as
+          | Record<string, unknown>
+          | undefined);
       if (vizObj?.type === "confusion_matrix") {
         plots.push({ key: "holdout_confusion", label: "Confusion Matrix" });
       } else {
@@ -1692,8 +1701,16 @@ export function usePlotData(
       }
 
       // Holdout / Cross-Validation evaluation
+      // HoldoutEvaluationNode declares `visualization` as a top-level output
+      // port; the legacy shape bundled it under a `default` port with a
+      // nested `visualization` dict. Support both.
       case "holdout_regression": {
-        const vizObj = (output.ports?.default?.value as Record<string, unknown>)?.visualization as Record<string, unknown> | undefined;
+        const ports = output.ports as Record<string, { value?: unknown }> | undefined;
+        const vizObj =
+          (ports?.visualization?.value as Record<string, unknown> | undefined) ??
+          ((ports?.default?.value as Record<string, unknown> | undefined)?.visualization as
+            | Record<string, unknown>
+            | undefined);
         const pairs = (vizObj?.data as number[][]) || [];
         if (!pairs.length) return { data: [], layout: BASE_PLOT_LAYOUT };
         const actual = pairs.map((p: number[]) => p[0]);
@@ -1709,7 +1726,12 @@ export function usePlotData(
         };
       }
       case "holdout_confusion": {
-        const vizObj = (output.ports?.default?.value as Record<string, unknown>)?.visualization as Record<string, unknown> | undefined;
+        const ports = output.ports as Record<string, { value?: unknown }> | undefined;
+        const vizObj =
+          (ports?.visualization?.value as Record<string, unknown> | undefined) ??
+          ((ports?.default?.value as Record<string, unknown> | undefined)?.visualization as
+            | Record<string, unknown>
+            | undefined);
         const cm = (vizObj?.data as number[][]) || [];
         if (!cm.length) return { data: [], layout: BASE_PLOT_LAYOUT };
         const labels = ((vizObj?.metadata as Record<string, unknown>)?.classes as string[]) || cm.map((_: unknown, i: number) => `Class ${i}`);
