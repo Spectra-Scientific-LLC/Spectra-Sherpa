@@ -960,7 +960,7 @@ class HoldoutEvaluationNode(Node):
         y_pred: np.ndarray,
         n_samples: int,
         uuid: Any,
-    ) -> dict[str, Any]:
+    ) -> NodeResult:
         from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
         y_true = y_true.astype(np.float64)
@@ -1073,7 +1073,7 @@ class HoldoutEvaluationNode(Node):
         y_pred: np.ndarray,
         n_samples: int,
         uuid: Any,
-    ) -> dict[str, Any]:
+    ) -> NodeResult:
         from sklearn.metrics import (
             accuracy_score,
             classification_report,
