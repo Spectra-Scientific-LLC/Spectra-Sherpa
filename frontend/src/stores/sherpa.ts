@@ -425,6 +425,99 @@ export const useSherpaStore = defineStore("sherpa", () => {
       }
     }
 
+    // Scientific scalars and structured fields that Sherpa's context builder
+    // can summarize. Keep this list in sync with the per-node-type summarizers
+    // in spectra-server/src/spectrasherpa_server/context_builder.py.
+    const SCIENTIFIC_KEYS = new Set([
+      // Shapes and identity
+      "type",
+      "shape",
+      "n_samples",
+      "n_features",
+      "n_components",
+      "n_classes",
+      "classes",
+      // Regression metrics
+      "r2",
+      "R2",
+      "rmse",
+      "RMSE",
+      "rmsep",
+      "RMSEP",
+      "rmsecv",
+      "RMSECV",
+      "q2",
+      "Q2",
+      "mae",
+      "MAE",
+      "sep",
+      "SEP",
+      "rer",
+      "RER",
+      "rpd",
+      "bias",
+      // Classification metrics
+      "accuracy",
+      "train_accuracy",
+      "cv_accuracy",
+      "cv_balanced_accuracy",
+      "f1_score",
+      "precision",
+      "recall",
+      "confusion_matrix",
+      "per_class",
+      // Decomposition metrics
+      "explained_variance",
+      "explained_variance_ratio",
+      "cumulative_variance",
+      "reconstruction_error",
+      // Clustering metrics
+      "silhouette_score",
+      "inertia",
+      "n_clusters",
+      // Diagnostics
+      "hotelling_t2",
+      "q_residuals",
+      "t2_critical_95",
+      "q_critical_95",
+      "n_outliers",
+      "outlier_percentage",
+      "t2_limit",
+      "q_limit",
+      // Chemistry-aware context (consumed by extract_salient_features_context)
+      "salient_features",
+      // Status
+      "status",
+      "task_type",
+    ]);
+
+    const isSimpleValue = (v: unknown): boolean =>
+      v == null ||
+      typeof v === "string" ||
+      typeof v === "number" ||
+      typeof v === "boolean";
+
+    const pickScientificFields = (
+      obj: Record<string, unknown>
+    ): Record<string, unknown> => {
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(obj)) {
+        if (!SCIENTIFIC_KEYS.has(k)) {
+          continue;
+        }
+        // Pass through scalars, small arrays, and nested objects as-is.
+        // The server's context builder further compacts these.
+        if (isSimpleValue(v)) {
+          out[k] = v;
+        } else if (Array.isArray(v)) {
+          out[k] = v;
+        } else if (typeof v === "object") {
+          out[k] = v;
+        }
+      }
+      return out;
+    };
+
     let results_summary: Record<string, Record<string, unknown>> | null = null;
     if (lastExecutionResults) {
       results_summary = {};
@@ -433,25 +526,33 @@ export const useSherpaStore = defineStore("sherpa", () => {
           continue;
         }
         const result = rawResult as Record<string, unknown>;
-        const metadata = result.metadata;
-        results_summary[nodeId] = {
+
+        // Always include shape identity fields even if not in SCIENTIFIC_KEYS match.
+        const summary: Record<string, unknown> = {
           type: result.type ?? null,
           shape: result.shape ?? null,
           n_samples: result.n_samples ?? null,
           n_features: result.n_features ?? null,
-          metadata:
-            metadata && typeof metadata === "object"
-              ? Object.fromEntries(
-                  Object.entries(metadata as Record<string, unknown>).filter(
-                    ([, value]) =>
-                      value == null ||
-                      typeof value === "string" ||
-                      typeof value === "number" ||
-                      typeof value === "boolean"
-                  )
-                )
-              : null,
         };
+
+        // Scientific fields from the top level of the result.
+        Object.assign(summary, pickScientificFields(result));
+
+        // Scientific fields from the nested metadata block.
+        const metadata = result.metadata;
+        if (metadata && typeof metadata === "object") {
+          Object.assign(summary, pickScientificFields(metadata as Record<string, unknown>));
+          // Also preserve the raw metadata primitives for backwards compat.
+          summary.metadata = Object.fromEntries(
+            Object.entries(metadata as Record<string, unknown>).filter(([, value]) =>
+              isSimpleValue(value)
+            )
+          );
+        } else {
+          summary.metadata = null;
+        }
+
+        results_summary[nodeId] = summary;
       }
     }
 

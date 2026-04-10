@@ -88,10 +88,14 @@ const selectPrimaryPort = (
   }
 
   if (outputPorts && outputPorts.length > 0) {
-    // Prefer a dataset-category port by inspecting the type_ref URI
+    // Prefer a dataset-category port by inspecting the type_ref URI.
+    // Include visualization and validation types so nodes like holdout_evaluation
+    // surface their confusion matrix / predicted-vs-actual plot by default.
     const datasetTypeNames = new Set([
       "SpectralDataset", "Spectrum", "ScoreMatrix", "LoadingMatrix",
-      "SpectralImage", "TimeSeries", "Array2D",
+      "SpectralImage", "TimeSeries", "Array2D", "Array1D",
+      "Visualization", "ValidationResult",
+      "DecompositionResult", "RegressionModel", "ClassificationModel",
     ]);
     const datasetPort = outputPorts.find((port) => {
       const nameMatch = port.type_ref?.match(/\/([A-Za-z0-9_]+)\/\d+\.\d+$/);
@@ -99,6 +103,14 @@ const selectPrimaryPort = (
     });
     if (datasetPort) {
       return datasetPort.name;
+    }
+
+    // Prefer a port whose data array is non-empty over one that is empty.
+    const firstWithData = outputPorts.find(
+      (port) => ports[port.name] && Array.isArray(ports[port.name].data) && ports[port.name].data.length > 0
+    );
+    if (firstWithData) {
+      return firstWithData.name;
     }
 
     const firstDefined = outputPorts.find((port) => ports[port.name]);
