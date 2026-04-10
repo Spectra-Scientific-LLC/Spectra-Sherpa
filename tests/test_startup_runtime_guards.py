@@ -116,8 +116,6 @@ def test_hybrid_security_rejects_default_api_key_when_system_auth_enabled(
     assert "APP_API_KEY is set to the default value" in caplog.text
 
 
-
-
 def test_hybrid_security_rejects_short_master_encryption_key(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_runtime(
         monkeypatch,
