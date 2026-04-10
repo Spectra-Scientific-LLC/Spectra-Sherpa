@@ -861,6 +861,46 @@ function classificationAccuracyLayout(): Record<string, any> {
 }
 
 // ============================================================================
+// Holdout evaluation shared helpers
+// ============================================================================
+
+/**
+ * Extract the flat metrics dictionary from a holdout evaluation node output.
+ *
+ * Handles both the current shape (metrics port carries the flat dict directly,
+ * with scalar keys plus a data/metadata wrapper for inspector rendering) and
+ * the legacy bundled shape (default port with nested metrics dict).
+ */
+function getHoldoutMetricsDict(output: any): Record<string, unknown> | null {
+  const ports = output?.ports as Record<string, { value?: unknown }> | undefined;
+  const metricsValue = ports?.metrics?.value;
+  if (metricsValue && typeof metricsValue === "object") {
+    // The metrics port value is the flat dict — scalar keys (accuracy,
+    // RMSEP, R2, ...) sit at the top level alongside the table wrapper.
+    return metricsValue as Record<string, unknown>;
+  }
+  const defaultValue = ports?.default?.value;
+  if (defaultValue && typeof defaultValue === "object") {
+    const bundled = (defaultValue as Record<string, unknown>).metrics;
+    if (bundled && typeof bundled === "object") {
+      return bundled as Record<string, unknown>;
+    }
+  }
+  return null;
+}
+
+/** Format a numeric metric for display in the metrics table. */
+function formatMetricValue(v: number): string {
+  if (!Number.isFinite(v)) return String(v);
+  if (Number.isInteger(v)) return String(v);
+  const abs = Math.abs(v);
+  if (abs >= 100) return v.toFixed(2);
+  if (abs >= 1) return v.toFixed(3);
+  if (abs >= 0.001) return v.toFixed(4);
+  return v.toExponential(3);
+}
+
+// ============================================================================
 // Spectra overlay / heatmap builders (data/preprocess nodes)
 // ============================================================================
 
@@ -1523,9 +1563,17 @@ export function usePlotData(
           | Record<string, unknown>
           | undefined);
       if (vizObj?.type === "confusion_matrix") {
+        // Classification: confusion matrix (normalized), per-class metrics,
+        // predictions scatter, and metrics table.
         plots.push({ key: "holdout_confusion", label: "Confusion Matrix" });
+        plots.push({ key: "holdout_per_class", label: "Per-Class Metrics" });
+        plots.push({ key: "holdout_predictions", label: "Predictions Scatter" });
+        plots.push({ key: "holdout_metrics_table", label: "Metrics Table" });
       } else {
+        // Regression: predicted-vs-actual, residuals, and metrics table.
         plots.push({ key: "holdout_regression", label: "Predicted vs Actual" });
+        plots.push({ key: "holdout_residuals", label: "Residuals" });
+        plots.push({ key: "holdout_metrics_table", label: "Metrics Table" });
       }
       return plots;
     }
@@ -1735,14 +1783,264 @@ export function usePlotData(
         const cm = (vizObj?.data as number[][]) || [];
         if (!cm.length) return { data: [], layout: BASE_PLOT_LAYOUT };
         const labels = ((vizObj?.metadata as Record<string, unknown>)?.classes as string[]) || cm.map((_: unknown, i: number) => `Class ${i}`);
+        // Row-normalized: each row shows the fraction of true-class samples
+        // predicted into each class. Diagonal = recall per class.
+        const cmNormalized = cm.map((row: number[]) => {
+          const total = row.reduce((a: number, b: number) => a + b, 0);
+          return total > 0 ? row.map((v: number) => v / total) : row.map(() => 0);
+        });
+        const textLabels = cm.map((row: number[], i: number) =>
+          row.map((v: number, j: number) => {
+            const frac = cmNormalized[i][j];
+            return `${v}\n${(frac * 100).toFixed(1)}%`;
+          })
+        );
         return {
           data: [{
-            z: cm, x: labels, y: labels, type: "heatmap", colorscale: "Blues", showscale: true,
-            text: cm.map((row: number[]) => row.map((v: number) => String(v))),
+            z: cmNormalized, x: labels, y: labels, type: "heatmap", colorscale: "Blues", showscale: true,
+            zmin: 0, zmax: 1,
+            text: textLabels,
             texttemplate: "%{text}",
-            hovertemplate: "True: %{y}<br>Predicted: %{x}<br>Count: %{z}<extra></extra>",
+            hovertemplate: "True: %{y}<br>Predicted: %{x}<br>Row fraction: %{z:.3f}<extra></extra>",
+            colorbar: { title: { text: "Row fraction", font: { color: "#94a3b8" } } },
           }],
-          layout: { ...BASE_PLOT_LAYOUT, title: { text: "Confusion Matrix", font: { color: "#e2e8f0", size: 14 } }, xaxis: { title: "Predicted", color: "#94a3b8" }, yaxis: { title: "True", color: "#94a3b8", autorange: "reversed" } },
+          layout: {
+            ...BASE_PLOT_LAYOUT,
+            title: { text: "Confusion Matrix (normalized by true class)", font: { color: "#e2e8f0", size: 14 } },
+            xaxis: { title: "Predicted", color: "#94a3b8" },
+            yaxis: { title: "True", color: "#94a3b8", autorange: "reversed" },
+          },
+        };
+      }
+
+      case "holdout_per_class": {
+        // Small multiples: one subplot per metric (sensitivity, specificity,
+        // precision, F1), each a bar chart over classes.
+        const metrics = getHoldoutMetricsDict(output);
+        const perClass = (metrics?.per_class as Array<Record<string, unknown>> | undefined) ?? [];
+        if (!perClass.length) return { data: [], layout: BASE_PLOT_LAYOUT };
+        const classNames = perClass.map((e) => String(e.class ?? ""));
+        const metricKeys: Array<{ key: string; label: string }> = [
+          { key: "sensitivity", label: "Sensitivity" },
+          { key: "specificity", label: "Specificity" },
+          { key: "precision", label: "Precision" },
+          { key: "f1", label: "F1" },
+        ];
+        const traces = metricKeys.map((m, idx) => ({
+          x: classNames,
+          y: perClass.map((e) => Number(e[m.key] ?? 0)),
+          type: "bar",
+          name: m.label,
+          xaxis: `x${idx + 1}`,
+          yaxis: `y${idx + 1}`,
+          marker: { color: ["#3b82f6", "#22c55e", "#f59e0b", "#a855f7"][idx] },
+          text: perClass.map((e) => Number(e[m.key] ?? 0).toFixed(3)),
+          textposition: "outside",
+          hovertemplate: `%{x}: %{y:.3f}<extra>${m.label}</extra>`,
+        }));
+        return {
+          data: traces,
+          layout: {
+            ...BASE_PLOT_LAYOUT,
+            title: { text: "Per-Class Metrics", font: { color: "#e2e8f0", size: 14 } },
+            grid: { rows: 2, columns: 2, pattern: "independent" },
+            showlegend: false,
+            annotations: metricKeys.map((m, idx) => {
+              const col = idx % 2;
+              const row = Math.floor(idx / 2);
+              return {
+                text: m.label,
+                showarrow: false,
+                x: 0.5,
+                y: 1.0,
+                xref: `x${idx + 1} domain` as const,
+                yref: `y${idx + 1} domain` as const,
+                yanchor: "bottom" as const,
+                font: { color: "#e2e8f0", size: 12 },
+                xshift: col * 0,
+                yshift: row * 0,
+              };
+            }),
+            xaxis: { color: "#94a3b8", automargin: true },
+            xaxis2: { color: "#94a3b8", automargin: true },
+            xaxis3: { color: "#94a3b8", automargin: true },
+            xaxis4: { color: "#94a3b8", automargin: true },
+            yaxis: { color: "#94a3b8", range: [0, 1.1] },
+            yaxis2: { color: "#94a3b8", range: [0, 1.1] },
+            yaxis3: { color: "#94a3b8", range: [0, 1.1] },
+            yaxis4: { color: "#94a3b8", range: [0, 1.1] },
+          },
+        };
+      }
+
+      case "holdout_predictions": {
+        // Scatter of individual predictions, indexed by sample.
+        // For classification: points colored by predicted class, y-axis is the
+        // predicted label, revealing misclassification runs and clusters.
+        // For regression: points at their predicted value vs. sample index.
+        const ports = output.ports as Record<string, { value?: unknown; data?: unknown }> | undefined;
+        const predictionsRaw =
+          ports?.predictions?.data ??
+          ports?.predictions?.value ??
+          [];
+        const preds = Array.isArray(predictionsRaw) ? (predictionsRaw as Array<number | string>) : [];
+        if (!preds.length) return { data: [], layout: BASE_PLOT_LAYOUT };
+        const sampleIndex = preds.map((_, i) => i);
+        // Detect classification by checking if values are strings.
+        const isCls = typeof preds[0] === "string";
+        if (isCls) {
+          const classes = Array.from(new Set(preds.map(String)));
+          const colors = ["#3b82f6", "#ef4444", "#22c55e", "#f59e0b", "#a855f7", "#06b6d4"];
+          const traces = classes.map((cls, idx) => {
+            const xs: number[] = [];
+            const ys: string[] = [];
+            preds.forEach((p, i) => {
+              if (String(p) === cls) {
+                xs.push(i);
+                ys.push(cls);
+              }
+            });
+            return {
+              x: xs,
+              y: ys,
+              mode: "markers" as const,
+              type: "scatter" as const,
+              name: cls,
+              marker: { color: colors[idx % colors.length], size: 8 },
+              hovertemplate: `Sample %{x}<br>Predicted: %{y}<extra></extra>`,
+            };
+          });
+          return {
+            data: traces,
+            layout: {
+              ...BASE_PLOT_LAYOUT,
+              title: { text: "Predictions by Sample Index", font: { color: "#e2e8f0", size: 14 } },
+              xaxis: { title: "Sample Index", color: "#94a3b8" },
+              yaxis: { title: "Predicted Class", color: "#94a3b8", type: "category", categoryorder: "array", categoryarray: classes },
+              showlegend: true,
+            },
+          };
+        }
+        // Regression
+        return {
+          data: [{
+            x: sampleIndex,
+            y: preds.map(Number),
+            mode: "markers",
+            type: "scatter",
+            name: "Predictions",
+            marker: { color: "#3b82f6", size: 6 },
+            hovertemplate: "Sample %{x}<br>Predicted: %{y:.4f}<extra></extra>",
+          }],
+          layout: {
+            ...BASE_PLOT_LAYOUT,
+            title: { text: "Predictions by Sample Index", font: { color: "#e2e8f0", size: 14 } },
+            xaxis: { title: "Sample Index", color: "#94a3b8" },
+            yaxis: { title: "Predicted Value", color: "#94a3b8" },
+            showlegend: false,
+          },
+        };
+      }
+
+      case "holdout_residuals": {
+        // Regression residuals: residual vs predicted scatter, with a 0-line.
+        const ports = output.ports as Record<string, { value?: unknown }> | undefined;
+        const vizObj =
+          (ports?.visualization?.value as Record<string, unknown> | undefined) ??
+          ((ports?.default?.value as Record<string, unknown> | undefined)?.visualization as
+            | Record<string, unknown>
+            | undefined);
+        const pairs = (vizObj?.data as number[][]) || [];
+        if (!pairs.length) return { data: [], layout: BASE_PLOT_LAYOUT };
+        const predicted = pairs.map((p: number[]) => p[1]);
+        const residuals = pairs.map((p: number[]) => p[0] - p[1]);
+        const minP = Math.min(...predicted);
+        const maxP = Math.max(...predicted);
+        return {
+          data: [
+            {
+              x: predicted,
+              y: residuals,
+              mode: "markers",
+              type: "scatter",
+              name: "Residuals",
+              marker: { color: "#3b82f6", size: 6 },
+              hovertemplate: "Predicted: %{x:.4f}<br>Residual: %{y:.4f}<extra></extra>",
+            },
+            {
+              x: [minP, maxP],
+              y: [0, 0],
+              mode: "lines",
+              type: "scatter",
+              name: "Zero",
+              line: { dash: "dash", color: "#94a3b8" },
+              hoverinfo: "skip",
+            },
+          ],
+          layout: {
+            ...BASE_PLOT_LAYOUT,
+            title: { text: "Residuals vs Predicted", font: { color: "#e2e8f0", size: 14 } },
+            xaxis: { title: "Predicted", color: "#94a3b8" },
+            yaxis: { title: "Residual (true − predicted)", color: "#94a3b8" },
+            showlegend: false,
+          },
+        };
+      }
+
+      case "holdout_metrics_table": {
+        // Plotly table of the metric keys and values from the metrics port.
+        const metrics = getHoldoutMetricsDict(output);
+        if (!metrics) return { data: [], layout: BASE_PLOT_LAYOUT };
+        const taskType = String(metrics.task_type ?? "");
+        const displayKeys: Array<{ key: string; label: string }> = taskType === "classification"
+          ? [
+              { key: "accuracy", label: "Accuracy" },
+              { key: "n_classes", label: "Number of Classes" },
+              { key: "n_samples", label: "Number of Samples" },
+            ]
+          : [
+              { key: "RMSEP", label: "RMSEP" },
+              { key: "R2", label: "R²" },
+              { key: "MAE", label: "MAE" },
+              { key: "bias", label: "Bias" },
+              { key: "SEP", label: "SEP" },
+              { key: "RER", label: "RER" },
+              { key: "n_samples", label: "Number of Samples" },
+              { key: "n_valid_samples", label: "Valid Samples" },
+              { key: "n_invalid_predictions", label: "Invalid Predictions" },
+              { key: "status", label: "Status" },
+            ];
+        const names: string[] = [];
+        const values: string[] = [];
+        for (const { key, label } of displayKeys) {
+          const v = metrics[key];
+          if (v === undefined || v === null) continue;
+          names.push(label);
+          values.push(typeof v === "number" ? formatMetricValue(v) : String(v));
+        }
+        return {
+          data: [{
+            type: "table",
+            header: {
+              values: ["<b>Metric</b>", "<b>Value</b>"],
+              align: ["left", "left"],
+              fill: { color: "#1e293b" },
+              font: { color: "#e2e8f0", size: 13 },
+              line: { color: "#334155", width: 1 },
+            },
+            cells: {
+              values: [names, values],
+              align: ["left", "left"],
+              fill: { color: "#0f172a" },
+              font: { color: "#e2e8f0", size: 12 },
+              line: { color: "#334155", width: 1 },
+              height: 28,
+            },
+          }],
+          layout: {
+            ...BASE_PLOT_LAYOUT,
+            title: { text: "Test Metrics", font: { color: "#e2e8f0", size: 14 } },
+          },
         };
       }
 
