@@ -777,6 +777,13 @@ class HoldoutEvaluationNode(Node):
         ],
         output_ports=[
             PortMetadata(
+                name="visualization",
+                type_ref="spectrasherpa://types/Visualization/1.0",
+                required=False,
+                label="Visualization",
+                description="Plot-ready data (predicted-vs-actual or confusion matrix)",
+            ),
+            PortMetadata(
                 name="metrics",
                 type_ref="spectrasherpa://types/ValidationResult/1.0",
                 required=True,
@@ -789,13 +796,6 @@ class HoldoutEvaluationNode(Node):
                 required=True,
                 label="Predictions",
                 description="Predicted values (pass-through for downstream use)",
-            ),
-            PortMetadata(
-                name="visualization",
-                type_ref="spectrasherpa://types/Visualization/1.0",
-                required=False,
-                label="Visualization Data",
-                description="Plot-ready data (predicted-vs-actual or confusion matrix)",
             ),
         ],
         input_types=["array", "array"],
@@ -1005,7 +1005,17 @@ class HoldoutEvaluationNode(Node):
         else:
             status = "invalid_predictions"
 
+        metrics_row = {
+            "RMSEP": rmsep, "R2": r2, "MAE": mae,
+            "bias": bias, "SEP": sep, "RER": rer,
+        }
         metrics = {
+            "data": [metrics_row],
+            "metadata": {
+                "type": "RegressionTest",
+                "n_samples": total_samples,
+                "status": status,
+            },
             "RMSEP": rmsep,
             "R2": r2,
             "MAE": mae,
@@ -1098,6 +1108,13 @@ class HoldoutEvaluationNode(Node):
             )
 
         metrics = {
+            "data": per_class_metrics,
+            "metadata": {
+                "type": "ClassificationTest",
+                "accuracy": accuracy,
+                "n_classes": len(unique_classes),
+                "n_samples": n_samples,
+            },
             "accuracy": accuracy,
             "n_classes": len(unique_classes),
             "classes": unique_classes.tolist(),
