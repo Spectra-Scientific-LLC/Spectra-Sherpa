@@ -1062,8 +1062,7 @@ class DAGExecutor:
             except asyncio.TimeoutError:
                 label = node.metadata.label if node.metadata else dep_node_id
                 err_msg = (
-                    f"Node '{label}' exceeded {node_timeout}s timeout. "
-                    f"Reduce dataset size or simplify parameters."
+                    f"Node '{label}' exceeded {node_timeout}s timeout. " f"Reduce dataset size or simplify parameters."
                 )
                 node.status = NodeStatus.ERROR
                 node.error_message = err_msg
