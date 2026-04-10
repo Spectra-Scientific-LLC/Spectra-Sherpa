@@ -101,6 +101,8 @@ under `frontend/src/`.
 
 ## Contribution workflow
 
+### For contributors
+
 1. **Fork** the repository and create a **branch** for your change.
 2. Make focused changes with tests.
 3. Run `make test` and `make lint` locally.
@@ -109,6 +111,42 @@ under `frontend/src/`.
    - how your change solves it
    - evidence that your tests pass
    - any notes on behavior that changes for existing users
+5. Wait for CI to pass (all checks must be green).
+6. A maintainer will deploy your branch to staging for final validation.
+7. Once verified on staging, the maintainer merges to `main`.
+8. Merging to `main` triggers an automatic deploy to production.
+
+### For maintainers
+
+After CI passes on a pull request, deploy the branch to the staging
+environment for manual verification before merging:
+
+```bash
+ssh root@<STAGING_IP>
+cd ~/spectra-platform/spectra-sherpa
+git fetch origin
+git checkout <branch-name>
+
+# Frontend-only change:
+cd ~/spectra-platform/spectra-ops/docker
+docker compose -f docker-compose.prod.yaml up -d --build frontend
+
+# Backend or full-stack change:
+cd ~/spectra-platform/spectra-ops/docker
+docker compose -f docker-compose.prod.yaml up -d --build
+```
+
+Verify the change on the staging URL, then merge the PR on GitHub.
+After merging, return staging to `main`:
+
+```bash
+cd ~/spectra-platform/spectra-sherpa
+git checkout main && git pull
+cd ~/spectra-platform/spectra-ops/docker
+docker compose -f docker-compose.prod.yaml up -d --build
+```
+
+Merging to `main` automatically deploys to production via GitHub Actions.
 
 ---
 
