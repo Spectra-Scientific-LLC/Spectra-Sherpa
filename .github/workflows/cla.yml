@@ -25,7 +25,7 @@ jobs:
           path-to-signatures: "signatures/cla.json"
           path-to-document: "https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/blob/main/CLA.md"
           branch: "cla-signatures"
-          allowlist: dependabot[bot],github-actions[bot],renovate[bot]
+          allowlist: fe2val,dependabot[bot],github-actions[bot],renovate[bot]
           lock-pullrequest-aftermerge: true
           create-file-commit-message: "chore: create CLA signatures file"
           signed-commit-message: "docs: $contributorName signed the CLA in $owner/$repo#$pullRequestNo"

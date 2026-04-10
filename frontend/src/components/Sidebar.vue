@@ -78,23 +78,29 @@ const secondaryNavItems = [
   transition: width 0.2s ease;
   width: var(--nav-width, 240px);
   flex-shrink: 0;
+  padding: 0;
+  gap: 0;
 }
 
 .sidebar.collapsed {
   width: 72px;
+  padding: 0;
 }
 
 .sidebar-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 16px 20px;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0 16px;
+  min-height: 56px;
+  max-height: 56px;
   border-bottom: 1px solid #334155;
 }
 
 .collapsed .sidebar-header {
   justify-content: center;
-  padding: 16px 12px;
+  padding: 0 12px;
 }
 
 .sidebar-logo {
