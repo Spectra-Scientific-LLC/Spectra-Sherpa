@@ -4,7 +4,7 @@
     <header class="llm-chat-header">
       <div class="llm-chat-header-left">
         <i class="pi pi-comments" style="font-size: 1.5rem; color: #3b82f6"></i>
-        <h1>LLM assistant</h1>
+        <h1>{{ pageTitle }}</h1>
       </div>
       <div class="llm-chat-header-actions">
         <Button
@@ -42,7 +42,7 @@
 
 <script setup lang="ts">
 import { ref, watch, computed } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import Button from "primevue/button";
 import Menu from "primevue/menu";
 import { useToast } from "primevue/usetoast";
@@ -53,9 +53,11 @@ import { getErrorMessage } from "@/utils/errors";
 import api from "@/api/client";
 
 const router = useRouter();
+const route = useRoute();
 const store = useLlmStore();
 const toast = useToast();
 const { appMode } = useAppConfig();
+const pageTitle = computed(() => (route.query.tab === "sherpa" ? "Sherpa Advisor" : "LLM assistant"));
 
 const goBack = () => {
   router.push("/workflow");

@@ -217,6 +217,21 @@ describe("Sherpa Store communication state", () => {
     sherpa.dispose();
   });
 
+  it("clears transient sync state when the Sherpa panel unmounts", async () => {
+    const sherpa = useSherpaStore();
+    sherpa.init();
+
+    await sherpa.syncWorkflow();
+    expect(sherpa.isSyncing).toBe(true);
+
+    sherpa.dispose();
+
+    expect(sherpa.isSyncing).toBe(false);
+    expect(sherpa.isChatting).toBe(false);
+    expect(sherpa.syncState).toBe("idle");
+    expect(sherpa.chatState).toBe("idle");
+  });
+
   it("resets the chat timeout when Sherpa activity continues", async () => {
     const sherpa = useSherpaStore();
     sherpa.init();

@@ -19,6 +19,14 @@ const mocks = vi.hoisted(() => ({
   apiGet: vi.fn(),
   apiPut: vi.fn(),
   routerPush: vi.fn(),
+  routerResolve: vi.fn((target: { path?: string; query?: Record<string, unknown> }) => {
+    const tab = typeof target.query?.tab === "string" ? `?tab=${target.query.tab}` : "";
+    return { href: `${target.path || ""}${tab}` };
+  }),
+  route: {
+    path: "/workflow",
+    query: {} as Record<string, unknown>,
+  },
   toastAdd: vi.fn(),
   llmStore: {
     conversations: [] as Array<Record<string, unknown>>,
@@ -93,7 +101,9 @@ vi.mock("@/api/client", () => ({
 vi.mock("vue-router", () => ({
   useRouter: () => ({
     push: mocks.routerPush,
+    resolve: mocks.routerResolve,
   }),
+  useRoute: () => mocks.route,
 }));
 
 vi.mock("primevue/usetoast", () => ({
@@ -380,6 +390,8 @@ describe("ChatPanel", () => {
       }
       return Promise.resolve({ data: [] });
     });
+    mocks.route.path = "/workflow";
+    mocks.route.query = {};
     mocks.llmStore.currentConfig = null;
     mocks.llmStore.messages = [];
     mocks.llmStore.conversations = [];
@@ -458,6 +470,48 @@ describe("ChatPanel", () => {
 
     expect(wrapper.text()).toContain("Sherpa Advisor");
     expect(wrapper.text()).not.toContain("LLM Chat");
+  });
+
+  it("opens the standalone Sherpa view with the current Sherpa tab preserved", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.appConfig.value = { subscription: { plan: "demo" } };
+    mocks.featureFlags.chatAssistant = true;
+    mocks.featureFlags.sherpaAdvisor = true;
+
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+
+    const sherpaTab = wrapper.findAll("button").find((button) => button.text() === "Sherpa Advisor");
+    expect(sherpaTab).toBeTruthy();
+    await sherpaTab!.trigger("click");
+    await flushPromises();
+
+    await wrapper.find('[aria-label="Open in new tab"]').trigger("click");
+
+    expect(openSpy).toHaveBeenCalledWith("/llm-chat?tab=sherpa", "_blank", "noopener,noreferrer");
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      path: "/llm-chat",
+      query: { tab: "sherpa" },
+    });
+
+    openSpy.mockRestore();
+  });
+
+  it("loads the standalone Sherpa view from route state without auto-syncing the workflow", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.appConfig.value = { subscription: { plan: "demo" } };
+    mocks.featureFlags.chatAssistant = true;
+    mocks.featureFlags.sherpaAdvisor = true;
+    mocks.route.path = "/llm-chat";
+    mocks.route.query = { tab: "sherpa" };
+    mocks.workflowStore.workflowId = 123;
+
+    const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+
+    expect(wrapper.find(".sherpa-conversation-picker").exists()).toBe(true);
+    expect(mocks.sherpaStore.syncWorkflow).not.toHaveBeenCalled();
   });
 
   it("shows a contacting status while Sherpa chat is waiting for acceptance", async () => {
@@ -539,7 +593,8 @@ describe("ChatPanel", () => {
     expect(input.attributes("placeholder")).toBe(
       "Run the workflow first, then ask Sherpa about the results..."
     );
-    expect(mocks.sherpaStore.syncWorkflow).toHaveBeenCalled();
+    expect(mocks.sherpaStore.syncWorkflow).not.toHaveBeenCalled();
+    expect(wrapper.find('[aria-label="Re-sync workflow"]').exists()).toBe(true);
   });
 
   it("shows an upgrade action when Sherpa reports a subscription upgrade URL", async () => {

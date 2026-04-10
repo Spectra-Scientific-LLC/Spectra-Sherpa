@@ -8,7 +8,7 @@
             v-if="showLlmTab"
             class="tab-btn"
             :class="{ active: activeTab === 'llm' }"
-            @click="activeTab = 'llm'"
+            @click="setActiveTab('llm')"
           >
             LLM Chat
           </button>
@@ -24,26 +24,26 @@
         <div v-else class="tab-toggle tab-toggle--static">
           <span class="tab-label">{{ activeTabLabel }}</span>
         </div>
-        <div v-if="activeTab === 'sherpa'" class="sherpa-conversation-picker">
-          <Dropdown
-            :modelValue="sherpaStore.currentConversationId"
-            :options="sherpaConversationOptions"
-            optionLabel="label"
-            optionValue="value"
-            placeholder="New Sherpa conversation"
-            class="sherpa-conversation-dropdown"
-            :disabled="sherpaStore.isChatting || sherpaStore.isSyncing || sherpaConversationOptions.length === 0"
-            @update:modelValue="onSherpaConversationSelect"
-          />
-          <Button
-            icon="pi pi-plus"
-            class="p-button-text p-button-sm llm-settings-btn"
-            aria-label="Start new Sherpa conversation"
-            @click="startNewSherpaConversation"
-            v-tooltip.bottom="'New Sherpa conversation'"
-          />
-        </div>
         <div class="panel-topbar-actions">
+          <div v-if="activeTab === 'sherpa'" class="sherpa-conversation-picker">
+            <Dropdown
+              :modelValue="sherpaStore.currentConversationId"
+              :options="sherpaConversationOptions"
+              optionLabel="label"
+              optionValue="value"
+              placeholder="New Sherpa conversation"
+              class="sherpa-conversation-dropdown"
+              :disabled="sherpaStore.isChatting || sherpaStore.isSyncing || sherpaConversationOptions.length === 0"
+              @update:modelValue="onSherpaConversationSelect"
+            />
+            <Button
+              icon="pi pi-plus"
+              class="p-button-text p-button-sm llm-settings-btn"
+              aria-label="Start new Sherpa conversation"
+              @click="startNewSherpaConversation"
+              v-tooltip.bottom="'New Sherpa conversation'"
+            />
+          </div>
           <!-- LLM settings (only on LLM tab, local mode only — server owns model selection) -->
           <Button
             v-if="activeTab === 'llm' && appMode === 'local'"
@@ -228,7 +228,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import Button from "primevue/button";
 import Dropdown from "primevue/dropdown";
 import InputText from "primevue/inputtext";
@@ -260,6 +260,7 @@ const props = withDefaults(
 );
 
 const router = useRouter();
+const route = useRoute();
 const store = useLlmStore();
 const sherpaStore = useSherpaStore();
 const experimentStore = useExperimentStore();
@@ -285,7 +286,8 @@ const scrollToBottom = async () => {
 
 // ── Tab toggle ───────────────────────────────────────────────
 
-const activeTab = ref<"llm" | "sherpa">("llm");
+type ChatTab = "llm" | "sherpa";
+
 const sherpaEnabled = computed(() => isFeatureEnabled("sherpaAdvisor"));
 const llmChatEnabled = computed(() => isFeatureEnabled("chatAssistant"));
 const showLlmTab = computed(() => !(isDemoMode.value && sherpaEnabled.value));
@@ -298,12 +300,41 @@ const hasExecutionResults = computed(
   () => Object.keys(workflowStore.lastExecutionResults || {}).length > 0
 );
 
-const switchToSherpa = () => {
-  activeTab.value = "sherpa";
-  // Auto-sync on switch (proactive assessment)
-  if (workflowStore.workflowId) {
-    sherpaStore.syncWorkflow();
+const requestedTab = computed<ChatTab | null>(() => {
+  const rawTab = route.query.tab;
+  if (rawTab === "sherpa" || rawTab === "llm") {
+    return rawTab;
   }
+  return null;
+});
+
+const resolveInitialTab = (): ChatTab => {
+  if (requestedTab.value === "sherpa" && sherpaEnabled.value) {
+    return "sherpa";
+  }
+  if (requestedTab.value === "llm" && showLlmTab.value) {
+    return "llm";
+  }
+  if (!showLlmTab.value && sherpaEnabled.value) {
+    return "sherpa";
+  }
+  return "llm";
+};
+
+const activeTab = ref<ChatTab>(resolveInitialTab());
+
+const setActiveTab = (tab: ChatTab) => {
+  if (tab === "sherpa" && !sherpaEnabled.value) {
+    return;
+  }
+  if (tab === "llm" && !showLlmTab.value) {
+    return;
+  }
+  activeTab.value = tab;
+};
+
+const switchToSherpa = () => {
+  setActiveTab("sherpa");
 };
 
 const inputPlaceholder = computed(() => {
@@ -390,10 +421,22 @@ const switchProvider = async (provider: string) => {
 
 // Sync with current config
 watch(
-  () => [showLlmTab.value, sherpaEnabled.value] as const,
-  ([llmVisible, sherpaVisible]) => {
-    if (!llmVisible && sherpaVisible && activeTab.value !== "sherpa") {
-      switchToSherpa();
+  () => [showLlmTab.value, sherpaEnabled.value, requestedTab.value] as const,
+  ([llmVisible, sherpaVisible, tabFromRoute]) => {
+    if (tabFromRoute === "sherpa" && sherpaVisible) {
+      setActiveTab("sherpa");
+      return;
+    }
+    if (tabFromRoute === "llm" && llmVisible) {
+      setActiveTab("llm");
+      return;
+    }
+    if (!llmVisible && sherpaVisible) {
+      setActiveTab("sherpa");
+      return;
+    }
+    if (activeTab.value === "sherpa" && !sherpaVisible && llmVisible) {
+      setActiveTab("llm");
     }
   },
   { immediate: true }
@@ -810,7 +853,20 @@ const startNewSherpaConversation = () => {
 };
 
 const openInNewTab = () => {
-  router.push('/llm-chat');
+  const target = router.resolve({
+    path: "/llm-chat",
+    query: { tab: activeTab.value },
+  });
+  if (typeof window !== "undefined") {
+    const opened = window.open(target.href, "_blank", "noopener,noreferrer");
+    if (opened) {
+      return;
+    }
+  }
+  router.push({
+    path: "/llm-chat",
+    query: { tab: activeTab.value },
+  });
 };
 
 const onProviderChange = async () => {
@@ -902,6 +958,7 @@ const collapsed = computed(() => props.collapsed);
 .panel-topbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 8px 12px;
   background: #f8fafc;
@@ -925,8 +982,11 @@ const collapsed = computed(() => props.collapsed);
 .panel-topbar-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-left: auto;
+  min-width: 0;
+  justify-content: flex-end;
 }
 
 .sherpa-conversation-picker {
@@ -934,10 +994,14 @@ const collapsed = computed(() => props.collapsed);
   align-items: center;
   gap: 8px;
   min-width: 0;
+  flex: 1 1 320px;
+  justify-content: flex-end;
 }
 
 .sherpa-conversation-dropdown {
-  min-width: 280px;
+  min-width: 240px;
+  max-width: 340px;
+  width: min(340px, 100%);
 }
 
 .sherpa-conversation-dropdown :deep(.p-dropdown-label) {

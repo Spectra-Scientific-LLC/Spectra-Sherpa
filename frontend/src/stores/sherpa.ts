@@ -331,6 +331,19 @@ export const useSherpaStore = defineStore("sherpa", () => {
     });
   }
 
+  function _resetTransientState(): void {
+    syncState.value = "idle";
+    chatState.value = "idle";
+    lastSyncError.value = null;
+    streamingIndex.value = null;
+    chatServerAcknowledged.value = false;
+    currentChatRequestId.value = null;
+    currentSyncRequestId.value = null;
+    activeTools.value = [];
+    subscriptionRequired.value = null;
+    subscriptionUpgradeUrl.value = null;
+  }
+
   function startNewConversation(): void {
     finalizeChatCommunication();
     finalizeSyncCommunication();
@@ -339,17 +352,8 @@ export const useSherpaStore = defineStore("sherpa", () => {
     unsubscribeSyncEvents?.();
     unsubscribeSyncEvents = null;
     messages.value = [];
-    syncState.value = "idle";
-    chatState.value = "idle";
-    lastSyncError.value = null;
-    streamingIndex.value = null;
-    chatServerAcknowledged.value = false;
-    currentChatRequestId.value = null;
-    currentSyncRequestId.value = null;
+    _resetTransientState();
     currentConversationId.value = null;
-    activeTools.value = [];
-    subscriptionRequired.value = null;
-    subscriptionUpgradeUrl.value = null;
     lastActivitySummary.value = null;
   }
 
@@ -1509,6 +1513,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
   function dispose(): void {
     finalizeChatCommunication();
     finalizeSyncCommunication();
+    _resetTransientState();
     isInitialized = false;
     unsubscribeGeneralEvents?.();
     unsubscribeGeneralEvents = null;
