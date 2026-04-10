@@ -1,7 +1,7 @@
 /* eslint-disable vue/one-component-per-file */
 import { flushPromises, mount } from "@vue/test-utils";
 import { defineComponent } from "vue";
-import type { Component } from "vue";
+import type { Component, PropType } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -39,6 +39,8 @@ const mocks = vi.hoisted(() => ({
   },
   sherpaStore: {
     messages: [] as Array<Record<string, unknown>>,
+    conversations: [] as Array<Record<string, unknown>>,
+    currentConversationId: null as string | null,
     state: "idle",
     isSyncing: false,
     isChatting: false,
@@ -50,6 +52,10 @@ const mocks = vi.hoisted(() => ({
     syncWorkflow: vi.fn(),
     sendMessage: vi.fn(),
     clearMessages: vi.fn(),
+    refreshConversations: vi.fn(),
+    startNewConversation: vi.fn(),
+    loadConversation: vi.fn(),
+    deleteConversation: vi.fn(),
     openSubscriptionUpgrade: vi.fn(),
   },
   experimentStore: {
@@ -200,6 +206,33 @@ const InputSwitchStub = defineComponent({
   `,
 });
 
+const DropdownStub = defineComponent({
+  name: "Dropdown",
+  inheritAttrs: false,
+  props: {
+    modelValue: { type: [String, Number, null] as PropType<string | number | null>, default: null },
+    options: { type: Array as PropType<Array<Record<string, unknown>>>, default: () => [] },
+    optionLabel: { type: String, default: "label" },
+    optionValue: { type: String, default: "value" },
+    placeholder: { type: String, default: "" },
+    disabled: { type: Boolean, default: false },
+  },
+  emits: ["update:modelValue"],
+  template: `
+    <select
+      v-bind="$attrs"
+      :value="modelValue ?? ''"
+      :disabled="disabled"
+      @change="$emit('update:modelValue', $event.target.value || null)"
+    >
+      <option value="">{{ placeholder }}</option>
+      <option v-for="opt in options" :key="opt[optionValue]" :value="opt[optionValue]">
+        {{ opt[optionLabel] }}
+      </option>
+    </select>
+  `,
+});
+
 const mountWithUiStubs = (component: Component) =>
   mount(component, {
     global: {
@@ -208,6 +241,7 @@ const mountWithUiStubs = (component: Component) =>
         InputText: InputTextStub,
         Menu: MenuStub,
         InputSwitch: InputSwitchStub,
+        Dropdown: DropdownStub,
       },
       directives: {
         tooltip: () => undefined,
@@ -352,6 +386,8 @@ describe("ChatPanel", () => {
     mocks.llmStore.loading = false;
     mocks.llmStore.streaming = false;
     mocks.sherpaStore.messages = [];
+    mocks.sherpaStore.conversations = [];
+    mocks.sherpaStore.currentConversationId = null;
     mocks.sherpaStore.state = "idle";
     mocks.sherpaStore.isSyncing = false;
     mocks.sherpaStore.isChatting = false;

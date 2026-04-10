@@ -280,6 +280,21 @@ describe("Sherpa Store communication state", () => {
     expect(payload.payload.workflow_context.workflow_id).toBeNull();
   });
 
+  it("sends the active Sherpa conversation_id and does not replay frontend history", async () => {
+    const { useProjectStore } = await import("@/stores/project");
+    const projectStore = useProjectStore();
+    const sherpa = useSherpaStore();
+    projectStore.currentProjectId = 101;
+    sherpa.currentConversationId = "conv-123";
+
+    await sherpa.sendMessage("continue this thread");
+
+    const payload = JSON.parse(mockWs.send.mock.calls[0][0] as string);
+    expect(payload.payload.conversation_id).toBe("conv-123");
+    expect(payload.payload.project_id).toBe(101);
+    expect(payload.payload.history).toBeUndefined();
+  });
+
   it("includes execution results in Sherpa workflow context for metric questions", async () => {
     const sherpa = useSherpaStore();
     mockWorkflowStore.nodes = [
@@ -858,6 +873,22 @@ describe("Sherpa Store communication state", () => {
     const metadata = summary.metadata as Record<string, unknown>;
     expect(metadata.n_components).toBe(2);
     expect(metadata.deep_nested).toBeUndefined();
+  });
+
+  it("adopts conversation_id from Sherpa chat start events", async () => {
+    const sherpa = useSherpaStore();
+    sherpa.init();
+
+    await sherpa.sendMessage("tell me about PCA");
+    emitSherpa({
+      type: SHERPA_WS_EVENT.chatStart,
+      request_id: lastRequestId(),
+      conversation_id: "conv-42",
+    });
+
+    expect(sherpa.currentConversationId).toBe("conv-42");
+
+    sherpa.dispose();
   });
 
   it("treats persisted results as completed when executionState is still pending", async () => {

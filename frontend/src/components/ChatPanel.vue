@@ -24,6 +24,25 @@
         <div v-else class="tab-toggle tab-toggle--static">
           <span class="tab-label">{{ activeTabLabel }}</span>
         </div>
+        <div v-if="activeTab === 'sherpa'" class="sherpa-conversation-picker">
+          <Dropdown
+            :modelValue="sherpaStore.currentConversationId"
+            :options="sherpaConversationOptions"
+            optionLabel="label"
+            optionValue="value"
+            placeholder="New Sherpa conversation"
+            class="sherpa-conversation-dropdown"
+            :disabled="sherpaStore.isChatting || sherpaStore.isSyncing || sherpaConversationOptions.length === 0"
+            @update:modelValue="onSherpaConversationSelect"
+          />
+          <Button
+            icon="pi pi-plus"
+            class="p-button-text p-button-sm llm-settings-btn"
+            aria-label="Start new Sherpa conversation"
+            @click="startNewSherpaConversation"
+            v-tooltip.bottom="'New Sherpa conversation'"
+          />
+        </div>
         <div class="panel-topbar-actions">
           <!-- LLM settings (only on LLM tab, local mode only — server owns model selection) -->
           <Button
@@ -211,6 +230,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import Button from "primevue/button";
+import Dropdown from "primevue/dropdown";
 import InputText from "primevue/inputtext";
 import Menu from "primevue/menu";
 import { useToast } from "primevue/usetoast";
@@ -332,6 +352,12 @@ const sherpaStatusMessage = computed(() => {
 const activeSherpaTools = computed(() =>
   sherpaStore.activeTools.filter((tool) => tool.status === "started")
 );
+const sherpaConversationOptions = computed(() =>
+  sherpaStore.conversations.map((conversation) => ({
+    label: `${conversation.title} · ${formatDateTime(conversation.updatedAt)}`,
+    value: conversation.id,
+  }))
+);
 
 // ── LLM Provider Menu ────────────────────────────────────────
 
@@ -408,6 +434,7 @@ onMounted(async () => {
     experimentStore.fetchExperiments();
     sherpaStore.init();
     await loadEgressDefaults();
+    await sherpaStore.refreshConversations(projectStore.currentProjectId);
     if (appMode.value === "local") {
       // Fetch initial config only when authenticated (requires /llm/debug/config)
       await store.checkConfigChange();
@@ -468,6 +495,7 @@ watch(
 watch(
   () => projectStore.currentProjectId,
   async (projectId) => {
+    await sherpaStore.refreshConversations(projectId);
     if (appMode.value !== "local") {
       await store.refreshConversations(projectId);
     }
@@ -658,11 +686,11 @@ const sendMessage = async () => {
   if (activeTab.value === "sherpa") {
     // Handle "/" clear in Sherpa tab too
     if (userMessage.value.trim() === "/") {
-      sherpaStore.clearMessages();
+      sherpaStore.startNewConversation();
       toast.add({
         severity: "success",
-        summary: "Sherpa Chat Cleared",
-        detail: "Cleared Sherpa conversation",
+        summary: "New Sherpa Conversation",
+        detail: "Started a new Sherpa conversation",
         life: 2000,
       });
       userMessage.value = "";
@@ -745,6 +773,40 @@ const deleteConversation = async (conversationId: string) => {
       life: 3000,
     });
   }
+};
+
+const onSherpaConversationSelect = async (conversationId: string | null) => {
+  if (!conversationId) {
+    return;
+  }
+  try {
+    await sherpaStore.loadConversation(conversationId);
+    toast.add({
+      severity: "success",
+      summary: "Sherpa Conversation Loaded",
+      detail: "Previous Sherpa conversation restored",
+      life: 2000,
+    });
+  } catch (error: unknown) {
+    console.error("Failed to load Sherpa conversation:", error);
+    toast.add({
+      severity: "error",
+      summary: "Sherpa Load Failed",
+      detail: getErrorMessage(error, "Unknown error"),
+      life: 3000,
+    });
+  }
+};
+
+const startNewSherpaConversation = () => {
+  sherpaStore.startNewConversation();
+  userMessage.value = "";
+  toast.add({
+    severity: "success",
+    summary: "New Sherpa Conversation",
+    detail: "Started a new Sherpa conversation",
+    life: 2000,
+  });
 };
 
 const openInNewTab = () => {
@@ -865,6 +927,21 @@ const collapsed = computed(() => props.collapsed);
   align-items: center;
   gap: 8px;
   margin-left: auto;
+}
+
+.sherpa-conversation-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sherpa-conversation-dropdown {
+  min-width: 280px;
+}
+
+.sherpa-conversation-dropdown :deep(.p-dropdown-label) {
+  font-size: 0.8rem;
 }
 
 /* Tab Toggle */

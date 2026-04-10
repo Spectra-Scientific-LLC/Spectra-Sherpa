@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- assistant sync payloads intentionally preserve flexible node parameter/result shapes. */
 import { defineStore } from "pinia";
 import { computed, ref, watch, type WatchStopHandle } from "vue";
+import api from "@/api/client";
+import { useAppConfig } from "@/composables/useAppConfig";
 import {
   createSherpaRequestId,
   subscribeSherpaEvents,
@@ -10,8 +12,9 @@ import { SHERPA_WS_ACTION, SHERPA_WS_EVENT, getSherpaChatAction } from "@/lib/sh
 import { summarizeDatasetForSherpaContext, useDataStore } from "@/stores/data";
 import { useLlmStore } from "@/stores/llm";
 import { useNotificationStore } from "@/stores/notification";
+import { useProjectStore } from "@/stores/project";
 import { useWorkflowStore } from "@/stores/workflow";
-import type { SherpaMessage, SherpaRecommendationPayload } from "@/types";
+import type { ConversationSummary, SherpaMessage, SherpaRecommendationPayload } from "@/types";
 
 type SherpaState = "idle" | "syncing" | "chatting" | "error";
 type SherpaSyncState = "idle" | "syncing" | "error";
@@ -38,8 +41,34 @@ export interface ToolEvent {
   result?: unknown;
 }
 
+const STORAGE_KEY = "sherpa_conversations";
+
+const loadConversations = (): ConversationSummary[] => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+    return JSON.parse(raw) as ConversationSummary[];
+  } catch (error) {
+    console.error("Failed to load Sherpa conversations from localStorage:", error);
+    return [];
+  }
+};
+
+const persistConversations = (items: ConversationSummary[]) => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+};
+
 export const useSherpaStore = defineStore("sherpa", () => {
+  const { appMode } = useAppConfig();
+  const projectStore = useProjectStore();
   const messages = ref<SherpaMessage[]>([]);
+  const isServerBacked = computed(() => appMode.value !== "local");
+  const conversations = ref<ConversationSummary[]>(
+    isServerBacked.value ? [] : loadConversations()
+  );
+  const currentConversationId = ref<string | null>(null);
   const syncState = ref<SherpaSyncState>("idle");
   const chatState = ref<SherpaChatState>("idle");
   const state = computed<SherpaState>(() => {
@@ -157,6 +186,106 @@ export const useSherpaStore = defineStore("sherpa", () => {
     }
   }
 
+  async function refreshConversations(projectId = projectStore.currentProjectId): Promise<void> {
+    if (!isServerBacked.value) {
+      conversations.value = loadConversations();
+      return;
+    }
+
+    if (!projectId) {
+      conversations.value = [];
+      currentConversationId.value = null;
+      messages.value = [];
+      return;
+    }
+
+    const response = await api.get("/llm/conversations", {
+      params: { project_id: projectId },
+    });
+    conversations.value = (response.data as Array<Record<string, unknown>>).map((item) => ({
+      id: String(item.id),
+      title: String(item.title || "Untitled conversation"),
+      updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
+    }));
+
+    if (
+      currentConversationId.value
+      && !conversations.value.some((item) => item.id === currentConversationId.value)
+    ) {
+      currentConversationId.value = null;
+      messages.value = [];
+    }
+  }
+
+  function updateConversationSummary(conversationId: string): void {
+    if (isServerBacked.value) {
+      void refreshConversations(projectStore.currentProjectId);
+      return;
+    }
+
+    const firstUser = messages.value.find((message) => message.role === "user");
+    const title =
+      firstUser?.content.slice(0, 60) || `Sherpa Conversation ${conversations.value.length + 1}`;
+    const updatedAt = new Date().toISOString();
+    const existing = conversations.value.find((item) => item.id === conversationId);
+
+    if (existing) {
+      existing.title = title;
+      existing.updatedAt = updatedAt;
+    } else {
+      conversations.value.unshift({ id: conversationId, title, updatedAt });
+    }
+
+    persistConversations(conversations.value);
+  }
+
+  async function loadConversation(conversationId: string): Promise<void> {
+    const params = isServerBacked.value
+      ? { project_id: projectStore.currentProjectId }
+      : undefined;
+
+    if (isServerBacked.value && projectStore.currentProjectId == null) {
+      throw new Error("Select a project before loading a Sherpa conversation.");
+    }
+
+    const response = await api.get(`/llm/conversation/${conversationId}`, { params });
+    currentConversationId.value = response.data.conversation_id;
+    messages.value = (response.data.messages as Array<{ role: SherpaMessage["role"]; content: string }>)
+      .map((message) => ({
+        role: message.role,
+        content: message.content,
+      }));
+    finalizeChatCommunication();
+    finalizeSyncCommunication();
+    chatState.value = "idle";
+    syncState.value = "idle";
+    streamingIndex.value = null;
+    currentChatRequestId.value = null;
+    currentSyncRequestId.value = null;
+    activeTools.value = [];
+    subscriptionRequired.value = null;
+    subscriptionUpgradeUrl.value = null;
+  }
+
+  async function deleteConversation(conversationId: string): Promise<void> {
+    const params = isServerBacked.value
+      ? { project_id: projectStore.currentProjectId }
+      : undefined;
+
+    if (isServerBacked.value && projectStore.currentProjectId == null) {
+      throw new Error("Select a project before deleting a Sherpa conversation.");
+    }
+
+    await api.delete(`/llm/conversation/${conversationId}`, { params });
+    conversations.value = conversations.value.filter((item) => item.id !== conversationId);
+    if (!isServerBacked.value) {
+      persistConversations(conversations.value);
+    }
+    if (currentConversationId.value === conversationId) {
+      startNewConversation();
+    }
+  }
+
   function _formatDemoLimitDetail(payload: Record<string, unknown>): string | undefined {
     const details: string[] = [];
     if (typeof payload.remaining === "number" && Number.isFinite(payload.remaining)) {
@@ -200,6 +329,28 @@ export const useSherpaStore = defineStore("sherpa", () => {
       role: "system",
       content,
     });
+  }
+
+  function startNewConversation(): void {
+    finalizeChatCommunication();
+    finalizeSyncCommunication();
+    unsubscribeChatEvents?.();
+    unsubscribeChatEvents = null;
+    unsubscribeSyncEvents?.();
+    unsubscribeSyncEvents = null;
+    messages.value = [];
+    syncState.value = "idle";
+    chatState.value = "idle";
+    lastSyncError.value = null;
+    streamingIndex.value = null;
+    chatServerAcknowledged.value = false;
+    currentChatRequestId.value = null;
+    currentSyncRequestId.value = null;
+    currentConversationId.value = null;
+    activeTools.value = [];
+    subscriptionRequired.value = null;
+    subscriptionUpgradeUrl.value = null;
+    lastActivitySummary.value = null;
   }
 
   function _currentStartedToolName(): string | null {
@@ -818,37 +969,19 @@ export const useSherpaStore = defineStore("sherpa", () => {
         payload: {
           request_id: requestId,
           message,
+          conversation_id: currentConversationId.value,
+          project_id: projectStore.currentProjectId,
           workflow_id: workflow.workflowId,
           workflow_context: buildSyncPayload(),
-          history: messages.value
-            .slice(-10)
-            .map((m) => ({ role: m.role, content: m.content })),
         },
       })
     );
   }
 
   function clearMessages(): void {
-    finalizeChatCommunication();
-    finalizeSyncCommunication();
-    unsubscribeChatEvents?.();
-    unsubscribeChatEvents = null;
-    unsubscribeSyncEvents?.();
-    unsubscribeSyncEvents = null;
-    messages.value = [];
-    syncState.value = "idle";
-    chatState.value = "idle";
-    lastSyncError.value = null;
-    streamingIndex.value = null;
-    chatServerAcknowledged.value = false;
-    currentChatRequestId.value = null;
-    currentSyncRequestId.value = null;
+    startNewConversation();
     lastPeaksResult.value = null;
     lastCodeResult.value = null;
-    activeTools.value = [];
-    subscriptionRequired.value = null;
-    subscriptionUpgradeUrl.value = null;
-    lastActivitySummary.value = null;
   }
 
   // ── WebSocket message handlers ─────────────────────────────
@@ -1012,6 +1145,8 @@ export const useSherpaStore = defineStore("sherpa", () => {
         chatServerAcknowledged.value = true;
         currentChatRequestId.value =
           typeof payload.request_id === "string" ? payload.request_id : currentChatRequestId.value;
+        currentConversationId.value =
+          typeof payload.conversation_id === "string" ? payload.conversation_id : currentConversationId.value;
         scheduleActiveChatTimeout();
         streamingIndex.value = messages.value.length;
         _recordActivity(
@@ -1046,6 +1181,8 @@ export const useSherpaStore = defineStore("sherpa", () => {
         chatServerAcknowledged.value = true;
         currentChatRequestId.value =
           typeof payload.request_id === "string" ? payload.request_id : currentChatRequestId.value;
+        currentConversationId.value =
+          typeof payload.conversation_id === "string" ? payload.conversation_id : currentConversationId.value;
         const response =
           streamingIndex.value !== null
             ? messages.value[streamingIndex.value]?.content ?? ""
@@ -1056,6 +1193,9 @@ export const useSherpaStore = defineStore("sherpa", () => {
         unsubscribeChatEvents?.();
         unsubscribeChatEvents = null;
         if (response.trim()) {
+          if (currentConversationId.value) {
+            updateConversationSummary(currentConversationId.value);
+          }
           _recordActivity(
             `Sherpa response received${_formatRequestSuffix(payload.request_id)}: ${_truncateForLog(response)}${_formatTimingSuffix(payload.timing)}`,
             {
@@ -1387,6 +1527,8 @@ export const useSherpaStore = defineStore("sherpa", () => {
 
   return {
     messages,
+    conversations,
+    currentConversationId,
     state,
     syncState,
     chatState,
@@ -1401,6 +1543,10 @@ export const useSherpaStore = defineStore("sherpa", () => {
     syncWorkflow,
     sendMessage,
     clearMessages,
+    startNewConversation,
+    refreshConversations,
+    loadConversation,
+    deleteConversation,
     openSubscriptionUpgrade,
     init,
     dispose,
