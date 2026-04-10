@@ -116,6 +116,13 @@ class HCANode(Node):
                 label="Linkage Matrix",
                 description="SciPy linkage matrix (Z)",
             ),
+            PortMetadata(
+                name="embedding",
+                type_ref="spectrasherpa://types/Array2D/1.0",
+                required=True,
+                label="Embedding (2D)",
+                description="2D projection of samples for cluster scatter visualization",
+            ),
         ],
     )
 
@@ -237,7 +244,7 @@ class HCANode(Node):
                 "linkage_matrix": Z.tolist(),
                 "labels": label_list,
                 "n_clusters": int(n_clusters),
-                "data": embedding.tolist(),  # Restore tabular data for Data Table
+                "embedding": embedding.tolist(),  # 2D projection for cluster scatter
                 "plots": {
                     "dendrogram": dendrogram_plot,
                     "default": dendrogram_plot,  # Hint for Quick Plot to use this
@@ -473,6 +480,13 @@ class KMeansNode(Node):
                 label="Centroids",
                 description="Cluster centers coordinates",
             ),
+            PortMetadata(
+                name="embedding",
+                type_ref="spectrasherpa://types/Array2D/1.0",
+                required=True,
+                label="Embedding (2D)",
+                description="2D projection of samples for cluster scatter visualization",
+            ),
         ],
     )
 
@@ -596,7 +610,7 @@ class KMeansNode(Node):
                 "centroids": model.cluster_centers_.tolist(),
                 "inertia": float(model.inertia_),
                 "n_clusters": int(n_clusters),
-                "data": embedding.tolist(),
+                "embedding": embedding.tolist(),
                 "metadata": {
                     "type": "KMeans",
                     "output_type": "clustering",
@@ -689,6 +703,13 @@ class DBSCANNode(Node):
                 required=True,
                 label="Cluster Labels",
                 description="Assigned cluster labels (noise=-1)",
+            ),
+            PortMetadata(
+                name="embedding",
+                type_ref="spectrasherpa://types/Array2D/1.0",
+                required=True,
+                label="Embedding (2D)",
+                description="2D projection of samples for cluster scatter visualization",
             ),
         ],
     )
@@ -798,7 +819,7 @@ class DBSCANNode(Node):
                 "model": model,
                 "labels": label_list,
                 "n_clusters": int(n_clusters),
-                "data": embedding.tolist(),
+                "embedding": embedding.tolist(),
                 "metadata": {
                     "type": "DBSCAN",
                     "output_type": "clustering",

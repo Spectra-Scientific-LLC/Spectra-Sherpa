@@ -570,6 +570,7 @@ class PLSNode(Node):
         return NodeResult(
             outputs={
                 "default": X_scores_dataset,  # SherpaDataset: X scores (n_samples, n_components)
+                "X_scores": X_scores_dataset,  # Alias of default for the declared X_scores port
                 "X_loadings": X_loadings_dataset,  # SherpaDataset: loadings (n_components, n_features)
                 "Y_scores": Y_scores_dataset,  # SherpaDataset: Y scores (n_samples, n_components)
                 "Y_loadings": Y_loadings_dataset,  # SherpaDataset: Y loadings (n_targets, n_components)

@@ -372,6 +372,7 @@ class PCRNode(Node):
         return NodeResult(
             outputs={
                 "default": scores_dataset,  # NDDataset: scores + sample labels (y) + PC coords (x)
+                "scores": scores_dataset,  # Alias of default for the declared scores port
                 "loadings": loadings_dataset,  # NDDataset: loadings + wavenumbers (x) + PC coords (y)
                 "model": model,  # Model port for downstream use
             },

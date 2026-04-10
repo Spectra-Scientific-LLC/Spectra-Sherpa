@@ -4288,11 +4288,16 @@ const verticalSliceLayout = computed(() => ({
 const CLUSTER_COLORS = ["#3b82f6", "#ef4444", "#22c55e", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316", "#6366f1", "#14b8a6"];
 
 const clusterScatterData = computed(() => {
-  if (!["model.kmeans", "model.dbscan"].includes(nodeTypeKey.value) || !hasOutput.value) return [];
-  const result = nodeOutput.value?.ports?.default?.value as Record<string, unknown> | undefined;
-  if (!result) return [];
-  const embedding = result.data as number[][] | undefined;
-  const labels = result.labels as number[] | undefined;
+  if (!["model.kmeans", "model.hca", "model.dbscan"].includes(nodeTypeKey.value) || !hasOutput.value) return [];
+  // Clustering nodes expose two relevant ports:
+  //   - `embedding` — 2D projection (Array2D, [n_samples, 2])
+  //   - `labels`    — cluster assignment (Array1D, [n_samples])
+  // Fall back to top-level for legacy bundled output shapes.
+  const ports = nodeOutput.value?.ports;
+  const embeddingPort = ports?.embedding?.value as Record<string, unknown> | undefined;
+  const labelsPort = ports?.labels?.value as unknown;
+  const embedding = (embeddingPort?.data ?? embeddingPort) as number[][] | undefined;
+  const labels = (Array.isArray(labelsPort) ? labelsPort : (labelsPort as Record<string, unknown> | undefined)?.data) as number[] | undefined;
   if (!embedding || !labels) return [];
 
   const uniqueLabels = [...new Set(labels)].sort((a, b) => a - b);
