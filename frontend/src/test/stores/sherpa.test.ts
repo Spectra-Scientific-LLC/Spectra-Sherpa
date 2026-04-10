@@ -198,6 +198,38 @@ describe("Sherpa Store communication state", () => {
     );
   });
 
+  it("seeds a welcome checklist the first time Sherpa initializes", () => {
+    const sherpa = useSherpaStore();
+
+    sherpa.init();
+
+    expect(sherpa.messages).toHaveLength(1);
+    expect(sherpa.messages[0]).toEqual({
+      role: "assistant",
+      content: [
+        "Sherpa Advisor is ready.",
+        "",
+        "1. Create a project.",
+        "2. Pick a template or build a workflow.",
+        "3. Run the workflow to generate results.",
+        "4. Ask Sherpa about the outputs, diagnostics, or next steps.",
+      ].join("\n"),
+    });
+
+    sherpa.dispose();
+  });
+
+  it("restores the welcome checklist when starting a new Sherpa conversation", () => {
+    const sherpa = useSherpaStore();
+
+    sherpa.init();
+    sherpa.startNewConversation();
+
+    expect(sherpa.messages).toHaveLength(1);
+    expect(sherpa.messages[0]?.role).toBe("assistant");
+    expect(sherpa.messages[0]?.content).toContain("1. Create a project.");
+  });
+
   it("does not show the delayed preparing notice after chat streaming starts", async () => {
     const sherpa = useSherpaStore();
     const notifications = useNotificationStore();

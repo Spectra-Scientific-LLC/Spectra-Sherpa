@@ -331,6 +331,27 @@ export const useSherpaStore = defineStore("sherpa", () => {
     });
   }
 
+  function _createWelcomeMessage(): SherpaMessage {
+    return {
+      role: "assistant",
+      content: [
+        "Sherpa Advisor is ready.",
+        "",
+        "1. Create a project.",
+        "2. Pick a template or build a workflow.",
+        "3. Run the workflow to generate results.",
+        "4. Ask Sherpa about the outputs, diagnostics, or next steps.",
+      ].join("\n"),
+    };
+  }
+
+  function _ensureWelcomeMessage(): void {
+    if (messages.value.length > 0) {
+      return;
+    }
+    messages.value = [_createWelcomeMessage()];
+  }
+
   function _resetTransientState(): void {
     syncState.value = "idle";
     chatState.value = "idle";
@@ -355,6 +376,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
     _resetTransientState();
     currentConversationId.value = null;
     lastActivitySummary.value = null;
+    _ensureWelcomeMessage();
   }
 
   function _currentStartedToolName(): string | null {
@@ -1488,6 +1510,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
     if (isInitialized) {
       return;
     }
+    _ensureWelcomeMessage();
     isInitialized = true;
     unsubscribeGeneralEvents = subscribeSherpaEvents(handleGeneralEvent, {
       types: [

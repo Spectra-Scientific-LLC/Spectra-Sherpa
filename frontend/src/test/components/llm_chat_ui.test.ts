@@ -193,6 +193,14 @@ const InputTextStub = defineComponent({
 
 const MenuStub = defineComponent({
   name: "AppMenuStub",
+  props: {
+    model: { type: Array as PropType<Array<Record<string, unknown>>>, default: () => [] },
+  },
+  methods: {
+    toggle() {
+      return undefined;
+    },
+  },
   template: "<div class=\"menu-stub\"><slot /></div>",
 });
 
@@ -510,8 +518,28 @@ describe("ChatPanel", () => {
     const wrapper = mountWithUiStubs(ChatPanel);
     await flushPromises();
 
-    expect(wrapper.find(".sherpa-conversation-picker").exists()).toBe(true);
+    expect(wrapper.find('[aria-label="Sherpa topics"]').exists()).toBe(true);
     expect(mocks.sherpaStore.syncWorkflow).not.toHaveBeenCalled();
+  });
+
+  it("shows a Sherpa topics button in the top bar", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.appConfig.value = { subscription: { plan: "demo" } };
+    mocks.featureFlags.sherpaAdvisor = true;
+    mocks.sherpaStore.conversations = [
+      { id: "conv-1", title: "PLS-DA validation", updatedAt: "2026-04-10T12:00:00Z" },
+    ];
+
+    const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+
+    const sherpaTab = wrapper.findAll("button").find((button) => button.text() === "Sherpa Advisor");
+    expect(sherpaTab).toBeTruthy();
+    await sherpaTab!.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[aria-label="Sherpa topics"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain("Topics");
   });
 
   it("shows a contacting status while Sherpa chat is waiting for acceptance", async () => {

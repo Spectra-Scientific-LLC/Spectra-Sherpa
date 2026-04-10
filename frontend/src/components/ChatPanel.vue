@@ -26,16 +26,32 @@
         </div>
         <div class="panel-topbar-actions">
           <div v-if="activeTab === 'sherpa'" class="sherpa-conversation-picker">
-            <Dropdown
-              :modelValue="sherpaStore.currentConversationId"
-              :options="sherpaConversationOptions"
-              optionLabel="label"
-              optionValue="value"
-              placeholder="New Sherpa conversation"
-              class="sherpa-conversation-dropdown"
-              :disabled="sherpaStore.isChatting || sherpaStore.isSyncing || sherpaConversationOptions.length === 0"
-              @update:modelValue="onSherpaConversationSelect"
+            <Button
+              icon="pi pi-list"
+              label="Topics"
+              class="p-button-text p-button-sm sherpa-topics-btn"
+              aria-label="Sherpa topics"
+              @click="toggleSherpaConversationMenu"
+              v-tooltip.bottom="'Sherpa topics'"
             />
+            <Menu ref="sherpaConversationMenu" :model="sherpaConversationMenuItems" :popup="true" class="sherpa-menu">
+              <template #item="{ item }">
+                <div
+                  class="sherpa-menu-item"
+                  :class="{
+                    active: item.active,
+                    'sherpa-menu-item--disabled': item.disabled,
+                    'sherpa-menu-item--action': item.isAction,
+                  }"
+                >
+                  <i v-if="item.icon" :class="item.icon"></i>
+                  <div class="sherpa-menu-copy">
+                    <span class="sherpa-menu-title">{{ item.label }}</span>
+                    <span v-if="item.updatedAt" class="sherpa-menu-meta">{{ item.updatedAt }}</span>
+                  </div>
+                </div>
+              </template>
+            </Menu>
             <Button
               icon="pi pi-plus"
               class="p-button-text p-button-sm llm-settings-btn"
@@ -230,7 +246,6 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import Button from "primevue/button";
-import Dropdown from "primevue/dropdown";
 import InputText from "primevue/inputtext";
 import Menu from "primevue/menu";
 import { useToast } from "primevue/usetoast";
@@ -383,16 +398,11 @@ const sherpaStatusMessage = computed(() => {
 const activeSherpaTools = computed(() =>
   sherpaStore.activeTools.filter((tool) => tool.status === "started")
 );
-const sherpaConversationOptions = computed(() =>
-  sherpaStore.conversations.map((conversation) => ({
-    label: `${conversation.title} · ${formatDateTime(conversation.updatedAt)}`,
-    value: conversation.id,
-  }))
-);
 
 // ── LLM Provider Menu ────────────────────────────────────────
 
 const llmMenu = ref();
+const sherpaConversationMenu = ref();
 const selectedProvider = ref<string>("deepseek");
 
 const llmProviders = [
@@ -412,6 +422,45 @@ const llmMenuItems = computed(() => {
 
 const toggleLlmMenu = (event: Event) => {
   llmMenu.value.toggle(event);
+};
+
+const sherpaConversationMenuItems = computed(() => {
+  const items: Array<Record<string, unknown>> = [
+    {
+      label: "New conversation",
+      icon: "pi pi-plus",
+      isAction: true,
+      command: () => startNewSherpaConversation(),
+    },
+  ];
+
+  if (sherpaStore.conversations.length > 0) {
+    items.push({ separator: true });
+    items.push(
+      ...sherpaStore.conversations.map((conversation) => ({
+        label: conversation.title,
+        updatedAt: formatDateTime(conversation.updatedAt),
+        icon: conversation.id === sherpaStore.currentConversationId ? "pi pi-check" : "pi pi-comment",
+        active: conversation.id === sherpaStore.currentConversationId,
+        command: () => {
+          void onSherpaConversationSelect(conversation.id);
+        },
+      }))
+    );
+  } else {
+    items.push({ separator: true });
+    items.push({
+      label: "No saved topics yet",
+      icon: "pi pi-info-circle",
+      disabled: true,
+    });
+  }
+
+  return items;
+});
+
+const toggleSherpaConversationMenu = (event: Event) => {
+  sherpaConversationMenu.value?.toggle(event);
 };
 
 const switchProvider = async (provider: string) => {
@@ -994,18 +1043,56 @@ const collapsed = computed(() => props.collapsed);
   align-items: center;
   gap: 8px;
   min-width: 0;
-  flex: 1 1 320px;
+  flex: 0 1 auto;
   justify-content: flex-end;
 }
 
-.sherpa-conversation-dropdown {
-  min-width: 240px;
-  max-width: 340px;
-  width: min(340px, 100%);
+.sherpa-topics-btn {
+  color: #475569;
 }
 
-.sherpa-conversation-dropdown :deep(.p-dropdown-label) {
-  font-size: 0.8rem;
+.sherpa-menu {
+  min-width: 260px;
+}
+
+.sherpa-menu-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sherpa-menu-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.sherpa-menu-item--action {
+  font-weight: 600;
+}
+
+.sherpa-menu-item--disabled {
+  color: #94a3b8;
+  cursor: default;
+}
+
+.sherpa-menu-item.active {
+  background: #e0f2fe;
+}
+
+.sherpa-menu-title {
+  color: #1e293b;
+  font-size: 0.85rem;
+  line-height: 1.2;
+}
+
+.sherpa-menu-meta {
+  color: #64748b;
+  font-size: 0.72rem;
 }
 
 /* Tab Toggle */
