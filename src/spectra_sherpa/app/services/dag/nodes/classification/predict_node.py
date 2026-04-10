@@ -20,6 +20,7 @@ from spectra_sherpa.app.services.dag.io_contracts import (
 from spectra_sherpa.app.services.dag.node_base import (
     Node,
     NodeMetadata,
+    NodeResult,
     PortMetadata,
     register_node,
 )
@@ -179,7 +180,7 @@ class ClassifierPredictNode(Node):
 
         return lines
 
-    async def execute(self, X_new: Any = None, model: Any = None, **kwargs: Any) -> dict[str, Any]:
+    async def execute(self, X_new: Any = None, model: Any = None, **kwargs: Any) -> NodeResult:
         if X_new is None:
             raise ValueError("Missing required input: X_new (new spectra)")
         if model is None:
@@ -207,7 +208,7 @@ class ClassifierPredictNode(Node):
     # ------------------------------------------------------------------
     # PLS-DA prediction
     # ------------------------------------------------------------------
-    def _predict_plsda(self, X_array: np.ndarray, model: dict) -> dict[str, Any]:
+    def _predict_plsda(self, X_array: np.ndarray, model: dict) -> NodeResult:
         from spectra_sherpa.app.lib.scp_compat import HAS_SCP
 
         if not HAS_SCP:
@@ -242,15 +243,24 @@ class ClassifierPredictNode(Node):
         Y_pred_prob = softmax(Y_pred_raw_np, axis=1)
         y_pred = classes[np.argmax(Y_pred_prob, axis=1)]
 
-        return {
-            "y_pred": y_pred.tolist(),
-            "y_prob": Y_pred_prob.tolist(),
-        }
+        mean_max_prob = float(np.mean(Y_pred_prob.max(axis=1))) if Y_pred_prob.size else 0.0
+        return NodeResult(
+            outputs={
+                "y_pred": y_pred.tolist(),
+                "y_prob": Y_pred_prob.tolist(),
+            },
+            diagnostics={
+                "method": "plsda",
+                "n_predicted": int(len(y_pred)),
+                "n_classes": int(len(np.unique(y_pred))),
+                "mean_max_prob": mean_max_prob,
+            },
+        )
 
     # ------------------------------------------------------------------
     # KNN prediction
     # ------------------------------------------------------------------
-    def _predict_knn(self, X_array: np.ndarray, model: dict) -> dict[str, Any]:
+    def _predict_knn(self, X_array: np.ndarray, model: dict) -> NodeResult:
         knn_model = model.get("model")
 
         if knn_model is None:
@@ -259,15 +269,24 @@ class ClassifierPredictNode(Node):
         y_pred = knn_model.predict(X_array)
         y_prob = knn_model.predict_proba(X_array)
 
-        return {
-            "y_pred": y_pred.tolist(),
-            "y_prob": y_prob.tolist(),
-        }
+        mean_max_prob = float(np.mean(y_prob.max(axis=1))) if y_prob.size else 0.0
+        return NodeResult(
+            outputs={
+                "y_pred": y_pred.tolist(),
+                "y_prob": y_prob.tolist(),
+            },
+            diagnostics={
+                "method": "knn",
+                "n_predicted": int(len(y_pred)),
+                "n_classes": int(len(np.unique(y_pred))),
+                "mean_max_prob": mean_max_prob,
+            },
+        )
 
     # ------------------------------------------------------------------
     # SIMCA prediction
     # ------------------------------------------------------------------
-    def _predict_simca(self, X_array: np.ndarray, model: dict) -> dict[str, Any]:
+    def _predict_simca(self, X_array: np.ndarray, model: dict) -> NodeResult:
         class_models = model.get("class_models")
         classes = model.get("classes", [])
         T2_limits = model.get("T2_limits", {})
@@ -334,7 +353,23 @@ class ClassifierPredictNode(Node):
 
         logger.debug("Classified %d samples into %d classes", n_samples, len(set(predictions)))
 
-        return {
-            "y_pred": predictions,
-            "y_prob": all_distances,
-        }
+        min_distances: list[float] = []
+        for dist_dict in all_distances:
+            if dist_dict:
+                try:
+                    min_distances.append(float(min(dist_dict.values())))
+                except Exception:
+                    pass
+        mean_min_distance = float(np.mean(min_distances)) if min_distances else 0.0
+        return NodeResult(
+            outputs={
+                "y_pred": predictions,
+                "y_prob": all_distances,
+            },
+            diagnostics={
+                "method": "simca",
+                "n_predicted": int(len(predictions)),
+                "n_classes": int(len(set(predictions))),
+                "mean_min_distance": mean_min_distance,
+            },
+        )

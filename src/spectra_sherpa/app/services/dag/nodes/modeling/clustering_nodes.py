@@ -231,28 +231,36 @@ class HCANode(Node):
         # Generate dendrogram plot using pre-computed linkage Z
         dendrogram_plot = self._generate_dendrogram(Z, linkage_method, source_labels, X_data.shape[0])
 
-        return {
-            "model": None,  # Scikit-learn model not used
-            "linkage_matrix": Z.tolist(),
-            "labels": label_list,
-            "n_clusters": int(n_clusters),
-            "data": embedding.tolist(),  # Restore tabular data for Data Table
-            "plots": {
-                "dendrogram": dendrogram_plot,
-                "default": dendrogram_plot,  # Hint for Quick Plot to use this
+        return NodeResult(
+            outputs={
+                "model": None,  # Scikit-learn model not used
+                "linkage_matrix": Z.tolist(),
+                "labels": label_list,
+                "n_clusters": int(n_clusters),
+                "data": embedding.tolist(),  # Restore tabular data for Data Table
+                "plots": {
+                    "dendrogram": dendrogram_plot,
+                    "default": dendrogram_plot,  # Hint for Quick Plot to use this
+                },
+                "metadata": {
+                    "type": "HCA",
+                    "output_type": "clustering",
+                    "n_clusters": int(n_clusters),
+                    "linkage": linkage_method,
+                    "metric": metric,
+                    "embedding": embedding_method,
+                    "sample_labels": sample_labels,
+                    "label_categories": label_categories,
+                    "source_labels": source_labels,
+                },
             },
-            "metadata": {
-                "type": "HCA",
-                "output_type": "clustering",
+            diagnostics={
                 "n_clusters": int(n_clusters),
                 "linkage": linkage_method,
                 "metric": metric,
-                "embedding": embedding_method,
-                "sample_labels": sample_labels,
-                "label_categories": label_categories,
-                "source_labels": source_labels,
+                "n_samples": int(X_data.shape[0]),
             },
-        }
+        )
 
     def _generate_dendrogram(self, Z, linkage_method, sample_labels=None, n_samples=None):
         """
@@ -781,21 +789,34 @@ class DBSCANNode(Node):
                 data_values = _y_coord.data
                 source_labels = data_values.tolist() if hasattr(data_values, "tolist") else list(data_values)
 
-        return {
-            "model": model,
-            "labels": label_list,
-            "n_clusters": int(n_clusters),
-            "data": embedding.tolist(),
-            "metadata": {
-                "type": "DBSCAN",
-                "output_type": "clustering",
+        n_samples_total = int(X_data.shape[0])
+        n_noise = int(np.sum(labels == -1))
+        noise_fraction = float(n_noise / n_samples_total) if n_samples_total > 0 else 0.0
+
+        return NodeResult(
+            outputs={
+                "model": model,
+                "labels": label_list,
                 "n_clusters": int(n_clusters),
-                "eps": eps,
-                "min_samples": min_samples,
-                "metric": metric,
-                "embedding": embedding_method,
-                "sample_labels": sample_labels,
-                "label_categories": label_categories,
-                "source_labels": source_labels,
+                "data": embedding.tolist(),
+                "metadata": {
+                    "type": "DBSCAN",
+                    "output_type": "clustering",
+                    "n_clusters": int(n_clusters),
+                    "eps": eps,
+                    "min_samples": min_samples,
+                    "metric": metric,
+                    "embedding": embedding_method,
+                    "sample_labels": sample_labels,
+                    "label_categories": label_categories,
+                    "source_labels": source_labels,
+                },
             },
-        }
+            diagnostics={
+                "n_clusters": int(n_clusters),
+                "eps": float(eps),
+                "min_samples": int(min_samples),
+                "noise_fraction": noise_fraction,
+                "metric": metric,
+            },
+        )

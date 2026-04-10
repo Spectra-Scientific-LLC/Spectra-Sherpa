@@ -19,6 +19,7 @@ from ...node_base import (
     Node,
     NodeMetadata,
     NodeParameter,
+    NodeResult,
     PortMetadata,
     register_node,
 )
@@ -357,14 +358,26 @@ class NMFNode(Node):
             }
         )
 
-        return {
-            "default": W_dataset,  # NDDataset: concentration profiles + sample labels (y) + component coords (x)
-            "concentrations": W_dataset,  # Alias for default
-            "spectra": H_dataset,  # NDDataset: basis spectra + wavenumbers (x) + component coords (y)
-            "W": W_dataset,  # Alias for concentrations
-            "H": H_dataset,  # Alias for spectra
-            "model": nmf,  # Model port
-        }
+        nmf_diagnostics: dict[str, Any] = {"n_components": int(n_components)}
+        if reconstruction_err is not None:
+            nmf_diagnostics["reconstruction_error"] = float(reconstruction_err)
+        if hasattr(nmf, "n_iter_"):
+            try:
+                nmf_diagnostics["n_iter"] = int(nmf.n_iter_)
+            except Exception:
+                pass
+
+        return NodeResult(
+            outputs={
+                "default": W_dataset,  # NDDataset: concentration profiles + sample labels (y) + component coords (x)
+                "concentrations": W_dataset,  # Alias for default
+                "spectra": H_dataset,  # NDDataset: basis spectra + wavenumbers (x) + component coords (y)
+                "W": W_dataset,  # Alias for concentrations
+                "H": H_dataset,  # Alias for spectra
+                "model": nmf,  # Model port
+            },
+            diagnostics=nmf_diagnostics,
+        )
 
 
 @register_node
@@ -725,13 +738,26 @@ class FastICANode(Node):
             }
         )
 
-        return {
-            "default": S_dataset,  # NDDataset: source signals + sample labels (y) + IC coords (x)
-            "sources": S_dataset,  # Alias for default
-            "components": St_dataset,  # NDDataset: spectral profiles + wavenumbers (x) + IC coords (y)
-            "mixing_matrix": A_dataset,  # NDDataset: mixing matrix
-            "model": ica,  # Model port
-        }
+        ica_diagnostics: dict[str, Any] = {"n_components": int(n_components)}
+        if hasattr(ica, "n_iter_"):
+            try:
+                n_iter_val = ica.n_iter_
+                ica_diagnostics["n_iter"] = int(n_iter_val)
+                # sklearn's FastICA reports convergence via n_iter_ < max_iter
+                ica_diagnostics["converged"] = bool(int(n_iter_val) < int(max_iter))
+            except Exception:
+                pass
+
+        return NodeResult(
+            outputs={
+                "default": S_dataset,  # NDDataset: source signals + sample labels (y) + IC coords (x)
+                "sources": S_dataset,  # Alias for default
+                "components": St_dataset,  # NDDataset: spectral profiles + wavenumbers (x) + IC coords (y)
+                "mixing_matrix": A_dataset,  # NDDataset: mixing matrix
+                "model": ica,  # Model port
+            },
+            diagnostics=ica_diagnostics,
+        )
 
 
 # =============================================================================

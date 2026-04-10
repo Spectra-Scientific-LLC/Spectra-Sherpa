@@ -16,6 +16,7 @@ from ...node_base import (
     Node,
     NodeMetadata,
     NodeParameter,
+    NodeResult,
     PortMetadata,
     register_node,
 )
@@ -359,11 +360,25 @@ class SIMPLISMANode(Node):
             node_id=self.node_id,
         )
 
-        return {
-            "default": C_dataset,  # SherpaDataset: concentrations + sample labels (y) + component coords (x)
-            "concentrations": C_dataset,  # Alias
-            "spectra": St_dataset,  # SherpaDataset: pure spectra + wavenumbers (x) + component coords (y)
-            "model": simplisma,  # Model port
-            "purity_values": purity_list,  # Plain list (1D diagnostic)
-            "_model_artifact": artifact,
+        diagnostics: dict[str, Any] = {
+            "n_components": int(n_components),
+            "noise": float(noise),
         }
+        if purity_list:
+            try:
+                diagnostics["purity_min"] = float(min(purity_list))
+                diagnostics["purity_max"] = float(max(purity_list))
+            except Exception:
+                pass
+
+        return NodeResult(
+            outputs={
+                "default": C_dataset,  # SherpaDataset: concentrations + sample labels (y) + component coords (x)
+                "concentrations": C_dataset,  # Alias
+                "spectra": St_dataset,  # SherpaDataset: pure spectra + wavenumbers (x) + component coords (y)
+                "model": simplisma,  # Model port
+                "purity_values": purity_list,  # Plain list (1D diagnostic)
+                "_model_artifact": artifact,
+            },
+            diagnostics=diagnostics,
+        )

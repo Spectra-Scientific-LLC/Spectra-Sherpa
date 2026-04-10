@@ -504,13 +504,15 @@ class StatsSummaryNode(Node):
             table_rows = []
             per_class = metrics.get("per_class", [])
             for entry in per_class:
-                table_rows.append({
-                    "class": entry.get("class", "?"),
-                    "sensitivity": round(float(entry.get("sensitivity", 0)), 4),
-                    "specificity": round(float(entry.get("specificity", 0)), 4),
-                    "precision": round(float(entry.get("precision", 0)), 4),
-                    "f1": round(float(entry.get("f1", 0)), 4),
-                })
+                table_rows.append(
+                    {
+                        "class": entry.get("class", "?"),
+                        "sensitivity": round(float(entry.get("sensitivity", 0)), 4),
+                        "specificity": round(float(entry.get("specificity", 0)), 4),
+                        "precision": round(float(entry.get("precision", 0)), 4),
+                        "f1": round(float(entry.get("f1", 0)), 4),
+                    }
+                )
 
             summary = {
                 "task_type": "classification",
@@ -530,8 +532,18 @@ class StatsSummaryNode(Node):
             }
         else:
             # Regression metrics
-            scalar_keys = ("RMSEP", "R2", "MAE", "bias", "SEP", "RER", "n_samples",
-                           "n_valid_samples", "n_invalid_predictions", "status")
+            scalar_keys = (
+                "RMSEP",
+                "R2",
+                "MAE",
+                "bias",
+                "SEP",
+                "RER",
+                "n_samples",
+                "n_valid_samples",
+                "n_invalid_predictions",
+                "status",
+            )
             summary = {k: metrics[k] for k in scalar_keys if k in metrics}
             summary["task_type"] = "regression"
 

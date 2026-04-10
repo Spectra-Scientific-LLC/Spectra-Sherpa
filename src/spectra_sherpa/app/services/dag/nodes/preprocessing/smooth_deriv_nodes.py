@@ -14,6 +14,7 @@ from ._shared import (
     Node,
     NodeMetadata,
     NodeParameter,
+    NodeResult,
     PortMetadata,
     _format_value,
     _wrap_result_lines,
@@ -178,7 +179,14 @@ class SmoothNode(Node):
         result.meta["snr_before_db"] = snr_before
         result.meta["snr_after_db"] = snr_after
         result.meta["snr_improvement_db"] = snr_after - snr_before
-        return result
+        return NodeResult(
+            outputs={"default": result},
+            diagnostics={
+                "snr_before": float(snr_before),
+                "snr_after": float(snr_after),
+                "snr_improvement_db": float(snr_after - snr_before),
+            },
+        )
 
     def supports_python_export(self) -> bool:
         return True

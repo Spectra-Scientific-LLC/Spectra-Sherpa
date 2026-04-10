@@ -31,7 +31,7 @@ async def test_mcr_node_constraints():
     ds = scp.NDDataset(X_array)
 
     result = await node.execute(input_data=ds)
-    mcr_model = result["model"]
+    mcr_model = result.outputs["model"]
 
     # Internal SCP instances should reflect the solver selection
     assert mcr_model.solverConc == "nnls"

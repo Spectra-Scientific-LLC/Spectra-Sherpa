@@ -560,11 +560,19 @@ class PeakFindingNode(Node):
             n_samples,
         )
 
+        detection_rates = [(row["count"] / n_samples) for row in consensus_rows] if n_samples > 0 else []
+        detection_rate_min = float(min(detection_rates)) if detection_rates else 0.0
+        detection_rate_max = float(max(detection_rates)) if detection_rates else 0.0
+
         return NodeResult(
             outputs=result,
             diagnostics={
-                "n_consensus_peaks": len(consensus_rows),
-                "n_total_detections": total_peaks,
+                "n_consensus_peaks": int(len(consensus_rows)),
+                "n_peaks": int(total_peaks),
+                "method": "scipy_find_peaks",
                 "technique": technique,
+                "n_features": int(n_features),
+                "detection_rate_min": detection_rate_min,
+                "detection_rate_max": detection_rate_max,
             },
         )

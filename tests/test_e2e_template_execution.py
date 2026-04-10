@@ -135,7 +135,10 @@ async def test_baseline_penalized_ls_uses_nir_lambda(diesel_nir_dataset: SherpaD
 
     # Result should be a valid SherpaDataset with same shape
     from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset as SD
+    from spectra_sherpa.app.services.dag.node_base import NodeResult
 
+    if isinstance(result, NodeResult):
+        result = result.outputs.get("default", result.outputs)
     assert isinstance(result, SD) or isinstance(result, dict)
 
 

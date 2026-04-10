@@ -679,16 +679,23 @@ class PLSPredictNode(Node):
 
         return lines
 
-    async def execute(self, X_new: Any = None, model: Any = None, **kwargs: Any) -> dict[str, Any]:
+    async def execute(
+        self,
+        X_new: Any = None,
+        model: Any = None,
+        y_true: Any = None,
+        **kwargs: Any,
+    ) -> NodeResult:
         """
         Apply PLS model to new data.
 
         Args:
             X_new: New spectral data (dataset)
             model: Trained PLS model dict from PLS node
+            y_true: Optional true target values for computing RMSEP/R² diagnostics
 
         Returns:
-            dict with 'y_pred' key containing predictions (1D or 2D)
+            NodeResult with 'y_pred' output and diagnostics
         """
         if X_new is None or model is None:
             raise ValueError("Both X_new and model inputs are required")
@@ -721,7 +728,28 @@ class PLSPredictNode(Node):
 
             logger.debug("[PLS Predict] Generated predictions with shape %s", y_pred_array.shape)
 
-            return {"y_pred": y_pred_array}
+            diagnostics: dict[str, Any] = {"n_predicted": int(y_pred_array.shape[0])}
+            if y_true is not None:
+                try:
+                    y_true_arr = np.asarray(
+                        y_true.data if hasattr(y_true, "data") and not isinstance(y_true, np.ndarray) else y_true,
+                        dtype=np.float64,
+                    ).ravel()
+                    y_pred_flat = y_pred_array.ravel() if y_pred_array.ndim > 1 else y_pred_array
+                    if y_true_arr.shape == y_pred_flat.shape and y_true_arr.size > 0:
+                        resid = y_true_arr - y_pred_flat
+                        rmsep = float(np.sqrt(np.mean(resid**2)))
+                        diagnostics["rmsep"] = rmsep
+                        ss_tot = float(np.sum((y_true_arr - y_true_arr.mean()) ** 2))
+                        if ss_tot > 0:
+                            diagnostics["r2"] = float(1.0 - np.sum(resid**2) / ss_tot)
+                except Exception:
+                    logger.debug("[PLS Predict] Failed to compute y_true diagnostics", exc_info=True)
+
+            return NodeResult(
+                outputs={"y_pred": y_pred_array},
+                diagnostics=diagnostics,
+            )
 
         except Exception as e:
             raise RuntimeError(f"PLS prediction failed: {str(e)}") from e

@@ -21,7 +21,6 @@ import pytest
 
 from spectra_sherpa.app.services.dag.node_base import NodeResult, node_registry
 
-
 # ---------------------------------------------------------------------------
 # Nodes that MUST return NodeResult with non-empty diagnostics today.
 # Each tuple: (node_type, constructor_params, execute_kwargs_builder, expected_diagnostic_keys)
@@ -32,11 +31,13 @@ def _make_classification_data(n_samples: int = 60, n_features: int = 10):
     """Build a small, well-separated 3-class classification dataset."""
     rng = np.random.default_rng(42)
     n_per_class = n_samples // 3
-    X = np.vstack([
-        rng.normal(0, 0.5, (n_per_class, n_features)),
-        rng.normal(3, 0.5, (n_per_class, n_features)),
-        rng.normal(-3, 0.5, (n_per_class, n_features)),
-    ])
+    X = np.vstack(
+        [
+            rng.normal(0, 0.5, (n_per_class, n_features)),
+            rng.normal(3, 0.5, (n_per_class, n_features)),
+            rng.normal(-3, 0.5, (n_per_class, n_features)),
+        ]
+    )
     y = np.array(
         ["a"] * n_per_class + ["b"] * n_per_class + ["c"] * n_per_class,
         dtype=object,
@@ -229,6 +230,212 @@ class TestClusteringNodesEmitDiagnostics:
             required_diagnostic_keys={"n_clusters"},
         )
 
+    @pytest.mark.asyncio
+    async def test_hca_emits_diagnostics(self):
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+        X, _ = _make_classification_data()
+        await _assert_node_result(
+            node_type="model.hca",
+            parameters={"n_clusters": 3, "linkage": "ward", "metric": "euclidean"},
+            kwargs={"input_data": SherpaDataset(X=X)},
+            required_diagnostic_keys={"n_clusters", "linkage", "metric", "n_samples"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_dbscan_emits_diagnostics(self):
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+        X, _ = _make_classification_data()
+        await _assert_node_result(
+            node_type="model.dbscan",
+            parameters={"eps": 2.0, "min_samples": 3, "metric": "euclidean"},
+            kwargs={"input_data": SherpaDataset(X=X)},
+            required_diagnostic_keys={
+                "n_clusters",
+                "eps",
+                "min_samples",
+                "noise_fraction",
+                "metric",
+            },
+        )
+
+
+class TestDecompositionNodesEmitDiagnostics:
+    @pytest.mark.asyncio
+    async def test_mcr_emits_diagnostics(self):
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+        rng = np.random.default_rng(0)
+        X = np.abs(rng.normal(0, 1, (20, 50))) + 0.1
+        await _assert_node_result(
+            node_type="model.mcr_als",
+            parameters={"n_components": 2},
+            kwargs={"input_data": SherpaDataset(X=X)},
+            required_diagnostic_keys={"n_components"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_simplisma_emits_diagnostics(self):
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+        rng = np.random.default_rng(1)
+        X = np.abs(rng.normal(0, 1, (20, 50))) + 0.1
+        await _assert_node_result(
+            node_type="model.simplisma",
+            parameters={"n_components": 2},
+            kwargs={"input_data": SherpaDataset(X=X)},
+            required_diagnostic_keys={"n_components", "noise"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_nmf_emits_diagnostics(self):
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+        rng = np.random.default_rng(2)
+        X = np.abs(rng.normal(0, 1, (20, 30))) + 0.1
+        await _assert_node_result(
+            node_type="model.nmf",
+            parameters={"n_components": 3},
+            kwargs={"input_data": SherpaDataset(X=X)},
+            required_diagnostic_keys={"n_components", "reconstruction_error"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_ica_emits_diagnostics(self):
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+        rng = np.random.default_rng(3)
+        X = rng.normal(0, 1, (40, 20))
+        await _assert_node_result(
+            node_type="model.ica",
+            parameters={"n_components": 3},
+            kwargs={"input_data": SherpaDataset(X=X)},
+            required_diagnostic_keys={"n_components"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_efa_emits_diagnostics(self):
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+        rng = np.random.default_rng(4)
+        X = np.abs(rng.normal(0, 1, (20, 30))) + 0.1
+        await _assert_node_result(
+            node_type="model.efa",
+            parameters={"n_components": 10},
+            kwargs={"input_data": SherpaDataset(X=X)},
+            required_diagnostic_keys={"n_components"},
+        )
+
+
+class TestPredictionNodesEmitDiagnostics:
+    @pytest.mark.asyncio
+    async def test_classifier_predict_plsda_emits_diagnostics(self):
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+        X, y = _make_classification_data()
+        train_node = node_registry.create_node(
+            node_type="classification.plsda",
+            node_id="plsda_train",
+            parameters={"n_components": 2, "cv_folds": 3},
+        )
+        train_result = await train_node.execute(X=SherpaDataset(X=X), y=y)
+        model = train_result.outputs["model"]
+
+        await _assert_node_result(
+            node_type="classification.predict",
+            parameters={},
+            kwargs={"X_new": SherpaDataset(X=X), "model": model},
+            required_diagnostic_keys={"method", "n_predicted", "n_classes"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_classifier_predict_knn_emits_diagnostics(self):
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+        X, y = _make_classification_data()
+        train_node = node_registry.create_node(
+            node_type="classification.knn",
+            node_id="knn_train",
+            parameters={"n_neighbors": 3, "cv_folds": 3},
+        )
+        train_result = await train_node.execute(X=SherpaDataset(X=X), y=y)
+        model = train_result.outputs["model"]
+
+        await _assert_node_result(
+            node_type="classification.predict",
+            parameters={},
+            kwargs={"X_new": SherpaDataset(X=X), "model": model},
+            required_diagnostic_keys={"method", "n_predicted", "n_classes", "mean_max_prob"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_classifier_predict_simca_emits_diagnostics(self):
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+        X, y = _make_classification_data()
+        train_node = node_registry.create_node(
+            node_type="classification.simca",
+            node_id="simca_train",
+            parameters={"n_components": 2},
+        )
+        train_result = await train_node.execute(X=SherpaDataset(X=X), y=y)
+        model = train_result.outputs["model"]
+
+        await _assert_node_result(
+            node_type="classification.predict",
+            parameters={},
+            kwargs={"X_new": SherpaDataset(X=X), "model": model},
+            required_diagnostic_keys={"method", "n_predicted", "n_classes", "mean_min_distance"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_peak_finding_emits_diagnostics(self):
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+        rng = np.random.default_rng(5)
+        # Build synthetic spectra with clear gaussian peaks
+        x = np.linspace(0, 100, 200)
+        n_samples = 5
+        spectra = np.zeros((n_samples, len(x)))
+        for i in range(n_samples):
+            for center in (25.0, 55.0, 80.0):
+                spectra[i] += np.exp(-((x - center) ** 2) / 10.0)
+            spectra[i] += rng.normal(0, 0.01, len(x))
+        await _assert_node_result(
+            node_type="analysis.peak_finding",
+            parameters={"distance": 5},
+            kwargs={"input_data": SherpaDataset(X=spectra)},
+            required_diagnostic_keys={
+                "n_consensus_peaks",
+                "n_peaks",
+                "method",
+                "n_features",
+                "detection_rate_min",
+                "detection_rate_max",
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_pls_predict_emits_diagnostics(self):
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+        X, y = _make_regression_data()
+        train_node = node_registry.create_node(
+            node_type="model.pls",
+            node_id="pls_train",
+            parameters={"n_components": 3},
+        )
+        train_result = await train_node.execute(X=SherpaDataset(X=X), y=y)
+        model = train_result.outputs["model"]
+
+        await _assert_node_result(
+            node_type="model.pls_predict",
+            parameters={},
+            kwargs={"X_new": SherpaDataset(X=X), "model": model, "y_true": y},
+            required_diagnostic_keys={"n_predicted", "rmsep", "r2"},
+        )
+
 
 # ---------------------------------------------------------------------------
 # Pending migration — documents nodes that still return plain dicts.
@@ -237,33 +444,69 @@ class TestClusteringNodesEmitDiagnostics:
 # ---------------------------------------------------------------------------
 
 
-PENDING_NODE_RESULT: set[str] = {
-    # Clustering (Phase 2)
-    "model.hca",
-    "model.dbscan",
-    # Decomposition (Phase 2)
-    "model.mcr_als",
-    "model.simplisma",
-    "model.nmf",
-    "model.ica",
-    "model.efa",
-    # Prediction/apply (Phase 2)
-    "classification.predict",
-    "model.pls_predict",
-    # Peak finding (Phase 2 — declared summarizer now matches but node still plain dict)
-    "analysis.peak_finding",
-    # Preprocessing nodes with SNR / baseline / smoothing diagnostics on .meta
-    "preprocess.baseline_pls",
-    "preprocess.smooth",
-    "preprocess.normalize",
-}
+class TestPreprocessingNodesEmitDiagnostics:
+    @pytest.mark.asyncio
+    async def test_baseline_penalized_ls_emits_diagnostics(self):
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+        rng = np.random.default_rng(6)
+        x = np.linspace(0, 100, 200)
+        baseline = 0.02 * x + 0.5
+        spectra = np.zeros((5, 200))
+        for i in range(5):
+            peak = np.exp(-((x - 50) ** 2) / 10.0)
+            spectra[i] = baseline + peak + rng.normal(0, 0.01, 200)
+        await _assert_node_result(
+            node_type="baseline.penalized_ls",
+            parameters={"method": "als", "lam": 1e5},
+            kwargs={"input_data": SherpaDataset(X=spectra)},
+            required_diagnostic_keys={
+                "baseline_mean",
+                "baseline_std",
+                "baseline_max",
+                "residual_rms",
+                "correction_magnitude_pct",
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_smooth_emits_diagnostics(self):
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+        rng = np.random.default_rng(7)
+        X = rng.normal(0, 1, (5, 100))
+        await _assert_node_result(
+            node_type="preprocess.smooth",
+            parameters={"method": "savitzky_golay", "size": 11, "order": 2},
+            kwargs={"input_data": SherpaDataset(X=X)},
+            required_diagnostic_keys={"snr_before", "snr_after", "snr_improvement_db"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_normalize_snv_emits_diagnostics(self):
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+        rng = np.random.default_rng(8)
+        X = rng.normal(0, 1, (5, 100))
+        await _assert_node_result(
+            node_type="preprocess.normalize",
+            parameters={"method": "snv"},
+            kwargs={"input_data": SherpaDataset(X=X)},
+            required_diagnostic_keys={"method", "snr_before", "snr_after"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_normalize_scale_emits_diagnostics(self):
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+        rng = np.random.default_rng(9)
+        X = np.abs(rng.normal(0, 1, (5, 100))) + 0.1
+        await _assert_node_result(
+            node_type="preprocess.normalize",
+            parameters={"method": "max"},
+            kwargs={"input_data": SherpaDataset(X=X)},
+            required_diagnostic_keys={"method"},
+        )
 
 
-def test_pending_list_is_visible():
-    """Sanity check: the pending list should not be empty until Phase 2 is done.
-    Once all nodes are migrated, delete this test along with PENDING_NODE_RESULT.
-    """
-    assert PENDING_NODE_RESULT, (
-        "All pending NodeResult migrations are complete — remove PENDING_NODE_RESULT "
-        "and this test, and fold the migrated nodes into the assertion suite above."
-    )
+PENDING_NODE_RESULT: set[str] = set()

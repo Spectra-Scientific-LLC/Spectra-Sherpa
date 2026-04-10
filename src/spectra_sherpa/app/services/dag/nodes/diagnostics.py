@@ -1006,8 +1006,12 @@ class HoldoutEvaluationNode(Node):
             status = "invalid_predictions"
 
         metrics_row = {
-            "RMSEP": rmsep, "R2": r2, "MAE": mae,
-            "bias": bias, "SEP": sep, "RER": rer,
+            "RMSEP": rmsep,
+            "R2": r2,
+            "MAE": mae,
+            "bias": bias,
+            "SEP": sep,
+            "RER": rer,
         }
         metrics = {
             "data": [metrics_row],
