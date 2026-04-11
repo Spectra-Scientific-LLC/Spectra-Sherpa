@@ -41,9 +41,7 @@ def _diff_summary(actual: object, expected: object, path: str = "") -> list[str]
     """Return a list of human-readable diff lines between two JSON trees."""
     diffs: list[str] = []
     if type(actual) is not type(expected):
-        diffs.append(
-            f"  {path or '<root>'}: type mismatch ({type(actual).__name__} vs {type(expected).__name__})"
-        )
+        diffs.append(f"  {path or '<root>'}: type mismatch ({type(actual).__name__} vs {type(expected).__name__})")
         return diffs
     if isinstance(actual, dict) and isinstance(expected, dict):
         missing = sorted(set(expected) - set(actual))
@@ -57,9 +55,7 @@ def _diff_summary(actual: object, expected: object, path: str = "") -> list[str]
         return diffs
     if isinstance(actual, list) and isinstance(expected, list):
         if len(actual) != len(expected):
-            diffs.append(
-                f"  {path}: length mismatch ({len(actual)} vs {len(expected)})"
-            )
+            diffs.append(f"  {path}: length mismatch ({len(actual)} vs {len(expected)})")
         for i, (a, e) in enumerate(zip(actual, expected)):
             diffs.extend(_diff_summary(a, e, f"{path}[{i}]"))
         return diffs
@@ -131,9 +127,7 @@ def test_fixtures_are_valid_json() -> None:
             parsed = json.load(fh)
             json.dumps(parsed)
         assert "_spec" in parsed, f"{path.name} missing '_spec' key"
-        assert parsed["_spec"] == spec.name, (
-            f"{path.name} has _spec={parsed['_spec']!r} but expected {spec.name!r}"
-        )
+        assert parsed["_spec"] == spec.name, f"{path.name} has _spec={parsed['_spec']!r} but expected {spec.name!r}"
 
 
 def test_normalize_strips_uuids_and_timestamps() -> None:

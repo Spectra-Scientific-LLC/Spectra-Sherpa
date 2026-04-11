@@ -33,9 +33,7 @@ _UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
     re.IGNORECASE,
 )
-_ISO_TIMESTAMP_RE = re.compile(
-    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:\d{2}|Z)?$"
-)
+_ISO_TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:\d{2}|Z)?$")
 
 # Fields whose value is intentionally replaced with a placeholder because
 # it changes between runs (UUIDs, timestamps, path-dependent strings).
@@ -254,16 +252,10 @@ def _build_holdout_regression_multitarget() -> Any:
     # per target so the metrics differ enough to be useful in assertions.
     rng = np.random.RandomState(0)
     n, k = 20, 4
-    y_true = rng.normal(size=(n, k)) * np.array(
-        [0.5, 0.3, 0.8, 1.0]
-    ) + np.array([10.0, 3.0, 8.0, 60.0])
-    y_pred = y_true + rng.normal(scale=0.1, size=(n, k)) * np.array(
-        [0.2, 1.5, 0.5, 0.8]
-    )
+    y_true = rng.normal(size=(n, k)) * np.array([0.5, 0.3, 0.8, 1.0]) + np.array([10.0, 3.0, 8.0, 60.0])
+    y_pred = y_true + rng.normal(scale=0.1, size=(n, k)) * np.array([0.2, 1.5, 0.5, 0.8])
 
-    node = HoldoutEvaluationNode(
-        node_id="eval_1", parameters={"task_type": "regression"}
-    )
+    node = HoldoutEvaluationNode(node_id="eval_1", parameters={"task_type": "regression"})
     return asyncio.run(
         node.run(
             y_true=y_true,
