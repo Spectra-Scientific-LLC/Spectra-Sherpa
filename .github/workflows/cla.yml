@@ -28,7 +28,16 @@ jobs:
           allowlist: fe2val,dependabot[bot],github-actions[bot],renovate[bot]
           lock-pullrequest-aftermerge: true
           create-file-commit-message: "chore: create CLA signatures file"
-          signed-commit-message: "docs: $contributorName signed the CLA in $owner/$repo#$pullRequestNo"
+          # NOTE: $pullRequestNo isn't reliably substituted by
+          # contributor-assistant/github-action@v2.6.1 (the $contributorName,
+          # $owner, and $repo placeholders expand, but $pullRequestNo ends
+          # up as a literal in the commit message — see commit 47069b3b on
+          # the cla-signatures branch for evidence).  The PR number is
+          # already recorded in signatures/cla.json under each entry's
+          # ``pullRequestNo`` field, so dropping it from the commit
+          # message subject has zero information loss and avoids the
+          # cosmetic issue in future signature commits.
+          signed-commit-message: "docs: $contributorName signed the CLA for $owner/$repo"
           custom-notsigned-prcomment: |
             Thank you for your submission! Spectra Sherpa is dual-licensed (AGPLv3 + Commercial)
             and requires a signed Contributor License Agreement before we can merge your code.
