@@ -9,7 +9,11 @@ import {
   type SherpaEventPayload,
 } from "@/lib/sherpaEvents";
 import { SHERPA_WS_ACTION, SHERPA_WS_EVENT, getSherpaChatAction } from "@/lib/sherpaWs";
-import { summarizeDatasetForSherpaContext, useDataStore } from "@/stores/data";
+import {
+  summarizeDatasetForSherpaContext,
+  useDataStore,
+  type SherpaDatasetContext,
+} from "@/stores/data";
 import { useLlmStore } from "@/stores/llm";
 import { useNotificationStore } from "@/stores/notification";
 import { useProjectStore } from "@/stores/project";
@@ -540,6 +544,85 @@ export const useSherpaStore = defineStore("sherpa", () => {
       string,
       Record<string, unknown>
     > | null;
+    const emptyDatasetContext = (): SherpaDatasetContext => ({
+      label: null,
+      source: null,
+      dataset_name: null,
+      description: null,
+      n_samples: null,
+      n_features: null,
+      is_time_series: null,
+      is_spectra: null,
+      technique: null,
+      x_title: null,
+      x_units: null,
+      x_min: null,
+      x_max: null,
+      data_quantity: null,
+      value_units: null,
+      feature_names: null,
+      target_names: null,
+      metadata_summary: null,
+    });
+
+    const toObject = (value: unknown): Record<string, unknown> | null =>
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : null;
+
+    const toStringList = (value: unknown, limit = 20): string[] | null => {
+      if (!Array.isArray(value)) {
+        return null;
+      }
+      const items = value
+        .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        .slice(0, limit);
+      return items.length > 0 ? items : null;
+    };
+
+    const deriveDatasetIdentity = (
+      _node: { label?: unknown; params?: Record<string, unknown> },
+      rawResult: Record<string, unknown> | null | undefined
+    ): Partial<SherpaDatasetContext> | null => {
+      const metadata = toObject(rawResult?.metadata);
+      const extra = toObject(rawResult?.extra);
+      const targetContext = toObject(rawResult?.target_context);
+      const datasetName =
+        typeof extra?.["sklearn.dataset_name"] === "string"
+          ? extra["sklearn.dataset_name"]
+          : typeof extra?.["catalog.dataset_name"] === "string"
+            ? extra["catalog.dataset_name"]
+            : typeof rawResult?.title === "string" && rawResult.title.trim()
+              ? rawResult.title
+              : null;
+      const featureNames =
+        toStringList(metadata?.feature_names) ??
+        toStringList(extra?.["csv.feature_names"]) ??
+        toStringList(toObject(rawResult?.x_axis)?.labels);
+      const targetNames =
+        toStringList(targetContext?.target_names) ??
+        toStringList(targetContext?.class_names) ??
+        toStringList(extra?.["sklearn.target_names"]);
+
+      const identity: Partial<SherpaDatasetContext> = {};
+      if (typeof rawResult?.title === "string" && rawResult.title.trim()) {
+        identity.label = rawResult.title;
+      }
+      if (typeof rawResult?.backend === "string" && rawResult.backend.trim()) {
+        identity.source = rawResult.backend;
+      }
+      if (datasetName) {
+        identity.dataset_name = datasetName;
+      }
+      if (featureNames) {
+        identity.feature_names = featureNames;
+      }
+      if (targetNames) {
+        identity.target_names = targetNames;
+      }
+
+      return Object.keys(identity).length > 0 ? identity : null;
+    };
 
     const deriveShapeAndType = (
       result: Record<string, unknown> | null | undefined
@@ -792,19 +875,71 @@ export const useSherpaStore = defineStore("sherpa", () => {
           summary.metadata = null;
         }
 
+        const extra = toObject(result.extra);
+        const targetContext = toObject(result.target_context);
+        const featureNames =
+          toStringList(toObject(metadata)?.feature_names) ??
+          toStringList(extra?.["csv.feature_names"]) ??
+          toStringList(toObject(result.x_axis)?.labels);
+        const targetNames =
+          toStringList(targetContext?.target_names) ??
+          toStringList(targetContext?.class_names) ??
+          toStringList(extra?.["sklearn.target_names"]);
+        const datasetName =
+          typeof extra?.["sklearn.dataset_name"] === "string"
+            ? extra["sklearn.dataset_name"]
+            : typeof extra?.["catalog.dataset_name"] === "string"
+              ? extra["catalog.dataset_name"]
+              : typeof result.title === "string" && result.title.trim()
+                ? result.title
+                : null;
+        if (typeof result.backend === "string" && result.backend.trim()) {
+          summary.backend = result.backend;
+        }
+        if (datasetName) {
+          summary.dataset_name = datasetName;
+        }
+        if (featureNames) {
+          summary.feature_names = featureNames;
+        }
+        if (targetNames) {
+          summary.target_names = targetNames;
+        }
+
         results_summary[nodeId] = summary;
       }
     }
 
     // Prefer explicitly explored catalog metadata, but fall back to the active file
     // inspection so Sherpa still gets technique/axis context for CSV/manual loads.
-    const dataset_context =
+    const summarizedDatasetContext =
       summarizeDatasetForSherpaContext(
         dataStore.catalogDatasetInfo as Record<string, unknown> | null
       )
       ?? summarizeDatasetForSherpaContext(
         dataStore.fileInfo as unknown as Record<string, unknown> | null
       );
+    let derivedDatasetIdentity: Partial<SherpaDatasetContext> | null = null;
+    for (const node of workflow.nodes) {
+      if (!node.type.startsWith("data.")) {
+        continue;
+      }
+      const rawResult = lastExecutionResults?.[String(node.id)] ?? null;
+      derivedDatasetIdentity = deriveDatasetIdentity(
+        node as { label?: unknown; params?: Record<string, unknown> },
+        rawResult
+      );
+      if (derivedDatasetIdentity) {
+        break;
+      }
+    }
+    const dataset_context =
+      summarizedDatasetContext || derivedDatasetIdentity
+        ? {
+          ...(summarizedDatasetContext ?? emptyDatasetContext()),
+          ...(derivedDatasetIdentity ?? {}),
+        }
+        : null;
 
     return {
       workflow_id: workflow.workflowId,
