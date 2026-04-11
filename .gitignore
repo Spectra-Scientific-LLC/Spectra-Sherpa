@@ -89,6 +89,14 @@ uv.lock
 .mypy_cache/
 .ruff_cache/
 
+# Vite dev-server cache (local-only, regenerated on every `npm run dev`)
+frontend/.vite/
+
+# CLA Assistant local signature cache (generated when the bot posts;
+# OSS/proprietary split: the authoritative signature state lives on the
+# CLA Assistant backend, not in the repo)
+signatures/
+
 # Legacy backend/ directory (superseded by src/spectra_sherpa/)
 backend/
 
@@ -100,3 +108,10 @@ spectrasherpa-server/
 
 # Internal planning docs (top-level only, not src/spectra_sherpa/app/contracts/)
 /contracts/
+
+# Internal plan drafts under docs/plans/ — the rest of docs/plans/ is
+# public OSS design documentation and should stay tracked.  These two
+# files are proprietary / in-progress and live only on the author's
+# laptop.
+docs/plans/hybrid-1.5-workflow-plan.md
+docs/plans/structural-refactor-plan-2026.md
