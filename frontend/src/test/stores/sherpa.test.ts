@@ -534,8 +534,10 @@ describe("Sherpa Store communication state", () => {
       source: "sklearn",
       dataset_name: "wine",
       description: null,
-      n_samples: null,
-      n_features: null,
+      // n_samples/n_features now come through from the unwrapped dataset
+      // identity on the first data.* node that has executed.
+      n_samples: 178,
+      n_features: 13,
       is_time_series: null,
       is_spectra: null,
       technique: null,
@@ -554,6 +556,81 @@ describe("Sherpa Store communication state", () => {
       dataset_name: "wine",
       feature_names: ["alcohol", "malic_acid", "ash"],
       target_names: ["class_0", "class_1", "class_2"],
+    });
+  });
+
+  it("unwraps multi-output data-source results (default port)", async () => {
+    // Real backend shape: serialize_result wraps SherpaDataset under a
+    // ``default`` port key, with sibling ``target`` alongside.  The
+    // identity fields (title, backend, extra, metadata, target_context)
+    // all live on the ``default`` sub-object, not at the top level.
+    // This regression test ensures the frontend unwraps correctly so
+    // Sherpa gets the real dataset identity instead of falling back to
+    // stale catalog state (which was the bug observed after PR #16's
+    // first deploy — Sherpa said "Iris" when the user loaded wine).
+    const sherpa = useSherpaStore();
+    mockWorkflowStore.nodes = [
+      {
+        id: "data_1",
+        type: "data.source",
+        x: 0,
+        y: 0,
+        label: "Load Data",
+        params: { source: "sklearn" },
+        executionState: { output_shape: [178, 13], status: "completed" },
+      },
+    ];
+    mockWorkflowStore.lastExecutionResults = {
+      data_1: {
+        // Multi-output wrapper — this is what ``serialize_result`` emits
+        // for ``data.source`` nodes whose outputs dict has ``{default,
+        // target}`` keys.
+        default: {
+          type: "SherpaDataset",
+          title: "wine",
+          backend: "sklearn",
+          n_samples: 178,
+          n_features: 13,
+          shape: [178, 13],
+          x_axis: {
+            labels: ["alcohol", "malic_acid", "ash"],
+          },
+          target_context: {
+            target_type: "categorical",
+            class_names: ["class_0", "class_1", "class_2"],
+          },
+          extra: {
+            "sklearn.dataset_name": "wine",
+            "sklearn.target_names": ["class_0", "class_1", "class_2"],
+          },
+          metadata: {
+            feature_names: ["alcohol", "malic_acid", "ash"],
+            "sklearn.dataset_name": "wine",
+          },
+        },
+        target: [0, 0, 0, 1, 1, 1, 2, 2, 2],
+      },
+    };
+
+    await sherpa.sendMessage("What are the top features that can be used as predictor?");
+
+    const payload = JSON.parse(mockWs.send.mock.calls[0][0] as string);
+    const datasetContext = payload.payload.workflow_context.dataset_context;
+    expect(datasetContext).toMatchObject({
+      label: "wine",
+      source: "sklearn",
+      dataset_name: "wine",
+      feature_names: ["alcohol", "malic_acid", "ash"],
+      target_names: ["class_0", "class_1", "class_2"],
+    });
+    // And the results_summary entry should also carry the unwrapped fields.
+    expect(payload.payload.workflow_context.results_summary.data_1).toMatchObject({
+      backend: "sklearn",
+      dataset_name: "wine",
+      feature_names: ["alcohol", "malic_acid", "ash"],
+      target_names: ["class_0", "class_1", "class_2"],
+      n_samples: 178,
+      n_features: 13,
     });
   });
 
