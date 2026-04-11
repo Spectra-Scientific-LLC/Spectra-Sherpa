@@ -3228,8 +3228,52 @@ const plotNodeData = computed(() => {
   if (!['output.plot', 'output.contour'].includes(nodeTypeKey.value) || !hasOutput.value) return [];
   // The visualization port stores {plot_type, data, layout}.
   // After buildNodeOutput, data = plotly traces, metadata = full vis object.
-  const viz = nodeOutput.value?.ports?.visualization?.value || nodeOutput.value?.metadata || {};
-  return viz.data || nodeOutput.value?.data || [];
+  const viz: any = nodeOutput.value?.ports?.visualization?.value || nodeOutput.value?.metadata || {};
+  if (Array.isArray(viz.data) && viz.data.length > 0) return viz.data;
+
+  // Defensive fallback: if a caller hands us a raw multi-target
+  // predicted-vs-actual series payload (``viz.series = [{name, actual,
+  // predicted}, ...]``) without going through PlotNode._plot_predicted_vs_actual
+  // first, synthesize Plotly traces here so the plot still renders.
+  const series = viz.series as Array<{
+    name?: string;
+    actual?: number[];
+    predicted?: number[];
+  }> | undefined;
+  if (Array.isArray(series) && series.length > 0) {
+    const traces: any[] = [];
+    const allActual: number[] = [];
+    const allPredicted: number[] = [];
+    for (const s of series) {
+      const actual = Array.isArray(s.actual) ? s.actual.map(Number) : [];
+      const predicted = Array.isArray(s.predicted) ? s.predicted.map(Number) : [];
+      if (!actual.length || !predicted.length) continue;
+      traces.push({
+        x: actual,
+        y: predicted,
+        mode: "markers" as const,
+        type: "scatter" as const,
+        name: String(s.name || "Target"),
+      });
+      allActual.push(...actual);
+      allPredicted.push(...predicted);
+    }
+    if (traces.length > 0) {
+      const minVal = Math.min(...allActual, ...allPredicted);
+      const maxVal = Math.max(...allActual, ...allPredicted);
+      traces.push({
+        x: [minVal, maxVal],
+        y: [minVal, maxVal],
+        mode: "lines" as const,
+        type: "scatter" as const,
+        name: "Ideal",
+        line: { dash: "dash" as const, color: "#94a3b8" },
+      });
+      return traces;
+    }
+  }
+
+  return nodeOutput.value?.data || [];
 });
 
 const plotNodeLayout = computed(() => {
@@ -4416,8 +4460,32 @@ const outlierChartLayout = computed(() => ({
 
 const holdoutVisualization = computed(() => {
   if (!hasOutput.value) return null;
-  const result = nodeOutput.value?.ports?.default?.value as Record<string, unknown> | undefined;
-  return (result?.visualization as Record<string, unknown>) || null;
+  // HoldoutEvaluation declares named output ports ('metrics',
+  // 'predictions', 'visualization', 'evaluation') — there is no
+  // 'default' port, so the previous lookup at ports.default.value was
+  // always undefined and this panel has been empty since the node was
+  // introduced.  Read the visualization port directly; fall through to
+  // metadata only if the port is missing (legacy single-output shape).
+  const vizPortValue = nodeOutput.value?.ports?.visualization?.value as
+    | Record<string, unknown>
+    | undefined;
+  if (vizPortValue && typeof vizPortValue === "object") {
+    // If the port was built by normalizePortOutput from the eval node's
+    // visualization payload directly, ``vizPortValue`` is the viz dict
+    // itself (with ``type``, ``data``/``series``, ``metadata``).
+    if (typeof (vizPortValue as any).type === "string") {
+      return vizPortValue;
+    }
+    // Otherwise it's a wrapper that carries a nested ``visualization``
+    // key — unwrap it.
+    const nested = (vizPortValue as any).visualization;
+    if (nested && typeof nested === "object") return nested as Record<string, unknown>;
+  }
+  // Last-resort legacy fallback: some older node shapes put the
+  // visualization payload on the node's top-level metadata.
+  const meta = nodeOutput.value?.metadata as Record<string, unknown> | undefined;
+  const metaViz = meta?.visualization as Record<string, unknown> | undefined;
+  return metaViz || null;
 });
 
 const holdoutConfusionData = computed(() => {
@@ -4450,7 +4518,50 @@ const holdoutConfusionLayout = computed(() => ({
 const holdoutRegressionData = computed(() => {
   const viz = holdoutVisualization.value;
   if (!viz || viz.type !== "predicted_vs_actual") return [];
-  const pairs = viz.data as number[][] || [];
+
+  // Multi-target PLS2 payload (new shape from HoldoutEvaluation):
+  //   viz.series = [{name, actual: number[], predicted: number[]}, ...]
+  // Render one marker trace per target, plus a dashed 1:1 line spanning
+  // the combined min/max of all series.
+  const series = viz.series as Array<{
+    name?: string;
+    actual?: number[];
+    predicted?: number[];
+  }> | undefined;
+  if (Array.isArray(series) && series.length > 0) {
+    const traces: any[] = [];
+    const allActual: number[] = [];
+    const allPredicted: number[] = [];
+    for (const s of series) {
+      const actual = Array.isArray(s.actual) ? s.actual.map(Number) : [];
+      const predicted = Array.isArray(s.predicted) ? s.predicted.map(Number) : [];
+      if (actual.length === 0 || predicted.length === 0) continue;
+      traces.push({
+        x: actual,
+        y: predicted,
+        mode: "markers" as const,
+        type: "scatter" as const,
+        name: String(s.name || "Target"),
+      });
+      allActual.push(...actual);
+      allPredicted.push(...predicted);
+    }
+    if (traces.length === 0) return [];
+    const minVal = Math.min(...allActual, ...allPredicted);
+    const maxVal = Math.max(...allActual, ...allPredicted);
+    traces.push({
+      x: [minVal, maxVal],
+      y: [minVal, maxVal],
+      mode: "lines" as const,
+      type: "scatter" as const,
+      name: "1:1 Line",
+      line: { dash: "dash" as const, color: "#94a3b8" },
+    });
+    return traces;
+  }
+
+  // Legacy single-target payload: viz.data = number[][] of [actual, predicted] pairs.
+  const pairs = (viz.data as number[][]) || [];
   if (!pairs.length) return [];
   const actual = pairs.map((p: number[]) => p[0]);
   const predicted = pairs.map((p: number[]) => p[1]);
@@ -4462,13 +4573,39 @@ const holdoutRegressionData = computed(() => {
   ];
 });
 
-const holdoutRegressionLayout = computed(() => ({
-  ...basePlotLayout,
-  title: { text: "Predicted vs Actual", font: { color: "#e2e8f0", size: 14 } },
-  xaxis: { title: "Actual", color: "#94a3b8" },
-  yaxis: { title: "Predicted", color: "#94a3b8" },
-  showlegend: false,
-}));
+const holdoutRegressionLayout = computed(() => {
+  // Show the legend when there are multiple target series so users can
+  // tell the colors apart; keep the legacy single-target layout clean.
+  // For multi-target runs, incorporate the real reference property names
+  // from metadata.target_names (populated by HoldoutEvaluation via the
+  // ``context`` port) into the yaxis title — falls back to generic
+  // "Predicted" when no names are available.
+  const viz = holdoutVisualization.value as any;
+  const isMultiTarget = Array.isArray(viz?.series) && viz.series.length > 1;
+  const rawNames = (viz?.metadata as any)?.target_names;
+  const targetNames = Array.isArray(rawNames) ? rawNames.map(String).filter(Boolean) : [];
+  const hasRealNames = targetNames.length > 0
+    && !targetNames.every((n) => /^Target_\d+$/.test(n));
+
+  let yTitle = "Predicted";
+  let titleText = isMultiTarget ? "Predicted vs Actual (per target)" : "Predicted vs Actual";
+  if (isMultiTarget && hasRealNames) {
+    const joined = targetNames.join(", ");
+    yTitle = `Predicted (${joined})`;
+    titleText = `Predicted vs Actual — ${joined}`;
+  } else if (!isMultiTarget && hasRealNames) {
+    yTitle = `Predicted ${targetNames[0]}`;
+    titleText = `Predicted vs Actual — ${targetNames[0]}`;
+  }
+
+  return {
+    ...basePlotLayout,
+    title: { text: titleText, font: { color: "#e2e8f0", size: 14 } },
+    xaxis: { title: "Actual", color: "#94a3b8" },
+    yaxis: { title: yTitle, color: "#94a3b8" },
+    showlegend: isMultiTarget,
+  };
+});
 
 // STATS Plots (adaptive: PeakFinding → bar chart, otherwise → histogram)
 // ============================================================================

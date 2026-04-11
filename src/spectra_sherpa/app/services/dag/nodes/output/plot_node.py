@@ -801,7 +801,94 @@ class PlotNode(Node):
         }
 
     def _plot_predicted_vs_actual(self, data: dict) -> Dict[str, Any]:
-        """Generate a regression holdout scatter plot."""
+        """Generate a regression holdout scatter plot.
+
+        Accepts two payload shapes from HoldoutEvaluation:
+
+        * Single-target (legacy):
+          ``{"data": [[actual, predicted], ...], "type": "predicted_vs_actual"}``
+        * Multi-target PLS2:
+          ``{"series": [{"name": str, "actual": [...], "predicted": [...]}],
+             "type": "predicted_vs_actual"}``
+
+        Multi-target renders each target as its own marker series on shared
+        axes.  Targets may have different units, so the 45° ideal line is
+        drawn from the combined min/max as a visual anchor only — judge
+        goodness of fit per-series, not globally.
+        """
+        series_payload = data.get("series")
+        if isinstance(series_payload, list) and series_payload:
+            traces: list[dict] = []
+            all_actual: list[float] = []
+            all_predicted: list[float] = []
+            for s in series_payload:
+                if not isinstance(s, dict):
+                    continue
+                name = str(s.get("name", "Target"))
+                series_actual = [float(v) for v in s.get("actual", [])]
+                series_predicted = [float(v) for v in s.get("predicted", [])]
+                if not series_actual or not series_predicted:
+                    continue
+                traces.append(
+                    {
+                        "x": series_actual,
+                        "y": series_predicted,
+                        "type": "scatter",
+                        "mode": "markers",
+                        "name": name,
+                    }
+                )
+                all_actual.extend(series_actual)
+                all_predicted.extend(series_predicted)
+
+            if all_actual and all_predicted:
+                lo = min(min(all_actual), min(all_predicted))
+                hi = max(max(all_actual), max(all_predicted))
+            else:
+                lo, hi = 0.0, 1.0
+            traces.append(
+                {
+                    "x": [lo, hi],
+                    "y": [lo, hi],
+                    "type": "scatter",
+                    "mode": "lines",
+                    "name": "Ideal",
+                    "line": {"dash": "dash", "color": "#888"},
+                }
+            )
+
+            # When HoldoutEvaluation resolved real reference property names
+            # (via its ``context`` port), incorporate them into the axis
+            # titles so the plot is self-describing.  Falls back to generic
+            # "Predicted" labels when the metadata carries Target_1..N.
+            metadata = data.get("metadata") or {}
+            raw_names = metadata.get("target_names")
+            if isinstance(raw_names, list):
+                name_list = [str(n) for n in raw_names if n]
+            else:
+                name_list = []
+            has_real_names = bool(name_list) and not all(str(n).startswith("Target_") for n in name_list)
+            if has_real_names:
+                joined = ", ".join(name_list)
+                title_text = f"Predicted vs Actual \u2014 {joined}"
+                y_title = f"Predicted ({joined})"
+            else:
+                title_text = "Predicted vs Actual (per target)"
+                y_title = "Predicted"
+
+            return {
+                "visualization": {
+                    "plot_type": "scatter",
+                    "data": traces,
+                    "layout": {
+                        "title": title_text,
+                        "xaxis": {"title": "Actual"},
+                        "yaxis": {"title": y_title},
+                    },
+                }
+            }
+
+        # Legacy single-target path.
         pairs = np.asarray(data.get("data", []), dtype=np.float64)
         if pairs.ndim == 1:
             pairs = pairs.reshape(-1, 2) if pairs.size else np.zeros((0, 2))

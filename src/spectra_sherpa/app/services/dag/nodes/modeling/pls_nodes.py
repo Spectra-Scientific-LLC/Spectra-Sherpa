@@ -85,6 +85,31 @@ class PLSNode(Node):
                 required=False,
                 category="basic",
             ),
+            NodeParameter(
+                name="cv_method",
+                label="Cross-Validation",
+                param_type="select",
+                default="k-fold",
+                options=["none", "k-fold", "leave-one-out"],
+                description=(
+                    "Internal cross-validation strategy for reporting "
+                    "R²_cv / RMSECV alongside the in-sample calibration fit"
+                ),
+                required=False,
+                category="basic",
+            ),
+            NodeParameter(
+                name="cv_folds",
+                label="CV Folds",
+                param_type="number",
+                default=5,
+                min_value=2,
+                max_value=20,
+                step=1,
+                description="Number of folds when cv_method='k-fold'",
+                required=False,
+                category="basic",
+            ),
         ],
         input_types=["NDDataset", "array"],
         output_type="dict",
@@ -396,6 +421,97 @@ class PLSNode(Node):
         except Exception:
             logger.debug("[PLS Node] Could not compute calibration R2/RMSE from predictions", exc_info=True)
 
+        # -----------------------------------------------------------------
+        # Cross-validation (adds r2_cv / RMSECV alongside in-sample metrics)
+        # -----------------------------------------------------------------
+        # The in-sample r2/rmse computed above is calibration only — it
+        # tells you whether the model can memorise the training data, not
+        # whether it generalises.  For a quick generalisation estimate
+        # without an external validation set we run either k-fold or LOO
+        # CV with sklearn's PLSRegression (which SCP's PLSRegression wraps
+        # anyway, so the numerics are the same).  RMSECV / r2_cv are the
+        # metrics practitioners expect to see next to RMSEC / R²_cal.
+        cv_method = self.parameters.get("cv_method", "k-fold")
+        cv_folds_param = int(self.parameters.get("cv_folds", 5))
+        pls_r2_cv: float | None = None
+        pls_rmsecv: float | None = None
+        cv_meta: dict | None = None
+        if cv_method and cv_method != "none":
+            try:
+                from sklearn.cross_decomposition import PLSRegression as SKPLSRegression
+                from sklearn.model_selection import KFold, LeaveOneOut
+
+                X_cv = np.asarray(X_ds.X, dtype=np.float64)
+                y_cv = y_2d  # already 2D (n_samples, n_targets)
+                n_cv_samples = X_cv.shape[0]
+
+                if cv_method == "leave-one-out":
+                    splitter = LeaveOneOut()
+                    effective_folds = n_cv_samples
+                else:  # "k-fold"
+                    effective_folds = min(cv_folds_param, n_cv_samples)
+                    if effective_folds < 2:
+                        raise ValueError(f"k-fold CV needs at least 2 samples, got {n_cv_samples}")
+                    splitter = KFold(
+                        n_splits=effective_folds,
+                        shuffle=True,
+                        random_state=42,
+                    )
+
+                y_pred_cv = np.full_like(y_cv, np.nan, dtype=np.float64)
+                for train_idx, test_idx in splitter.split(X_cv):
+                    # Skip folds where the train partition is smaller than
+                    # n_components — sklearn raises before that but we
+                    # want a graceful per-fold fallback for LOO on tiny sets.
+                    if train_idx.shape[0] < n_components + 1:
+                        continue
+                    cv_model = SKPLSRegression(n_components=n_components, scale=scale)
+                    cv_model.fit(X_cv[train_idx], y_cv[train_idx])
+                    pred = np.asarray(cv_model.predict(X_cv[test_idx]), dtype=np.float64)
+                    if pred.ndim == 1:
+                        pred = pred.reshape(-1, 1)
+                    y_pred_cv[test_idx] = pred
+
+                # Per-target + mean aggregates; ignore samples that never got
+                # a prediction (can only happen if every fold containing them
+                # was skipped above).
+                finite_mask = np.isfinite(y_pred_cv).all(axis=1)
+                if finite_mask.any():
+                    y_true_fin = y_cv[finite_mask]
+                    y_pred_fin = y_pred_cv[finite_mask]
+                    residual_cv = y_true_fin - y_pred_fin
+                    ss_res_cv = np.sum(residual_cv**2, axis=0)
+                    ss_tot_cv = np.sum((y_true_fin - np.mean(y_true_fin, axis=0)) ** 2, axis=0)
+                    r2_cv_per_target = np.where(ss_tot_cv > 0, 1.0 - ss_res_cv / ss_tot_cv, np.nan)
+                    rmsecv_per_target = np.sqrt(np.mean(residual_cv**2, axis=0))
+                    pls_r2_cv = float(np.nanmean(r2_cv_per_target))
+                    pls_rmsecv = float(np.sqrt(np.mean(residual_cv**2)))
+                    cv_meta = {
+                        "cv_method": cv_method,
+                        "cv_folds": int(effective_folds),
+                        "r2_cv": pls_r2_cv,
+                        "rmsecv": pls_rmsecv,
+                        "r2_cv_per_target": [float(v) for v in r2_cv_per_target],
+                        "rmsecv_per_target": [float(v) for v in rmsecv_per_target],
+                        "n_cv_samples": int(finite_mask.sum()),
+                    }
+                    if _resolved_target_names:
+                        cv_meta["target_names"] = _resolved_target_names
+                    logger.info(
+                        "[PLS Node] CV (%s, %d folds): mean R²_cv=%.4f, RMSECV=%.4f",
+                        cv_method,
+                        effective_folds,
+                        pls_r2_cv,
+                        pls_rmsecv,
+                    )
+                else:
+                    logger.warning(
+                        "[PLS Node] Cross-validation produced no valid predictions; "
+                        "dataset may be too small for the requested n_components"
+                    )
+            except Exception as exc:
+                logger.warning("[PLS Node] Cross-validation failed: %s", exc, exc_info=True)
+
         logger.debug("[PLS Node] PLS model fitted successfully")
         logger.debug("  - X_scores shape: %s", X_scores_data.shape if X_scores_data is not None else "N/A")
         logger.debug("  - Coefficients shape: %s", coef_data.shape if coef_data is not None else "N/A")
@@ -534,7 +650,11 @@ class PLSNode(Node):
                 node_id=self.node_id,
             )
 
-        # Store scientific metadata in X_scores SherpaDataset meta
+        # Store scientific metadata in X_scores SherpaDataset meta.  The
+        # "r2"/"rmse" keys remain calibration (in-sample) for backward
+        # compatibility with existing consumers; explicit aliases
+        # "r2_cal"/"rmse_cal" are also stored to make the semantics
+        # unambiguous alongside the new CV metrics.
         if X_scores_dataset is not None:
             meta_dict = {
                 "type": "PLS",
@@ -543,9 +663,15 @@ class PLSNode(Node):
                 "label_categories": label_categories,
                 "r2": pls_r2,
                 "rmse": pls_rmse,
+                "r2_cal": pls_r2,
+                "rmse_cal": pls_rmse,
+                "r2_cv": pls_r2_cv,
+                "rmsecv": pls_rmsecv,
             }
             if regression_meta is not None:
                 meta_dict.update(regression_meta)
+            if cv_meta is not None:
+                meta_dict["cv"] = cv_meta
             X_scores_dataset.meta.update(meta_dict)
             attach_evaluation(
                 X_scores_dataset,
@@ -564,8 +690,14 @@ class PLSNode(Node):
         artifact_metrics = {}
         if pls_r2 is not None:
             artifact_metrics["r2"] = pls_r2
+            artifact_metrics["r2_cal"] = pls_r2
         if pls_rmse is not None:
             artifact_metrics["rmse"] = pls_rmse
+            artifact_metrics["rmse_cal"] = pls_rmse
+        if pls_r2_cv is not None:
+            artifact_metrics["r2_cv"] = pls_r2_cv
+        if pls_rmsecv is not None:
+            artifact_metrics["rmsecv"] = pls_rmsecv
 
         return NodeResult(
             outputs={
@@ -586,6 +718,11 @@ class PLSNode(Node):
             diagnostics={
                 "r2": pls_r2,
                 "rmse": pls_rmse,
+                "r2_cal": pls_r2,
+                "rmse_cal": pls_rmse,
+                "r2_cv": pls_r2_cv,
+                "rmsecv": pls_rmsecv,
+                "cv_method": cv_method if pls_r2_cv is not None else "none",
                 "n_components": n_components,
             },
         )

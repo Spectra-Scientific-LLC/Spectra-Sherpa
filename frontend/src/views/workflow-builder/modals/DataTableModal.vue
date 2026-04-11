@@ -232,6 +232,22 @@ const extractedData = computed(() => {
 });
 
 // Compute data shape
+/** True when ``data`` is a list of row dicts (e.g. HoldoutEvaluation
+ * metrics: ``[{target: "Moisture", RMSEP: 0.1, R2: 0.9, ...}, ...]``).
+ * In that case column headers are pulled from the dict keys (or from
+ * ``metadata.column_names`` for an explicit order) and each row renders
+ * one cell per key. */
+const isRowDictFormat = computed(() => {
+  const data = props.nodeOutput?.data;
+  return (
+    Array.isArray(data)
+    && data.length > 0
+    && typeof data[0] === "object"
+    && data[0] !== null
+    && !Array.isArray(data[0])
+  );
+});
+
 const dataShape = computed(() => {
   const output = props.nodeOutput;
   if (!output?.data) return { rows: 0, cols: 0 };
@@ -248,6 +264,21 @@ const dataShape = computed(() => {
   if (!Array.isArray(data)) return { rows: 0, cols: 0 };
 
   const rows = data.length;
+
+  if (isRowDictFormat.value) {
+    // Column count = union of keys across all rows, or explicit column_names from metadata.
+    const metadata = output.metadata || {};
+    const explicitCols = Array.isArray(metadata.column_names) ? metadata.column_names.length : 0;
+    if (explicitCols > 0) return { rows, cols: explicitCols };
+    const keys = new Set<string>();
+    for (const row of data) {
+      if (row && typeof row === "object" && !Array.isArray(row)) {
+        for (const key of Object.keys(row)) keys.add(key);
+      }
+    }
+    return { rows, cols: keys.size };
+  }
+
   const cols = Array.isArray(data[0]) ? data[0].length : 1;
 
   return { rows, cols };
@@ -294,6 +325,50 @@ const tableColumns = computed(() => {
   const pcLabels = metadata.pc_labels || [];
   const mcrLabels = metadata.labels || [];
   const labelInfo = getLabelInfo(metadata);
+
+  // Row-dict format (metrics payloads): one field per dict key, ordered
+  // by metadata.column_names if present, else by first-seen order across rows.
+  if (isRowDictFormat.value) {
+    const columns: any[] = [
+      { field: "_index", header: "#", width: "60px", isNumeric: true },
+    ];
+
+    let orderedKeys: string[] = [];
+    if (Array.isArray(metadata.column_names) && metadata.column_names.length > 0) {
+      orderedKeys = metadata.column_names.map((k: any) => String(k));
+    } else {
+      const seen = new Set<string>();
+      for (const row of data) {
+        if (row && typeof row === "object" && !Array.isArray(row)) {
+          for (const key of Object.keys(row)) {
+            if (!seen.has(key)) {
+              seen.add(key);
+              orderedKeys.push(key);
+            }
+          }
+        }
+      }
+    }
+
+    for (const key of orderedKeys) {
+      // Guess numeric vs string by inspecting the first few rows.
+      let isNumeric = false;
+      for (let i = 0; i < Math.min(data.length, 5); i += 1) {
+        const row = data[i];
+        if (row && typeof row === "object" && typeof row[key] === "number") {
+          isNumeric = true;
+          break;
+        }
+      }
+      columns.push({
+        field: key,
+        header: key,
+        width: isNumeric ? "120px" : "160px",
+        isNumeric,
+      });
+    }
+    return columns;
+  }
 
   // Check if it's 2D data
   if (Array.isArray(data[0])) {
@@ -412,6 +487,23 @@ const previewTableData = computed(() => {
 
   const rows: any[] = [];
   const maxRows = Math.min(data.length, limit);
+
+  // Row-dict format (metrics payloads): spread each dict's keys onto
+  // the row object directly, keyed by the column field name that
+  // ``tableColumns`` emits.  ``_label_full`` stays empty — there's no
+  // sample label concept for per-target metrics tables.
+  if (isRowDictFormat.value) {
+    for (let i = 0; i < maxRows; i += 1) {
+      const src = data[i];
+      if (!src || typeof src !== "object" || Array.isArray(src)) continue;
+      const row: any = { _index: i + 1, _label_full: "" };
+      for (const [key, value] of Object.entries(src)) {
+        row[key] = value;
+      }
+      rows.push(row);
+    }
+    return rows;
+  }
 
   if (Array.isArray(data[0])) {
     // 2D data
@@ -578,6 +670,42 @@ function exportCSV() {
   };
 
   let csv = "";
+
+  // Row-dict format: emit each dict key as a column.
+  if (isRowDictFormat.value) {
+    let orderedKeys: string[] = [];
+    if (Array.isArray(metadata.column_names) && metadata.column_names.length > 0) {
+      orderedKeys = metadata.column_names.map((k: any) => String(k));
+    } else {
+      const seen = new Set<string>();
+      for (const row of data) {
+        if (row && typeof row === "object" && !Array.isArray(row)) {
+          for (const key of Object.keys(row)) {
+            if (!seen.has(key)) {
+              seen.add(key);
+              orderedKeys.push(key);
+            }
+          }
+        }
+      }
+    }
+    const headers = ["Index", ...orderedKeys];
+    csv += headers.map(escapeCsv).join(",") + "\n";
+    for (let i = 0; i < data.length; i += 1) {
+      const src = data[i];
+      if (!src || typeof src !== "object" || Array.isArray(src)) continue;
+      const row: any[] = [i + 1, ...orderedKeys.map((k) => (src as any)[k] ?? "")];
+      csv += row.map(escapeCsv).join(",") + "\n";
+    }
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${props.nodeLabel.replace(/\s+/g, "_")}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    return;
+  }
 
   if (Array.isArray(data[0])) {
     // 2D data - build header row
