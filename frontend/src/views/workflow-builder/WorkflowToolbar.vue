@@ -1,314 +1,114 @@
 <template>
-  <div class="workflow-toolbar">
+  <div class="workflow-toolbar" :class="{ collapsed: isCollapsed }">
     <div class="toolbar-header">
-      <h3>Add Nodes</h3>
-    </div>
-
-    <div class="toolbar-content">
-      <!-- Data Sources Section -->
-      <div class="section" @mouseenter="!clickCooldown && (activeSection = 'data')">
-        <div class="section-header" :class="{ active: activeSection === 'data' }" @click="toggleSection('data')">
-          <span>Data Sources</span>
-          <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'data' }"></i>
-        </div>
-        <div class="section-nodes" :class="{ expanded: activeSection === 'data' }">
-          <div
-            v-for="(config, type) in dataNodes"
-            :key="type"
-            class="node-button"
-            :class="config.colorClass"
-            @click="addNode(type)"
-          >
-            <span class="node-icon">{{ config.icon }}</span>
-            <span class="node-label">{{ config.label }}</span>
-            <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">
-              <span class="node-desc-title">{{ config.label }}</span>
-              <span class="node-desc-body">{{ config.description }}</span>
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Synthesis Section -->
-      <div class="section" @mouseenter="!clickCooldown && (activeSection = 'synthesis')">
-        <div class="section-header" :class="{ active: activeSection === 'synthesis' }" @click="toggleSection('synthesis')">
-          <span>Synthesis</span>
-          <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'synthesis' }"></i>
-        </div>
-        <div class="section-nodes" :class="{ expanded: activeSection === 'synthesis' }">
-          <div
-            v-for="(config, type) in synthesisNodes"
-            :key="type"
-            class="node-button"
-            :class="config.colorClass"
-            @click="addNode(type)"
-          >
-            <span class="node-icon">{{ config.icon }}</span>
-            <span class="node-label">{{ config.label }}</span>
-            <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">
-              <span class="node-desc-title">{{ config.label }}</span>
-              <span class="node-desc-body">{{ config.description }}</span>
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Preprocessing Section -->
-      <div class="section" @mouseenter="!clickCooldown && (activeSection = 'preprocess')">
-        <div class="section-header" :class="{ active: activeSection === 'preprocess' }" @click="toggleSection('preprocess')">
-          <span>Preprocessing</span>
-          <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'preprocess' }"></i>
-        </div>
-        <div class="section-nodes" :class="{ expanded: activeSection === 'preprocess' }">
-          <div
-            v-for="(config, type) in preprocessNodes"
-            :key="type"
-            class="node-button"
-            :class="config.colorClass"
-            @click="addNode(type)"
-          >
-            <span class="node-icon">{{ config.icon }}</span>
-            <span class="node-label">{{ config.label }}</span>
-            <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">
-              <span class="node-desc-title">{{ config.label }}</span>
-              <span class="node-desc-body">{{ config.description }}</span>
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Selection & Design Section -->
-      <div class="section" @mouseenter="!clickCooldown && (activeSection = 'selection')">
-        <div class="section-header" :class="{ active: activeSection === 'selection' }" @click="toggleSection('selection')">
-          <span>Selection &amp; Design</span>
-          <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'selection' }"></i>
-        </div>
-        <div class="section-nodes" :class="{ expanded: activeSection === 'selection' }">
-          <div
-            v-for="(config, type) in selectionNodes"
-            :key="type"
-            class="node-button"
-            :class="config.colorClass"
-            @click="addNode(type)"
-          >
-            <span class="node-icon">{{ config.icon }}</span>
-            <span class="node-label">{{ config.label }}</span>
-            <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">
-              <span class="node-desc-title">{{ config.label }}</span>
-              <span class="node-desc-body">{{ config.description }}</span>
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Exploratory Section -->
-      <div class="section" @mouseenter="!clickCooldown && (activeSection = 'exploratory')">
-        <div class="section-header" :class="{ active: activeSection === 'exploratory' }" @click="toggleSection('exploratory')">
-          <span>Exploratory</span>
-          <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'exploratory' }"></i>
-        </div>
-        <div class="section-nodes" :class="{ expanded: activeSection === 'exploratory' }">
-          <div
-            v-for="(config, type) in exploratoryNodes"
-            :key="type"
-            class="node-button"
-            :class="config.colorClass"
-            @click="addNode(type)"
-          >
-            <span class="node-icon">{{ config.icon }}</span>
-            <span class="node-label">{{ config.label }}</span>
-            <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">
-              <span class="node-desc-title">{{ config.label }}</span>
-              <span class="node-desc-body">{{ config.description }}</span>
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Regression Section -->
-      <div class="section" @mouseenter="!clickCooldown && (activeSection = 'regression')">
-        <div class="section-header" :class="{ active: activeSection === 'regression' }" @click="toggleSection('regression')">
-          <span>Regression</span>
-          <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'regression' }"></i>
-        </div>
-        <div class="section-nodes" :class="{ expanded: activeSection === 'regression' }">
-          <div
-            v-for="(config, type) in regressionNodes"
-            :key="type"
-            class="node-button"
-            :class="config.colorClass"
-            @click="addNode(type)"
-          >
-            <span class="node-icon">{{ config.icon }}</span>
-            <span class="node-label">{{ config.label }}</span>
-            <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">
-              <span class="node-desc-title">{{ config.label }}</span>
-              <span class="node-desc-body">{{ config.description }}</span>
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Classification Section -->
-      <div class="section" @mouseenter="!clickCooldown && (activeSection = 'classification')">
-        <div class="section-header" :class="{ active: activeSection === 'classification' }" @click="toggleSection('classification')">
-          <span>Classification</span>
-          <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'classification' }"></i>
-        </div>
-        <div class="section-nodes" :class="{ expanded: activeSection === 'classification' }">
-          <div
-            v-for="(config, type) in classificationNodes"
-            :key="type"
-            class="node-button"
-            :class="config.colorClass"
-            @click="addNode(type)"
-          >
-            <span class="node-icon">{{ config.icon }}</span>
-            <span class="node-label">{{ config.label }}</span>
-            <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">
-              <span class="node-desc-title">{{ config.label }}</span>
-              <span class="node-desc-body">{{ config.description }}</span>
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Clustering Section -->
-      <div class="section" @mouseenter="!clickCooldown && (activeSection = 'clustering')">
-        <div class="section-header" :class="{ active: activeSection === 'clustering' }" @click="toggleSection('clustering')">
-          <span>Clustering</span>
-          <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'clustering' }"></i>
-        </div>
-        <div class="section-nodes" :class="{ expanded: activeSection === 'clustering' }">
-          <div
-            v-for="(config, type) in clusteringNodes"
-            :key="type"
-            class="node-button"
-            :class="config.colorClass"
-            @click="addNode(type)"
-          >
-            <span class="node-icon">{{ config.icon }}</span>
-            <span class="node-label">{{ config.label }}</span>
-            <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">
-              <span class="node-desc-title">{{ config.label }}</span>
-              <span class="node-desc-body">{{ config.description }}</span>
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Validation Section -->
-      <div class="section" @mouseenter="!clickCooldown && (activeSection = 'validation')">
-        <div class="section-header" :class="{ active: activeSection === 'validation' }" @click="toggleSection('validation')">
-          <span>Validation</span>
-          <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'validation' }"></i>
-        </div>
-        <div class="section-nodes" :class="{ expanded: activeSection === 'validation' }">
-          <div
-            v-for="(config, type) in validationNodes"
-            :key="type"
-            class="node-button"
-            :class="config.colorClass"
-            @click="addNode(type)"
-          >
-            <span class="node-icon">{{ config.icon }}</span>
-            <span class="node-label">{{ config.label }}</span>
-            <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">
-              <span class="node-desc-title">{{ config.label }}</span>
-              <span class="node-desc-body">{{ config.description }}</span>
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Output Section -->
-      <div class="section" @mouseenter="!clickCooldown && (activeSection = 'output')">
-        <div class="section-header" :class="{ active: activeSection === 'output' }" @click="toggleSection('output')">
-          <span>Output</span>
-          <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'output' }"></i>
-        </div>
-        <div class="section-nodes" :class="{ expanded: activeSection === 'output' }">
-          <div
-            v-for="(config, type) in outputNodes"
-            :key="type"
-            class="node-button"
-            :class="config.colorClass"
-            @click="addNode(type)"
-          >
-            <span class="node-icon">{{ config.icon }}</span>
-            <span class="node-label">{{ config.label }}</span>
-            <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">
-              <span class="node-desc-title">{{ config.label }}</span>
-              <span class="node-desc-body">{{ config.description }}</span>
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Deployment Section -->
-      <div class="section" @mouseenter="!clickCooldown && (activeSection = 'deploy')">
-        <div class="section-header" :class="{ active: activeSection === 'deploy' }" @click="toggleSection('deploy')">
-          <span>Deployment</span>
-          <i class="pi pi-chevron-right" :class="{ rotated: activeSection === 'deploy' }"></i>
-        </div>
-        <div class="section-nodes" :class="{ expanded: activeSection === 'deploy' }">
-          <div
-            v-for="(config, type) in deployNodes"
-            :key="type"
-            class="node-button"
-            :class="config.colorClass"
-            @click="addNode(type)"
-          >
-            <span class="node-icon">{{ config.icon }}</span>
-            <span class="node-label">{{ config.label }}</span>
-            <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">
-              <span class="node-desc-title">{{ config.label }}</span>
-              <span class="node-desc-body">{{ config.description }}</span>
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Dynamic sections for plugin/custom categories not in the built-in list -->
-      <div
-        v-for="extra in extraCategories"
-        :key="extra.key"
-        class="section"
-        @mouseenter="!clickCooldown && (activeSection = extra.key)"
+      <h3 v-if="!isCollapsed">Add Nodes</h3>
+      <button
+        type="button"
+        class="collapse-toggle"
+        :aria-label="isCollapsed ? 'Expand toolbar' : 'Collapse toolbar'"
+        :title="isCollapsed ? 'Expand' : 'Collapse'"
+        data-testid="toolbar-collapse-toggle"
+        @click="toggleCollapsed"
       >
-        <div class="section-header" :class="{ active: activeSection === extra.key }" @click="toggleSection(extra.key)">
-          <span>{{ extra.label }}</span>
-          <i class="pi pi-chevron-right" :class="{ rotated: activeSection === extra.key }"></i>
+        <i class="pi" :class="isCollapsed ? 'pi-chevron-right' : 'pi-chevron-left'"></i>
+      </button>
+    </div>
+
+    <div v-if="!isCollapsed" class="toolbar-content">
+      <!-- Search category - always first, auto-focused on mount -->
+      <div class="section section-search" data-testid="section-search">
+        <div class="section-header static">
+          <span>Search</span>
+          <i class="pi pi-search"></i>
         </div>
-        <div class="section-nodes" :class="{ expanded: activeSection === extra.key }">
+        <div class="search-box">
+          <input
+            ref="searchInputRef"
+            v-model="searchQuery"
+            type="text"
+            class="search-input"
+            placeholder="Filter nodes by name…"
+            aria-label="Search nodes"
+            data-testid="toolbar-search-input"
+          />
+          <button
+            v-if="searchQuery"
+            type="button"
+            class="search-clear"
+            aria-label="Clear search"
+            data-testid="toolbar-search-clear"
+            @click="searchQuery = ''"
+          >
+            <i class="pi pi-times"></i>
+          </button>
+        </div>
+        <div
+          v-if="searchQuery.trim()"
+          class="section-nodes expanded search-results"
+          data-testid="toolbar-search-results"
+        >
+          <template v-if="searchResults.length > 0">
+            <div
+              v-for="hit in searchResults"
+              :key="hit.type"
+              class="node-button"
+              :class="hit.config.colorClass"
+              :data-testid="`node-button-${hit.type}`"
+              @click="addNode(hit.type)"
+              @mouseenter="onNodeHover($event, hit.config)"
+              @mouseleave="onNodeLeave"
+            >
+              <span class="node-icon">{{ hit.config.icon }}</span>
+              <span class="node-label">{{ hit.config.label }}</span>
+              <i class="pi pi-plus add-icon"></i>
+            </div>
+          </template>
+          <div v-else class="search-empty" data-testid="toolbar-search-empty">
+            No nodes match "{{ searchQuery }}"
+          </div>
+        </div>
+      </div>
+
+      <!-- Categories rendered via v-for -->
+      <div
+        v-for="category in allCategories"
+        :key="category.key"
+        class="section"
+        :data-testid="`section-${category.key}`"
+      >
+        <div
+          class="section-header"
+          :class="{ active: isOpen(category.key) }"
+          :data-testid="`section-header-${category.key}`"
+          @click="toggleSection(category.key)"
+        >
+          <span>{{ category.label }}</span>
+          <i class="pi pi-chevron-right" :class="{ rotated: isOpen(category.key) }"></i>
+        </div>
+        <div
+          class="section-nodes"
+          :class="{ expanded: isOpen(category.key) }"
+          :data-testid="`section-nodes-${category.key}`"
+        >
           <div
-            v-for="(config, type) in extra.nodes"
+            v-for="(config, type) in category.nodes"
             :key="type"
             class="node-button"
             :class="config.colorClass"
-            @click="addNode(type)"
+            :data-testid="`node-button-${type}`"
+            @click="addNode(String(type))"
+            @mouseenter="onNodeHover($event, config)"
+            @mouseleave="onNodeLeave"
           >
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">{{ config.description }}</span>
           </div>
         </div>
       </div>
     </div>
 
-    <div class="toolbar-help">
+    <div v-if="!isCollapsed" class="toolbar-help">
       <h4>How to use</h4>
       <ol>
         <li>Add nodes from above</li>
@@ -318,11 +118,30 @@
         <li>Click "Execute Workflow"</li>
       </ol>
     </div>
+
+    <!--
+      Floating hover tooltip. Uses position: fixed (via inline style) so it
+      escapes the scrollable toolbar and can overlay the main workflow canvas.
+      Expert users ignore it and search by name; new users hover to read the
+      full description without truncation.
+    -->
+    <div
+      v-if="hoveredNode"
+      class="node-tooltip"
+      data-testid="node-hover-tooltip"
+      :style="{ left: `${hoveredNode.x}px`, top: `${hoveredNode.y}px` }"
+      role="tooltip"
+    >
+      <div class="node-tooltip-title">{{ hoveredNode.label }}</div>
+      <div v-if="hoveredNode.description" class="node-tooltip-body">
+        {{ hoveredNode.description }}
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, nextTick } from 'vue';
 import { useWorkflowStore } from '@/stores/workflow';
 import type { NodeTypeMetadata } from '@/types';
 
@@ -333,23 +152,74 @@ interface NodeConfig {
   description: string;
 }
 
+interface CategoryGroup {
+  key: string;
+  label: string;
+  nodes: Record<string, NodeConfig>;
+}
+
+interface SearchHit {
+  type: string;
+  config: NodeConfig;
+  score: number;
+}
+
 const emit = defineEmits<{
   (e: 'add-node', nodeType: string): void;
+  (e: 'toggle-collapsed', collapsed: boolean): void;
 }>();
 
 const workflowStore = useWorkflowStore();
 
-// Active section state - starts with 'data' (Data Sources) open
-const activeSection = ref<string>('data');
+const COLLAPSED_STORAGE_KEY = 'workflow-toolbar-collapsed';
 
-// Cooldown flag to prevent immediate re-expansion after clicking a node
-const clickCooldown = ref<boolean>(false);
+// Multi-open categories: a Set of category keys that are currently expanded.
+const openSections = ref<Set<string>>(new Set());
 
-// Fetch node library on mount
+// Live search query - filters nodes across all categories as the user types.
+const searchQuery = ref<string>('');
+
+// Whole-toolbar collapse state (persisted in localStorage).
+const isCollapsed = ref<boolean>(false);
+
+const searchInputRef = ref<HTMLInputElement | null>(null);
+
+// Floating hover tooltip state: the currently hovered node and the screen
+// coordinates at which to render the tooltip. Cleared on mouseleave.
+interface HoverTooltipState {
+  label: string;
+  description: string;
+  x: number;
+  y: number;
+}
+const hoveredNode = ref<HoverTooltipState | null>(null);
+
+// Horizontal gap (px) between the hovered button and the tooltip.
+const TOOLTIP_GAP_PX = 12;
+// Max tooltip width (must match the CSS rule below) — used for edge-clamping.
+const TOOLTIP_MAX_WIDTH_PX = 320;
+
+// Restore persisted collapsed state before mount so the initial render matches.
+try {
+  const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(COLLAPSED_STORAGE_KEY) : null;
+  if (stored === '1') {
+    isCollapsed.value = true;
+  }
+} catch {
+  // localStorage may be unavailable (private mode, tests) — fall back to expanded.
+}
+
 onMounted(async () => {
   if (workflowStore.nodeLibrary.size === 0) {
     await workflowStore.fetchNodeLibrary();
   }
+  // Auto-focus the search input when the toolbar mounts expanded.
+  if (!isCollapsed.value) {
+    await nextTick();
+    searchInputRef.value?.focus();
+  }
+  // Broadcast the initial state so the parent layout can size the grid column.
+  emit('toggle-collapsed', isCollapsed.value);
 });
 
 // Icon mappings by canonical node_type
@@ -449,7 +319,7 @@ const CATEGORY_COLOR: Record<string, string> = {
 
 // Category display names
 const CATEGORY_LABELS: Record<string, string> = {
-  data: 'Data',
+  data: 'Data Sources',
   synthesis: 'Synthesis',
   preprocessing: 'Preprocessing',
   selection: 'Selection & Design',
@@ -462,25 +332,29 @@ const CATEGORY_LABELS: Record<string, string> = {
   deploy: 'Deployment',
 };
 
+// Ordered list of built-in category keys — drives v-for render order.
+const BUILTIN_CATEGORY_ORDER: string[] = [
+  'data',
+  'synthesis',
+  'preprocessing',
+  'selection',
+  'exploratory',
+  'regression',
+  'classification',
+  'clustering',
+  'validation',
+  'output',
+  'deploy',
+];
+
+/**
+ * Normalize whitespace on a node description and return the full text.
+ * The floating tooltip is the only consumer now, so long, detailed
+ * descriptions render completely — users move their cursor down the
+ * category list to read each one in turn.
+ */
 const summarizePurpose = (description: string): string => {
-  const normalized = description.replace(/\s+/g, ' ').trim();
-  if (!normalized) return '';
-
-  const firstSentence = normalized.match(/(.+?[.!?])(?:\s|$)/);
-  if (firstSentence) {
-    return firstSentence[1];
-  }
-
-  const clause = normalized.match(/^(.+?)(?:;|,|\s+-\s+)/);
-  if (clause) {
-    return `${clause[1]}.`;
-  }
-
-  if (normalized.length <= 100) {
-    return normalized;
-  }
-
-  return `${normalized.slice(0, 97).trimEnd()}...`;
+  return description.replace(/\s+/g, ' ').trim();
 };
 
 // Convert backend metadata to NodeConfig
@@ -495,19 +369,17 @@ const metadataToConfig = (metadata: NodeTypeMetadata): NodeConfig => {
   };
 };
 
-// Built-in category keys handled by dedicated template sections
-const BUILTIN_CATEGORIES = new Set(Object.keys(CATEGORY_LABELS));
+// Built-in category keys handled by the canonical template sections
+const BUILTIN_CATEGORIES = new Set(BUILTIN_CATEGORY_ORDER);
 
 // Dynamically group nodes by category from backend
 const nodesByCategory = computed(() => {
   const groups: Record<string, Record<string, NodeConfig>> = {};
 
-  // Initialize built-in categories
   for (const category of BUILTIN_CATEGORIES) {
     groups[category] = {};
   }
 
-  // Populate from node library
   workflowStore.nodeLibrary.forEach((metadata) => {
     const category = metadata.category;
     if (!groups[category]) {
@@ -519,12 +391,11 @@ const nodesByCategory = computed(() => {
   return groups;
 });
 
-// Extra categories from backend that aren't covered by the built-in template sections
-const extraCategories = computed(() => {
-  const extras: Array<{ key: string; label: string; nodes: Record<string, NodeConfig> }> = [];
+// Extra categories from backend that aren't covered by the built-in list.
+const extraCategories = computed<CategoryGroup[]>(() => {
+  const extras: CategoryGroup[] = [];
   for (const [category, nodes] of Object.entries(nodesByCategory.value)) {
     if (!BUILTIN_CATEGORIES.has(category) && Object.keys(nodes).length > 0) {
-      // Generate display label: "custom" -> "Custom", "spectral_analysis" -> "Spectral Analysis"
       const label = category
         .replace(/_/g, ' ')
         .replace(/\b\w/g, (c) => c.toUpperCase());
@@ -534,34 +405,124 @@ const extraCategories = computed(() => {
   return extras;
 });
 
-// Direct access to backend-populated category groups (no fallbacks)
-const dataNodes = computed(() => nodesByCategory.value.data || {});
-const synthesisNodes = computed(() => nodesByCategory.value.synthesis || {});
-const preprocessNodes = computed(() => nodesByCategory.value.preprocessing || {});
-const selectionNodes = computed(() => nodesByCategory.value.selection || {});
-const exploratoryNodes = computed(() => nodesByCategory.value.exploratory || {});
-const regressionNodes = computed(() => nodesByCategory.value.regression || {});
-const clusteringNodes = computed(() => nodesByCategory.value.clustering || {});
-const validationNodes = computed(() => nodesByCategory.value.validation || {});
-const classificationNodes = computed(() => nodesByCategory.value.classification || {});
-const outputNodes = computed(() => nodesByCategory.value.output || {});
-const deployNodes = computed(() => nodesByCategory.value.deploy || {});
+// Full ordered list of categories shown in the toolbar (built-in first, extras last).
+const allCategories = computed<CategoryGroup[]>(() => {
+  const builtin: CategoryGroup[] = BUILTIN_CATEGORY_ORDER.map((key) => ({
+    key,
+    label: CATEGORY_LABELS[key],
+    nodes: nodesByCategory.value[key] || {},
+  }));
+  return [...builtin, ...extraCategories.value];
+});
+
+/**
+ * Case-insensitive fuzzy search across node labels and node_type identifiers.
+ * Returns a ranked list of at most 20 hits. Ranking preference:
+ *   1) label starts with query     (score 0)
+ *   2) label contains query        (score 10)
+ *   3) node_type contains query    (score 20)
+ * Ties broken by label length, then alphabetically.
+ */
+const searchResults = computed<SearchHit[]>(() => {
+  const q = searchQuery.value.trim().toLowerCase();
+  if (!q) return [];
+
+  const hits: SearchHit[] = [];
+  const seen = new Set<string>();
+
+  for (const category of allCategories.value) {
+    for (const [type, config] of Object.entries(category.nodes)) {
+      if (seen.has(type)) continue;
+      const label = config.label.toLowerCase();
+      const typeLower = type.toLowerCase();
+
+      let score: number | null = null;
+      if (label.startsWith(q)) {
+        score = 0;
+      } else if (label.includes(q)) {
+        score = 10;
+      } else if (typeLower.includes(q)) {
+        score = 20;
+      }
+
+      if (score !== null) {
+        seen.add(type);
+        hits.push({ type, config, score: score + config.label.length });
+      }
+    }
+  }
+
+  hits.sort((a, b) => a.score - b.score || a.config.label.localeCompare(b.config.label));
+  return hits.slice(0, 20);
+});
+
+const isOpen = (key: string): boolean => openSections.value.has(key);
 
 const toggleSection = (section: string) => {
-  activeSection.value = activeSection.value === section ? '' : section;
+  // Use a fresh Set so reactivity triggers (Vue doesn't deep-track Set mutations).
+  const next = new Set(openSections.value);
+  if (next.has(section)) {
+    next.delete(section);
+  } else {
+    next.add(section);
+  }
+  openSections.value = next;
 };
 
 const addNode = (nodeType: string) => {
   emit('add-node', nodeType);
-  // Auto-collapse section after selection
-  activeSection.value = '';
-
-  // Enable cooldown to prevent immediate re-expansion
-  clickCooldown.value = true;
-  setTimeout(() => {
-    clickCooldown.value = false;
-  }, 500);
+  // Clear search after a successful add so the panel returns to category view.
+  searchQuery.value = '';
+  // Dismiss any floating tooltip that was showing for this button.
+  hoveredNode.value = null;
 };
+
+/**
+ * Show the floating tooltip anchored to the right edge of the hovered button.
+ * If the button's right edge plus tooltip width overflows the viewport, the
+ * tooltip flips to the left side of the button instead.
+ */
+const onNodeHover = (event: MouseEvent, config: NodeConfig) => {
+  const target = event.currentTarget as HTMLElement | null;
+  if (!target) return;
+  const rect = target.getBoundingClientRect();
+  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1024;
+
+  let x = rect.right + TOOLTIP_GAP_PX;
+  if (x + TOOLTIP_MAX_WIDTH_PX > viewportWidth) {
+    // Not enough room on the right — anchor to the left of the button.
+    x = Math.max(8, rect.left - TOOLTIP_MAX_WIDTH_PX - TOOLTIP_GAP_PX);
+  }
+
+  hoveredNode.value = {
+    label: config.label,
+    description: config.description,
+    x,
+    y: rect.top,
+  };
+};
+
+const onNodeLeave = () => {
+  hoveredNode.value = null;
+};
+
+const toggleCollapsed = async () => {
+  isCollapsed.value = !isCollapsed.value;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(COLLAPSED_STORAGE_KEY, isCollapsed.value ? '1' : '0');
+    }
+  } catch {
+    // Ignore storage failures — state still lives in memory for the session.
+  }
+  emit('toggle-collapsed', isCollapsed.value);
+  if (!isCollapsed.value) {
+    await nextTick();
+    searchInputRef.value?.focus();
+  }
+};
+
+defineExpose({ summarizePurpose });
 </script>
 
 <style scoped>
@@ -572,11 +533,29 @@ const addNode = (nodeType: string) => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  transition: background 0.2s ease;
+}
+
+.workflow-toolbar.collapsed {
+  /* When collapsed, the toolbar shrinks to just the chevron column. */
+  align-items: center;
 }
 
 .toolbar-header {
   padding: 16px;
   border-bottom: 1px solid #334155;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.workflow-toolbar.collapsed .toolbar-header {
+  padding: 12px 6px;
+  border-bottom: none;
+  justify-content: center;
 }
 
 .toolbar-header h3 {
@@ -586,6 +565,31 @@ const addNode = (nodeType: string) => {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: #94a3b8;
+}
+
+.collapse-toggle {
+  background: transparent;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  color: #94a3b8;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.collapse-toggle:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e2e8f0;
+  border-color: #475569;
+}
+
+.collapse-toggle i {
+  font-size: 0.7rem;
 }
 
 .toolbar-content {
@@ -630,6 +634,16 @@ const addNode = (nodeType: string) => {
   background: rgba(59, 130, 246, 0.1);
 }
 
+.section-header.static {
+  cursor: default;
+  color: #94a3b8;
+}
+
+.section-header.static:hover {
+  background: rgba(255, 255, 255, 0.03);
+  color: #94a3b8;
+}
+
 .section-header i {
   font-size: 0.65rem;
   transition: transform 0.2s ease;
@@ -637,6 +651,73 @@ const addNode = (nodeType: string) => {
 
 .section-header i.rotated {
   transform: rotate(90deg);
+}
+
+/* Search box */
+.search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 6px 4px 4px 4px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 8px 28px 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #334155;
+  background: rgba(15, 23, 42, 0.6);
+  color: #e2e8f0;
+  font-size: 0.85rem;
+  font-family: inherit;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  box-sizing: border-box;
+}
+
+.search-input::placeholder {
+  color: #64748b;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.search-clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+}
+
+.search-clear:hover {
+  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.search-clear i {
+  font-size: 0.65rem;
+}
+
+.search-results {
+  margin-top: 4px;
+}
+
+.search-empty {
+  padding: 10px 12px;
+  font-size: 0.78rem;
+  color: #64748b;
+  font-style: italic;
 }
 
 /* Section nodes container - collapsible */
@@ -675,28 +756,40 @@ const addNode = (nodeType: string) => {
   transform: translateX(4px);
 }
 
-.node-desc {
-  display: none;
-  width: 100%;
-  display: none;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 0.72rem;
-  color: rgba(255, 255, 255, 0.8);
-  line-height: 1.3;
-}
-
-.node-button:hover .node-desc {
+/*
+ * Floating hover tooltip. Uses position: fixed so it escapes the scrollable
+ * toolbar and overlays the workflow canvas to the right. Coordinates are
+ * supplied inline from onNodeHover(); this rule owns the look-and-feel only.
+ */
+.node-tooltip {
+  position: fixed;
+  z-index: 1000;
+  max-width: 320px;
+  padding: 10px 12px;
+  background: #0f172a;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  pointer-events: none;
   display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.node-desc-title {
+.node-tooltip-title {
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.96);
+  font-size: 0.82rem;
+  color: #f8fafc;
 }
 
-.node-desc-body {
+.node-tooltip-body {
   font-weight: 400;
+  color: #cbd5e1;
+  white-space: normal;
+  word-wrap: break-word;
 }
 
 .node-icon {
