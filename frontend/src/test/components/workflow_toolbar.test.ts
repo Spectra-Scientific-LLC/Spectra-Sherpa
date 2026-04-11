@@ -1,11 +1,13 @@
 /**
  * Regression coverage for the redesigned "Add Nodes" toolbar.
  *
- * These tests guard the four UX contracts the panel is supposed to honor:
+ * These tests guard the UX contracts the panel is supposed to honor:
  *   1. Categories expand on CLICK only (no hover-to-expand),
  *   2. Multiple categories can be open at the same time,
  *   3. A search box at the top filters nodes live and remains the first element,
- *   4. Hover descriptions are capped at 7 words,
+ *   4. Hovering a node shows a FLOATING tooltip with the FULL description,
+ *      positioned to the right of the button via position: fixed so it can
+ *      overlay the main workflow canvas,
  *   5. A header chevron collapses/expands the whole toolbar and flips direction.
  */
 import { flushPromises, mount } from "@vue/test-utils";
@@ -200,30 +202,112 @@ describe("WorkflowToolbar", () => {
     });
   });
 
-  describe("7-word hover description cap", () => {
-    it("truncates verbose descriptions to 7 words with an ellipsis", async () => {
+  describe("floating hover tooltip", () => {
+    const stubRect = (el: HTMLElement, rect: Partial<DOMRect>) => {
+      const full: DOMRect = {
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: 0,
+        height: 0,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+        ...rect,
+      } as DOMRect;
+      el.getBoundingClientRect = () => full;
+    };
+
+    it("is not rendered until the user hovers a node", async () => {
       const wrapper = await mountToolbar();
       await wrapper.get('[data-testid="section-header-data"]').trigger("click");
-
-      const dataSource = wrapper.get('[data-testid="node-button-data.source"]');
-      const descBody = dataSource.get(".node-desc-body");
-      const text = descBody.text().trim();
-
-      // Cap is 7 words before the ellipsis.
-      const withoutEllipsis = text.replace(/…$/, "").trim();
-      const wordCount = withoutEllipsis.split(/\s+/).filter(Boolean).length;
-      expect(wordCount).toBeLessThanOrEqual(7);
-      expect(text.endsWith("…")).toBe(true);
+      expect(wrapper.find('[data-testid="node-hover-tooltip"]').exists()).toBe(false);
     });
 
-    it("keeps short descriptions unchanged and without an ellipsis", async () => {
+    it("shows the FULL description (not truncated) on mouseenter", async () => {
       const wrapper = await mountToolbar();
       await wrapper.get('[data-testid="section-header-data"]').trigger("click");
 
-      const fileLoad = wrapper.get('[data-testid="node-button-data.file_load"]');
-      const descBody = fileLoad.get(".node-desc-body").text().trim();
-      expect(descBody).toBe("Read CSV");
-      expect(descBody.endsWith("…")).toBe(false);
+      const button = wrapper.get('[data-testid="node-button-data.source"]');
+      await button.trigger("mouseenter");
+
+      const tooltip = wrapper.get('[data-testid="node-hover-tooltip"]');
+      // Full description (from seedLibrary), no 7-word ellipsis.
+      expect(tooltip.text()).toContain(
+        "Load spectral data from a source into the workflow for further processing."
+      );
+      // Label rendered as tooltip title.
+      expect(tooltip.get(".node-tooltip-title").text()).toBe("Data Source");
+      // > 9 words proves the 7-word cap is gone.
+      const words = tooltip.get(".node-tooltip-body").text().split(/\s+/).filter(Boolean);
+      expect(words.length).toBeGreaterThan(9);
+    });
+
+    it("hides the tooltip on mouseleave", async () => {
+      const wrapper = await mountToolbar();
+      await wrapper.get('[data-testid="section-header-data"]').trigger("click");
+      const button = wrapper.get('[data-testid="node-button-data.source"]');
+
+      await button.trigger("mouseenter");
+      expect(wrapper.find('[data-testid="node-hover-tooltip"]').exists()).toBe(true);
+
+      await button.trigger("mouseleave");
+      expect(wrapper.find('[data-testid="node-hover-tooltip"]').exists()).toBe(false);
+    });
+
+    it("positions the tooltip to the right of the hovered button via fixed coords", async () => {
+      const wrapper = await mountToolbar();
+      await wrapper.get('[data-testid="section-header-data"]').trigger("click");
+
+      const button = wrapper.get('[data-testid="node-button-data.source"]');
+      stubRect(button.element as HTMLElement, { top: 150, left: 20, right: 200, bottom: 180, width: 180, height: 30 });
+
+      await button.trigger("mouseenter");
+
+      const tooltip = wrapper.get('[data-testid="node-hover-tooltip"]');
+      const styleAttr = tooltip.attributes("style") || "";
+      // The gap is 12px; right=200 → left should land at 212px.
+      expect(styleAttr).toContain("left: 212px");
+      expect(styleAttr).toContain("top: 150px");
+    });
+
+    it("flips to the left when the tooltip would overflow the viewport on the right", async () => {
+      const wrapper = await mountToolbar();
+      await wrapper.get('[data-testid="section-header-data"]').trigger("click");
+
+      const button = wrapper.get('[data-testid="node-button-data.source"]');
+      // Force the button to sit near the right edge of a narrow viewport.
+      Object.defineProperty(window, "innerWidth", { value: 400, configurable: true });
+      stubRect(button.element as HTMLElement, { top: 100, left: 180, right: 380, bottom: 130, width: 200, height: 30 });
+
+      await button.trigger("mouseenter");
+
+      const tooltip = wrapper.get('[data-testid="node-hover-tooltip"]');
+      const styleAttr = tooltip.attributes("style") || "";
+      // Tooltip should land to the LEFT of the button (left < button.left).
+      const leftMatch = styleAttr.match(/left:\s*(-?\d+(?:\.\d+)?)px/);
+      expect(leftMatch).not.toBeNull();
+      expect(parseFloat(leftMatch![1])).toBeLessThan(180);
+    });
+
+    it("does not render the inline .node-desc anymore (description lives in the floating tooltip)", async () => {
+      const wrapper = await mountToolbar();
+      await wrapper.get('[data-testid="section-header-data"]').trigger("click");
+      expect(wrapper.find(".node-desc").exists()).toBe(false);
+      expect(wrapper.find(".node-desc-body").exists()).toBe(false);
+    });
+
+    it("dismisses the tooltip when a node button is clicked (add-node)", async () => {
+      const wrapper = await mountToolbar();
+      await wrapper.get('[data-testid="section-header-data"]').trigger("click");
+
+      const button = wrapper.get('[data-testid="node-button-data.source"]');
+      await button.trigger("mouseenter");
+      expect(wrapper.find('[data-testid="node-hover-tooltip"]').exists()).toBe(true);
+
+      await button.trigger("click");
+      expect(wrapper.find('[data-testid="node-hover-tooltip"]').exists()).toBe(false);
     });
   });
 

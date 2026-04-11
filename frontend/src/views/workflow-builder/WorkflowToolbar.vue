@@ -55,14 +55,12 @@
               :class="hit.config.colorClass"
               :data-testid="`node-button-${hit.type}`"
               @click="addNode(hit.type)"
+              @mouseenter="onNodeHover($event, hit.config)"
+              @mouseleave="onNodeLeave"
             >
               <span class="node-icon">{{ hit.config.icon }}</span>
               <span class="node-label">{{ hit.config.label }}</span>
               <i class="pi pi-plus add-icon"></i>
-              <span v-if="hit.config.description" class="node-desc">
-                <span class="node-desc-title">{{ hit.config.label }}</span>
-                <span class="node-desc-body">{{ hit.config.description }}</span>
-              </span>
             </div>
           </template>
           <div v-else class="search-empty" data-testid="toolbar-search-empty">
@@ -99,14 +97,12 @@
             :class="config.colorClass"
             :data-testid="`node-button-${type}`"
             @click="addNode(String(type))"
+            @mouseenter="onNodeHover($event, config)"
+            @mouseleave="onNodeLeave"
           >
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
             <i class="pi pi-plus add-icon"></i>
-            <span v-if="config.description" class="node-desc">
-              <span class="node-desc-title">{{ config.label }}</span>
-              <span class="node-desc-body">{{ config.description }}</span>
-            </span>
           </div>
         </div>
       </div>
@@ -121,6 +117,25 @@
         <li>Adjust parameters on right</li>
         <li>Click "Execute Workflow"</li>
       </ol>
+    </div>
+
+    <!--
+      Floating hover tooltip. Uses position: fixed (via inline style) so it
+      escapes the scrollable toolbar and can overlay the main workflow canvas.
+      Expert users ignore it and search by name; new users hover to read the
+      full description without truncation.
+    -->
+    <div
+      v-if="hoveredNode"
+      class="node-tooltip"
+      data-testid="node-hover-tooltip"
+      :style="{ left: `${hoveredNode.x}px`, top: `${hoveredNode.y}px` }"
+      role="tooltip"
+    >
+      <div class="node-tooltip-title">{{ hoveredNode.label }}</div>
+      <div v-if="hoveredNode.description" class="node-tooltip-body">
+        {{ hoveredNode.description }}
+      </div>
     </div>
   </div>
 </template>
@@ -168,6 +183,21 @@ const searchQuery = ref<string>('');
 const isCollapsed = ref<boolean>(false);
 
 const searchInputRef = ref<HTMLInputElement | null>(null);
+
+// Floating hover tooltip state: the currently hovered node and the screen
+// coordinates at which to render the tooltip. Cleared on mouseleave.
+interface HoverTooltipState {
+  label: string;
+  description: string;
+  x: number;
+  y: number;
+}
+const hoveredNode = ref<HoverTooltipState | null>(null);
+
+// Horizontal gap (px) between the hovered button and the tooltip.
+const TOOLTIP_GAP_PX = 12;
+// Max tooltip width (must match the CSS rule below) — used for edge-clamping.
+const TOOLTIP_MAX_WIDTH_PX = 320;
 
 // Restore persisted collapsed state before mount so the initial render matches.
 try {
@@ -318,24 +348,13 @@ const BUILTIN_CATEGORY_ORDER: string[] = [
 ];
 
 /**
- * Reduce a verbose node description to a hover-friendly snippet of
- * at most 7 words. Keeps the first sentence if it's short enough; otherwise
- * truncates with an ellipsis.
+ * Normalize whitespace on a node description and return the full text.
+ * The floating tooltip is the only consumer now, so long, detailed
+ * descriptions render completely — users move their cursor down the
+ * category list to read each one in turn.
  */
 const summarizePurpose = (description: string): string => {
-  const normalized = description.replace(/\s+/g, ' ').trim();
-  if (!normalized) return '';
-
-  // Use the first sentence as the base if present.
-  const firstSentenceMatch = normalized.match(/(.+?[.!?])(?:\s|$)/);
-  const base = firstSentenceMatch ? firstSentenceMatch[1] : normalized;
-  const trimmed = base.replace(/[.!?]+$/, '').trim();
-
-  const words = trimmed.split(/\s+/).filter(Boolean);
-  if (words.length <= 7) {
-    return trimmed;
-  }
-  return words.slice(0, 7).join(' ') + '…';
+  return description.replace(/\s+/g, ' ').trim();
 };
 
 // Convert backend metadata to NodeConfig
@@ -454,6 +473,37 @@ const addNode = (nodeType: string) => {
   emit('add-node', nodeType);
   // Clear search after a successful add so the panel returns to category view.
   searchQuery.value = '';
+  // Dismiss any floating tooltip that was showing for this button.
+  hoveredNode.value = null;
+};
+
+/**
+ * Show the floating tooltip anchored to the right edge of the hovered button.
+ * If the button's right edge plus tooltip width overflows the viewport, the
+ * tooltip flips to the left side of the button instead.
+ */
+const onNodeHover = (event: MouseEvent, config: NodeConfig) => {
+  const target = event.currentTarget as HTMLElement | null;
+  if (!target) return;
+  const rect = target.getBoundingClientRect();
+  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1024;
+
+  let x = rect.right + TOOLTIP_GAP_PX;
+  if (x + TOOLTIP_MAX_WIDTH_PX > viewportWidth) {
+    // Not enough room on the right — anchor to the left of the button.
+    x = Math.max(8, rect.left - TOOLTIP_MAX_WIDTH_PX - TOOLTIP_GAP_PX);
+  }
+
+  hoveredNode.value = {
+    label: config.label,
+    description: config.description,
+    x,
+    y: rect.top,
+  };
+};
+
+const onNodeLeave = () => {
+  hoveredNode.value = null;
 };
 
 const toggleCollapsed = async () => {
@@ -706,27 +756,40 @@ defineExpose({ summarizePurpose });
   transform: translateX(4px);
 }
 
-.node-desc {
-  display: none;
-  width: 100%;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 0.72rem;
-  color: rgba(255, 255, 255, 0.8);
-  line-height: 1.3;
-}
-
-.node-button:hover .node-desc {
+/*
+ * Floating hover tooltip. Uses position: fixed so it escapes the scrollable
+ * toolbar and overlays the workflow canvas to the right. Coordinates are
+ * supplied inline from onNodeHover(); this rule owns the look-and-feel only.
+ */
+.node-tooltip {
+  position: fixed;
+  z-index: 1000;
+  max-width: 320px;
+  padding: 10px 12px;
+  background: #0f172a;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  pointer-events: none;
   display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.node-desc-title {
+.node-tooltip-title {
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.96);
+  font-size: 0.82rem;
+  color: #f8fafc;
 }
 
-.node-desc-body {
+.node-tooltip-body {
   font-weight: 400;
+  color: #cbd5e1;
+  white-space: normal;
+  word-wrap: break-word;
 }
 
 .node-icon {
