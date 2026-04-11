@@ -65,6 +65,7 @@ export interface ReferenceCatalog {
 export interface SherpaDatasetContext {
   label: string | null;
   source: string | null;
+  dataset_name: string | null;
   description: string | null;
   n_samples: number | null;
   n_features: number | null;
@@ -77,6 +78,8 @@ export interface SherpaDatasetContext {
   x_max: number | null;
   data_quantity: string | null;
   value_units: string | null;
+  feature_names: string[] | null;
+  target_names: string[] | null;
   metadata_summary: StoryObject | null;
 }
 
@@ -84,6 +87,16 @@ function asObject(value: unknown): StoryObject {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as StoryObject)
     : {};
+}
+
+function asStringList(value: unknown, limit = 20): string[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const items = value
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .slice(0, limit);
+  return items.length > 0 ? items : null;
 }
 
 function summarizeForDataStory(datasetInfo: StoryObject): StoryObject {
@@ -195,6 +208,21 @@ export function summarizeDatasetForSherpaContext(
     metadata.value_units ??
     metadata.y_units ??
     null;
+  const datasetName =
+    typeof datasetInfo.name === "string"
+      ? datasetInfo.name
+      : typeof metadata["sklearn.dataset_name"] === "string"
+        ? metadata["sklearn.dataset_name"]
+        : typeof metadata["catalog.dataset_name"] === "string"
+          ? metadata["catalog.dataset_name"]
+          : null;
+  const featureNames =
+    asStringList(datasetInfo.feature_names) ??
+    asStringList(metadata.feature_names);
+  const targetNames =
+    asStringList(datasetInfo.target_names) ??
+    asStringList(metadata.target_names) ??
+    asStringList(metadata.prop_names);
 
   return {
     label:
@@ -206,6 +234,7 @@ export function summarizeDatasetForSherpaContext(
             ? fileMetadata.name
             : null,
     source: typeof source === "string" ? source : null,
+    dataset_name: datasetName,
     description:
       typeof datasetInfo.description === "string" ? datasetInfo.description : null,
     n_samples:
@@ -243,6 +272,8 @@ export function summarizeDatasetForSherpaContext(
           : null,
     data_quantity: typeof dataQuantity === "string" ? dataQuantity : null,
     value_units: typeof valueUnits === "string" ? valueUnits : null,
+    feature_names: featureNames,
+    target_names: targetNames,
     metadata_summary: {
       data_type:
         typeof metadata.data_type === "string" ? metadata.data_type : null,

@@ -9,7 +9,11 @@ import {
   type SherpaEventPayload,
 } from "@/lib/sherpaEvents";
 import { SHERPA_WS_ACTION, SHERPA_WS_EVENT, getSherpaChatAction } from "@/lib/sherpaWs";
-import { summarizeDatasetForSherpaContext, useDataStore } from "@/stores/data";
+import {
+  summarizeDatasetForSherpaContext,
+  useDataStore,
+  type SherpaDatasetContext,
+} from "@/stores/data";
 import { useLlmStore } from "@/stores/llm";
 import { useNotificationStore } from "@/stores/notification";
 import { useProjectStore } from "@/stores/project";
@@ -540,6 +544,117 @@ export const useSherpaStore = defineStore("sherpa", () => {
       string,
       Record<string, unknown>
     > | null;
+    const emptyDatasetContext = (): SherpaDatasetContext => ({
+      label: null,
+      source: null,
+      dataset_name: null,
+      description: null,
+      n_samples: null,
+      n_features: null,
+      is_time_series: null,
+      is_spectra: null,
+      technique: null,
+      x_title: null,
+      x_units: null,
+      x_min: null,
+      x_max: null,
+      data_quantity: null,
+      value_units: null,
+      feature_names: null,
+      target_names: null,
+      metadata_summary: null,
+    });
+
+    const toObject = (value: unknown): Record<string, unknown> | null =>
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : null;
+
+    const toStringList = (value: unknown, limit = 20): string[] | null => {
+      if (!Array.isArray(value)) {
+        return null;
+      }
+      const items = value
+        .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        .slice(0, limit);
+      return items.length > 0 ? items : null;
+    };
+
+    /**
+     * Unwrap a multi-output node's serialized result to the dataset-bearing
+     * port.  Multi-output nodes (``data.source``, ``model.*``) serialize to
+     * ``{default: {...SherpaDataset fields...}, target: ..., ...}``, so the
+     * dataset identity lives at ``result.default``, not at the top level.
+     * Single-output nodes that serialize directly as a SherpaDataset have
+     * ``type: "SherpaDataset"`` at the top level and pass through unchanged.
+     */
+    const unwrapDatasetResult = (
+      rawResult: Record<string, unknown> | null | undefined
+    ): Record<string, unknown> | null => {
+      if (!rawResult || typeof rawResult !== "object") return null;
+      if (rawResult.type === "SherpaDataset") return rawResult;
+      const defaultPort = toObject(rawResult.default);
+      if (defaultPort && defaultPort.type === "SherpaDataset") return defaultPort;
+      return rawResult;
+    };
+
+    const deriveDatasetIdentity = (
+      _node: { label?: unknown; params?: Record<string, unknown> },
+      rawResult: Record<string, unknown> | null | undefined
+    ): Partial<SherpaDatasetContext> | null => {
+      const ds = unwrapDatasetResult(rawResult);
+      if (!ds) return null;
+      const metadata = toObject(ds.metadata);
+      const extra = toObject(ds.extra);
+      const targetContext = toObject(ds.target_context);
+      const datasetName =
+        typeof extra?.["sklearn.dataset_name"] === "string"
+          ? extra["sklearn.dataset_name"]
+          : typeof extra?.["catalog.dataset_name"] === "string"
+            ? extra["catalog.dataset_name"]
+            : typeof metadata?.["sklearn.dataset_name"] === "string"
+              ? metadata["sklearn.dataset_name"]
+              : typeof metadata?.["catalog.dataset_name"] === "string"
+                ? metadata["catalog.dataset_name"]
+                : typeof ds.title === "string" && ds.title.trim()
+                  ? ds.title
+                  : null;
+      const featureNames =
+        toStringList(metadata?.feature_names) ??
+        toStringList(extra?.["csv.feature_names"]) ??
+        toStringList(toObject(ds.x_axis)?.labels) ??
+        toStringList(toObject(ds.feature_axis)?.labels);
+      const targetNames =
+        toStringList(targetContext?.target_names) ??
+        toStringList(targetContext?.class_names) ??
+        toStringList(extra?.["sklearn.target_names"]) ??
+        toStringList(metadata?.["sklearn.target_names"]);
+
+      const identity: Partial<SherpaDatasetContext> = {};
+      if (typeof ds.title === "string" && ds.title.trim()) {
+        identity.label = ds.title;
+      }
+      if (typeof ds.backend === "string" && ds.backend.trim()) {
+        identity.source = ds.backend;
+      }
+      if (datasetName) {
+        identity.dataset_name = datasetName;
+      }
+      if (featureNames) {
+        identity.feature_names = featureNames;
+      }
+      if (targetNames) {
+        identity.target_names = targetNames;
+      }
+      if (typeof ds.n_samples === "number") {
+        identity.n_samples = ds.n_samples;
+      }
+      if (typeof ds.n_features === "number") {
+        identity.n_features = ds.n_features;
+      }
+
+      return Object.keys(identity).length > 0 ? identity : null;
+    };
 
     const deriveShapeAndType = (
       result: Record<string, unknown> | null | undefined
@@ -792,19 +907,96 @@ export const useSherpaStore = defineStore("sherpa", () => {
           summary.metadata = null;
         }
 
+        // For multi-output nodes the SherpaDataset lives under ``default``;
+        // unwrap so the scientific fields (title, backend, extra,
+        // target_context, metadata.feature_names) come from the right layer.
+        // We pull fields from ``ds`` (unwrapped) for dataset identity but
+        // keep using ``result`` above for the legacy summary shape.
+        const ds = unwrapDatasetResult(result) ?? result;
+        const dsMetadata = toObject(ds.metadata) ?? toObject(metadata);
+        const extra = toObject(ds.extra);
+        const targetContext = toObject(ds.target_context);
+        const featureNames =
+          toStringList(dsMetadata?.feature_names) ??
+          toStringList(extra?.["csv.feature_names"]) ??
+          toStringList(toObject(ds.x_axis)?.labels) ??
+          toStringList(toObject(ds.feature_axis)?.labels);
+        const targetNames =
+          toStringList(targetContext?.target_names) ??
+          toStringList(targetContext?.class_names) ??
+          toStringList(extra?.["sklearn.target_names"]) ??
+          toStringList(dsMetadata?.["sklearn.target_names"]);
+        const datasetName =
+          typeof extra?.["sklearn.dataset_name"] === "string"
+            ? extra["sklearn.dataset_name"]
+            : typeof extra?.["catalog.dataset_name"] === "string"
+              ? extra["catalog.dataset_name"]
+              : typeof dsMetadata?.["sklearn.dataset_name"] === "string"
+                ? dsMetadata["sklearn.dataset_name"]
+                : typeof dsMetadata?.["catalog.dataset_name"] === "string"
+                  ? dsMetadata["catalog.dataset_name"]
+                  : typeof ds.title === "string" && ds.title.trim()
+                    ? ds.title
+                    : null;
+        if (typeof ds.backend === "string" && ds.backend.trim()) {
+          summary.backend = ds.backend;
+        }
+        if (datasetName) {
+          summary.dataset_name = datasetName;
+        }
+        if (featureNames) {
+          summary.feature_names = featureNames;
+        }
+        if (targetNames) {
+          summary.target_names = targetNames;
+        }
+        // Fill in shape fields from the unwrapped dataset too — they're
+        // usually null at the top level of a multi-output wrapper.
+        if (summary.n_samples == null && typeof ds.n_samples === "number") {
+          summary.n_samples = ds.n_samples;
+        }
+        if (summary.n_features == null && typeof ds.n_features === "number") {
+          summary.n_features = ds.n_features;
+        }
+        if ((summary.shape == null || (Array.isArray(summary.shape) && summary.shape.length === 0))
+            && Array.isArray(ds.shape)) {
+          summary.shape = ds.shape;
+        }
+
         results_summary[nodeId] = summary;
       }
     }
 
     // Prefer explicitly explored catalog metadata, but fall back to the active file
     // inspection so Sherpa still gets technique/axis context for CSV/manual loads.
-    const dataset_context =
+    const summarizedDatasetContext =
       summarizeDatasetForSherpaContext(
         dataStore.catalogDatasetInfo as Record<string, unknown> | null
       )
       ?? summarizeDatasetForSherpaContext(
         dataStore.fileInfo as unknown as Record<string, unknown> | null
       );
+    let derivedDatasetIdentity: Partial<SherpaDatasetContext> | null = null;
+    for (const node of workflow.nodes) {
+      if (!node.type.startsWith("data.")) {
+        continue;
+      }
+      const rawResult = lastExecutionResults?.[String(node.id)] ?? null;
+      derivedDatasetIdentity = deriveDatasetIdentity(
+        node as { label?: unknown; params?: Record<string, unknown> },
+        rawResult
+      );
+      if (derivedDatasetIdentity) {
+        break;
+      }
+    }
+    const dataset_context =
+      summarizedDatasetContext || derivedDatasetIdentity
+        ? {
+          ...(summarizedDatasetContext ?? emptyDatasetContext()),
+          ...(derivedDatasetIdentity ?? {}),
+        }
+        : null;
 
     return {
       workflow_id: workflow.workflowId,
