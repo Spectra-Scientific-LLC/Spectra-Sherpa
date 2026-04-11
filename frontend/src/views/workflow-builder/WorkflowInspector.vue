@@ -1437,6 +1437,17 @@ const formatDiagnosticValue = (value: unknown): string => {
       if (typeof item === "number") {
         return Number.isInteger(item) ? String(item) : item.toFixed(4);
       }
+      // Arrays of row dicts (e.g. HoldoutEvaluation's ``data`` /
+      // ``per_target``) used to render as ``[object Object]`` via
+      // ``String(item)`` — JSON-stringify instead so the preview
+      // actually shows the row contents.
+      if (item && typeof item === "object") {
+        try {
+          return JSON.stringify(item);
+        } catch {
+          return String(item);
+        }
+      }
       return String(item);
     });
     const suffix = value.length > 4 ? `, ... (${value.length})` : "";

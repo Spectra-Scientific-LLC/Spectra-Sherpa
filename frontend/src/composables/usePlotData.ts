@@ -1752,6 +1752,14 @@ export function usePlotData(
       // HoldoutEvaluationNode declares `visualization` as a top-level output
       // port; the legacy shape bundled it under a `default` port with a
       // nested `visualization` dict. Support both.
+      //
+      // Payload shapes:
+      //   Multi-target (new): viz.series = [{name, actual, predicted}, ...]
+      //   Single-target (legacy): viz.data = number[][] of [actual, predicted] pairs.
+      // When real reference property names are present in viz.metadata.target_names
+      // (e.g. Moisture/Oil/Protein/Starch), incorporate them into the plot
+      // title and y-axis so the plot is self-describing — matches the layout
+      // logic used by NodeDetailView.holdoutRegressionLayout.
       case "holdout_regression": {
         const ports = output.ports as Record<string, { value?: unknown }> | undefined;
         const vizObj =
@@ -1759,18 +1767,89 @@ export function usePlotData(
           ((ports?.default?.value as Record<string, unknown> | undefined)?.visualization as
             | Record<string, unknown>
             | undefined);
-        const pairs = (vizObj?.data as number[][]) || [];
+        if (!vizObj) return { data: [], layout: BASE_PLOT_LAYOUT };
+
+        const vizMeta = (vizObj.metadata as Record<string, unknown> | undefined) ?? {};
+        const rawNames = vizMeta.target_names;
+        const targetNames = Array.isArray(rawNames)
+          ? rawNames.map((n) => String(n)).filter(Boolean)
+          : [];
+        const hasRealNames = targetNames.length > 0
+          && !targetNames.every((n) => /^Target_\d+$/.test(n));
+
+        const series = vizObj.series as
+          | Array<{ name?: string; actual?: number[]; predicted?: number[] }>
+          | undefined;
+        if (Array.isArray(series) && series.length > 0) {
+          const traces: Array<Record<string, unknown>> = [];
+          const allActual: number[] = [];
+          const allPredicted: number[] = [];
+          for (const s of series) {
+            const sActual = Array.isArray(s.actual) ? s.actual.map(Number) : [];
+            const sPredicted = Array.isArray(s.predicted) ? s.predicted.map(Number) : [];
+            if (!sActual.length || !sPredicted.length) continue;
+            traces.push({
+              x: sActual,
+              y: sPredicted,
+              mode: "markers",
+              type: "scatter",
+              name: String(s.name || "Target"),
+            });
+            allActual.push(...sActual);
+            allPredicted.push(...sPredicted);
+          }
+          if (traces.length === 0) return { data: [], layout: BASE_PLOT_LAYOUT };
+          const minVal = Math.min(...allActual, ...allPredicted);
+          const maxVal = Math.max(...allActual, ...allPredicted);
+          traces.push({
+            x: [minVal, maxVal],
+            y: [minVal, maxVal],
+            mode: "lines",
+            type: "scatter",
+            name: "1:1 Line",
+            line: { dash: "dash", color: "#94a3b8" },
+          });
+          const joined = targetNames.join(", ");
+          const titleText = hasRealNames
+            ? `Predicted vs Actual \u2014 ${joined}`
+            : "Predicted vs Actual (per target)";
+          const yTitle = hasRealNames ? `Predicted (${joined})` : "Predicted";
+          return {
+            data: traces,
+            layout: {
+              ...BASE_PLOT_LAYOUT,
+              title: { text: titleText, font: { color: "#e2e8f0", size: 14 } },
+              xaxis: { title: "Actual", color: "#94a3b8" },
+              yaxis: { title: yTitle, color: "#94a3b8" },
+              showlegend: true,
+            },
+          };
+        }
+
+        // Legacy single-target path.
+        const pairs = (vizObj.data as number[][]) || [];
         if (!pairs.length) return { data: [], layout: BASE_PLOT_LAYOUT };
         const actual = pairs.map((p: number[]) => p[0]);
         const predicted = pairs.map((p: number[]) => p[1]);
         const minVal = Math.min(...actual, ...predicted);
         const maxVal = Math.max(...actual, ...predicted);
+        const singleName = hasRealNames ? targetNames[0] : "";
+        const titleText = singleName
+          ? `Predicted vs Actual \u2014 ${singleName}`
+          : "Predicted vs Actual";
+        const yTitle = singleName ? `Predicted ${singleName}` : "Predicted";
         return {
           data: [
             { x: actual, y: predicted, mode: "markers", type: "scatter", name: "Samples", marker: { color: "#3b82f6" } },
             { x: [minVal, maxVal], y: [minVal, maxVal], mode: "lines", type: "scatter", name: "1:1 Line", line: { dash: "dash", color: "#94a3b8" } },
           ],
-          layout: { ...BASE_PLOT_LAYOUT, title: { text: "Predicted vs Actual", font: { color: "#e2e8f0", size: 14 } }, xaxis: { title: "Actual", color: "#94a3b8" }, yaxis: { title: "Predicted", color: "#94a3b8" }, showlegend: false },
+          layout: {
+            ...BASE_PLOT_LAYOUT,
+            title: { text: titleText, font: { color: "#e2e8f0", size: 14 } },
+            xaxis: { title: "Actual", color: "#94a3b8" },
+            yaxis: { title: yTitle, color: "#94a3b8" },
+            showlegend: false,
+          },
         };
       }
       case "holdout_confusion": {
@@ -1944,13 +2023,64 @@ export function usePlotData(
 
       case "holdout_residuals": {
         // Regression residuals: residual vs predicted scatter, with a 0-line.
+        // Supports both single-target (viz.data = number[][]) and
+        // multi-target (viz.series = per-target actual/predicted arrays).
         const ports = output.ports as Record<string, { value?: unknown }> | undefined;
         const vizObj =
           (ports?.visualization?.value as Record<string, unknown> | undefined) ??
           ((ports?.default?.value as Record<string, unknown> | undefined)?.visualization as
             | Record<string, unknown>
             | undefined);
-        const pairs = (vizObj?.data as number[][]) || [];
+        if (!vizObj) return { data: [], layout: BASE_PLOT_LAYOUT };
+
+        const series = vizObj.series as
+          | Array<{ name?: string; actual?: number[]; predicted?: number[] }>
+          | undefined;
+        if (Array.isArray(series) && series.length > 0) {
+          const traces: Array<Record<string, unknown>> = [];
+          const allPredicted: number[] = [];
+          for (const s of series) {
+            const sActual = Array.isArray(s.actual) ? s.actual.map(Number) : [];
+            const sPredicted = Array.isArray(s.predicted) ? s.predicted.map(Number) : [];
+            if (!sActual.length || !sPredicted.length) continue;
+            const sResiduals = sActual.map((a, i) => a - sPredicted[i]);
+            traces.push({
+              x: sPredicted,
+              y: sResiduals,
+              mode: "markers",
+              type: "scatter",
+              name: String(s.name || "Target"),
+              hovertemplate:
+                `${String(s.name || "")}<br>Predicted: %{x:.4f}<br>Residual: %{y:.4f}<extra></extra>`,
+            });
+            allPredicted.push(...sPredicted);
+          }
+          if (traces.length === 0) return { data: [], layout: BASE_PLOT_LAYOUT };
+          const minP = Math.min(...allPredicted);
+          const maxP = Math.max(...allPredicted);
+          traces.push({
+            x: [minP, maxP],
+            y: [0, 0],
+            mode: "lines",
+            type: "scatter",
+            name: "Zero",
+            line: { dash: "dash", color: "#94a3b8" },
+            hoverinfo: "skip",
+          });
+          return {
+            data: traces,
+            layout: {
+              ...BASE_PLOT_LAYOUT,
+              title: { text: "Residuals vs Predicted (per target)", font: { color: "#e2e8f0", size: 14 } },
+              xaxis: { title: "Predicted", color: "#94a3b8" },
+              yaxis: { title: "Residual (true \u2212 predicted)", color: "#94a3b8" },
+              showlegend: true,
+            },
+          };
+        }
+
+        // Legacy single-target path.
+        const pairs = (vizObj.data as number[][]) || [];
         if (!pairs.length) return { data: [], layout: BASE_PLOT_LAYOUT };
         const predicted = pairs.map((p: number[]) => p[1]);
         const residuals = pairs.map((p: number[]) => p[0] - p[1]);
@@ -1981,7 +2111,7 @@ export function usePlotData(
             ...BASE_PLOT_LAYOUT,
             title: { text: "Residuals vs Predicted", font: { color: "#e2e8f0", size: 14 } },
             xaxis: { title: "Predicted", color: "#94a3b8" },
-            yaxis: { title: "Residual (true − predicted)", color: "#94a3b8" },
+            yaxis: { title: "Residual (true \u2212 predicted)", color: "#94a3b8" },
             showlegend: false,
           },
         };

@@ -774,21 +774,42 @@ class HoldoutEvaluationNode(Node):
                 label="Predicted Values",
                 description="Model predictions on the test set",
             ),
+            PortMetadata(
+                name="context",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=False,
+                label="Reference Context (optional)",
+                description=(
+                    "Optional dataset used purely for resolving target names "
+                    "(e.g. the test-set SherpaDataset with its target_context). "
+                    "When provided, per-target metrics rows and the "
+                    "predicted-vs-actual plot labels use real reference "
+                    "property names (Moisture, Oil, ...) instead of Target_1..N."
+                ),
+            ),
         ],
         output_ports=[
-            PortMetadata(
-                name="visualization",
-                type_ref="spectrasherpa://types/Visualization/1.0",
-                required=False,
-                label="Visualization",
-                description="Plot-ready data (predicted-vs-actual or confusion matrix)",
-            ),
+            # ``metrics`` is listed first so that ``selectPrimaryPort`` on
+            # the frontend picks it as the primary port of the node — that
+            # way ``nodeOutput.data`` resolves to the per-target row dicts
+            # (``[{target, RMSEP, R2, ...}, ...]``) and the Inspector's
+            # Quick Plot / View Data buttons become enabled.  Before this
+            # reorder the primary port was ``visualization`` whose value
+            # has no top-level ``data`` key, so ``nodeOutput.data`` was
+            # always empty and the buttons were permanently disabled.
             PortMetadata(
                 name="metrics",
                 type_ref="spectrasherpa://types/ValidationResult/1.0",
                 required=True,
                 label="Test Metrics",
                 description="Performance metrics dict (RMSEP/R² or accuracy/confusion matrix)",
+            ),
+            PortMetadata(
+                name="visualization",
+                type_ref="spectrasherpa://types/Visualization/1.0",
+                required=False,
+                label="Visualization",
+                description="Plot-ready data (predicted-vs-actual or confusion matrix)",
             ),
             PortMetadata(
                 name="predictions",
@@ -931,124 +952,264 @@ class HoldoutEvaluationNode(Node):
         if y_true is None or y_pred is None:
             raise ValueError("Missing required inputs: y_true and y_pred")
 
-        y_true = to_numpy_1d(_unwrap_data(y_true), name="y_true")
-        y_pred = to_numpy_1d(_unwrap_data(y_pred), name="y_pred", expected_length=y_true.shape[0])
-
-        # Coerce to matching types (int vs string mismatch guard)
-        if y_true.dtype != y_pred.dtype:
-            _either_str = y_true.dtype.kind in ("U", "S", "O") or y_pred.dtype.kind in ("U", "S", "O")
-            if _either_str:
-                y_true = np.array([str(v) for v in y_true], dtype=object)
-                y_pred = np.array([str(v) for v in y_pred], dtype=object)
-            else:
-                y_true = y_true.astype(np.float64)
-                y_pred = y_pred.astype(np.float64)
-
         task_type = self.parameters.get("task_type", "regression")
-        n_samples = len(y_true)
 
         import uuid
 
-        if task_type == "classification":
-            return self._evaluate_classification(y_true, y_pred, n_samples, uuid)
-        else:
-            return self._evaluate_regression(y_true, y_pred, n_samples, uuid)
+        if task_type == "regression":
+            # Preserve 2D shape for multi-target PLS2 so per-target metrics
+            # can be computed.  Previously this path force-raveled both
+            # arrays, which turned (n, k) targets into length-n*k vectors
+            # and produced a single meaningless "average across targets"
+            # row in metrics['data'].  Force dtype here because the
+            # classification string-coerce path below would corrupt numerics.
+            y_true_arr = np.asarray(_unwrap_data(y_true), dtype=np.float64)
+            y_pred_arr = np.asarray(_unwrap_data(y_pred), dtype=np.float64)
+            if y_true_arr.ndim == 0 or y_pred_arr.ndim == 0:
+                raise ValueError("y_true and y_pred must be 1D or 2D arrays")
+            if y_true_arr.ndim > 2 or y_pred_arr.ndim > 2:
+                raise ValueError(
+                    "HoldoutEvaluation accepts 1D or 2D targets, got "
+                    f"y_true.ndim={y_true_arr.ndim}, y_pred.ndim={y_pred_arr.ndim}"
+                )
+            if y_true_arr.ndim == 1:
+                y_true_arr = y_true_arr.reshape(-1, 1)
+            if y_pred_arr.ndim == 1:
+                y_pred_arr = y_pred_arr.reshape(-1, 1)
+            if y_true_arr.shape != y_pred_arr.shape:
+                raise ValueError(f"y_true shape {y_true_arr.shape} does not match " f"y_pred shape {y_pred_arr.shape}")
+
+            # Target name resolution order:
+            #   1. explicit ``target_names`` kwarg (programmatic callers)
+            #   2. ``context`` port — a SherpaDataset whose target_context
+            #      carries the reference property names (e.g. the test-set
+            #      dataset from partition_1)
+            #   3. fallback to Target_1..N inside _evaluate_regression
+            target_names = kwargs.get("target_names")
+            if not target_names:
+                context_ds = kwargs.get("context")
+                if context_ds is not None:
+                    try:
+                        from ..io_contracts import resolve_target_names
+
+                        resolved = resolve_target_names(None, context_ds)
+                        if resolved:
+                            target_names = list(resolved)
+                    except Exception:
+                        logger.debug(
+                            "[HoldoutEvaluation] Failed to resolve target names from context",
+                            exc_info=True,
+                        )
+            return self._evaluate_regression(y_true_arr, y_pred_arr, uuid, target_names=target_names)
+
+        # Classification path: stay 1D (multi-label classification is out of
+        # scope for this node), and keep the original dtype-coercion logic.
+        y_true_1d = to_numpy_1d(_unwrap_data(y_true), name="y_true")
+        y_pred_1d = to_numpy_1d(_unwrap_data(y_pred), name="y_pred", expected_length=y_true_1d.shape[0])
+
+        if y_true_1d.dtype != y_pred_1d.dtype:
+            _either_str = y_true_1d.dtype.kind in ("U", "S", "O") or y_pred_1d.dtype.kind in ("U", "S", "O")
+            if _either_str:
+                y_true_1d = np.array([str(v) for v in y_true_1d], dtype=object)
+                y_pred_1d = np.array([str(v) for v in y_pred_1d], dtype=object)
+            else:
+                y_true_1d = y_true_1d.astype(np.float64)
+                y_pred_1d = y_pred_1d.astype(np.float64)
+
+        return self._evaluate_classification(y_true_1d, y_pred_1d, len(y_true_1d), uuid)
 
     def _evaluate_regression(
         self,
         y_true: np.ndarray,
         y_pred: np.ndarray,
-        n_samples: int,
         uuid: Any,
+        *,
+        target_names: list[str] | None = None,
     ) -> NodeResult:
+        """Compute holdout regression metrics for 1D or 2D targets.
+
+        Always called with 2D arrays shaped ``(n_samples, n_targets)``.  For
+        the single-target case we preserve the legacy flat metrics layout
+        (no ``target`` column in the one row) so existing consumers keep
+        working; for multi-target we emit one row per target plus aggregate
+        mean-across-targets metrics, and the visualization payload becomes a
+        per-target series (handled by PlotNode._plot_predicted_vs_actual).
+        """
         from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-        y_true = y_true.astype(np.float64)
-        y_pred = y_pred.astype(np.float64)
-        total_samples = int(n_samples)
+        assert y_true.ndim == 2 and y_pred.ndim == 2, "execute() must pass 2D arrays"
+        n_samples, n_targets = y_true.shape
+        is_multi_target = n_targets > 1
 
-        finite_mask = np.isfinite(y_true) & np.isfinite(y_pred)
-        n_valid = int(np.count_nonzero(finite_mask))
-        n_invalid = int(total_samples - n_valid)
+        def _score_column(col_true: np.ndarray, col_pred: np.ndarray) -> tuple[dict, int, int, str]:
+            """Return (metrics_dict, n_valid, n_invalid, status) for one target."""
+            finite = np.isfinite(col_true) & np.isfinite(col_pred)
+            n_valid = int(np.count_nonzero(finite))
+            n_invalid = int(col_true.shape[0] - n_valid)
+            status = "ok"
+            if n_invalid:
+                status = "contains_non_finite_predictions"
 
-        if n_invalid:
-            logger.warning(
-                "Holdout evaluation (regression): dropping %d non-finite prediction(s) before scoring",
+            rmsep = mae = r2 = bias = sep = rer = float("nan")
+
+            if n_valid > 0:
+                ct = col_true[finite]
+                cp = col_pred[finite]
+                mse = mean_squared_error(ct, cp)
+                rmsep = float(np.sqrt(mse))
+                mae = float(mean_absolute_error(ct, cp))
+                if n_valid > 1:
+                    r2 = float(r2_score(ct, cp))
+                bias = float(np.mean(ct - cp))
+                sep_sq = max(0.0, rmsep**2 - bias**2)
+                sep = float(np.sqrt(sep_sq))
+                y_range = float(np.ptp(ct))
+                rer = float(y_range / rmsep) if rmsep > 1e-12 else float("inf")
+            else:
+                status = "invalid_predictions"
+
+            return (
+                {"RMSEP": rmsep, "R2": r2, "MAE": mae, "bias": bias, "SEP": sep, "RER": rer},
+                n_valid,
                 n_invalid,
+                status,
             )
 
-        y_true_valid = y_true[finite_mask]
-        y_pred_valid = y_pred[finite_mask]
-
-        rmsep = float("nan")
-        mae = float("nan")
-        r2 = float("nan")
-        bias = float("nan")
-        sep = float("nan")
-        rer = float("nan")
-        status = "ok"
-
-        if n_invalid:
-            status = "contains_non_finite_predictions"
-
-        if n_valid > 0:
-            mse = mean_squared_error(y_true_valid, y_pred_valid)
-            rmsep = float(np.sqrt(mse))
-            mae = float(mean_absolute_error(y_true_valid, y_pred_valid))
-            if n_valid > 1:
-                r2 = float(r2_score(y_true_valid, y_pred_valid))
-            bias = float(np.mean(y_true_valid - y_pred_valid))
-            sep_sq = max(0.0, rmsep**2 - bias**2)
-            sep = float(np.sqrt(sep_sq))
-            y_range = float(np.ptp(y_true_valid))
-            rer = float(y_range / rmsep) if rmsep > 1e-12 else float("inf")
+        # Resolve target labels.  Callers that know them (PLSPredictNode via
+        # kwargs forwarding) pass ``target_names``; otherwise we fall back to
+        # generic Target_1..N so the metrics table still has a label column
+        # the user can map back to their properties.
+        if target_names and len(target_names) == n_targets:
+            target_labels = [str(n) for n in target_names]
         else:
-            status = "invalid_predictions"
+            target_labels = [f"Target_{i+1}" for i in range(n_targets)]
 
-        metrics_row = {
-            "RMSEP": rmsep,
-            "R2": r2,
-            "MAE": mae,
-            "bias": bias,
-            "SEP": sep,
-            "RER": rer,
-        }
-        metrics = {
-            "data": [metrics_row],
-            "metadata": {
-                "type": "RegressionTest",
-                "n_samples": total_samples,
-                "status": status,
-            },
-            "RMSEP": rmsep,
-            "R2": r2,
-            "MAE": mae,
-            "bias": bias,
-            "SEP": sep,
-            "RER": rer,
-            "n_samples": total_samples,
-            "n_valid_samples": n_valid,
-            "n_invalid_predictions": n_invalid,
-            "status": status,
-            "task_type": "regression",
+        # Per-target scoring.
+        per_target_rows: list[dict] = []
+        per_target_valid: list[int] = []
+        per_target_invalid: list[int] = []
+        per_target_status: list[str] = []
+        for j in range(n_targets):
+            row, nv, ni, st = _score_column(y_true[:, j], y_pred[:, j])
+            labelled = {"target": target_labels[j], **row}
+            per_target_rows.append(labelled)
+            per_target_valid.append(nv)
+            per_target_invalid.append(ni)
+            per_target_status.append(st)
+
+        total_invalid = int(sum(per_target_invalid))
+        if total_invalid:
+            logger.warning(
+                "Holdout evaluation (regression): %d non-finite prediction(s) across %d target(s)",
+                total_invalid,
+                n_targets,
+            )
+
+        def _nanmean(vals: list[float]) -> float:
+            arr = np.asarray(vals, dtype=np.float64)
+            finite = arr[np.isfinite(arr)]
+            return float(np.mean(finite)) if finite.size else float("nan")
+
+        agg = {
+            "RMSEP": _nanmean([r["RMSEP"] for r in per_target_rows]),
+            "R2": _nanmean([r["R2"] for r in per_target_rows]),
+            "MAE": _nanmean([r["MAE"] for r in per_target_rows]),
+            "bias": _nanmean([r["bias"] for r in per_target_rows]),
+            "SEP": _nanmean([r["SEP"] for r in per_target_rows]),
+            "RER": _nanmean([r["RER"] for r in per_target_rows]),
         }
 
+        if is_multi_target:
+            metrics: dict = {
+                "data": per_target_rows,
+                "metadata": {
+                    "type": "RegressionTest",
+                    "n_samples": int(n_samples),
+                    "n_targets": int(n_targets),
+                    "target_names": target_labels,
+                    "aggregate": "mean_across_targets",
+                    "status": "ok" if total_invalid == 0 else "contains_non_finite_predictions",
+                },
+                "per_target": per_target_rows,
+                "mean_across_targets": agg,
+                "n_samples": int(n_samples),
+                "n_targets": int(n_targets),
+                "n_valid_samples": int(min(per_target_valid)) if per_target_valid else 0,
+                "n_invalid_predictions": total_invalid,
+                "task_type": "regression",
+            }
+        else:
+            flat = {k: v for k, v in per_target_rows[0].items() if k != "target"}
+            metrics = {
+                "data": [flat],
+                "metadata": {
+                    "type": "RegressionTest",
+                    "n_samples": int(n_samples),
+                    "status": per_target_status[0],
+                },
+                **flat,
+                "n_samples": int(n_samples),
+                "n_valid_samples": per_target_valid[0],
+                "n_invalid_predictions": per_target_invalid[0],
+                "status": per_target_status[0],
+                "task_type": "regression",
+            }
+
+        # EvaluationResult stores the headline single pair.  For multi-target
+        # we record the cross-target mean so the model-list dashboards still
+        # have a numeric handle while the per-target breakdown lives in
+        # metrics['per_target'].
         evaluation = EvaluationResult(
             evaluation_id=str(uuid.uuid4()),
-            r2=None if np.isnan(r2) else r2,
-            rmse=None if np.isnan(rmsep) else rmsep,
-            mae=None if np.isnan(mae) else mae,
+            r2=None if not np.isfinite(agg["R2"]) else agg["R2"],
+            rmse=None if not np.isfinite(agg["RMSEP"]) else agg["RMSEP"],
+            mae=None if not np.isfinite(agg["MAE"]) else agg["MAE"],
         )
 
-        viz_data = [[float(y_true_valid[i]), float(y_pred_valid[i])] for i in range(n_valid)]
+        # Visualization: single-target stays as a flat list of [actual, pred]
+        # pairs so existing PlotNode._plot_predicted_vs_actual renders
+        # unchanged.  Multi-target emits a list of per-target series that
+        # PlotNode now understands (see the plot_node.py changes).
+        if is_multi_target:
+            series = []
+            for j, label in enumerate(target_labels):
+                finite = np.isfinite(y_true[:, j]) & np.isfinite(y_pred[:, j])
+                series.append(
+                    {
+                        "name": label,
+                        "actual": y_true[finite, j].tolist(),
+                        "predicted": y_pred[finite, j].tolist(),
+                    }
+                )
+            viz_payload = {
+                "series": series,
+                "type": "predicted_vs_actual",
+                "metadata": {"type": "RegressionTest", "target_names": target_labels, **metrics},
+            }
+        else:
+            finite = np.isfinite(y_true[:, 0]) & np.isfinite(y_pred[:, 0])
+            viz_data = [[float(y_true[i, 0]), float(y_pred[i, 0])] for i in range(n_samples) if finite[i]]
+            viz_payload = {
+                "data": viz_data,
+                "type": "predicted_vs_actual",
+                "metadata": {"type": "RegressionTest", **metrics},
+            }
 
-        if n_valid > 0:
+        if is_multi_target:
+            logger.info(
+                "Holdout evaluation (regression, %d targets): "
+                "mean RMSEP=%.4f, mean R²=%.4f (per-target in metrics['per_target'])",
+                n_targets,
+                agg["RMSEP"],
+                agg["R2"],
+            )
+        elif per_target_valid[0] > 0:
             logger.info(
                 "Holdout evaluation (regression): RMSEP=%.4f, R²=%.4f, SEP=%.4f, RER=%.1f",
-                rmsep,
-                r2,
-                sep,
-                rer,
+                per_target_rows[0]["RMSEP"],
+                per_target_rows[0]["R2"],
+                per_target_rows[0]["SEP"],
+                per_target_rows[0]["RER"],
             )
         else:
             logger.warning("Holdout evaluation (regression): all predictions were non-finite; metrics undefined")
@@ -1057,11 +1218,7 @@ class HoldoutEvaluationNode(Node):
             outputs={
                 "metrics": metrics,
                 "predictions": y_pred.tolist(),
-                "visualization": {
-                    "data": viz_data,
-                    "type": "predicted_vs_actual",
-                    "metadata": {"type": "RegressionTest", **metrics},
-                },
+                "visualization": viz_payload,
                 "evaluation": evaluation,
             },
             diagnostics=metrics,

@@ -94,6 +94,13 @@ template_data:
     to_node_id: eval_1
     from_output: y_test
     to_input: y_true
+  # Carry the X_test dataset to eval_1 purely so it can resolve real
+  # reference property names (Moisture, Oil, ...) from its target_context
+  # instead of falling back to Target_1..N labels.
+  - from_node_id: partition_1
+    to_node_id: eval_1
+    from_output: X_test
+    to_input: context
   - from_node_id: eval_1
     to_node_id: table_1
     from_output: metrics
