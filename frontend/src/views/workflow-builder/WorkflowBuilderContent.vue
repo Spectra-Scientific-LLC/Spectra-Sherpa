@@ -71,9 +71,12 @@
     </div>
 
     <!-- Three-column layout: Toolbar | Canvas | Inspector Sidebar -->
-    <div class="workflow-workspace" :class="{ 'inspector-open': inspectorOpen }">
+    <div
+      class="workflow-workspace"
+      :class="{ 'inspector-open': inspectorOpen, 'toolbar-collapsed': toolbarCollapsed }"
+    >
       <!-- Left Panel: Node Toolbar -->
-      <WorkflowToolbar @add-node="onAddNode" />
+      <WorkflowToolbar @add-node="onAddNode" @toggle-collapsed="onToolbarCollapsedChange" />
 
       <!-- Center: Canvas -->
       <div class="canvas-container">
@@ -145,6 +148,21 @@ const isWorkflowStale = computed(() => workflowStore.isWorkflowStale);
 const selectedNode = ref<WorkflowNode | null>(null);
 const nodeOutputs = ref<Map<string, NodeOutput>>(new Map());
 const inspectorOpen = ref(false);
+// Mirrors WorkflowToolbar's collapsed state so the workspace grid can shrink the
+// toolbar column to just the chevron strip. Initialized from localStorage so the
+// layout matches the toolbar on first paint (no flash of expanded column).
+const toolbarCollapsed = ref<boolean>(
+  (() => {
+    try {
+      return typeof localStorage !== 'undefined' && localStorage.getItem('workflow-toolbar-collapsed') === '1';
+    } catch {
+      return false;
+    }
+  })()
+);
+const onToolbarCollapsedChange = (collapsed: boolean) => {
+  toolbarCollapsed.value = collapsed;
+};
 const autoExecute = ref(false); // Auto-execute workflow when nodes connect or parameters change
 
 // Autosave state
@@ -1165,6 +1183,15 @@ const onDeleteNode = (nodeId: string) => {
   grid-template-columns: 200px 1fr 320px;
 }
 
+/* Collapsed toolbar: shrink the left column to just the chevron strip. */
+.workflow-workspace.toolbar-collapsed {
+  grid-template-columns: 44px 1fr;
+}
+
+.workflow-workspace.toolbar-collapsed.inspector-open {
+  grid-template-columns: 44px 1fr 320px;
+}
+
 .canvas-container {
   background: #1e293b;
   border-radius: 8px;
@@ -1183,6 +1210,9 @@ const onDeleteNode = (nodeId: string) => {
 @media (max-width: 1200px) {
   .workflow-workspace.inspector-open {
     grid-template-columns: 180px 1fr 280px;
+  }
+  .workflow-workspace.toolbar-collapsed.inspector-open {
+    grid-template-columns: 44px 1fr 280px;
   }
 }
 
