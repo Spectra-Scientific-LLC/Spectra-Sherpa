@@ -1,0 +1,60 @@
+{
+  "_description": "DataTableNode rendering of per-target HoldoutEvaluation metrics \u2014 pins the list-of-row-dicts shape that the frontend DataTableModal + outputPreview consume.",
+  "_spec": "data_table_per_target_metrics",
+  "serialized": {
+    "visualization": {
+      "data": [
+        {
+          "target": "Moisture",
+          "RMSEP": 0.11,
+          "R2": 0.98,
+          "MAE": 0.09
+        },
+        {
+          "target": "Oil",
+          "RMSEP": 0.22,
+          "R2": 0.83,
+          "MAE": 0.18
+        },
+        {
+          "target": "Protein",
+          "RMSEP": 0.15,
+          "R2": 0.95,
+          "MAE": 0.12
+        },
+        {
+          "target": "Starch",
+          "RMSEP": 0.2,
+          "R2": 0.91,
+          "MAE": 0.17
+        }
+      ],
+      "metadata": {
+        "type": "metrics",
+        "n_rows": 4,
+        "n_cols": 4,
+        "truncated": false,
+        "show_index": true,
+        "column_names": [
+          "target",
+          "RMSEP",
+          "R2",
+          "MAE"
+        ],
+        "source_metadata": {
+          "type": "RegressionTest",
+          "n_samples": 20,
+          "n_targets": 4,
+          "target_names": [
+            "Moisture",
+            "Oil",
+            "Protein",
+            "Starch"
+          ],
+          "aggregate": "mean_across_targets",
+          "status": "ok"
+        }
+      }
+    }
+  }
+}
