@@ -5013,9 +5013,22 @@ const formatMetaValue = (value: any): string => {
   if (value === null || value === undefined) return "\u2014";
   if (Array.isArray(value)) {
     if (value.length === 0) return "[]";
-    const preview = value.slice(0, 5).map((v: any) =>
-      typeof v === "number" ? (Number.isInteger(v) ? String(v) : v.toFixed(4)) : String(v)
-    );
+    const preview = value.slice(0, 5).map((v: any) => {
+      if (typeof v === "number") {
+        return Number.isInteger(v) ? String(v) : v.toFixed(4);
+      }
+      // Arrays of row dicts (e.g. per-target metrics) render as
+      // ``[object Object]`` via ``String(v)`` — JSON-stringify
+      // instead so the preview shows real content.
+      if (v && typeof v === "object") {
+        try {
+          return JSON.stringify(v);
+        } catch {
+          return String(v);
+        }
+      }
+      return String(v);
+    });
     return `[${preview.join(", ")}${value.length > 5 ? `, \u2026 (${value.length})` : ""}]`;
   }
   if (typeof value === "object") {

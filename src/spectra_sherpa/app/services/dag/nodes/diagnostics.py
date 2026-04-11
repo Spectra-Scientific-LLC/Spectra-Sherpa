@@ -789,19 +789,27 @@ class HoldoutEvaluationNode(Node):
             ),
         ],
         output_ports=[
-            PortMetadata(
-                name="visualization",
-                type_ref="spectrasherpa://types/Visualization/1.0",
-                required=False,
-                label="Visualization",
-                description="Plot-ready data (predicted-vs-actual or confusion matrix)",
-            ),
+            # ``metrics`` is listed first so that ``selectPrimaryPort`` on
+            # the frontend picks it as the primary port of the node — that
+            # way ``nodeOutput.data`` resolves to the per-target row dicts
+            # (``[{target, RMSEP, R2, ...}, ...]``) and the Inspector's
+            # Quick Plot / View Data buttons become enabled.  Before this
+            # reorder the primary port was ``visualization`` whose value
+            # has no top-level ``data`` key, so ``nodeOutput.data`` was
+            # always empty and the buttons were permanently disabled.
             PortMetadata(
                 name="metrics",
                 type_ref="spectrasherpa://types/ValidationResult/1.0",
                 required=True,
                 label="Test Metrics",
                 description="Performance metrics dict (RMSEP/R² or accuracy/confusion matrix)",
+            ),
+            PortMetadata(
+                name="visualization",
+                type_ref="spectrasherpa://types/Visualization/1.0",
+                required=False,
+                label="Visualization",
+                description="Plot-ready data (predicted-vs-actual or confusion matrix)",
             ),
             PortMetadata(
                 name="predictions",
