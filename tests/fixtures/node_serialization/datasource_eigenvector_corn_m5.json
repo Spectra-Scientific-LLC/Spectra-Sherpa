@@ -1,0 +1,186 @@
+{
+  "_description": "data.source eigenvector corn_m5 \u2014 pins the continuous multi-target case with real reference property names (Moisture/Oil/Protein/Starch) in target_context.",
+  "_spec": "datasource_eigenvector_corn_m5",
+  "serialized": {
+    "default": {
+      "type": "SherpaDataset",
+      "version": "1.0",
+      "dataset_id": "<dataset_id>",
+      "shape": [
+        80,
+        700
+      ],
+      "ndim": 2,
+      "data": {
+        "__array_summary__": true,
+        "shape": [
+          80,
+          700
+        ],
+        "element_type": "list"
+      },
+      "n_samples": 80,
+      "n_features": 700,
+      "title": "Corn M5 NIR (80 samples, 700 channels)",
+      "units": null,
+      "backend": "scp",
+      "target": {
+        "__array_summary__": true,
+        "shape": [
+          80,
+          4
+        ],
+        "element_type": "list"
+      },
+      "domain": {
+        "technique": "NIR"
+      },
+      "target_context": {
+        "target_type": "continuous",
+        "target_names": [
+          "Moisture",
+          "Oil",
+          "Protein",
+          "Starch"
+        ]
+      },
+      "provenance": [
+        {
+          "op_id": "data.source",
+          "op_version": "1.0",
+          "parameters": {
+            "source": "eigenvector",
+            "example_dataset": null,
+            "sklearn_dataset": null,
+            "eigenvector_dataset": "corn_m5",
+            "experiment_id": null,
+            "file_path": null
+          },
+          "timestamp": "<timestamp>",
+          "node_id": "data_1",
+          "input_shape": [
+            80,
+            700
+          ],
+          "output_shape": [
+            80,
+            700
+          ],
+          "state_effects": []
+        }
+      ],
+      "quality": {
+        "evaluations": []
+      },
+      "state": {
+        "processing_stage": "preprocessed",
+        "effects": [],
+        "n_steps": 1
+      },
+      "extra": {
+        "scp.provenance": {
+          "current_source_type": "eigenvector",
+          "source_type": "eigenvector",
+          "original_source": "eigenvector",
+          "operations": [
+            "data.source"
+          ],
+          "last_modified": "<last_modified>",
+          "last_operation": "data.source"
+        }
+      },
+      "is_time_series": false,
+      "metadata": {
+        "processing_history": [
+          {
+            "op_id": "data.source",
+            "op_version": "1.0",
+            "parameters": {
+              "source": "eigenvector",
+              "example_dataset": null,
+              "sklearn_dataset": null,
+              "eigenvector_dataset": "corn_m5",
+              "experiment_id": null,
+              "file_path": null
+            },
+            "timestamp": "<timestamp>",
+            "node_id": "data_1",
+            "input_shape": [
+              80,
+              700
+            ],
+            "output_shape": [
+              80,
+              700
+            ],
+            "state_effects": []
+          }
+        ],
+        "data_type": "spectra",
+        "is_spectra": true,
+        "is_time_series": false,
+        "spectral_technique": "NIR",
+        "data_quantity": null,
+        "wavenumbers": {
+          "__array_summary__": true,
+          "shape": [
+            700
+          ],
+          "element_type": "float"
+        },
+        "x_title": "Channel",
+        "x_units": "",
+        "y_title": "Sample",
+        "y_units": "",
+        "value_units": "Response",
+        "provenance": {
+          "operations": [
+            "data.source"
+          ],
+          "last_modified": "<last_modified>"
+        }
+      },
+      "manifest": {
+        "dataset_id": "<dataset_id>",
+        "shape": [
+          80,
+          700
+        ],
+        "title": "Corn M5 NIR (80 samples, 700 channels)",
+        "technique": "NIR",
+        "backend": "scp",
+        "n_provenance_steps": 1,
+        "state_effects": []
+      },
+      "x_axis": {
+        "data": {
+          "__array_summary__": true,
+          "shape": [
+            700
+          ],
+          "element_type": "float"
+        },
+        "title": "Channel",
+        "axis_class": "SpectralAxis"
+      },
+      "y_axis": {
+        "data": {
+          "__array_summary__": true,
+          "shape": [
+            80
+          ],
+          "element_type": "float"
+        },
+        "title": "Sample"
+      }
+    },
+    "target": {
+      "__array_summary__": true,
+      "shape": [
+        80,
+        4
+      ],
+      "element_type": "list"
+    }
+  }
+}
