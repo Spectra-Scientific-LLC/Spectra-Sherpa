@@ -266,9 +266,9 @@ class DataTableNode(Node):
             n_rows = min(scores.shape[0], max_rows)
             n_cols = scores.shape[1] if scores.ndim > 1 else 1
             columns = list(data.get("pc_labels", [f"PC{i+1}" for i in range(n_cols)]))[:n_cols]
-            rows = [list(map(float, scores[i].tolist())) for i in range(n_rows)]
+            numeric_rows: list[list[float]] = [list(map(float, scores[i].tolist())) for i in range(n_rows)]
             return {
-                "data": rows,
+                "data": numeric_rows,
                 "metadata": {
                     "type": "PCA_scores",
                     "n_rows": n_rows,
@@ -279,10 +279,13 @@ class DataTableNode(Node):
             }
 
         # Fallback: flatten a scalar dict into a two-column key/value table.
+        # Use a distinct variable name from the numeric-rows branch above so
+        # mypy doesn't narrow the type to ``list[list[float]]`` and reject
+        # this list-of-dicts assignment (CI #260 caught this on main).
         items = list(data.items())[:max_rows]
-        rows = [{"Key": str(k), "Value": str(v)} for k, v in items]
+        dict_rows: list[dict[str, str]] = [{"Key": str(k), "Value": str(v)} for k, v in items]
         return {
-            "data": rows,
+            "data": dict_rows,
             "metadata": {
                 "type": "dict",
                 "n_rows": len(items),
