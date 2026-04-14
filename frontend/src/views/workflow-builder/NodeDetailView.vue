@@ -101,645 +101,30 @@
       />
 
       <!-- Plots Section -->
-      <section class="detail-section" v-if="hasOutput && availablePlots.length > 0">
-        <div class="section-header" @click="toggleSection('plots')">
-          <div class="section-title">
-            <i :class="sections.plots ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-            <h2>Plots</h2>
-          </div>
-          <span class="section-badge">{{ availablePlots.length }} visualizations</span>
-        </div>
-        <Transition name="collapse">
-          <div v-if="sections.plots" class="section-content plots-content">
-            <!-- PCA Plots -->
-            <template v-if="isPCAOutput">
-              <!-- Scores Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('pcaScores')">
-                  <i :class="plotSections.pcaScores ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Scores Plot</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.pcaScores" class="plot-container">
-                    <div class="plot-controls">
-                      <div class="control-group">
-                        <label>X Axis</label>
-                        <Dropdown v-model="pcaXAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                      <div class="control-group">
-                        <label>Y Axis</label>
-                        <Dropdown v-model="pcaYAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                    </div>
-                    <PlotlyChart :data="pcaScoresData" :layout="pcaScoresLayout" :config="pcaScoresConfig" />
-                  </div>
-                </Transition>
-              </div>
-
-              <!-- Biplot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('pcaBiplot')">
-                  <i :class="plotSections.pcaBiplot ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Biplot (Scores + Loadings)</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.pcaBiplot" class="plot-container">
-                    <div class="plot-controls">
-                      <div class="control-group">
-                        <label>X Axis</label>
-                        <Dropdown v-model="pcaXAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                      <div class="control-group">
-                        <label>Y Axis</label>
-                        <Dropdown v-model="pcaYAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                    </div>
-                    <PlotlyChart :data="pcaBiplotData" :layout="pcaBiplotLayout" :config="pcaScoresConfig" />
-                  </div>
-                </Transition>
-              </div>
-
-              <!-- Loadings Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('pcaLoadings')">
-                  <i :class="plotSections.pcaLoadings ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Loadings Plot</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.pcaLoadings" class="plot-container">
-                    <PlotlyChart :data="pcaLoadingsData" :layout="pcaLoadingsLayout" :config="pcaLoadingsConfig" />
-                  </div>
-                </Transition>
-              </div>
-
-              <!-- Scree Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('pcaScree')">
-                  <i :class="plotSections.pcaScree ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Scree Plot (Explained Variance)</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.pcaScree" class="plot-container">
-                    <PlotlyChart :data="pcaScreeData" :layout="pcaScreeLayout" />
-                  </div>
-                </Transition>
-              </div>
-
-              <!-- Diagnostics Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('pcaDiagnostics')">
-                  <i :class="plotSections.pcaDiagnostics ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Diagnostics Plot (T² / SPE)</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.pcaDiagnostics" class="plot-container">
-                    <PlotlyChart :data="pcaDiagnosticsData" :layout="pcaDiagnosticsLayout" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- MCR-ALS Plots -->
-            <template v-if="nodeTypeKey === 'model.mcr_als' || nodeTypeKey === 'model.simplisma'">
-              <!-- Concentration Profiles -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('mcrConcentrations')">
-                  <i :class="plotSections.mcrConcentrations ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Concentration Profiles (C)</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.mcrConcentrations" class="plot-container">
-                    <PlotlyChart :data="mcrConcentrationData" :layout="mcrConcentrationLayout" />
-                  </div>
-                </Transition>
-              </div>
-
-              <!-- Pure Spectra -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('mcrSpectra')">
-                  <i :class="plotSections.mcrSpectra ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Pure Spectra (S<sup>T</sup>)</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.mcrSpectra" class="plot-container">
-                    <PlotlyChart :data="mcrSpectraData" :layout="mcrSpectraLayout" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- EFA Eigenvalue Plot -->
-            <template v-if="nodeTypeKey === 'model.efa'">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('efaEigenvalues')">
-                  <i :class="plotSections.efaEigenvalues ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Eigenvalue Plot</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.efaEigenvalues" class="plot-container">
-                    <PlotlyChart :data="efaEigenvalueData" :layout="efaEigenvalueLayout" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- PLS Plots -->
-            <template v-if="nodeTypeKey === 'model.pls'">
-              <!-- Scores Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('plsScores')">
-                  <i :class="plotSections.plsScores ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Scores Plot</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.plsScores" class="plot-container">
-                    <div class="plot-controls">
-                      <div class="control-group">
-                        <label>X Axis</label>
-                        <Dropdown v-model="pcaXAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                      <div class="control-group">
-                        <label>Y Axis</label>
-                        <Dropdown v-model="pcaYAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                    </div>
-                    <PlotlyChart :data="plsScoresData" :layout="plsScoresLayout" :config="pcaScoresConfig" />
-                  </div>
-                </Transition>
-              </div>
-
-              <!-- Loadings Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('plsLoadings')">
-                  <i :class="plotSections.plsLoadings ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Loadings Plot</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.plsLoadings" class="plot-container">
-                    <PlotlyChart :data="plsLoadingsData" :layout="plsLoadingsLayout" :config="pcaLoadingsConfig" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- PLS-DA Plots -->
-            <template v-if="nodeTypeKey === 'classification.plsda'">
-              <!-- Scores Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('classificationScores')">
-                  <i :class="plotSections.classificationScores ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Scores Plot</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.classificationScores" class="plot-container">
-                    <div class="plot-controls">
-                      <div class="control-group">
-                        <label>X Axis</label>
-                        <Dropdown v-model="pcaXAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                      <div class="control-group">
-                        <label>Y Axis</label>
-                        <Dropdown v-model="pcaYAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                    </div>
-                    <PlotlyChart :data="classificationScoresData" :layout="classificationScoresLayout" :config="pcaScoresConfig" />
-                  </div>
-                </Transition>
-              </div>
-
-              <!-- Loadings Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('plsdaLoadings')">
-                  <i :class="plotSections.plsdaLoadings ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Loadings Plot</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.plsdaLoadings" class="plot-container">
-                    <div class="plot-controls">
-                      <Button
-                        :label="'Line Plot'"
-                        :class="{ 'p-button-outlined': plsdaLoadingsViewMode !== 'lines' }"
-                        @click="plsdaLoadingsViewMode = 'lines'"
-                        size="small"
-                      />
-                      <Button
-                        :label="'Biplot'"
-                        :class="{ 'p-button-outlined': plsdaLoadingsViewMode !== 'biplot' }"
-                        @click="plsdaLoadingsViewMode = 'biplot'"
-                        size="small"
-                      />
-                    </div>
-                    <PlotlyChart :data="plsdaLoadingsData" :layout="plsdaLoadingsLayout" :config="pcaLoadingsConfig" />
-                  </div>
-                </Transition>
-              </div>
-
-              <!-- VIP Scores Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('plsdaVip')">
-                  <i :class="plotSections.plsdaVip ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>VIP Scores (Variable Importance)</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.plsdaVip" class="plot-container">
-                    <PlotlyChart :data="plsdaVipData" :layout="plsdaVipLayout" />
-                  </div>
-                </Transition>
-              </div>
-
-              <!-- Confusion Matrix (Training) -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('plsdaConfusionTrain')">
-                  <i :class="plotSections.plsdaConfusionTrain ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Confusion Matrix (Training)</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.plsdaConfusionTrain" class="plot-container">
-                    <PlotlyChart :data="plsdaConfusionTrainData" :layout="plsdaConfusionTrainLayout" />
-                  </div>
-                </Transition>
-              </div>
-
-              <!-- Confusion Matrix (Cross-Validation) -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('plsdaConfusionCV')">
-                  <i :class="plotSections.plsdaConfusionCV ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Confusion Matrix (Cross-Validation)</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.plsdaConfusionCV" class="plot-container">
-                    <PlotlyChart :data="plsdaConfusionCVData" :layout="plsdaConfusionCVLayout" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- SIMCA Plots -->
-            <template v-if="nodeTypeKey === 'classification.simca'">
-              <!-- Scores Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('classificationScores')">
-                  <i :class="plotSections.classificationScores ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Scores Plot (Class Model Projections)</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.classificationScores" class="plot-container">
-                    <div class="plot-controls">
-                      <div class="control-group">
-                        <label>X Axis</label>
-                        <Dropdown v-model="pcaXAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                      <div class="control-group">
-                        <label>Y Axis</label>
-                        <Dropdown v-model="pcaYAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                    </div>
-                    <PlotlyChart :data="classificationScoresData" :layout="classificationScoresLayout" :config="pcaScoresConfig" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- KNN Plots -->
-            <template v-if="nodeTypeKey === 'classification.knn'">
-              <!-- Scores Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('classificationScores')">
-                  <i :class="plotSections.classificationScores ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Feature Space Plot</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.classificationScores" class="plot-container">
-                    <div class="plot-controls">
-                      <div class="control-group">
-                        <label>X Axis</label>
-                        <Dropdown v-model="pcaXAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                      <div class="control-group">
-                        <label>Y Axis</label>
-                        <Dropdown v-model="pcaYAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                    </div>
-                    <PlotlyChart :data="classificationScoresData" :layout="classificationScoresLayout" :config="pcaScoresConfig" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- Predicted vs Actual (Regression) — PLS/PCR/SVR only -->
-            <template v-if="['model.pls', 'model.pcr', 'model.svr'].includes(nodeTypeKey) && regressionCorrelationData.length > 0">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('regressionCorrelation')">
-                  <i :class="plotSections.regressionCorrelation ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Predicted vs Actual</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.regressionCorrelation" class="plot-container">
-                    <div v-if="regressionTargetOptions.length > 1" class="plot-controls">
-                      <div class="control-group">
-                        <label>Target</label>
-                        <Dropdown v-model="regressionTargetIdx" :options="regressionTargetOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                    </div>
-                    <PlotlyChart :data="regressionCorrelationData" :layout="regressionCorrelationLayout" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- Per-Class Accuracy (Classification) — PLS-DA/SIMCA/KNN only -->
-            <template v-if="['classification.plsda', 'classification.simca', 'classification.knn'].includes(nodeTypeKey) && classificationAccuracyData.length > 0">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('classificationAccuracy')">
-                  <i :class="plotSections.classificationAccuracy ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Per-Class Accuracy</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.classificationAccuracy" class="plot-container">
-                    <PlotlyChart :data="classificationAccuracyData" :layout="classificationAccuracyLayout" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- HCA Plots -->
-            <template v-if="nodeTypeKey === 'model.hca'">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('hcaDendrogram')">
-                  <i :class="plotSections.hcaDendrogram ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Dendrogram</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.hcaDendrogram" class="plot-container">
-                    <PlotlyChart :data="hcaDendrogramData" :layout="hcaDendrogramLayout" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- Peak Finding Plot (pre-computed on the backend) -->
-            <template v-if="nodeTypeKey === 'analysis.peak_finding'">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('peakFinding')">
-                  <i :class="plotSections.peakFinding ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Spectra with Peaks</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.peakFinding" class="plot-container">
-                    <PlotlyChart :data="peakFindingPlotData" :layout="peakFindingPlotLayout" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- Plot / Contour Node Visualization (server-rendered Plotly) -->
-            <template v-if="nodeTypeKey === 'output.plot' || nodeTypeKey === 'output.contour'">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('plotVisualization')">
-                  <i :class="plotSections.plotVisualization ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Visualization</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.plotVisualization" class="plot-container">
-                    <PlotlyChart v-if="plotNodeData.length > 0" :data="plotNodeData" :layout="plotNodeLayout" />
-                    <div v-else class="empty-plot-message">
-                      <i class="pi pi-play" />
-                      <span>Run the node to generate the visualization.</span>
-                    </div>
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- Preprocessing / DATA Plots with Interactive Contour -->
-            <template v-if="(isPreprocessingNode || isDataNode) && isSpectraData">
-              <!-- Spectra Overview - Only for spectral data -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('spectraOverview')">
-                  <i :class="plotSections.spectraOverview ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Spectra Overview</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.spectraOverview" class="plot-container">
-                    <div class="plot-controls">
-                      <div class="control-group">
-                        <label>Display</label>
-                        <Dropdown v-model="spectraDisplayMode" :options="spectraDisplayOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                    </div>
-                    <PlotlyChart
-                      v-if="spectraDisplayMode === 'overlay'"
-                      :data="spectraOverlayData"
-                      :layout="spectraOverlayLayout"
-                    />
-                    <div v-else class="interactive-contour-container">
-                      <PlotlyChart
-                        :data="spectraContourData"
-                        :layout="spectraContourLayout"
-                        @click="handleContourClick"
-                      />
-                      <!-- Slice plots below contour -->
-                      <div v-if="contourClickPoint" class="slice-plots">
-                        <div class="slice-plot">
-                          <h5>Spectrum at Sample {{ contourClickPoint.sampleIdx + 1 }}</h5>
-                          <PlotlyChart :data="horizontalSliceData" :layout="horizontalSliceLayout" />
-                        </div>
-                        <div class="slice-plot">
-                          <h5>Time Profile at {{ contourClickPoint.wavenumber.toFixed(1) }} {{ nodeOutput?.metadata?.x_units || '' }}</h5>
-                          <PlotlyChart :data="verticalSliceData" :layout="verticalSliceLayout" />
-                        </div>
-                      </div>
-                      <div v-else class="slice-hint">
-                        <i class="pi pi-info-circle" />
-                        <span>Click on the contour plot to view spectral and temporal slices</span>
-                      </div>
-                    </div>
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- Generic Data Overview - For non-spectral datasets like Iris -->
-            <template v-if="isGenericDataNode">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('dataOverview')">
-                  <i :class="plotSections.dataOverview ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Data Overview</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.dataOverview" class="plot-container">
-                    <div class="plot-controls">
-                      <div class="control-group">
-                        <label>Display</label>
-                        <Dropdown v-model="genericDisplayMode" :options="genericDisplayOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                      <!-- Feature selectors for scatter plot -->
-                      <template v-if="genericDisplayMode === 'scatter'">
-                        <div class="control-group">
-                          <label>X Axis</label>
-                          <Dropdown v-model="featureXAxis" :options="featureOptions" optionLabel="label" optionValue="value" />
-                        </div>
-                        <div class="control-group">
-                          <label>Y Axis</label>
-                          <Dropdown v-model="featureYAxis" :options="featureOptions" optionLabel="label" optionValue="value" />
-                        </div>
-                      </template>
-                    </div>
-                    <PlotlyChart
-                      v-if="genericDisplayMode === 'boxplot'"
-                      :data="genericBoxPlotData"
-                      :layout="genericBoxPlotLayout"
-                    />
-                    <PlotlyChart
-                      v-else
-                      :data="genericScatterData"
-                      :layout="genericScatterLayout"
-                    />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- STATS Plots -->
-            <!-- Cluster Scatter (KMeans / DBSCAN) -->
-            <template v-if="nodeTypeKey === 'model.kmeans' || nodeTypeKey === 'model.dbscan'">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('clusterScatter')">
-                  <i :class="plotSections.clusterScatter ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Cluster Scatter</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.clusterScatter" class="plot-container">
-                    <div v-if="clusterScatterData.length > 0">
-                      <PlotlyChart :data="clusterScatterData" :layout="clusterScatterLayout" />
-                    </div>
-                    <div v-else class="no-plot-message">
-                      Execute the node to see cluster assignments.
-                    </div>
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- NMF / ICA — reuse MCR-style concentration + spectra plots -->
-            <template v-if="nodeTypeKey === 'model.nmf' || nodeTypeKey === 'model.ica'">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('mcrConcentrations')">
-                  <i :class="plotSections.mcrConcentrations ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>{{ nodeTypeKey === 'model.nmf' ? 'Basis Weights (W)' : 'Source Signals (S)' }}</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.mcrConcentrations" class="plot-container">
-                    <PlotlyChart :data="mcrConcentrationData" :layout="mcrConcentrationLayout" />
-                  </div>
-                </Transition>
-              </div>
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('mcrSpectra')">
-                  <i :class="plotSections.mcrSpectra ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>{{ nodeTypeKey === 'model.nmf' ? 'Basis Spectra (H)' : 'Spectral Components' }}</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.mcrSpectra" class="plot-container">
-                    <PlotlyChart :data="mcrSpectraData" :layout="mcrSpectraLayout" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- Outlier Detection: T² vs Q Control Chart -->
-            <template v-if="nodeTypeKey === 'diagnostics.outliers'">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('outlierChart')">
-                  <i :class="plotSections.outlierChart ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>T² vs Q Control Chart</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.outlierChart" class="plot-container">
-                    <div v-if="outlierChartData.length > 0">
-                      <PlotlyChart :data="outlierChartData" :layout="outlierChartLayout" />
-                    </div>
-                    <div v-else class="no-plot-message">
-                      Execute the node to see outlier diagnostics.
-                    </div>
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- Holdout / Cross-Validation Evaluation -->
-            <template v-if="nodeTypeKey === 'diagnostics.holdout_evaluation' || nodeTypeKey === 'diagnostics.cross_validation'">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('evaluationResults')">
-                  <i :class="plotSections.evaluationResults ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Evaluation Results</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.evaluationResults" class="plot-container">
-                    <div v-if="holdoutVisualization" class="evaluation-viz">
-                      <!-- Confusion Matrix (classification) -->
-                      <template v-if="holdoutVisualization.type === 'confusion_matrix'">
-                        <PlotlyChart :data="holdoutConfusionData" :layout="holdoutConfusionLayout" />
-                      </template>
-                      <!-- Predicted vs Actual (regression) -->
-                      <template v-else-if="holdoutVisualization.type === 'predicted_vs_actual'">
-                        <PlotlyChart :data="holdoutRegressionData" :layout="holdoutRegressionLayout" />
-                      </template>
-                    </div>
-                    <div v-else class="no-plot-message">
-                      Execute the node to see evaluation results.
-                    </div>
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <template v-if="nodeTypeKey === 'stats.summary'">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('statsDistribution')">
-                  <i :class="plotSections.statsDistribution ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Summary Plot</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.statsDistribution" class="plot-container">
-                    <PlotlyChart :data="statsPlotData" :layout="statsPlotLayout" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- PLS Plots -->
-            <template v-if="nodeTypeKey === 'model.pls'">
-              <!-- Scores Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('plsScores')">
-                  <i :class="plotSections.plsScores ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Scores Plot</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.plsScores" class="plot-container">
-                    <PlotlyChart :data="plsScoresData" :layout="plsScoresLayout" />
-                  </div>
-                </Transition>
-              </div>
-
-              <!-- Loadings Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('plsLoadings')">
-                  <i :class="plotSections.plsLoadings ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Loadings Plot</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.plsLoadings" class="plot-container">
-                    <PlotlyChart :data="plsLoadingsData" :layout="plsLoadingsLayout" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-          </div>
-        </Transition>
-      </section>
+      <PlotsPanel
+        :expanded="sections.plots"
+        :plot-sections="plotSections"
+        :pca-x-axis="pcaXAxis"
+        :pca-y-axis="pcaYAxis"
+        :plsda-loadings-view-mode="plsdaLoadingsViewMode"
+        :regression-target-idx="regressionTargetIdx"
+        :spectra-display-mode="spectraDisplayMode"
+        :generic-display-mode="genericDisplayMode"
+        :feature-x-axis="featureXAxis"
+        :feature-y-axis="featureYAxis"
+        :state="plotState"
+        @toggle="toggleSection('plots')"
+        @toggle-plot="togglePlot"
+        @update:pca-x-axis="(v) => (pcaXAxis = v)"
+        @update:pca-y-axis="(v) => (pcaYAxis = v)"
+        @update:plsda-loadings-view-mode="(v) => (plsdaLoadingsViewMode = v)"
+        @update:regression-target-idx="(v) => (regressionTargetIdx = v)"
+        @update:spectra-display-mode="(v) => (spectraDisplayMode = v)"
+        @update:generic-display-mode="(v) => (genericDisplayMode = v)"
+        @update:feature-x-axis="(v) => (featureXAxis = v)"
+        @update:feature-y-axis="(v) => (featureYAxis = v)"
+        @contour-click="handleContourClick"
+      />
 
       <!-- Log Section -->
       <LogPanel
@@ -785,11 +170,9 @@ import { ref, computed, watch, onMounted } from "vue";
 import { useRoute } from "vue-router";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
-import Dropdown from "primevue/dropdown";
 import { useToast } from "primevue/usetoast";
 import QuickPlotModal from "./modals/QuickPlotModal.vue";
 import DataTableModal from "./modals/DataTableModal.vue";
-import PlotlyChart from "@/components/PlotlyChart.vue";
 import { useWorkflowStore } from "@/stores/workflow";
 import { createCategoryColorMap } from "@/utils/colors";
 import { getYAxisLabel } from "@/utils/plotLabels";
@@ -809,6 +192,7 @@ import LogPanel from "./node-detail/panels/LogPanel.vue";
 import InputPanel from "./node-detail/panels/InputPanel.vue";
 import SettingsPanel from "./node-detail/panels/SettingsPanel.vue";
 import OutputPanel from "./node-detail/panels/OutputPanel.vue";
+import PlotsPanel from "./node-detail/panels/PlotsPanel.vue";
 
 
 const route = useRoute();
@@ -4448,6 +3832,67 @@ onMounted(() => {
     });
   }
 });
+
+// Aggregate plot-related state for PlotsPanel (read-only surface).
+const plotState = computed(() => ({
+  hasOutput: hasOutput.value,
+  availablePlots: availablePlots.value,
+  nodeTypeKey: nodeTypeKey.value,
+  isPCAOutput: isPCAOutput.value,
+  isPreprocessingNode: isPreprocessingNode.value,
+  isDataNode: isDataNode.value,
+  isSpectraData: isSpectraData.value,
+  isGenericDataNode: isGenericDataNode.value,
+  nodeOutput: nodeOutput.value,
+  contourClickPoint: contourClickPoint.value,
+  pcaAxisOptions: pcaAxisOptions.value,
+  regressionTargetOptions: regressionTargetOptions.value,
+  spectraDisplayOptions,
+  genericDisplayOptions,
+  featureOptions: featureOptions.value,
+  holdoutVisualization: holdoutVisualization.value,
+  // PCA
+  pcaScoresData: pcaScoresData.value, pcaScoresLayout: pcaScoresLayout.value, pcaScoresConfig: pcaScoresConfig.value,
+  pcaBiplotData: pcaBiplotData.value, pcaBiplotLayout: pcaBiplotLayout.value,
+  pcaLoadingsData: pcaLoadingsData.value, pcaLoadingsLayout: pcaLoadingsLayout.value, pcaLoadingsConfig: pcaLoadingsConfig.value,
+  pcaScreeData: pcaScreeData.value, pcaScreeLayout: pcaScreeLayout.value,
+  pcaDiagnosticsData: pcaDiagnosticsData.value, pcaDiagnosticsLayout: pcaDiagnosticsLayout.value,
+  // MCR / SIMPLISMA / NMF / ICA
+  mcrConcentrationData: mcrConcentrationData.value, mcrConcentrationLayout: mcrConcentrationLayout.value,
+  mcrSpectraData: mcrSpectraData.value, mcrSpectraLayout: mcrSpectraLayout.value,
+  // EFA
+  efaEigenvalueData: efaEigenvalueData.value, efaEigenvalueLayout: efaEigenvalueLayout.value,
+  // PLS
+  plsScoresData: plsScoresData.value, plsScoresLayout: plsScoresLayout.value,
+  plsLoadingsData: plsLoadingsData.value, plsLoadingsLayout: plsLoadingsLayout.value,
+  // PLS-DA + classification
+  classificationScoresData: classificationScoresData.value, classificationScoresLayout: classificationScoresLayout.value,
+  plsdaLoadingsData: plsdaLoadingsData.value, plsdaLoadingsLayout: plsdaLoadingsLayout.value,
+  plsdaVipData: plsdaVipData.value, plsdaVipLayout: plsdaVipLayout.value,
+  plsdaConfusionTrainData: plsdaConfusionTrainData.value, plsdaConfusionTrainLayout: plsdaConfusionTrainLayout.value,
+  plsdaConfusionCVData: plsdaConfusionCVData.value, plsdaConfusionCVLayout: plsdaConfusionCVLayout.value,
+  classificationAccuracyData: classificationAccuracyData.value, classificationAccuracyLayout: classificationAccuracyLayout.value,
+  // Regression
+  regressionCorrelationData: regressionCorrelationData.value, regressionCorrelationLayout: regressionCorrelationLayout.value,
+  // HCA / Peak / Plot node
+  hcaDendrogramData: hcaDendrogramData.value, hcaDendrogramLayout: hcaDendrogramLayout.value,
+  peakFindingPlotData: peakFindingPlotData.value, peakFindingPlotLayout: peakFindingPlotLayout.value,
+  plotNodeData: plotNodeData.value, plotNodeLayout: plotNodeLayout.value,
+  // Spectra
+  spectraOverlayData: spectraOverlayData.value, spectraOverlayLayout: spectraOverlayLayout.value,
+  spectraContourData: spectraContourData.value, spectraContourLayout: spectraContourLayout.value,
+  horizontalSliceData: horizontalSliceData.value, horizontalSliceLayout: horizontalSliceLayout.value,
+  verticalSliceData: verticalSliceData.value, verticalSliceLayout: verticalSliceLayout.value,
+  // Generic
+  genericBoxPlotData: genericBoxPlotData.value, genericBoxPlotLayout: genericBoxPlotLayout.value,
+  genericScatterData: genericScatterData.value, genericScatterLayout: genericScatterLayout.value,
+  // Clusters / outliers / holdout / stats
+  clusterScatterData: clusterScatterData.value, clusterScatterLayout: clusterScatterLayout.value,
+  outlierChartData: outlierChartData.value, outlierChartLayout: outlierChartLayout.value,
+  holdoutConfusionData: holdoutConfusionData.value, holdoutConfusionLayout: holdoutConfusionLayout.value,
+  holdoutRegressionData: holdoutRegressionData.value, holdoutRegressionLayout: holdoutRegressionLayout.value,
+  statsPlotData: statsPlotData.value, statsPlotLayout: statsPlotLayout.value,
+}));
 
 </script>
 
