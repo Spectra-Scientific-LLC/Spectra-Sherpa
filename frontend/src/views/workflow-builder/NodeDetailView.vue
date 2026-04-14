@@ -37,75 +37,17 @@
     <!-- Main Content -->
     <main class="detail-content">
       <!-- Input Section -->
-      <section class="detail-section">
-        <div class="section-header" @click="toggleSection('input')">
-          <div class="section-title">
-            <i :class="sections.input ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-            <h2>Input</h2>
-          </div>
-          <span class="section-badge" v-if="inputSummary">{{ inputSummary }}</span>
-        </div>
-        <Transition name="collapse">
-          <div v-if="sections.input" class="section-content">
-            <div v-if="!hasInput" class="empty-section">
-              <i class="pi pi-inbox" />
-              <p>No input data available</p>
-              <small>This node has not received input yet. Execute the workflow to see input data.</small>
-            </div>
-            <div v-else class="input-content">
-              <!-- Input source info -->
-              <div class="info-grid">
-                <div class="info-item" v-if="inputData?.shape">
-                  <label>Shape</label>
-                  <span>{{ inputData.shape[0] }} x {{ inputData.shape[1] }}</span>
-                </div>
-                <div class="info-item" v-if="inputData?.source">
-                  <label>Source</label>
-                  <span>{{ inputData.source }}</span>
-                </div>
-                <div class="info-item" v-if="inputData?.dataType">
-                  <label>Data Type</label>
-                  <span>{{ inputData.dataType }}</span>
-                </div>
-              </div>
-
-              <!-- Input connections -->
-              <div v-if="inputConnections.length" class="connections-list">
-                <h4>Connected From</h4>
-                <div
-                  v-for="conn in inputConnections"
-                  :key="conn.nodeId"
-                  class="connection-item"
-                >
-                  <span class="conn-icon">{{ conn.icon }}</span>
-                  <span class="conn-name">{{ conn.label }}</span>
-                  <span class="conn-port">{{ conn.port }}</span>
-                </div>
-              </div>
-
-              <!-- Preview table -->
-              <div v-if="inputPreview.length" class="preview-table">
-                <h4>Input Preview ({{ inputDataSummary }})</h4>
-                <DataTable
-                  :value="inputPreview"
-                  :scrollable="true"
-                  scrollHeight="200px"
-                  class="preview-datatable"
-                  size="small"
-                >
-                  <Column
-                    v-for="col in inputPreviewColumns"
-                    :key="col.field"
-                    :field="col.field"
-                    :header="col.header"
-                    :style="{ minWidth: '80px' }"
-                  />
-                </DataTable>
-              </div>
-            </div>
-          </div>
-        </Transition>
-      </section>
+      <InputPanel
+        :expanded="sections.input"
+        :has-input="hasInput"
+        :input-summary="inputSummary"
+        :input-data="inputData"
+        :input-connections="inputConnections"
+        :input-preview="inputPreview"
+        :input-data-summary="inputDataSummary"
+        :input-preview-columns="inputPreviewColumns"
+        @toggle="toggleSection('input')"
+      />
 
       <!-- Settings Section -->
       <section class="detail-section">
@@ -1281,47 +1223,13 @@
       </section>
 
       <!-- Log Section -->
-      <section class="detail-section">
-        <div class="section-header" @click="toggleSection('log')">
-          <div class="section-title">
-            <i :class="sections.log ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-            <h2>Execution Log</h2>
-          </div>
-          <span class="section-badge" v-if="executionLogs.length">{{ executionLogs.length }} entries</span>
-        </div>
-        <Transition name="collapse">
-          <div v-if="sections.log" class="section-content log-content">
-            <div v-if="executionLogs.length === 0" class="empty-section">
-              <i class="pi pi-list" />
-              <p>No execution logs yet</p>
-              <small>Click "Run Node" to execute and see logs here.</small>
-            </div>
-            <div v-else class="log-entries">
-              <div
-                v-for="(log, idx) in executionLogs"
-                :key="idx"
-                class="log-entry"
-                :class="log.type"
-              >
-                <span class="log-time">{{ log.time }}</span>
-                <span class="log-icon">
-                  <i :class="getLogIcon(log.type)" />
-                </span>
-                <span class="log-message">{{ log.message }}</span>
-                <span v-if="log.details" class="log-details">{{ log.details }}</span>
-              </div>
-            </div>
-            <div v-if="executionLogs.length > 0" class="log-actions">
-              <Button
-                label="Clear Log"
-                icon="pi pi-trash"
-                class="p-button-sm p-button-text p-button-secondary"
-                @click="clearLogs"
-              />
-            </div>
-          </div>
-        </Transition>
-      </section>
+      <LogPanel
+        :logs="executionLogs"
+        :expanded="sections.log"
+        :get-log-icon="getLogIcon"
+        @toggle="toggleSection('log')"
+        @clear="clearLogs"
+      />
     </main>
 
     <!-- Modals -->
@@ -1383,6 +1291,8 @@ import { useNodeValidation } from "./node-detail/composables/useNodeValidation";
 import { useNodeOutput } from "./node-detail/composables/useNodeOutput";
 import { useNodeSections } from "./node-detail/composables/useNodeSections";
 import { useNodeTrial, STORAGE_KEY } from "./node-detail/composables/useNodeTrial";
+import LogPanel from "./node-detail/panels/LogPanel.vue";
+import InputPanel from "./node-detail/panels/InputPanel.vue";
 
 
 const route = useRoute();
@@ -5613,100 +5523,6 @@ onMounted(() => {
   .slice-plots {
     grid-template-columns: 1fr;
   }
-}
-
-/* Log Section */
-.log-content {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.log-entries {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.log-entry {
-  display: grid;
-  grid-template-columns: 70px 24px 1fr;
-  align-items: start;
-  gap: 10px;
-  padding: 10px 14px;
-  background: #0f172a;
-  border-radius: 8px;
-  border-left: 3px solid #334155;
-  font-size: 0.85rem;
-}
-
-.log-entry.success {
-  border-left-color: #22c55e;
-  background: rgba(34, 197, 94, 0.05);
-}
-
-.log-entry.error {
-  border-left-color: #ef4444;
-  background: rgba(239, 68, 68, 0.05);
-}
-
-.log-entry.warn {
-  border-left-color: #f59e0b;
-  background: rgba(245, 158, 11, 0.05);
-}
-
-.log-entry.info {
-  border-left-color: #3b82f6;
-  background: rgba(59, 130, 246, 0.05);
-}
-
-.log-time {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.75rem;
-  color: #64748b;
-}
-
-.log-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.log-entry.success .log-icon i {
-  color: #22c55e;
-}
-
-.log-entry.error .log-icon i {
-  color: #ef4444;
-}
-
-.log-entry.warn .log-icon i {
-  color: #f59e0b;
-}
-
-.log-entry.info .log-icon i {
-  color: #3b82f6;
-}
-
-.log-message {
-  font-weight: 500;
-  color: #f8fafc;
-}
-
-.log-details {
-  grid-column: 3;
-  font-size: 0.8rem;
-  color: #94a3b8;
-  margin-top: 2px;
-}
-
-.log-actions {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 8px;
-  border-top: 1px solid #334155;
 }
 
 /* Dataset Inspector sections */
