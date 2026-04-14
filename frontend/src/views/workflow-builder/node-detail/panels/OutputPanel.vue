@@ -720,6 +720,30 @@ defineEmits<{
 
 .full-meta-action { display: flex; justify-content: flex-start; }
 .output-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.preview-datatable :deep(.p-datatable-wrapper) {
+  background: #0f172a;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.preview-datatable :deep(.p-datatable-thead > tr > th) {
+  background: #1e293b;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid #334155;
+}
+.preview-datatable :deep(.p-datatable-tbody > tr) {
+  background: #0f172a;
+  color: #cbd5e1;
+}
+.preview-datatable :deep(.p-datatable-tbody > tr:nth-child(even)) {
+  background: #111e33;
+}
+.preview-datatable :deep(.p-datatable-tbody > tr > td) {
+  border-bottom: 1px solid #1e293b;
+  font-size: 0.85rem;
+}
 .preview-table h4 {
   margin: 0 0 10px;
   font-size: 0.85rem;
