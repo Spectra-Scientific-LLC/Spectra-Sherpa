@@ -1354,7 +1354,7 @@
 
 <script setup lang="ts">
 /* eslint-disable @typescript-eslint/no-explicit-any -- node outputs and plot payloads vary widely across node families in this inspection view. */
-import { ref, computed, watch, onMounted, onUnmounted } from "vue";
+import { ref, computed, watch, onMounted } from "vue";
 import { useRoute } from "vue-router";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
@@ -1371,7 +1371,6 @@ import PlotlyChart from "@/components/PlotlyChart.vue";
 import { useWorkflowStore } from "@/stores/workflow";
 import { createCategoryColorMap } from "@/utils/colors";
 import { getYAxisLabel } from "@/utils/plotLabels";
-import { buildNodeOutput, type NodeOutput } from "@/utils/nodeOutput";
 import {
   buildLabelTable,
   compactSampleLabel,
@@ -1379,103 +1378,32 @@ import {
   normalizeSampleLabel,
   splitLabelByDelimiter,
 } from "@/utils/sampleLabels";
-import api from "@/api/client";
+import { useNodeLog } from "./node-detail/composables/useNodeLog";
+import { useNodeValidation } from "./node-detail/composables/useNodeValidation";
+import { useNodeOutput } from "./node-detail/composables/useNodeOutput";
+import { useNodeSections } from "./node-detail/composables/useNodeSections";
+import { useNodeTrial, STORAGE_KEY } from "./node-detail/composables/useNodeTrial";
 
 
 const route = useRoute();
 const toast = useToast();
 
-// Session storage key for passing data between tabs
-const STORAGE_KEY = "node_detail_data";
+// Trial execution + cross-tab broadcast — extracted to composable.
+// (STORAGE_KEY / BROADCAST_CHANNEL_NAME re-exported from the composable module.)
 
-// BroadcastChannel for cross-tab communication
-const BROADCAST_CHANNEL_NAME = "workflow_node_updates";
-const broadcastChannel = ref<BroadcastChannel | null>(null);
+// Section collapse state — extracted to composable
+const {
+  sections,
+  outputSubsections,
+  plotSections,
+  toggleSection,
+  toggleOutputSubsection,
+  togglePlot,
+} = useNodeSections();
 
-// Execution state
-const isExecuting = ref(false);
-let executionTimeout: ReturnType<typeof setTimeout> | null = null;
-
-// Section collapse state
-const sections = ref({
-  input: false,
-  settings: false,
-  output: false,
-  plots: false,
-  log: false,
-});
-
-const outputSubsections = ref({
-  coordinates: false,
-  metadata: false,
-  processing: false,
-  provenance: false,
-  quality: false,
-  ports: false,
-});
-
-// Execution log entries
-interface LogEntry {
-  time: string;
-  type: "info" | "success" | "error" | "warn";
-  message: string;
-  details?: string;
-}
-const executionLogs = ref<LogEntry[]>([]);
+// Execution log entries — extracted to composable
+const { executionLogs, addLog, clearLogs, getLogIcon } = useNodeLog();
 const previewRowLimit = 50;
-
-const addLog = (type: LogEntry["type"], message: string, details?: string) => {
-  const now = new Date();
-  const time = now.toLocaleTimeString("en-US", { hour12: false });
-  executionLogs.value.unshift({ time, type, message, details });
-  // Keep max 50 entries
-  if (executionLogs.value.length > 50) {
-    executionLogs.value.pop();
-  }
-};
-
-const clearLogs = () => {
-  executionLogs.value = [];
-};
-
-const getLogIcon = (type: LogEntry["type"]): string => {
-  switch (type) {
-    case "success": return "pi pi-check-circle";
-    case "error": return "pi pi-times-circle";
-    case "warn": return "pi pi-exclamation-triangle";
-    default: return "pi pi-info-circle";
-  }
-};
-
-// Plot subsection collapse state
-const plotSections = ref<Record<string, boolean>>({
-  pcaScores: false,
-  pcaBiplot: false,
-  pcaLoadings: false,
-  pcaScree: false,
-  pcaDiagnostics: false,
-  mcrConcentrations: false,
-  mcrSpectra: false,
-  spectraOverview: false,
-  dataOverview: false, // For generic non-spectral data like Iris
-  statsDistribution: false,
-  plsScores: false,
-  plsLoadings: false,
-  classificationScores: false,
-  plsdaLoadings: false,
-  plsdaVip: false,
-  plsdaConfusionTrain: false,
-  plsdaConfusionCV: false,
-  regressionCorrelation: false,
-  classificationAccuracy: false,
-  hcaDendrogram: false,
-  peakFinding: false,
-  plotVisualization: false,
-  efaEigenvalues: false,
-  evaluationResults: true,
-  clusterScatter: true,
-  outlierChart: true,
-});
 
 // PLS-DA loadings view mode (lines or biplot)
 const plsdaLoadingsViewMode = ref<"lines" | "biplot">("lines");
@@ -1493,59 +1421,7 @@ const nodeData = ref<any>(null);
 const localParams = ref<Record<string, any>>({});
 const originalParams = ref<Record<string, any>>({});
 
-// Validation errors
 const workflowStore = useWorkflowStore();
-const validationErrors = ref<Array<{ param_name: string; message: string }>>([]);
-
-// Filter out internal "_metadata" errors from display (these occur when library isn't loaded yet)
-const displayedValidationErrors = computed(() => {
-  return validationErrors.value.filter(e => e.param_name !== "_metadata");
-});
-
-const hasValidationErrors = computed(() => {
-  return displayedValidationErrors.value.length > 0;
-});
-
-// Validate parameters
-const validateParams = () => {
-  if (!nodeType.value) {
-    validationErrors.value = [];
-    return;
-  }
-
-  // Skip validation if node library is still loading
-  if (workflowStore.isLoadingNodeLibrary) {
-    validationErrors.value = [];
-    return;
-  }
-
-  // Skip validation if node library failed to load or is empty
-  if (workflowStore.nodeLibraryLoadError || workflowStore.nodeLibrary.size === 0) {
-    validationErrors.value = [];
-    return;
-  }
-
-  validationErrors.value = workflowStore.validateNodeParams(nodeType.value, localParams.value);
-};
-
-// Get error message for a specific parameter (excluding metadata errors)
-const getParamError = (paramName: string): string | null => {
-  const error = validationErrors.value.find(e => e.param_name === paramName && e.param_name !== "_metadata");
-  return error ? error.message : null;
-};
-
-// Watch for parameter changes and validate
-watch(localParams, () => {
-  validateParams();
-}, { deep: true });
-
-// Watch for node library to finish loading, then validate
-watch(() => workflowStore.isLoadingNodeLibrary, (isLoading) => {
-  if (!isLoading && workflowStore.nodeLibrary.size > 0) {
-    // Library finished loading, validate now
-    validateParams();
-  }
-});
 
 // Node icon mapping
 const NODE_ICONS: Record<string, string> = {
@@ -1567,6 +1443,24 @@ const NODE_ICONS: Record<string, string> = {
 const nodeId = computed(() => route.params.nodeId as string);
 const nodeType = computed(() => nodeData.value?.type || "Unknown");
 const nodeTypeKey = computed(() => nodeType.value);
+
+// Parameter validation — extracted to composable
+const {
+  displayedValidationErrors,
+  hasValidationErrors,
+  validateParams,
+  getParamError,
+} = useNodeValidation(workflowStore, nodeType, localParams);
+
+watch(localParams, () => validateParams(), { deep: true });
+watch(
+  () => workflowStore.isLoadingNodeLibrary,
+  (isLoading) => {
+    if (!isLoading && workflowStore.nodeLibrary.size > 0) {
+      validateParams();
+    }
+  },
+);
 const isDataNode = computed(() => nodeType.value.startsWith("data."));
 
 // Detect if data is spectral (vs generic like Iris dataset)
@@ -1900,25 +1794,14 @@ const fullMetadataJson = computed(() => {
   return JSON.stringify(full, null, 2);
 });
 
-const normalizeNodeOutput = (result: any): NodeOutput => {
-  const outputPorts = nodeMetadata.value?.output_ports;
-  return buildNodeOutput(result, outputPorts);
-};
-
-const resolvePortPayload = (port: any): any => {
-  if (!port || typeof port !== "object") return port;
-  return "value" in port ? port.value : port;
-};
+const { normalizeNodeOutput, resolvePortPayload, primaryOutputPayload } = useNodeOutput(
+  nodeOutput,
+  nodeMetadata,
+);
 
 const isPCAOutput = computed(() => {
   const metadata = nodeOutput.value?.metadata || {};
   return nodeTypeKey.value === "model.pca" || metadata.type === "model.pca" || metadata.isPCA === true;
-});
-
-const primaryOutputPayload = computed(() => {
-  const primaryPort = nodeOutput.value?.primary_port;
-  if (!primaryPort) return null;
-  return resolvePortPayload(nodeOutput.value?.ports?.[primaryPort]);
 });
 
 const pcaSampleLabels = computed<string[]>(() => {
@@ -4981,20 +4864,6 @@ const classificationAccuracyLayout = computed(() => {
 // ============================================================================
 
 // Methods
-const toggleSection = (section: "input" | "settings" | "output" | "plots" | "log") => {
-  sections.value[section] = !sections.value[section];
-};
-
-const toggleOutputSubsection = (
-  section: "coordinates" | "metadata" | "processing" | "provenance" | "quality" | "ports",
-) => {
-  outputSubsections.value[section] = !outputSubsections.value[section];
-};
-
-const togglePlot = (plot: string) => {
-  plotSections.value[plot] = !plotSections.value[plot];
-};
-
 const resetToDefaults = () => {
   for (const param of nodeParams.value) {
     if (param.default !== undefined) {
@@ -5082,34 +4951,14 @@ const handleCancel = () => {
   window.close();
 };
 
-// Broadcast params update to main tab
-const broadcastParamsUpdate = () => {
-  const updateMessage = {
-    type: "node_params_updated",
-    nodeId: nodeData.value?.id,
-    nodeType: nodeData.value?.type,
-    params: { ...localParams.value },
-    timestamp: Date.now(),
-  };
-
-  // Try BroadcastChannel first (more reliable)
-  if (broadcastChannel.value) {
-    broadcastChannel.value.postMessage(updateMessage);
-  }
-
-  // Also update sessionStorage and dispatch event as fallback
-  const updatedData = {
-    ...nodeData.value,
-    params: { ...localParams.value },
-    _saved: true,
-    _savedAt: Date.now(),
-  };
-  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(updatedData));
-  window.dispatchEvent(new StorageEvent("storage", {
-    key: STORAGE_KEY,
-    newValue: JSON.stringify(updatedData),
-  }));
-};
+const { isExecuting, broadcastParamsUpdate, handleRunTrial } = useNodeTrial({
+  nodeData,
+  localParams,
+  nodeType,
+  addLog,
+  normalizeNodeOutput,
+  toast,
+});
 
 const handleSaveAndExit = () => {
   // Broadcast params update to main tab
@@ -5128,268 +4977,9 @@ const handleSaveAndExit = () => {
   }, 500);
 };
 
-/**
- * Run a trial execution of this node with current local parameters.
- *
- * This calls the backend trial API directly, bypassing the main workflow.
- * The trial runs in a fresh execution context (no caching) and does NOT
- * persist any changes to the workflow.
- *
- * Flow:
- * - Run Trial: Execute with trial params, see results locally
- * - Cancel: Discard trial, close window (no changes saved)
- * - Save and Exit: Persist params to workflow, then close
- *
- * IMPORTANT: Since Pinia stores don't sync across browser tabs, this function
- * reads the workflow nodes/edges from sessionStorage (passed by WorkflowInspector).
- */
-const handleRunTrial = async () => {
-  if (!nodeData.value) return;
 
-  isExecuting.value = true;
-  addLog("info", "Trial started", `Running ${nodeType.value} with trial settings`);
-
-  toast.add({
-    severity: "info",
-    summary: "Running Trial",
-    detail: "Executing with current settings...",
-    life: 2000,
-  });
-
-  try {
-    // Read workflow nodes/edges from nodeData (loaded from sessionStorage)
-    // These are passed by WorkflowInspector since Pinia stores don't sync across tabs
-    const workflowNodes = nodeData.value.workflowNodes || [];
-    const workflowEdges = nodeData.value.workflowEdges || [];
-
-    if (workflowNodes.length === 0) {
-      throw new Error("No workflow nodes found. Please reopen from the workflow inspector.");
-    }
-
-    // Build nodes list for trial API (using backend format)
-    // IMPORTANT: Map ALL node parameters from frontend names to backend names
-    const trialNodes = workflowNodes.map((node: any) => ({
-      node_id: String(node.id),
-      node_type: node.type,
-      parameters: { ...(node.params || {}) },
-    }));
-
-    // Build edges list for trial API
-    const trialEdges = workflowEdges.map((edge: any) => ({
-      from_node_id: String(edge.from),
-      to_node_id: String(edge.to),
-      from_output: edge.fromPort || "default",
-      to_input: edge.toPort || "default",
-    }));
-
-    // Build initial data for DATA nodes (needed for upstream dependencies)
-    const initialData: Record<string, any> = {};
-    // If this node's input came from a DATA node, include its config
-    if (nodeData.value.inputData?.experiment_id) {
-      // Find DATA node ID from input connections
-      const inputConnections = nodeData.value.inputConnections || [];
-      for (const conn of inputConnections) {
-        if (conn.nodeType === "data.source") {
-          initialData[String(conn.nodeId)] = {
-            experiment_id: nodeData.value.inputData.experiment_id,
-            source: nodeData.value.inputData.source || "experiment",
-          };
-        }
-      }
-    }
-
-    // Map trial params from frontend names to backend names
-    // E.g., "components" -> "n_components" for PCA
-    const mappedTrialParams = { ...localParams.value };
-
-    // Build trial execution request payload
-    const trialPayload = {
-      target_node_id: String(nodeData.value.id),
-      trial_params: mappedTrialParams,
-      nodes: trialNodes,
-      edges: trialEdges,
-      initial_data: Object.keys(initialData).length > 0 ? initialData : null,
-    };
-
-    const targetNodeInList = trialNodes.find((n: any) => n.node_id === String(nodeData.value.id));
-
-    console.log("[NodeDetailView] Trial execution details:", {
-      targetNodeId: trialPayload.target_node_id,
-      targetNodeIdType: typeof trialPayload.target_node_id,
-      nodeType: nodeData.value.type,
-      nodeCount: trialNodes.length,
-      edgeCount: trialEdges.length,
-      localParams: localParams.value,
-      mappedTrialParams: mappedTrialParams,
-      targetNodeInList: targetNodeInList,
-      allNodeIds: trialNodes.map((n: any) => ({ id: n.node_id, type: typeof n.node_id, params: n.parameters })),
-    });
-
-    // Log meaningful parameter changes
-    const changes: string[] = [];
-    for (const [key, value] of Object.entries(mappedTrialParams)) {
-      const oldValue = nodeData.value.params?.[key];
-      if (oldValue !== undefined && oldValue !== value) {
-        changes.push(`${key}: ${oldValue} → ${value}`);
-      }
-    }
-    if (changes.length > 0) {
-      addLog("info", "Parameter changes", changes.join(", "));
-    }
-
-    // Execute trial via direct API call
-    const response = await api.post("/workflows/trial/execute", trialPayload);
-
-    isExecuting.value = false;
-
-    if (response.data.status === "error" || response.data.error) {
-      addLog("error", "Trial failed", response.data.error || "Unknown error");
-      toast.add({
-        severity: "error",
-        summary: "Trial Failed",
-        detail: response.data.error || "Execution failed",
-        life: 5000,
-      });
-      return;
-    }
-
-    // Update local output with trial result
-    if (response.data.result) {
-      // The result from trial API has the data and metadata directly
-      const output = normalizeNodeOutput(response.data.result);
-
-      console.log("[NodeDetailView] Trial completed, updating output:", {
-        hasData: !!output.data,
-        dataLength: Array.isArray(output.data) ? output.data.length : "N/A",
-        metadataKeys: output.metadata ? Object.keys(output.metadata) : [],
-      });
-
-      // Update node data with new output (triggers reactive updates for plots)
-      nodeData.value = {
-        ...nodeData.value,
-        output: output,
-      };
-
-      // Build output summary for log
-      let outputSummary = "Trial completed";
-      if (output.data && Array.isArray(output.data)) {
-        const rows = output.data.length;
-        const cols = Array.isArray(output.data[0]) ? output.data[0].length : 1;
-        outputSummary = `Output: ${rows} × ${cols} matrix`;
-      }
-
-      addLog("success", "Trial completed", outputSummary);
-      toast.add({
-        severity: "success",
-        summary: "Trial Complete",
-        detail: outputSummary,
-        life: 3000,
-      });
-    } else {
-      addLog("warn", "Trial completed", "No output data returned");
-      toast.add({
-        severity: "warn",
-        summary: "Trial Complete",
-        detail: "Execution completed but no output data was returned",
-        life: 3000,
-      });
-    }
-  } catch (error: any) {
-    isExecuting.value = false;
-    const message = error?.response?.data?.detail || error?.message || String(error);
-    addLog("error", "Trial failed", message);
-    toast.add({
-      severity: "error",
-      summary: "Trial Failed",
-      detail: message,
-      life: 5000,
-    });
-  }
-};
-
-// Handle execution result from main tab
-const handleBroadcastMessage = (event: MessageEvent) => {
-  const { type, nodeId, output, error } = event.data;
-
-  console.log('[NodeDetailView] Received broadcast:', { type, nodeId, localNodeId: nodeData.value?.id, hasOutput: !!output });
-
-  // Use loose equality (==) to handle string/number type mismatches
-  // e.g., nodeId might be "1" (string) while nodeData.value.id is 1 (number)
-  if (String(nodeId) !== String(nodeData.value?.id)) {
-    console.log('[NodeDetailView] Node ID mismatch, ignoring message');
-    return;
-  }
-
-  if (type === "node_execution_result") {
-    // Clear the timeout since we got a response
-    if (executionTimeout) {
-      clearTimeout(executionTimeout);
-      executionTimeout = null;
-    }
-
-    isExecuting.value = false;
-
-    if (error) {
-      addLog("error", "Execution failed", error);
-      toast.add({
-        severity: "error",
-        summary: "Execution Failed",
-        detail: error,
-        life: 5000,
-      });
-    } else if (output) {
-      // Update node data with new output
-      console.log('[NodeDetailView] Updating output:', {
-        hasData: !!output.data,
-        dataLength: Array.isArray(output.data) ? output.data.length : 'N/A',
-        metadataKeys: output.metadata ? Object.keys(output.metadata) : [],
-      });
-
-      nodeData.value = {
-        ...nodeData.value,
-        output: output,
-      };
-
-      console.log('[NodeDetailView] nodeData.value.output updated, hasOutput:', hasOutput.value);
-
-      // Build output summary for log
-      let outputSummary = "Output updated";
-      if (output.data && Array.isArray(output.data)) {
-        const rows = output.data.length;
-        const cols = Array.isArray(output.data[0]) ? output.data[0].length : 1;
-        outputSummary = `Output: ${rows} x ${cols} matrix`;
-      }
-
-      addLog("success", "Execution complete", outputSummary);
-      toast.add({
-        severity: "success",
-        summary: "Execution Complete",
-        detail: "Node executed successfully. Output updated.",
-        life: 3000,
-      });
-    } else {
-      addLog("info", "Execution complete", "No output data received");
-      toast.add({
-        severity: "info",
-        summary: "Execution Complete",
-        detail: "Node executed but no output data received.",
-        life: 3000,
-      });
-    }
-  }
-};
-
-// Lifecycle
+// Lifecycle — BroadcastChannel setup/teardown lives in useNodeTrial
 onMounted(() => {
-  // Set up BroadcastChannel for cross-tab communication
-  try {
-    broadcastChannel.value = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
-    broadcastChannel.value.onmessage = handleBroadcastMessage;
-    console.log('[NodeDetailView] BroadcastChannel initialized');
-  } catch (e) {
-    console.warn('[NodeDetailView] BroadcastChannel not supported:', e);
-  }
-
   // Load node data from session storage
   const storedData = sessionStorage.getItem(STORAGE_KEY);
   if (storedData) {
@@ -5433,14 +5023,6 @@ onMounted(() => {
   }
 });
 
-// Clean up on unmount
-onUnmounted(() => {
-  if (broadcastChannel.value) {
-    broadcastChannel.value.close();
-    broadcastChannel.value = null;
-    console.log('[NodeDetailView] BroadcastChannel closed');
-  }
-});
 </script>
 
 <style scoped>
