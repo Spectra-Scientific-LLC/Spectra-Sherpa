@@ -26,6 +26,7 @@ def test_export_artifacts_handles_string_targets_and_arrays(tmp_path, monkeypatc
     exec(code, namespace)
 
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("SPECTRA_SHERPA_EXPORT_DIR", str(tmp_path))
     results = {
         "spectra": SherpaDataset(
             np.arange(6).reshape(3, 2),

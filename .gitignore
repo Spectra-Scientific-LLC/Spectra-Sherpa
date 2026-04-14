@@ -74,6 +74,8 @@ openapi.json
 frontend/openapi.json
 
 # Workflow export dumps (generated at runtime)
+# Default output dir for export_artifacts(); override via SPECTRA_SHERPA_EXPORT_DIR.
+exports/
 *_2026*/
 *_2025*/
 *.zip

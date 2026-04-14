@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Exported-script artifact location** — `export_artifacts()` (used by generated Python scripts and notebooks) now writes timestamped output to `./exports/<workflow>_<ts>/` by default instead of directly into the current working directory. Set `SPECTRA_SHERPA_EXPORT_DIR=<path>` to override. This prevents repo-root pollution when users run exported scripts from inside a checkout.
+
 ## [0.3.0] - 2026-03-30
 
 ### Security
