@@ -50,114 +50,18 @@
       />
 
       <!-- Settings Section -->
-      <section class="detail-section">
-        <div class="section-header" @click="toggleSection('settings')">
-          <div class="section-title">
-            <i :class="sections.settings ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-            <h2>Settings</h2>
-          </div>
-          <span class="section-badge" v-if="settingsCount">{{ settingsCount }} parameters</span>
-        </div>
-        <Transition name="collapse">
-          <div v-if="sections.settings" class="section-content">
-            <!-- Validation error banner -->
-            <div v-if="hasValidationErrors" class="validation-error-banner">
-              <div class="error-banner-header">
-                <i class="pi pi-exclamation-triangle"></i>
-                <div class="error-banner-content">
-                  <strong>{{ displayedValidationErrors.length }} validation error{{ displayedValidationErrors.length > 1 ? 's' : '' }}</strong>
-                  <span>Please fix the following errors before running:</span>
-                </div>
-              </div>
-              <ul class="error-list">
-                <li v-for="error in displayedValidationErrors" :key="error.param_name">
-                  <strong>{{ error.param_name }}:</strong> {{ error.message }}
-                </li>
-              </ul>
-            </div>
-
-            <div v-if="!nodeParams.length" class="empty-section">
-              <i class="pi pi-cog" />
-              <p>No configurable parameters</p>
-              <small>This node type does not have any settings to configure.</small>
-            </div>
-            <div v-else class="settings-form">
-              <div
-                v-for="param in nodeParams"
-                :key="param.name"
-                class="param-field"
-                :class="{ 'has-error': getParamError(param.name) }"
-              >
-                <label :for="param.name">
-                  {{ param.label }}
-                  <span v-if="param.required" class="required-mark">*</span>
-                </label>
-                <small v-if="param.description" class="param-description">
-                  {{ param.description }}
-                </small>
-
-                <!-- Number input -->
-                <InputNumber
-                  v-if="param.type === 'number'"
-                  v-model="localParams[param.name]"
-                  :id="param.name"
-                  :min="param.min"
-                  :max="param.max"
-                  :step="param.step || 1"
-                  :minFractionDigits="param.step && param.step < 1 ? 2 : 0"
-                  :maxFractionDigits="param.step && param.step < 1 ? 4 : 0"
-                  :placeholder="param.required ? '' : 'Optional input'"
-                  class="full-width"
-                  :class="{ 'p-invalid': getParamError(param.name) }"
-                />
-
-                <!-- Boolean toggle -->
-                <div v-else-if="param.type === 'boolean'" class="toggle-field">
-                  <InputSwitch v-model="localParams[param.name]" :id="param.name" />
-                  <span class="toggle-label">{{ localParams[param.name] ? 'Enabled' : 'Disabled' }}</span>
-                </div>
-
-                <!-- Dropdown select -->
-                <Dropdown
-                  v-else-if="param.type === 'select'"
-                  v-model="localParams[param.name]"
-                  :id="param.name"
-                  :options="param.options"
-                  :optionLabel="param.optionLabel || 'label'"
-                  :optionValue="param.optionValue || 'value'"
-                  class="full-width"
-                  :class="{ 'p-invalid': getParamError(param.name) }"
-                />
-
-                <!-- Text input -->
-                <InputText
-                  v-else
-                  v-model="localParams[param.name]"
-                  :id="param.name"
-                  :placeholder="param.required ? '' : 'Optional input'"
-                  class="full-width"
-                  :class="{ 'p-invalid': getParamError(param.name) }"
-                />
-
-                <!-- Error message -->
-                <small v-if="getParamError(param.name)" class="param-error-message">
-                  {{ getParamError(param.name) }}
-                </small>
-              </div>
-
-              <!-- Reset to defaults button -->
-              <div class="settings-actions">
-                <Button
-                  label="Reset to Defaults"
-                  icon="pi pi-refresh"
-                  class="p-button-outlined p-button-secondary"
-                  @click="resetToDefaults"
-                />
-              </div>
-            </div>
-          </div>
-        </Transition>
-      </section>
+      <SettingsPanel
+        :expanded="sections.settings"
+        :settings-count="settingsCount"
+        :params="nodeParams"
+        :local-params="localParams"
+        :has-validation-errors="hasValidationErrors"
+        :displayed-validation-errors="displayedValidationErrors"
+        :get-param-error="getParamError"
+        @toggle="toggleSection('settings')"
+        @reset="resetToDefaults"
+        @update-param="(name, v) => (localParams[name] = v)"
+      />
 
       <!-- Output Section -->
       <section class="detail-section">
@@ -1266,9 +1170,6 @@ import { ref, computed, watch, onMounted } from "vue";
 import { useRoute } from "vue-router";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
-import InputNumber from "primevue/inputnumber";
-import InputText from "primevue/inputtext";
-import InputSwitch from "primevue/inputswitch";
 import Dropdown from "primevue/dropdown";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
@@ -1293,6 +1194,7 @@ import { useNodeSections } from "./node-detail/composables/useNodeSections";
 import { useNodeTrial, STORAGE_KEY } from "./node-detail/composables/useNodeTrial";
 import LogPanel from "./node-detail/panels/LogPanel.vue";
 import InputPanel from "./node-detail/panels/InputPanel.vue";
+import SettingsPanel from "./node-detail/panels/SettingsPanel.vue";
 
 
 const route = useRoute();
