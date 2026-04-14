@@ -64,426 +64,41 @@
       />
 
       <!-- Output Section -->
-      <section class="detail-section">
-        <div class="section-header" @click="toggleSection('output')">
-          <div class="section-title">
-            <i :class="sections.output ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-            <h2>Output</h2>
-          </div>
-          <span class="section-badge" v-if="outputSummary">{{ outputSummary }}</span>
-        </div>
-        <Transition name="collapse">
-          <div v-if="sections.output" class="section-content">
-            <div v-if="!hasOutput" class="empty-section">
-              <i class="pi pi-box" />
-              <p>No output data available</p>
-              <small>Execute this node to generate output data.</small>
-            </div>
-            <div v-else class="output-content">
-              <!-- Output stats -->
-              <div class="info-grid">
-                <div class="info-item" v-if="outputData?.rows !== undefined">
-                  <label>Rows</label>
-                  <span>{{ outputData.rows }}</span>
-                </div>
-                <div class="info-item" v-if="outputData?.cols !== undefined">
-                  <label>Columns</label>
-                  <span>{{ outputData.cols }}</span>
-                </div>
-                <div class="info-item" v-if="outputData?.type">
-                  <label>Output Type</label>
-                  <span>{{ outputData.type }}</span>
-                </div>
-                <div class="info-item" v-if="outputData?.range">
-                  <label>Value Range</label>
-                  <span>{{ outputData.range[0].toFixed(3) }} - {{ outputData.range[1].toFixed(3) }}</span>
-                </div>
-              </div>
-
-              <!-- Dataset Inspector: Coordinates -->
-              <div v-if="datasetInfo" class="inspector-section">
-                <button
-                  type="button"
-                  class="inspector-toggle"
-                  @click="toggleOutputSubsection('coordinates')"
-                >
-                  <span class="inspector-toggle-title">
-                    <i class="pi pi-compass" />
-                    Dataset Coordinates
-                  </span>
-                  <i :class="outputSubsections.coordinates ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                </button>
-                <div v-if="outputSubsections.coordinates" class="inspector-grid">
-                  <div v-if="datasetInfo.title" class="inspector-item">
-                    <span class="insp-label">Title</span>
-                    <span class="insp-value">{{ datasetInfo.title }}</span>
-                  </div>
-                  <div v-if="datasetInfo.isSpectra" class="inspector-item">
-                    <span class="insp-label">Data Type</span>
-                    <span class="insp-value insp-badge">Spectral</span>
-                  </div>
-                  <div v-if="datasetInfo.spectralTechnique" class="inspector-item">
-                    <span class="insp-label">Technique</span>
-                    <span class="insp-value">{{ datasetInfo.spectralTechnique }}</span>
-                  </div>
-                  <div v-if="datasetInfo.dataQuantity" class="inspector-item">
-                    <span class="insp-label">Quantity</span>
-                    <span class="insp-value">{{ datasetInfo.dataQuantity }}</span>
-                  </div>
-                  <div v-if="datasetInfo.valueUnits" class="inspector-item">
-                    <span class="insp-label">Units</span>
-                    <span class="insp-value">{{ datasetInfo.valueUnits }}</span>
-                  </div>
-                  <template v-if="datasetInfo.xAxis">
-                    <div class="inspector-item">
-                      <span class="insp-label">X-Axis</span>
-                      <span class="insp-value">
-                        {{ datasetInfo.xAxis.title }}
-                        <span v-if="datasetInfo.xAxis.units" class="insp-units">({{ datasetInfo.xAxis.units }})</span>
-                      </span>
-                    </div>
-                    <div v-if="datasetInfo.xAxis.points" class="inspector-item">
-                      <span class="insp-label">X Points</span>
-                      <span class="insp-value">{{ datasetInfo.xAxis.points }}</span>
-                    </div>
-                    <div v-if="datasetInfo.xAxis.range" class="inspector-item">
-                      <span class="insp-label">X Range</span>
-                      <span class="insp-value mono">
-                        {{ datasetInfo.xAxis.range[0].toFixed(1) }} &ndash; {{ datasetInfo.xAxis.range[1].toFixed(1) }}
-                      </span>
-                    </div>
-                  </template>
-                  <template v-if="datasetInfo.yAxis">
-                    <div class="inspector-item">
-                      <span class="insp-label">Y-Axis</span>
-                      <span class="insp-value">
-                        {{ datasetInfo.yAxis.title }}
-                        <span v-if="datasetInfo.yAxis.units" class="insp-units">({{ datasetInfo.yAxis.units }})</span>
-                      </span>
-                    </div>
-                    <div v-if="datasetInfo.yAxis.nSamples" class="inspector-item">
-                      <span class="insp-label">Samples</span>
-                      <span class="insp-value">{{ datasetInfo.yAxis.nSamples }}</span>
-                    </div>
-                    <div v-if="datasetInfo.yAxis.labels?.length" class="inspector-item wide">
-                      <span class="insp-label">Labels</span>
-                      <div class="insp-label-table-wrap">
-                        <table class="insp-label-table">
-                          <thead>
-                            <tr>
-                              <th>#</th>
-                              <th
-                                v-for="(header, idx) in datasetLabelTable.headers"
-                                :key="`label-header-${idx}`"
-                              >
-                                {{ header }}
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr
-                              v-for="(row, rowIdx) in datasetLabelTable.rows"
-                              :key="`label-row-${rowIdx}`"
-                            >
-                              <td class="label-row-index">{{ rowIdx + 1 }}</td>
-                              <td
-                                v-for="(cell, cellIdx) in row"
-                                :key="`label-cell-${rowIdx}-${cellIdx}`"
-                                class="label-cell"
-                                :title="cell"
-                              >
-                                {{ cell }}
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                        <span v-if="datasetInfo.yAxis.labels.length > labelPreviewLimit" class="insp-more">
-                          (+{{ datasetInfo.yAxis.labels.length - labelPreviewLimit }} more)
-                        </span>
-                      </div>
-                    </div>
-                  </template>
-                </div>
-              </div>
-
-              <!-- Output metadata (scientific results) -->
-              <div v-if="Object.keys(outputMetadata).length" class="inspector-section metadata-section">
-                <button
-                  type="button"
-                  class="inspector-toggle"
-                  @click="toggleOutputSubsection('metadata')"
-                >
-                  <span class="inspector-toggle-title">
-                    <i class="pi pi-database" />
-                    Metadata
-                  </span>
-                  <i :class="outputSubsections.metadata ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                </button>
-                <div v-if="outputSubsections.metadata" class="metadata-grid">
-                  <div
-                    v-for="(value, key) in outputMetadata"
-                    :key="key"
-                    class="metadata-item"
-                  >
-                    <span class="meta-key">
-                      {{ key }}:
-                      <i
-                        v-if="getMetaTooltip(key)"
-                        class="pi pi-info-circle meta-info-icon"
-                        :title="getMetaTooltip(key)"
-                      ></i>
-                    </span>
-                    <span class="meta-value">{{ formatMetaValue(value) }}</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Processing History -->
-              <div v-if="processingHistory" class="inspector-section">
-                <button
-                  type="button"
-                  class="inspector-toggle"
-                  @click="toggleOutputSubsection('processing')"
-                >
-                  <span class="inspector-toggle-title">
-                    <i class="pi pi-history" />
-                    Processing History
-                  </span>
-                  <i :class="outputSubsections.processing ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                </button>
-                <div v-if="outputSubsections.processing" class="processing-timeline">
-                  <div
-                    v-for="(step, index) in processingHistory"
-                    :key="index"
-                    class="timeline-item"
-                  >
-                    <span class="step-number">{{ index + 1 }}</span>
-                    <div class="step-content">
-                      <span class="step-operation">
-                        {{ typeof step === 'string' ? step : step.operation || 'unknown' }}
-                      </span>
-                      <div
-                        v-if="typeof step === 'object' && step.parameters && Object.keys(step.parameters).length > 0"
-                        class="step-params"
-                      >
-                        <span
-                          v-for="(pVal, pKey) in step.parameters"
-                          :key="pKey"
-                          class="param-chip"
-                          v-show="pVal !== null"
-                        >
-                          {{ pKey }}: {{ pVal }}
-                        </span>
-                      </div>
-                      <div
-                        v-if="typeof step === 'object' && (step.input_shape || step.output_shape)"
-                        class="step-shapes"
-                      >
-                        <span v-if="step.input_shape" class="shape-badge">In: {{ step.input_shape?.join('\u00d7') }}</span>
-                        <span v-if="step.output_shape" class="shape-badge">Out: {{ step.output_shape?.join('\u00d7') }}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Provenance -->
-              <div v-if="provenanceInfo" class="inspector-section">
-                <button
-                  type="button"
-                  class="inspector-toggle"
-                  @click="toggleOutputSubsection('provenance')"
-                >
-                  <span class="inspector-toggle-title">
-                    <i class="pi pi-sitemap" />
-                    Provenance
-                  </span>
-                  <i :class="outputSubsections.provenance ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                </button>
-                <div v-if="outputSubsections.provenance" class="inspector-grid">
-                  <div v-if="provenanceInfo.source_type" class="inspector-item">
-                    <span class="insp-label">Source</span>
-                    <span class="insp-value">{{ provenanceInfo.source_type }}</span>
-                  </div>
-                  <div v-if="provenanceInfo.operations?.length" class="inspector-item wide">
-                    <span class="insp-label">Operations</span>
-                    <span class="insp-value mono">
-                      {{ provenanceInfo.operations.join(' \u2192 ') }}
-                    </span>
-                  </div>
-                  <div v-if="provenanceInfo.last_modified" class="inspector-item">
-                    <span class="insp-label">Modified</span>
-                    <span class="insp-value">{{ provenanceInfo.last_modified }}</span>
-                  </div>
-                  <template v-for="(val, key) in provenanceInfo" :key="key">
-                    <div
-                      v-if="!['source_type', 'operations', 'last_modified'].includes(String(key)) && typeof val !== 'object'"
-                      class="inspector-item"
-                    >
-                      <span class="insp-label">{{ key }}</span>
-                      <span class="insp-value">{{ val }}</span>
-                    </div>
-                  </template>
-                </div>
-              </div>
-
-              <!-- Quality Summary -->
-              <div v-if="qualitySummary" class="inspector-section">
-                <button
-                  type="button"
-                  class="inspector-toggle"
-                  @click="toggleOutputSubsection('quality')"
-                >
-                  <span class="inspector-toggle-title">
-                    <i class="pi pi-check-circle" />
-                    Quality
-                  </span>
-                  <i :class="outputSubsections.quality ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                </button>
-                <div v-if="outputSubsections.quality" class="inspector-grid">
-                  <div
-                    v-if="isRegressionNode && regressionTargetOptions.length > 1"
-                    class="inspector-item wide"
-                  >
-                    <span class="insp-label">Target Metric</span>
-                    <Dropdown
-                      v-model="regressionTargetIdx"
-                      :options="regressionTargetOptions"
-                      optionLabel="label"
-                      optionValue="value"
-                      class="detail-target-dropdown"
-                    />
-                  </div>
-                  <div v-if="qualitySummary.latest_model_type" class="inspector-item">
-                    <span class="insp-label">Model</span>
-                    <span class="insp-value">{{ qualitySummary.latest_model_type }}</span>
-                  </div>
-                  <div v-if="qualitySummary.latest_r2 != null" class="inspector-item">
-                    <span class="insp-label">R&sup2;</span>
-                    <span class="insp-value">{{ Number(qualitySummary.latest_r2).toFixed(4) }}</span>
-                  </div>
-                  <div v-if="qualitySummary.latest_rmse != null" class="inspector-item">
-                    <span class="insp-label">RMSE</span>
-                    <span class="insp-value">{{ Number(qualitySummary.latest_rmse).toFixed(4) }}</span>
-                  </div>
-                  <div v-if="selectedRegressionR2 != null" class="inspector-item">
-                    <span class="insp-label">Selected R&sup2;</span>
-                    <span class="insp-value">{{ Number(selectedRegressionR2).toFixed(4) }}</span>
-                  </div>
-                  <div v-if="selectedRegressionRmse != null" class="inspector-item">
-                    <span class="insp-label">Selected RMSE</span>
-                    <span class="insp-value">{{ Number(selectedRegressionRmse).toFixed(4) }}</span>
-                  </div>
-                  <div v-if="qualitySummary.n_evaluations" class="inspector-item">
-                    <span class="insp-label">Evaluations</span>
-                    <span class="insp-value">{{ qualitySummary.n_evaluations }}</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Secondary Port Outputs -->
-              <div v-if="portSummaries.length > 0" class="inspector-section">
-                <button
-                  type="button"
-                  class="inspector-toggle"
-                  @click="toggleOutputSubsection('ports')"
-                >
-                  <span class="inspector-toggle-title">
-                    <i class="pi pi-share-alt" />
-                    Output Ports
-                  </span>
-                  <i :class="outputSubsections.ports ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                </button>
-                <div v-if="outputSubsections.ports" class="port-summaries">
-                  <div v-for="port in portSummaries" :key="port.name" class="port-summary-card">
-                    <div class="port-header">
-                      <span class="port-name">{{ port.name }}</span>
-                      <span v-if="port.type" class="port-type-badge">{{ port.type }}</span>
-                    </div>
-                    <div class="port-details">
-                      <span v-if="port.shape">Shape: {{ port.shape.join('\u00d7') }}</span>
-                      <span v-if="port.title">{{ port.title }}</span>
-                      <span v-if="port.xTitle">X: {{ port.xTitle }}<template v-if="port.xUnits"> ({{ port.xUnits }})</template><template v-if="port.xPoints">, {{ port.xPoints }} pts</template></span>
-                      <span v-if="port.yTitle">Y: {{ port.yTitle }}<template v-if="port.nLabels">, {{ port.nLabels }} labels</template></span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- View Full Metadata button -->
-              <div v-if="hasOutput" class="full-meta-action">
-                <Button
-                  label="View Full Metadata (JSON)"
-                  icon="pi pi-code"
-                  class="p-button-sm p-button-text"
-                  @click="showFullMetadata = true"
-                />
-              </div>
-
-              <!-- Quick actions -->
-              <div class="output-actions">
-                <Button
-                  label="View Data Table"
-                  icon="pi pi-table"
-                  class="p-button-outlined"
-                  @click="openDataTable"
-                />
-                <Button
-                  label="Quick Plot"
-                  icon="pi pi-chart-line"
-                  class="p-button-outlined"
-                  @click="openQuickPlot"
-                />
-                <Button
-                  label="Export CSV"
-                  icon="pi pi-download"
-                  class="p-button-outlined"
-                  @click="exportOutput"
-                />
-              </div>
-
-              <!-- Preview table -->
-              <div v-if="outputPreview.length" class="preview-table">
-                <h4>Output Preview ({{ outputDataSummary }})</h4>
-                <DataTable
-                  :value="outputPreview"
-                  :scrollable="true"
-                  scrollHeight="200px"
-                  class="preview-datatable"
-                  size="small"
-                >
-                  <Column
-                    v-for="col in outputPreviewColumns"
-                    :key="col.field"
-                    :field="col.field"
-                    :header="col.header"
-                    :style="{ minWidth: '80px' }"
-                  />
-                </DataTable>
-              </div>
-
-              <div v-if="pcaDiagnosticsPreview.length" class="preview-table">
-                <h4>PCA Diagnostics ({{ pcaDiagSummary }})</h4>
-                <DataTable
-                  :value="pcaDiagnosticsPreview"
-                  :scrollable="true"
-                  scrollHeight="200px"
-                  class="preview-datatable"
-                  size="small"
-                >
-                  <Column
-                    v-for="col in pcaDiagnosticsColumns"
-                    :key="col.field"
-                    :field="col.field"
-                    :header="col.header"
-                    :style="{ minWidth: '120px' }"
-                  />
-                </DataTable>
-              </div>
-            </div>
-          </div>
-        </Transition>
-      </section>
+      <OutputPanel
+        :expanded="sections.output"
+        :output-summary="outputSummary"
+        :has-output="hasOutput"
+        :output-data="outputData"
+        :output-metadata="outputMetadata"
+        :output-subsections="outputSubsections"
+        :dataset-info="datasetInfo"
+        :dataset-label-table="datasetLabelTable"
+        :label-preview-limit="labelPreviewLimit"
+        :processing-history="processingHistory"
+        :provenance-info="provenanceInfo"
+        :quality-summary="qualitySummary"
+        :is-regression-node="isRegressionNode"
+        :regression-target-options="regressionTargetOptions"
+        :regression-target-idx="regressionTargetIdx"
+        :selected-regression-r2="selectedRegressionR2"
+        :selected-regression-rmse="selectedRegressionRmse"
+        :port-summaries="portSummaries"
+        :output-preview="outputPreview"
+        :output-preview-columns="outputPreviewColumns"
+        :output-data-summary="outputDataSummary"
+        :pca-diagnostics-preview="pcaDiagnosticsPreview"
+        :pca-diag-summary="pcaDiagSummary"
+        :pca-diagnostics-columns="pcaDiagnosticsColumns"
+        :get-meta-tooltip="getMetaTooltip"
+        :format-meta-value="formatMetaValue"
+        @toggle="toggleSection('output')"
+        @toggle-sub="toggleOutputSubsection"
+        @update:regression-target-idx="(v) => (regressionTargetIdx = v)"
+        @show-full-metadata="showFullMetadata = true"
+        @open-data-table="openDataTable"
+        @open-quick-plot="openQuickPlot"
+        @export-output="exportOutput"
+      />
 
       <!-- Plots Section -->
       <section class="detail-section" v-if="hasOutput && availablePlots.length > 0">
@@ -1171,8 +786,6 @@ import { useRoute } from "vue-router";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
 import Dropdown from "primevue/dropdown";
-import DataTable from "primevue/datatable";
-import Column from "primevue/column";
 import { useToast } from "primevue/usetoast";
 import QuickPlotModal from "./modals/QuickPlotModal.vue";
 import DataTableModal from "./modals/DataTableModal.vue";
@@ -1195,6 +808,7 @@ import { useNodeTrial, STORAGE_KEY } from "./node-detail/composables/useNodeTria
 import LogPanel from "./node-detail/panels/LogPanel.vue";
 import InputPanel from "./node-detail/panels/InputPanel.vue";
 import SettingsPanel from "./node-detail/panels/SettingsPanel.vue";
+import OutputPanel from "./node-detail/panels/OutputPanel.vue";
 
 
 const route = useRoute();
