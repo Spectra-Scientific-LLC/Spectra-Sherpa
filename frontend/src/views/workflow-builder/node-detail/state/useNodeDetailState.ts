@@ -112,12 +112,21 @@ export interface OutputSlice {
   formatMetaValue: (value: any) => string;
 }
 
-// ── Plot data bag (untyped for now; tightening to per-family slices is
-//    follow-up #24b; this still beats the old `state: any`) ──────────────
+// ── Plot data bag: per-family slices ──────────────────────────────────
+//
+// Runtime shape is still flat (panels read `state.plots.value.pcaScoresData`)
+// so the consumer contract is unchanged, but the type is now an intersection
+// of per-family slices so editors can autocomplete within a family and
+// unrelated keys no longer resolve to `any`. Plotly trace/layout payloads
+// remain typed as `any` — tightening those is out of scope for this PR and
+// would require a plotly type dependency.
+//
+// When adding a new plot family, add its slice interface here and include
+// it in the intersection at the bottom.
 
-export interface PlotDataBag {
+export interface PlotMetaSlice {
   hasOutput: boolean;
-  availablePlots: any[];
+  availablePlots: string[];
   nodeTypeKey: string;
   isPCAOutput: boolean;
   isPreprocessingNode: boolean;
@@ -125,17 +134,89 @@ export interface PlotDataBag {
   isSpectraData: boolean;
   isGenericDataNode: boolean;
   nodeOutput: NodeOutput | null;
-  contourClickPoint: { sampleIdx: number; wavenumber: number } | null;
+  contourClickPoint:
+    | { sampleIdx: number; wavenumberIdx: number; wavenumber: number }
+    | null;
   pcaAxisOptions: { label: string; value: number }[];
   regressionTargetOptions: { label: string; value: number }[];
   spectraDisplayOptions: { label: string; value: string }[];
   genericDisplayOptions: { label: string; value: string }[];
   featureOptions: { label: string; value: number }[];
   holdoutVisualization: Record<string, any> | null;
-  // Plot data + layout pairs. Typed as any — the individual plotly shapes
-  // vary too widely to tighten meaningfully in this commit.
-  [key: string]: any;
 }
+
+export interface PcaPlotSlice {
+  pcaScoresData: any[]; pcaScoresLayout: Record<string, any>; pcaScoresConfig: Record<string, any>;
+  pcaBiplotData: any[]; pcaBiplotLayout: Record<string, any>;
+  pcaLoadingsData: any[]; pcaLoadingsLayout: Record<string, any>; pcaLoadingsConfig: Record<string, any>;
+  pcaScreeData: any[]; pcaScreeLayout: Record<string, any>;
+  pcaDiagnosticsData: any[]; pcaDiagnosticsLayout: Record<string, any>;
+}
+
+export interface McrPlotSlice {
+  mcrConcentrationData: any[]; mcrConcentrationLayout: Record<string, any>;
+  mcrSpectraData: any[]; mcrSpectraLayout: Record<string, any>;
+}
+
+export interface EfaPlotSlice {
+  efaEigenvalueData: any[]; efaEigenvalueLayout: Record<string, any>;
+}
+
+export interface PlsPlotSlice {
+  plsScoresData: any[]; plsScoresLayout: Record<string, any>;
+  plsLoadingsData: any[]; plsLoadingsLayout: Record<string, any>;
+}
+
+export interface ClassificationPlotSlice {
+  classificationScoresData: any[]; classificationScoresLayout: Record<string, any>;
+  plsdaLoadingsData: any[]; plsdaLoadingsLayout: Record<string, any>;
+  plsdaVipData: any[]; plsdaVipLayout: Record<string, any>;
+  plsdaConfusionTrainData: any[]; plsdaConfusionTrainLayout: Record<string, any>;
+  plsdaConfusionCVData: any[]; plsdaConfusionCVLayout: Record<string, any>;
+  classificationAccuracyData: any[]; classificationAccuracyLayout: Record<string, any>;
+}
+
+export interface RegressionPlotSlice {
+  regressionCorrelationData: any[]; regressionCorrelationLayout: Record<string, any>;
+}
+
+export interface OverviewPlotSlice {
+  hcaDendrogramData: any[]; hcaDendrogramLayout: Record<string, any>;
+  peakFindingPlotData: any[]; peakFindingPlotLayout: Record<string, any>;
+  plotNodeData: any[]; plotNodeLayout: Record<string, any>;
+}
+
+export interface SpectraPlotSlice {
+  spectraOverlayData: any[]; spectraOverlayLayout: Record<string, any>;
+  spectraContourData: any[]; spectraContourLayout: Record<string, any>;
+  horizontalSliceData: any[]; horizontalSliceLayout: Record<string, any>;
+  verticalSliceData: any[]; verticalSliceLayout: Record<string, any>;
+}
+
+export interface GenericPlotSlice {
+  genericBoxPlotData: any[]; genericBoxPlotLayout: Record<string, any>;
+  genericScatterData: any[]; genericScatterLayout: Record<string, any>;
+}
+
+export interface DiagnosticsPlotSlice {
+  clusterScatterData: any[]; clusterScatterLayout: Record<string, any>;
+  outlierChartData: any[]; outlierChartLayout: Record<string, any>;
+  holdoutConfusionData: any[]; holdoutConfusionLayout: Record<string, any>;
+  holdoutRegressionData: any[]; holdoutRegressionLayout: Record<string, any>;
+  statsPlotData: any[]; statsPlotLayout: Record<string, any>;
+}
+
+export type PlotDataBag = PlotMetaSlice &
+  PcaPlotSlice &
+  McrPlotSlice &
+  EfaPlotSlice &
+  PlsPlotSlice &
+  ClassificationPlotSlice &
+  RegressionPlotSlice &
+  OverviewPlotSlice &
+  SpectraPlotSlice &
+  GenericPlotSlice &
+  DiagnosticsPlotSlice;
 
 // ── Writable refs (edited via v-model emit pairs from panels) ───────────
 
