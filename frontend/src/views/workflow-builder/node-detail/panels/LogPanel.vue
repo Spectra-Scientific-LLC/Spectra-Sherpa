@@ -12,7 +12,7 @@
         <div v-if="logs.length === 0" class="empty-section">
           <i class="pi pi-list" />
           <p>No execution logs yet</p>
-          <small>Click "Run Node" to execute and see logs here.</small>
+          <small>Click "Run Trial" to execute and see logs here.</small>
         </div>
         <div v-else class="log-entries">
           <div

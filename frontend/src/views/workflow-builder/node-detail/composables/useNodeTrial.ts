@@ -33,7 +33,6 @@ export function useNodeTrial({
 }: UseNodeTrialDeps) {
   const isExecuting = ref(false);
   const broadcastChannel = ref<BroadcastChannel | null>(null);
-  let executionTimeout: ReturnType<typeof setTimeout> | null = null;
 
   const broadcastParamsUpdate = () => {
     const updateMessage = {
@@ -197,65 +196,12 @@ export function useNodeTrial({
     }
   };
 
-  const handleBroadcastMessage = (event: MessageEvent) => {
-    const { type, nodeId, output, error } = event.data;
-
-    if (String(nodeId) !== String(nodeData.value?.id)) {
-      return;
-    }
-
-    if (type === "node_execution_result") {
-      if (executionTimeout) {
-        clearTimeout(executionTimeout);
-        executionTimeout = null;
-      }
-
-      isExecuting.value = false;
-
-      if (error) {
-        addLog("error", "Execution failed", error);
-        toast.add({
-          severity: "error",
-          summary: "Execution Failed",
-          detail: error,
-          life: 5000,
-        });
-      } else if (output) {
-        nodeData.value = {
-          ...nodeData.value,
-          output: output,
-        };
-
-        let outputSummary = "Output updated";
-        if (output.data && Array.isArray(output.data)) {
-          const rows = output.data.length;
-          const cols = Array.isArray(output.data[0]) ? output.data[0].length : 1;
-          outputSummary = `Output: ${rows} x ${cols} matrix`;
-        }
-
-        addLog("success", "Execution complete", outputSummary);
-        toast.add({
-          severity: "success",
-          summary: "Execution Complete",
-          detail: "Node executed successfully. Output updated.",
-          life: 3000,
-        });
-      } else {
-        addLog("info", "Execution complete", "No output data received");
-        toast.add({
-          severity: "info",
-          summary: "Execution Complete",
-          detail: "Node executed but no output data received.",
-          life: 3000,
-        });
-      }
-    }
-  };
-
+  // NodeDetailView is a sender-only participant on the BroadcastChannel;
+  // it posts `node_params_updated` via broadcastParamsUpdate() and does not
+  // need to receive anything back.
   onMounted(() => {
     try {
       broadcastChannel.value = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
-      broadcastChannel.value.onmessage = handleBroadcastMessage;
     } catch (e) {
       console.warn("[NodeDetailView] BroadcastChannel not supported:", e);
     }
@@ -273,6 +219,5 @@ export function useNodeTrial({
     broadcastChannel,
     broadcastParamsUpdate,
     handleRunTrial,
-    handleBroadcastMessage,
   };
 }

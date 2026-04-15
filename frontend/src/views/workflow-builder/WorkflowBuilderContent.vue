@@ -184,133 +184,15 @@ const createNodeId = (nodeType: string): string => {
   return candidate;
 };
 
-// Handle BroadcastChannel messages from NodeDetailView
-const handleBroadcastMessage = async (event: MessageEvent) => {
-  const { type, nodeId, params, nodeType, persistParams } = event.data;
+// Handle BroadcastChannel messages from NodeDetailView.
+// DetailView is send-only for `node_params_updated` (fired on Save and Exit).
+const handleBroadcastMessage = (event: MessageEvent) => {
+  const { type, nodeId, params } = event.data;
 
-  // Handle param updates from DetailView (only on "Save and Exit")
   if (type === 'node_params_updated') {
     const node = nodes.value.find(n => n.id === nodeId);
     if (node && params) {
-      console.log('[WorkflowBuilder] Received param update from DetailView:', { nodeId, params });
       workflowStore.updateNode(nodeId, { params });
-    }
-  }
-
-  // Handle execution requests from DetailView - works for ANY node, not just selected
-  if (type === 'execute_node_request') {
-    console.log('[WorkflowBuilder] Received execute request from DetailView:', { nodeId, nodeType, persistParams });
-
-    const node = nodes.value.find(n => n.id === nodeId);
-    if (!node) {
-      console.warn('[WorkflowBuilder] Node not found:', nodeId);
-      // Send error back
-      if (broadcastChannel.value) {
-        broadcastChannel.value.postMessage({
-          type: 'node_execution_result',
-          nodeId,
-          output: null,
-          error: `Node ${nodeId} not found in workflow`,
-          timestamp: Date.now(),
-        });
-      }
-      return;
-    }
-
-    // Save original params if we're not persisting (for restore after execution)
-    const originalParams = persistParams === false ? { ...node.params } : null;
-
-    // Temporarily update node params for execution
-    if (params) {
-      workflowStore.updateNode(nodeId, { params });
-    }
-
-    // Execute the node
-    try {
-      const initialData = await buildInitialData();
-      const response = await workflowStore.executeNode(nodeId, initialData);
-
-      // Update outputs
-      const newOutputs = new Map(nodeOutputs.value);
-      let executedNodeOutput: NodeOutput | null = null;
-
-      for (const [nId, result] of Object.entries(response.results)) {
-        const output = buildOutputForNode(nId, result);
-        const diagnostics = response.diagnostics?.[nId];
-        if (diagnostics && typeof diagnostics === "object") {
-          output.metadata = {
-            ...output.metadata,
-            diagnostics,
-          };
-        }
-        newOutputs.set(nId, output);
-
-        // Track the specific node's output for the broadcast response
-        if (nId === String(nodeId)) {
-          console.log('[WorkflowBuilder] Found matching output for node:', nodeId);
-          executedNodeOutput = output;
-        }
-      }
-      nodeOutputs.value = newOutputs;
-
-      // Broadcast result back to DetailView
-      if (broadcastChannel.value) {
-        console.log('[WorkflowBuilder] Sending execution result back:', {
-          nodeId,
-          nodeIdType: typeof nodeId,
-          hasOutput: !!executedNodeOutput,
-          outputDataLength: executedNodeOutput?.data?.length || 0,
-          resultKeys: Object.keys(response.results || {}),
-        });
-        broadcastChannel.value.postMessage({
-          type: 'node_execution_result',
-          nodeId,
-          output: executedNodeOutput,
-          error: response.error || null,
-          timestamp: Date.now(),
-        });
-      }
-
-      // Restore original params if we didn't want to persist
-      if (originalParams !== null) {
-        workflowStore.updateNode(nodeId, { params: originalParams });
-        console.log('[WorkflowBuilder] Restored original params (not persisting)');
-      }
-
-      if (!response.error) {
-        toast.add({
-          severity: "success",
-          summary: "Node Executed",
-          detail: `${node.type} completed (from DetailView)`,
-          life: 2000,
-        });
-      }
-    } catch (error: unknown) {
-      // Restore original params even on error
-      if (originalParams !== null) {
-        workflowStore.updateNode(nodeId, { params: originalParams });
-        console.log('[WorkflowBuilder] Restored original params after error');
-      }
-
-      const message = getErrorMessage(error);
-
-      // Send error back to DetailView
-      if (broadcastChannel.value) {
-        broadcastChannel.value.postMessage({
-          type: 'node_execution_result',
-          nodeId,
-          output: null,
-          error: message,
-          timestamp: Date.now(),
-        });
-      }
-
-      toast.add({
-        severity: "error",
-        summary: "Node Failed",
-        detail: message,
-        life: 3000,
-      });
     }
   }
 };
