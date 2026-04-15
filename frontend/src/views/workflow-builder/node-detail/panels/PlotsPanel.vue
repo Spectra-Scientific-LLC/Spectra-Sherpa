@@ -21,11 +21,11 @@
                 <div class="plot-controls">
                   <div class="control-group">
                     <label>X Axis</label>
-                    <Dropdown :model-value="pcaXAxis" @update:model-value="(v) => $emit('update:pcaXAxis', v)" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
+                    <Dropdown v-model="pcaXAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
                   </div>
                   <div class="control-group">
                     <label>Y Axis</label>
-                    <Dropdown :model-value="pcaYAxis" @update:model-value="(v) => $emit('update:pcaYAxis', v)" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
+                    <Dropdown v-model="pcaYAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
                   </div>
                 </div>
                 <PlotlyChart :data="state.pcaScoresData" :layout="state.pcaScoresLayout" :config="state.pcaScoresConfig" />
@@ -43,11 +43,11 @@
                 <div class="plot-controls">
                   <div class="control-group">
                     <label>X Axis</label>
-                    <Dropdown :model-value="pcaXAxis" @update:model-value="(v) => $emit('update:pcaXAxis', v)" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
+                    <Dropdown v-model="pcaXAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
                   </div>
                   <div class="control-group">
                     <label>Y Axis</label>
-                    <Dropdown :model-value="pcaYAxis" @update:model-value="(v) => $emit('update:pcaYAxis', v)" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
+                    <Dropdown v-model="pcaYAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
                   </div>
                 </div>
                 <PlotlyChart :data="state.pcaBiplotData" :layout="state.pcaBiplotLayout" :config="state.pcaScoresConfig" />
@@ -145,11 +145,11 @@
                 <div class="plot-controls">
                   <div class="control-group">
                     <label>X Axis</label>
-                    <Dropdown :model-value="pcaXAxis" @update:model-value="(v) => $emit('update:pcaXAxis', v)" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
+                    <Dropdown v-model="pcaXAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
                   </div>
                   <div class="control-group">
                     <label>Y Axis</label>
-                    <Dropdown :model-value="pcaYAxis" @update:model-value="(v) => $emit('update:pcaYAxis', v)" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
+                    <Dropdown v-model="pcaYAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
                   </div>
                 </div>
                 <PlotlyChart :data="state.plsScoresData" :layout="state.plsScoresLayout" :config="state.pcaScoresConfig" />
@@ -181,11 +181,11 @@
                 <div class="plot-controls">
                   <div class="control-group">
                     <label>X Axis</label>
-                    <Dropdown :model-value="pcaXAxis" @update:model-value="(v) => $emit('update:pcaXAxis', v)" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
+                    <Dropdown v-model="pcaXAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
                   </div>
                   <div class="control-group">
                     <label>Y Axis</label>
-                    <Dropdown :model-value="pcaYAxis" @update:model-value="(v) => $emit('update:pcaYAxis', v)" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
+                    <Dropdown v-model="pcaYAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
                   </div>
                 </div>
                 <PlotlyChart :data="state.classificationScoresData" :layout="state.classificationScoresLayout" :config="state.pcaScoresConfig" />
@@ -203,13 +203,13 @@
                   <Button
                     :label="'Line Plot'"
                     :class="{ 'p-button-outlined': plsdaLoadingsViewMode !== 'lines' }"
-                    @click="$emit('update:plsdaLoadingsViewMode', 'lines')"
+                    @click="plsdaLoadingsViewMode = 'lines'"
                     size="small"
                   />
                   <Button
                     :label="'Biplot'"
                     :class="{ 'p-button-outlined': plsdaLoadingsViewMode !== 'biplot' }"
-                    @click="$emit('update:plsdaLoadingsViewMode', 'biplot')"
+                    @click="plsdaLoadingsViewMode = 'biplot'"
                     size="small"
                   />
                 </div>
@@ -264,11 +264,11 @@
                 <div class="plot-controls">
                   <div class="control-group">
                     <label>X Axis</label>
-                    <Dropdown :model-value="pcaXAxis" @update:model-value="(v) => $emit('update:pcaXAxis', v)" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
+                    <Dropdown v-model="pcaXAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
                   </div>
                   <div class="control-group">
                     <label>Y Axis</label>
-                    <Dropdown :model-value="pcaYAxis" @update:model-value="(v) => $emit('update:pcaYAxis', v)" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
+                    <Dropdown v-model="pcaYAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
                   </div>
                 </div>
                 <PlotlyChart :data="state.classificationScoresData" :layout="state.classificationScoresLayout" :config="state.pcaScoresConfig" />
@@ -289,11 +289,11 @@
                 <div class="plot-controls">
                   <div class="control-group">
                     <label>X Axis</label>
-                    <Dropdown :model-value="pcaXAxis" @update:model-value="(v) => $emit('update:pcaXAxis', v)" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
+                    <Dropdown v-model="pcaXAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
                   </div>
                   <div class="control-group">
                     <label>Y Axis</label>
-                    <Dropdown :model-value="pcaYAxis" @update:model-value="(v) => $emit('update:pcaYAxis', v)" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
+                    <Dropdown v-model="pcaYAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
                   </div>
                 </div>
                 <PlotlyChart :data="state.classificationScoresData" :layout="state.classificationScoresLayout" :config="state.pcaScoresConfig" />
@@ -314,7 +314,7 @@
                 <div v-if="state.regressionTargetOptions.length > 1" class="plot-controls">
                   <div class="control-group">
                     <label>Target</label>
-                    <Dropdown :model-value="regressionTargetIdx" @update:model-value="(v) => $emit('update:regressionTargetIdx', v)" :options="state.regressionTargetOptions" optionLabel="label" optionValue="value" />
+                    <Dropdown v-model="regressionTargetIdx" :options="state.regressionTargetOptions" optionLabel="label" optionValue="value" />
                   </div>
                 </div>
                 <PlotlyChart :data="state.regressionCorrelationData" :layout="state.regressionCorrelationLayout" />
@@ -399,7 +399,7 @@
                 <div class="plot-controls">
                   <div class="control-group">
                     <label>Display</label>
-                    <Dropdown :model-value="spectraDisplayMode" @update:model-value="(v) => $emit('update:spectraDisplayMode', v)" :options="state.spectraDisplayOptions" optionLabel="label" optionValue="value" />
+                    <Dropdown v-model="spectraDisplayMode" :options="state.spectraDisplayOptions" optionLabel="label" optionValue="value" />
                   </div>
                 </div>
                 <PlotlyChart
@@ -445,16 +445,16 @@
                 <div class="plot-controls">
                   <div class="control-group">
                     <label>Display</label>
-                    <Dropdown :model-value="genericDisplayMode" @update:model-value="(v) => $emit('update:genericDisplayMode', v)" :options="state.genericDisplayOptions" optionLabel="label" optionValue="value" />
+                    <Dropdown v-model="genericDisplayMode" :options="state.genericDisplayOptions" optionLabel="label" optionValue="value" />
                   </div>
                   <template v-if="genericDisplayMode === 'scatter'">
                     <div class="control-group">
                       <label>X Axis</label>
-                      <Dropdown :model-value="featureXAxis" @update:model-value="(v) => $emit('update:featureXAxis', v)" :options="state.featureOptions" optionLabel="label" optionValue="value" />
+                      <Dropdown v-model="featureXAxis" :options="state.featureOptions" optionLabel="label" optionValue="value" />
                     </div>
                     <div class="control-group">
                       <label>Y Axis</label>
-                      <Dropdown :model-value="featureYAxis" @update:model-value="(v) => $emit('update:featureYAxis', v)" :options="state.featureOptions" optionLabel="label" optionValue="value" />
+                      <Dropdown v-model="featureYAxis" :options="state.featureOptions" optionLabel="label" optionValue="value" />
                     </div>
                   </template>
                 </div>
@@ -584,39 +584,42 @@
 </template>
 
 <script setup lang="ts">
+import { inject } from "vue";
 import Button from "primevue/button";
 import Dropdown from "primevue/dropdown";
 import PlotlyChart from "@/components/PlotlyChart.vue";
+import { NODE_DETAIL_STATE_KEY } from "../state/useNodeDetailState";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 defineProps<{
   expanded: boolean;
-  plotSections: Record<string, boolean>;
-  pcaXAxis: number;
-  pcaYAxis: number;
-  plsdaLoadingsViewMode: "lines" | "biplot";
-  regressionTargetIdx: number;
-  spectraDisplayMode: string;
-  genericDisplayMode: string;
-  featureXAxis: number;
-  featureYAxis: number;
-  state: any; // big bag of computed plot data/layouts/flags
 }>();
 
 defineEmits<{
   (e: "toggle"): void;
   (e: "togglePlot", key: string): void;
-  (e: "update:pcaXAxis", v: number): void;
-  (e: "update:pcaYAxis", v: number): void;
-  (e: "update:plsdaLoadingsViewMode", v: "lines" | "biplot"): void;
-  (e: "update:regressionTargetIdx", v: number): void;
-  (e: "update:spectraDisplayMode", v: string): void;
-  (e: "update:genericDisplayMode", v: string): void;
-  (e: "update:featureXAxis", v: number): void;
-  (e: "update:featureYAxis", v: number): void;
   (e: "contourClick", event: any): void;
 }>();
+
+const detailState = inject(NODE_DETAIL_STATE_KEY);
+if (!detailState) {
+  throw new Error("PlotsPanel must be rendered inside NodeDetailView (missing NODE_DETAIL_STATE_KEY)");
+}
+const { writable, plotSections: plotSectionsRef, plots } = detailState;
+
+// Re-expose under the names the template uses. Refs auto-unwrap in template.
+const plotSections = plotSectionsRef;
+const state = plots;
+// Writable refs: v-model binds directly — mutating .value propagates to shell.
+const pcaXAxis = writable.pcaXAxis;
+const pcaYAxis = writable.pcaYAxis;
+const plsdaLoadingsViewMode = writable.plsdaLoadingsViewMode;
+const regressionTargetIdx = writable.regressionTargetIdx;
+const spectraDisplayMode = writable.spectraDisplayMode;
+const genericDisplayMode = writable.genericDisplayMode;
+const featureXAxis = writable.featureXAxis;
+const featureYAxis = writable.featureYAxis;
 </script>
 
 <style scoped>

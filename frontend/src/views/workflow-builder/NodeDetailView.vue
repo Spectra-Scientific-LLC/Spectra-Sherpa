@@ -66,34 +66,8 @@
       <!-- Output Section -->
       <OutputPanel
         :expanded="sections.output"
-        :output-summary="outputSummary"
-        :has-output="hasOutput"
-        :output-data="outputData"
-        :output-metadata="outputMetadata"
-        :output-subsections="outputSubsections"
-        :dataset-info="datasetInfo"
-        :dataset-label-table="datasetLabelTable"
-        :label-preview-limit="labelPreviewLimit"
-        :processing-history="processingHistory"
-        :provenance-info="provenanceInfo"
-        :quality-summary="qualitySummary"
-        :is-regression-node="isRegressionNode"
-        :regression-target-options="regressionTargetOptions"
-        :regression-target-idx="regressionTargetIdx"
-        :selected-regression-r2="selectedRegressionR2"
-        :selected-regression-rmse="selectedRegressionRmse"
-        :port-summaries="portSummaries"
-        :output-preview="outputPreview"
-        :output-preview-columns="outputPreviewColumns"
-        :output-data-summary="outputDataSummary"
-        :pca-diagnostics-preview="pcaDiagnosticsPreview"
-        :pca-diag-summary="pcaDiagSummary"
-        :pca-diagnostics-columns="pcaDiagnosticsColumns"
-        :get-meta-tooltip="getMetaTooltip"
-        :format-meta-value="formatMetaValue"
         @toggle="toggleSection('output')"
         @toggle-sub="toggleOutputSubsection"
-        @update:regression-target-idx="(v) => (regressionTargetIdx = v)"
         @show-full-metadata="showFullMetadata = true"
         @open-data-table="openDataTable"
         @open-quick-plot="openQuickPlot"
@@ -103,26 +77,8 @@
       <!-- Plots Section -->
       <PlotsPanel
         :expanded="sections.plots"
-        :plot-sections="plotSections"
-        :pca-x-axis="pcaXAxis"
-        :pca-y-axis="pcaYAxis"
-        :plsda-loadings-view-mode="plsdaLoadingsViewMode"
-        :regression-target-idx="regressionTargetIdx"
-        :spectra-display-mode="spectraDisplayMode"
-        :generic-display-mode="genericDisplayMode"
-        :feature-x-axis="featureXAxis"
-        :feature-y-axis="featureYAxis"
-        :state="plotState"
         @toggle="toggleSection('plots')"
         @toggle-plot="togglePlot"
-        @update:pca-x-axis="(v) => (pcaXAxis = v)"
-        @update:pca-y-axis="(v) => (pcaYAxis = v)"
-        @update:plsda-loadings-view-mode="(v) => (plsdaLoadingsViewMode = v)"
-        @update:regression-target-idx="(v) => (regressionTargetIdx = v)"
-        @update:spectra-display-mode="(v) => (spectraDisplayMode = v)"
-        @update:generic-display-mode="(v) => (genericDisplayMode = v)"
-        @update:feature-x-axis="(v) => (featureXAxis = v)"
-        @update:feature-y-axis="(v) => (featureYAxis = v)"
         @contour-click="handleContourClick"
       />
 
@@ -166,7 +122,11 @@
 
 <script setup lang="ts">
 /* eslint-disable @typescript-eslint/no-explicit-any -- node outputs and plot payloads vary widely across node families in this inspection view. */
-import { ref, computed, watch, onMounted } from "vue";
+import { ref, computed, watch, onMounted, provide } from "vue";
+import {
+  NODE_DETAIL_STATE_KEY,
+  type NodeDetailState,
+} from "./node-detail/state/useNodeDetailState";
 import { useRoute } from "vue-router";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
@@ -3893,6 +3853,57 @@ const plotState = computed(() => ({
   holdoutRegressionData: holdoutRegressionData.value, holdoutRegressionLayout: holdoutRegressionLayout.value,
   statsPlotData: statsPlotData.value, statsPlotLayout: statsPlotLayout.value,
 }));
+
+// ── Provide canonical state to descendant panels (issue #24a) ─────────
+// Panels inject NODE_DETAIL_STATE_KEY instead of receiving the big prop
+// bags they used to. Readonly refs are passed through directly; the
+// writable slice gives panels typed handles for v-model-style updates.
+const detailState: NodeDetailState = {
+  output: {
+    summary: outputSummary,
+    hasOutput,
+    data: outputData,
+    metadata: outputMetadata,
+    subsections: outputSubsections,
+    datasetInfo,
+    datasetLabelTable,
+    labelPreviewLimit,
+    processingHistory,
+    provenance: provenanceInfo,
+    quality: qualitySummary,
+    portSummaries,
+    preview: computed(() => ({
+      rows: outputPreview.value,
+      columns: outputPreviewColumns.value,
+      summary: outputDataSummary.value,
+    })),
+    pcaDiagnostics: computed(() => ({
+      rows: pcaDiagnosticsPreview.value,
+      columns: pcaDiagnosticsColumns.value,
+      summary: pcaDiagSummary.value,
+    })),
+    isRegressionNode,
+    regressionTargetOptions,
+    selectedRegressionR2,
+    selectedRegressionRmse,
+    getMetaTooltip,
+    formatMetaValue,
+  },
+  plots: plotState,
+  writable: {
+    pcaXAxis,
+    pcaYAxis,
+    plsdaLoadingsViewMode,
+    regressionTargetIdx,
+    spectraDisplayMode,
+    genericDisplayMode,
+    featureXAxis,
+    featureYAxis,
+    contourClickPoint,
+  },
+  plotSections,
+};
+provide(NODE_DETAIL_STATE_KEY, detailState);
 
 </script>
 

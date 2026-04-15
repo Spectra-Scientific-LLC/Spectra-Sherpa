@@ -282,8 +282,7 @@
               >
                 <span class="insp-label">Target Metric</span>
                 <Dropdown
-                  :model-value="regressionTargetIdx"
-                  @update:model-value="(v) => $emit('update:regressionTargetIdx', v)"
+                  v-model="regressionTargetIdx"
                   :options="regressionTargetOptions"
                   optionLabel="label"
                   optionValue="value"
@@ -420,52 +419,66 @@
 </template>
 
 <script setup lang="ts">
+import { computed, inject } from "vue";
 import Button from "primevue/button";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
 import Dropdown from "primevue/dropdown";
 import type { OutputSubsection } from "../composables/useNodeSections";
+import { NODE_DETAIL_STATE_KEY } from "../state/useNodeDetailState";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 
 defineProps<{
   expanded: boolean;
-  outputSummary: string;
-  hasOutput: boolean;
-  outputData: any;
-  outputMetadata: Record<string, any>;
-  outputSubsections: Record<OutputSubsection, boolean>;
-  datasetInfo: any;
-  datasetLabelTable: { headers: string[]; rows: string[][] };
-  labelPreviewLimit: number;
-  processingHistory: any;
-  provenanceInfo: any;
-  qualitySummary: any;
-  isRegressionNode: boolean;
-  regressionTargetOptions: { label: string; value: number }[];
-  regressionTargetIdx: number;
-  selectedRegressionR2: number | null;
-  selectedRegressionRmse: number | null;
-  portSummaries: any[];
-  outputPreview: any[];
-  outputPreviewColumns: { field: string; header: string }[];
-  outputDataSummary: string;
-  pcaDiagnosticsPreview: any[];
-  pcaDiagSummary: string;
-  pcaDiagnosticsColumns: { field: string; header: string }[];
-  getMetaTooltip: (key: string) => string | null;
-  formatMetaValue: (value: any) => string;
 }>();
 
 defineEmits<{
   (e: "toggle"): void;
   (e: "toggleSub", sub: OutputSubsection): void;
-  (e: "update:regressionTargetIdx", value: number): void;
   (e: "showFullMetadata"): void;
   (e: "openDataTable"): void;
   (e: "openQuickPlot"): void;
   (e: "exportOutput"): void;
 }>();
+
+// Canonical state — the shell provides this via provide/inject.
+const state = inject(NODE_DETAIL_STATE_KEY);
+if (!state) {
+  throw new Error("OutputPanel must be rendered inside NodeDetailView (missing NODE_DETAIL_STATE_KEY)");
+}
+const { output, writable } = state;
+
+// Re-expose under the names the template uses. Refs auto-unwrap in template.
+const outputSummary = output.summary;
+const hasOutput = output.hasOutput;
+const outputData = output.data;
+const outputMetadata = output.metadata;
+const outputSubsections = output.subsections;
+const datasetInfo = output.datasetInfo;
+const datasetLabelTable = output.datasetLabelTable;
+const labelPreviewLimit = output.labelPreviewLimit;
+const processingHistory = output.processingHistory;
+const provenanceInfo = output.provenance;
+const qualitySummary = output.quality;
+const isRegressionNode = output.isRegressionNode;
+const regressionTargetOptions = output.regressionTargetOptions;
+const selectedRegressionR2 = output.selectedRegressionR2;
+const selectedRegressionRmse = output.selectedRegressionRmse;
+const portSummaries = output.portSummaries;
+const { getMetaTooltip, formatMetaValue } = output;
+
+// Preview and pcaDiagnostics are bundled tables in the new slice; re-expose
+// the individual fields the template reads (rows / columns / summary).
+const outputPreview = computed(() => output.preview.value.rows);
+const outputPreviewColumns = computed(() => output.preview.value.columns);
+const outputDataSummary = computed(() => output.preview.value.summary);
+const pcaDiagnosticsPreview = computed(() => output.pcaDiagnostics.value.rows);
+const pcaDiagnosticsColumns = computed(() => output.pcaDiagnostics.value.columns);
+const pcaDiagSummary = computed(() => output.pcaDiagnostics.value.summary);
+
+// Writable ref shared with shell: mutating .value here propagates back.
+const regressionTargetIdx = writable.regressionTargetIdx;
 </script>
 
 <style scoped>
