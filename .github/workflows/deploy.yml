@@ -1,7 +1,25 @@
-# Auto-deploy to DigitalOcean droplet on push.
+# Auto-deploy to DigitalOcean droplet after CI passes.
 #
-# - Push to main  → deploys to production (ports 80/443)
-# - Push to develop → deploys to staging (port 8080)
+# Trigger model:
+#
+#   1. ``workflow_run`` on the CI workflow — fires whenever CI finishes
+#      on ``main`` or ``develop``.  We only proceed to the SSH step when
+#      CI's conclusion is ``success`` (see the ``if`` guard on the deploy
+#      job).  This gates prod/staging behind green CI, so a merge that
+#      produces a post-merge conflict or hidden breakage is caught before
+#      it reaches the droplet.
+#
+#   2. ``workflow_dispatch`` — manual override for emergency redeploys or
+#      for deploying a non-default branch.  Bypasses the CI gate (by
+#      design — sometimes you need to push broken code to get out of a
+#      broken state).  Choose the environment from the UI dropdown.
+#
+# Branch → environment mapping:
+#
+#   - ``main`` push + green CI    → deploys to production
+#   - ``develop`` push + green CI → deploys to staging
+#   - manual dispatch              → deploys to whichever environment
+#                                    the operator chose
 #
 # Required GitHub Secrets (set in spectra-sherpa repo → Settings → Secrets):
 #   DROPLET_IP        — your DigitalOcean droplet IP address
@@ -10,7 +28,9 @@
 name: Deploy
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main, develop]
   workflow_dispatch:
     inputs:
@@ -27,22 +47,58 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Gate: for workflow_run triggers, require CI to have passed.
+    # workflow_dispatch (manual) is always allowed through for emergencies.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || github.event.workflow_run.conclusion == 'success'
     concurrency:
-      # Only one deploy per environment at a time
-      group: deploy-${{ github.ref_name == 'main' && 'production' || 'staging' }}
+      # Only one deploy per environment at a time.  The branch resolution
+      # below mirrors the environment logic in the "Determine environment"
+      # step, so the concurrency key matches whatever the deploy actually
+      # targets (prevents a dispatch-production run from colliding with a
+      # workflow_run-production run or vice versa).
+      group: >-
+        deploy-${{
+          github.event_name == 'workflow_dispatch' && inputs.environment
+          || (github.event.workflow_run.head_branch == 'main' && 'production' || 'staging')
+        }}
       cancel-in-progress: false
 
     steps:
-      - name: Determine environment
+      - name: Determine environment and branch
         id: env
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "target=${{ inputs.environment }}" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.ref_name }}" = "main" ]; then
-            echo "target=production" >> "$GITHUB_OUTPUT"
+            TARGET="${{ inputs.environment }}"
+            # Manual dispatch always deploys the default branch of the
+            # target env (main for production, develop for staging).
+            if [ "$TARGET" = "production" ]; then
+              BRANCH="main"
+            else
+              BRANCH="develop"
+            fi
           else
-            echo "target=staging" >> "$GITHUB_OUTPUT"
+            # workflow_run path — use the branch CI ran on.
+            BRANCH="${{ github.event.workflow_run.head_branch }}"
+            if [ "$BRANCH" = "main" ]; then
+              TARGET="production"
+            else
+              TARGET="staging"
+            fi
           fi
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "Deploying branch=$BRANCH to target=$TARGET"
+
+      - name: Log CI run context (for workflow_run triggers)
+        if: github.event_name == 'workflow_run'
+        run: |
+          echo "Triggered by CI run ${{ github.event.workflow_run.id }}"
+          echo "  branch: ${{ github.event.workflow_run.head_branch }}"
+          echo "  head_sha: ${{ github.event.workflow_run.head_sha }}"
+          echo "  conclusion: ${{ github.event.workflow_run.conclusion }}"
+          echo "  url: ${{ github.event.workflow_run.html_url }}"
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
@@ -54,4 +110,4 @@ jobs:
           script: |
             bash ~/spectra-platform/spectra-ops/scripts/deploy.sh \
               ${{ steps.env.outputs.target }} \
-              ${{ github.ref_name }}
+              ${{ steps.env.outputs.branch }}
