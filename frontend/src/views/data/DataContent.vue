@@ -1641,6 +1641,16 @@ onMounted(async () => {
   ]);
   syncGuidedExampleSession();
   await applyRouteExploreState();
+
+  // Restore the Explore tab if the Pinia store still has an active
+  // exploration (i.e. the user left the Data page after inspecting a
+  // reference or file). Route-driven state takes precedence.
+  if (
+    activeTab.value === 0 &&
+    (dataStore.catalogDatasetInfo !== null || dataStore.fileInfo !== null)
+  ) {
+    activeTab.value = 1;
+  }
 });
 
 watch(activeTab, (tabIndex) => {
