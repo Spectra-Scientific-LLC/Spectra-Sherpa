@@ -136,12 +136,7 @@ import DataTableModal from "./modals/DataTableModal.vue";
 import { useWorkflowStore } from "@/stores/workflow";
 import { createCategoryColorMap } from "@/utils/colors";
 import { getYAxisLabel } from "@/utils/plotLabels";
-import {
-  compactSampleLabel,
-  detectLabelDelimiter,
-  normalizeSampleLabel,
-  splitLabelByDelimiter,
-} from "@/utils/sampleLabels";
+import { normalizeSampleLabel } from "@/utils/sampleLabels";
 import { useNodeLog } from "./node-detail/composables/useNodeLog";
 import { useNodeValidation } from "./node-detail/composables/useNodeValidation";
 import { useNodeOutput } from "./node-detail/composables/useNodeOutput";
@@ -303,7 +298,14 @@ const nodeParams = computed(() => {
 });
 const nodeOutput = computed(() => nodeData.value?.output || null);
 
-// Output-panel data + helpers extracted to composable (issue #26 phase 2a).
+const settingsCount = computed(() => nodeParams.value.length);
+
+const { normalizeNodeOutput, resolvePortPayload, primaryOutputPayload } = useNodeOutput(
+  nodeOutput,
+  nodeMetadata,
+);
+
+// Output-panel data + preview tables + regression selector extracted to composable.
 const {
   hasInput,
   hasOutput,
@@ -320,22 +322,30 @@ const {
   provenanceInfo,
   qualitySummary,
   isRegressionNode,
+  isPCAOutput,
   portSummaries,
   fullMetadataJson,
   getMetaTooltip,
   formatMetaValue,
-} = useNodeOutputData({ nodeOutput, nodeData, nodeTypeKey });
-
-const settingsCount = computed(() => nodeParams.value.length);
-
-const { normalizeNodeOutput, resolvePortPayload, primaryOutputPayload } = useNodeOutput(
+  inputPreview,
+  inputPreviewColumns,
+  inputDataSummary,
+  outputPreview,
+  outputPreviewColumns,
+  outputDataSummary,
+  pcaDiagnosticsPreview,
+  pcaDiagnosticsColumns,
+  pcaDiagSummary,
+  regressionTargetOptions,
+  selectedRegressionR2,
+  selectedRegressionRmse,
+} = useNodeOutputData({
   nodeOutput,
-  nodeMetadata,
-);
-
-const isPCAOutput = computed(() => {
-  const metadata = nodeOutput.value?.metadata || {};
-  return nodeTypeKey.value === "model.pca" || metadata.type === "model.pca" || metadata.isPCA === true;
+  nodeData,
+  nodeTypeKey,
+  resolvePortPayload,
+  regressionTargetIdx,
+  previewRowLimit,
 });
 
 const pcaSampleLabels = computed<string[]>(() => {
@@ -382,208 +392,6 @@ const pcaUseCategorical = computed(() => {
 });
 
 
-// Preview data for tables
-const inputPreview = computed(() => {
-  const data = nodeData.value?.inputData?.data;
-  if (!data || !Array.isArray(data)) return [];
-  return data.slice(0, previewRowLimit).map((row: any, i: number) => {
-    const obj: any = { _index: i + 1 };
-    if (Array.isArray(row)) {
-      row.slice(0, 10).forEach((val: any, j: number) => {
-        obj[`col_${j}`] = typeof val === "number" ? val.toFixed(4) : val;
-      });
-    } else {
-      obj.value = typeof row === "number" ? row.toFixed(4) : row;
-    }
-    return obj;
-  });
-});
-
-const inputDataSummary = computed(() => {
-  const data = nodeData.value?.inputData?.data;
-  if (!data || !Array.isArray(data)) return "";
-  const totalRows = data.length;
-  const totalCols = Array.isArray(data[0]) ? data[0].length : 1;
-  const shownRows = Math.min(totalRows, previewRowLimit);
-  const shownCols = Math.min(totalCols, 10);
-  let summary = `${shownRows} of ${totalRows} rows`;
-  if (totalCols > 10) summary += `, ${shownCols} of ${totalCols} columns`;
-  return summary;
-});
-
-const inputPreviewColumns = computed(() => {
-  if (!inputPreview.value.length) return [];
-  const first = inputPreview.value[0];
-  const metadata = nodeData.value?.inputData?.metadata || {};
-  const featureNames = metadata.feature_names || [];
-  const xTitle = metadata.x_title || "";
-
-  return Object.keys(first).map((key) => {
-    let header = key;
-    if (key === "_index") {
-      header = "#";
-    } else if (key.startsWith("col_")) {
-      const colIdx = parseInt(key.replace("col_", ""));
-      if (featureNames.length > colIdx) {
-        header = featureNames[colIdx];
-      } else if (xTitle && xTitle !== "Feature") {
-        header = `${xTitle} ${colIdx + 1}`;
-      } else {
-        header = `Col ${colIdx + 1}`;
-      }
-    }
-    return { field: key, header };
-  });
-});
-
-const outputPreview = computed(() => {
-  const data = nodeOutput.value?.data;
-  if (!data || !Array.isArray(data)) return [];
-  const metadata = nodeOutput.value?.metadata || {};
-  const labelsRaw = metadata.sample_labels || metadata.labels || [];
-  const labels = Array.isArray(labelsRaw)
-    ? labelsRaw.map((label: any) => normalizeSampleLabel(label))
-    : [];
-  const labelDelimiter = detectLabelDelimiter(labels);
-  const splitLabels = labelDelimiter
-    ? labels.map((label: string) => splitLabelByDelimiter(label, labelDelimiter))
-    : [];
-  const maxLabelParts = splitLabels.length > 0
-    ? Math.max(...splitLabels.map((parts: string[]) => parts.length))
-    : 0;
-  const useSplitLabelColumns = !!labelDelimiter && maxLabelParts > 1;
-
-  return data.slice(0, previewRowLimit).map((row: any, i: number) => {
-    const obj: any = { _index: i + 1 };
-    const fullLabel = labels[i] || "";
-    obj._label_full = fullLabel;
-
-    if (labels.length > 0) {
-      if (useSplitLabelColumns) {
-        const parts = splitLabels[i] || [];
-        for (let labelIdx = 0; labelIdx < maxLabelParts; labelIdx += 1) {
-          const value = parts[labelIdx] || "";
-          obj[`_label_${labelIdx}`] = compactSampleLabel(value, {
-            maxLength: 42,
-            headLength: 28,
-            tailLength: 12,
-          });
-        }
-      } else {
-        obj._label = compactSampleLabel(fullLabel, {
-          maxLength: 52,
-          headLength: 34,
-          tailLength: 14,
-        });
-      }
-    }
-
-    if (Array.isArray(row)) {
-      row.slice(0, 10).forEach((val: any, j: number) => {
-        obj[`col_${j}`] = typeof val === "number" ? val.toFixed(4) : val;
-      });
-    } else if (typeof row === "object" && row !== null) {
-      // Dict rows (e.g. PeakFinding stats output)
-      for (const [k, v] of Object.entries(row)) {
-        obj[k] = typeof v === "number" ? Number(v).toFixed(4) : v;
-      }
-    } else {
-      obj.value = typeof row === "number" ? row.toFixed(4) : row;
-    }
-    return obj;
-  });
-});
-
-const outputPreviewColumns = computed(() => {
-  if (!outputPreview.value.length) return [];
-  const first = outputPreview.value[0] as Record<string, any>;
-  const metadata = nodeOutput.value?.metadata || {};
-  const pcLabels = metadata.pc_labels || [];
-  const mcrLabels = metadata.labels || [];
-  const featureNames = metadata.feature_names || [];
-  const columnNames: string[] = Array.isArray(metadata.column_names) ? metadata.column_names : [];
-  const xTitle = metadata.x_title || "";
-  const isPCA = metadata.type === "model.pca" || metadata.isPCA;
-  const isMCR = metadata.type === "model.mcr_als";
-
-  return Object.keys(first)
-    .filter((key) => key !== "_label_full")
-    .map((key) => {
-    let header = key;
-    if (key === "_index") {
-      header = "#";
-    } else if (key === "_label") {
-      header = "Label";
-    } else if (key.startsWith("_label_")) {
-      const labelIdx = Number.parseInt(key.replace("_label_", ""), 10);
-      header = Number.isNaN(labelIdx) ? "Label" : `Field ${labelIdx + 1}`;
-    } else if (key.startsWith("col_")) {
-      const colIdx = parseInt(key.replace("col_", ""));
-      if (columnNames.length > colIdx) {
-        header = columnNames[colIdx];
-      } else if (isPCA && pcLabels[colIdx]) {
-        header = pcLabels[colIdx];
-      } else if (isMCR && mcrLabels[colIdx]) {
-        header = mcrLabels[colIdx];
-      } else if (featureNames.length > colIdx) {
-        header = featureNames[colIdx];
-      } else if (xTitle && xTitle !== "Feature") {
-        header = `${xTitle} ${colIdx + 1}`;
-      } else {
-        header = `Col ${colIdx + 1}`;
-      }
-    }
-    return { field: key, header };
-  });
-});
-
-const outputDataSummary = computed(() => {
-  const data = nodeOutput.value?.data;
-  if (!data || !Array.isArray(data)) return "";
-  const totalRows = data.length;
-  const totalCols = Array.isArray(data[0]) ? data[0].length : 1;
-  const shownRows = Math.min(totalRows, previewRowLimit);
-  const shownCols = Math.min(totalCols, 10);
-  let summary = `${shownRows} of ${totalRows} rows`;
-  if (totalCols > 10) summary += `, ${shownCols} of ${totalCols} columns`;
-  return summary;
-});
-
-const pcaDiagnosticsPreview = computed(() => {
-  if (!isPCAOutput.value || !hasOutput.value) return [];
-  const metadata = nodeOutput.value?.metadata || {};
-  const t2 = Array.isArray(metadata.t2) ? metadata.t2 : [];
-  const spe = Array.isArray(metadata.spe) ? metadata.spe : [];
-  const rowCount = Math.max(t2.length, spe.length);
-  if (rowCount === 0) return [];
-
-  const rows = [];
-  const limit = Math.min(rowCount, previewRowLimit);
-  for (let i = 0; i < limit; i += 1) {
-    rows.push({
-      sample: i + 1,
-      t2: typeof t2[i] === "number" ? t2[i].toFixed(4) : "",
-      spe: typeof spe[i] === "number" ? spe[i].toFixed(6) : "",
-    });
-  }
-  return rows;
-});
-
-const pcaDiagSummary = computed(() => {
-  if (!isPCAOutput.value || !hasOutput.value) return "";
-  const metadata = nodeOutput.value?.metadata || {};
-  const t2 = Array.isArray(metadata.t2) ? metadata.t2 : [];
-  const spe = Array.isArray(metadata.spe) ? metadata.spe : [];
-  const totalRows = Math.max(t2.length, spe.length);
-  const shownRows = Math.min(totalRows, previewRowLimit);
-  return `${shownRows} of ${totalRows} rows`;
-});
-
-const pcaDiagnosticsColumns = computed(() => ([
-  { field: "sample", header: "Sample" },
-  { field: "t2", header: "T²" },
-  { field: "spe", header: "SPE (Q)" },
-]));
 
 // ============================================================================
 // PLOTS SECTION - State and Computed Properties
@@ -3186,72 +2994,6 @@ const efaEigenvalueLayout = computed(() => {
     xaxis: { ...basePlotLayout.xaxis, title: metadata.x_title || "Sample Index" },
     yaxis: { ...basePlotLayout.yaxis, title: "Eigenvalue (log scale)", type: "log" },
   };
-});
-
-// ============================================================================
-// Regression: Predicted vs Actual correlation plot
-// ============================================================================
-
-const regressionTargetNames = computed(() => {
-  const metadata = nodeOutput.value?.metadata || {};
-  const yLoadings = resolvePortPayload(nodeOutput.value?.ports?.Y_loadings);
-  const targetPort = resolvePortPayload(nodeOutput.value?.ports?.target);
-  const candidates = [
-    metadata.target_names,
-    yLoadings?.y_axis?.labels,
-    targetPort?.y_axis?.labels,
-    targetPort?.metadata?.target_names,
-  ];
-
-  for (const raw of candidates) {
-    if (Array.isArray(raw) && raw.length > 0) {
-      return raw.map((name: unknown) => normalizeSampleLabel(name));
-    }
-  }
-
-  return [];
-});
-
-const regressionTargetOptions = computed(() => {
-  const metadata = nodeOutput.value?.metadata || {};
-  const yTrue = metadata.y_true;
-  if (!Array.isArray(yTrue) || yTrue.length === 0) return [];
-  const nTargets = Array.isArray(yTrue[0]) ? yTrue[0].length : 1;
-  const names = regressionTargetNames.value;
-  return Array.from({ length: nTargets }, (_, i) => ({
-    label: names[i] || `Target ${i + 1}`,
-    value: i,
-  }));
-});
-
-watch(
-  regressionTargetOptions,
-  (options) => {
-    if (options.length === 0) {
-      regressionTargetIdx.value = 0;
-      return;
-    }
-    if (!options.some((option) => option.value === regressionTargetIdx.value)) {
-      regressionTargetIdx.value = options[0].value;
-    }
-  },
-  { immediate: true },
-);
-
-const selectedRegressionR2 = computed(() => {
-  const metadata = nodeOutput.value?.metadata || {};
-  const r2List = metadata.r2_per_target;
-  if (!Array.isArray(r2List)) return null;
-  const value = r2List[regressionTargetIdx.value];
-  return typeof value === "number" ? value : null;
-});
-
-const selectedRegressionRmse = computed(() => {
-  const metadata = nodeOutput.value?.metadata || {};
-  const rmseList = metadata.rmse_per_target;
-  if (!Array.isArray(rmseList)) return null;
-  const value = rmseList[regressionTargetIdx.value];
-  return typeof value === "number" ? value : null;
 });
 
 const regressionCorrelationData = computed(() => {
