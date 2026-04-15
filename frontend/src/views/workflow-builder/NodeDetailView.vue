@@ -37,1291 +37,59 @@
     <!-- Main Content -->
     <main class="detail-content">
       <!-- Input Section -->
-      <section class="detail-section">
-        <div class="section-header" @click="toggleSection('input')">
-          <div class="section-title">
-            <i :class="sections.input ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-            <h2>Input</h2>
-          </div>
-          <span class="section-badge" v-if="inputSummary">{{ inputSummary }}</span>
-        </div>
-        <Transition name="collapse">
-          <div v-if="sections.input" class="section-content">
-            <div v-if="!hasInput" class="empty-section">
-              <i class="pi pi-inbox" />
-              <p>No input data available</p>
-              <small>This node has not received input yet. Execute the workflow to see input data.</small>
-            </div>
-            <div v-else class="input-content">
-              <!-- Input source info -->
-              <div class="info-grid">
-                <div class="info-item" v-if="inputData?.shape">
-                  <label>Shape</label>
-                  <span>{{ inputData.shape[0] }} x {{ inputData.shape[1] }}</span>
-                </div>
-                <div class="info-item" v-if="inputData?.source">
-                  <label>Source</label>
-                  <span>{{ inputData.source }}</span>
-                </div>
-                <div class="info-item" v-if="inputData?.dataType">
-                  <label>Data Type</label>
-                  <span>{{ inputData.dataType }}</span>
-                </div>
-              </div>
-
-              <!-- Input connections -->
-              <div v-if="inputConnections.length" class="connections-list">
-                <h4>Connected From</h4>
-                <div
-                  v-for="conn in inputConnections"
-                  :key="conn.nodeId"
-                  class="connection-item"
-                >
-                  <span class="conn-icon">{{ conn.icon }}</span>
-                  <span class="conn-name">{{ conn.label }}</span>
-                  <span class="conn-port">{{ conn.port }}</span>
-                </div>
-              </div>
-
-              <!-- Preview table -->
-              <div v-if="inputPreview.length" class="preview-table">
-                <h4>Input Preview ({{ inputDataSummary }})</h4>
-                <DataTable
-                  :value="inputPreview"
-                  :scrollable="true"
-                  scrollHeight="200px"
-                  class="preview-datatable"
-                  size="small"
-                >
-                  <Column
-                    v-for="col in inputPreviewColumns"
-                    :key="col.field"
-                    :field="col.field"
-                    :header="col.header"
-                    :style="{ minWidth: '80px' }"
-                  />
-                </DataTable>
-              </div>
-            </div>
-          </div>
-        </Transition>
-      </section>
+      <InputPanel
+        :expanded="sections.input"
+        :has-input="hasInput"
+        :input-summary="inputSummary"
+        :input-data="inputData"
+        :input-connections="inputConnections"
+        :input-preview="inputPreview"
+        :input-data-summary="inputDataSummary"
+        :input-preview-columns="inputPreviewColumns"
+        @toggle="toggleSection('input')"
+      />
 
       <!-- Settings Section -->
-      <section class="detail-section">
-        <div class="section-header" @click="toggleSection('settings')">
-          <div class="section-title">
-            <i :class="sections.settings ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-            <h2>Settings</h2>
-          </div>
-          <span class="section-badge" v-if="settingsCount">{{ settingsCount }} parameters</span>
-        </div>
-        <Transition name="collapse">
-          <div v-if="sections.settings" class="section-content">
-            <!-- Validation error banner -->
-            <div v-if="hasValidationErrors" class="validation-error-banner">
-              <div class="error-banner-header">
-                <i class="pi pi-exclamation-triangle"></i>
-                <div class="error-banner-content">
-                  <strong>{{ displayedValidationErrors.length }} validation error{{ displayedValidationErrors.length > 1 ? 's' : '' }}</strong>
-                  <span>Please fix the following errors before running:</span>
-                </div>
-              </div>
-              <ul class="error-list">
-                <li v-for="error in displayedValidationErrors" :key="error.param_name">
-                  <strong>{{ error.param_name }}:</strong> {{ error.message }}
-                </li>
-              </ul>
-            </div>
-
-            <div v-if="!nodeParams.length" class="empty-section">
-              <i class="pi pi-cog" />
-              <p>No configurable parameters</p>
-              <small>This node type does not have any settings to configure.</small>
-            </div>
-            <div v-else class="settings-form">
-              <div
-                v-for="param in nodeParams"
-                :key="param.name"
-                class="param-field"
-                :class="{ 'has-error': getParamError(param.name) }"
-              >
-                <label :for="param.name">
-                  {{ param.label }}
-                  <span v-if="param.required" class="required-mark">*</span>
-                </label>
-                <small v-if="param.description" class="param-description">
-                  {{ param.description }}
-                </small>
-
-                <!-- Number input -->
-                <InputNumber
-                  v-if="param.type === 'number'"
-                  v-model="localParams[param.name]"
-                  :id="param.name"
-                  :min="param.min"
-                  :max="param.max"
-                  :step="param.step || 1"
-                  :minFractionDigits="param.step && param.step < 1 ? 2 : 0"
-                  :maxFractionDigits="param.step && param.step < 1 ? 4 : 0"
-                  :placeholder="param.required ? '' : 'Optional input'"
-                  class="full-width"
-                  :class="{ 'p-invalid': getParamError(param.name) }"
-                />
-
-                <!-- Boolean toggle -->
-                <div v-else-if="param.type === 'boolean'" class="toggle-field">
-                  <InputSwitch v-model="localParams[param.name]" :id="param.name" />
-                  <span class="toggle-label">{{ localParams[param.name] ? 'Enabled' : 'Disabled' }}</span>
-                </div>
-
-                <!-- Dropdown select -->
-                <Dropdown
-                  v-else-if="param.type === 'select'"
-                  v-model="localParams[param.name]"
-                  :id="param.name"
-                  :options="param.options"
-                  :optionLabel="param.optionLabel || 'label'"
-                  :optionValue="param.optionValue || 'value'"
-                  class="full-width"
-                  :class="{ 'p-invalid': getParamError(param.name) }"
-                />
-
-                <!-- Text input -->
-                <InputText
-                  v-else
-                  v-model="localParams[param.name]"
-                  :id="param.name"
-                  :placeholder="param.required ? '' : 'Optional input'"
-                  class="full-width"
-                  :class="{ 'p-invalid': getParamError(param.name) }"
-                />
-
-                <!-- Error message -->
-                <small v-if="getParamError(param.name)" class="param-error-message">
-                  {{ getParamError(param.name) }}
-                </small>
-              </div>
-
-              <!-- Reset to defaults button -->
-              <div class="settings-actions">
-                <Button
-                  label="Reset to Defaults"
-                  icon="pi pi-refresh"
-                  class="p-button-outlined p-button-secondary"
-                  @click="resetToDefaults"
-                />
-              </div>
-            </div>
-          </div>
-        </Transition>
-      </section>
+      <SettingsPanel
+        :expanded="sections.settings"
+        :settings-count="settingsCount"
+        :params="nodeParams"
+        :local-params="localParams"
+        :has-validation-errors="hasValidationErrors"
+        :displayed-validation-errors="displayedValidationErrors"
+        :get-param-error="getParamError"
+        @toggle="toggleSection('settings')"
+        @reset="resetToDefaults"
+        @update-param="(name, v) => (localParams[name] = v)"
+      />
 
       <!-- Output Section -->
-      <section class="detail-section">
-        <div class="section-header" @click="toggleSection('output')">
-          <div class="section-title">
-            <i :class="sections.output ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-            <h2>Output</h2>
-          </div>
-          <span class="section-badge" v-if="outputSummary">{{ outputSummary }}</span>
-        </div>
-        <Transition name="collapse">
-          <div v-if="sections.output" class="section-content">
-            <div v-if="!hasOutput" class="empty-section">
-              <i class="pi pi-box" />
-              <p>No output data available</p>
-              <small>Execute this node to generate output data.</small>
-            </div>
-            <div v-else class="output-content">
-              <!-- Output stats -->
-              <div class="info-grid">
-                <div class="info-item" v-if="outputData?.rows !== undefined">
-                  <label>Rows</label>
-                  <span>{{ outputData.rows }}</span>
-                </div>
-                <div class="info-item" v-if="outputData?.cols !== undefined">
-                  <label>Columns</label>
-                  <span>{{ outputData.cols }}</span>
-                </div>
-                <div class="info-item" v-if="outputData?.type">
-                  <label>Output Type</label>
-                  <span>{{ outputData.type }}</span>
-                </div>
-                <div class="info-item" v-if="outputData?.range">
-                  <label>Value Range</label>
-                  <span>{{ outputData.range[0].toFixed(3) }} - {{ outputData.range[1].toFixed(3) }}</span>
-                </div>
-              </div>
-
-              <!-- Dataset Inspector: Coordinates -->
-              <div v-if="datasetInfo" class="inspector-section">
-                <button
-                  type="button"
-                  class="inspector-toggle"
-                  @click="toggleOutputSubsection('coordinates')"
-                >
-                  <span class="inspector-toggle-title">
-                    <i class="pi pi-compass" />
-                    Dataset Coordinates
-                  </span>
-                  <i :class="outputSubsections.coordinates ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                </button>
-                <div v-if="outputSubsections.coordinates" class="inspector-grid">
-                  <div v-if="datasetInfo.title" class="inspector-item">
-                    <span class="insp-label">Title</span>
-                    <span class="insp-value">{{ datasetInfo.title }}</span>
-                  </div>
-                  <div v-if="datasetInfo.isSpectra" class="inspector-item">
-                    <span class="insp-label">Data Type</span>
-                    <span class="insp-value insp-badge">Spectral</span>
-                  </div>
-                  <div v-if="datasetInfo.spectralTechnique" class="inspector-item">
-                    <span class="insp-label">Technique</span>
-                    <span class="insp-value">{{ datasetInfo.spectralTechnique }}</span>
-                  </div>
-                  <div v-if="datasetInfo.dataQuantity" class="inspector-item">
-                    <span class="insp-label">Quantity</span>
-                    <span class="insp-value">{{ datasetInfo.dataQuantity }}</span>
-                  </div>
-                  <div v-if="datasetInfo.valueUnits" class="inspector-item">
-                    <span class="insp-label">Units</span>
-                    <span class="insp-value">{{ datasetInfo.valueUnits }}</span>
-                  </div>
-                  <template v-if="datasetInfo.xAxis">
-                    <div class="inspector-item">
-                      <span class="insp-label">X-Axis</span>
-                      <span class="insp-value">
-                        {{ datasetInfo.xAxis.title }}
-                        <span v-if="datasetInfo.xAxis.units" class="insp-units">({{ datasetInfo.xAxis.units }})</span>
-                      </span>
-                    </div>
-                    <div v-if="datasetInfo.xAxis.points" class="inspector-item">
-                      <span class="insp-label">X Points</span>
-                      <span class="insp-value">{{ datasetInfo.xAxis.points }}</span>
-                    </div>
-                    <div v-if="datasetInfo.xAxis.range" class="inspector-item">
-                      <span class="insp-label">X Range</span>
-                      <span class="insp-value mono">
-                        {{ datasetInfo.xAxis.range[0].toFixed(1) }} &ndash; {{ datasetInfo.xAxis.range[1].toFixed(1) }}
-                      </span>
-                    </div>
-                  </template>
-                  <template v-if="datasetInfo.yAxis">
-                    <div class="inspector-item">
-                      <span class="insp-label">Y-Axis</span>
-                      <span class="insp-value">
-                        {{ datasetInfo.yAxis.title }}
-                        <span v-if="datasetInfo.yAxis.units" class="insp-units">({{ datasetInfo.yAxis.units }})</span>
-                      </span>
-                    </div>
-                    <div v-if="datasetInfo.yAxis.nSamples" class="inspector-item">
-                      <span class="insp-label">Samples</span>
-                      <span class="insp-value">{{ datasetInfo.yAxis.nSamples }}</span>
-                    </div>
-                    <div v-if="datasetInfo.yAxis.labels?.length" class="inspector-item wide">
-                      <span class="insp-label">Labels</span>
-                      <div class="insp-label-table-wrap">
-                        <table class="insp-label-table">
-                          <thead>
-                            <tr>
-                              <th>#</th>
-                              <th
-                                v-for="(header, idx) in datasetLabelTable.headers"
-                                :key="`label-header-${idx}`"
-                              >
-                                {{ header }}
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr
-                              v-for="(row, rowIdx) in datasetLabelTable.rows"
-                              :key="`label-row-${rowIdx}`"
-                            >
-                              <td class="label-row-index">{{ rowIdx + 1 }}</td>
-                              <td
-                                v-for="(cell, cellIdx) in row"
-                                :key="`label-cell-${rowIdx}-${cellIdx}`"
-                                class="label-cell"
-                                :title="cell"
-                              >
-                                {{ cell }}
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                        <span v-if="datasetInfo.yAxis.labels.length > labelPreviewLimit" class="insp-more">
-                          (+{{ datasetInfo.yAxis.labels.length - labelPreviewLimit }} more)
-                        </span>
-                      </div>
-                    </div>
-                  </template>
-                </div>
-              </div>
-
-              <!-- Output metadata (scientific results) -->
-              <div v-if="Object.keys(outputMetadata).length" class="inspector-section metadata-section">
-                <button
-                  type="button"
-                  class="inspector-toggle"
-                  @click="toggleOutputSubsection('metadata')"
-                >
-                  <span class="inspector-toggle-title">
-                    <i class="pi pi-database" />
-                    Metadata
-                  </span>
-                  <i :class="outputSubsections.metadata ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                </button>
-                <div v-if="outputSubsections.metadata" class="metadata-grid">
-                  <div
-                    v-for="(value, key) in outputMetadata"
-                    :key="key"
-                    class="metadata-item"
-                  >
-                    <span class="meta-key">
-                      {{ key }}:
-                      <i
-                        v-if="getMetaTooltip(key)"
-                        class="pi pi-info-circle meta-info-icon"
-                        :title="getMetaTooltip(key)"
-                      ></i>
-                    </span>
-                    <span class="meta-value">{{ formatMetaValue(value) }}</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Processing History -->
-              <div v-if="processingHistory" class="inspector-section">
-                <button
-                  type="button"
-                  class="inspector-toggle"
-                  @click="toggleOutputSubsection('processing')"
-                >
-                  <span class="inspector-toggle-title">
-                    <i class="pi pi-history" />
-                    Processing History
-                  </span>
-                  <i :class="outputSubsections.processing ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                </button>
-                <div v-if="outputSubsections.processing" class="processing-timeline">
-                  <div
-                    v-for="(step, index) in processingHistory"
-                    :key="index"
-                    class="timeline-item"
-                  >
-                    <span class="step-number">{{ index + 1 }}</span>
-                    <div class="step-content">
-                      <span class="step-operation">
-                        {{ typeof step === 'string' ? step : step.operation || 'unknown' }}
-                      </span>
-                      <div
-                        v-if="typeof step === 'object' && step.parameters && Object.keys(step.parameters).length > 0"
-                        class="step-params"
-                      >
-                        <span
-                          v-for="(pVal, pKey) in step.parameters"
-                          :key="pKey"
-                          class="param-chip"
-                          v-show="pVal !== null"
-                        >
-                          {{ pKey }}: {{ pVal }}
-                        </span>
-                      </div>
-                      <div
-                        v-if="typeof step === 'object' && (step.input_shape || step.output_shape)"
-                        class="step-shapes"
-                      >
-                        <span v-if="step.input_shape" class="shape-badge">In: {{ step.input_shape?.join('\u00d7') }}</span>
-                        <span v-if="step.output_shape" class="shape-badge">Out: {{ step.output_shape?.join('\u00d7') }}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Provenance -->
-              <div v-if="provenanceInfo" class="inspector-section">
-                <button
-                  type="button"
-                  class="inspector-toggle"
-                  @click="toggleOutputSubsection('provenance')"
-                >
-                  <span class="inspector-toggle-title">
-                    <i class="pi pi-sitemap" />
-                    Provenance
-                  </span>
-                  <i :class="outputSubsections.provenance ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                </button>
-                <div v-if="outputSubsections.provenance" class="inspector-grid">
-                  <div v-if="provenanceInfo.source_type" class="inspector-item">
-                    <span class="insp-label">Source</span>
-                    <span class="insp-value">{{ provenanceInfo.source_type }}</span>
-                  </div>
-                  <div v-if="provenanceInfo.operations?.length" class="inspector-item wide">
-                    <span class="insp-label">Operations</span>
-                    <span class="insp-value mono">
-                      {{ provenanceInfo.operations.join(' \u2192 ') }}
-                    </span>
-                  </div>
-                  <div v-if="provenanceInfo.last_modified" class="inspector-item">
-                    <span class="insp-label">Modified</span>
-                    <span class="insp-value">{{ provenanceInfo.last_modified }}</span>
-                  </div>
-                  <template v-for="(val, key) in provenanceInfo" :key="key">
-                    <div
-                      v-if="!['source_type', 'operations', 'last_modified'].includes(String(key)) && typeof val !== 'object'"
-                      class="inspector-item"
-                    >
-                      <span class="insp-label">{{ key }}</span>
-                      <span class="insp-value">{{ val }}</span>
-                    </div>
-                  </template>
-                </div>
-              </div>
-
-              <!-- Quality Summary -->
-              <div v-if="qualitySummary" class="inspector-section">
-                <button
-                  type="button"
-                  class="inspector-toggle"
-                  @click="toggleOutputSubsection('quality')"
-                >
-                  <span class="inspector-toggle-title">
-                    <i class="pi pi-check-circle" />
-                    Quality
-                  </span>
-                  <i :class="outputSubsections.quality ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                </button>
-                <div v-if="outputSubsections.quality" class="inspector-grid">
-                  <div
-                    v-if="isRegressionNode && regressionTargetOptions.length > 1"
-                    class="inspector-item wide"
-                  >
-                    <span class="insp-label">Target Metric</span>
-                    <Dropdown
-                      v-model="regressionTargetIdx"
-                      :options="regressionTargetOptions"
-                      optionLabel="label"
-                      optionValue="value"
-                      class="detail-target-dropdown"
-                    />
-                  </div>
-                  <div v-if="qualitySummary.latest_model_type" class="inspector-item">
-                    <span class="insp-label">Model</span>
-                    <span class="insp-value">{{ qualitySummary.latest_model_type }}</span>
-                  </div>
-                  <div v-if="qualitySummary.latest_r2 != null" class="inspector-item">
-                    <span class="insp-label">R&sup2;</span>
-                    <span class="insp-value">{{ Number(qualitySummary.latest_r2).toFixed(4) }}</span>
-                  </div>
-                  <div v-if="qualitySummary.latest_rmse != null" class="inspector-item">
-                    <span class="insp-label">RMSE</span>
-                    <span class="insp-value">{{ Number(qualitySummary.latest_rmse).toFixed(4) }}</span>
-                  </div>
-                  <div v-if="selectedRegressionR2 != null" class="inspector-item">
-                    <span class="insp-label">Selected R&sup2;</span>
-                    <span class="insp-value">{{ Number(selectedRegressionR2).toFixed(4) }}</span>
-                  </div>
-                  <div v-if="selectedRegressionRmse != null" class="inspector-item">
-                    <span class="insp-label">Selected RMSE</span>
-                    <span class="insp-value">{{ Number(selectedRegressionRmse).toFixed(4) }}</span>
-                  </div>
-                  <div v-if="qualitySummary.n_evaluations" class="inspector-item">
-                    <span class="insp-label">Evaluations</span>
-                    <span class="insp-value">{{ qualitySummary.n_evaluations }}</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Secondary Port Outputs -->
-              <div v-if="portSummaries.length > 0" class="inspector-section">
-                <button
-                  type="button"
-                  class="inspector-toggle"
-                  @click="toggleOutputSubsection('ports')"
-                >
-                  <span class="inspector-toggle-title">
-                    <i class="pi pi-share-alt" />
-                    Output Ports
-                  </span>
-                  <i :class="outputSubsections.ports ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                </button>
-                <div v-if="outputSubsections.ports" class="port-summaries">
-                  <div v-for="port in portSummaries" :key="port.name" class="port-summary-card">
-                    <div class="port-header">
-                      <span class="port-name">{{ port.name }}</span>
-                      <span v-if="port.type" class="port-type-badge">{{ port.type }}</span>
-                    </div>
-                    <div class="port-details">
-                      <span v-if="port.shape">Shape: {{ port.shape.join('\u00d7') }}</span>
-                      <span v-if="port.title">{{ port.title }}</span>
-                      <span v-if="port.xTitle">X: {{ port.xTitle }}<template v-if="port.xUnits"> ({{ port.xUnits }})</template><template v-if="port.xPoints">, {{ port.xPoints }} pts</template></span>
-                      <span v-if="port.yTitle">Y: {{ port.yTitle }}<template v-if="port.nLabels">, {{ port.nLabels }} labels</template></span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- View Full Metadata button -->
-              <div v-if="hasOutput" class="full-meta-action">
-                <Button
-                  label="View Full Metadata (JSON)"
-                  icon="pi pi-code"
-                  class="p-button-sm p-button-text"
-                  @click="showFullMetadata = true"
-                />
-              </div>
-
-              <!-- Quick actions -->
-              <div class="output-actions">
-                <Button
-                  label="View Data Table"
-                  icon="pi pi-table"
-                  class="p-button-outlined"
-                  @click="openDataTable"
-                />
-                <Button
-                  label="Quick Plot"
-                  icon="pi pi-chart-line"
-                  class="p-button-outlined"
-                  @click="openQuickPlot"
-                />
-                <Button
-                  label="Export CSV"
-                  icon="pi pi-download"
-                  class="p-button-outlined"
-                  @click="exportOutput"
-                />
-              </div>
-
-              <!-- Preview table -->
-              <div v-if="outputPreview.length" class="preview-table">
-                <h4>Output Preview ({{ outputDataSummary }})</h4>
-                <DataTable
-                  :value="outputPreview"
-                  :scrollable="true"
-                  scrollHeight="200px"
-                  class="preview-datatable"
-                  size="small"
-                >
-                  <Column
-                    v-for="col in outputPreviewColumns"
-                    :key="col.field"
-                    :field="col.field"
-                    :header="col.header"
-                    :style="{ minWidth: '80px' }"
-                  />
-                </DataTable>
-              </div>
-
-              <div v-if="pcaDiagnosticsPreview.length" class="preview-table">
-                <h4>PCA Diagnostics ({{ pcaDiagSummary }})</h4>
-                <DataTable
-                  :value="pcaDiagnosticsPreview"
-                  :scrollable="true"
-                  scrollHeight="200px"
-                  class="preview-datatable"
-                  size="small"
-                >
-                  <Column
-                    v-for="col in pcaDiagnosticsColumns"
-                    :key="col.field"
-                    :field="col.field"
-                    :header="col.header"
-                    :style="{ minWidth: '120px' }"
-                  />
-                </DataTable>
-              </div>
-            </div>
-          </div>
-        </Transition>
-      </section>
+      <OutputPanel
+        :expanded="sections.output"
+        @toggle="toggleSection('output')"
+        @toggle-sub="toggleOutputSubsection"
+        @show-full-metadata="showFullMetadata = true"
+        @open-data-table="openDataTable"
+        @open-quick-plot="openQuickPlot"
+        @export-output="exportOutput"
+      />
 
       <!-- Plots Section -->
-      <section class="detail-section" v-if="hasOutput && availablePlots.length > 0">
-        <div class="section-header" @click="toggleSection('plots')">
-          <div class="section-title">
-            <i :class="sections.plots ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-            <h2>Plots</h2>
-          </div>
-          <span class="section-badge">{{ availablePlots.length }} visualizations</span>
-        </div>
-        <Transition name="collapse">
-          <div v-if="sections.plots" class="section-content plots-content">
-            <!-- PCA Plots -->
-            <template v-if="isPCAOutput">
-              <!-- Scores Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('pcaScores')">
-                  <i :class="plotSections.pcaScores ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Scores Plot</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.pcaScores" class="plot-container">
-                    <div class="plot-controls">
-                      <div class="control-group">
-                        <label>X Axis</label>
-                        <Dropdown v-model="pcaXAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                      <div class="control-group">
-                        <label>Y Axis</label>
-                        <Dropdown v-model="pcaYAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                    </div>
-                    <PlotlyChart :data="pcaScoresData" :layout="pcaScoresLayout" :config="pcaScoresConfig" />
-                  </div>
-                </Transition>
-              </div>
-
-              <!-- Biplot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('pcaBiplot')">
-                  <i :class="plotSections.pcaBiplot ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Biplot (Scores + Loadings)</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.pcaBiplot" class="plot-container">
-                    <div class="plot-controls">
-                      <div class="control-group">
-                        <label>X Axis</label>
-                        <Dropdown v-model="pcaXAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                      <div class="control-group">
-                        <label>Y Axis</label>
-                        <Dropdown v-model="pcaYAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                    </div>
-                    <PlotlyChart :data="pcaBiplotData" :layout="pcaBiplotLayout" :config="pcaScoresConfig" />
-                  </div>
-                </Transition>
-              </div>
-
-              <!-- Loadings Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('pcaLoadings')">
-                  <i :class="plotSections.pcaLoadings ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Loadings Plot</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.pcaLoadings" class="plot-container">
-                    <PlotlyChart :data="pcaLoadingsData" :layout="pcaLoadingsLayout" :config="pcaLoadingsConfig" />
-                  </div>
-                </Transition>
-              </div>
-
-              <!-- Scree Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('pcaScree')">
-                  <i :class="plotSections.pcaScree ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Scree Plot (Explained Variance)</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.pcaScree" class="plot-container">
-                    <PlotlyChart :data="pcaScreeData" :layout="pcaScreeLayout" />
-                  </div>
-                </Transition>
-              </div>
-
-              <!-- Diagnostics Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('pcaDiagnostics')">
-                  <i :class="plotSections.pcaDiagnostics ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Diagnostics Plot (T² / SPE)</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.pcaDiagnostics" class="plot-container">
-                    <PlotlyChart :data="pcaDiagnosticsData" :layout="pcaDiagnosticsLayout" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- MCR-ALS Plots -->
-            <template v-if="nodeTypeKey === 'model.mcr_als' || nodeTypeKey === 'model.simplisma'">
-              <!-- Concentration Profiles -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('mcrConcentrations')">
-                  <i :class="plotSections.mcrConcentrations ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Concentration Profiles (C)</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.mcrConcentrations" class="plot-container">
-                    <PlotlyChart :data="mcrConcentrationData" :layout="mcrConcentrationLayout" />
-                  </div>
-                </Transition>
-              </div>
-
-              <!-- Pure Spectra -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('mcrSpectra')">
-                  <i :class="plotSections.mcrSpectra ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Pure Spectra (S<sup>T</sup>)</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.mcrSpectra" class="plot-container">
-                    <PlotlyChart :data="mcrSpectraData" :layout="mcrSpectraLayout" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- EFA Eigenvalue Plot -->
-            <template v-if="nodeTypeKey === 'model.efa'">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('efaEigenvalues')">
-                  <i :class="plotSections.efaEigenvalues ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Eigenvalue Plot</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.efaEigenvalues" class="plot-container">
-                    <PlotlyChart :data="efaEigenvalueData" :layout="efaEigenvalueLayout" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- PLS Plots -->
-            <template v-if="nodeTypeKey === 'model.pls'">
-              <!-- Scores Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('plsScores')">
-                  <i :class="plotSections.plsScores ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Scores Plot</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.plsScores" class="plot-container">
-                    <div class="plot-controls">
-                      <div class="control-group">
-                        <label>X Axis</label>
-                        <Dropdown v-model="pcaXAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                      <div class="control-group">
-                        <label>Y Axis</label>
-                        <Dropdown v-model="pcaYAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                    </div>
-                    <PlotlyChart :data="plsScoresData" :layout="plsScoresLayout" :config="pcaScoresConfig" />
-                  </div>
-                </Transition>
-              </div>
-
-              <!-- Loadings Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('plsLoadings')">
-                  <i :class="plotSections.plsLoadings ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Loadings Plot</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.plsLoadings" class="plot-container">
-                    <PlotlyChart :data="plsLoadingsData" :layout="plsLoadingsLayout" :config="pcaLoadingsConfig" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- PLS-DA Plots -->
-            <template v-if="nodeTypeKey === 'classification.plsda'">
-              <!-- Scores Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('classificationScores')">
-                  <i :class="plotSections.classificationScores ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Scores Plot</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.classificationScores" class="plot-container">
-                    <div class="plot-controls">
-                      <div class="control-group">
-                        <label>X Axis</label>
-                        <Dropdown v-model="pcaXAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                      <div class="control-group">
-                        <label>Y Axis</label>
-                        <Dropdown v-model="pcaYAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                    </div>
-                    <PlotlyChart :data="classificationScoresData" :layout="classificationScoresLayout" :config="pcaScoresConfig" />
-                  </div>
-                </Transition>
-              </div>
-
-              <!-- Loadings Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('plsdaLoadings')">
-                  <i :class="plotSections.plsdaLoadings ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Loadings Plot</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.plsdaLoadings" class="plot-container">
-                    <div class="plot-controls">
-                      <Button
-                        :label="'Line Plot'"
-                        :class="{ 'p-button-outlined': plsdaLoadingsViewMode !== 'lines' }"
-                        @click="plsdaLoadingsViewMode = 'lines'"
-                        size="small"
-                      />
-                      <Button
-                        :label="'Biplot'"
-                        :class="{ 'p-button-outlined': plsdaLoadingsViewMode !== 'biplot' }"
-                        @click="plsdaLoadingsViewMode = 'biplot'"
-                        size="small"
-                      />
-                    </div>
-                    <PlotlyChart :data="plsdaLoadingsData" :layout="plsdaLoadingsLayout" :config="pcaLoadingsConfig" />
-                  </div>
-                </Transition>
-              </div>
-
-              <!-- VIP Scores Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('plsdaVip')">
-                  <i :class="plotSections.plsdaVip ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>VIP Scores (Variable Importance)</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.plsdaVip" class="plot-container">
-                    <PlotlyChart :data="plsdaVipData" :layout="plsdaVipLayout" />
-                  </div>
-                </Transition>
-              </div>
-
-              <!-- Confusion Matrix (Training) -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('plsdaConfusionTrain')">
-                  <i :class="plotSections.plsdaConfusionTrain ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Confusion Matrix (Training)</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.plsdaConfusionTrain" class="plot-container">
-                    <PlotlyChart :data="plsdaConfusionTrainData" :layout="plsdaConfusionTrainLayout" />
-                  </div>
-                </Transition>
-              </div>
-
-              <!-- Confusion Matrix (Cross-Validation) -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('plsdaConfusionCV')">
-                  <i :class="plotSections.plsdaConfusionCV ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Confusion Matrix (Cross-Validation)</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.plsdaConfusionCV" class="plot-container">
-                    <PlotlyChart :data="plsdaConfusionCVData" :layout="plsdaConfusionCVLayout" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- SIMCA Plots -->
-            <template v-if="nodeTypeKey === 'classification.simca'">
-              <!-- Scores Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('classificationScores')">
-                  <i :class="plotSections.classificationScores ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Scores Plot (Class Model Projections)</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.classificationScores" class="plot-container">
-                    <div class="plot-controls">
-                      <div class="control-group">
-                        <label>X Axis</label>
-                        <Dropdown v-model="pcaXAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                      <div class="control-group">
-                        <label>Y Axis</label>
-                        <Dropdown v-model="pcaYAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                    </div>
-                    <PlotlyChart :data="classificationScoresData" :layout="classificationScoresLayout" :config="pcaScoresConfig" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- KNN Plots -->
-            <template v-if="nodeTypeKey === 'classification.knn'">
-              <!-- Scores Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('classificationScores')">
-                  <i :class="plotSections.classificationScores ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Feature Space Plot</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.classificationScores" class="plot-container">
-                    <div class="plot-controls">
-                      <div class="control-group">
-                        <label>X Axis</label>
-                        <Dropdown v-model="pcaXAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                      <div class="control-group">
-                        <label>Y Axis</label>
-                        <Dropdown v-model="pcaYAxis" :options="pcaAxisOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                    </div>
-                    <PlotlyChart :data="classificationScoresData" :layout="classificationScoresLayout" :config="pcaScoresConfig" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- Predicted vs Actual (Regression) — PLS/PCR/SVR only -->
-            <template v-if="['model.pls', 'model.pcr', 'model.svr'].includes(nodeTypeKey) && regressionCorrelationData.length > 0">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('regressionCorrelation')">
-                  <i :class="plotSections.regressionCorrelation ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Predicted vs Actual</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.regressionCorrelation" class="plot-container">
-                    <div v-if="regressionTargetOptions.length > 1" class="plot-controls">
-                      <div class="control-group">
-                        <label>Target</label>
-                        <Dropdown v-model="regressionTargetIdx" :options="regressionTargetOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                    </div>
-                    <PlotlyChart :data="regressionCorrelationData" :layout="regressionCorrelationLayout" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- Per-Class Accuracy (Classification) — PLS-DA/SIMCA/KNN only -->
-            <template v-if="['classification.plsda', 'classification.simca', 'classification.knn'].includes(nodeTypeKey) && classificationAccuracyData.length > 0">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('classificationAccuracy')">
-                  <i :class="plotSections.classificationAccuracy ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Per-Class Accuracy</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.classificationAccuracy" class="plot-container">
-                    <PlotlyChart :data="classificationAccuracyData" :layout="classificationAccuracyLayout" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- HCA Plots -->
-            <template v-if="nodeTypeKey === 'model.hca'">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('hcaDendrogram')">
-                  <i :class="plotSections.hcaDendrogram ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Dendrogram</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.hcaDendrogram" class="plot-container">
-                    <PlotlyChart :data="hcaDendrogramData" :layout="hcaDendrogramLayout" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- Peak Finding Plot (pre-computed on the backend) -->
-            <template v-if="nodeTypeKey === 'analysis.peak_finding'">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('peakFinding')">
-                  <i :class="plotSections.peakFinding ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Spectra with Peaks</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.peakFinding" class="plot-container">
-                    <PlotlyChart :data="peakFindingPlotData" :layout="peakFindingPlotLayout" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- Plot / Contour Node Visualization (server-rendered Plotly) -->
-            <template v-if="nodeTypeKey === 'output.plot' || nodeTypeKey === 'output.contour'">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('plotVisualization')">
-                  <i :class="plotSections.plotVisualization ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Visualization</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.plotVisualization" class="plot-container">
-                    <PlotlyChart v-if="plotNodeData.length > 0" :data="plotNodeData" :layout="plotNodeLayout" />
-                    <div v-else class="empty-plot-message">
-                      <i class="pi pi-play" />
-                      <span>Run the node to generate the visualization.</span>
-                    </div>
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- Preprocessing / DATA Plots with Interactive Contour -->
-            <template v-if="(isPreprocessingNode || isDataNode) && isSpectraData">
-              <!-- Spectra Overview - Only for spectral data -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('spectraOverview')">
-                  <i :class="plotSections.spectraOverview ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Spectra Overview</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.spectraOverview" class="plot-container">
-                    <div class="plot-controls">
-                      <div class="control-group">
-                        <label>Display</label>
-                        <Dropdown v-model="spectraDisplayMode" :options="spectraDisplayOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                    </div>
-                    <PlotlyChart
-                      v-if="spectraDisplayMode === 'overlay'"
-                      :data="spectraOverlayData"
-                      :layout="spectraOverlayLayout"
-                    />
-                    <div v-else class="interactive-contour-container">
-                      <PlotlyChart
-                        :data="spectraContourData"
-                        :layout="spectraContourLayout"
-                        @click="handleContourClick"
-                      />
-                      <!-- Slice plots below contour -->
-                      <div v-if="contourClickPoint" class="slice-plots">
-                        <div class="slice-plot">
-                          <h5>Spectrum at Sample {{ contourClickPoint.sampleIdx + 1 }}</h5>
-                          <PlotlyChart :data="horizontalSliceData" :layout="horizontalSliceLayout" />
-                        </div>
-                        <div class="slice-plot">
-                          <h5>Time Profile at {{ contourClickPoint.wavenumber.toFixed(1) }} {{ nodeOutput?.metadata?.x_units || '' }}</h5>
-                          <PlotlyChart :data="verticalSliceData" :layout="verticalSliceLayout" />
-                        </div>
-                      </div>
-                      <div v-else class="slice-hint">
-                        <i class="pi pi-info-circle" />
-                        <span>Click on the contour plot to view spectral and temporal slices</span>
-                      </div>
-                    </div>
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- Generic Data Overview - For non-spectral datasets like Iris -->
-            <template v-if="isGenericDataNode">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('dataOverview')">
-                  <i :class="plotSections.dataOverview ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Data Overview</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.dataOverview" class="plot-container">
-                    <div class="plot-controls">
-                      <div class="control-group">
-                        <label>Display</label>
-                        <Dropdown v-model="genericDisplayMode" :options="genericDisplayOptions" optionLabel="label" optionValue="value" />
-                      </div>
-                      <!-- Feature selectors for scatter plot -->
-                      <template v-if="genericDisplayMode === 'scatter'">
-                        <div class="control-group">
-                          <label>X Axis</label>
-                          <Dropdown v-model="featureXAxis" :options="featureOptions" optionLabel="label" optionValue="value" />
-                        </div>
-                        <div class="control-group">
-                          <label>Y Axis</label>
-                          <Dropdown v-model="featureYAxis" :options="featureOptions" optionLabel="label" optionValue="value" />
-                        </div>
-                      </template>
-                    </div>
-                    <PlotlyChart
-                      v-if="genericDisplayMode === 'boxplot'"
-                      :data="genericBoxPlotData"
-                      :layout="genericBoxPlotLayout"
-                    />
-                    <PlotlyChart
-                      v-else
-                      :data="genericScatterData"
-                      :layout="genericScatterLayout"
-                    />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- STATS Plots -->
-            <!-- Cluster Scatter (KMeans / DBSCAN) -->
-            <template v-if="nodeTypeKey === 'model.kmeans' || nodeTypeKey === 'model.dbscan'">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('clusterScatter')">
-                  <i :class="plotSections.clusterScatter ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Cluster Scatter</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.clusterScatter" class="plot-container">
-                    <div v-if="clusterScatterData.length > 0">
-                      <PlotlyChart :data="clusterScatterData" :layout="clusterScatterLayout" />
-                    </div>
-                    <div v-else class="no-plot-message">
-                      Execute the node to see cluster assignments.
-                    </div>
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- NMF / ICA — reuse MCR-style concentration + spectra plots -->
-            <template v-if="nodeTypeKey === 'model.nmf' || nodeTypeKey === 'model.ica'">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('mcrConcentrations')">
-                  <i :class="plotSections.mcrConcentrations ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>{{ nodeTypeKey === 'model.nmf' ? 'Basis Weights (W)' : 'Source Signals (S)' }}</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.mcrConcentrations" class="plot-container">
-                    <PlotlyChart :data="mcrConcentrationData" :layout="mcrConcentrationLayout" />
-                  </div>
-                </Transition>
-              </div>
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('mcrSpectra')">
-                  <i :class="plotSections.mcrSpectra ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>{{ nodeTypeKey === 'model.nmf' ? 'Basis Spectra (H)' : 'Spectral Components' }}</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.mcrSpectra" class="plot-container">
-                    <PlotlyChart :data="mcrSpectraData" :layout="mcrSpectraLayout" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- Outlier Detection: T² vs Q Control Chart -->
-            <template v-if="nodeTypeKey === 'diagnostics.outliers'">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('outlierChart')">
-                  <i :class="plotSections.outlierChart ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>T² vs Q Control Chart</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.outlierChart" class="plot-container">
-                    <div v-if="outlierChartData.length > 0">
-                      <PlotlyChart :data="outlierChartData" :layout="outlierChartLayout" />
-                    </div>
-                    <div v-else class="no-plot-message">
-                      Execute the node to see outlier diagnostics.
-                    </div>
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- Holdout / Cross-Validation Evaluation -->
-            <template v-if="nodeTypeKey === 'diagnostics.holdout_evaluation' || nodeTypeKey === 'diagnostics.cross_validation'">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('evaluationResults')">
-                  <i :class="plotSections.evaluationResults ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Evaluation Results</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.evaluationResults" class="plot-container">
-                    <div v-if="holdoutVisualization" class="evaluation-viz">
-                      <!-- Confusion Matrix (classification) -->
-                      <template v-if="holdoutVisualization.type === 'confusion_matrix'">
-                        <PlotlyChart :data="holdoutConfusionData" :layout="holdoutConfusionLayout" />
-                      </template>
-                      <!-- Predicted vs Actual (regression) -->
-                      <template v-else-if="holdoutVisualization.type === 'predicted_vs_actual'">
-                        <PlotlyChart :data="holdoutRegressionData" :layout="holdoutRegressionLayout" />
-                      </template>
-                    </div>
-                    <div v-else class="no-plot-message">
-                      Execute the node to see evaluation results.
-                    </div>
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <template v-if="nodeTypeKey === 'stats.summary'">
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('statsDistribution')">
-                  <i :class="plotSections.statsDistribution ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Summary Plot</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.statsDistribution" class="plot-container">
-                    <PlotlyChart :data="statsPlotData" :layout="statsPlotLayout" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-            <!-- PLS Plots -->
-            <template v-if="nodeTypeKey === 'model.pls'">
-              <!-- Scores Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('plsScores')">
-                  <i :class="plotSections.plsScores ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Scores Plot</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.plsScores" class="plot-container">
-                    <PlotlyChart :data="plsScoresData" :layout="plsScoresLayout" />
-                  </div>
-                </Transition>
-              </div>
-
-              <!-- Loadings Plot -->
-              <div class="plot-subsection">
-                <div class="plot-subsection-header" @click="togglePlot('plsLoadings')">
-                  <i :class="plotSections.plsLoadings ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                  <span>Loadings Plot</span>
-                </div>
-                <Transition name="collapse">
-                  <div v-if="plotSections.plsLoadings" class="plot-container">
-                    <PlotlyChart :data="plsLoadingsData" :layout="plsLoadingsLayout" />
-                  </div>
-                </Transition>
-              </div>
-            </template>
-
-          </div>
-        </Transition>
-      </section>
+      <PlotsPanel
+        :expanded="sections.plots"
+        @toggle="toggleSection('plots')"
+        @toggle-plot="togglePlot"
+        @contour-click="handleContourClick"
+      />
 
       <!-- Log Section -->
-      <section class="detail-section">
-        <div class="section-header" @click="toggleSection('log')">
-          <div class="section-title">
-            <i :class="sections.log ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-            <h2>Execution Log</h2>
-          </div>
-          <span class="section-badge" v-if="executionLogs.length">{{ executionLogs.length }} entries</span>
-        </div>
-        <Transition name="collapse">
-          <div v-if="sections.log" class="section-content log-content">
-            <div v-if="executionLogs.length === 0" class="empty-section">
-              <i class="pi pi-list" />
-              <p>No execution logs yet</p>
-              <small>Click "Run Node" to execute and see logs here.</small>
-            </div>
-            <div v-else class="log-entries">
-              <div
-                v-for="(log, idx) in executionLogs"
-                :key="idx"
-                class="log-entry"
-                :class="log.type"
-              >
-                <span class="log-time">{{ log.time }}</span>
-                <span class="log-icon">
-                  <i :class="getLogIcon(log.type)" />
-                </span>
-                <span class="log-message">{{ log.message }}</span>
-                <span v-if="log.details" class="log-details">{{ log.details }}</span>
-              </div>
-            </div>
-            <div v-if="executionLogs.length > 0" class="log-actions">
-              <Button
-                label="Clear Log"
-                icon="pi pi-trash"
-                class="p-button-sm p-button-text p-button-secondary"
-                @click="clearLogs"
-              />
-            </div>
-          </div>
-        </Transition>
-      </section>
+      <LogPanel
+        :logs="executionLogs"
+        :expanded="sections.log"
+        :get-log-icon="getLogIcon"
+        @toggle="toggleSection('log')"
+        @clear="clearLogs"
+      />
     </main>
 
     <!-- Modals -->
@@ -1354,24 +122,20 @@
 
 <script setup lang="ts">
 /* eslint-disable @typescript-eslint/no-explicit-any -- node outputs and plot payloads vary widely across node families in this inspection view. */
-import { ref, computed, watch, onMounted, onUnmounted } from "vue";
+import { ref, computed, watch, onMounted, provide } from "vue";
+import {
+  NODE_DETAIL_STATE_KEY,
+  type NodeDetailState,
+} from "./node-detail/state/useNodeDetailState";
 import { useRoute } from "vue-router";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
-import InputNumber from "primevue/inputnumber";
-import InputText from "primevue/inputtext";
-import InputSwitch from "primevue/inputswitch";
-import Dropdown from "primevue/dropdown";
-import DataTable from "primevue/datatable";
-import Column from "primevue/column";
 import { useToast } from "primevue/usetoast";
 import QuickPlotModal from "./modals/QuickPlotModal.vue";
 import DataTableModal from "./modals/DataTableModal.vue";
-import PlotlyChart from "@/components/PlotlyChart.vue";
 import { useWorkflowStore } from "@/stores/workflow";
 import { createCategoryColorMap } from "@/utils/colors";
 import { getYAxisLabel } from "@/utils/plotLabels";
-import { buildNodeOutput, type NodeOutput } from "@/utils/nodeOutput";
 import {
   buildLabelTable,
   compactSampleLabel,
@@ -1379,103 +143,37 @@ import {
   normalizeSampleLabel,
   splitLabelByDelimiter,
 } from "@/utils/sampleLabels";
-import api from "@/api/client";
+import { useNodeLog } from "./node-detail/composables/useNodeLog";
+import { useNodeValidation } from "./node-detail/composables/useNodeValidation";
+import { useNodeOutput } from "./node-detail/composables/useNodeOutput";
+import { useNodeSections } from "./node-detail/composables/useNodeSections";
+import { useNodeTrial, STORAGE_KEY } from "./node-detail/composables/useNodeTrial";
+import LogPanel from "./node-detail/panels/LogPanel.vue";
+import InputPanel from "./node-detail/panels/InputPanel.vue";
+import SettingsPanel from "./node-detail/panels/SettingsPanel.vue";
+import OutputPanel from "./node-detail/panels/OutputPanel.vue";
+import PlotsPanel from "./node-detail/panels/PlotsPanel.vue";
 
 
 const route = useRoute();
 const toast = useToast();
 
-// Session storage key for passing data between tabs
-const STORAGE_KEY = "node_detail_data";
+// Trial execution + cross-tab broadcast — extracted to composable.
+// (STORAGE_KEY / BROADCAST_CHANNEL_NAME re-exported from the composable module.)
 
-// BroadcastChannel for cross-tab communication
-const BROADCAST_CHANNEL_NAME = "workflow_node_updates";
-const broadcastChannel = ref<BroadcastChannel | null>(null);
+// Section collapse state — extracted to composable
+const {
+  sections,
+  outputSubsections,
+  plotSections,
+  toggleSection,
+  toggleOutputSubsection,
+  togglePlot,
+} = useNodeSections();
 
-// Execution state
-const isExecuting = ref(false);
-let executionTimeout: ReturnType<typeof setTimeout> | null = null;
-
-// Section collapse state
-const sections = ref({
-  input: false,
-  settings: false,
-  output: false,
-  plots: false,
-  log: false,
-});
-
-const outputSubsections = ref({
-  coordinates: false,
-  metadata: false,
-  processing: false,
-  provenance: false,
-  quality: false,
-  ports: false,
-});
-
-// Execution log entries
-interface LogEntry {
-  time: string;
-  type: "info" | "success" | "error" | "warn";
-  message: string;
-  details?: string;
-}
-const executionLogs = ref<LogEntry[]>([]);
+// Execution log entries — extracted to composable
+const { executionLogs, addLog, clearLogs, getLogIcon } = useNodeLog();
 const previewRowLimit = 50;
-
-const addLog = (type: LogEntry["type"], message: string, details?: string) => {
-  const now = new Date();
-  const time = now.toLocaleTimeString("en-US", { hour12: false });
-  executionLogs.value.unshift({ time, type, message, details });
-  // Keep max 50 entries
-  if (executionLogs.value.length > 50) {
-    executionLogs.value.pop();
-  }
-};
-
-const clearLogs = () => {
-  executionLogs.value = [];
-};
-
-const getLogIcon = (type: LogEntry["type"]): string => {
-  switch (type) {
-    case "success": return "pi pi-check-circle";
-    case "error": return "pi pi-times-circle";
-    case "warn": return "pi pi-exclamation-triangle";
-    default: return "pi pi-info-circle";
-  }
-};
-
-// Plot subsection collapse state
-const plotSections = ref<Record<string, boolean>>({
-  pcaScores: false,
-  pcaBiplot: false,
-  pcaLoadings: false,
-  pcaScree: false,
-  pcaDiagnostics: false,
-  mcrConcentrations: false,
-  mcrSpectra: false,
-  spectraOverview: false,
-  dataOverview: false, // For generic non-spectral data like Iris
-  statsDistribution: false,
-  plsScores: false,
-  plsLoadings: false,
-  classificationScores: false,
-  plsdaLoadings: false,
-  plsdaVip: false,
-  plsdaConfusionTrain: false,
-  plsdaConfusionCV: false,
-  regressionCorrelation: false,
-  classificationAccuracy: false,
-  hcaDendrogram: false,
-  peakFinding: false,
-  plotVisualization: false,
-  efaEigenvalues: false,
-  evaluationResults: true,
-  clusterScatter: true,
-  outlierChart: true,
-});
 
 // PLS-DA loadings view mode (lines or biplot)
 const plsdaLoadingsViewMode = ref<"lines" | "biplot">("lines");
@@ -1493,59 +191,7 @@ const nodeData = ref<any>(null);
 const localParams = ref<Record<string, any>>({});
 const originalParams = ref<Record<string, any>>({});
 
-// Validation errors
 const workflowStore = useWorkflowStore();
-const validationErrors = ref<Array<{ param_name: string; message: string }>>([]);
-
-// Filter out internal "_metadata" errors from display (these occur when library isn't loaded yet)
-const displayedValidationErrors = computed(() => {
-  return validationErrors.value.filter(e => e.param_name !== "_metadata");
-});
-
-const hasValidationErrors = computed(() => {
-  return displayedValidationErrors.value.length > 0;
-});
-
-// Validate parameters
-const validateParams = () => {
-  if (!nodeType.value) {
-    validationErrors.value = [];
-    return;
-  }
-
-  // Skip validation if node library is still loading
-  if (workflowStore.isLoadingNodeLibrary) {
-    validationErrors.value = [];
-    return;
-  }
-
-  // Skip validation if node library failed to load or is empty
-  if (workflowStore.nodeLibraryLoadError || workflowStore.nodeLibrary.size === 0) {
-    validationErrors.value = [];
-    return;
-  }
-
-  validationErrors.value = workflowStore.validateNodeParams(nodeType.value, localParams.value);
-};
-
-// Get error message for a specific parameter (excluding metadata errors)
-const getParamError = (paramName: string): string | null => {
-  const error = validationErrors.value.find(e => e.param_name === paramName && e.param_name !== "_metadata");
-  return error ? error.message : null;
-};
-
-// Watch for parameter changes and validate
-watch(localParams, () => {
-  validateParams();
-}, { deep: true });
-
-// Watch for node library to finish loading, then validate
-watch(() => workflowStore.isLoadingNodeLibrary, (isLoading) => {
-  if (!isLoading && workflowStore.nodeLibrary.size > 0) {
-    // Library finished loading, validate now
-    validateParams();
-  }
-});
 
 // Node icon mapping
 const NODE_ICONS: Record<string, string> = {
@@ -1567,6 +213,24 @@ const NODE_ICONS: Record<string, string> = {
 const nodeId = computed(() => route.params.nodeId as string);
 const nodeType = computed(() => nodeData.value?.type || "Unknown");
 const nodeTypeKey = computed(() => nodeType.value);
+
+// Parameter validation — extracted to composable
+const {
+  displayedValidationErrors,
+  hasValidationErrors,
+  validateParams,
+  getParamError,
+} = useNodeValidation(workflowStore, nodeType, localParams);
+
+watch(localParams, () => validateParams(), { deep: true });
+watch(
+  () => workflowStore.isLoadingNodeLibrary,
+  (isLoading) => {
+    if (!isLoading && workflowStore.nodeLibrary.size > 0) {
+      validateParams();
+    }
+  },
+);
 const isDataNode = computed(() => nodeType.value.startsWith("data."));
 
 // Detect if data is spectral (vs generic like Iris dataset)
@@ -1900,25 +564,14 @@ const fullMetadataJson = computed(() => {
   return JSON.stringify(full, null, 2);
 });
 
-const normalizeNodeOutput = (result: any): NodeOutput => {
-  const outputPorts = nodeMetadata.value?.output_ports;
-  return buildNodeOutput(result, outputPorts);
-};
-
-const resolvePortPayload = (port: any): any => {
-  if (!port || typeof port !== "object") return port;
-  return "value" in port ? port.value : port;
-};
+const { normalizeNodeOutput, resolvePortPayload, primaryOutputPayload } = useNodeOutput(
+  nodeOutput,
+  nodeMetadata,
+);
 
 const isPCAOutput = computed(() => {
   const metadata = nodeOutput.value?.metadata || {};
   return nodeTypeKey.value === "model.pca" || metadata.type === "model.pca" || metadata.isPCA === true;
-});
-
-const primaryOutputPayload = computed(() => {
-  const primaryPort = nodeOutput.value?.primary_port;
-  if (!primaryPort) return null;
-  return resolvePortPayload(nodeOutput.value?.ports?.[primaryPort]);
 });
 
 const pcaSampleLabels = computed<string[]>(() => {
@@ -4981,20 +3634,6 @@ const classificationAccuracyLayout = computed(() => {
 // ============================================================================
 
 // Methods
-const toggleSection = (section: "input" | "settings" | "output" | "plots" | "log") => {
-  sections.value[section] = !sections.value[section];
-};
-
-const toggleOutputSubsection = (
-  section: "coordinates" | "metadata" | "processing" | "provenance" | "quality" | "ports",
-) => {
-  outputSubsections.value[section] = !outputSubsections.value[section];
-};
-
-const togglePlot = (plot: string) => {
-  plotSections.value[plot] = !plotSections.value[plot];
-};
-
 const resetToDefaults = () => {
   for (const param of nodeParams.value) {
     if (param.default !== undefined) {
@@ -5082,34 +3721,14 @@ const handleCancel = () => {
   window.close();
 };
 
-// Broadcast params update to main tab
-const broadcastParamsUpdate = () => {
-  const updateMessage = {
-    type: "node_params_updated",
-    nodeId: nodeData.value?.id,
-    nodeType: nodeData.value?.type,
-    params: { ...localParams.value },
-    timestamp: Date.now(),
-  };
-
-  // Try BroadcastChannel first (more reliable)
-  if (broadcastChannel.value) {
-    broadcastChannel.value.postMessage(updateMessage);
-  }
-
-  // Also update sessionStorage and dispatch event as fallback
-  const updatedData = {
-    ...nodeData.value,
-    params: { ...localParams.value },
-    _saved: true,
-    _savedAt: Date.now(),
-  };
-  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(updatedData));
-  window.dispatchEvent(new StorageEvent("storage", {
-    key: STORAGE_KEY,
-    newValue: JSON.stringify(updatedData),
-  }));
-};
+const { isExecuting, broadcastParamsUpdate, handleRunTrial } = useNodeTrial({
+  nodeData,
+  localParams,
+  nodeType,
+  addLog,
+  normalizeNodeOutput,
+  toast,
+});
 
 const handleSaveAndExit = () => {
   // Broadcast params update to main tab
@@ -5128,268 +3747,9 @@ const handleSaveAndExit = () => {
   }, 500);
 };
 
-/**
- * Run a trial execution of this node with current local parameters.
- *
- * This calls the backend trial API directly, bypassing the main workflow.
- * The trial runs in a fresh execution context (no caching) and does NOT
- * persist any changes to the workflow.
- *
- * Flow:
- * - Run Trial: Execute with trial params, see results locally
- * - Cancel: Discard trial, close window (no changes saved)
- * - Save and Exit: Persist params to workflow, then close
- *
- * IMPORTANT: Since Pinia stores don't sync across browser tabs, this function
- * reads the workflow nodes/edges from sessionStorage (passed by WorkflowInspector).
- */
-const handleRunTrial = async () => {
-  if (!nodeData.value) return;
 
-  isExecuting.value = true;
-  addLog("info", "Trial started", `Running ${nodeType.value} with trial settings`);
-
-  toast.add({
-    severity: "info",
-    summary: "Running Trial",
-    detail: "Executing with current settings...",
-    life: 2000,
-  });
-
-  try {
-    // Read workflow nodes/edges from nodeData (loaded from sessionStorage)
-    // These are passed by WorkflowInspector since Pinia stores don't sync across tabs
-    const workflowNodes = nodeData.value.workflowNodes || [];
-    const workflowEdges = nodeData.value.workflowEdges || [];
-
-    if (workflowNodes.length === 0) {
-      throw new Error("No workflow nodes found. Please reopen from the workflow inspector.");
-    }
-
-    // Build nodes list for trial API (using backend format)
-    // IMPORTANT: Map ALL node parameters from frontend names to backend names
-    const trialNodes = workflowNodes.map((node: any) => ({
-      node_id: String(node.id),
-      node_type: node.type,
-      parameters: { ...(node.params || {}) },
-    }));
-
-    // Build edges list for trial API
-    const trialEdges = workflowEdges.map((edge: any) => ({
-      from_node_id: String(edge.from),
-      to_node_id: String(edge.to),
-      from_output: edge.fromPort || "default",
-      to_input: edge.toPort || "default",
-    }));
-
-    // Build initial data for DATA nodes (needed for upstream dependencies)
-    const initialData: Record<string, any> = {};
-    // If this node's input came from a DATA node, include its config
-    if (nodeData.value.inputData?.experiment_id) {
-      // Find DATA node ID from input connections
-      const inputConnections = nodeData.value.inputConnections || [];
-      for (const conn of inputConnections) {
-        if (conn.nodeType === "data.source") {
-          initialData[String(conn.nodeId)] = {
-            experiment_id: nodeData.value.inputData.experiment_id,
-            source: nodeData.value.inputData.source || "experiment",
-          };
-        }
-      }
-    }
-
-    // Map trial params from frontend names to backend names
-    // E.g., "components" -> "n_components" for PCA
-    const mappedTrialParams = { ...localParams.value };
-
-    // Build trial execution request payload
-    const trialPayload = {
-      target_node_id: String(nodeData.value.id),
-      trial_params: mappedTrialParams,
-      nodes: trialNodes,
-      edges: trialEdges,
-      initial_data: Object.keys(initialData).length > 0 ? initialData : null,
-    };
-
-    const targetNodeInList = trialNodes.find((n: any) => n.node_id === String(nodeData.value.id));
-
-    console.log("[NodeDetailView] Trial execution details:", {
-      targetNodeId: trialPayload.target_node_id,
-      targetNodeIdType: typeof trialPayload.target_node_id,
-      nodeType: nodeData.value.type,
-      nodeCount: trialNodes.length,
-      edgeCount: trialEdges.length,
-      localParams: localParams.value,
-      mappedTrialParams: mappedTrialParams,
-      targetNodeInList: targetNodeInList,
-      allNodeIds: trialNodes.map((n: any) => ({ id: n.node_id, type: typeof n.node_id, params: n.parameters })),
-    });
-
-    // Log meaningful parameter changes
-    const changes: string[] = [];
-    for (const [key, value] of Object.entries(mappedTrialParams)) {
-      const oldValue = nodeData.value.params?.[key];
-      if (oldValue !== undefined && oldValue !== value) {
-        changes.push(`${key}: ${oldValue} → ${value}`);
-      }
-    }
-    if (changes.length > 0) {
-      addLog("info", "Parameter changes", changes.join(", "));
-    }
-
-    // Execute trial via direct API call
-    const response = await api.post("/workflows/trial/execute", trialPayload);
-
-    isExecuting.value = false;
-
-    if (response.data.status === "error" || response.data.error) {
-      addLog("error", "Trial failed", response.data.error || "Unknown error");
-      toast.add({
-        severity: "error",
-        summary: "Trial Failed",
-        detail: response.data.error || "Execution failed",
-        life: 5000,
-      });
-      return;
-    }
-
-    // Update local output with trial result
-    if (response.data.result) {
-      // The result from trial API has the data and metadata directly
-      const output = normalizeNodeOutput(response.data.result);
-
-      console.log("[NodeDetailView] Trial completed, updating output:", {
-        hasData: !!output.data,
-        dataLength: Array.isArray(output.data) ? output.data.length : "N/A",
-        metadataKeys: output.metadata ? Object.keys(output.metadata) : [],
-      });
-
-      // Update node data with new output (triggers reactive updates for plots)
-      nodeData.value = {
-        ...nodeData.value,
-        output: output,
-      };
-
-      // Build output summary for log
-      let outputSummary = "Trial completed";
-      if (output.data && Array.isArray(output.data)) {
-        const rows = output.data.length;
-        const cols = Array.isArray(output.data[0]) ? output.data[0].length : 1;
-        outputSummary = `Output: ${rows} × ${cols} matrix`;
-      }
-
-      addLog("success", "Trial completed", outputSummary);
-      toast.add({
-        severity: "success",
-        summary: "Trial Complete",
-        detail: outputSummary,
-        life: 3000,
-      });
-    } else {
-      addLog("warn", "Trial completed", "No output data returned");
-      toast.add({
-        severity: "warn",
-        summary: "Trial Complete",
-        detail: "Execution completed but no output data was returned",
-        life: 3000,
-      });
-    }
-  } catch (error: any) {
-    isExecuting.value = false;
-    const message = error?.response?.data?.detail || error?.message || String(error);
-    addLog("error", "Trial failed", message);
-    toast.add({
-      severity: "error",
-      summary: "Trial Failed",
-      detail: message,
-      life: 5000,
-    });
-  }
-};
-
-// Handle execution result from main tab
-const handleBroadcastMessage = (event: MessageEvent) => {
-  const { type, nodeId, output, error } = event.data;
-
-  console.log('[NodeDetailView] Received broadcast:', { type, nodeId, localNodeId: nodeData.value?.id, hasOutput: !!output });
-
-  // Use loose equality (==) to handle string/number type mismatches
-  // e.g., nodeId might be "1" (string) while nodeData.value.id is 1 (number)
-  if (String(nodeId) !== String(nodeData.value?.id)) {
-    console.log('[NodeDetailView] Node ID mismatch, ignoring message');
-    return;
-  }
-
-  if (type === "node_execution_result") {
-    // Clear the timeout since we got a response
-    if (executionTimeout) {
-      clearTimeout(executionTimeout);
-      executionTimeout = null;
-    }
-
-    isExecuting.value = false;
-
-    if (error) {
-      addLog("error", "Execution failed", error);
-      toast.add({
-        severity: "error",
-        summary: "Execution Failed",
-        detail: error,
-        life: 5000,
-      });
-    } else if (output) {
-      // Update node data with new output
-      console.log('[NodeDetailView] Updating output:', {
-        hasData: !!output.data,
-        dataLength: Array.isArray(output.data) ? output.data.length : 'N/A',
-        metadataKeys: output.metadata ? Object.keys(output.metadata) : [],
-      });
-
-      nodeData.value = {
-        ...nodeData.value,
-        output: output,
-      };
-
-      console.log('[NodeDetailView] nodeData.value.output updated, hasOutput:', hasOutput.value);
-
-      // Build output summary for log
-      let outputSummary = "Output updated";
-      if (output.data && Array.isArray(output.data)) {
-        const rows = output.data.length;
-        const cols = Array.isArray(output.data[0]) ? output.data[0].length : 1;
-        outputSummary = `Output: ${rows} x ${cols} matrix`;
-      }
-
-      addLog("success", "Execution complete", outputSummary);
-      toast.add({
-        severity: "success",
-        summary: "Execution Complete",
-        detail: "Node executed successfully. Output updated.",
-        life: 3000,
-      });
-    } else {
-      addLog("info", "Execution complete", "No output data received");
-      toast.add({
-        severity: "info",
-        summary: "Execution Complete",
-        detail: "Node executed but no output data received.",
-        life: 3000,
-      });
-    }
-  }
-};
-
-// Lifecycle
+// Lifecycle — BroadcastChannel setup/teardown lives in useNodeTrial
 onMounted(() => {
-  // Set up BroadcastChannel for cross-tab communication
-  try {
-    broadcastChannel.value = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
-    broadcastChannel.value.onmessage = handleBroadcastMessage;
-    console.log('[NodeDetailView] BroadcastChannel initialized');
-  } catch (e) {
-    console.warn('[NodeDetailView] BroadcastChannel not supported:', e);
-  }
-
   // Load node data from session storage
   const storedData = sessionStorage.getItem(STORAGE_KEY);
   if (storedData) {
@@ -5433,24 +3793,128 @@ onMounted(() => {
   }
 });
 
-// Clean up on unmount
-onUnmounted(() => {
-  if (broadcastChannel.value) {
-    broadcastChannel.value.close();
-    broadcastChannel.value = null;
-    console.log('[NodeDetailView] BroadcastChannel closed');
-  }
-});
+// Aggregate plot-related state for PlotsPanel (read-only surface).
+const plotState = computed(() => ({
+  hasOutput: hasOutput.value,
+  availablePlots: availablePlots.value,
+  nodeTypeKey: nodeTypeKey.value,
+  isPCAOutput: isPCAOutput.value,
+  isPreprocessingNode: isPreprocessingNode.value,
+  isDataNode: isDataNode.value,
+  isSpectraData: isSpectraData.value,
+  isGenericDataNode: isGenericDataNode.value,
+  nodeOutput: nodeOutput.value,
+  contourClickPoint: contourClickPoint.value,
+  pcaAxisOptions: pcaAxisOptions.value,
+  regressionTargetOptions: regressionTargetOptions.value,
+  spectraDisplayOptions,
+  genericDisplayOptions,
+  featureOptions: featureOptions.value,
+  holdoutVisualization: holdoutVisualization.value,
+  // PCA
+  pcaScoresData: pcaScoresData.value, pcaScoresLayout: pcaScoresLayout.value, pcaScoresConfig: pcaScoresConfig.value,
+  pcaBiplotData: pcaBiplotData.value, pcaBiplotLayout: pcaBiplotLayout.value,
+  pcaLoadingsData: pcaLoadingsData.value, pcaLoadingsLayout: pcaLoadingsLayout.value, pcaLoadingsConfig: pcaLoadingsConfig.value,
+  pcaScreeData: pcaScreeData.value, pcaScreeLayout: pcaScreeLayout.value,
+  pcaDiagnosticsData: pcaDiagnosticsData.value, pcaDiagnosticsLayout: pcaDiagnosticsLayout.value,
+  // MCR / SIMPLISMA / NMF / ICA
+  mcrConcentrationData: mcrConcentrationData.value, mcrConcentrationLayout: mcrConcentrationLayout.value,
+  mcrSpectraData: mcrSpectraData.value, mcrSpectraLayout: mcrSpectraLayout.value,
+  // EFA
+  efaEigenvalueData: efaEigenvalueData.value, efaEigenvalueLayout: efaEigenvalueLayout.value,
+  // PLS
+  plsScoresData: plsScoresData.value, plsScoresLayout: plsScoresLayout.value,
+  plsLoadingsData: plsLoadingsData.value, plsLoadingsLayout: plsLoadingsLayout.value,
+  // PLS-DA + classification
+  classificationScoresData: classificationScoresData.value, classificationScoresLayout: classificationScoresLayout.value,
+  plsdaLoadingsData: plsdaLoadingsData.value, plsdaLoadingsLayout: plsdaLoadingsLayout.value,
+  plsdaVipData: plsdaVipData.value, plsdaVipLayout: plsdaVipLayout.value,
+  plsdaConfusionTrainData: plsdaConfusionTrainData.value, plsdaConfusionTrainLayout: plsdaConfusionTrainLayout.value,
+  plsdaConfusionCVData: plsdaConfusionCVData.value, plsdaConfusionCVLayout: plsdaConfusionCVLayout.value,
+  classificationAccuracyData: classificationAccuracyData.value, classificationAccuracyLayout: classificationAccuracyLayout.value,
+  // Regression
+  regressionCorrelationData: regressionCorrelationData.value, regressionCorrelationLayout: regressionCorrelationLayout.value,
+  // HCA / Peak / Plot node
+  hcaDendrogramData: hcaDendrogramData.value, hcaDendrogramLayout: hcaDendrogramLayout.value,
+  peakFindingPlotData: peakFindingPlotData.value, peakFindingPlotLayout: peakFindingPlotLayout.value,
+  plotNodeData: plotNodeData.value, plotNodeLayout: plotNodeLayout.value,
+  // Spectra
+  spectraOverlayData: spectraOverlayData.value, spectraOverlayLayout: spectraOverlayLayout.value,
+  spectraContourData: spectraContourData.value, spectraContourLayout: spectraContourLayout.value,
+  horizontalSliceData: horizontalSliceData.value, horizontalSliceLayout: horizontalSliceLayout.value,
+  verticalSliceData: verticalSliceData.value, verticalSliceLayout: verticalSliceLayout.value,
+  // Generic
+  genericBoxPlotData: genericBoxPlotData.value, genericBoxPlotLayout: genericBoxPlotLayout.value,
+  genericScatterData: genericScatterData.value, genericScatterLayout: genericScatterLayout.value,
+  // Clusters / outliers / holdout / stats
+  clusterScatterData: clusterScatterData.value, clusterScatterLayout: clusterScatterLayout.value,
+  outlierChartData: outlierChartData.value, outlierChartLayout: outlierChartLayout.value,
+  holdoutConfusionData: holdoutConfusionData.value, holdoutConfusionLayout: holdoutConfusionLayout.value,
+  holdoutRegressionData: holdoutRegressionData.value, holdoutRegressionLayout: holdoutRegressionLayout.value,
+  statsPlotData: statsPlotData.value, statsPlotLayout: statsPlotLayout.value,
+}));
+
+// ── Provide canonical state to descendant panels (issue #24a) ─────────
+// Panels inject NODE_DETAIL_STATE_KEY instead of receiving the big prop
+// bags they used to. Readonly refs are passed through directly; the
+// writable slice gives panels typed handles for v-model-style updates.
+const detailState: NodeDetailState = {
+  output: {
+    summary: outputSummary,
+    hasOutput,
+    data: outputData,
+    metadata: outputMetadata,
+    subsections: outputSubsections,
+    datasetInfo,
+    datasetLabelTable,
+    labelPreviewLimit,
+    processingHistory,
+    provenance: provenanceInfo,
+    quality: qualitySummary,
+    portSummaries,
+    preview: computed(() => ({
+      rows: outputPreview.value,
+      columns: outputPreviewColumns.value,
+      summary: outputDataSummary.value,
+    })),
+    pcaDiagnostics: computed(() => ({
+      rows: pcaDiagnosticsPreview.value,
+      columns: pcaDiagnosticsColumns.value,
+      summary: pcaDiagSummary.value,
+    })),
+    isRegressionNode,
+    regressionTargetOptions,
+    selectedRegressionR2,
+    selectedRegressionRmse,
+    getMetaTooltip,
+    formatMetaValue,
+  },
+  plots: plotState,
+  writable: {
+    pcaXAxis,
+    pcaYAxis,
+    plsdaLoadingsViewMode,
+    regressionTargetIdx,
+    spectraDisplayMode,
+    genericDisplayMode,
+    featureXAxis,
+    featureYAxis,
+    contourClickPoint,
+  },
+  plotSections,
+};
+provide(NODE_DETAIL_STATE_KEY, detailState);
+
 </script>
 
 <style scoped>
+/* Shell-only styles. Per-panel styles live in node-detail/panels/*.vue. */
 .node-detail-view {
   min-height: 100vh;
   background: #0f172a;
   color: #f8fafc;
 }
 
-/* Header */
 .detail-header {
   display: flex;
   justify-content: space-between;
@@ -5496,894 +3960,12 @@ onUnmounted(() => {
   gap: 12px;
 }
 
-/* Main Content */
 .detail-content {
   max-width: 1000px;
   margin: 0 auto;
   padding: 32px;
 }
 
-/* Sections */
-.detail-section {
-  background: #1e293b;
-  border-radius: 12px;
-  margin-bottom: 24px;
-  overflow: hidden;
-  border: 1px solid #334155;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.section-header:hover {
-  background: rgba(51, 65, 85, 0.5);
-}
-
-.section-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-title i {
-  font-size: 0.85rem;
-  color: #64748b;
-}
-
-.section-title h2 {
-  margin: 0;
-  font-size: 1.1rem;
-  font-weight: 600;
-}
-
-.section-badge {
-  padding: 4px 10px;
-  background: #334155;
-  border-radius: 12px;
-  font-size: 0.75rem;
-  color: #94a3b8;
-}
-
-.section-content {
-  padding: 20px;
-  border-top: 1px solid #334155;
-}
-
-/* Collapse animation */
-.collapse-enter-active,
-.collapse-leave-active {
-  transition: all 0.2s ease;
-  overflow: hidden;
-}
-
-.collapse-enter-from,
-.collapse-leave-to {
-  opacity: 0;
-  max-height: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-}
-
-/* Empty sections */
-.empty-section {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 40px 20px;
-  text-align: center;
-  color: #64748b;
-}
-
-.empty-section i {
-  font-size: 2.5rem;
-  margin-bottom: 16px;
-  color: #475569;
-}
-
-.empty-section p {
-  margin: 0 0 8px;
-  font-size: 1rem;
-}
-
-.empty-section small {
-  color: #475569;
-  font-size: 0.85rem;
-}
-
-/* Info grid */
-.info-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 16px;
-  margin-bottom: 20px;
-}
-
-.info-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.info-item label {
-  font-size: 0.75rem;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.info-item span {
-  font-size: 1rem;
-  font-weight: 500;
-}
-
-/* Connections */
-.connections-list {
-  margin-bottom: 20px;
-}
-
-.connections-list h4 {
-  margin: 0 0 12px;
-  font-size: 0.85rem;
-  color: #94a3b8;
-  font-weight: 500;
-}
-
-.connection-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  background: #0f172a;
-  border-radius: 8px;
-  margin-bottom: 8px;
-}
-
-.conn-icon {
-  font-size: 1.2rem;
-}
-
-.conn-name {
-  flex: 1;
-  font-weight: 500;
-}
-
-.conn-port {
-  font-size: 0.8rem;
-  color: #64748b;
-  padding: 2px 8px;
-  background: #334155;
-  border-radius: 4px;
-}
-
-/* Settings form */
-.settings-form {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.param-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.param-field > label {
-  font-size: 0.9rem;
-  font-weight: 500;
-}
-
-.required-mark {
-  color: #f87171;
-  margin-left: 2px;
-}
-
-.param-description {
-  font-size: 0.8rem;
-  color: #64748b;
-  margin-bottom: 4px;
-}
-
-/* Validation error styling */
-.validation-error-banner {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 20px;
-}
-
-.error-banner-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.error-banner-header i {
-  color: #ef4444;
-  font-size: 1.2rem;
-  margin-top: 2px;
-  flex-shrink: 0;
-}
-
-.error-banner-content {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex: 1;
-}
-
-.error-banner-content strong {
-  color: #ef4444;
-  font-size: 0.95rem;
-}
-
-.error-banner-content span {
-  color: #f87171;
-  font-size: 0.85rem;
-}
-
-.error-list {
-  list-style: none;
-  padding: 0;
-  margin: 12px 0 0 36px;
-}
-
-.error-list li {
-  font-size: 0.85rem;
-  color: #f87171;
-  margin: 6px 0;
-  line-height: 1.4;
-}
-
-.error-list li strong {
-  color: #ef4444;
-  font-weight: 600;
-}
-
-.param-field.has-error > label {
-  color: #ef4444;
-}
-
-.param-error-message {
-  display: block;
-  color: #ef4444;
-  font-size: 0.75rem;
-  font-weight: 500;
-  margin-top: 4px;
-  padding: 6px 8px;
-  background: rgba(239, 68, 68, 0.1);
-  border-left: 2px solid #ef4444;
-  border-radius: 2px;
-}
-
-.p-invalid {
-  border-color: #ef4444 !important;
-}
-
-.toggle-field {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.toggle-label {
-  font-size: 0.9rem;
-  color: #94a3b8;
-}
-
-.full-width {
-  width: 100%;
-}
-
-.settings-actions {
-  display: flex;
-  justify-content: flex-start;
-  padding-top: 12px;
-  border-top: 1px solid #334155;
-  margin-top: 8px;
-}
-
-/* Metadata section */
-.metadata-section {
-  margin-bottom: 20px;
-}
-
-.metadata-section h4 {
-  margin: 0 0 12px;
-  font-size: 0.85rem;
-  color: #94a3b8;
-  font-weight: 500;
-}
-
-.metadata-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 24px;
-}
-
-.metadata-item {
-  font-size: 0.85rem;
-}
-
-.meta-key {
-  color: #64748b;
-  margin-right: 4px;
-}
-
-.meta-info-icon {
-  margin-left: 6px;
-  color: #94a3b8;
-  font-size: 0.85rem;
-}
-
-.meta-info-icon:hover {
-  color: #e2e8f0;
-}
-
-.meta-value {
-  font-family: "JetBrains Mono", monospace;
-  color: #f8fafc;
-}
-
-/* Output actions */
-.output-actions {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 20px;
-}
-
-/* Preview table */
-.preview-table {
-  margin-top: 20px;
-}
-
-.preview-table h4 {
-  margin: 0 0 12px;
-  font-size: 0.85rem;
-  color: #94a3b8;
-  font-weight: 500;
-}
-
-.preview-datatable {
-  font-size: 0.8rem;
-}
-
-.preview-datatable :deep(.p-datatable-wrapper) {
-  background: #0f172a;
-  border-radius: 8px;
-}
-
-.preview-datatable :deep(.p-datatable-thead > tr > th) {
-  background: #1e293b;
-  color: #f8fafc;
-  border-color: #334155;
-  padding: 8px 10px;
-  font-weight: 600;
-}
-
-.preview-datatable :deep(.p-datatable-tbody > tr) {
-  background: #0f172a;
-  color: #f8fafc;
-}
-
-.preview-datatable :deep(.p-datatable-tbody > tr:nth-child(even)) {
-  background: rgba(30, 41, 59, 0.5);
-}
-
-.preview-datatable :deep(.p-datatable-tbody > tr > td) {
-  border-color: #334155;
-  padding: 6px 10px;
-  font-family: "JetBrains Mono", monospace;
-}
-
-/* PrimeVue dark theme overrides */
-:deep(.p-inputtext),
-:deep(.p-inputnumber-input),
-:deep(.p-dropdown) {
-  background: #0f172a;
-  border-color: #334155;
-  color: #f8fafc;
-}
-
-:deep(.p-inputtext:focus),
-:deep(.p-inputnumber-input:focus),
-:deep(.p-dropdown:focus),
-:deep(.p-dropdown.p-focus) {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-}
-
-:deep(.p-dropdown-panel) {
-  background: #1e293b;
-  border-color: #334155;
-}
-
-:deep(.p-dropdown-item) {
-  color: #f8fafc;
-}
-
-:deep(.p-dropdown-item:hover) {
-  background: #334155;
-}
-
-:deep(.p-inputswitch.p-inputswitch-checked .p-inputswitch-slider) {
-  background: #3b82f6;
-}
-
-/* Plots Section */
-.plots-content {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.plot-subsection {
-  background: #0f172a;
-  border-radius: 8px;
-  border: 1px solid #334155;
-  overflow: hidden;
-}
-
-.plot-subsection-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  cursor: pointer;
-  font-weight: 500;
-  font-size: 0.95rem;
-  transition: background 0.15s;
-}
-
-.plot-subsection-header:hover {
-  background: rgba(51, 65, 85, 0.5);
-}
-
-.plot-subsection-header i {
-  font-size: 0.8rem;
-  color: #64748b;
-}
-
-.plot-container {
-  padding: 16px;
-  border-top: 1px solid #334155;
-}
-
-.plot-controls {
-  display: flex;
-  gap: 16px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-}
-
-.plot-controls .control-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.plot-controls .control-group label {
-  font-size: 0.85rem;
-  color: #94a3b8;
-  white-space: nowrap;
-}
-
-.plot-controls :deep(.p-dropdown) {
-  min-width: 140px;
-}
-
-.detail-target-dropdown {
-  width: 100%;
-}
-
-/* Interactive Contour */
-.interactive-contour-container {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.slice-plots {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-.slice-plot {
-  background: #1e293b;
-  border-radius: 8px;
-  padding: 12px;
-  border: 1px solid #334155;
-}
-
-.slice-plot h5 {
-  margin: 0 0 8px;
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: #94a3b8;
-}
-
-.slice-hint {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 20px;
-  background: rgba(51, 65, 85, 0.3);
-  border-radius: 8px;
-  color: #64748b;
-  font-size: 0.9rem;
-}
-
-.slice-hint i {
-  font-size: 1.1rem;
-  color: #3b82f6;
-}
-
-@media (max-width: 900px) {
-  .slice-plots {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* Log Section */
-.log-content {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.log-entries {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.log-entry {
-  display: grid;
-  grid-template-columns: 70px 24px 1fr;
-  align-items: start;
-  gap: 10px;
-  padding: 10px 14px;
-  background: #0f172a;
-  border-radius: 8px;
-  border-left: 3px solid #334155;
-  font-size: 0.85rem;
-}
-
-.log-entry.success {
-  border-left-color: #22c55e;
-  background: rgba(34, 197, 94, 0.05);
-}
-
-.log-entry.error {
-  border-left-color: #ef4444;
-  background: rgba(239, 68, 68, 0.05);
-}
-
-.log-entry.warn {
-  border-left-color: #f59e0b;
-  background: rgba(245, 158, 11, 0.05);
-}
-
-.log-entry.info {
-  border-left-color: #3b82f6;
-  background: rgba(59, 130, 246, 0.05);
-}
-
-.log-time {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.75rem;
-  color: #64748b;
-}
-
-.log-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.log-entry.success .log-icon i {
-  color: #22c55e;
-}
-
-.log-entry.error .log-icon i {
-  color: #ef4444;
-}
-
-.log-entry.warn .log-icon i {
-  color: #f59e0b;
-}
-
-.log-entry.info .log-icon i {
-  color: #3b82f6;
-}
-
-.log-message {
-  font-weight: 500;
-  color: #f8fafc;
-}
-
-.log-details {
-  grid-column: 3;
-  font-size: 0.8rem;
-  color: #94a3b8;
-  margin-top: 2px;
-}
-
-.log-actions {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 8px;
-  border-top: 1px solid #334155;
-}
-
-/* Dataset Inspector sections */
-.inspector-section {
-  margin-bottom: 20px;
-  padding: 14px;
-  background: #0f172a;
-  border-radius: 8px;
-  border: 1px solid #334155;
-}
-
-.inspector-toggle {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 0 0 12px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #94a3b8;
-  font-size: 0.85rem;
-  font-weight: 500;
-  text-align: left;
-  cursor: pointer;
-}
-
-.inspector-toggle-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.inspector-toggle i {
-  font-size: 0.85rem;
-}
-
-.inspector-toggle-title i {
-  color: #3b82f6;
-}
-
-.inspector-toggle > i:last-child {
-  color: #64748b;
-}
-
-.inspector-toggle:hover {
-  color: #cbd5e1;
-}
-
-.inspector-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 10px 20px;
-}
-
-.inspector-grid .wide {
-  grid-column: 1 / -1;
-}
-
-.inspector-item {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.insp-label {
-  font-size: 0.7rem;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.insp-value {
-  font-size: 0.85rem;
-  color: #f8fafc;
-  font-weight: 500;
-}
-
-.insp-value.mono {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.8rem;
-}
-
-.insp-label-table-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.insp-label-table {
-  width: 100%;
-  border-collapse: collapse;
-  border: 1px solid #334155;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.78rem;
-}
-
-.insp-label-table th,
-.insp-label-table td {
-  border: 1px solid #334155;
-  padding: 4px 6px;
-  text-align: left;
-  vertical-align: top;
-}
-
-.insp-label-table th {
-  background: #1e293b;
-  color: #cbd5e1;
-  font-weight: 600;
-}
-
-.label-row-index {
-  width: 44px;
-  color: #94a3b8;
-}
-
-.insp-label-table .label-cell {
-  max-width: 340px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.insp-units {
-  color: #94a3b8;
-  font-weight: 400;
-}
-
-.insp-badge {
-  display: inline-block;
-  padding: 1px 8px;
-  background: rgba(59, 130, 246, 0.15);
-  color: #60a5fa;
-  border-radius: 4px;
-  font-size: 0.8rem;
-}
-
-.insp-more {
-  color: #64748b;
-  font-size: 0.75rem;
-}
-
-/* Processing Timeline */
-.processing-timeline {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.timeline-item {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-}
-
-.step-number {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: #334155;
-  color: #94a3b8;
-  font-size: 0.7rem;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-
-.step-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.step-operation {
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: #f8fafc;
-}
-
-.step-params {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 4px;
-}
-
-.param-chip {
-  padding: 1px 8px;
-  background: #334155;
-  border-radius: 4px;
-  font-size: 0.7rem;
-  color: #94a3b8;
-  font-family: "JetBrains Mono", monospace;
-}
-
-.step-shapes {
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
-}
-
-.shape-badge {
-  font-size: 0.7rem;
-  color: #64748b;
-  font-family: "JetBrains Mono", monospace;
-}
-
-/* Port Summaries */
-.port-summaries {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.port-summary-card {
-  padding: 10px 14px;
-  background: #1e293b;
-  border-radius: 8px;
-  border: 1px solid #334155;
-}
-
-.port-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.port-name {
-  font-weight: 600;
-  font-size: 0.85rem;
-  color: #f8fafc;
-}
-
-.port-type-badge {
-  padding: 1px 8px;
-  background: rgba(34, 197, 94, 0.15);
-  color: #4ade80;
-  border-radius: 4px;
-  font-size: 0.7rem;
-}
-
-.port-details {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 16px;
-  font-size: 0.8rem;
-  color: #94a3b8;
-  font-family: "JetBrains Mono", monospace;
-}
-
-/* Full metadata action */
-.full-meta-action {
-  margin-bottom: 16px;
-}
-
-/* Full Metadata Dialog */
 .full-metadata-json {
   background: #0f172a;
   color: #e2e8f0;
@@ -6399,29 +3981,21 @@ onUnmounted(() => {
   margin: 0;
 }
 
-/* Responsive */
 @media (max-width: 768px) {
   .detail-header {
     flex-direction: column;
     gap: 16px;
     padding: 16px;
   }
-
   .header-actions {
     width: 100%;
     justify-content: stretch;
   }
-
   .header-actions .p-button {
     flex: 1;
   }
-
   .detail-content {
     padding: 16px;
-  }
-
-  .output-actions {
-    flex-direction: column;
   }
 }
 </style>

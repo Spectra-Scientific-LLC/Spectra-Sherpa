@@ -82,6 +82,10 @@ def export_artifacts(results: dict, workflow_name: str = "workflow") -> str:
     Handles SherpaDataset objects, numpy arrays, Plotly figures,
     scikit-learn-style model objects, and plain dicts/scalars.
 
+    Output location is controlled by the ``SPECTRA_SHERPA_EXPORT_DIR`` env var;
+    if unset, artifacts are written under ``./exports/`` in the current working
+    directory (previously written directly to cwd, which polluted repo roots).
+
     Returns the path to the created zip file.
     """
     import pickle
@@ -89,7 +93,8 @@ def export_artifacts(results: dict, workflow_name: str = "workflow") -> str:
     from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir = f"{workflow_name}_{timestamp}"
+    export_root = os.environ.get("SPECTRA_SHERPA_EXPORT_DIR", "exports")
+    out_dir = os.path.join(export_root, f"{workflow_name}_{timestamp}")
     os.makedirs(out_dir, exist_ok=True)
     print(f"\nExporting artifacts to {out_dir}/")
 
