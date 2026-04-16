@@ -83,6 +83,7 @@ def from_nddataset(ds: Any) -> SherpaDataset:
     # Extract provenance from meta
     meta = _to_plain_dict(dict(ds.meta)) if hasattr(ds, "meta") and ds.meta else {}
     provenance_raw = meta.pop("processing_history", [])
+    is_time_series_flag = bool(meta.pop("is_time_series", False))
 
     # Lift dataset-level boolean flags out of meta into top-level SherpaDataset
     # attributes so they survive the SCP round-trip across model nodes (PCA,

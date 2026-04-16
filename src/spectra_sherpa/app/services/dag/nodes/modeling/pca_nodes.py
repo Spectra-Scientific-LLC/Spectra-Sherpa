@@ -18,7 +18,7 @@ from spectra_sherpa.app.lib.sherpa_dataset import (
 from spectra_sherpa.app.services.dag.meta_helpers import (
     add_processing_step,
     copy_processing_history,
-    inherit_origin_flags,
+    inherit_origin_context,
     inherit_sample_flags,
 )
 
@@ -530,46 +530,26 @@ class PCANode(Node):
         scores_dataset = from_nddataset(scores_dataset)
         loadings_dataset = from_nddataset(loadings_dataset)
 
-        # Propagate dataset-level flags from input. PCA preserves sample
-        # ordering on the scores port, so is_time_series carries through.
-        # Loadings rows are principal components (not samples), so the
-        # flag is meaningless there — leave it at the SherpaDataset default.
-        inherit_sample_flags(input_ds, scores_dataset)
-        # Origin tags (is_spectra, spectral_technique) describe provenance,
-        # not data shape — they survive on both scores and loadings.
-        inherit_origin_flags(input_ds, scores_dataset)
-        inherit_origin_flags(input_ds, loadings_dataset)
-
-        # Fix feature axes that from_nddataset() may leave with values=None
-        # (SCP sometimes omits the component axis on PCA outputs).
+        # PCA goes through SCP datasets before returning SherpaDataset, so
+        # explicit re-attach is required after from_nddataset(). Two helpers:
+        # - inherit_sample_flags also restores sample_axis on scores (rows = samples)
+        # - inherit_origin_context restores domain/meta and feature_axis on
+        #   loadings (cols = original wavelengths) when preserve_feature_axis=True
         from spectra_sherpa.app.lib.axes import FeatureAxis
 
+        # Synthetic PC-label feature axis on scores when SCP didn't supply one.
+        # (inherit_origin_context can't help here — scores' feature axis is PCs,
+        # not the input's wavelength axis.)
         if scores_dataset.feature_axis is None or scores_dataset.feature_axis.data is None:
             scores_dataset.feature_axis = FeatureAxis(
                 values=np.arange(actual_n_components, dtype=np.float64),
                 labels=pc_labels,
                 title="Principal Component",
             )
-        # Defensively preserve sample labels on scores when SCP doesn't carry
-        # them through the transform — rows of scores ARE samples, so the
-        # user-provided sample_axis (labels, title) must survive.
-        if (
-            scores_dataset.sample_axis is None or getattr(scores_dataset.sample_axis, "values", None) is None
-        ) and getattr(input_ds, "sample_axis", None) is not None:
-            scores_dataset.sample_axis = input_ds.sample_axis
-        if loadings_dataset.feature_axis is None or loadings_dataset.feature_axis.data is None:
-            # Loadings cols = original features (wavenumbers/wavelengths). Reuse
-            # the input's feature_axis verbatim so user-edited title and units
-            # ("Wavelength" / "nm" set in Data/Explore) survive PCA. Fall back
-            # to a synthetic axis only if the input has no feature_axis at all.
-            inherited_feature_axis = getattr(input_ds, "feature_axis", None)
-            if inherited_feature_axis is not None and getattr(inherited_feature_axis, "values", None) is not None:
-                loadings_dataset.feature_axis = inherited_feature_axis
-            else:
-                loadings_dataset.feature_axis = FeatureAxis(
-                    values=np.arange(n_features, dtype=np.float64),
-                    title="Feature",
-                )
+
+        inherit_sample_flags(input_ds, scores_dataset)
+        inherit_origin_context(input_ds, scores_dataset)
+        inherit_origin_context(input_ds, loadings_dataset, preserve_feature_axis=True)
 
         # Defensive shape check — guard against future SCP API orientation changes.
         # SCP 0.8.1 returns scores=(n_samples, n_components), loadings=(n_components, n_features).

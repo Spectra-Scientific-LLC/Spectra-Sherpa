@@ -138,80 +138,88 @@ def get_processing_history(dataset: Any) -> List[Dict[str, Any]]:
 
 
 def inherit_sample_flags(source: Any, target: Any) -> None:
-    """Propagate dataset-level sample flags (e.g. is_time_series) from a source
-    SherpaDataset to a target SherpaDataset.
+    """Propagate sample-axis semantics from a source SherpaDataset to a
+    sample-preserved target.
 
-    Why: SCP NDDataset has no concept of these dataset-wide booleans. When a
-    model node round-trips through SCP (to_nddataset → fit/transform →
-    from_nddataset), the resulting SherpaDataset defaults is_time_series=False
-    even when the input was True. Transforms like PCA preserve sample order
-    and should also preserve the flag — this helper makes that explicit.
+    Copies:
+    - ``target.is_time_series`` (top-level boolean — SCP NDDataset has no
+      native concept of this, so it must be explicitly carried back across
+      every to_nddataset → SCP op → from_nddataset round-trip)
+    - ``target.sample_axis`` (full axis with labels/title) when row counts
+      match — covers cases where SCP's transform() drops sample labels
+
+    Safe to call with non-SherpaDataset arguments or 1D shapes (no-op).
+    """
+    if not isinstance(source, SherpaDataset) or not isinstance(target, SherpaDataset):
+        return
+
+    if len(source.shape) < 2 or len(target.shape) < 2:
+        return
+
+    target.is_time_series = bool(source.is_time_series)
+
+    if source.sample_axis is not None and source.shape[0] == target.shape[0]:
+        target.sample_axis = source.sample_axis
+
+
+def inherit_origin_context(source: Any, target: Any, *, preserve_feature_axis: bool = False) -> None:
+    """Propagate origin metadata that should survive a transform.
+
+    Preserves user-facing Explore-tab overrides and spectral provenance in
+    the structured places serialization actually reads from:
+    - ``target.domain.technique`` / ``data_quantity`` / ``expected_units``
+    - ``target.feature_axis`` when the output still spans the source feature
+      axis (loadings, residuals, reconstructed spectra — pass
+      ``preserve_feature_axis=True``)
+    - ``target.meta`` as a compatibility fallback for frontend consumers
+
+    Principle: every field a user can edit in the Data/Explore tab must
+    survive every transform.  Setdefault-style on meta — never overwrites
+    a value the node has already explicitly set (e.g. PCA scores keep
+    x_title="Principal Component" because they set it before this runs).
 
     Safe to call with non-SherpaDataset arguments (no-op).
     """
     if not isinstance(source, SherpaDataset) or not isinstance(target, SherpaDataset):
         return
-    target.is_time_series = bool(source.is_time_series)
+
+    if preserve_feature_axis and source.feature_axis is not None and source.shape[-1] == target.shape[-1]:
+        target.feature_axis = source.feature_axis
+
+    source_domain = source.domain
+    target_domain = target.domain.model_copy(deep=True)
+    domain_changed = False
+    for field in ("technique", "data_quantity", "expected_units"):
+        value = getattr(source_domain, field, None)
+        if value is not None and getattr(target_domain, field, None) is None:
+            setattr(target_domain, field, value)
+            domain_changed = True
+    if domain_changed:
+        target.domain = target_domain
+
+    source_meta = source.meta if isinstance(source.meta, dict) else {}
+    for key in ("is_spectra", "spectral_technique", "data_quantity"):
+        if key in source_meta and source_meta[key] is not None and key not in target.meta:
+            target.meta[key] = source_meta[key]
+
+    if preserve_feature_axis:
+        for key in ("x_title", "x_units"):
+            if key in source_meta and source_meta[key] is not None and key not in target.meta:
+                target.meta[key] = source_meta[key]
 
 
 def inherit_origin_flags(source: Any, target: Any) -> None:
-    """Propagate dataset origin tags + user-edited Explore-tab metadata
-    from a source SherpaDataset to a target SherpaDataset.
+    """Backwards-compatibility wrapper around :func:`inherit_origin_context`.
 
-    Why: transform nodes (PCA scores, PLS loadings, MCR components, etc.)
-    discard the origin context when they construct fresh outputs from SCP
-    objects. Even when the OUTPUT data is no longer raw spectra (e.g. PCA
-    scores are projections, not absorbances), the *provenance* — "this
-    came from UV-Vis spectra of NIR data" — should survive. Downstream UI
-    and AI consumers rely on these tags.
-
-    Principle: every field a user can edit in the Data/Explore tab must
-    survive every transform. Structured feature_axis already carries x_title /
-    x_units for nodes that wire it correctly — this helper covers the meta
-    dict as defense-in-depth using setdefault semantics so a node that has
-    explicitly set its own value (e.g. PCA scores override x_title to
-    "Principal Component") wins.
-
-    Copies (all setdefault — never overwrites an explicit value on target):
-    - source.meta["is_spectra"] -> target.meta["is_spectra"]
-    - source.meta["spectral_technique"] -> target.meta["spectral_technique"]
-    - source.meta["x_title"] / ["x_units"] -> target.meta (Explore-tab edits)
-    - source.meta["data_quantity"] -> target.meta (Explore-tab edit, = y_title)
-    - source.domain.technique -> target.domain.technique (if both have a domain)
-
-    Sample-order preservation is the separate concern of
-    inherit_sample_flags(); compose both for sample-axis-preserved outputs.
-
-    Safe to call with non-SherpaDataset arguments (no-op).
+    Earlier commits in this PR called this name from every model node;
+    the helper has since been merged with the broader
+    :func:`inherit_origin_context` (which also handles domain fields and
+    optional feature-axis preservation).  Existing call sites stay valid:
+    they default to ``preserve_feature_axis=False``, which is correct for
+    scores-style ports.  Loadings-style ports get the right behavior via
+    :func:`copy_processing_history` (which auto-detects shape match).
     """
-    if not isinstance(source, SherpaDataset) or not isinstance(target, SherpaDataset):
-        return
-    # Meta dict propagation. SherpaDataset.meta is a read-only property that
-    # returns a mutable view backed by .extra, so we mutate via setdefault
-    # rather than reassigning the attribute.
-    src_meta = source.meta if isinstance(source.meta, dict) else {}
-    tgt_meta = target.meta if isinstance(target.meta, dict) else None
-    if tgt_meta is not None:
-        for key in (
-            "is_spectra",
-            "spectral_technique",
-            "x_title",
-            "x_units",
-            "data_quantity",
-        ):
-            if key in src_meta and src_meta[key] is not None:
-                tgt_meta.setdefault(key, src_meta[key])
-    # Domain.technique propagation (best-effort)
-    src_domain = getattr(source, "domain", None)
-    tgt_domain = getattr(target, "domain", None)
-    if src_domain is not None and tgt_domain is not None:
-        src_tech = getattr(src_domain, "technique", None)
-        tgt_tech = getattr(tgt_domain, "technique", None)
-        if src_tech and not tgt_tech:
-            try:
-                target.domain = tgt_domain.model_copy(update={"technique": src_tech})
-            except Exception:
-                pass
+    inherit_origin_context(source, target, preserve_feature_axis=False)
 
 
 def copy_processing_history(source: Any, target: Any) -> None:
@@ -225,6 +233,10 @@ def copy_processing_history(source: Any, target: Any) -> None:
         source: Dataset to copy history from
         target: Dataset to copy history to
     """
+    if isinstance(source, SherpaDataset) and isinstance(target, SherpaDataset):
+        inherit_sample_flags(source, target)
+        inherit_origin_context(source, target, preserve_feature_axis=source.shape[-1] == target.shape[-1])
+
     history = get_processing_history(source)
     copied = [step.copy() if isinstance(step, dict) else dict(step) for step in history]
 
