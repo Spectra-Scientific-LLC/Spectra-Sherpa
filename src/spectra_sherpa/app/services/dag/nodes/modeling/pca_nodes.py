@@ -550,12 +550,26 @@ class PCANode(Node):
                 labels=pc_labels,
                 title="Principal Component",
             )
+        # Defensively preserve sample labels on scores when SCP doesn't carry
+        # them through the transform — rows of scores ARE samples, so the
+        # user-provided sample_axis (labels, title) must survive.
+        if (
+            scores_dataset.sample_axis is None or getattr(scores_dataset.sample_axis, "values", None) is None
+        ) and getattr(input_ds, "sample_axis", None) is not None:
+            scores_dataset.sample_axis = input_ds.sample_axis
         if loadings_dataset.feature_axis is None or loadings_dataset.feature_axis.data is None:
-            # Loadings rows = components, cols = features (wavenumbers)
-            loadings_dataset.feature_axis = FeatureAxis(
-                values=np.arange(n_features, dtype=np.float64),
-                title="Feature",
-            )
+            # Loadings cols = original features (wavenumbers/wavelengths). Reuse
+            # the input's feature_axis verbatim so user-edited title and units
+            # ("Wavelength" / "nm" set in Data/Explore) survive PCA. Fall back
+            # to a synthetic axis only if the input has no feature_axis at all.
+            inherited_feature_axis = getattr(input_ds, "feature_axis", None)
+            if inherited_feature_axis is not None and getattr(inherited_feature_axis, "values", None) is not None:
+                loadings_dataset.feature_axis = inherited_feature_axis
+            else:
+                loadings_dataset.feature_axis = FeatureAxis(
+                    values=np.arange(n_features, dtype=np.float64),
+                    title="Feature",
+                )
 
         # Defensive shape check — guard against future SCP API orientation changes.
         # SCP 0.8.1 returns scores=(n_samples, n_components), loadings=(n_components, n_features).

@@ -155,8 +155,8 @@ def inherit_sample_flags(source: Any, target: Any) -> None:
 
 
 def inherit_origin_flags(source: Any, target: Any) -> None:
-    """Propagate dataset origin tags (is_spectra, spectral_technique) from
-    a source SherpaDataset to a target SherpaDataset.
+    """Propagate dataset origin tags + user-edited Explore-tab metadata
+    from a source SherpaDataset to a target SherpaDataset.
 
     Why: transform nodes (PCA scores, PLS loadings, MCR components, etc.)
     discard the origin context when they construct fresh outputs from SCP
@@ -165,15 +165,21 @@ def inherit_origin_flags(source: Any, target: Any) -> None:
     came from UV-Vis spectra of NIR data" — should survive. Downstream UI
     and AI consumers rely on these tags.
 
-    Copies (in this order, all best-effort and silently skipping when missing):
+    Principle: every field a user can edit in the Data/Explore tab must
+    survive every transform. Structured feature_axis already carries x_title /
+    x_units for nodes that wire it correctly — this helper covers the meta
+    dict as defense-in-depth using setdefault semantics so a node that has
+    explicitly set its own value (e.g. PCA scores override x_title to
+    "Principal Component") wins.
+
+    Copies (all setdefault — never overwrites an explicit value on target):
     - source.meta["is_spectra"] -> target.meta["is_spectra"]
     - source.meta["spectral_technique"] -> target.meta["spectral_technique"]
+    - source.meta["x_title"] / ["x_units"] -> target.meta (Explore-tab edits)
+    - source.meta["data_quantity"] -> target.meta (Explore-tab edit, = y_title)
     - source.domain.technique -> target.domain.technique (if both have a domain)
 
-    Does NOT copy: x_title, x_units, value_units, data_quantity. Those
-    legitimately change for decomposition outputs (e.g. x_title becomes
-    "Principal Component" or "Latent Variable") and each node sets them
-    explicitly. Sample-order preservation is the separate concern of
+    Sample-order preservation is the separate concern of
     inherit_sample_flags(); compose both for sample-axis-preserved outputs.
 
     Safe to call with non-SherpaDataset arguments (no-op).
@@ -186,7 +192,13 @@ def inherit_origin_flags(source: Any, target: Any) -> None:
     src_meta = source.meta if isinstance(source.meta, dict) else {}
     tgt_meta = target.meta if isinstance(target.meta, dict) else None
     if tgt_meta is not None:
-        for key in ("is_spectra", "spectral_technique"):
+        for key in (
+            "is_spectra",
+            "spectral_technique",
+            "x_title",
+            "x_units",
+            "data_quantity",
+        ):
             if key in src_meta and src_meta[key] is not None:
                 tgt_meta.setdefault(key, src_meta[key])
     # Domain.technique propagation (best-effort)
