@@ -1205,16 +1205,28 @@ watch(() => dataStore.catalogDatasetInfo, _syncFromCatalog);
 
 // Persist changes to backend + update in-memory metadata
 async function persistMetadataOverride() {
-  // Plot labels update reactively via sdMeta reading editXTitle/editXUnits/editYTitle.
-  // Do NOT mutate dataStore.fileInfo.metadata here — that would trigger a full
-  // plot re-render (new trace objects) instead of just a layout label change.
+  // Plot labels update reactively via sdMeta reading editXTitle/editXUnits/editYTitle
+  // — those refs feed sdMeta directly, so the plot stays fast without us
+  // touching dataStore.fileInfo.metadata as a whole.
+  //
+  // We DO mutate the specific override fields (x_title, x_units, data_quantity,
+  // is_time_series) on the in-memory store after a successful PATCH so that
+  // downstream consumers — Generate Data Story, workflow trial requests,
+  // Detailed View — pick up the user's edits without a page refresh. Vue
+  // tracks per-property reactivity, and these specific fields are not read
+  // by sdMeta or previewPlotData, so the plot doesn't re-render.
 
   // Build request payload
+  const xTitle = editXTitle.value || null;
+  const xUnits = editXUnits.value || null;
+  const yTitle = editYTitle.value || null;
+  const isTimeSeries = isTimeSeriesToggle.value;
+
   const body: Record<string, unknown> = {
-    x_title: editXTitle.value || null,
-    x_units: editXUnits.value || null,
-    y_title: editYTitle.value || null,
-    is_time_series: isTimeSeriesToggle.value,
+    x_title: xTitle,
+    x_units: xUnits,
+    y_title: yTitle,
+    is_time_series: isTimeSeries,
   };
   const catInfo = dataStore.catalogDatasetInfo;
   if (catInfo?.source && catInfo?.name) {
@@ -1231,6 +1243,32 @@ async function persistMetadataOverride() {
 
   try {
     await api.patch("/builder/file-metadata", body);
+
+    // Reflect the persisted values in the store so the same-session reads see
+    // them. Without this, "Generate Data Story" and the Detail View report
+    // stale values (the ones loaded before the user edited).
+    const fi = dataStore.fileInfo;
+    if (fi && typeof fi === "object") {
+      const fiAny = fi as Record<string, unknown> & { metadata?: Record<string, unknown> };
+      if (fiAny.metadata && typeof fiAny.metadata === "object") {
+        fiAny.metadata.x_title = xTitle;
+        fiAny.metadata.x_units = xUnits;
+        fiAny.metadata.data_quantity = yTitle;
+        fiAny.metadata.is_time_series = isTimeSeries;
+      }
+      // Some readers also check top-level fields on fileInfo.
+      fiAny.x_title = xTitle;
+      fiAny.x_units = xUnits;
+      fiAny.data_quantity = yTitle;
+      fiAny.is_time_series = isTimeSeries;
+    }
+    if (catInfo) {
+      const ciAny = catInfo as Record<string, unknown>;
+      ciAny.x_title = xTitle;
+      ciAny.x_units = xUnits;
+      ciAny.data_quantity = yTitle;
+      ciAny.is_time_series = isTimeSeries;
+    }
   } catch (err) {
     console.warn("Failed to persist metadata override", err);
   }
