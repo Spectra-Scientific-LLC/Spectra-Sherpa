@@ -414,23 +414,37 @@ export const useLlmStore = defineStore("llm", () => {
       return;
     }
 
-    const response = await api.get("/llm/conversations", {
-      params: { project_id: projectId },
-    });
-    conversations.value = (response.data as Array<Record<string, unknown>>).map((item) => ({
-      id: String(item.id),
-      title: String(item.title || "Untitled conversation"),
-      updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
-    }));
-    // Drop stale conversation id but keep messages.value — a common
-    // post-stream race has the server returning a list that doesn't yet
-    // include a just-created conversation, and wiping messages here would
-    // make the user's just-received response disappear. See sherpa.ts
-    // refreshConversations for the parallel fix.
-    if (
-      currentConversationId.value
-      && !conversations.value.some((item) => item.id === currentConversationId.value)
-    ) {
+    // Degrade gracefully: if the Sherpa conversations backend is
+    // unreachable or unconfigured, don't let an unhandled rejection
+    // crash the page. Backend already returns [] on soft misconfig;
+    // this guards against transient 5xx and network errors too.
+    try {
+      const response = await api.get("/llm/conversations", {
+        params: { project_id: projectId },
+      });
+      conversations.value = (response.data as Array<Record<string, unknown>>).map((item) => ({
+        id: String(item.id),
+        title: String(item.title || "Untitled conversation"),
+        updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
+      }));
+      // Drop stale conversation id but keep messages.value — a common
+      // post-stream race has the server returning a list that doesn't yet
+      // include a just-created conversation, and wiping messages here would
+      // make the user's just-received response disappear. See sherpa.ts
+      // refreshConversations for the parallel fix.
+      if (
+        currentConversationId.value
+        && !conversations.value.some((item) => item.id === currentConversationId.value)
+      ) {
+        currentConversationId.value = null;
+      }
+    } catch (err) {
+      // Clear cached list + active id on genuine failure so a subsequent
+      // sendMessage doesn't reuse a stale conversation_id, but keep
+      // messages.value so in-flight chat content the user can see isn't
+      // wiped under them during a transient 5xx or project switch race.
+      console.warn("[llm] refreshConversations failed — treating as empty:", err);
+      conversations.value = [];
       currentConversationId.value = null;
     }
   };
