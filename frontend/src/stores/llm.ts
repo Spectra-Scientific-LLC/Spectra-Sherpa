@@ -414,18 +414,34 @@ export const useLlmStore = defineStore("llm", () => {
       return;
     }
 
-    const response = await api.get("/llm/conversations", {
-      params: { project_id: projectId },
-    });
-    conversations.value = (response.data as Array<Record<string, unknown>>).map((item) => ({
-      id: String(item.id),
-      title: String(item.title || "Untitled conversation"),
-      updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
-    }));
-    if (
-      currentConversationId.value
-      && !conversations.value.some((item) => item.id === currentConversationId.value)
-    ) {
+    // Degrade gracefully: if the Sherpa conversations backend is unreachable
+    // or unconfigured, don't let an unhandled rejection crash the page.
+    // Backend already returns [] on soft misconfig; this guards against
+    // transient 5xx and network errors too.
+    try {
+      const response = await api.get("/llm/conversations", {
+        params: { project_id: projectId },
+      });
+      conversations.value = (response.data as Array<Record<string, unknown>>).map((item) => ({
+        id: String(item.id),
+        title: String(item.title || "Untitled conversation"),
+        updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
+      }));
+      if (
+        currentConversationId.value
+        && !conversations.value.some((item) => item.id === currentConversationId.value)
+      ) {
+        currentConversationId.value = null;
+        messages.value = [];
+      }
+    } catch (err) {
+      // Mirror the empty-projectId path: clear all three pieces of conversation
+      // state, not just the list. Otherwise a transient 5xx (or a project switch
+      // that races with a failing fetch) leaves the UI in an "empty list,
+      // active old thread" state and can reuse a stale conversation_id on
+      // subsequent sendMessage calls.
+      console.warn("[llm] refreshConversations failed — treating as empty:", err);
+      conversations.value = [];
       currentConversationId.value = null;
       messages.value = [];
     }
