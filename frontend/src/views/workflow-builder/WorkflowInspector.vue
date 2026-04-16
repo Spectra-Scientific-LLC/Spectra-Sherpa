@@ -1171,7 +1171,11 @@
     :modal="true"
     class="metadata-dialog"
   >
-    <div v-if="nodeOutput?.metadata" class="metadata-modal-content">
+    <div v-if="!nodeOutput" class="metadata-modal-empty">
+      <i class="pi pi-info-circle"></i>
+      <span>No output available for this node. Run the workflow first.</span>
+    </div>
+    <div v-else class="metadata-modal-content">
       <!-- Instrument Metadata Section (if available) -->
       <div v-if="outputMetadata.instrument_metadata || outputMetadata.acquisition_params" class="metadata-section">
         <h4 class="section-title">
@@ -1244,7 +1248,21 @@
           <i class="pi pi-code"></i>
           Raw Metadata (JSON)
         </h4>
-        <pre class="metadata-json">{{ JSON.stringify(nodeOutput.metadata, null, 2) }}</pre>
+        <pre class="metadata-json">{{ JSON.stringify(nodeOutput.metadata ?? {}, null, 2) }}</pre>
+      </div>
+
+      <!-- Per-port Metadata Section (for multi-port outputs like PCA) -->
+      <div v-if="nodeOutput.ports && Object.keys(nodeOutput.ports).length > 0" class="metadata-section">
+        <h4 class="section-title">
+          <i class="pi pi-sitemap"></i>
+          Output Ports
+        </h4>
+        <div v-for="(port, portName) in nodeOutput.ports" :key="String(portName)" class="port-metadata-block">
+          <h5 class="port-metadata-title">
+            {{ portName }}<span v-if="portName === nodeOutput.primary_port" class="primary-port-tag"> (primary)</span>
+          </h5>
+          <pre class="metadata-json">{{ JSON.stringify(port.metadata ?? {}, null, 2) }}</pre>
+        </div>
       </div>
     </div>
   </Dialog>
@@ -3316,15 +3334,6 @@ onUnmounted(() => {
   font-weight: 500;
 }
 
-/* Metadata - compact */
-.metadata-section {
-  display: none;
-}
-
-.metadata-json {
-  display: none;
-}
-
 /* PrimeVue component overrides for dark theme */
 :deep(.p-dropdown),
 :deep(.p-inputtext),
@@ -4220,6 +4229,42 @@ onUnmounted(() => {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.metadata-modal-empty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 24px;
+  color: #94a3b8;
+  font-size: 0.9rem;
+}
+
+.metadata-modal-empty i {
+  color: #3b82f6;
+  font-size: 1.2rem;
+}
+
+.port-metadata-block {
+  margin-top: 12px;
+}
+
+.port-metadata-block:first-child {
+  margin-top: 0;
+}
+
+.port-metadata-title {
+  margin: 0 0 6px 0;
+  color: #cbd5e1;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: ui-monospace, monospace;
+}
+
+.primary-port-tag {
+  color: #3b82f6;
+  font-weight: 400;
+  font-size: 0.75rem;
 }
 
 /* Metadata dialog styling */
