@@ -360,11 +360,15 @@ export const useSherpaStore = defineStore("sherpa", () => {
     }
 
     if (isServerBacked.value) {
-      // Async background refresh to pull server-canonical title/timestamp.
-      // The optimistic entry above stays visible until this resolves; if
-      // the refresh fails, the optimistic entry remains (failure path in
-      // refreshConversations() preserves state).
-      void refreshConversations(projectStore.currentProjectId);
+      // Don't fire refreshConversations here. The server list endpoint
+      // proxies to spectrasherpa, which may not have the conversation yet
+      // (or ever — chat goes through the local backend, not through the
+      // proxy). Replacing conversations.value with the server's empty/stale
+      // list destroys the optimistic entries for all prior topics and makes
+      // them disappear from Topics. The optimistic insert above is
+      // sufficient for the sidebar; refreshConversations will run on page
+      // load and project switch (via the ChatPanel watcher) when we
+      // genuinely need to sync with the server.
       return;
     }
 

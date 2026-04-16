@@ -406,7 +406,10 @@ export const useLlmStore = defineStore("llm", () => {
     }
 
     if (isServerBacked.value) {
-      void refreshConversations();
+      // Don't fire refreshConversations here — see sherpa.ts for full
+      // rationale. The server list may not contain locally-created
+      // conversations and replacing conversations.value destroys all
+      // prior optimistic sidebar entries.
       return;
     }
     persistConversations(conversations.value);
