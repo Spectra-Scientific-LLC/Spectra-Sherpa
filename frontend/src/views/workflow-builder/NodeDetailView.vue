@@ -541,9 +541,34 @@ const handleSaveAndExit = () => {
     life: 1500,
   });
 
-  // Close after brief delay
+  // Attempt to close the tab. window.close() is advisory — browsers silently
+  // ignore it if the tab is not script-closable (e.g. opener navigated away,
+  // direct URL load, some reverse-proxy configurations). If it doesn't close
+  // within 400ms, focus the opener and show a persistent "you can close now"
+  // hint so the params aren't just broadcast-and-abandoned.
   setTimeout(() => {
-    window.close();
+    try {
+      window.close();
+    } catch {
+      /* no-op — browser may throw in strict modes */
+    }
+    setTimeout(() => {
+      if (!window.closed) {
+        if (window.opener && !window.opener.closed) {
+          try {
+            window.opener.focus();
+          } catch {
+            /* cross-origin or stale opener — ignore */
+          }
+        }
+        toast.add({
+          severity: "info",
+          summary: "Settings applied",
+          detail: "You may close this tab — changes are live in the workflow.",
+          life: 6000,
+        });
+      }
+    }, 400);
   }, 500);
 };
 
