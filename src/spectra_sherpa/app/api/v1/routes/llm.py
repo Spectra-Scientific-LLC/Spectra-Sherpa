@@ -163,24 +163,33 @@ async def get_conversation(
     project_id: int | None = None,
     current_user: User = Depends(get_current_user),
 ) -> LLMConversation:
+    user_id = current_user.id if current_user.id else 0
+
     if _should_proxy_server_conversations():
         if project_id is None:
             raise HTTPException(status_code=400, detail="project_id is required for server-backed conversations")
-        response = await _proxy_server_request(
-            "GET",
-            f"/conversations/{conversation_id}",
-            params={"local_user_id": current_user.id, "project_id": project_id},
-        )
-        data = response.json()
-        return LLMConversation(
-            conversation_id=conversation_id,
-            messages=[
-                LLMMessage(role=message["role"], content=message["content"]) for message in data.get("messages", [])
-            ],
-        )
+        try:
+            response = await _proxy_server_request(
+                "GET",
+                f"/conversations/{conversation_id}",
+                params={"local_user_id": current_user.id, "project_id": project_id},
+            )
+            data = response.json()
+            return LLMConversation(
+                conversation_id=conversation_id,
+                messages=[
+                    LLMMessage(role=message["role"], content=message["content"]) for message in data.get("messages", [])
+                ],
+            )
+        except HTTPException as exc:
+            if exc.status_code == 404:
+                # Proxy 404 — conversation may exist in local store only
+                # (WebSocket chat creates conversations locally, not on the
+                # upstream spectrasherpa service). Fall through to local lookup.
+                pass
+            else:
+                raise
 
-    # Pass user_id to enforce ownership check
-    user_id = current_user.id if current_user.id else 0
     messages = conversation_store.get(conversation_id, user_id=user_id)
     if messages is None:
         raise HTTPException(status_code=404, detail="Conversation not found")

@@ -376,6 +376,10 @@ export const useSherpaStore = defineStore("sherpa", () => {
   }
 
   async function loadConversation(conversationId: string): Promise<void> {
+    if (conversationId === currentConversationId.value && messages.value.length > 0) {
+      return;
+    }
+
     const params = isServerBacked.value
       ? { project_id: projectStore.currentProjectId }
       : undefined;
