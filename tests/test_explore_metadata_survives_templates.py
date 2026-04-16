@@ -178,9 +178,7 @@ def _input_row_count(executor: DAGExecutor) -> int:
     return 0
 
 
-def _iter_terminal_datasets(
-    executor: DAGExecutor, node_types: dict[str, str]
-) -> list[tuple[str, str, SherpaDataset]]:
+def _iter_terminal_datasets(executor: DAGExecutor, node_types: dict[str, str]) -> list[tuple[str, str, SherpaDataset]]:
     """Yield (node_id, port_name, dataset) for every SherpaDataset produced
     by ANY non-output node in the DAG (not just exit nodes).
 
@@ -243,18 +241,16 @@ async def test_baseline_data_source_receives_overrides(monkeypatch: pytest.Monke
     assert fa.title == EXPECTED_X_TITLE, f"baseline: feature_axis.title = {fa.title!r}, expected {EXPECTED_X_TITLE!r}"
     assert fa.units == EXPECTED_X_UNITS, f"baseline: feature_axis.units = {fa.units!r}, expected {EXPECTED_X_UNITS!r}"
 
-    assert dataset.meta.get("x_title") == EXPECTED_X_TITLE, (
-        f"baseline: meta['x_title'] = {dataset.meta.get('x_title')!r}"
-    )
-    assert dataset.meta.get("x_units") == EXPECTED_X_UNITS, (
-        f"baseline: meta['x_units'] = {dataset.meta.get('x_units')!r}"
-    )
-    assert dataset.meta.get("data_quantity") == EXPECTED_Y_TITLE, (
-        f"baseline: meta['data_quantity'] = {dataset.meta.get('data_quantity')!r}"
-    )
-    assert dataset.is_time_series is EXPECTED_IS_TIME_SERIES, (
-        f"baseline: is_time_series = {dataset.is_time_series!r}"
-    )
+    assert (
+        dataset.meta.get("x_title") == EXPECTED_X_TITLE
+    ), f"baseline: meta['x_title'] = {dataset.meta.get('x_title')!r}"
+    assert (
+        dataset.meta.get("x_units") == EXPECTED_X_UNITS
+    ), f"baseline: meta['x_units'] = {dataset.meta.get('x_units')!r}"
+    assert (
+        dataset.meta.get("data_quantity") == EXPECTED_Y_TITLE
+    ), f"baseline: meta['data_quantity'] = {dataset.meta.get('data_quantity')!r}"
+    assert dataset.is_time_series is EXPECTED_IS_TIME_SERIES, f"baseline: is_time_series = {dataset.is_time_series!r}"
 
     # The corn_m5 catalog entry is NIR; domain.technique should reflect that.
     assert dataset.domain.technique, "baseline: domain.technique should be set for corn_m5 (NIR)"
@@ -269,16 +265,12 @@ async def test_baseline_data_source_receives_overrides(monkeypatch: pytest.Monke
         pytest.param(
             slug,
             override,
-            marks=(
-                [pytest.mark.skipif(not HAS_SCP, reason="requires SCP")] if requires_scp else []
-            ),
+            marks=([pytest.mark.skipif(not HAS_SCP, reason="requires SCP")] if requires_scp else []),
         )
         for slug, requires_scp, override in TEMPLATES
     ],
 )
-async def test_explore_metadata_survives_template(
-    slug: str, override: dict, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_explore_metadata_survives_template(slug: str, override: dict, monkeypatch: pytest.MonkeyPatch) -> None:
     _install_overrides_patch(monkeypatch)
     td = _load_template(slug)
     executor, node_types = _build_executor(td, {"data_1": override})
@@ -311,18 +303,18 @@ async def test_explore_metadata_survives_template(
         # the feature axis (e.g. PCA loadings → 'Principal Component').
         if not _is_node_overridden_x_title(fa_title):
             assert fa is not None, f"{ctx}: feature_axis missing (expected title={EXPECTED_X_TITLE!r})"
-            assert fa.title == EXPECTED_X_TITLE, (
-                f"{ctx}: feature_axis.title = {fa.title!r} (expected {EXPECTED_X_TITLE!r})"
-            )
-            assert fa.units == EXPECTED_X_UNITS, (
-                f"{ctx}: feature_axis.units = {fa.units!r} (expected {EXPECTED_X_UNITS!r})"
-            )
-            assert ds.meta.get("x_title") == EXPECTED_X_TITLE, (
-                f"{ctx}: meta['x_title'] = {ds.meta.get('x_title')!r} (expected {EXPECTED_X_TITLE!r})"
-            )
-            assert ds.meta.get("x_units") == EXPECTED_X_UNITS, (
-                f"{ctx}: meta['x_units'] = {ds.meta.get('x_units')!r} (expected {EXPECTED_X_UNITS!r})"
-            )
+            assert (
+                fa.title == EXPECTED_X_TITLE
+            ), f"{ctx}: feature_axis.title = {fa.title!r} (expected {EXPECTED_X_TITLE!r})"
+            assert (
+                fa.units == EXPECTED_X_UNITS
+            ), f"{ctx}: feature_axis.units = {fa.units!r} (expected {EXPECTED_X_UNITS!r})"
+            assert (
+                ds.meta.get("x_title") == EXPECTED_X_TITLE
+            ), f"{ctx}: meta['x_title'] = {ds.meta.get('x_title')!r} (expected {EXPECTED_X_TITLE!r})"
+            assert (
+                ds.meta.get("x_units") == EXPECTED_X_UNITS
+            ), f"{ctx}: meta['x_units'] = {ds.meta.get('x_units')!r} (expected {EXPECTED_X_UNITS!r})"
 
         # is_time_series is only meaningful on ports whose rows are still
         # samples (row count == input row count).  Loadings/pure spectra/etc.
@@ -333,17 +325,14 @@ async def test_explore_metadata_survives_template(
             port_rows = -1
         if port_rows == input_rows:
             assert ds.is_time_series is True, (
-                f"{ctx}: is_time_series = {ds.is_time_series!r} "
-                f"(rows preserved at {port_rows}, expected True)"
+                f"{ctx}: is_time_series = {ds.is_time_series!r} " f"(rows preserved at {port_rows}, expected True)"
             )
 
         # data_quantity (y_title) is a soft-assert: many nodes legitimately
         # rewrite it (e.g. scores are dimensionless), but any port that
         # preserves the sample axis should also preserve data_quantity.
         if port_rows == input_rows:
-            dq = ds.meta.get("data_quantity") or (
-                ds.domain.data_quantity if ds.domain is not None else None
-            )
+            dq = ds.meta.get("data_quantity") or (ds.domain.data_quantity if ds.domain is not None else None)
             # Permit nodes to downgrade y_title to a different scientific
             # label (e.g. "Intensity") but flag silent drops to empty/None.
             assert dq, f"{ctx}: data_quantity dropped to {dq!r} on a sample-axis-preserving port"
