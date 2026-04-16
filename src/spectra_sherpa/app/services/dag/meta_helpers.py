@@ -137,6 +137,23 @@ def get_processing_history(dataset: Any) -> List[Dict[str, Any]]:
     return cast(List[Dict[str, Any]], dataset.meta.get("processing_history", []))
 
 
+def inherit_sample_flags(source: Any, target: Any) -> None:
+    """Propagate dataset-level sample flags (e.g. is_time_series) from a source
+    SherpaDataset to a target SherpaDataset.
+
+    Why: SCP NDDataset has no concept of these dataset-wide booleans. When a
+    model node round-trips through SCP (to_nddataset → fit/transform →
+    from_nddataset), the resulting SherpaDataset defaults is_time_series=False
+    even when the input was True. Transforms like PCA preserve sample order
+    and should also preserve the flag — this helper makes that explicit.
+
+    Safe to call with non-SherpaDataset arguments (no-op).
+    """
+    if not isinstance(source, SherpaDataset) or not isinstance(target, SherpaDataset):
+        return
+    target.is_time_series = bool(source.is_time_series)
+
+
 def copy_processing_history(source: Any, target: Any) -> None:
     """
     Copy processing history from source to target dataset.

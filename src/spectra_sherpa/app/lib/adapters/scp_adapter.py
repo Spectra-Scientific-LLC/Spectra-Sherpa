@@ -84,6 +84,14 @@ def from_nddataset(ds: Any) -> SherpaDataset:
     meta = _to_plain_dict(dict(ds.meta)) if hasattr(ds, "meta") and ds.meta else {}
     provenance_raw = meta.pop("processing_history", [])
 
+    # Lift dataset-level boolean flags out of meta into top-level SherpaDataset
+    # attributes so they survive the SCP round-trip across model nodes (PCA,
+    # MCR, ICA, NMF, etc.). Without this, is_time_series=True on the input
+    # silently becomes False on every transform output because the SCP
+    # NDDataset has no concept of these flags and the resulting SherpaDataset
+    # constructor defaults them to False.
+    is_time_series_flag = bool(meta.pop("is_time_series", False))
+
     # Build extra from remaining meta
     extra = {}
     for k, v in meta.items():
@@ -102,6 +110,7 @@ def from_nddataset(ds: Any) -> SherpaDataset:
         title=_extract_title(ds),
         units=str(ds.units) if hasattr(ds, "units") and ds.units else None,
         extra=extra if extra else None,
+        is_time_series=is_time_series_flag,
     )
 
 
@@ -146,6 +155,10 @@ def to_nddataset(sherpa_ds: SherpaDataset) -> Any:
     # Pack provenance + extra into meta
     ds.meta = {}
     ds.meta["processing_history"] = sherpa_ds.provenance.to_list()
+    # Preserve dataset-level flags through the SCP round-trip (see the
+    # symmetric restore in from_nddataset). SCP NDDataset has no native
+    # is_time_series concept, so we stash it in meta.
+    ds.meta["is_time_series"] = bool(sherpa_ds.is_time_series)
     for k, v in sherpa_ds.extra.items():
         if k.startswith("scp."):
             ds.meta[k[4:]] = v  # strip "scp." prefix

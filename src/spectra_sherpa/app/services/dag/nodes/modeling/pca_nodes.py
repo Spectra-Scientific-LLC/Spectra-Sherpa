@@ -15,7 +15,11 @@ import numpy as np
 from spectra_sherpa.app.lib.sherpa_dataset import (
     EvaluationResult,
 )
-from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
+from spectra_sherpa.app.services.dag.meta_helpers import (
+    add_processing_step,
+    copy_processing_history,
+    inherit_sample_flags,
+)
 
 from ...io_contracts import (
     attach_evaluation,
@@ -524,6 +528,12 @@ class PCANode(Node):
         # Convert NDDataset outputs to SherpaDataset for DAG uniformity
         scores_dataset = from_nddataset(scores_dataset)
         loadings_dataset = from_nddataset(loadings_dataset)
+
+        # Propagate dataset-level flags from input. PCA preserves sample
+        # ordering on the scores port, so is_time_series carries through.
+        # Loadings rows are principal components (not samples), so the
+        # flag is meaningless there — leave it at the SherpaDataset default.
+        inherit_sample_flags(input_ds, scores_dataset)
 
         # Fix feature axes that from_nddataset() may leave with values=None
         # (SCP sometimes omits the component axis on PCA outputs).
