@@ -490,13 +490,13 @@ export const useLlmStore = defineStore("llm", () => {
         }
         lastConversationProjectId = projectId;
       } else if (status === 404) {
-        // Same-project 404 — most often an eventual-consistency race
-        // between POST /chat and GET /conversation/{id}. Preserve state
-        // so the freshly-received answer doesn't vanish mid-render.
+        // Same-project 404: preserve state + restore sidebar entry.
         console.warn(
-          "[llm] getConversation probe 404 on same project — likely eventual consistency; preserving state:",
+          "[llm] getConversation probe 404 on same project — preserving state + sidebar entry:",
           { activeId, projectId },
         );
+        ensureOptimisticSidebarEntry(activeId);
+        lastConversationProjectId = projectId;
       } else {
         console.warn(
           "[llm] getConversation probe failed — keeping active thread intact:",

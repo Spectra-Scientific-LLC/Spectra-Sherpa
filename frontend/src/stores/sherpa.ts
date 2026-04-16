@@ -299,19 +299,17 @@ export const useSherpaStore = defineStore("sherpa", () => {
         }
         lastConversationProjectId = projectId;
       } else if (status === 404) {
-        // Same-project 404 is ambiguous and often transient:
-        // eventual consistency between POST /chat and GET
-        // /conversation/{id} on the upstream service (the id was just
-        // minted, persistence still in flight) shows up here as a 404
-        // on the very refresh triggered by updateConversationSummary().
-        // Wiping messages.value under that race makes the just-received
-        // answer vanish from the chat pane mid-render — a regression
-        // we hit in staging. Preserve state; if the conversation really
-        // is gone, the user's next send will surface a clean error.
+        // Same-project 404: either eventual consistency (upstream hasn't
+        // persisted the new id yet) or the conversation only exists in the
+        // local backend conversation_store and was never proxied to the
+        // upstream spectrasherpa service. Either way, preserve the active
+        // thread AND restore its sidebar entry so Topics keeps showing it.
         console.warn(
-          "[sherpa] getConversation probe 404 on same project — likely eventual consistency; preserving state:",
+          "[sherpa] getConversation probe 404 on same project — preserving state + sidebar entry:",
           { activeId, projectId },
         );
+        ensureOptimisticSidebarEntry(activeId);
+        lastConversationProjectId = projectId;
       } else {
         // 5xx / network on probe. Ambiguous — preserve state.
         console.warn(
