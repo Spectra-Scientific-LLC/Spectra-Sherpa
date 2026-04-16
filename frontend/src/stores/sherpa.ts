@@ -212,12 +212,24 @@ export const useSherpaStore = defineStore("sherpa", () => {
       updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
     }));
 
+    // If the active conversation isn't in the refreshed list, the current
+    // thread is stale (e.g. the user deleted it elsewhere). BUT: this branch
+    // is also hit in a post-stream race where updateConversationSummary()
+    // fires refreshConversations() immediately after a new conversation is
+    // created and the server's list hasn't yet been updated — wiping
+    // messages.value here made the just-received response vanish even
+    // though the server had delivered it.
+    //
+    // Resolution: drop the current conversation id (so the next user send
+    // starts fresh), but KEEP messages.value so the user can still read
+    // the response they just received. If the conversation was genuinely
+    // deleted, the next interaction will replace these messages; if the
+    // race was harmless, nothing was lost.
     if (
       currentConversationId.value
       && !conversations.value.some((item) => item.id === currentConversationId.value)
     ) {
       currentConversationId.value = null;
-      messages.value = [];
     }
   }
 
