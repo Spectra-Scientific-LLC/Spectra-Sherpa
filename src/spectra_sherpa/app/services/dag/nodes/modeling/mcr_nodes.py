@@ -462,6 +462,18 @@ class MCRNode(Node):
                 except Exception:
                     pass
 
+        quality_summary: dict = {
+            "n_components": int(n_components),
+            "method": "MCR-ALS",
+        }
+        if "n_iter" in diagnostics:
+            quality_summary["n_iter"] = int(diagnostics["n_iter"])
+        if "lof_percent" in diagnostics:
+            quality_summary["lof_percent"] = float(diagnostics["lof_percent"])
+        if "residual_rms" in diagnostics:
+            quality_summary["residual_rms"] = float(diagnostics["residual_rms"])
+        C_dataset.meta.update({"quality_summary": quality_summary})
+
         return NodeResult(
             outputs={
                 "default": C_dataset,  # SherpaDataset: concentration profiles (n_samples, n_components)

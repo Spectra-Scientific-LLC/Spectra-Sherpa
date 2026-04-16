@@ -518,6 +518,10 @@ class PeakFindingNode(Node):
                     "technique": technique,
                     "x_title": x_title,
                     "x_units": x_units,
+                    "quality_summary": {
+                        "n_peaks": int(total_peaks),
+                        "n_consensus_peaks": int(len(consensus_rows)),
+                    },
                 },
             },
             "spectrum": all_spectra,

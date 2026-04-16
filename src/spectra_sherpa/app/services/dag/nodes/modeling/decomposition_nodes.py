@@ -349,12 +349,16 @@ class NMFNode(Node):
         )
 
         # Store only scientific metadata that coordinates can't carry
+        nmf_quality_summary: dict = {"n_components": int(n_components)}
+        if reconstruction_err is not None:
+            nmf_quality_summary["reconstruction_err"] = float(reconstruction_err)
         W_dataset.meta.update(
             {
                 "type": "NMF",
                 "n_components": n_components,
                 "label_categories": label_categories,
                 "reconstruction_error": reconstruction_err,
+                "quality_summary": nmf_quality_summary,
             }
         )
 
@@ -735,6 +739,11 @@ class FastICANode(Node):
                 "n_components": n_components,
                 "label_categories": label_categories,
                 "species_names": species_names,
+                "quality_summary": {
+                    "n_components": int(n_components),
+                    "algorithm": str(algorithm),
+                    "fun": str(fun),
+                },
             }
         )
 

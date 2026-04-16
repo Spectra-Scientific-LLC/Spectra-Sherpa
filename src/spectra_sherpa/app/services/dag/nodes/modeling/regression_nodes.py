@@ -354,6 +354,12 @@ class PCRNode(Node):
                 "target_names": target_names,
                 "r2_per_target": [float(r2)],
                 "rmse_per_target": [rmse],
+                "quality_summary": {
+                    "n_components": int(n_components),
+                    "r2": float(r2),
+                    "rmse": float(rmse),
+                    "explained_variance_ratio": evr.tolist(),
+                },
             }
         )
         attach_evaluation(
@@ -453,6 +459,12 @@ def _svr_post_fit(model, X_data, y_array, X_ds, params, node_id):
             "target_names": target_names,
             "r2_per_target": [r2],
             "rmse_per_target": [rmse],
+            "quality_summary": {
+                "r2": float(r2) if r2 is not None else None,
+                "rmse": float(rmse) if rmse is not None else None,
+                "kernel": str(params.get("kernel", "rbf")),
+                "C": float(params.get("C", 1.0)),
+            },
         },
     }
 

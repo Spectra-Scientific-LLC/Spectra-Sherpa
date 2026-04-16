@@ -259,6 +259,11 @@ class HCANode(Node):
                     "sample_labels": sample_labels,
                     "label_categories": label_categories,
                     "source_labels": source_labels,
+                    "quality_summary": {
+                        "n_clusters": int(n_clusters),
+                        "linkage": str(linkage_method),
+                        "metric": str(metric),
+                    },
                 },
             },
             diagnostics={
@@ -619,6 +624,11 @@ class KMeansNode(Node):
                     "sample_labels": sample_labels,
                     "label_categories": label_categories,
                     "source_labels": source_labels,
+                    "quality_summary": {
+                        "n_clusters": int(n_clusters),
+                        "silhouette_score": float(sil_score) if sil_score is not None else None,
+                        "inertia": float(model.inertia_),
+                    },
                 },
             },
             diagnostics={

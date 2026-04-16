@@ -514,6 +514,12 @@ class SIMCANode(Node):
                     "T2_limits": {str(k): float(v) for k, v in T2_limits.items()},
                     "Q_limits": {str(k): float(v) for k, v in Q_limits.items()},
                 },
+                "quality_summary": {
+                    "accuracy": float(train_accuracy),
+                    "n_components": int(n_components),
+                    "n_classes": int(len(classes)),
+                    "confidence_level": float(confidence_level),
+                },
             }
         )
 

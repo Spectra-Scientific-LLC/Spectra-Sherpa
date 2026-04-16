@@ -345,6 +345,9 @@ class SIMPLISMANode(Node):
                 "n_components": n_components,
                 "label_categories": label_categories,
                 "species_names": species_names,
+                "quality_summary": {
+                    "n_components": int(n_components),
+                },
             }
         )
 

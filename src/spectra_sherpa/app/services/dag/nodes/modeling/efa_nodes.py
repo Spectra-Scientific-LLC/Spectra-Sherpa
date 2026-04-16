@@ -238,6 +238,9 @@ class EFANode(Node):
                 {
                     "type": "EFA",
                     "n_components": n_components,
+                    "quality_summary": {
+                        "n_components": int(n_components),
+                    },
                 }
             )
 

@@ -553,6 +553,15 @@ class PLSDANode(Node):
                 "vip_scores": vip_scores.tolist(),
                 "vip_error": vip_error,
                 "plot_error": plot_error,
+                "quality_summary": {
+                    "accuracy": float(cv_accuracy),
+                    "n_components": int(n_components),
+                    "n_classes": int(len(classes)),
+                    "cv_method": f"k-fold (k={cv_folds})",
+                    "f1": float(cv_f1_macro),
+                    "train_accuracy": float(train_accuracy),
+                    "balanced_accuracy": float(cv_balanced_accuracy),
+                },
             }
         )
 

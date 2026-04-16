@@ -385,6 +385,12 @@ class KNNNode(Node):
                 "y_pred": y_pred_train.tolist(),
                 "y_pred_cv": y_pred_cv.tolist(),
                 "optimal_k": k_tuning_results.get("best_k") if k_tuning_results else None,
+                "quality_summary": {
+                    "train_accuracy": float(train_accuracy),
+                    "cv_accuracy": float(cv_accuracy),
+                    "n_neighbors": int(n_neighbors),
+                    "metric": str(metric),
+                },
             }
         )
 
