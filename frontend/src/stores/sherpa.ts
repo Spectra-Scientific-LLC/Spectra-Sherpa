@@ -203,53 +203,97 @@ export const useSherpaStore = defineStore("sherpa", () => {
       return;
     }
 
-    const response = await api.get("/llm/conversations", {
-      params: { project_id: projectId },
-    });
-    conversations.value = (response.data as Array<Record<string, unknown>>).map((item) => ({
-      id: String(item.id),
-      title: String(item.title || "Untitled conversation"),
-      updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
-    }));
+    // Failure modes we must survive without corrupting user state:
+    //   1. Transient 5xx / network error on /llm/conversations
+    //      → leave ALL state untouched. Next refresh retries.
+    //   2. List lookup succeeds but the active conversation_id isn't in
+    //      the list. Two sub-cases, distinguished by a follow-up
+    //      GET /llm/conversation/{id}:
+    //        - 2xx: id is valid, list just hasn't caught up (eventual
+    //          consistency). Keep everything.
+    //        - 404: conversation was genuinely deleted. Clear id + messages.
+    //        - other 5xx / network: leave state untouched, next refresh retries.
+    let listResponse;
+    try {
+      listResponse = await api.get("/llm/conversations", {
+        params: { project_id: projectId },
+      });
+    } catch (err) {
+      console.warn(
+        "[sherpa] refreshConversations list fetch failed — keeping current state:",
+        err,
+      );
+      return;
+    }
 
-    // If the active conversation isn't in the refreshed list, the current
-    // thread is stale (e.g. the user deleted it elsewhere). BUT: this branch
-    // is also hit in a post-stream race where updateConversationSummary()
-    // fires refreshConversations() immediately after a new conversation is
-    // created and the server's list hasn't yet been updated — wiping
-    // messages.value here made the just-received response vanish even
-    // though the server had delivered it.
-    //
-    // Resolution: drop the current conversation id (so the next user send
-    // starts fresh), but KEEP messages.value so the user can still read
-    // the response they just received. If the conversation was genuinely
-    // deleted, the next interaction will replace these messages; if the
-    // race was harmless, nothing was lost.
-    if (
-      currentConversationId.value
-      && !conversations.value.some((item) => item.id === currentConversationId.value)
-    ) {
-      currentConversationId.value = null;
+    conversations.value = (listResponse.data as Array<Record<string, unknown>>).map(
+      (item) => ({
+        id: String(item.id),
+        title: String(item.title || "Untitled conversation"),
+        updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
+      }),
+    );
+
+    const activeId = currentConversationId.value;
+    if (!activeId || conversations.value.some((item) => item.id === activeId)) {
+      return;
+    }
+
+    // List doesn't contain the active id. Ask the authoritative endpoint
+    // before destroying state — the list endpoint is eventually
+    // consistent with POST /llm/chat, which has caused mid-stream state
+    // loss in production. See PR #34 for the incident background.
+    try {
+      await api.get(`/llm/conversation/${activeId}`, {
+        params: { project_id: projectId },
+      });
+      // 2xx: id is still valid upstream. Keep everything; the list will
+      // catch up on the next refresh.
+    } catch (err) {
+      const status = (err as { response?: { status?: number } }).response?.status;
+      if (status === 404) {
+        // Genuinely deleted. Safe to clear.
+        currentConversationId.value = null;
+        messages.value = [];
+      } else {
+        // 5xx / network: ambiguous, don't destroy state. Next refresh retries.
+        console.warn(
+          "[sherpa] getConversation probe failed — keeping active thread intact:",
+          err,
+        );
+      }
     }
   }
 
   function updateConversationSummary(conversationId: string): void {
-    if (isServerBacked.value) {
-      void refreshConversations(projectStore.currentProjectId);
-      return;
-    }
-
+    // Optimistic insertion: when a new conversation_id arrives mid-stream
+    // (server-backed) or on turn completion (local), make sure an entry
+    // exists in conversations.value immediately so the sidebar shows the
+    // user's active thread without waiting for the async list refresh.
     const firstUser = messages.value.find((message) => message.role === "user");
-    const title =
+    const derivedTitle =
       firstUser?.content.slice(0, 60) || `Sherpa Conversation ${conversations.value.length + 1}`;
     const updatedAt = new Date().toISOString();
     const existing = conversations.value.find((item) => item.id === conversationId);
 
     if (existing) {
-      existing.title = title;
       existing.updatedAt = updatedAt;
+      // Don't overwrite an existing title — server may have a
+      // better one from prior messages.
+      if (!existing.title || existing.title === "Untitled conversation") {
+        existing.title = derivedTitle;
+      }
     } else {
-      conversations.value.unshift({ id: conversationId, title, updatedAt });
+      conversations.value.unshift({ id: conversationId, title: derivedTitle, updatedAt });
+    }
+
+    if (isServerBacked.value) {
+      // Async background refresh to pull server-canonical title/timestamp.
+      // The optimistic entry above stays visible until this resolves; if
+      // the refresh fails, the optimistic entry remains (failure path in
+      // refreshConversations() preserves state).
+      void refreshConversations(projectStore.currentProjectId);
+      return;
     }
 
     persistConversations(conversations.value);
@@ -1777,6 +1821,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
     clearMessages,
     startNewConversation,
     refreshConversations,
+    updateConversationSummary,
     loadConversation,
     deleteConversation,
     openSubscriptionUpgrade,

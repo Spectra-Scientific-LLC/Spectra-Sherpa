@@ -414,38 +414,61 @@ export const useLlmStore = defineStore("llm", () => {
       return;
     }
 
-    // Degrade gracefully: if the Sherpa conversations backend is
-    // unreachable or unconfigured, don't let an unhandled rejection
-    // crash the page. Backend already returns [] on soft misconfig;
-    // this guards against transient 5xx and network errors too.
+    // Failure modes we must survive without corrupting user state
+    // (parallel to sherpa.ts refreshConversations):
+    //   1. Transient 5xx / network error on /llm/conversations
+    //      → leave ALL state untouched. Next refresh retries.
+    //   2. List lookup succeeds but the active conversation_id isn't in
+    //      the list. Two sub-cases, distinguished by GET /llm/conversation/{id}:
+    //        - 2xx: id is valid, list just hasn't caught up. Keep everything.
+    //        - 404: conversation was genuinely deleted. Clear id + messages.
+    //        - other 5xx / network: leave state untouched, next refresh retries.
+    let listResponse;
     try {
-      const response = await api.get("/llm/conversations", {
+      listResponse = await api.get("/llm/conversations", {
         params: { project_id: projectId },
       });
-      conversations.value = (response.data as Array<Record<string, unknown>>).map((item) => ({
+    } catch (err) {
+      console.warn(
+        "[llm] refreshConversations list fetch failed — keeping current state:",
+        err,
+      );
+      return;
+    }
+
+    conversations.value = (listResponse.data as Array<Record<string, unknown>>).map(
+      (item) => ({
         id: String(item.id),
         title: String(item.title || "Untitled conversation"),
         updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
-      }));
-      // Drop stale conversation id but keep messages.value — a common
-      // post-stream race has the server returning a list that doesn't yet
-      // include a just-created conversation, and wiping messages here would
-      // make the user's just-received response disappear. See sherpa.ts
-      // refreshConversations for the parallel fix.
-      if (
-        currentConversationId.value
-        && !conversations.value.some((item) => item.id === currentConversationId.value)
-      ) {
-        currentConversationId.value = null;
-      }
+      }),
+    );
+
+    const activeId = currentConversationId.value;
+    if (!activeId || conversations.value.some((item) => item.id === activeId)) {
+      return;
+    }
+
+    // List doesn't contain the active id. Validate against the
+    // authoritative single-doc endpoint before destroying state — the
+    // list endpoint is eventually consistent with POST /llm/chat and has
+    // caused mid-stream state loss in production. See PR #34 for context.
+    try {
+      await api.get(`/llm/conversation/${activeId}`, {
+        params: { project_id: projectId },
+      });
+      // 2xx: still valid upstream. Keep everything; list catches up next refresh.
     } catch (err) {
-      // Clear cached list + active id on genuine failure so a subsequent
-      // sendMessage doesn't reuse a stale conversation_id, but keep
-      // messages.value so in-flight chat content the user can see isn't
-      // wiped under them during a transient 5xx or project switch race.
-      console.warn("[llm] refreshConversations failed — treating as empty:", err);
-      conversations.value = [];
-      currentConversationId.value = null;
+      const status = (err as { response?: { status?: number } }).response?.status;
+      if (status === 404) {
+        currentConversationId.value = null;
+        messages.value = [];
+      } else {
+        console.warn(
+          "[llm] getConversation probe failed — keeping active thread intact:",
+          err,
+        );
+      }
     }
   };
 

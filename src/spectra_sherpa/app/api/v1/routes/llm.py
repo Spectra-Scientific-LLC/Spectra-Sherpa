@@ -1,12 +1,8 @@
 from __future__ import annotations
 
-import logging
-
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-
-logger = logging.getLogger(__name__)
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session
 from spectra_sherpa.app.core.app_paths import get_app_data_paths
@@ -134,26 +130,17 @@ async def list_conversations(
     if not _should_proxy_server_conversations():
         return []
 
-    # If the deployment is configured to proxy server-backed conversations
-    # but the subscription API key is missing, degrade gracefully with an
-    # empty list rather than 503. A list-on-load endpoint breaking the
-    # whole page just because the Sherpa chat feature isn't set up is a
-    # much worse UX than silently showing no prior conversations.
-    try:
-        response = await _proxy_server_request(
-            "GET",
-            "/conversations",
-            params={"local_user_id": current_user.id, "project_id": project_id},
-        )
-    except HTTPException as exc:
-        if exc.status_code in (502, 503, 504):
-            logger.warning(
-                "list_conversations: proxy unavailable (%s: %s) — returning empty list",
-                exc.status_code,
-                exc.detail,
-            )
-            return []
-        raise
+    # No graceful-degradation wrapper: real proxy failures (missing api_key,
+    # 502/503/504 from upstream) propagate to the caller with real status
+    # codes. Frontend is responsible for handling those gracefully without
+    # destroying user state. Silent swallowing would make real outages
+    # indistinguishable from "no conversations," which is destructive for a
+    # critical Advisor path.
+    response = await _proxy_server_request(
+        "GET",
+        "/conversations",
+        params={"local_user_id": current_user.id, "project_id": project_id},
+    )
     return response.json()
 
 
