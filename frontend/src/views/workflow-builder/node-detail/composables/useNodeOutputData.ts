@@ -190,19 +190,32 @@ export function useNodeOutputData({
     const defaultSampleTitle = metadata.is_time_series
       ? "Scan / Time Index"
       : "Sample";
+    const isTrivialIndexLabels = (labels: unknown): boolean => {
+      if (!Array.isArray(labels) || labels.length === 0) return true;
+      return labels.every((raw, i) => {
+        if (raw === null || raw === undefined) return true;
+        const s = String(raw).trim();
+        if (s === "") return true;
+        const n = Number(s);
+        return Number.isFinite(n) && (n === i || n === i + 1);
+      });
+    };
+    const meaningfulLabels = (labels: unknown) =>
+      Array.isArray(labels) && !isTrivialIndexLabels(labels) ? labels : undefined;
+
     const yAxis = portValue?.y_axis;
     if (yAxis) {
       info.yAxis = {
         title: yAxis.title || metadata.y_title || defaultSampleTitle,
         units: yAxis.units || metadata.y_units || "",
-        labels: yAxis.labels,
+        labels: meaningfulLabels(yAxis.labels),
         nSamples: yAxis.data?.length,
       };
     } else if (metadata.sample_labels?.length) {
       info.yAxis = {
         title: metadata.y_title || defaultSampleTitle,
         units: metadata.y_units || "",
-        labels: metadata.sample_labels,
+        labels: meaningfulLabels(metadata.sample_labels),
         nSamples: metadata.sample_labels.length,
       };
     }
