@@ -30,12 +30,25 @@ _llm_rate_limiter = RateLimiter(
 
 
 def _should_proxy_server_conversations() -> bool:
-    return app_config.mode in ("hybrid", "enterprise") or app_config.site_profile == "demo"
+    from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
+
+    # Proxy only when the deployment mode calls for it AND the subscription
+    # api_key is actually configured. Without the key the proxy target would
+    # 503, which previously broke conversation-related requests in demo mode —
+    # including get_conversation and delete_conversation, whose callers surface
+    # the 503 as "Sherpa Load Failed" on topic switch. Falling through to the
+    # local conversation_store branch is harmless (empty / 404) and matches
+    # what the frontend expects when no server-backed history exists yet.
+    if app_config.mode not in ("hybrid", "enterprise") and app_config.site_profile != "demo":
+        return False
+    return bool(spectrasherpa_config.api_key)
 
 
 def _server_proxy_target() -> tuple[str, dict[str, str]]:
     from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
 
+    # Defence-in-depth: callers are gated by _should_proxy_server_conversations(),
+    # but if anyone reaches here without a key, fail loudly with a clear message.
     if not spectrasherpa_config.api_key:
         raise HTTPException(status_code=503, detail="Sherpa subscription service is not configured.")
 
