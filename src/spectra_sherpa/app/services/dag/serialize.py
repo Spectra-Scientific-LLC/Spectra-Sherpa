@@ -307,16 +307,6 @@ def _serialize_sherpa_dataset(
             "last_modified": history[-1].get("timestamp") if history else None,
         }
 
-    # Quality metrics summary
-    if dataset.quality.evaluations:
-        latest = dataset.quality.latest
-        metadata["quality_summary"] = {
-            "n_evaluations": len(dataset.quality.evaluations),
-            "latest_model_type": latest.model_type if latest else None,
-            "latest_r2": latest.r2 if latest else None,
-            "latest_rmse": latest.rmse if latest else None,
-        }
-
     # Path sanitization
     if sanitize_paths:
         PATH_FIELDS = {"original_file_path", "original_source", "background_file", "original_filename"}
@@ -327,12 +317,34 @@ def _serialize_sherpa_dataset(
     # Merge extra metadata into metadata (strips scp. prefix).
     # Nodes store scientific metadata via NDDataset .meta which from_nddataset()
     # moves to SherpaDataset._extra with "scp." prefix.  The frontend expects
-    # these keys (e.g. explained_variance_ratio, isPCA) in .metadata.
+    # these keys (e.g. explained_variance_ratio, isPCA, quality_summary)
+    # in .metadata.
     if result.get("extra"):
         for k, v in result["extra"].items():
             clean_key = k[4:] if k.startswith("scp.") else k
             if clean_key not in metadata:
                 metadata[clean_key] = v
+
+    # Quality metrics summary — merge regression-centric evaluation keys into
+    # whatever quality_summary the node may have already set (e.g. PCA emits
+    # explained_variance_ratio, T²/SPE limits). Must run AFTER the extras
+    # merge so the node-native dict is visible in metadata; otherwise the
+    # regression shim would clobber PCA/PLS/etc. keys.
+    if dataset.quality.evaluations:
+        latest = dataset.quality.latest
+        evaluation_summary = {
+            "n_evaluations": len(dataset.quality.evaluations),
+            "latest_model_type": latest.model_type if latest else None,
+            "latest_r2": latest.r2 if latest else None,
+            "latest_rmse": latest.rmse if latest else None,
+        }
+        existing = metadata.get("quality_summary")
+        if isinstance(existing, dict):
+            for k, v in evaluation_summary.items():
+                if v is not None and k not in existing:
+                    existing[k] = v
+        else:
+            metadata["quality_summary"] = evaluation_summary
 
     # Title fallback
     if not result.get("title"):
