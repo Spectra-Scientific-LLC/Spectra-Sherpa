@@ -50,10 +50,13 @@ export interface DatasetInfo {
 }
 
 export interface ProcessingStep {
+  op_id?: string;
   operation?: string;
   parameters?: Record<string, any>;
   input_shape?: number[];
   output_shape?: number[];
+  timestamp?: string;
+  node_id?: string;
 }
 
 export interface ProvenanceInfo {

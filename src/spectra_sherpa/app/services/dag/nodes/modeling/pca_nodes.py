@@ -504,20 +504,33 @@ class PCANode(Node):
         # Store only scientific metadata that coordinates can't carry.
         # serialize_for_api() extracts wavenumbers, sample_labels, x_title, etc.
         # from SherpaDataset coordinates automatically at the API boundary.
+        evr_list = evr_ratio.tolist()
+        cumulative_variance = float(np.sum(evr_ratio))
+        quality_summary = {
+            "explained_variance_ratio": evr_list,
+            "cumulative_variance": cumulative_variance,
+            "n_components": actual_n_components,
+            "t2_mean": float(np.mean(t2_stats)) if t2_stats is not None else None,
+            "t2_p95": t2_p95,
+            "spe_mean": float(np.mean(spe_stats)) if spe_stats is not None else None,
+            "spe_p95": spe_p95,
+        }
+
         scores_dataset.meta.update(
             {
                 "type": "PCA",
                 "isPCA": True,
                 "pc_labels": pc_labels,
-                "explained_variance_ratio": evr_ratio.tolist(),
+                "explained_variance_ratio": evr_list,
                 "n_components": actual_n_components,
                 "t2": t2_stats.tolist() if t2_stats is not None else [],
                 "spe": spe_stats.tolist() if spe_stats is not None else [],
                 "t2_p95": t2_p95,
                 "spe_p95": spe_p95,
-                "t2_mean": float(np.mean(t2_stats)) if t2_stats is not None else None,
-                "spe_mean": float(np.mean(spe_stats)) if spe_stats is not None else None,
+                "t2_mean": quality_summary["t2_mean"],
+                "spe_mean": quality_summary["spe_mean"],
                 "label_categories": label_categories,
+                "quality_summary": quality_summary,
             }
         )
 

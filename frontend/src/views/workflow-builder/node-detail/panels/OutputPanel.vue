@@ -195,7 +195,7 @@
                 <span class="step-number">{{ index + 1 }}</span>
                 <div class="step-content">
                   <span class="step-operation">
-                    {{ typeof step === 'string' ? step : step.operation || 'unknown' }}
+                    {{ typeof step === 'string' ? step : (step.op_id || step.operation || 'Unknown') }}
                   </span>
                   <div
                     v-if="typeof step === 'object' && step.parameters && Object.keys(step.parameters).length > 0"
