@@ -663,12 +663,27 @@ const pcaBiplotLayout = computed(() => {
 const pcaLoadingsData = computed(() => {
   if (!isPCAOutput.value || !hasOutput.value) return [];
 
-  // Read loadings from port (new architecture) or metadata (backwards compat)
+  // Read loadings from port (new architecture) or metadata (backwards compat).
+  // Reduced-tier sessionStorage fallbacks may deliver loadings via the
+  // PortOutput's normalized payload (loadingsPayload.data) rather than the
+  // raw port .data — check both before falling back to metadata.
   const loadingsPort = nodeOutput.value?.ports?.loadings;
   const loadingsPayload = resolvePortPayload(loadingsPort);
   const metadata = nodeOutput.value?.metadata || {};
-  const loadings = loadingsPort?.data || metadata.loadings || [];
-  if (!loadings.length) return [];
+  const loadings: number[][] =
+    (loadingsPort?.data as number[][] | undefined) ||
+    (loadingsPayload?.data as number[][] | undefined) ||
+    (metadata.loadings as number[][] | undefined) ||
+    [];
+  if (!loadings.length) {
+    if (!loadingsPort && !metadata.loadings) {
+      console.warn(
+        "[pcaLoadingsData] No loadings payload found — ports keys:",
+        Object.keys(nodeOutput.value?.ports || {}),
+      );
+    }
+    return [];
+  }
 
   // Wavenumbers/features: prefer loadings port x_axis (has actual wavenumbers), then metadata
   const portWavenumbers = loadingsPayload?.x_axis?.data;

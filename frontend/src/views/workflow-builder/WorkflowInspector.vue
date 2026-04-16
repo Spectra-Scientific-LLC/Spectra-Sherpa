@@ -1283,6 +1283,7 @@ import Slider from "primevue/slider";
 import TreeSelect from "primevue/treeselect";
 import { useToast } from "primevue/usetoast";
 import { useWorkflowStore, type WorkflowNode } from "@/stores/workflow";
+import { useProjectStore } from "@/stores/project";
 import { useDemoMode } from "@/composables/useDemoMode";
 import QuickPlotModal from "./modals/QuickPlotModal.vue";
 import DataTableModal from "./modals/DataTableModal.vue";
@@ -1402,6 +1403,7 @@ const emit = defineEmits<{
 
 const toast = useToast();
 const workflowStore = useWorkflowStore();
+const projectStore = useProjectStore();
 const { isDemoMode } = useDemoMode();
 const selectedNodeType = computed(() => props.selectedNode?.type || '');
 
@@ -2612,11 +2614,30 @@ const openInNewTab = () => {
     toPort: edge.toPort || 'default',
   }));
 
-  // detail level: "full" = all data+ports, "primary" = data+metadata only, "minimal" = no data
+  // Pick the ports we want to preserve across reduced-tier fallbacks.
+  // Plot computeds on the Detail View read these directly (loadings for
+  // PCA/PLS/PLSDA; St/H/A for MCR/NMF/ICA/SIMPLISMA). They're all small
+  // matrices (n_components × n_features) and stripping them makes those
+  // plots render empty even when the primary payload fits.
+  const PRESERVED_PORT_NAMES = new Set(["loadings", "St", "H", "A"]);
+
+  const buildReducedPorts = (
+    level: "full" | "primary" | "minimal",
+    ports: NodeOutput["ports"] | null | undefined,
+  ): NodeOutput["ports"] | null => {
+    if (!ports) return null;
+    if (level === "full") return ports;
+    const reduced: Record<string, PortOutput> = {};
+    for (const [name, port] of Object.entries(ports)) {
+      if (PRESERVED_PORT_NAMES.has(name)) reduced[name] = port;
+    }
+    return Object.keys(reduced).length > 0 ? reduced : null;
+  };
+
+  // detail level: "full" = all data+ports, "primary" = data+metadata+small-plot-ports, "minimal" = no data
   const buildNodeDetailData = (level: "full" | "primary" | "minimal") => {
     if (!props.selectedNode) return null;
     const includeData = level !== "minimal";
-    const includePorts = level === "full";
 
     // Strip large metadata fields to avoid sessionStorage quota.
     // Visualization nodes (output.*) embed Plotly traces in metadata.data
@@ -2663,7 +2684,7 @@ const openInNewTab = () => {
           ? props.nodeOutput.data : null,
         metadata: metadata,
         plots: props.nodeOutput.plots || null,
-        ports: includePorts ? (props.nodeOutput.ports || null) : null,
+        ports: buildReducedPorts(level, props.nodeOutput.ports),
         primary_port: props.nodeOutput.primary_port || null,
       } : null,
       // Include input connections with their data
@@ -2674,6 +2695,8 @@ const openInNewTab = () => {
       // Include full workflow context for trial execution (Pinia doesn't sync across tabs)
       workflowNodes: workflowNodes,
       workflowEdges: workflowEdges,
+      // Carry project context into the new tab (Pinia doesn't sync across window.open)
+      projectId: projectStore.currentProjectId,
     };
   };
 

@@ -134,6 +134,7 @@ import { useToast } from "primevue/usetoast";
 import QuickPlotModal from "./modals/QuickPlotModal.vue";
 import DataTableModal from "./modals/DataTableModal.vue";
 import { useWorkflowStore } from "@/stores/workflow";
+import { useProjectStore } from "@/stores/project";
 import { normalizeSampleLabel } from "@/utils/sampleLabels";
 import { useNodeLog } from "./node-detail/composables/useNodeLog";
 import { useNodeValidation } from "./node-detail/composables/useNodeValidation";
@@ -186,6 +187,7 @@ const localParams = ref<Record<string, any>>({});
 const originalParams = ref<Record<string, any>>({});
 
 const workflowStore = useWorkflowStore();
+const projectStore = useProjectStore();
 
 // Node icon mapping
 const NODE_ICONS: Record<string, string> = {
@@ -580,6 +582,14 @@ onMounted(() => {
   if (storedData) {
     try {
       nodeData.value = JSON.parse(storedData);
+
+      // Hydrate project context (Pinia doesn't sync across window.open tabs).
+      // Without this, clicking "Data"/"Experiments" from Detail View loses the
+      // project and lands on a bare listing.
+      const storedProjectId = (nodeData.value as any)?.projectId;
+      if (typeof storedProjectId === "number" && storedProjectId > 0) {
+        projectStore.selectProject(storedProjectId);
+      }
 
       // Build params with defaults from paramDefinitions, then override with stored values
       const defaults: Record<string, any> = {};
