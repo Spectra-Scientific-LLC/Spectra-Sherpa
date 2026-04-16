@@ -435,8 +435,15 @@ export const useLlmStore = defineStore("llm", () => {
         messages.value = [];
       }
     } catch (err) {
+      // Mirror the empty-projectId path: clear all three pieces of conversation
+      // state, not just the list. Otherwise a transient 5xx (or a project switch
+      // that races with a failing fetch) leaves the UI in an "empty list,
+      // active old thread" state and can reuse a stale conversation_id on
+      // subsequent sendMessage calls.
       console.warn("[llm] refreshConversations failed — treating as empty:", err);
       conversations.value = [];
+      currentConversationId.value = null;
+      messages.value = [];
     }
   };
 
