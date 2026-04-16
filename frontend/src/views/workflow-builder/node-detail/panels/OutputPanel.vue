@@ -276,6 +276,7 @@
               <i :class="outputSubsections.quality ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
             </button>
             <div v-if="outputSubsections.quality" class="inspector-grid">
+              <!-- Regression-specific controls -->
               <div
                 v-if="isRegressionNode && regressionTargetOptions.length > 1"
                 class="inspector-item wide"
@@ -313,6 +314,17 @@
                 <span class="insp-label">Evaluations</span>
                 <span class="insp-value">{{ qualitySummary.n_evaluations }}</span>
               </div>
+              <!-- Generic quality_summary rendering for non-regression nodes -->
+              <template v-for="(val, key) in qualitySummary" :key="String(key)">
+                <div
+                  v-if="!REGRESSION_QUALITY_KEYS.has(String(key)) && val != null"
+                  class="inspector-item"
+                  :class="{ wide: Array.isArray(val) }"
+                >
+                  <span class="insp-label">{{ formatQualityLabel(String(key)) }}</span>
+                  <span class="insp-value">{{ formatQualityValue(val) }}</span>
+                </div>
+              </template>
             </div>
           </div>
 
@@ -467,6 +479,66 @@ const selectedRegressionR2 = output.selectedRegressionR2;
 const selectedRegressionRmse = output.selectedRegressionRmse;
 const portSummaries = output.portSummaries;
 const { getMetaTooltip, formatMetaValue } = output;
+
+const REGRESSION_QUALITY_KEYS = new Set([
+  "latest_model_type", "latest_r2", "latest_rmse", "n_evaluations",
+]);
+
+const QUALITY_LABEL_MAP: Record<string, string> = {
+  explained_variance_ratio: "Explained Variance (per PC)",
+  total_variance_explained: "Total Variance Explained",
+  n_components: "Components",
+  t2_mean: "T² Mean",
+  t2_limit_95: "T² 95% Limit (F-dist)",
+  spe_mean: "SPE Mean",
+  spe_limit_95: "SPE 95% Limit (χ²)",
+  r2: "R²",
+  r2_cv: "R² (CV)",
+  rmse: "RMSE",
+  rmsecv: "RMSECV",
+  cv_method: "CV Method",
+  accuracy: "Accuracy",
+  train_accuracy: "Train Accuracy",
+  cv_accuracy: "CV Accuracy",
+  balanced_accuracy: "Balanced Accuracy",
+  f1: "F1 Score",
+  n_classes: "Classes",
+  n_neighbors: "Neighbors (k)",
+  confidence_level: "Confidence Level",
+  n_clusters: "Clusters",
+  silhouette_score: "Silhouette Score",
+  inertia: "Inertia",
+  linkage: "Linkage",
+  metric: "Distance Metric",
+  n_peaks: "Peaks Found",
+  n_consensus_peaks: "Consensus Peaks",
+  kernel: "Kernel",
+  method: "Method",
+  algorithm: "Algorithm",
+  reconstruction_err: "Reconstruction Error",
+  n_iter: "Iterations",
+  lof_percent: "LOF (%)",
+  residual_rms: "Residual RMS",
+};
+
+const formatQualityLabel = (key: string): string =>
+  QUALITY_LABEL_MAP[key] || key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+const formatQualityValue = (val: unknown): string => {
+  if (val == null) return "\u2014";
+  if (typeof val === "number") {
+    if (Number.isInteger(val)) return String(val);
+    return val < 0.01 ? val.toExponential(3) : val.toFixed(4);
+  }
+  if (Array.isArray(val)) {
+    const preview = val.slice(0, 6).map((v: any) =>
+      typeof v === "number" ? (v < 0.01 ? v.toExponential(2) : v.toFixed(3)) : String(v)
+    );
+    const suffix = val.length > 6 ? `, \u2026 (${val.length})` : "";
+    return `[${preview.join(", ")}${suffix}]`;
+  }
+  return String(val);
+};
 
 // Preview and pcaDiagnostics are bundled tables in the new slice; re-expose
 // the individual fields the template reads (rows / columns / summary).
