@@ -388,7 +388,27 @@ export const useSherpaStore = defineStore("sherpa", () => {
       throw new Error("Select a project before loading a Sherpa conversation.");
     }
 
-    const response = await api.get(`/llm/conversation/${conversationId}`, { params });
+    let response;
+    try {
+      response = await api.get(`/llm/conversation/${conversationId}`, { params });
+    } catch (err) {
+      const status = (err as { response?: { status?: number } }).response?.status;
+      if (status === 404) {
+        // Stale sidebar entry — the backend no longer has this
+        // conversation (optimistic-only row, or upstream lost it).
+        // Remove it so it can't be clicked again, and start fresh.
+        conversations.value = conversations.value.filter(
+          (item) => item.id !== conversationId,
+        );
+        if (currentConversationId.value === conversationId) {
+          currentConversationId.value = null;
+          messages.value = [];
+        }
+        throw new Error("This conversation is no longer available. It has been removed from Topics.");
+      }
+      throw err;
+    }
+
     currentConversationId.value = response.data.conversation_id;
     messages.value = (response.data.messages as Array<{ role: SherpaMessage["role"]; content: string }>)
       .map((message) => ({

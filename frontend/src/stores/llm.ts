@@ -551,15 +551,33 @@ export const useLlmStore = defineStore("llm", () => {
   };
 
   const loadConversation = async (conversationId: string) => {
+    if (conversationId === currentConversationId.value && messages.value.length > 0) {
+      return;
+    }
     if (isServerBacked.value && projectStore.currentProjectId == null) {
       throw new Error("Select a project before loading a server-backed conversation.");
     }
     const params = isServerBacked.value
       ? { project_id: projectStore.currentProjectId }
       : undefined;
-    const response = await api.get(`/llm/conversation/${conversationId}`, { params });
-    currentConversationId.value = response.data.conversation_id;
-    messages.value = response.data.messages;
+    try {
+      const response = await api.get(`/llm/conversation/${conversationId}`, { params });
+      currentConversationId.value = response.data.conversation_id;
+      messages.value = response.data.messages;
+    } catch (err) {
+      const status = (err as { response?: { status?: number } }).response?.status;
+      if (status === 404) {
+        conversations.value = conversations.value.filter(
+          (item) => item.id !== conversationId,
+        );
+        if (currentConversationId.value === conversationId) {
+          currentConversationId.value = null;
+          messages.value = [];
+        }
+        throw new Error("This conversation is no longer available. It has been removed from Topics.");
+      }
+      throw err;
+    }
   };
 
   const deleteConversation = async (conversationId: string) => {
