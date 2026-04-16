@@ -319,6 +319,7 @@ describe("Sherpa Advisor refreshConversations — project-switch state isolation
 
     expect(sherpa.currentConversationId).toBeNull();
     expect(sherpa.messages).toEqual([]);
+    expect(sherpa.conversations).toEqual([]);
     // Both endpoints were hit.
     expect(apiGet).toHaveBeenNthCalledWith(1, "/llm/conversations", expect.anything());
     expect(apiGet).toHaveBeenNthCalledWith(
@@ -345,5 +346,30 @@ describe("Sherpa Advisor refreshConversations — project-switch state isolation
 
     expect(sherpa.currentConversationId).toBe("conv-active");
     expect(sherpa.messages).toHaveLength(1);
+  });
+
+  it("clears stale sidebar rows on a project switch even when there is no active conversation to probe", async () => {
+    // Medium-severity follow-up: if the user switches projects while no
+    // thread is active, a failing list request previously left the OLD
+    // project's rows visible in the new project's sidebar.
+    apiGet.mockResolvedValueOnce({
+      data: [{ id: "conv-old", title: "Old project thread", updated_at: "t0" }],
+    });
+
+    const sherpa = useSherpaStore();
+    await sherpa.refreshConversations(7); // establish last known project scope
+
+    sherpa.$patch({ currentConversationId: null });
+    sherpa.$patch({
+      conversations: [{ id: "conv-old", title: "Old project thread", updatedAt: "t0" }],
+    });
+
+    apiGet.mockReset();
+    apiGet.mockRejectedValueOnce(axiosError(503));
+
+    await sherpa.refreshConversations(999);
+
+    expect(sherpa.currentConversationId).toBeNull();
+    expect(sherpa.conversations).toEqual([]);
   });
 });

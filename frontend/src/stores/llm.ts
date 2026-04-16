@@ -79,6 +79,7 @@ export const useLlmStore = defineStore("llm", () => {
   const CONNECT_RETRY_ATTEMPTS = 3;
   let connectAttempt = 0;
   let authFallbackRetried = false;
+  let lastConversationProjectId: number | null = null;
 
   const formatChatWarning = (
     payload: Record<string, unknown>
@@ -420,6 +421,7 @@ export const useLlmStore = defineStore("llm", () => {
       conversations.value = [];
       currentConversationId.value = null;
       messages.value = [];
+      lastConversationProjectId = null;
       return;
     }
 
@@ -431,6 +433,7 @@ export const useLlmStore = defineStore("llm", () => {
     // healthy but stale.
     let listResponse;
     let listFailed = false;
+    const switchingProjects = lastConversationProjectId !== null && lastConversationProjectId !== projectId;
     try {
       listResponse = await api.get("/llm/conversations", {
         params: { project_id: projectId },
@@ -451,10 +454,15 @@ export const useLlmStore = defineStore("llm", () => {
           updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
         }),
       );
+      lastConversationProjectId = projectId;
     }
 
     const activeId = currentConversationId.value;
     if (!activeId) {
+      if (listFailed && switchingProjects) {
+        conversations.value = [];
+        lastConversationProjectId = projectId;
+      }
       return;
     }
 
@@ -469,6 +477,7 @@ export const useLlmStore = defineStore("llm", () => {
       if (!listFailed) {
         ensureOptimisticSidebarEntry(activeId);
       }
+      lastConversationProjectId = projectId;
     } catch (err) {
       const status = (err as { response?: { status?: number } }).response?.status;
       if (status === 404) {
@@ -476,6 +485,10 @@ export const useLlmStore = defineStore("llm", () => {
         // send doesn't pair an old id with a new project_id.
         currentConversationId.value = null;
         messages.value = [];
+        if (listFailed) {
+          conversations.value = [];
+        }
+        lastConversationProjectId = projectId;
       } else {
         console.warn(
           "[llm] getConversation probe failed — keeping active thread intact:",

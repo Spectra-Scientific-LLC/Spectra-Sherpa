@@ -69,6 +69,12 @@ class MockWebSocket {
   }
 }
 
+const axiosError = (status: number) => {
+  const err = new Error(`Request failed with status code ${status}`);
+  (err as unknown as { response: { status: number } }).response = { status };
+  return err;
+};
+
 describe("LLM Store WebSocket handshake", () => {
   let sockets: MockWebSocket[] = [];
   let OriginalWebSocket: typeof WebSocket;
@@ -235,5 +241,52 @@ describe("LLM Store WebSocket handshake", () => {
     expect(notifications.notifications[0]?.detail).toBe(
       "Conversation history could not be loaded. Sherpa is replying without prior chat context."
     );
+  });
+});
+
+describe("LLM Store refreshConversations project-scope cleanup", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    apiGet.mockReset();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("clears stale rows when a project switch fails list fetch and probe 404s", async () => {
+    apiGet.mockRejectedValueOnce(axiosError(503));
+    apiGet.mockRejectedValueOnce(axiosError(404));
+
+    const llm = useLlmStore();
+    llm.currentConversationId = "conv-old";
+    llm.messages = [{ role: "assistant", content: "old thread" }];
+    llm.conversations = [{ id: "conv-old", title: "Old thread", updatedAt: "t0" }];
+
+    await llm.refreshConversations(999);
+
+    expect(llm.currentConversationId).toBeNull();
+    expect(llm.messages).toEqual([]);
+    expect(llm.conversations).toEqual([]);
+  });
+
+  it("clears stale rows on project switch failure even when there is no active conversation", async () => {
+    apiGet.mockResolvedValueOnce({
+      data: [{ id: "conv-old", title: "Old thread", updated_at: "t0" }],
+    });
+
+    const llm = useLlmStore();
+    await llm.refreshConversations(1);
+
+    llm.currentConversationId = null;
+    llm.conversations = [{ id: "conv-old", title: "Old thread", updatedAt: "t0" }];
+
+    apiGet.mockReset();
+    apiGet.mockRejectedValueOnce(axiosError(503));
+
+    await llm.refreshConversations(999);
+
+    expect(llm.currentConversationId).toBeNull();
+    expect(llm.conversations).toEqual([]);
   });
 });

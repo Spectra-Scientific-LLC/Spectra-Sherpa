@@ -112,6 +112,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
   let unsubscribeSyncEvents: (() => void) | null = null;
   let unsubscribeGeneralEvents: (() => void) | null = null;
   let isInitialized = false;
+  let lastConversationProjectId: number | null = null;
 
   // ── helpers ────────────────────────────────────────────────
 
@@ -200,6 +201,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
       conversations.value = [];
       currentConversationId.value = null;
       messages.value = [];
+      lastConversationProjectId = null;
       return;
     }
 
@@ -235,6 +237,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
     //        - other 5xx / network: ambiguous. Preserve state.
     let listResponse;
     let listFailed = false;
+    const switchingProjects = lastConversationProjectId !== null && lastConversationProjectId !== projectId;
     try {
       listResponse = await api.get("/llm/conversations", {
         params: { project_id: projectId },
@@ -255,10 +258,15 @@ export const useSherpaStore = defineStore("sherpa", () => {
           updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
         }),
       );
+      lastConversationProjectId = projectId;
     }
 
     const activeId = currentConversationId.value;
     if (!activeId) {
+      if (listFailed && switchingProjects) {
+        conversations.value = [];
+        lastConversationProjectId = projectId;
+      }
       return;
     }
 
@@ -277,6 +285,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
       if (!listFailed) {
         ensureOptimisticSidebarEntry(activeId);
       }
+      lastConversationProjectId = projectId;
     } catch (err) {
       const status = (err as { response?: { status?: number } }).response?.status;
       if (status === 404) {
@@ -285,6 +294,10 @@ export const useSherpaStore = defineStore("sherpa", () => {
         // starts a new thread scoped to the current project.
         currentConversationId.value = null;
         messages.value = [];
+        if (listFailed) {
+          conversations.value = [];
+        }
+        lastConversationProjectId = projectId;
       } else {
         // 5xx / network on probe. Ambiguous — preserve state.
         console.warn(
