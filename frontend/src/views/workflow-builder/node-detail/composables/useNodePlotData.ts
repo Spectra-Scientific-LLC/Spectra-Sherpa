@@ -1360,15 +1360,13 @@ const classificationScoresData = computed(() => {
   const nodeType = nodeTypeKey.value;
   if (!["classification.plsda", "classification.simca", "classification.knn"].includes(nodeType) || !hasOutput.value) return [];
 
-  // For PLS-DA, use pre-built scores plot if available
-  if (nodeType === "classification.plsda") {
-    const plots = nodeOutput.value?.plots;
-    if (plots?.scores?.data) {
-      return plots.scores.data;
-    }
-  }
-
-  // Fallback: build scores plot from raw data
+  // Always build from raw scores so the X / Y axis dropdowns actually drive
+  // the plot. The backend ships a pre-built scatter for PLS-DA
+  // (plots.scores.data) but it's pinned to dims 0 and 1 — short-
+  // circuiting to it here left the frontend dropdowns effectively dead on
+  // PLS-DA nodes (bug surfaced on staging). The raw-build path below
+  // produces equivalent output when dropdowns are at defaults AND honors
+  // user changes. Mirror of the fix in PR #36 on main.
   const scores = nodeOutput.value?.data || [];
   const metadata = nodeOutput.value?.metadata || {};
   if (!scores.length) return [];
@@ -1433,17 +1431,11 @@ const classificationScoresData = computed(() => {
 });
 
 const classificationScoresLayout = computed(() => {
-  // For PLS-DA, use pre-built layout if available
-  if (nodeTypeKey.value === "classification.plsda") {
-    const plots = nodeOutput.value?.plots;
-    if (plots?.scores?.layout) {
-      return {
-        ...basePlotLayout,
-        ...plots.scores.layout,
-        height: 400,
-      };
-    }
-  }
+  // Always build the layout from current axis dropdowns — do NOT short-
+  // circuit to nodeOutput.plots.scores.layout for PLS-DA. The pre-built
+  // layout is pinned to dims 0 and 1, which would leave the X / Y axis
+  // titles out of sync with the user's dropdown selection even if the data
+  // updated. Mirror of the fix in PR #36 on main.
 
   // Fallback layout
   const metadata = nodeOutput.value?.metadata || {};
