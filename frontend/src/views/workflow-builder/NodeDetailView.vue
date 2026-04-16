@@ -134,6 +134,7 @@ import { useToast } from "primevue/usetoast";
 import QuickPlotModal from "./modals/QuickPlotModal.vue";
 import DataTableModal from "./modals/DataTableModal.vue";
 import { useWorkflowStore } from "@/stores/workflow";
+import { useProjectStore } from "@/stores/project";
 import { createCategoryColorMap } from "@/utils/colors";
 import { getYAxisLabel } from "@/utils/plotLabels";
 import {
@@ -192,6 +193,7 @@ const localParams = ref<Record<string, any>>({});
 const originalParams = ref<Record<string, any>>({});
 
 const workflowStore = useWorkflowStore();
+const projectStore = useProjectStore();
 
 // Node icon mapping
 const NODE_ICONS: Record<string, string> = {
@@ -1421,12 +1423,32 @@ const pcaBiplotLayout = computed(() => {
 const pcaLoadingsData = computed(() => {
   if (!isPCAOutput.value || !hasOutput.value) return [];
 
-  // Read loadings from port (new architecture) or metadata (backwards compat)
+  // Loadings data can arrive on several shapes depending on which tier
+  // buildNodeDetailData used for sessionStorage (full / primary / minimal)
+  // and whether we came from Run Trial (fresh response) or the Inspector's
+  // session hand-off. Check every plausible location before giving up.
   const loadingsPort = nodeOutput.value?.ports?.loadings;
   const loadingsPayload = resolvePortPayload(loadingsPort);
   const metadata = nodeOutput.value?.metadata || {};
-  const loadings = loadingsPort?.data || metadata.loadings || [];
-  if (!loadings.length) return [];
+  const loadings: number[][] =
+    loadingsPort?.data
+    || loadingsPayload?.data
+    || metadata.loadings
+    || [];
+  if (!loadings.length) {
+    // Log a diagnostic so we can tell WHY it's empty on staging. Covers
+    // the "missing loadings port after reduced-tier sessionStorage" case
+    // we've seen on OES with large inputs.
+    if (!loadingsPort && !metadata.loadings) {
+      console.warn(
+        "[pcaLoadingsData] No loadings payload found — nodeOutput.ports keys:",
+        nodeOutput.value?.ports ? Object.keys(nodeOutput.value.ports) : "(ports missing)",
+        "metadata keys:",
+        Object.keys(metadata),
+      );
+    }
+    return [];
+  }
 
   // Wavenumbers/features: prefer loadings port x_axis (has actual wavenumbers), then metadata
   const portWavenumbers = loadingsPayload?.x_axis?.data;
@@ -3755,6 +3777,17 @@ onMounted(() => {
   if (storedData) {
     try {
       nodeData.value = JSON.parse(storedData);
+
+      // Hydrate project context from the sessionStorage payload. The
+      // parent tab owns the active project, but the new Detail View
+      // tab starts fresh (Pinia doesn't cross-tab). Without this,
+      // clicking Data / Experiments / Workflows inside the Detail
+      // View tab lands with no project selected and loses the user's
+      // workflow context.
+      const storedProjectId = nodeData.value?.projectId;
+      if (typeof storedProjectId === "number" && storedProjectId > 0) {
+        projectStore.selectProject(storedProjectId);
+      }
 
       // Build params with defaults from paramDefinitions, then override with stored values
       const defaults: Record<string, any> = {};
