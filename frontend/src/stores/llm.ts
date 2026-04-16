@@ -384,20 +384,29 @@ export const useLlmStore = defineStore("llm", () => {
   };
 
   const updateConversationSummary = (conversationId: string) => {
-    if (isServerBacked.value) {
-      void refreshConversations();
-      return;
-    }
+    // Optimistic insertion runs for BOTH modes so the sidebar shows the
+    // active thread synchronously, before the async server-backed refresh
+    // resolves. refreshConversations() will restore this row if a stale
+    // list erases it (probe-then-re-insert path).
     const firstUser = messages.value.find((msg) => msg.role === "user");
     const title =
       firstUser?.content.slice(0, 60) || `Conversation ${conversations.value.length + 1}`;
     const updatedAt = new Date().toISOString();
     const existing = conversations.value.find((item) => item.id === conversationId);
     if (existing) {
-      existing.title = title;
       existing.updatedAt = updatedAt;
+      // Preserve an existing server-assigned title; only fill in when
+      // there isn't one yet.
+      if (!existing.title || existing.title === "Untitled conversation") {
+        existing.title = title;
+      }
     } else {
       conversations.value.unshift({ id: conversationId, title, updatedAt });
+    }
+
+    if (isServerBacked.value) {
+      void refreshConversations();
+      return;
     }
     persistConversations(conversations.value);
   };
@@ -414,53 +423,57 @@ export const useLlmStore = defineStore("llm", () => {
       return;
     }
 
-    // Failure modes we must survive without corrupting user state
-    // (parallel to sherpa.ts refreshConversations):
-    //   1. Transient 5xx / network error on /llm/conversations
-    //      → leave ALL state untouched. Next refresh retries.
-    //   2. List lookup succeeds but the active conversation_id isn't in
-    //      the list. Two sub-cases, distinguished by GET /llm/conversation/{id}:
-    //        - 2xx: id is valid, list just hasn't caught up. Keep everything.
-    //        - 404: conversation was genuinely deleted. Clear id + messages.
-    //        - other 5xx / network: leave state untouched, next refresh retries.
+    // Failure modes handled — see sherpa.ts refreshConversations for
+    // the full design notes. This parallel implementation preserves the
+    // same contract: probe must run regardless of list outcome so project
+    // switches with list failures clear state correctly (via probe 404),
+    // and the active row is re-inserted optimistically if the list was
+    // healthy but stale.
     let listResponse;
+    let listFailed = false;
     try {
       listResponse = await api.get("/llm/conversations", {
         params: { project_id: projectId },
       });
     } catch (err) {
       console.warn(
-        "[llm] refreshConversations list fetch failed — keeping current state:",
+        "[llm] refreshConversations list fetch failed — will probe active id before deciding:",
         err,
       );
-      return;
+      listFailed = true;
     }
 
-    conversations.value = (listResponse.data as Array<Record<string, unknown>>).map(
-      (item) => ({
-        id: String(item.id),
-        title: String(item.title || "Untitled conversation"),
-        updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
-      }),
-    );
+    if (listResponse) {
+      conversations.value = (listResponse.data as Array<Record<string, unknown>>).map(
+        (item) => ({
+          id: String(item.id),
+          title: String(item.title || "Untitled conversation"),
+          updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
+        }),
+      );
+    }
 
     const activeId = currentConversationId.value;
-    if (!activeId || conversations.value.some((item) => item.id === activeId)) {
+    if (!activeId) {
       return;
     }
 
-    // List doesn't contain the active id. Validate against the
-    // authoritative single-doc endpoint before destroying state — the
-    // list endpoint is eventually consistent with POST /llm/chat and has
-    // caused mid-stream state loss in production. See PR #34 for context.
+    if (!listFailed && conversations.value.some((item) => item.id === activeId)) {
+      return;
+    }
+
     try {
       await api.get(`/llm/conversation/${activeId}`, {
         params: { project_id: projectId },
       });
-      // 2xx: still valid upstream. Keep everything; list catches up next refresh.
+      if (!listFailed) {
+        ensureOptimisticSidebarEntry(activeId);
+      }
     } catch (err) {
       const status = (err as { response?: { status?: number } }).response?.status;
       if (status === 404) {
+        // Deleted OR belongs to a different project. Clear so the next
+        // send doesn't pair an old id with a new project_id.
         currentConversationId.value = null;
         messages.value = [];
       } else {
@@ -470,6 +483,20 @@ export const useLlmStore = defineStore("llm", () => {
         );
       }
     }
+  };
+
+  const ensureOptimisticSidebarEntry = (conversationId: string): void => {
+    if (conversations.value.some((item) => item.id === conversationId)) {
+      return;
+    }
+    const firstUser = messages.value.find((message) => message.role === "user");
+    const derivedTitle =
+      firstUser?.content.slice(0, 60) || `Conversation ${conversations.value.length + 1}`;
+    conversations.value.unshift({
+      id: conversationId,
+      title: derivedTitle,
+      updatedAt: new Date().toISOString(),
+    });
   };
 
   const sendMessage = async (message: string, metadata?: Record<string, unknown>) => {

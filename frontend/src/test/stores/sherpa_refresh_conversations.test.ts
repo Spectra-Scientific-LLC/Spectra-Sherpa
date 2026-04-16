@@ -240,3 +240,110 @@ describe("Sherpa Advisor updateConversationSummary — optimistic UI", () => {
     expect(entry.updatedAt).not.toBe("old"); // refreshed
   });
 });
+
+// ───────────────────────────────────────────────────────────────────────
+// Reviewer-round-2 regressions — exact scenarios flagged post-merge.
+// ───────────────────────────────────────────────────────────────────────
+describe("Sherpa Advisor refreshConversations — sidebar row survives a stale list", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    apiGet.mockReset();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("re-inserts the active row when the server list is healthy but missing the just-created id", async () => {
+    // The exact bug from reviewer H1: optimistic insert lands in
+    // conversations.value, then refreshConversations() overwrites it with
+    // the server list (which hasn't caught up), then probe says the id
+    // is still valid \u2014 but the row is gone from the sidebar.
+    //
+    // Contract: after probe 2xx, if list was healthy but omitted the id,
+    // the active row must be restored.
+    apiGet.mockResolvedValueOnce({
+      data: [{ id: "conv-other", title: "Other thread", updated_at: "t" }],
+    }); // list: healthy but missing conv-new
+    apiGet.mockResolvedValueOnce({ data: { conversation_id: "conv-new", messages: [] } }); // probe: 2xx
+
+    const sherpa = useSherpaStore();
+    sherpa.$patch({ currentConversationId: "conv-new" });
+    sherpa.$patch({ messages: [
+      { role: "user", content: "tell me what this template does" },
+      { role: "assistant", content: "## response ..." },
+    ] });
+    // Simulate the optimistic insertion that happened on stream start.
+    sherpa.$patch({ conversations: [
+      { id: "conv-new", title: "tell me what this template does", updatedAt: "t0" },
+    ] });
+
+    await sherpa.refreshConversations(7);
+
+    expect(sherpa.currentConversationId).toBe("conv-new");
+    const rows = sherpa.conversations.map((c) => c.id);
+    expect(rows).toContain("conv-new");
+    expect(rows).toContain("conv-other");
+  });
+});
+
+describe("Sherpa Advisor refreshConversations — project-switch state isolation", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    apiGet.mockReset();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("clears state when probe 404s on a project switch even if list fetch failed", async () => {
+    // Reviewer H2: user switches projects. ChatPanel calls
+    // refreshConversations(newProjectId). If list fetches fine the probe
+    // with newProjectId returns 404 and we clear \u2014 fine. But if list
+    // fetch 5xxes, the previous contract returned early without clearing,
+    // leaving currentConversationId pointing at the OLD project's thread.
+    // The next send would pair old id with new project_id.
+    //
+    // New contract: probe runs regardless of list outcome. 404 on the
+    // probe (scoped by project_id) correctly identifies the project
+    // mismatch and clears state.
+    apiGet.mockRejectedValueOnce(axiosError(503)); // list fails
+    apiGet.mockRejectedValueOnce(axiosError(404)); // probe 404 = wrong project
+
+    const sherpa = useSherpaStore();
+    sherpa.$patch({ currentConversationId: "conv-from-old-project" });
+    sherpa.$patch({ messages: [{ role: "assistant", content: "old project chat" }] });
+
+    await sherpa.refreshConversations(999); // new project id
+
+    expect(sherpa.currentConversationId).toBeNull();
+    expect(sherpa.messages).toEqual([]);
+    // Both endpoints were hit.
+    expect(apiGet).toHaveBeenNthCalledWith(1, "/llm/conversations", expect.anything());
+    expect(apiGet).toHaveBeenNthCalledWith(
+      2,
+      "/llm/conversation/conv-from-old-project",
+      expect.anything(),
+    );
+  });
+
+  it("preserves state when list 5xxes and probe succeeds (same-project transient failure)", async () => {
+    // Contrast case for the test above: list fails transiently for a
+    // reason unrelated to project switch. Probe still succeeds \u2014 the
+    // conversation belongs to THIS project. Must preserve all state.
+    apiGet.mockRejectedValueOnce(axiosError(502));
+    apiGet.mockResolvedValueOnce({
+      data: { conversation_id: "conv-active", messages: [] },
+    });
+
+    const sherpa = useSherpaStore();
+    sherpa.$patch({ currentConversationId: "conv-active" });
+    sherpa.$patch({ messages: [{ role: "assistant", content: "reply" }] });
+
+    await sherpa.refreshConversations(7);
+
+    expect(sherpa.currentConversationId).toBe("conv-active");
+    expect(sherpa.messages).toHaveLength(1);
+  });
+});

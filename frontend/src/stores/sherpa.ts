@@ -203,60 +203,90 @@ export const useSherpaStore = defineStore("sherpa", () => {
       return;
     }
 
-    // Failure modes we must survive without corrupting user state:
-    //   1. Transient 5xx / network error on /llm/conversations
-    //      → leave ALL state untouched. Next refresh retries.
-    //   2. List lookup succeeds but the active conversation_id isn't in
-    //      the list. Two sub-cases, distinguished by a follow-up
-    //      GET /llm/conversation/{id}:
-    //        - 2xx: id is valid, list just hasn't caught up (eventual
-    //          consistency). Keep everything.
-    //        - 404: conversation was genuinely deleted. Clear id + messages.
-    //        - other 5xx / network: leave state untouched, next refresh retries.
+    // Failure modes we must survive without corrupting user state AND
+    // without leaving stale rows / ids when the project context shifts.
+    //
+    // Two things drive the logic:
+    //   A) List endpoint (GET /llm/conversations?project_id=X) is
+    //      eventually consistent with POST /llm/chat — a brand-new id
+    //      can be absent from the list for ~100-500ms.
+    //   B) List AND probe endpoints are both scoped by project_id. A
+    //      conversation that belongs to project A will 404 when probed
+    //      with project_id=B. This is exactly how we detect a project
+    //      switch: the probe settles the ambiguity.
+    //
+    // Flow:
+    //   1. Fetch the list. If it fails, record listFailed=true and fall
+    //      through — we still need to run the probe to distinguish
+    //      "transient upstream issue in same project" (preserve state)
+    //      from "project-switch with list failure" (clear state).
+    //   2. If list succeeded and contains the active id, done.
+    //   3. Otherwise probe GET /llm/conversation/{id}?project_id=X:
+    //        - 2xx: id is valid for THIS project. Keep it. If the list
+    //          was healthy but missing the id (eventual consistency),
+    //          re-insert the active row optimistically so the sidebar
+    //          shows the thread immediately — otherwise the list
+    //          overwrite from step 1 would have erased the previous
+    //          optimistic insertion from updateConversationSummary().
+    //        - 404: id doesn't exist for this project. Either deleted
+    //          or belongs to a different project (project-switch).
+    //          Clear id + messages so we can't send old id with new
+    //          project_id on the next chat turn.
+    //        - other 5xx / network: ambiguous. Preserve state.
     let listResponse;
+    let listFailed = false;
     try {
       listResponse = await api.get("/llm/conversations", {
         params: { project_id: projectId },
       });
     } catch (err) {
       console.warn(
-        "[sherpa] refreshConversations list fetch failed — keeping current state:",
+        "[sherpa] refreshConversations list fetch failed — will probe active id before deciding:",
         err,
       );
-      return;
+      listFailed = true;
     }
 
-    conversations.value = (listResponse.data as Array<Record<string, unknown>>).map(
-      (item) => ({
-        id: String(item.id),
-        title: String(item.title || "Untitled conversation"),
-        updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
-      }),
-    );
+    if (listResponse) {
+      conversations.value = (listResponse.data as Array<Record<string, unknown>>).map(
+        (item) => ({
+          id: String(item.id),
+          title: String(item.title || "Untitled conversation"),
+          updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
+        }),
+      );
+    }
 
     const activeId = currentConversationId.value;
-    if (!activeId || conversations.value.some((item) => item.id === activeId)) {
+    if (!activeId) {
       return;
     }
 
-    // List doesn't contain the active id. Ask the authoritative endpoint
-    // before destroying state — the list endpoint is eventually
-    // consistent with POST /llm/chat, which has caused mid-stream state
-    // loss in production. See PR #34 for the incident background.
+    if (!listFailed && conversations.value.some((item) => item.id === activeId)) {
+      // Happy path: list is authoritative and contains the id.
+      return;
+    }
+
     try {
       await api.get(`/llm/conversation/${activeId}`, {
         params: { project_id: projectId },
       });
-      // 2xx: id is still valid upstream. Keep everything; the list will
-      // catch up on the next refresh.
+      // 2xx: id is valid for this project. If the list came back healthy
+      // but was missing this id (eventual consistency), restore the row
+      // so the sidebar doesn't appear to lose the active thread.
+      if (!listFailed) {
+        ensureOptimisticSidebarEntry(activeId);
+      }
     } catch (err) {
       const status = (err as { response?: { status?: number } }).response?.status;
       if (status === 404) {
-        // Genuinely deleted. Safe to clear.
+        // Deleted, or belongs to a different project. Either way, the
+        // active id does not apply here. Clear both so the next send
+        // starts a new thread scoped to the current project.
         currentConversationId.value = null;
         messages.value = [];
       } else {
-        // 5xx / network: ambiguous, don't destroy state. Next refresh retries.
+        // 5xx / network on probe. Ambiguous — preserve state.
         console.warn(
           "[sherpa] getConversation probe failed — keeping active thread intact:",
           err,
@@ -265,11 +295,28 @@ export const useSherpaStore = defineStore("sherpa", () => {
     }
   }
 
+  function ensureOptimisticSidebarEntry(conversationId: string): void {
+    if (conversations.value.some((item) => item.id === conversationId)) {
+      return;
+    }
+    const firstUser = messages.value.find((message) => message.role === "user");
+    const derivedTitle =
+      firstUser?.content.slice(0, 60) || `Sherpa Conversation ${conversations.value.length + 1}`;
+    conversations.value.unshift({
+      id: conversationId,
+      title: derivedTitle,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
   function updateConversationSummary(conversationId: string): void {
     // Optimistic insertion: when a new conversation_id arrives mid-stream
     // (server-backed) or on turn completion (local), make sure an entry
     // exists in conversations.value immediately so the sidebar shows the
     // user's active thread without waiting for the async list refresh.
+    // refreshConversations() ALSO restores this row if a stale list erases
+    // it, so the sidebar remains correct across the eventual-consistency
+    // window.
     const firstUser = messages.value.find((message) => message.role === "user");
     const derivedTitle =
       firstUser?.content.slice(0, 60) || `Sherpa Conversation ${conversations.value.length + 1}`;
