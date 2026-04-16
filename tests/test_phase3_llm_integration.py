@@ -416,6 +416,58 @@ class TestHttpLlmRateLimits:
         ]
 
     @pytest.mark.asyncio
+    async def test_proxy_server_chat_persists_completed_transcript_to_local_store(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from spectra_sherpa.app.services import ws_handlers
+
+        ws = SimpleNamespace(send_json=AsyncMock())
+        captured: dict[str, object] = {}
+
+        class _ConversationStore:
+            def get_or_create(self, conversation_id, user_id):
+                captured["get_or_create"] = (conversation_id, user_id)
+                return conversation_id, [{"role": "assistant", "content": "Earlier reply"}]
+
+            def save_messages(self, conversation_id, messages):
+                captured["save_messages"] = (conversation_id, messages)
+
+        async def _fake_stream_llm_chat(self, **_kwargs):
+            yield {"type": "start", "conversation_id": "conv-2"}
+            yield {"type": "chunk", "conversation_id": "conv-2", "text": "Hello"}
+            yield {"type": "chunk", "conversation_id": "conv-2", "text": " world"}
+            yield {"type": "done", "conversation_id": "conv-2"}
+
+        class _Advisor:
+            is_available = True
+            stream_llm_chat = _fake_stream_llm_chat
+
+        monkeypatch.setattr(
+            "spectra_sherpa.app.services.sherpa_advisor.get_sherpa_advisor",
+            lambda: _Advisor(),
+        )
+        monkeypatch.setattr(ws_handlers, "conversation_store", _ConversationStore())
+
+        await ws_handlers._proxy_server_chat(
+            ws,
+            "Explain this workflow",
+            None,
+            {"project_id": 42},
+            SimpleNamespace(id=7),
+        )
+
+        assert captured["get_or_create"] == ("conv-2", 7)
+        assert captured["save_messages"] == (
+            "conv-2",
+            [
+                {"role": "assistant", "content": "Earlier reply"},
+                {"role": "user", "content": "Explain this workflow"},
+                {"role": "assistant", "content": "Hello world"},
+            ],
+        )
+
+    @pytest.mark.asyncio
     async def test_proxy_server_chat_stops_after_done_event(
         self,
         monkeypatch: pytest.MonkeyPatch,
