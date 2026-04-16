@@ -422,12 +422,16 @@ export const useLlmStore = defineStore("llm", () => {
       title: String(item.title || "Untitled conversation"),
       updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
     }));
+    // Drop stale conversation id but keep messages.value — a common
+    // post-stream race has the server returning a list that doesn't yet
+    // include a just-created conversation, and wiping messages here would
+    // make the user's just-received response disappear. See sherpa.ts
+    // refreshConversations for the parallel fix.
     if (
       currentConversationId.value
       && !conversations.value.some((item) => item.id === currentConversationId.value)
     ) {
       currentConversationId.value = null;
-      messages.value = [];
     }
   };
 
