@@ -30,12 +30,24 @@ _llm_rate_limiter = RateLimiter(
 
 
 def _should_proxy_server_conversations() -> bool:
-    return app_config.mode in ("hybrid", "enterprise") or app_config.site_profile == "demo"
+    from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
+
+    # Proxy only when the deployment mode calls for it AND the subscription
+    # api_key is actually configured. Without the key the proxy target would
+    # 503, which (before this gate) broke every conversation-related request
+    # in demo mode — including the sidebar list and topic-switch fetch.
+    # Falling through to the local path instead lets the frontend behave as
+    # if there are simply no server-backed conversations yet.
+    if app_config.mode not in ("hybrid", "enterprise") and app_config.site_profile != "demo":
+        return False
+    return bool(spectrasherpa_config.api_key)
 
 
 def _server_proxy_target() -> tuple[str, dict[str, str]]:
     from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
 
+    # Defence-in-depth: callers are gated by _should_proxy_server_conversations(),
+    # but if anyone reaches here without a key, fail loudly with a clear message.
     if not spectrasherpa_config.api_key:
         raise HTTPException(status_code=503, detail="Sherpa subscription service is not configured.")
 

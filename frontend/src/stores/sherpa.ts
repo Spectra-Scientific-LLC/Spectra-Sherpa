@@ -112,6 +112,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
   let unsubscribeSyncEvents: (() => void) | null = null;
   let unsubscribeGeneralEvents: (() => void) | null = null;
   let isInitialized = false;
+  let lastConversationProjectId: number | null = null;
 
   // ── helpers ────────────────────────────────────────────────
 
@@ -196,10 +197,24 @@ export const useSherpaStore = defineStore("sherpa", () => {
       return;
     }
 
+    // Detect genuine project switches so we can wipe stale sidebar rows
+    // BEFORE the fetch. If the fetch later throws (network error, transient
+    // backend failure), at least the sidebar won't keep showing the old
+    // project's conversations — which was the observed bug when the proxy
+    // 503'd on missing api_key.
+    const switchingProjects =
+      lastConversationProjectId !== null && lastConversationProjectId !== projectId;
+    if (switchingProjects) {
+      conversations.value = [];
+      currentConversationId.value = null;
+      messages.value = [];
+    }
+
     if (!projectId) {
       conversations.value = [];
       currentConversationId.value = null;
       messages.value = [];
+      lastConversationProjectId = null;
       return;
     }
 
@@ -211,6 +226,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
       title: String(item.title || "Untitled conversation"),
       updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
     }));
+    lastConversationProjectId = projectId;
 
     if (
       currentConversationId.value

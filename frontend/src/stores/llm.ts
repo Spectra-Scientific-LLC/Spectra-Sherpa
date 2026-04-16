@@ -79,6 +79,7 @@ export const useLlmStore = defineStore("llm", () => {
   const CONNECT_RETRY_ATTEMPTS = 3;
   let connectAttempt = 0;
   let authFallbackRetried = false;
+  let lastConversationProjectId: number | null = null;
 
   const formatChatWarning = (
     payload: Record<string, unknown>
@@ -407,10 +408,23 @@ export const useLlmStore = defineStore("llm", () => {
       conversations.value = loadConversations();
       return;
     }
+
+    // Eagerly clear stale sidebar rows on a genuine project switch so a
+    // failing fetch can't leave the previous project's conversations
+    // visible after the user has moved on.
+    const switchingProjects =
+      lastConversationProjectId !== null && lastConversationProjectId !== projectId;
+    if (switchingProjects) {
+      conversations.value = [];
+      currentConversationId.value = null;
+      messages.value = [];
+    }
+
     if (!projectId || !authStore.user?.id) {
       conversations.value = [];
       currentConversationId.value = null;
       messages.value = [];
+      lastConversationProjectId = null;
       return;
     }
 
@@ -422,6 +436,7 @@ export const useLlmStore = defineStore("llm", () => {
       title: String(item.title || "Untitled conversation"),
       updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
     }));
+    lastConversationProjectId = projectId;
     if (
       currentConversationId.value
       && !conversations.value.some((item) => item.id === currentConversationId.value)
