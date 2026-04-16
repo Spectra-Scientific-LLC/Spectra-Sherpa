@@ -18,6 +18,7 @@ from spectra_sherpa.app.lib.sherpa_dataset import (
 from spectra_sherpa.app.services.dag.meta_helpers import (
     add_processing_step,
     copy_processing_history,
+    inherit_origin_flags,
     inherit_sample_flags,
 )
 
@@ -534,6 +535,10 @@ class PCANode(Node):
         # Loadings rows are principal components (not samples), so the
         # flag is meaningless there — leave it at the SherpaDataset default.
         inherit_sample_flags(input_ds, scores_dataset)
+        # Origin tags (is_spectra, spectral_technique) describe provenance,
+        # not data shape — they survive on both scores and loadings.
+        inherit_origin_flags(input_ds, scores_dataset)
+        inherit_origin_flags(input_ds, loadings_dataset)
 
         # Fix feature axes that from_nddataset() may leave with values=None
         # (SCP sometimes omits the component axis on PCA outputs).

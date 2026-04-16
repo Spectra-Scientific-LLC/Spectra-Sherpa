@@ -154,6 +154,54 @@ def inherit_sample_flags(source: Any, target: Any) -> None:
     target.is_time_series = bool(source.is_time_series)
 
 
+def inherit_origin_flags(source: Any, target: Any) -> None:
+    """Propagate dataset origin tags (is_spectra, spectral_technique) from
+    a source SherpaDataset to a target SherpaDataset.
+
+    Why: transform nodes (PCA scores, PLS loadings, MCR components, etc.)
+    discard the origin context when they construct fresh outputs from SCP
+    objects. Even when the OUTPUT data is no longer raw spectra (e.g. PCA
+    scores are projections, not absorbances), the *provenance* — "this
+    came from UV-Vis spectra of NIR data" — should survive. Downstream UI
+    and AI consumers rely on these tags.
+
+    Copies (in this order, all best-effort and silently skipping when missing):
+    - source.meta["is_spectra"] -> target.meta["is_spectra"]
+    - source.meta["spectral_technique"] -> target.meta["spectral_technique"]
+    - source.domain.technique -> target.domain.technique (if both have a domain)
+
+    Does NOT copy: x_title, x_units, value_units, data_quantity. Those
+    legitimately change for decomposition outputs (e.g. x_title becomes
+    "Principal Component" or "Latent Variable") and each node sets them
+    explicitly. Sample-order preservation is the separate concern of
+    inherit_sample_flags(); compose both for sample-axis-preserved outputs.
+
+    Safe to call with non-SherpaDataset arguments (no-op).
+    """
+    if not isinstance(source, SherpaDataset) or not isinstance(target, SherpaDataset):
+        return
+    # Meta dict propagation. SherpaDataset.meta is a read-only property that
+    # returns a mutable view backed by .extra, so we mutate via setdefault
+    # rather than reassigning the attribute.
+    src_meta = source.meta if isinstance(source.meta, dict) else {}
+    tgt_meta = target.meta if isinstance(target.meta, dict) else None
+    if tgt_meta is not None:
+        for key in ("is_spectra", "spectral_technique"):
+            if key in src_meta and src_meta[key] is not None:
+                tgt_meta.setdefault(key, src_meta[key])
+    # Domain.technique propagation (best-effort)
+    src_domain = getattr(source, "domain", None)
+    tgt_domain = getattr(target, "domain", None)
+    if src_domain is not None and tgt_domain is not None:
+        src_tech = getattr(src_domain, "technique", None)
+        tgt_tech = getattr(tgt_domain, "technique", None)
+        if src_tech and not tgt_tech:
+            try:
+                target.domain = tgt_domain.model_copy(update={"technique": src_tech})
+            except Exception:
+                pass
+
+
 def copy_processing_history(source: Any, target: Any) -> None:
     """
     Copy processing history from source to target dataset.
