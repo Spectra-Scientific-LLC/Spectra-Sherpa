@@ -455,12 +455,15 @@ export const useSherpaStore = defineStore("sherpa", () => {
     return {
       role: "assistant",
       content: [
-        "Sherpa Advisor is ready.",
+        "Welcome to Sherpa Advisor. Quick tour:",
         "",
-        "1. Create a project.",
-        "2. Pick a template or build a workflow.",
-        "3. Run the workflow to generate results.",
-        "4. Ask Sherpa about the outputs, diagnostics, or next steps.",
+        "1. **Project** — create or select one.",
+        "2. **Template** — pick one that fits your analysis.",
+        "3. **Data** — load a dataset (your files or the reference catalog).",
+        "4. **Inspect** — review and refine axes / metadata in the Data → Explore tab.",
+        "5. **Workflow** — run the pipeline, then ask me about the results.",
+        "",
+        "Ask me anything as you go — I can explain templates, diagnose runs, and suggest next steps.",
       ].join("\n"),
     };
   }
