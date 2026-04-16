@@ -144,19 +144,24 @@ describe("Sherpa Advisor refreshConversations — thread-continuity contract", (
     );
   });
 
-  it("clears state when list is missing the id AND GET /conversation/{id} 404s", async () => {
-    // The conversation was genuinely deleted elsewhere. Safe to clear.
+  it("preserves state when list is missing the id AND GET /conversation/{id} 404s on the same project", async () => {
+    // Same-project 404 is ambiguous: it happens during eventual consistency
+    // between POST /chat and GET /conversation/{id} on the upstream service
+    // (new id minted, persistence still in flight) just as much as when the
+    // conversation was genuinely deleted elsewhere. Wiping messages in the
+    // race case made the just-received answer vanish mid-render on staging.
+    // New contract: only wipe on 404 when switchingProjects is true.
     apiGet.mockResolvedValueOnce({ data: [] });
     apiGet.mockRejectedValueOnce(axiosError(404));
 
     const sherpa = useSherpaStore();
-    sherpa.$patch({ currentConversationId: "conv-gone" });
-    sherpa.$patch({ messages: [{ role: "assistant", content: "stale content" }] });
+    sherpa.$patch({ currentConversationId: "conv-new" });
+    sherpa.$patch({ messages: [{ role: "assistant", content: "just received" }] });
 
     await sherpa.refreshConversations(7);
 
-    expect(sherpa.currentConversationId).toBeNull();
-    expect(sherpa.messages).toEqual([]);
+    expect(sherpa.currentConversationId).toBe("conv-new");
+    expect(sherpa.messages).toHaveLength(1);
   });
 
   it("preserves state when list is missing the id AND GET /conversation/{id} fails with 5xx", async () => {
@@ -300,30 +305,37 @@ describe("Sherpa Advisor refreshConversations — project-switch state isolation
   it("clears state when probe 404s on a project switch even if list fetch failed", async () => {
     // Reviewer H2: user switches projects. ChatPanel calls
     // refreshConversations(newProjectId). If list fetches fine the probe
-    // with newProjectId returns 404 and we clear \u2014 fine. But if list
+    // with newProjectId returns 404 and we clear — fine. But if list
     // fetch 5xxes, the previous contract returned early without clearing,
     // leaving currentConversationId pointing at the OLD project's thread.
     // The next send would pair old id with new project_id.
     //
     // New contract: probe runs regardless of list outcome. 404 on the
     // probe (scoped by project_id) correctly identifies the project
-    // mismatch and clears state.
-    apiGet.mockRejectedValueOnce(axiosError(503)); // list fails
-    apiGet.mockRejectedValueOnce(axiosError(404)); // probe 404 = wrong project
+    // mismatch and clears state — but ONLY when switchingProjects is
+    // true (lastConversationProjectId !== newProjectId). So we prime
+    // lastConversationProjectId by running a successful refresh for the
+    // old project first.
+    apiGet.mockResolvedValueOnce({ data: [] }); // seed: list OK for old project
+    apiGet.mockRejectedValueOnce(axiosError(503)); // new project: list fails
+    apiGet.mockRejectedValueOnce(axiosError(404)); // new project: probe 404 = wrong project
 
     const sherpa = useSherpaStore();
+    await sherpa.refreshConversations(7); // seed lastConversationProjectId = 7
+
     sherpa.$patch({ currentConversationId: "conv-from-old-project" });
     sherpa.$patch({ messages: [{ role: "assistant", content: "old project chat" }] });
 
-    await sherpa.refreshConversations(999); // new project id
+    await sherpa.refreshConversations(999); // new project id — switchingProjects = true
 
     expect(sherpa.currentConversationId).toBeNull();
     expect(sherpa.messages).toEqual([]);
     expect(sherpa.conversations).toEqual([]);
-    // Both endpoints were hit.
+    // Seed list + new-project list + new-project probe.
     expect(apiGet).toHaveBeenNthCalledWith(1, "/llm/conversations", expect.anything());
+    expect(apiGet).toHaveBeenNthCalledWith(2, "/llm/conversations", expect.anything());
     expect(apiGet).toHaveBeenNthCalledWith(
-      2,
+      3,
       "/llm/conversation/conv-from-old-project",
       expect.anything(),
     );

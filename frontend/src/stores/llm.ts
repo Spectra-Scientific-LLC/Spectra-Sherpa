@@ -480,15 +480,23 @@ export const useLlmStore = defineStore("llm", () => {
       lastConversationProjectId = projectId;
     } catch (err) {
       const status = (err as { response?: { status?: number } }).response?.status;
-      if (status === 404) {
-        // Deleted OR belongs to a different project. Clear so the next
-        // send doesn't pair an old id with a new project_id.
+      if (status === 404 && switchingProjects) {
+        // Project switch: stale id belongs to a different project.
+        // Clear so the next send doesn't pair an old id with a new project_id.
         currentConversationId.value = null;
         messages.value = [];
         if (listFailed) {
           conversations.value = [];
         }
         lastConversationProjectId = projectId;
+      } else if (status === 404) {
+        // Same-project 404 — most often an eventual-consistency race
+        // between POST /chat and GET /conversation/{id}. Preserve state
+        // so the freshly-received answer doesn't vanish mid-render.
+        console.warn(
+          "[llm] getConversation probe 404 on same project — likely eventual consistency; preserving state:",
+          { activeId, projectId },
+        );
       } else {
         console.warn(
           "[llm] getConversation probe failed — keeping active thread intact:",

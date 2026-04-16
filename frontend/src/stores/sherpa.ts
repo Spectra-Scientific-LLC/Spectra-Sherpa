@@ -288,16 +288,30 @@ export const useSherpaStore = defineStore("sherpa", () => {
       lastConversationProjectId = projectId;
     } catch (err) {
       const status = (err as { response?: { status?: number } }).response?.status;
-      if (status === 404) {
-        // Deleted, or belongs to a different project. Either way, the
-        // active id does not apply here. Clear both so the next send
-        // starts a new thread scoped to the current project.
+      if (status === 404 && switchingProjects) {
+        // Project switch: the stale activeId belongs to the previous
+        // project and 404s against the new one. Safe to wipe — next
+        // chat starts a new thread scoped to the current project.
         currentConversationId.value = null;
         messages.value = [];
         if (listFailed) {
           conversations.value = [];
         }
         lastConversationProjectId = projectId;
+      } else if (status === 404) {
+        // Same-project 404 is ambiguous and often transient:
+        // eventual consistency between POST /chat and GET
+        // /conversation/{id} on the upstream service (the id was just
+        // minted, persistence still in flight) shows up here as a 404
+        // on the very refresh triggered by updateConversationSummary().
+        // Wiping messages.value under that race makes the just-received
+        // answer vanish from the chat pane mid-render — a regression
+        // we hit in staging. Preserve state; if the conversation really
+        // is gone, the user's next send will surface a clean error.
+        console.warn(
+          "[sherpa] getConversation probe 404 on same project — likely eventual consistency; preserving state:",
+          { activeId, projectId },
+        );
       } else {
         // 5xx / network on probe. Ambiguous — preserve state.
         console.warn(

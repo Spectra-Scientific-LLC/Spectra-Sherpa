@@ -255,10 +255,16 @@ describe("LLM Store refreshConversations project-scope cleanup", () => {
   });
 
   it("clears stale rows when a project switch fails list fetch and probe 404s", async () => {
+    // Seed lastConversationProjectId via a successful refresh for the
+    // old project; otherwise switchingProjects is false and the new
+    // contract preserves state on 404 (treating it as eventual consistency).
+    apiGet.mockResolvedValueOnce({ data: [] });
     apiGet.mockRejectedValueOnce(axiosError(503));
     apiGet.mockRejectedValueOnce(axiosError(404));
 
     const llm = useLlmStore();
+    await llm.refreshConversations(1);
+
     llm.currentConversationId = "conv-old";
     llm.messages = [{ role: "assistant", content: "old thread" }];
     llm.conversations = [{ id: "conv-old", title: "Old thread", updatedAt: "t0" }];
