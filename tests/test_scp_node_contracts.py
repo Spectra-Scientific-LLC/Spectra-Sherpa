@@ -16,9 +16,16 @@ import pytest
 
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP
 from spectra_sherpa.app.lib.sherpa_dataset import (
+    DomainContext,
+    SampleAxis,
     SherpaDataset,
     SpectralAxis,
     TargetContext,
+)
+from spectra_sherpa.app.services.dag.meta_helpers import (
+    copy_processing_history,
+    inherit_origin_context,
+    inherit_sample_flags,
 )
 from spectra_sherpa.app.services.dag.node_base import node_registry
 from spectra_sherpa.app.services.serialization import serialize_result
@@ -92,17 +99,38 @@ def _make_spectral_dataset(
             target_names=target_names,
         )
 
-    return SherpaDataset(
+    ds = SherpaDataset(
         X=X,
         feature_axis=SpectralAxis(
-            values=np.linspace(400, 4000, n_features),
-            title="Wavenumber",
-            units="cm^-1",
+            values=np.linspace(350, 900, n_features),
+            title="Wavelength",
+            units="nm",
+        ),
+        sample_axis=SampleAxis(
+            values=np.linspace(0, n_samples - 1, n_samples),
+            title="Elapsed Time",
+            units="s",
+        ),
+        domain=DomainContext(
+            technique="UV-Vis",
+            data_quantity="Absorbance",
+            expected_units="nm",
         ),
         target=target,
         target_context=target_context,
         backend="numpy",
     )
+    ds.is_time_series = True
+    ds.meta.update(
+        {
+            "is_spectra": True,
+            "spectral_technique": "UV-Vis",
+            "data_quantity": "Absorbance",
+            "x_title": "Wavelength",
+            "x_units": "nm",
+        }
+    )
+    return ds
 
 
 # ---------------------------------------------------------------------------
@@ -368,3 +396,119 @@ class TestExplicitOutputTypes:
 
         payload = serialize_result(result["default"])
         assert payload["metadata"]["type"] == "PLS_DA"
+
+
+class TestOriginContextPropagation:
+    """Transformed outputs should keep serialized Explore-tab context."""
+
+    @_skip_no_scp
+    @pytest.mark.asyncio
+    async def test_pca_serialized_outputs_preserve_origin_context(self, make_node):
+        ds = _make_spectral_dataset(n_samples=24, n_features=60)
+        node = make_node("model.pca", {"n_components": "3"})
+        result = _unwrap_result(await node.execute(input_data=ds))
+
+        scores_payload = serialize_result(result["scores"])
+        loadings_payload = serialize_result(result["loadings"])
+
+        assert scores_payload["metadata"]["is_time_series"] is True
+        assert scores_payload["metadata"]["spectral_technique"] == "UV-Vis"
+        assert scores_payload["metadata"]["data_quantity"] == "Absorbance"
+
+        assert loadings_payload["metadata"]["spectral_technique"] == "UV-Vis"
+        assert loadings_payload["metadata"]["data_quantity"] == "Absorbance"
+        assert loadings_payload["metadata"]["x_title"] == "Wavelength"
+        assert loadings_payload["metadata"]["x_units"] == "nm"
+
+
+class TestOriginContextHelpers:
+    """Helper-level regression coverage for environments without SCP."""
+
+    def test_copy_processing_history_preserves_serialized_origin_context(self):
+        source = _make_spectral_dataset(n_samples=18, n_features=40)
+        scores = SherpaDataset(
+            X=np.ones((18, 3), dtype=np.float64),
+            feature_axis=SpectralAxis(
+                values=np.arange(3, dtype=np.float64),
+                labels=["PC1", "PC2", "PC3"],
+                title="Principal Component",
+            ),
+            backend="numpy",
+        )
+        loadings = SherpaDataset(
+            X=np.ones((3, 40), dtype=np.float64),
+            feature_axis=SpectralAxis(values=np.arange(40, dtype=np.float64), title="Feature"),
+            backend="numpy",
+        )
+
+        copy_processing_history(source, scores)
+        copy_processing_history(source, loadings)
+
+        scores_payload = serialize_result(scores)
+        loadings_payload = serialize_result(loadings)
+
+        assert scores_payload["metadata"]["is_time_series"] is True
+        assert scores_payload["metadata"]["spectral_technique"] == "UV-Vis"
+        assert scores_payload["metadata"]["data_quantity"] == "Absorbance"
+
+        assert loadings_payload["metadata"]["spectral_technique"] == "UV-Vis"
+        assert loadings_payload["metadata"]["data_quantity"] == "Absorbance"
+        assert loadings_payload["metadata"]["x_title"] == "Wavelength"
+        assert loadings_payload["metadata"]["x_units"] == "nm"
+
+    def test_pca_post_conversion_helpers_restore_serialized_origin_context(self):
+        source = _make_spectral_dataset(n_samples=20, n_features=32)
+        scores = SherpaDataset(
+            X=np.ones((20, 2), dtype=np.float64),
+            feature_axis=SpectralAxis(
+                values=np.arange(2, dtype=np.float64),
+                labels=["PC1", "PC2"],
+                title="Principal Component",
+            ),
+            backend="numpy",
+        )
+        loadings = SherpaDataset(
+            X=np.ones((2, 32), dtype=np.float64),
+            feature_axis=SpectralAxis(values=np.arange(32, dtype=np.float64), title="Feature"),
+            backend="numpy",
+        )
+
+        inherit_sample_flags(source, scores)
+        inherit_origin_context(source, scores)
+        inherit_origin_context(source, loadings, preserve_feature_axis=True)
+
+        scores_payload = serialize_result(scores)
+        loadings_payload = serialize_result(loadings)
+
+        assert scores_payload["metadata"]["is_time_series"] is True
+        assert scores_payload["metadata"]["spectral_technique"] == "UV-Vis"
+        assert scores_payload["metadata"]["data_quantity"] == "Absorbance"
+
+        assert loadings_payload["metadata"]["spectral_technique"] == "UV-Vis"
+        assert loadings_payload["metadata"]["data_quantity"] == "Absorbance"
+        assert loadings_payload["metadata"]["x_title"] == "Wavelength"
+        assert loadings_payload["metadata"]["x_units"] == "nm"
+
+    @_skip_no_scp
+    @pytest.mark.asyncio
+    async def test_pls_serialized_outputs_preserve_origin_context(self, make_node):
+        ds = _make_spectral_dataset(
+            n_samples=30,
+            n_features=50,
+            n_targets=2,
+            target_names=["Moisture", "Oil"],
+        )
+        node = make_node("model.pls", {"n_components": 2})
+        result = _unwrap_result(await node.execute(X=ds))
+
+        scores_payload = serialize_result(result["X_scores"])
+        loadings_payload = serialize_result(result["X_loadings"])
+
+        assert scores_payload["metadata"]["is_time_series"] is True
+        assert scores_payload["metadata"]["spectral_technique"] == "UV-Vis"
+        assert scores_payload["metadata"]["data_quantity"] == "Absorbance"
+
+        assert loadings_payload["metadata"]["spectral_technique"] == "UV-Vis"
+        assert loadings_payload["metadata"]["data_quantity"] == "Absorbance"
+        assert loadings_payload["metadata"]["x_title"] == "Wavelength"
+        assert loadings_payload["metadata"]["x_units"] == "nm"

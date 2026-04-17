@@ -75,5 +75,3 @@ template_data:
     name: iris
   - source: sklearn
     name: breast_cancer
-  - source: sklearn
-    name: digits

@@ -9,7 +9,12 @@ from typing import Any
 
 import numpy as np
 
-from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
+from spectra_sherpa.app.services.dag.meta_helpers import (
+    add_processing_step,
+    copy_processing_history,
+    inherit_origin_flags,
+    inherit_sample_flags,
+)
 
 from ...io_contracts import (
     bind_X,
@@ -496,6 +501,12 @@ class SIMCANode(Node):
             {"n_components": n_components},
             node_id=self.node_id,
         )
+
+        # Propagate dataset-level flags. SIMCA viz scores project all
+        # samples into the first class's PC space, so rows are samples
+        # (sample-axis preserved). Origin tags survive on every output.
+        inherit_sample_flags(X_ds, scores_dataset)
+        inherit_origin_flags(X_ds, scores_dataset)
 
         # Store ONLY scientific metadata that coordinates can't carry
         scores_dataset.meta.update(
