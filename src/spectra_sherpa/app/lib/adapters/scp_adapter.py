@@ -312,6 +312,9 @@ def _extract_spectral_axis(ds: Any, *, ndim: int, dim_names: list[str] | None) -
         units=str(coord.units) if hasattr(coord, "units") and coord.units else None,
         title=str(coord.title) if hasattr(coord, "title") and coord.title else None,
         labels=labels,
+        include_mask=None,
+        selection_scores=None,
+        selection_method=None,
     )
 
 
@@ -326,6 +329,10 @@ def _extract_sample_axis(ds: Any, *, dim_names: list[str] | None) -> SampleAxis 
         units=str(coord.units) if hasattr(coord, "units") and coord.units else None,
         title=str(coord.title) if hasattr(coord, "title") and coord.title else None,
         labels=labels,
+        classes=None,
+        include_mask=None,
+        exclusion_reasons=None,
+        sample_table=None,
     )
 
 
@@ -534,11 +541,35 @@ def _coord_to_axis(coord: Any) -> AxisInfo | None:
     if units:
         u = units.lower().strip()
         if u in _TIME_UNITS:
-            return TimeAxis(values=values, units=units, title=title, labels=labels)
+            return TimeAxis(
+                values=values,
+                units=units,
+                title=title,
+                labels=labels,
+                include_mask=None,
+                selection_scores=None,
+                selection_method=None,
+            )
         if u in _MZ_UNITS:
-            return MZAxis(values=values, units=units, title=title, labels=labels)
+            return MZAxis(
+                values=values,
+                units=units,
+                title=title,
+                labels=labels,
+                include_mask=None,
+                selection_scores=None,
+                selection_method=None,
+            )
         if u in _SPATIAL_UNITS:
-            return SpatialAxis(values=values, units=units, title=title, labels=labels)
+            return SpatialAxis(
+                values=values,
+                units=units,
+                title=title,
+                labels=labels,
+                include_mask=None,
+                selection_scores=None,
+                selection_method=None,
+            )
 
     # Default: generic AxisInfo for unknown inner dimensions
     return AxisInfo(values=values, units=units, title=title, labels=labels)
