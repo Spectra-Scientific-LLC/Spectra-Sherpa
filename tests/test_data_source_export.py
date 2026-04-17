@@ -570,3 +570,64 @@ def test_generate_python_code_uses_bundled_files_and_explicit_overrides():
     assert "_feature_axis_src.units = 's'" in code
     assert "_domain_src.data_quantity = 'Response'" in code
     assert "_ds.is_time_series = True" in code
+
+
+@pytest.mark.skipif(not HAS_SCP, reason="SCP testdata required to resolve bundle files")
+def test_resolve_scp_bundle_files_known_default():
+    """SCP example datasets with known defaults produce a BundledSourceFile."""
+    from spectra_sherpa.app.services.workflow_export_context import _resolve_scp_bundle_files
+
+    files = _resolve_scp_bundle_files("data_1", {"example_dataset": "irdata"})
+    assert len(files) == 1
+    assert files[0].absolute_path.exists()
+    assert files[0].bundle_relative_path == "data_1/nh4y-activation.spg"
+    assert "irdata" in files[0].source_relative_path
+
+
+def test_resolve_scp_bundle_files_unknown_dataset():
+    """SCP datasets not in _SCP_KNOWN_DEFAULTS and no example_file return empty."""
+    from spectra_sherpa.app.services.workflow_export_context import _resolve_scp_bundle_files
+
+    files = _resolve_scp_bundle_files("data_1", {"example_dataset": "ramandata"})
+    assert files == []
+
+
+@pytest.mark.skipif(not HAS_SCP, reason="SCP testdata required to resolve bundle files")
+def test_scp_source_bundled_export_uses_bundle_path():
+    """When SCP data is resolvable, the generated code references the bundled file
+    via _bundle_path instead of calling scp.read() with an SCP-relative path."""
+    from spectra_sherpa.app.services.python_export import generate_python_code
+    from spectra_sherpa.app.services.workflow_export_context import (
+        SourceExportSpec,
+        WorkflowExportContext,
+        _resolve_scp_bundle_files,
+    )
+
+    bundle_files = _resolve_scp_bundle_files("data_1", {"example_dataset": "irdata"})
+    assert bundle_files, "Expected SCP bundle files to be resolved"
+
+    wf = _make_workflow(
+        "SCP Bundled",
+        nodes=[
+            _wf_node("data_1", "data.source", {"source": "spectrochempy", "example_dataset": "irdata"}),
+            _wf_node("pca", "model.pca", {"n_components": 3}),
+        ],
+        edges=[_wf_edge("data_1", "pca", from_output="default", to_input="default")],
+    )
+
+    context = WorkflowExportContext(
+        source_specs={
+            "data_1": SourceExportSpec(
+                node_id="data_1",
+                source="spectrochempy",
+                loader_mode="single_file",
+                bundle_files=tuple(bundle_files),
+            )
+        }
+    )
+
+    code = generate_python_code(wf, export_context=context)
+
+    # Should use the bundled file path, not scp.read() with a bare SCP-relative path
+    assert "os.path.join(DATA_DIR," in code
+    assert "_bundle_path_data_1" in code
