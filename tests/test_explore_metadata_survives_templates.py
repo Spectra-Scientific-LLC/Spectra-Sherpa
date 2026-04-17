@@ -62,18 +62,19 @@ _SKLEARN_IRIS_OVERRIDE = {"source": "sklearn", "sklearn_dataset": "iris"}
 
 TEMPLATES: list[tuple[str, bool, dict]] = [
     # (slug, requires_scp_after_override, data_1_override)
-    # None of these fundamentally require SCP once data_1 is overridden, but
-    # we keep the hook in place in case a template adds an SCP-only node later.
+    # Modeling/decomposition nodes (PCA, PLS, MCR, etc.) delegate to
+    # SpectroChemPy internally and raise ValueError without it, even when
+    # the data_1 node is overridden with a pure-numpy dataset.
     ("preprocessing", False, _EIGENVECTOR_CORN_OVERRIDE),
-    ("pca_exploratory", False, _EIGENVECTOR_CORN_OVERRIDE),
-    ("pls_calibration", False, _EIGENVECTOR_CORN_OVERRIDE),
-    ("mcr_als", False, _EIGENVECTOR_CORN_OVERRIDE),
-    ("simplisma", False, _EIGENVECTOR_CORN_OVERRIDE),
-    ("spectral_decomposition", False, _EIGENVECTOR_CORN_OVERRIDE),
-    ("classification_plsda", False, _SKLEARN_IRIS_OVERRIDE),
-    ("simca_classification", False, _SKLEARN_IRIS_OVERRIDE),
+    ("pca_exploratory", True, _EIGENVECTOR_CORN_OVERRIDE),
+    ("pls_calibration", True, _EIGENVECTOR_CORN_OVERRIDE),
+    ("mcr_als", True, _EIGENVECTOR_CORN_OVERRIDE),
+    ("simplisma", True, _EIGENVECTOR_CORN_OVERRIDE),
+    ("spectral_decomposition", True, _EIGENVECTOR_CORN_OVERRIDE),
+    ("classification_plsda", True, _SKLEARN_IRIS_OVERRIDE),
+    ("simca_classification", True, _SKLEARN_IRIS_OVERRIDE),
     ("hierarchical_clustering", False, _EIGENVECTOR_CORN_OVERRIDE),
-    ("efa_analysis", False, _EIGENVECTOR_CORN_OVERRIDE),
+    ("efa_analysis", True, _EIGENVECTOR_CORN_OVERRIDE),
 ]
 
 
