@@ -15,11 +15,13 @@
  * same refs exposed via useNodeDetailState.writable.
  */
 
-import { computed, watch, type Ref } from "vue";
+import { computed, watch, type ComputedRef, type Ref } from "vue";
 import type { NodeOutput } from "@/utils/nodeOutput";
+import type { PlotDataBag } from "../state/useNodeDetailState";
 import { createCategoryColorMap } from "@/utils/colors";
 import { getYAxisLabel } from "@/utils/plotLabels";
 import { normalizeSampleLabel } from "@/utils/sampleLabels";
+import { resolvePortPayload } from "./useNodeOutput";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- plotly payloads and node metadata vary too widely to tighten meaningfully here; see PlotDataBag per-family comments for the boundary. */
 
@@ -29,13 +31,6 @@ interface UseNodePlotDataDeps {
   nodeTypeKey: Ref<string>;
   hasOutput: Ref<boolean>;
   isPCAOutput: Ref<boolean>;
-  isDataNode: Ref<boolean>;
-  isSpectraData: Ref<boolean>;
-  isGenericDataNode: Ref<boolean>;
-  resolvePortPayload: (port: any) => any;
-  pcaSampleLabels: Ref<string[]>;
-  pcaLabelCategories: Ref<string[]>;
-  pcaUseCategorical: Ref<boolean>;
   // Writable — owned by the shell, mutated in place by the PCA clamp watch
   // and the contour click handler.
   pcaXAxis: Ref<number>;
@@ -64,13 +59,6 @@ export function useNodePlotData(deps: UseNodePlotDataDeps) {
     nodeTypeKey,
     hasOutput,
     isPCAOutput,
-    isDataNode,
-    isSpectraData,
-    isGenericDataNode,
-    resolvePortPayload,
-    pcaSampleLabels,
-    pcaLabelCategories,
-    pcaUseCategorical,
     pcaXAxis,
     pcaYAxis,
     plsdaLoadingsViewMode,
@@ -82,6 +70,71 @@ export function useNodePlotData(deps: UseNodePlotDataDeps) {
     selectedRegressionR2,
     selectedRegressionRmse,
   } = deps;
+
+  // ── Derived flags (previously computed in the shell) ──────────────────
+
+  const isDataNode = computed(() => nodeType.value.startsWith("data."));
+
+  const isSpectraData = computed(() => {
+    const metadata = nodeOutput.value?.metadata || {};
+    if (metadata.is_spectra !== undefined) return metadata.is_spectra;
+    if (metadata.data_type === "spectra") return true;
+    if (metadata.data_type === "generic") return false;
+    const xTitle = (metadata.x_title || "").toLowerCase();
+    const spectralKeywords = ["wavenumber", "wavelength", "raman", "cm-1", "cm⁻¹", "nm", "shift", "frequency"];
+    return spectralKeywords.some((kw) => xTitle.includes(kw));
+  });
+
+  const isGenericDataNode = computed(() => {
+    if (!isDataNode.value) return false;
+    const metadata = nodeOutput.value?.metadata || {};
+    const hasFeatureNames = metadata.feature_names && metadata.feature_names.length > 0;
+    return !isSpectraData.value && hasFeatureNames;
+  });
+
+  // ── PCA sample labels (previously computed in the shell) ──────────────
+
+  const primaryOutputPayload = computed(() => {
+    const primaryPort = nodeOutput.value?.primary_port;
+    if (!primaryPort) return null;
+    return resolvePortPayload(nodeOutput.value?.ports?.[primaryPort]);
+  });
+
+  const pcaSampleLabels = computed<string[]>(() => {
+    const metadata = nodeOutput.value?.metadata || {};
+    const candidates = [
+      metadata.sample_labels,
+      metadata.labels,
+      primaryOutputPayload.value?.y_axis?.labels,
+    ];
+    for (const raw of candidates) {
+      if (Array.isArray(raw) && raw.length > 0) {
+        return raw.map((item: any) => normalizeSampleLabel(item));
+      }
+    }
+    return [];
+  });
+
+  const pcaLabelCategories = computed<string[]>(() => {
+    const labels = pcaSampleLabels.value;
+    if (labels.length === 0) return [];
+    const metadata = nodeOutput.value?.metadata || {};
+    const labelSet = new Set(labels);
+    const rawCategories = Array.isArray(metadata.label_categories)
+      ? metadata.label_categories.map((item: any) => normalizeSampleLabel(item))
+      : [];
+    let categories = rawCategories.filter((category: string) => labelSet.has(category));
+    if (categories.length === 0) categories = Array.from(labelSet);
+    return Array.from(new Set(categories));
+  });
+
+  const pcaUseCategorical = computed(() => {
+    const labels = pcaSampleLabels.value;
+    const categories = pcaLabelCategories.value;
+    if (labels.length === 0 || categories.length < 2) return false;
+    if (categories.length >= labels.length) return false;
+    return categories.length <= 20;
+  });
 
 
 // Spectra display mode
@@ -2812,93 +2865,72 @@ const classificationAccuracyLayout = computed(() => {
   };
 });
 
-  return {
+  // ── Pre-built PlotDataBag for provide/inject ──────────────────────────
+  // Aggregates every plot computed into a single reactive object so the
+  // shell no longer needs a 60-line unwrapping computed.
+  const plotBag: ComputedRef<PlotDataBag> = computed(() => ({
     // Meta / options
-    availablePlots,
-    isPreprocessingNode,
-    pcLabels,
-    pcaAxisOptions,
-    featureOptions,
-    yAxisLabel,
+    hasOutput: hasOutput.value,
+    availablePlots: availablePlots.value,
+    nodeTypeKey: nodeTypeKey.value,
+    isPCAOutput: isPCAOutput.value,
+    isPreprocessingNode: isPreprocessingNode.value,
+    isDataNode: isDataNode.value,
+    isSpectraData: isSpectraData.value,
+    isGenericDataNode: isGenericDataNode.value,
+    nodeOutput: nodeOutput.value,
+    contourClickPoint: contourClickPoint.value,
+    pcaAxisOptions: pcaAxisOptions.value,
+    regressionTargetOptions: regressionTargetOptions.value,
     spectraDisplayOptions,
     genericDisplayOptions,
-    holdoutVisualization,
-    basePlotLayout,
-    // Handlers
-    handleContourClick,
+    featureOptions: featureOptions.value,
+    holdoutVisualization: holdoutVisualization.value,
     // PCA
-    pcaScoresData,
-    pcaScoresLayout,
-    pcaScoresConfig,
-    pcaBiplotData,
-    pcaBiplotLayout,
-    pcaLoadingsData,
-    pcaLoadingsLayout,
-    pcaLoadingsConfig,
-    pcaScreeData,
-    pcaScreeLayout,
-    pcaDiagnosticsData,
-    pcaDiagnosticsLayout,
+    pcaScoresData: pcaScoresData.value, pcaScoresLayout: pcaScoresLayout.value, pcaScoresConfig: pcaScoresConfig.value,
+    pcaBiplotData: pcaBiplotData.value, pcaBiplotLayout: pcaBiplotLayout.value,
+    pcaLoadingsData: pcaLoadingsData.value, pcaLoadingsLayout: pcaLoadingsLayout.value, pcaLoadingsConfig: pcaLoadingsConfig.value,
+    pcaScreeData: pcaScreeData.value, pcaScreeLayout: pcaScreeLayout.value,
+    pcaDiagnosticsData: pcaDiagnosticsData.value, pcaDiagnosticsLayout: pcaDiagnosticsLayout.value,
     // MCR / SIMPLISMA / NMF / ICA
-    mcrConcentrationData,
-    mcrConcentrationLayout,
-    mcrSpectraData,
-    mcrSpectraLayout,
+    mcrConcentrationData: mcrConcentrationData.value, mcrConcentrationLayout: mcrConcentrationLayout.value,
+    mcrSpectraData: mcrSpectraData.value, mcrSpectraLayout: mcrSpectraLayout.value,
     // EFA
-    efaEigenvalueData,
-    efaEigenvalueLayout,
+    efaEigenvalueData: efaEigenvalueData.value, efaEigenvalueLayout: efaEigenvalueLayout.value,
     // PLS
-    plsScoresData,
-    plsScoresLayout,
-    plsLoadingsData,
-    plsLoadingsLayout,
+    plsScoresData: plsScoresData.value, plsScoresLayout: plsScoresLayout.value,
+    plsLoadingsData: plsLoadingsData.value, plsLoadingsLayout: plsLoadingsLayout.value,
     // PLS-DA + classification
-    classificationScoresData,
-    classificationScoresLayout,
-    plsdaLoadingsData,
-    plsdaLoadingsLayout,
-    plsdaVipData,
-    plsdaVipLayout,
-    plsdaConfusionTrainData,
-    plsdaConfusionTrainLayout,
-    plsdaConfusionCVData,
-    plsdaConfusionCVLayout,
-    classificationAccuracyData,
-    classificationAccuracyLayout,
+    classificationScoresData: classificationScoresData.value, classificationScoresLayout: classificationScoresLayout.value,
+    plsdaLoadingsData: plsdaLoadingsData.value, plsdaLoadingsLayout: plsdaLoadingsLayout.value,
+    plsdaVipData: plsdaVipData.value, plsdaVipLayout: plsdaVipLayout.value,
+    plsdaConfusionTrainData: plsdaConfusionTrainData.value, plsdaConfusionTrainLayout: plsdaConfusionTrainLayout.value,
+    plsdaConfusionCVData: plsdaConfusionCVData.value, plsdaConfusionCVLayout: plsdaConfusionCVLayout.value,
+    classificationAccuracyData: classificationAccuracyData.value, classificationAccuracyLayout: classificationAccuracyLayout.value,
     // Regression
-    regressionCorrelationData,
-    regressionCorrelationLayout,
+    regressionCorrelationData: regressionCorrelationData.value, regressionCorrelationLayout: regressionCorrelationLayout.value,
     // HCA / Peak / Plot node
-    hcaDendrogramData,
-    hcaDendrogramLayout,
-    peakFindingPlotData,
-    peakFindingPlotLayout,
-    plotNodeData,
-    plotNodeLayout,
+    hcaDendrogramData: hcaDendrogramData.value, hcaDendrogramLayout: hcaDendrogramLayout.value,
+    peakFindingPlotData: peakFindingPlotData.value, peakFindingPlotLayout: peakFindingPlotLayout.value,
+    plotNodeData: plotNodeData.value, plotNodeLayout: plotNodeLayout.value,
     // Spectra
-    spectraOverlayData,
-    spectraOverlayLayout,
-    spectraContourData,
-    spectraContourLayout,
-    horizontalSliceData,
-    horizontalSliceLayout,
-    verticalSliceData,
-    verticalSliceLayout,
+    spectraOverlayData: spectraOverlayData.value, spectraOverlayLayout: spectraOverlayLayout.value,
+    spectraContourData: spectraContourData.value, spectraContourLayout: spectraContourLayout.value,
+    horizontalSliceData: horizontalSliceData.value, horizontalSliceLayout: horizontalSliceLayout.value,
+    verticalSliceData: verticalSliceData.value, verticalSliceLayout: verticalSliceLayout.value,
     // Generic
-    genericBoxPlotData,
-    genericBoxPlotLayout,
-    genericScatterData,
-    genericScatterLayout,
+    genericBoxPlotData: genericBoxPlotData.value, genericBoxPlotLayout: genericBoxPlotLayout.value,
+    genericScatterData: genericScatterData.value, genericScatterLayout: genericScatterLayout.value,
     // Clusters / outliers / holdout / stats
-    clusterScatterData,
-    clusterScatterLayout,
-    outlierChartData,
-    outlierChartLayout,
-    holdoutConfusionData,
-    holdoutConfusionLayout,
-    holdoutRegressionData,
-    holdoutRegressionLayout,
-    statsPlotData,
-    statsPlotLayout,
+    clusterScatterData: clusterScatterData.value, clusterScatterLayout: clusterScatterLayout.value,
+    outlierChartData: outlierChartData.value, outlierChartLayout: outlierChartLayout.value,
+    holdoutConfusionData: holdoutConfusionData.value, holdoutConfusionLayout: holdoutConfusionLayout.value,
+    holdoutRegressionData: holdoutRegressionData.value, holdoutRegressionLayout: holdoutRegressionLayout.value,
+    statsPlotData: statsPlotData.value, statsPlotLayout: statsPlotLayout.value,
+  }));
+
+  return {
+    plotBag,
+    handleContourClick,
   };
 }
