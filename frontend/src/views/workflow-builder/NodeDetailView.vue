@@ -134,6 +134,7 @@ import { useToast } from "primevue/usetoast";
 import QuickPlotModal from "./modals/QuickPlotModal.vue";
 import DataTableModal from "./modals/DataTableModal.vue";
 import { useWorkflowStore } from "@/stores/workflow";
+import { useProjectStore } from "@/stores/project";
 import { createCategoryColorMap } from "@/utils/colors";
 import { getYAxisLabel } from "@/utils/plotLabels";
 import {
@@ -192,6 +193,7 @@ const localParams = ref<Record<string, any>>({});
 const originalParams = ref<Record<string, any>>({});
 
 const workflowStore = useWorkflowStore();
+const projectStore = useProjectStore();
 
 // Node icon mapping
 const NODE_ICONS: Record<string, string> = {
@@ -1421,12 +1423,32 @@ const pcaBiplotLayout = computed(() => {
 const pcaLoadingsData = computed(() => {
   if (!isPCAOutput.value || !hasOutput.value) return [];
 
-  // Read loadings from port (new architecture) or metadata (backwards compat)
+  // Loadings data can arrive on several shapes depending on which tier
+  // buildNodeDetailData used for sessionStorage (full / primary / minimal)
+  // and whether we came from Run Trial (fresh response) or the Inspector's
+  // session hand-off. Check every plausible location before giving up.
   const loadingsPort = nodeOutput.value?.ports?.loadings;
   const loadingsPayload = resolvePortPayload(loadingsPort);
   const metadata = nodeOutput.value?.metadata || {};
-  const loadings = loadingsPort?.data || metadata.loadings || [];
-  if (!loadings.length) return [];
+  const loadings: number[][] =
+    loadingsPort?.data
+    || loadingsPayload?.data
+    || metadata.loadings
+    || [];
+  if (!loadings.length) {
+    // Log a diagnostic so we can tell WHY it's empty on staging. Covers
+    // the "missing loadings port after reduced-tier sessionStorage" case
+    // we've seen on OES with large inputs.
+    if (!loadingsPort && !metadata.loadings) {
+      console.warn(
+        "[pcaLoadingsData] No loadings payload found — nodeOutput.ports keys:",
+        nodeOutput.value?.ports ? Object.keys(nodeOutput.value.ports) : "(ports missing)",
+        "metadata keys:",
+        Object.keys(metadata),
+      );
+    }
+    return [];
+  }
 
   // Wavenumbers/features: prefer loadings port x_axis (has actual wavenumbers), then metadata
   const portWavenumbers = loadingsPayload?.x_axis?.data;
@@ -2118,15 +2140,12 @@ const classificationScoresData = computed(() => {
   const nodeType = nodeTypeKey.value;
   if (!["classification.plsda", "classification.simca", "classification.knn"].includes(nodeType) || !hasOutput.value) return [];
 
-  // For PLS-DA, use pre-built scores plot if available
-  if (nodeType === "classification.plsda") {
-    const plots = nodeOutput.value?.plots;
-    if (plots?.scores?.data) {
-      return plots.scores.data;
-    }
-  }
-
-  // Fallback: build scores plot from raw data
+  // Always build from raw scores so the X / Y axis dropdowns actually drive
+  // the plot. The backend ships a pre-built scatter for PLS-DA (plots.scores.data)
+  // but it's pinned to dims 0 and 1 — short-circuiting to it here left the
+  // frontend dropdowns effectively dead on PLS-DA nodes (bug surfaced on
+  // staging). The raw-build path below produces equivalent output when the
+  // dropdowns are at their defaults AND honors user changes.
   const scores = nodeOutput.value?.data || [];
   const metadata = nodeOutput.value?.metadata || {};
   if (!scores.length) return [];
@@ -2191,17 +2210,10 @@ const classificationScoresData = computed(() => {
 });
 
 const classificationScoresLayout = computed(() => {
-  // For PLS-DA, use pre-built layout if available
-  if (nodeTypeKey.value === "classification.plsda") {
-    const plots = nodeOutput.value?.plots;
-    if (plots?.scores?.layout) {
-      return {
-        ...basePlotLayout,
-        ...plots.scores.layout,
-        height: 400,
-      };
-    }
-  }
+  // Always build the layout from current axis dropdowns — do NOT short-circuit
+  // to nodeOutput.plots.scores.layout for PLS-DA. The pre-built layout is
+  // pinned to dims 0 and 1, which would leave the X / Y axis titles out of
+  // sync with the user's dropdown selection even if the data updated.
 
   // Fallback layout
   const metadata = nodeOutput.value?.metadata || {};
@@ -3755,6 +3767,17 @@ onMounted(() => {
   if (storedData) {
     try {
       nodeData.value = JSON.parse(storedData);
+
+      // Hydrate project context from the sessionStorage payload. The
+      // parent tab owns the active project, but the new Detail View
+      // tab starts fresh (Pinia doesn't cross-tab). Without this,
+      // clicking Data / Experiments / Workflows inside the Detail
+      // View tab lands with no project selected and loses the user's
+      // workflow context.
+      const storedProjectId = nodeData.value?.projectId;
+      if (typeof storedProjectId === "number" && storedProjectId > 0) {
+        projectStore.selectProject(storedProjectId);
+      }
 
       // Build params with defaults from paramDefinitions, then override with stored values
       const defaults: Record<string, any> = {};

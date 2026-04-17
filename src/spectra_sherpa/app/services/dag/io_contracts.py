@@ -428,7 +428,12 @@ def build_dataset_like(
 
     sample_axis = obs_axis if isinstance(obs_axis, SampleAxis) else None
 
-    # Create dataset using feature_axis (supports all FeatureAxis types)
+    # Create dataset using feature_axis (supports all FeatureAxis types).
+    # is_time_series is a top-level SherpaDataset attribute (not stored in
+    # meta or domain), so it must be threaded explicitly here. Without this,
+    # every preprocessing node that builds output via build_dataset_like
+    # silently drops the user's Explore-tab time-series toggle. Sample-order
+    # is preserved by all such transforms, so propagating the flag is correct.
     result = SherpaDataset(
         X=arr,
         feature_axis=feature_axis,
@@ -443,6 +448,7 @@ def build_dataset_like(
         title=src.title if title is None else title,
         units=src.units if units is None else units,
         extra=copy.deepcopy(src.meta),
+        is_time_series=bool(src.is_time_series),
     )
 
     # If observation axis is NOT a SampleAxis (e.g., TimeAxis for time-resolved data),

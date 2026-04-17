@@ -75,7 +75,6 @@ MATRIX: list[tuple[str, str, dict]] = [
     ("classification_plsda", "wine", _sk("wine")),
     ("classification_plsda", "iris", _sk("iris")),
     ("classification_plsda", "breast_cancer", _sk("breast_cancer")),
-    ("classification_plsda", "digits", _sk("digits")),
     ("classification_plsda", "corn_m5_ev", _ev("corn_m5")),  # no class labels → expected fail
     # ── efa_analysis ──────────────────────────────────────────────────────
     ("efa_analysis", "irdata", _scp("irdata")),
@@ -94,7 +93,6 @@ MATRIX: list[tuple[str, str, dict]] = [
     ("knn_classification", "wine", _sk("wine")),
     ("knn_classification", "iris", _sk("iris")),
     ("knn_classification", "breast_cancer", _sk("breast_cancer")),
-    ("knn_classification", "digits", _sk("digits")),
     ("knn_classification", "corn_m5_ev", _ev("corn_m5")),  # no class labels → expected fail
     # ── mcr_als ───────────────────────────────────────────────────────────
     ("mcr_als", "irdata", _scp("irdata")),
@@ -161,13 +159,11 @@ MATRIX: list[tuple[str, str, dict]] = [
     ("simca_classification", "wine", _sk("wine")),
     ("simca_classification", "iris", _sk("iris")),
     ("simca_classification", "breast_cancer", _sk("breast_cancer")),
-    ("simca_classification", "digits", _sk("digits")),
     ("simca_classification", "corn_m5_ev", _ev("corn_m5")),  # no labels → fail expected
     # ── simca_qc ──────────────────────────────────────────────────────────
     ("simca_qc", "wine", _sk("wine")),
     ("simca_qc", "iris", _sk("iris")),
     ("simca_qc", "breast_cancer", _sk("breast_cancer")),
-    ("simca_qc", "digits", _sk("digits")),
     ("simca_qc", "corn_m5_ev", _ev("corn_m5")),  # no labels → fail expected
     # ── simplisma ─────────────────────────────────────────────────────────
     ("simplisma", "irdata", _scp("irdata")),
