@@ -13,7 +13,12 @@ import numpy as np
 from spectra_sherpa.app.lib.sherpa_dataset import (
     EvaluationResult,
 )
-from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
+from spectra_sherpa.app.services.dag.meta_helpers import (
+    add_processing_step,
+    copy_processing_history,
+    inherit_origin_flags,
+    inherit_sample_flags,
+)
 
 from ...io_contracts import (
     attach_evaluation,
@@ -336,6 +341,12 @@ class PCRNode(Node):
             {"n_components": n_components},
             node_id=self.node_id,
         )
+
+        # Propagate dataset-level flags. Scores rows are samples;
+        # loadings rows are principal components — origin tags only.
+        inherit_sample_flags(X_ds, scores_dataset)
+        inherit_origin_flags(X_ds, scores_dataset)
+        inherit_origin_flags(X_ds, loadings_dataset)
 
         target_names = _resolved_target_names
 
