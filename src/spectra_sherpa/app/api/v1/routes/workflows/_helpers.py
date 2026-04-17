@@ -5,6 +5,7 @@ Shared helpers for workflow route sub-modules.
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
@@ -16,6 +17,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from spectra_sherpa.app.models.execution_run import ExecutionRun
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_json(obj: Any) -> Any:
+    """Replace NaN/Inf floats with None so PostgreSQL JSON accepts the payload."""
+    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    if isinstance(obj, dict):
+        return {k: _sanitize_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_json(v) for v in obj]
+    return obj
 
 
 async def _auto_persist_run(
@@ -52,8 +64,8 @@ async def _auto_persist_run(
             name="__latest__",
             status=final_status,
             params_snapshot=params_snapshot or {},
-            results_summary=serialized_results,
-            diagnostics=diagnostics_serialized,
+            results_summary=_sanitize_json(serialized_results),
+            diagnostics=_sanitize_json(diagnostics_serialized),
             node_statuses=node_statuses,
             error=error_msg,
             integrity_hash=integrity_hash,
