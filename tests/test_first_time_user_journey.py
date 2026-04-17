@@ -112,23 +112,27 @@ async def test_first_time_user_journey(
     from spectra_sherpa.app.models.workflow_edge import WorkflowEdge as WFEdge
 
     for node_data in td["nodes"]:
-        test_session.add(WFNode(
-            workflow_id=workflow.id,
-            node_id=node_data["node_id"],
-            node_type=node_data["node_type"],
-            label=node_data.get("label"),
-            parameters=node_data.get("parameters", {}),
-            position_x=node_data.get("position_x"),
-            position_y=node_data.get("position_y"),
-        ))
+        test_session.add(
+            WFNode(
+                workflow_id=workflow.id,
+                node_id=node_data["node_id"],
+                node_type=node_data["node_type"],
+                label=node_data.get("label"),
+                parameters=node_data.get("parameters", {}),
+                position_x=node_data.get("position_x"),
+                position_y=node_data.get("position_y"),
+            )
+        )
     for edge_data in td["edges"]:
-        test_session.add(WFEdge(
-            workflow_id=workflow.id,
-            from_node_id=edge_data["from_node_id"],
-            to_node_id=edge_data["to_node_id"],
-            from_output=edge_data.get("from_output", "default"),
-            to_input=edge_data.get("to_input", "default"),
-        ))
+        test_session.add(
+            WFEdge(
+                workflow_id=workflow.id,
+                from_node_id=edge_data["from_node_id"],
+                to_node_id=edge_data["to_node_id"],
+                from_output=edge_data.get("from_output", "default"),
+                to_input=edge_data.get("to_input", "default"),
+            )
+        )
     await test_session.commit()
 
     # ── Step 4: Execute the workflow ────────────────���─────────────────
@@ -136,9 +140,9 @@ async def test_first_time_user_journey(
         f"/api/v1/workflows/{workflow.id}/execute",
         json={},
     )
-    assert execute_response.status_code == 200, (
-        f"Execute returned {execute_response.status_code}: {execute_response.text[:500]}"
-    )
+    assert (
+        execute_response.status_code == 200
+    ), f"Execute returned {execute_response.status_code}: {execute_response.text[:500]}"
     exec_data = execute_response.json()
 
     # Surface per-node errors for easier debugging
@@ -151,12 +155,10 @@ async def test_first_time_user_journey(
             f"  Failed nodes: {error_nodes}\n"
             f"  Node statuses: {node_statuses}"
         )
-    assert exec_data["status"] in ("completed", "partial"), (
-        f"Unexpected status: {exec_data['status']}"
-    )
-    assert "preprocess_1" in exec_data["results"], (
-        f"Missing preprocess_1 in results. Keys: {list(exec_data['results'].keys())}"
-    )
+    assert exec_data["status"] in ("completed", "partial"), f"Unexpected status: {exec_data['status']}"
+    assert (
+        "preprocess_1" in exec_data["results"]
+    ), f"Missing preprocess_1 in results. Keys: {list(exec_data['results'].keys())}"
 
     # Verify the preprocessing node produced a valid dataset.
     # Results may be wrapped in a port dict ({"default": {...}}) or flat.
@@ -172,8 +174,7 @@ async def test_first_time_user_journey(
 
     # ── Step 5: Ask Sherpa "what does this template do?" ──────────────
     mock_response = (
-        "This template loads spectral data and applies SNV normalization "
-        "to correct for scattering effects."
+        "This template loads spectral data and applies SNV normalization " "to correct for scattering effects."
     )
 
     async def mock_chat(self, *, message, conversation_id=None, metadata=None):
