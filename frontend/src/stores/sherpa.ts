@@ -263,8 +263,11 @@ export const useSherpaStore = defineStore("sherpa", () => {
 
     const activeId = currentConversationId.value;
     if (!activeId) {
-      if (listFailed && switchingProjects) {
-        conversations.value = [];
+      if (switchingProjects) {
+        startNewConversation();
+        if (listFailed) {
+          conversations.value = [];
+        }
         lastConversationProjectId = projectId;
       }
       return;
@@ -292,8 +295,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
         // Project switch: the stale activeId belongs to the previous
         // project and 404s against the new one. Safe to wipe — next
         // chat starts a new thread scoped to the current project.
-        currentConversationId.value = null;
-        messages.value = [];
+        startNewConversation();
         if (listFailed) {
           conversations.value = [];
         }

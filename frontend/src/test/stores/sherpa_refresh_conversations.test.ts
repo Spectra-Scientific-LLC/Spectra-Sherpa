@@ -329,7 +329,8 @@ describe("Sherpa Advisor refreshConversations — project-switch state isolation
     await sherpa.refreshConversations(999); // new project id — switchingProjects = true
 
     expect(sherpa.currentConversationId).toBeNull();
-    expect(sherpa.messages).toEqual([]);
+    expect(sherpa.messages).toHaveLength(1);
+    expect(sherpa.messages[0]?.content).toContain("Welcome to Sherpa Advisor");
     expect(sherpa.conversations).toEqual([]);
     // Seed list + new-project list + new-project probe.
     expect(apiGet).toHaveBeenNthCalledWith(1, "/llm/conversations", expect.anything());
@@ -373,6 +374,9 @@ describe("Sherpa Advisor refreshConversations — project-switch state isolation
 
     sherpa.$patch({ currentConversationId: null });
     sherpa.$patch({
+      messages: [{ role: "assistant", content: "Old project transcript" }],
+    });
+    sherpa.$patch({
       conversations: [{ id: "conv-old", title: "Old project thread", updatedAt: "t0" }],
     });
 
@@ -382,6 +386,8 @@ describe("Sherpa Advisor refreshConversations — project-switch state isolation
     await sherpa.refreshConversations(999);
 
     expect(sherpa.currentConversationId).toBeNull();
+    expect(sherpa.messages).toHaveLength(1);
+    expect(sherpa.messages[0]?.content).toContain("Welcome to Sherpa Advisor");
     expect(sherpa.conversations).toEqual([]);
   });
 });

@@ -285,6 +285,7 @@ describe("LLM Store refreshConversations project-scope cleanup", () => {
     await llm.refreshConversations(1);
 
     llm.currentConversationId = null;
+    llm.messages = [{ role: "assistant", content: "Old project transcript" }];
     llm.conversations = [{ id: "conv-old", title: "Old thread", updatedAt: "t0" }];
 
     apiGet.mockReset();
@@ -293,6 +294,7 @@ describe("LLM Store refreshConversations project-scope cleanup", () => {
     await llm.refreshConversations(999);
 
     expect(llm.currentConversationId).toBeNull();
+    expect(llm.messages).toEqual([]);
     expect(llm.conversations).toEqual([]);
   });
 });

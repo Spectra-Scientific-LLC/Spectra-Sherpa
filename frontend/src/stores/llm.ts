@@ -462,8 +462,12 @@ export const useLlmStore = defineStore("llm", () => {
 
     const activeId = currentConversationId.value;
     if (!activeId) {
-      if (listFailed && switchingProjects) {
-        conversations.value = [];
+      if (switchingProjects) {
+        currentConversationId.value = null;
+        messages.value = [];
+        if (listFailed) {
+          conversations.value = [];
+        }
         lastConversationProjectId = projectId;
       }
       return;
