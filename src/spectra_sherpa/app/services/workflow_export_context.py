@@ -8,7 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.app.lib.scp_compat import resolve_scp_path
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
+from spectra_sherpa.app.services.dag.nodes.data._utils import _SCP_KNOWN_DEFAULTS
 from spectra_sherpa.app.services.prepared_data import (
     PreparedDataOverrides,
     load_prepared_data_overrides_for_source,
@@ -109,7 +111,42 @@ async def _resolve_bundle_files(
             [normalize_relative_data_path(str(parameters["file_path"]))],
         )
 
+    if source == "spectrochempy":
+        return _resolve_scp_bundle_files(safe_node_dir, parameters)
+
     return []
+
+
+def _resolve_scp_bundle_files(node_dir: str, parameters: dict[str, Any]) -> list[BundledSourceFile]:
+    """Resolve a SpectroChemPy example dataset to a bundleable file.
+
+    Mirrors the file-resolution logic in ``DataSourceNode._load_spectrochempy_example``
+    and ``_gen_spectrochempy`` so the ZIP export includes the actual data file rather
+    than relying on the user having SCP testdata installed.
+    """
+    example_dataset = str(parameters.get("example_dataset") or "irdata")
+    example_file = str(parameters.get("example_file") or "")
+
+    if example_file:
+        scp_rel = f"{example_dataset}/{example_file}" if "/" not in example_file else example_file
+    elif example_dataset in _SCP_KNOWN_DEFAULTS:
+        scp_rel, _ = _SCP_KNOWN_DEFAULTS[example_dataset]
+    else:
+        # Unknown dataset and no explicit file — cannot resolve on disk.
+        return []
+
+    resolved = resolve_scp_path(scp_rel)
+    if resolved is None or not resolved.exists():
+        return []
+
+    bundle_name = resolved.name
+    return [
+        BundledSourceFile(
+            absolute_path=resolved,
+            source_relative_path=scp_rel,
+            bundle_relative_path=f"{node_dir}/{bundle_name}",
+        )
+    ]
 
 
 def _bundle_specs_for_files(node_dir: str, source_relative_paths: list[str] | Any) -> list[BundledSourceFile]:
