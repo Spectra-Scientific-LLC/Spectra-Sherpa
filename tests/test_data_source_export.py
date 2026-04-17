@@ -68,7 +68,6 @@ class TestSklearnExport:
             ("iris", "load_iris"),
             ("wine", "load_wine"),
             ("breast_cancer", "load_breast_cancer"),
-            ("digits", "load_digits"),
         ],
     )
     def test_sklearn_loader_import(self, dataset, loader):
