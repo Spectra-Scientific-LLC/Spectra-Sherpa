@@ -118,7 +118,6 @@ class DataSourceNode(Node):
                     {"label": "Iris (3 species, 4 features, 150 samples)", "value": "iris"},
                     {"label": "Wine (3 classes, 13 features, 178 samples)", "value": "wine"},
                     {"label": "Breast Cancer (2 classes, 30 features, 569 samples)", "value": "breast_cancer"},
-                    {"label": "Digits (10 classes, 64 features, 1797 samples)", "value": "digits"},
                 ],
                 description="Scikit-learn dataset to load via SpectroChemPy (for testing PCA, classification, etc.)",
                 required=False,
@@ -302,7 +301,6 @@ class DataSourceNode(Node):
             "iris": "load_iris",
             "wine": "load_wine",
             "breast_cancer": "load_breast_cancer",
-            "digits": "load_digits",
         }
         loader = loader_map.get(ds_name, f"load_{ds_name}")
 
@@ -885,7 +883,7 @@ class DataSourceNode(Node):
         from scikit-learn and returns a numpy array.
 
         Args:
-            dataset_name: Name of sklearn dataset (iris, wine, breast_cancer, digits)
+            dataset_name: Name of sklearn dataset (iris, wine, breast_cancer)
 
         Returns:
             NDDataset (with SCP) or numpy array (without SCP)
@@ -899,7 +897,6 @@ class DataSourceNode(Node):
             "iris": sk_datasets.load_iris,
             "wine": sk_datasets.load_wine,
             "breast_cancer": sk_datasets.load_breast_cancer,
-            "digits": sk_datasets.load_digits,
         }
 
         if dataset_name not in _loaders:
