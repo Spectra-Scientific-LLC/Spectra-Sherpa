@@ -1265,6 +1265,7 @@ import Slider from "primevue/slider";
 import TreeSelect from "primevue/treeselect";
 import { useToast } from "primevue/usetoast";
 import { useWorkflowStore, type WorkflowNode } from "@/stores/workflow";
+import { useProjectStore } from "@/stores/project";
 import { useDemoMode } from "@/composables/useDemoMode";
 import QuickPlotModal from "./modals/QuickPlotModal.vue";
 import DataTableModal from "./modals/DataTableModal.vue";
@@ -1384,6 +1385,7 @@ const emit = defineEmits<{
 
 const toast = useToast();
 const workflowStore = useWorkflowStore();
+const projectStore = useProjectStore();
 const { isDemoMode } = useDemoMode();
 const selectedNodeType = computed(() => props.selectedNode?.type || '');
 
@@ -2594,11 +2596,30 @@ const openInNewTab = () => {
     toPort: edge.toPort || 'default',
   }));
 
-  // detail level: "full" = all data+ports, "primary" = data+metadata only, "minimal" = no data
+  // Pick the ports we want to preserve across reduced-tier fallbacks.
+  // Plot computeds on the Detail View read these directly (loadings for
+  // PCA/PLS/PLSDA; St/H/A for MCR/NMF/ICA/SIMPLISMA). They're all small
+  // matrices (n_components × n_features) and stripping them makes those
+  // plots render empty even when the primary payload fits.
+  const PRESERVED_PORT_NAMES = new Set(["loadings", "St", "H", "A"]);
+
+  const buildReducedPorts = (
+    level: "full" | "primary" | "minimal",
+    ports: NodeOutput["ports"] | null | undefined,
+  ): NodeOutput["ports"] | null => {
+    if (!ports) return null;
+    if (level === "full") return ports;
+    const reduced: Record<string, PortOutput> = {};
+    for (const [name, port] of Object.entries(ports)) {
+      if (PRESERVED_PORT_NAMES.has(name)) reduced[name] = port;
+    }
+    return Object.keys(reduced).length > 0 ? reduced : null;
+  };
+
+  // detail level: "full" = all data+ports, "primary" = data+metadata+small-plot-ports, "minimal" = no data
   const buildNodeDetailData = (level: "full" | "primary" | "minimal") => {
     if (!props.selectedNode) return null;
     const includeData = level !== "minimal";
-    const includePorts = level === "full";
 
     // Strip large metadata fields to avoid sessionStorage quota.
     // Visualization nodes (output.*) embed Plotly traces in metadata.data
@@ -2638,6 +2659,12 @@ const openInNewTab = () => {
       type: props.selectedNode.type,
       label: getNodeLabel(props.selectedNode.type),
       params: { ...localParams.value },
+      // Active project context — the Detail View opens in a new tab and
+      // doesn't share Pinia state, so the store starts null. Pass it
+      // through sessionStorage so NodeDetailView can hydrate
+      // projectStore.currentProjectId and avoid "lost context" when the
+      // user navigates to Data / Experiments / Workflows from the new tab.
+      projectId: projectStore.currentProjectId,
       output: props.nodeOutput ? {
         // For output.* nodes in reduced tiers, top-level data duplicates
         // the Plotly traces already stripped from metadata — omit it too.
@@ -2645,7 +2672,16 @@ const openInNewTab = () => {
           ? props.nodeOutput.data : null,
         metadata: metadata,
         plots: props.nodeOutput.plots || null,
-        ports: includePorts ? (props.nodeOutput.ports || null) : null,
+        // In the "full" tier we ship every port. In reduced tiers ("primary"
+        // / "minimal") we drop bulk ports to stay under sessionStorage quota
+        // but preserve a minimal subset that the Detail View's plots need
+        // and that stay small regardless of dataset size:
+        //   - loadings (n_components × n_features, typically a few KB):
+        //     needed for PCA / PLS / PLSDA Loadings Plot and Biplot.
+        //     Without it, Loadings Plot renders empty on OES / large data.
+        //   - St / H / A (decomposition spectra, same shape order):
+        //     needed for MCR / NMF / ICA / SIMPLISMA pure-spectra plots.
+        ports: buildReducedPorts(level, props.nodeOutput.ports),
         primary_port: props.nodeOutput.primary_port || null,
       } : null,
       // Include input connections with their data
