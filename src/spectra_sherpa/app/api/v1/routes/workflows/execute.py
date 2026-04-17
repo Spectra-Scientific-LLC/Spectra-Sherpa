@@ -272,9 +272,13 @@ async def execute_workflow(
 
     # Snapshot ORM attributes while session is clean (before execution may
     # dirty or expire them, making lazy loads fail in the error handler).
+    # workflow.nodes is eagerly loaded via selectinload, but session.commit()
+    # expires all attributes — accessing workflow.nodes after commit triggers
+    # a lazy load that fails with MissingGreenlet on async SQLAlchemy.
     wf_integrity_hash = workflow.integrity_hash
     wf_version_id = getattr(workflow, "current_version_id", None)
     wf_project_id = getattr(workflow, "project_id", None)
+    wf_params_snapshot = {n.node_id: n.parameters for n in workflow.nodes if n.parameters}
 
     executor = None
     try:
@@ -397,7 +401,6 @@ async def execute_workflow(
             session,
             workflow_id=workflow_id,
             user_id=user_id,
-            workflow=workflow,
             wf_version_id=wf_version_id,
             serialized_results=serialized_results,
             diagnostics_serialized=diagnostics_serialized,
@@ -406,6 +409,7 @@ async def execute_workflow(
             error_msg=error_msg,
             integrity_hash=wf_integrity_hash,
             model_ids=[a["artifact_uid"] for a in (executor.saved_artifacts or [])],
+            params_snapshot=wf_params_snapshot,
         )
         if not persisted:
             _raise_execution_persistence_error()
@@ -493,7 +497,6 @@ async def execute_workflow(
             session,
             workflow_id=workflow_id,
             user_id=user_id,
-            workflow=workflow,
             wf_version_id=wf_version_id,
             serialized_results=partial_results,
             diagnostics_serialized=partial_diagnostics,
@@ -502,6 +505,7 @@ async def execute_workflow(
             error_msg=error_msg,
             integrity_hash=wf_integrity_hash,
             model_ids=[a["artifact_uid"] for a in (getattr(executor, "saved_artifacts", None) or [])],
+            params_snapshot=wf_params_snapshot,
         )
         if not persisted:
             _raise_execution_persistence_error()

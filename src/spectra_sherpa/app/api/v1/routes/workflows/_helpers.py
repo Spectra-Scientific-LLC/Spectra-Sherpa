@@ -14,7 +14,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.models.execution_run import ExecutionRun
-from spectra_sherpa.app.models.workflow import Workflow
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +23,6 @@ async def _auto_persist_run(
     *,
     workflow_id: int,
     user_id: int,
-    workflow: Workflow,
     wf_version_id: int | None,
     serialized_results: dict[str, Any],
     diagnostics_serialized: dict[str, Any],
@@ -33,6 +31,7 @@ async def _auto_persist_run(
     error_msg: str | None,
     integrity_hash: str | None,
     model_ids: list[str] | None,
+    params_snapshot: dict[str, Any] | None = None,
 ) -> bool:
     """Upsert an auto-saved ``ExecutionRun`` so results survive page refresh."""
     try:
@@ -52,7 +51,7 @@ async def _auto_persist_run(
             user_id=user_id,
             name="__latest__",
             status=final_status,
-            params_snapshot={n.node_id: n.parameters for n in workflow.nodes if n.parameters},
+            params_snapshot=params_snapshot or {},
             results_summary=serialized_results,
             diagnostics=diagnostics_serialized,
             node_statuses=node_statuses,
