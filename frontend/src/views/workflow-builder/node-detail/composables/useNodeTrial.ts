@@ -47,19 +47,31 @@ export function useNodeTrial({
       broadcastChannel.value.postMessage(updateMessage);
     }
 
-    const updatedData = {
-      ...nodeData.value,
-      params: { ...localParams.value },
+    // Storage-event fallback for browsers/contexts without BroadcastChannel.
+    // We intentionally do NOT rewrite the full nodeData blob here — it can
+    // contain multi-MB workflowNodes/edges/output payloads which blow past
+    // sessionStorage quota (QuotaExceededError). The main tab only needs
+    // the minimal diff (nodeId + params) to apply the update.
+    const minimalPayload = JSON.stringify({
       _saved: true,
       _savedAt: Date.now(),
-    };
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(updatedData));
-    window.dispatchEvent(
-      new StorageEvent("storage", {
-        key: STORAGE_KEY,
-        newValue: JSON.stringify(updatedData),
-      }),
-    );
+      id: nodeData.value?.id,
+      type: nodeData.value?.type,
+      params: { ...localParams.value },
+    });
+    try {
+      sessionStorage.setItem(STORAGE_KEY, minimalPayload);
+      window.dispatchEvent(
+        new StorageEvent("storage", {
+          key: STORAGE_KEY,
+          newValue: minimalPayload,
+        }),
+      );
+    } catch (err) {
+      // Quota or storage access errors must never block the UI flow —
+      // BroadcastChannel already delivered the params to the main tab.
+      console.warn("[NodeDetailView] sessionStorage broadcast failed:", err);
+    }
   };
 
   const handleRunTrial = async () => {

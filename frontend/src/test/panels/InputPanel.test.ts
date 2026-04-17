@@ -25,13 +25,14 @@ describe("InputPanel", () => {
     expect(w.text()).toContain("No input data available");
   });
 
-  it("renders shape / source / data type info when inputData is present", () => {
+  it("renders shape / data type info when inputData is present", () => {
     const w = factory({
       inputData: { shape: [80, 700], source: "experiment", dataType: "absorbance" },
     });
     expect(w.text()).toContain("80 x 700");
-    expect(w.text()).toContain("experiment");
     expect(w.text()).toContain("absorbance");
+    // "Source" row removed in favor of the richer "Connected From" list — see #27.
+    expect(w.text()).not.toContain("experiment");
   });
 
   it("renders connected-from list when inputConnections is non-empty", () => {

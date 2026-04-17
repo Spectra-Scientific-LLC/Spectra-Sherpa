@@ -1171,7 +1171,11 @@
     :modal="true"
     class="metadata-dialog"
   >
-    <div v-if="nodeOutput?.metadata" class="metadata-modal-content">
+    <div v-if="!nodeOutput" class="metadata-modal-empty">
+      <i class="pi pi-info-circle"></i>
+      <span>No output available for this node. Run the workflow first.</span>
+    </div>
+    <div v-else class="metadata-modal-content">
       <!-- Instrument Metadata Section (if available) -->
       <div v-if="outputMetadata.instrument_metadata || outputMetadata.acquisition_params" class="metadata-section">
         <h4 class="section-title">
@@ -1208,7 +1212,7 @@
           >
             <span class="step-number">{{ index + 1 }}</span>
             <div class="step-content">
-              <span class="step-operation">{{ typeof step === 'string' ? step : step.operation }}</span>
+              <span class="step-operation">{{ typeof step === 'string' ? step : (step.op_id || step.operation || 'Unknown') }}</span>
               <span v-if="typeof step === 'object' && step.timestamp" class="step-timestamp">
                 {{ formatStepTimestamp(step.timestamp, index) }}
               </span>
@@ -1244,7 +1248,21 @@
           <i class="pi pi-code"></i>
           Raw Metadata (JSON)
         </h4>
-        <pre class="metadata-json">{{ JSON.stringify(nodeOutput.metadata, null, 2) }}</pre>
+        <pre class="metadata-json">{{ JSON.stringify(nodeOutput.metadata ?? {}, null, 2) }}</pre>
+      </div>
+
+      <!-- Per-port Metadata Section (for multi-port outputs like PCA) -->
+      <div v-if="nodeOutput.ports && Object.keys(nodeOutput.ports).length > 0" class="metadata-section">
+        <h4 class="section-title">
+          <i class="pi pi-sitemap"></i>
+          Output Ports
+        </h4>
+        <div v-for="(port, portName) in nodeOutput.ports" :key="String(portName)" class="port-metadata-block">
+          <h5 class="port-metadata-title">
+            {{ portName }}<span v-if="portName === nodeOutput.primary_port" class="primary-port-tag"> (primary)</span>
+          </h5>
+          <pre class="metadata-json">{{ JSON.stringify(port.metadata ?? {}, null, 2) }}</pre>
+        </div>
       </div>
     </div>
   </Dialog>
@@ -2659,12 +2677,6 @@ const openInNewTab = () => {
       type: props.selectedNode.type,
       label: getNodeLabel(props.selectedNode.type),
       params: { ...localParams.value },
-      // Active project context — the Detail View opens in a new tab and
-      // doesn't share Pinia state, so the store starts null. Pass it
-      // through sessionStorage so NodeDetailView can hydrate
-      // projectStore.currentProjectId and avoid "lost context" when the
-      // user navigates to Data / Experiments / Workflows from the new tab.
-      projectId: projectStore.currentProjectId,
       output: props.nodeOutput ? {
         // For output.* nodes in reduced tiers, top-level data duplicates
         // the Plotly traces already stripped from metadata — omit it too.
@@ -2672,15 +2684,6 @@ const openInNewTab = () => {
           ? props.nodeOutput.data : null,
         metadata: metadata,
         plots: props.nodeOutput.plots || null,
-        // In the "full" tier we ship every port. In reduced tiers ("primary"
-        // / "minimal") we drop bulk ports to stay under sessionStorage quota
-        // but preserve a minimal subset that the Detail View's plots need
-        // and that stay small regardless of dataset size:
-        //   - loadings (n_components × n_features, typically a few KB):
-        //     needed for PCA / PLS / PLSDA Loadings Plot and Biplot.
-        //     Without it, Loadings Plot renders empty on OES / large data.
-        //   - St / H / A (decomposition spectra, same shape order):
-        //     needed for MCR / NMF / ICA / SIMPLISMA pure-spectra plots.
         ports: buildReducedPorts(level, props.nodeOutput.ports),
         primary_port: props.nodeOutput.primary_port || null,
       } : null,
@@ -2692,6 +2695,8 @@ const openInNewTab = () => {
       // Include full workflow context for trial execution (Pinia doesn't sync across tabs)
       workflowNodes: workflowNodes,
       workflowEdges: workflowEdges,
+      // Carry project context into the new tab (Pinia doesn't sync across window.open)
+      projectId: projectStore.currentProjectId,
     };
   };
 
@@ -3350,15 +3355,6 @@ onUnmounted(() => {
 .info-value {
   color: #e2e8f0;
   font-weight: 500;
-}
-
-/* Metadata - compact */
-.metadata-section {
-  display: none;
-}
-
-.metadata-json {
-  display: none;
 }
 
 /* PrimeVue component overrides for dark theme */
@@ -4256,6 +4252,42 @@ onUnmounted(() => {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.metadata-modal-empty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 24px;
+  color: #94a3b8;
+  font-size: 0.9rem;
+}
+
+.metadata-modal-empty i {
+  color: #3b82f6;
+  font-size: 1.2rem;
+}
+
+.port-metadata-block {
+  margin-top: 12px;
+}
+
+.port-metadata-block:first-child {
+  margin-top: 0;
+}
+
+.port-metadata-title {
+  margin: 0 0 6px 0;
+  color: #cbd5e1;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: ui-monospace, monospace;
+}
+
+.primary-port-tag {
+  color: #3b82f6;
+  font-weight: 400;
+  font-size: 0.75rem;
 }
 
 /* Metadata dialog styling */

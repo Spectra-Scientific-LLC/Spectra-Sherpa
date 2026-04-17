@@ -20,10 +20,6 @@
               <label>Shape</label>
               <span>{{ inputData.shape[0] }} x {{ inputData.shape[1] }}</span>
             </div>
-            <div class="info-item" v-if="inputData?.source">
-              <label>Source</label>
-              <span>{{ inputData.source }}</span>
-            </div>
             <div class="info-item" v-if="inputData?.dataType">
               <label>Data Type</label>
               <span>{{ inputData.dataType }}</span>

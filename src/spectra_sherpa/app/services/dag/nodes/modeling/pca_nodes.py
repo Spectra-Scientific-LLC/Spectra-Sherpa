@@ -503,26 +503,53 @@ class PCANode(Node):
             node_id=self.node_id,
         )
 
-        t2_p95 = float(np.percentile(t2_stats, 95)) if t2_stats is not None else None
-        spe_p95 = float(np.percentile(spe_stats, 95)) if spe_stats is not None else None
+        # Analytical control limits (F-based T², chi-square SPE)
+        from scipy import stats as sp_stats
+
+        t2_limit: Optional[float] = None
+        if t2_stats is not None and n_observations > actual_n_components:
+            a = actual_n_components
+            n = n_observations
+            f_crit = sp_stats.f.ppf(0.95, a, n - a)
+            t2_limit = float(a * (n - 1) / (n - a) * f_crit)
+
+        spe_limit: Optional[float] = None
+        if spe_stats is not None:
+            spe_mean_val = float(np.mean(spe_stats))
+            spe_var = float(np.var(spe_stats, ddof=1)) if len(spe_stats) > 1 else 0.0
+            if spe_mean_val > 0 and spe_var > 0:
+                g = spe_var / (2.0 * spe_mean_val)
+                h = (2.0 * spe_mean_val**2) / spe_var
+                spe_limit = float(g * sp_stats.chi2.ppf(0.95, h))
 
         # Store only scientific metadata that coordinates can't carry.
-        # serialize_for_api() extracts wavenumbers, sample_labels, x_title, etc.
-        # from SherpaDataset coordinates automatically at the API boundary.
+        evr_list = evr_ratio.tolist()
+        total_variance_explained = float(np.sum(evr_ratio))
+        quality_summary = {
+            "explained_variance_ratio": evr_list,
+            "total_variance_explained": total_variance_explained,
+            "n_components": actual_n_components,
+            "t2_mean": float(np.mean(t2_stats)) if t2_stats is not None else None,
+            "t2_limit_95": t2_limit,
+            "spe_mean": float(np.mean(spe_stats)) if spe_stats is not None else None,
+            "spe_limit_95": spe_limit,
+        }
+
         scores_dataset.meta.update(
             {
                 "type": "PCA",
                 "isPCA": True,
                 "pc_labels": pc_labels,
-                "explained_variance_ratio": evr_ratio.tolist(),
+                "explained_variance_ratio": evr_list,
                 "n_components": actual_n_components,
                 "t2": t2_stats.tolist() if t2_stats is not None else [],
                 "spe": spe_stats.tolist() if spe_stats is not None else [],
-                "t2_p95": t2_p95,
-                "spe_p95": spe_p95,
-                "t2_mean": float(np.mean(t2_stats)) if t2_stats is not None else None,
-                "spe_mean": float(np.mean(spe_stats)) if spe_stats is not None else None,
+                "t2_p95": t2_limit,
+                "spe_p95": spe_limit,
+                "t2_mean": quality_summary["t2_mean"],
+                "spe_mean": quality_summary["spe_mean"],
                 "label_categories": label_categories,
+                "quality_summary": quality_summary,
             }
         )
 
@@ -576,8 +603,8 @@ class PCANode(Node):
                 n_components=actual_n_components,
                 hotelling_t2=t2_stats.tolist() if t2_stats is not None else None,
                 q_residuals=spe_stats.tolist() if spe_stats is not None else None,
-                t2_limit=t2_p95,
-                q_limit=spe_p95,
+                t2_limit=t2_limit,
+                q_limit=spe_limit,
             ),
         )
 
@@ -588,7 +615,7 @@ class PCANode(Node):
         )
         logger.debug("[PCA Node] Scores shape: %s, Loadings shape: %s", scores_dataset.shape, loadings_dataset.shape)
 
-        cumulative_variance = np.cumsum(evr_ratio).tolist()
+        cumulative_variance_per_pc = np.cumsum(evr_ratio).tolist()
         n_components_95pct = None
         above_95 = np.where(np.cumsum(evr_ratio) >= 0.95)[0]
         if len(above_95) > 0:
@@ -596,12 +623,12 @@ class PCANode(Node):
 
         diagnostics = {
             "explained_variance_ratio": evr_ratio.tolist(),
-            "cumulative_variance": cumulative_variance,
+            "cumulative_variance": cumulative_variance_per_pc,
             "n_components_95pct": n_components_95pct,
             "hotelling_t2": t2_stats.tolist() if t2_stats is not None else [],
             "q_residuals": spe_stats.tolist() if spe_stats is not None else [],
-            "t2_critical_95": t2_p95,
-            "q_critical_95": spe_p95,
+            "t2_critical_95": t2_limit,
+            "q_critical_95": spe_limit,
         }
 
         # Build model artifact for persistence
@@ -613,7 +640,7 @@ class PCANode(Node):
             node_id=self.node_id,
             metrics={
                 "explained_variance_ratio": evr_ratio.tolist(),
-                "cumulative_variance": cumulative_variance,
+                "cumulative_variance": cumulative_variance_per_pc,
             },
         )
 

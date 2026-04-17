@@ -691,6 +691,18 @@ class PLSNode(Node):
                 meta_dict.update(regression_meta)
             if cv_meta is not None:
                 meta_dict["cv"] = cv_meta
+            quality_summary: dict = {"n_components": int(n_components)}
+            if pls_r2 is not None:
+                quality_summary["r2"] = float(pls_r2)
+            if pls_rmse is not None:
+                quality_summary["rmse"] = float(pls_rmse)
+            if pls_r2_cv is not None:
+                quality_summary["r2_cv"] = float(pls_r2_cv)
+            if pls_rmsecv is not None:
+                quality_summary["rmsecv"] = float(pls_rmsecv)
+            if cv_method is not None:
+                quality_summary["cv_method"] = str(cv_method)
+            meta_dict["quality_summary"] = quality_summary
             X_scores_dataset.meta.update(meta_dict)
             attach_evaluation(
                 X_scores_dataset,
