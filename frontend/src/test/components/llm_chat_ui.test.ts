@@ -480,6 +480,21 @@ describe("ChatPanel", () => {
     expect(wrapper.text()).not.toContain("LLM Chat");
   });
 
+  it("renders LLM assistant markdown and math with the shared renderer", async () => {
+    mocks.featureFlags.chatAssistant = true;
+    mocks.llmStore.messages = [
+      { role: "assistant", content: "**PLS-DA**\n\n$$y = x^2$$" },
+    ];
+
+    const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+
+    const assistantBubble = wrapper.find(".chat-message.assistant .chat-bubble--md");
+    expect(assistantBubble.exists()).toBe(true);
+    expect(assistantBubble.html()).toContain("<strong>PLS-DA</strong>");
+    expect(assistantBubble.html()).toContain("katex");
+  });
+
   it("opens the standalone Sherpa view with the current Sherpa tab preserved", async () => {
     mocks.appMode.value = "enterprise";
     mocks.appConfig.value = { subscription: { plan: "demo" } };

@@ -211,17 +211,15 @@ describe("Sherpa Store communication state", () => {
     sherpa.init();
 
     expect(sherpa.messages).toHaveLength(1);
-    expect(sherpa.messages[0]).toEqual({
-      role: "assistant",
-      content: [
-        "Sherpa Advisor is ready.",
-        "",
-        "1. Create a project.",
-        "2. Pick a template or build a workflow.",
-        "3. Run the workflow to generate results.",
-        "4. Ask Sherpa about the outputs, diagnostics, or next steps.",
-      ].join("\n"),
-    });
+    const welcome = sherpa.messages[0];
+    expect(welcome?.role).toBe("assistant");
+    // Five-step orientation: Project → Template → Data → Inspect → Workflow.
+    expect(welcome?.content).toContain("Welcome to Sherpa Advisor");
+    expect(welcome?.content).toMatch(/1\.\s+\*\*Project\*\*/);
+    expect(welcome?.content).toMatch(/2\.\s+\*\*Template\*\*/);
+    expect(welcome?.content).toMatch(/3\.\s+\*\*Data\*\*/);
+    expect(welcome?.content).toMatch(/4\.\s+\*\*Inspect\*\*/);
+    expect(welcome?.content).toMatch(/5\.\s+\*\*Workflow\*\*/);
 
     sherpa.dispose();
   });
@@ -234,7 +232,8 @@ describe("Sherpa Store communication state", () => {
 
     expect(sherpa.messages).toHaveLength(1);
     expect(sherpa.messages[0]?.role).toBe("assistant");
-    expect(sherpa.messages[0]?.content).toContain("1. Create a project.");
+    expect(sherpa.messages[0]?.content).toContain("Welcome to Sherpa Advisor");
+    expect(sherpa.messages[0]?.content).toMatch(/1\.\s+\*\*Project\*\*/);
   });
 
   it("does not show the delayed preparing notice after chat streaming starts", async () => {

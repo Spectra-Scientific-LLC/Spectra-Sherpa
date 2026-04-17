@@ -83,6 +83,15 @@ def from_nddataset(ds: Any) -> SherpaDataset:
     # Extract provenance from meta
     meta = _to_plain_dict(dict(ds.meta)) if hasattr(ds, "meta") and ds.meta else {}
     provenance_raw = meta.pop("processing_history", [])
+    is_time_series_flag = bool(meta.pop("is_time_series", False))
+
+    # Lift dataset-level boolean flags out of meta into top-level SherpaDataset
+    # attributes so they survive the SCP round-trip across model nodes (PCA,
+    # MCR, ICA, NMF, etc.). Without this, is_time_series=True on the input
+    # silently becomes False on every transform output because the SCP
+    # NDDataset has no concept of these flags and the resulting SherpaDataset
+    # constructor defaults them to False.
+    is_time_series_flag = bool(meta.pop("is_time_series", False))
 
     # Build extra from remaining meta
     extra = {}
@@ -102,6 +111,7 @@ def from_nddataset(ds: Any) -> SherpaDataset:
         title=_extract_title(ds),
         units=str(ds.units) if hasattr(ds, "units") and ds.units else None,
         extra=extra if extra else None,
+        is_time_series=is_time_series_flag,
     )
 
 
@@ -146,6 +156,10 @@ def to_nddataset(sherpa_ds: SherpaDataset) -> Any:
     # Pack provenance + extra into meta
     ds.meta = {}
     ds.meta["processing_history"] = sherpa_ds.provenance.to_list()
+    # Preserve dataset-level flags through the SCP round-trip (see the
+    # symmetric restore in from_nddataset). SCP NDDataset has no native
+    # is_time_series concept, so we stash it in meta.
+    ds.meta["is_time_series"] = bool(sherpa_ds.is_time_series)
     for k, v in sherpa_ds.extra.items():
         if k.startswith("scp."):
             ds.meta[k[4:]] = v  # strip "scp." prefix
@@ -298,6 +312,9 @@ def _extract_spectral_axis(ds: Any, *, ndim: int, dim_names: list[str] | None) -
         units=str(coord.units) if hasattr(coord, "units") and coord.units else None,
         title=str(coord.title) if hasattr(coord, "title") and coord.title else None,
         labels=labels,
+        include_mask=None,
+        selection_scores=None,
+        selection_method=None,
     )
 
 
@@ -312,6 +329,10 @@ def _extract_sample_axis(ds: Any, *, dim_names: list[str] | None) -> SampleAxis 
         units=str(coord.units) if hasattr(coord, "units") and coord.units else None,
         title=str(coord.title) if hasattr(coord, "title") and coord.title else None,
         labels=labels,
+        classes=None,
+        include_mask=None,
+        exclusion_reasons=None,
+        sample_table=None,
     )
 
 
@@ -520,11 +541,35 @@ def _coord_to_axis(coord: Any) -> AxisInfo | None:
     if units:
         u = units.lower().strip()
         if u in _TIME_UNITS:
-            return TimeAxis(values=values, units=units, title=title, labels=labels)
+            return TimeAxis(
+                values=values,
+                units=units,
+                title=title,
+                labels=labels,
+                include_mask=None,
+                selection_scores=None,
+                selection_method=None,
+            )
         if u in _MZ_UNITS:
-            return MZAxis(values=values, units=units, title=title, labels=labels)
+            return MZAxis(
+                values=values,
+                units=units,
+                title=title,
+                labels=labels,
+                include_mask=None,
+                selection_scores=None,
+                selection_method=None,
+            )
         if u in _SPATIAL_UNITS:
-            return SpatialAxis(values=values, units=units, title=title, labels=labels)
+            return SpatialAxis(
+                values=values,
+                units=units,
+                title=title,
+                labels=labels,
+                include_mask=None,
+                selection_scores=None,
+                selection_method=None,
+            )
 
     # Default: generic AxisInfo for unknown inner dimensions
     return AxisInfo(values=values, units=units, title=title, labels=labels)

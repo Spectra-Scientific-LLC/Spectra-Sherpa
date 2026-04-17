@@ -11,7 +11,12 @@ import numpy as np
 
 from spectra_sherpa.app.lib.adapters.scp_extractors import _safe_getattr
 from spectra_sherpa.app.lib.scp_compat import scp
-from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
+from spectra_sherpa.app.services.dag.meta_helpers import (
+    add_processing_step,
+    copy_processing_history,
+    inherit_origin_flags,
+    inherit_sample_flags,
+)
 
 from ...io_contracts import (
     bind_X,
@@ -525,6 +530,12 @@ class PLSDANode(Node):
             {"n_components": n_components},
             node_id=self.node_id,
         )
+
+        # Propagate dataset-level flags. Scores rows are samples;
+        # loadings rows are latent variables — origin tags only.
+        inherit_sample_flags(X_ds, scores_dataset)
+        inherit_origin_flags(X_ds, scores_dataset)
+        inherit_origin_flags(X_ds, loadings_dataset)
 
         # Store ONLY scientific metadata that coordinates can't carry
         scores_dataset.meta.update(

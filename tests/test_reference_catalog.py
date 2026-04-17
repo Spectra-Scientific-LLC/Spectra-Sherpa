@@ -27,9 +27,9 @@ from spectra_sherpa.app.lib.sklearn_info import SKLEARN_CATALOG, get_sklearn_dat
 class TestSklearnInfo:
     """Test the sklearn dataset metadata module."""
 
-    def test_catalog_has_four_entries(self):
-        assert len(SKLEARN_CATALOG) == 4
-        for name in ("iris", "wine", "breast_cancer", "digits"):
+    def test_catalog_has_three_entries(self):
+        assert len(SKLEARN_CATALOG) == 3
+        for name in ("iris", "wine", "breast_cancer"):
             assert name in SKLEARN_CATALOG
 
     def test_catalog_entries_have_label(self):
@@ -57,11 +57,6 @@ class TestSklearnInfo:
         info = get_sklearn_dataset_info("breast_cancer")
         assert info["n_samples"] == 569
         assert info["n_features"] == 30
-
-    def test_get_digits_info(self):
-        info = get_sklearn_dataset_info("digits")
-        assert info["n_samples"] == 1797
-        assert info["n_features"] == 64
 
     def test_invalid_name_raises(self):
         with pytest.raises(ValueError, match="Unknown sklearn dataset"):

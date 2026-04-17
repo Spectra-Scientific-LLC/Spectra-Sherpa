@@ -37,19 +37,12 @@ SKLEARN_CATALOG: dict[str, dict[str, Any]] = {
         "is_spectra": False,
         "warning": _SKLEARN_NON_SPECTROSCOPIC_WARNING,
     },
-    "digits": {
-        "label": "Digits — non-spectroscopic (10 classes, 64 features, 1797 samples)",
-        "task_type": "classification",
-        "is_spectra": False,
-        "warning": _SKLEARN_NON_SPECTROSCOPIC_WARNING,
-    },
 }
 
 _LOADERS = {
     "iris": "load_iris",
     "wine": "load_wine",
     "breast_cancer": "load_breast_cancer",
-    "digits": "load_digits",
 }
 
 

@@ -9,7 +9,12 @@ from typing import Any
 
 import numpy as np
 
-from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
+from spectra_sherpa.app.services.dag.meta_helpers import (
+    add_processing_step,
+    copy_processing_history,
+    inherit_origin_flags,
+    inherit_sample_flags,
+)
 
 from ...io_contracts import (
     bind_X,
@@ -347,6 +352,13 @@ class NMFNode(Node):
             {"n_components": n_components},
             node_id=self.node_id,
         )
+
+        # Propagate dataset-level flags. W (concentrations) is
+        # sample-axis-preserved; H (basis spectra) rows are components.
+        # Origin tags survive on every output.
+        inherit_sample_flags(input_ds, W_dataset)
+        inherit_origin_flags(input_ds, W_dataset)
+        inherit_origin_flags(input_ds, H_dataset)
 
         # Store only scientific metadata that coordinates can't carry
         nmf_quality_summary: dict = {"n_components": int(n_components)}
@@ -731,6 +743,18 @@ class FastICANode(Node):
                 {"n_components": n_components},
                 node_id=self.node_id,
             )
+
+        # Propagate dataset-level flags. S (sources) and A (mixing matrix) are
+        # sample-axis-preserved; St (spectral profiles) rows are components.
+        # Origin tags survive on every output.
+        if S_dataset is not None:
+            inherit_sample_flags(input_ds, S_dataset)
+            inherit_origin_flags(input_ds, S_dataset)
+        if A_dataset is not None:
+            inherit_sample_flags(input_ds, A_dataset)
+            inherit_origin_flags(input_ds, A_dataset)
+        if St_dataset is not None:
+            inherit_origin_flags(input_ds, St_dataset)
 
         # Store only scientific metadata that coordinates can't carry
         S_dataset.meta.update(

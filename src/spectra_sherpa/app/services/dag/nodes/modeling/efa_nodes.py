@@ -7,7 +7,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
+from spectra_sherpa.app.services.dag.meta_helpers import (
+    add_processing_step,
+    copy_processing_history,
+    inherit_origin_flags,
+    inherit_sample_flags,
+)
 
 from ...io_contracts import (
     bind_X,
@@ -229,6 +234,16 @@ class EFANode(Node):
                 {"n_components": n_components},
                 node_id=self.node_id,
             )
+
+        # Propagate dataset-level flags. EFA forward/backward eigenvalues
+        # have one row per sample (window position), so sample-axis flags
+        # carry through. Origin tags survive on every output.
+        if forward_ev_dataset is not None:
+            inherit_sample_flags(input_ds, forward_ev_dataset)
+            inherit_origin_flags(input_ds, forward_ev_dataset)
+        if backward_ev_dataset is not None:
+            inherit_sample_flags(input_ds, backward_ev_dataset)
+            inherit_origin_flags(input_ds, backward_ev_dataset)
 
         # Store only scientific metadata that coordinates can't carry
         # Use forward_ev_dataset as default output

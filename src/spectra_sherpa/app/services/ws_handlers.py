@@ -32,7 +32,7 @@ from starlette.websockets import WebSocketState
 
 from spectra_sherpa.app.core.security import check_egress_permission
 from spectra_sherpa.app.db.session import async_session
-from spectra_sherpa.app.services.llm import LLMService
+from spectra_sherpa.app.services.llm import LLMService, conversation_store
 from spectra_sherpa.app.services.llm_rate_limits import allow_llm_request
 from spectra_sherpa.app.services.rate_limiter import RateLimiter
 from spectra_sherpa.app.services.websocket_manager import ws_manager
@@ -137,8 +137,34 @@ async def _proxy_server_chat(
     workflow_context = metadata.get("workflow_context") if metadata else None
     user_id = user.id if user else None
 
+    def _persist_fallback_transcript(convo_id: str | None, assistant_text: str) -> None:
+        """Mirror completed proxied chats into the local fallback store.
+
+        Server-backed chats stream from the deployment advisor, but the REST
+        ``GET /llm/conversation/{id}`` route falls back to ``conversation_store``
+        when the upstream service 404s or loses history. Persisting the final
+        transcript here makes sidebar topics durably loadable even when the
+        server-side list/history views lag or drop the conversation.
+        """
+        if user_id is None or not convo_id:
+            return
+        try:
+            persisted_id, history = conversation_store.get_or_create(convo_id, user_id)
+            updated_history = list(history)
+            updated_history.append({"role": "user", "content": message})
+            if assistant_text:
+                updated_history.append({"role": "assistant", "content": assistant_text})
+            conversation_store.save_messages(persisted_id, updated_history)
+        except Exception:
+            logger.warning(
+                "Failed to persist proxied chat transcript to local conversation_store",
+                exc_info=True,
+            )
+
     try:
         started = False
+        active_conversation_id = conversation_id
+        response_parts: list[str] = []
         event_stream = advisor.stream_llm_chat(
             message=message,
             conversation_id=conversation_id,
@@ -149,11 +175,14 @@ async def _proxy_server_chat(
         try:
             async for event in event_stream:
                 etype = event.get("type")
+                event_conversation_id = event.get("conversation_id")
+                if isinstance(event_conversation_id, str) and event_conversation_id.strip():
+                    active_conversation_id = event_conversation_id
                 if etype == "start":
                     started = True
                     if not await _safe_ws_send_json(
                         ws,
-                        {"type": "llm_start", "conversation_id": event.get("conversation_id")},
+                        {"type": "llm_start", "conversation_id": active_conversation_id},
                     ):
                         return
                 elif etype == "chunk":
@@ -161,22 +190,28 @@ async def _proxy_server_chat(
                         started = True
                         if not await _safe_ws_send_json(
                             ws,
-                            {"type": "llm_start", "conversation_id": event.get("conversation_id")},
+                            {"type": "llm_start", "conversation_id": active_conversation_id},
                         ):
                             return
+                    chunk_text = str(event.get("text", ""))
+                    response_parts.append(chunk_text)
                     if not await _safe_ws_send_json(
                         ws,
                         {
                             "type": "llm_chunk",
-                            "conversation_id": event.get("conversation_id"),
-                            "chunk": event.get("text", ""),
+                            "conversation_id": active_conversation_id,
+                            "chunk": chunk_text,
                         },
                     ):
                         return
                 elif etype == "done":
+                    _persist_fallback_transcript(
+                        active_conversation_id,
+                        "".join(response_parts),
+                    )
                     await _safe_ws_send_json(
                         ws,
-                        {"type": "llm_done", "conversation_id": event.get("conversation_id")},
+                        {"type": "llm_done", "conversation_id": active_conversation_id},
                     )
                     return
                 elif etype == "warning":
@@ -184,7 +219,7 @@ async def _proxy_server_chat(
                         ws,
                         {
                             "type": "llm_warning",
-                            "conversation_id": event.get("conversation_id"),
+                            "conversation_id": active_conversation_id,
                             "detail": event.get("message", event.get("detail", "")),
                             "code": event.get("code"),
                         },

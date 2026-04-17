@@ -9,7 +9,12 @@ from typing import Any
 
 import numpy as np
 
-from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
+from spectra_sherpa.app.services.dag.meta_helpers import (
+    add_processing_step,
+    copy_processing_history,
+    inherit_origin_flags,
+    inherit_sample_flags,
+)
 
 from ...io_contracts import (
     bind_X,
@@ -368,6 +373,12 @@ class KNNNode(Node):
             {"n_neighbors": n_neighbors},
             node_id=self.node_id,
         )
+
+        # Propagate dataset-level flags. Visualization scores rows are
+        # samples (one per input row), so sample-axis flags carry through.
+        # Origin tags survive on every output.
+        inherit_sample_flags(X, scores_dataset)
+        inherit_origin_flags(X, scores_dataset)
 
         # Store ONLY scientific metadata that coordinates can't carry
         scores_dataset.meta.update(

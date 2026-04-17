@@ -14,7 +14,12 @@ from spectra_sherpa.app.lib.sherpa_dataset import (
     EvaluationResult,
     SherpaDataset,
 )
-from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
+from spectra_sherpa.app.services.dag.meta_helpers import (
+    add_processing_step,
+    copy_processing_history,
+    inherit_origin_flags,
+    inherit_sample_flags,
+)
 
 from ...io_contracts import (
     attach_evaluation,
@@ -649,6 +654,20 @@ class PLSNode(Node):
                 {"n_components": n_components},
                 node_id=self.node_id,
             )
+
+        # Propagate dataset-level flags. Scores rows are samples (preserve
+        # is_time_series); loadings rows are latent variables / targets
+        # (inherit only origin tags). Origin tags survive on every output.
+        if X_scores_dataset is not None:
+            inherit_sample_flags(X_ds, X_scores_dataset)
+            inherit_origin_flags(X_ds, X_scores_dataset)
+        if Y_scores_dataset is not None:
+            inherit_sample_flags(X_ds, Y_scores_dataset)
+            inherit_origin_flags(X_ds, Y_scores_dataset)
+        if X_loadings_dataset is not None:
+            inherit_origin_flags(X_ds, X_loadings_dataset)
+        if Y_loadings_dataset is not None:
+            inherit_origin_flags(X_ds, Y_loadings_dataset)
 
         # Store scientific metadata in X_scores SherpaDataset meta.  The
         # "r2"/"rmse" keys remain calibration (in-sample) for backward

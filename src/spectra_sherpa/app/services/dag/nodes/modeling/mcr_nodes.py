@@ -9,7 +9,12 @@ from typing import Any
 
 import numpy as np
 
-from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
+from spectra_sherpa.app.services.dag.meta_helpers import (
+    add_processing_step,
+    copy_processing_history,
+    inherit_origin_flags,
+    inherit_sample_flags,
+)
 
 from ...io_contracts import (
     bind_X,
@@ -395,6 +400,15 @@ class MCRNode(Node):
             {"n_components": n_components},
             node_id=self.node_id,
         )
+
+        # Propagate dataset-level flags. C (concentrations) and residuals are
+        # sample-axis-preserved; St (pure spectra) rows are components.
+        # Origin tags survive on every output.
+        inherit_sample_flags(input_ds, C_dataset)
+        inherit_origin_flags(input_ds, C_dataset)
+        inherit_sample_flags(input_ds, residuals_dataset)
+        inherit_origin_flags(input_ds, residuals_dataset)
+        inherit_origin_flags(input_ds, St_dataset)
 
         # Store scientific metadata + embed St/wavenumber data for detailed view plots
         wavenumbers = None

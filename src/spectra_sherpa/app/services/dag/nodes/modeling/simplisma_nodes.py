@@ -7,7 +7,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, copy_processing_history
+from spectra_sherpa.app.services.dag.meta_helpers import (
+    add_processing_step,
+    copy_processing_history,
+    inherit_origin_flags,
+    inherit_sample_flags,
+)
 
 from ...io_contracts import (
     bind_X,
@@ -337,6 +342,13 @@ class SIMPLISMANode(Node):
             {"n_components": n_components},
             node_id=self.node_id,
         )
+
+        # Propagate dataset-level flags. C (concentrations) is
+        # sample-axis-preserved; St (pure spectra) rows are components.
+        # Origin tags survive on every output.
+        inherit_sample_flags(input_ds, C_dataset)
+        inherit_origin_flags(input_ds, C_dataset)
+        inherit_origin_flags(input_ds, St_dataset)
 
         # Store scientific metadata that coordinates can't carry
         C_dataset.meta.update(
