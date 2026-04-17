@@ -250,9 +250,9 @@
                 <span class="insp-label">Modified</span>
                 <span class="insp-value">{{ provenanceInfo.last_modified }}</span>
               </div>
-              <template v-for="(val, key) in provenanceInfo" :key="key">
+              <template v-for="(val, key) in provenanceInfo.extras" :key="key">
                 <div
-                  v-if="!['source_type', 'operations', 'last_modified'].includes(String(key)) && typeof val !== 'object'"
+                  v-if="typeof val !== 'object'"
                   class="inspector-item"
                 >
                   <span class="insp-label">{{ key }}</span>
@@ -315,9 +315,9 @@
                 <span class="insp-value">{{ qualitySummary.n_evaluations }}</span>
               </div>
               <!-- Generic quality_summary rendering for non-regression nodes -->
-              <template v-for="(val, key) in qualitySummary" :key="String(key)">
+              <template v-for="(val, key) in qualitySummary.extras" :key="String(key)">
                 <div
-                  v-if="!REGRESSION_QUALITY_KEYS.has(String(key)) && val != null"
+                  v-if="val != null"
                   class="inspector-item"
                   :class="{ wide: Array.isArray(val) }"
                 >
@@ -479,10 +479,6 @@ const selectedRegressionR2 = output.selectedRegressionR2;
 const selectedRegressionRmse = output.selectedRegressionRmse;
 const portSummaries = output.portSummaries;
 const { getMetaTooltip, formatMetaValue } = output;
-
-const REGRESSION_QUALITY_KEYS = new Set([
-  "latest_model_type", "latest_r2", "latest_rmse", "n_evaluations",
-]);
 
 const QUALITY_LABEL_MAP: Record<string, string> = {
   explained_variance_ratio: "Explained Variance (per PC)",
