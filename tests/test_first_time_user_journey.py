@@ -19,7 +19,6 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from spectra_sherpa.app.models.project import Project
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
 from spectra_sherpa.app.models.workflow_template import WorkflowTemplate
@@ -108,8 +107,8 @@ async def test_first_time_user_journey(
     await test_session.commit()
     await test_session.refresh(workflow)
 
-    from spectra_sherpa.app.models.workflow_node import WorkflowNode as WFNode
     from spectra_sherpa.app.models.workflow_edge import WorkflowEdge as WFEdge
+    from spectra_sherpa.app.models.workflow_node import WorkflowNode as WFNode
 
     for node_data in td["nodes"]:
         test_session.add(
