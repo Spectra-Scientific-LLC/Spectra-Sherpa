@@ -162,6 +162,12 @@
                     <div v-if="message.role === 'system'" class="system-notification">
                       {{ message.content }}
                     </div>
+                    <div
+                      v-else-if="message.role === 'assistant'"
+                      class="chat-bubble chat-bubble--md"
+                    >
+                      <ChatMarkdown :source="message.content" />
+                    </div>
                     <div v-else class="chat-bubble">{{ message.content }}</div>
                   </div>
                   <div v-if="store.loading" class="chat-message assistant">
@@ -186,7 +192,7 @@
                     class="chat-bubble"
                     :class="{ 'chat-bubble--md': message.role === 'assistant' }"
                   >
-                    <VueMarkdown v-if="message.role === 'assistant'" :source="message.content" />
+                    <ChatMarkdown v-if="message.role === 'assistant'" :source="message.content" />
                     <template v-else>{{ message.content }}</template>
                   </div>
                 </div>
@@ -250,7 +256,7 @@ import InputText from "primevue/inputtext";
 import Menu from "primevue/menu";
 import { useToast } from "primevue/usetoast";
 
-import VueMarkdown from "vue-markdown-render";
+import ChatMarkdown from "@/components/ChatMarkdown.vue";
 import { useLlmStore } from "@/stores/llm";
 import { useSherpaStore } from "@/stores/sherpa";
 import { useExperimentStore } from "@/stores/experiment";
@@ -1416,6 +1422,20 @@ const collapsed = computed(() => props.collapsed);
 .chat-bubble--md :deep(td) {
   border: 1px solid rgba(0, 0, 0, 0.15);
   padding: 3px 8px;
+}
+
+.chat-bubble--md :deep(.katex-display) {
+  margin: 0.5em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.chat-bubble--md :deep(.katex-display::-webkit-scrollbar) {
+  height: 6px;
+}
+
+.chat-bubble--md :deep(.katex) {
+  font-size: 1em;
 }
 
 .chat-input {

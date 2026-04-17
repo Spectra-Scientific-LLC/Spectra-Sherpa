@@ -112,6 +112,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
   let unsubscribeSyncEvents: (() => void) | null = null;
   let unsubscribeGeneralEvents: (() => void) | null = null;
   let isInitialized = false;
+  let lastConversationProjectId: number | null = null;
 
   // ── helpers ────────────────────────────────────────────────
 
@@ -200,50 +201,187 @@ export const useSherpaStore = defineStore("sherpa", () => {
       conversations.value = [];
       currentConversationId.value = null;
       messages.value = [];
+      lastConversationProjectId = null;
       return;
     }
 
-    const response = await api.get("/llm/conversations", {
-      params: { project_id: projectId },
-    });
-    conversations.value = (response.data as Array<Record<string, unknown>>).map((item) => ({
-      id: String(item.id),
-      title: String(item.title || "Untitled conversation"),
-      updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
-    }));
+    // Failure modes we must survive without corrupting user state AND
+    // without leaving stale rows / ids when the project context shifts.
+    //
+    // Two things drive the logic:
+    //   A) List endpoint (GET /llm/conversations?project_id=X) is
+    //      eventually consistent with POST /llm/chat — a brand-new id
+    //      can be absent from the list for ~100-500ms.
+    //   B) List AND probe endpoints are both scoped by project_id. A
+    //      conversation that belongs to project A will 404 when probed
+    //      with project_id=B. This is exactly how we detect a project
+    //      switch: the probe settles the ambiguity.
+    //
+    // Flow:
+    //   1. Fetch the list. If it fails, record listFailed=true and fall
+    //      through — we still need to run the probe to distinguish
+    //      "transient upstream issue in same project" (preserve state)
+    //      from "project-switch with list failure" (clear state).
+    //   2. If list succeeded and contains the active id, done.
+    //   3. Otherwise probe GET /llm/conversation/{id}?project_id=X:
+    //        - 2xx: id is valid for THIS project. Keep it. If the list
+    //          was healthy but missing the id (eventual consistency),
+    //          re-insert the active row optimistically so the sidebar
+    //          shows the thread immediately — otherwise the list
+    //          overwrite from step 1 would have erased the previous
+    //          optimistic insertion from updateConversationSummary().
+    //        - 404: id doesn't exist for this project. Either deleted
+    //          or belongs to a different project (project-switch).
+    //          Clear id + messages so we can't send old id with new
+    //          project_id on the next chat turn.
+    //        - other 5xx / network: ambiguous. Preserve state.
+    let listResponse;
+    let listFailed = false;
+    const switchingProjects = lastConversationProjectId !== null && lastConversationProjectId !== projectId;
+    try {
+      listResponse = await api.get("/llm/conversations", {
+        params: { project_id: projectId },
+      });
+    } catch (err) {
+      console.warn(
+        "[sherpa] refreshConversations list fetch failed — will probe active id before deciding:",
+        err,
+      );
+      listFailed = true;
+    }
 
-    if (
-      currentConversationId.value
-      && !conversations.value.some((item) => item.id === currentConversationId.value)
-    ) {
-      currentConversationId.value = null;
-      messages.value = [];
+    if (listResponse) {
+      conversations.value = (listResponse.data as Array<Record<string, unknown>>).map(
+        (item) => ({
+          id: String(item.id),
+          title: String(item.title || "Untitled conversation"),
+          updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
+        }),
+      );
+      lastConversationProjectId = projectId;
+    }
+
+    const activeId = currentConversationId.value;
+    if (!activeId) {
+      if (switchingProjects) {
+        startNewConversation();
+        if (listFailed) {
+          conversations.value = [];
+        }
+        lastConversationProjectId = projectId;
+      }
+      return;
+    }
+
+    if (!listFailed && conversations.value.some((item) => item.id === activeId)) {
+      // Happy path: list is authoritative and contains the id.
+      return;
+    }
+
+    try {
+      await api.get(`/llm/conversation/${activeId}`, {
+        params: { project_id: projectId },
+      });
+      // 2xx: id is valid for this project. If the list came back healthy
+      // but was missing this id (eventual consistency), restore the row
+      // so the sidebar doesn't appear to lose the active thread.
+      if (!listFailed) {
+        ensureOptimisticSidebarEntry(activeId);
+      }
+      lastConversationProjectId = projectId;
+    } catch (err) {
+      const status = (err as { response?: { status?: number } }).response?.status;
+      if (status === 404 && switchingProjects) {
+        // Project switch: the stale activeId belongs to the previous
+        // project and 404s against the new one. Safe to wipe — next
+        // chat starts a new thread scoped to the current project.
+        startNewConversation();
+        if (listFailed) {
+          conversations.value = [];
+        }
+        lastConversationProjectId = projectId;
+      } else if (status === 404) {
+        // Same-project 404: either eventual consistency (upstream hasn't
+        // persisted the new id yet) or the conversation only exists in the
+        // local backend conversation_store and was never proxied to the
+        // upstream spectrasherpa service. Either way, preserve the active
+        // thread AND restore its sidebar entry so Topics keeps showing it.
+        console.warn(
+          "[sherpa] getConversation probe 404 on same project — preserving state + sidebar entry:",
+          { activeId, projectId },
+        );
+        ensureOptimisticSidebarEntry(activeId);
+        lastConversationProjectId = projectId;
+      } else {
+        // 5xx / network on probe. Ambiguous — preserve state.
+        console.warn(
+          "[sherpa] getConversation probe failed — keeping active thread intact:",
+          err,
+        );
+      }
     }
   }
 
-  function updateConversationSummary(conversationId: string): void {
-    if (isServerBacked.value) {
-      void refreshConversations(projectStore.currentProjectId);
+  function ensureOptimisticSidebarEntry(conversationId: string): void {
+    if (conversations.value.some((item) => item.id === conversationId)) {
       return;
     }
-
     const firstUser = messages.value.find((message) => message.role === "user");
-    const title =
+    const derivedTitle =
+      firstUser?.content.slice(0, 60) || `Sherpa Conversation ${conversations.value.length + 1}`;
+    conversations.value.unshift({
+      id: conversationId,
+      title: derivedTitle,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  function updateConversationSummary(conversationId: string): void {
+    // Optimistic insertion: when a new conversation_id arrives mid-stream
+    // (server-backed) or on turn completion (local), make sure an entry
+    // exists in conversations.value immediately so the sidebar shows the
+    // user's active thread without waiting for the async list refresh.
+    // refreshConversations() ALSO restores this row if a stale list erases
+    // it, so the sidebar remains correct across the eventual-consistency
+    // window.
+    const firstUser = messages.value.find((message) => message.role === "user");
+    const derivedTitle =
       firstUser?.content.slice(0, 60) || `Sherpa Conversation ${conversations.value.length + 1}`;
     const updatedAt = new Date().toISOString();
     const existing = conversations.value.find((item) => item.id === conversationId);
 
     if (existing) {
-      existing.title = title;
       existing.updatedAt = updatedAt;
+      // Don't overwrite an existing title — server may have a
+      // better one from prior messages.
+      if (!existing.title || existing.title === "Untitled conversation") {
+        existing.title = derivedTitle;
+      }
     } else {
-      conversations.value.unshift({ id: conversationId, title, updatedAt });
+      conversations.value.unshift({ id: conversationId, title: derivedTitle, updatedAt });
+    }
+
+    if (isServerBacked.value) {
+      // Don't fire refreshConversations here. The server list endpoint
+      // proxies to spectrasherpa, which may not have the conversation yet
+      // (or ever — chat goes through the local backend, not through the
+      // proxy). Replacing conversations.value with the server's empty/stale
+      // list destroys the optimistic entries for all prior topics and makes
+      // them disappear from Topics. The optimistic insert above is
+      // sufficient for the sidebar; refreshConversations will run on page
+      // load and project switch (via the ChatPanel watcher) when we
+      // genuinely need to sync with the server.
+      return;
     }
 
     persistConversations(conversations.value);
   }
 
   async function loadConversation(conversationId: string): Promise<void> {
+    if (conversationId === currentConversationId.value && messages.value.length > 0) {
+      return;
+    }
+
     const params = isServerBacked.value
       ? { project_id: projectStore.currentProjectId }
       : undefined;
@@ -252,7 +390,27 @@ export const useSherpaStore = defineStore("sherpa", () => {
       throw new Error("Select a project before loading a Sherpa conversation.");
     }
 
-    const response = await api.get(`/llm/conversation/${conversationId}`, { params });
+    let response;
+    try {
+      response = await api.get(`/llm/conversation/${conversationId}`, { params });
+    } catch (err) {
+      const status = (err as { response?: { status?: number } }).response?.status;
+      if (status === 404) {
+        // Stale sidebar entry — the backend no longer has this
+        // conversation (optimistic-only row, or upstream lost it).
+        // Remove it so it can't be clicked again, and start fresh.
+        conversations.value = conversations.value.filter(
+          (item) => item.id !== conversationId,
+        );
+        if (currentConversationId.value === conversationId) {
+          currentConversationId.value = null;
+          messages.value = [];
+        }
+        throw new Error("This conversation is no longer available. It has been removed from Topics.");
+      }
+      throw err;
+    }
+
     currentConversationId.value = response.data.conversation_id;
     messages.value = (response.data.messages as Array<{ role: SherpaMessage["role"]; content: string }>)
       .map((message) => ({
@@ -339,12 +497,15 @@ export const useSherpaStore = defineStore("sherpa", () => {
     return {
       role: "assistant",
       content: [
-        "Sherpa Advisor is ready.",
+        "Welcome to Sherpa Advisor. Quick tour:",
         "",
-        "1. Create a project.",
-        "2. Pick a template or build a workflow.",
-        "3. Run the workflow to generate results.",
-        "4. Ask Sherpa about the outputs, diagnostics, or next steps.",
+        "1. **Project** — create or select one.",
+        "2. **Template** — pick one that fits your analysis.",
+        "3. **Data** — load a dataset (your files or the reference catalog).",
+        "4. **Inspect** — review and refine axes / metadata in the Data → Explore tab.",
+        "5. **Workflow** — run the pipeline, then ask me about the results.",
+        "",
+        "Ask me anything as you go — I can explain templates, diagnose runs, and suggest next steps.",
       ].join("\n"),
     };
   }
@@ -1765,6 +1926,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
     clearMessages,
     startNewConversation,
     refreshConversations,
+    updateConversationSummary,
     loadConversation,
     deleteConversation,
     openSubscriptionUpgrade,

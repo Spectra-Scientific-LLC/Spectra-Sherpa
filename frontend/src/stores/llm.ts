@@ -79,6 +79,7 @@ export const useLlmStore = defineStore("llm", () => {
   const CONNECT_RETRY_ATTEMPTS = 3;
   let connectAttempt = 0;
   let authFallbackRetried = false;
+  let lastConversationProjectId: number | null = null;
 
   const formatChatWarning = (
     payload: Record<string, unknown>
@@ -384,20 +385,32 @@ export const useLlmStore = defineStore("llm", () => {
   };
 
   const updateConversationSummary = (conversationId: string) => {
-    if (isServerBacked.value) {
-      void refreshConversations();
-      return;
-    }
+    // Optimistic insertion runs for BOTH modes so the sidebar shows the
+    // active thread synchronously, before the async server-backed refresh
+    // resolves. refreshConversations() will restore this row if a stale
+    // list erases it (probe-then-re-insert path).
     const firstUser = messages.value.find((msg) => msg.role === "user");
     const title =
       firstUser?.content.slice(0, 60) || `Conversation ${conversations.value.length + 1}`;
     const updatedAt = new Date().toISOString();
     const existing = conversations.value.find((item) => item.id === conversationId);
     if (existing) {
-      existing.title = title;
       existing.updatedAt = updatedAt;
+      // Preserve an existing server-assigned title; only fill in when
+      // there isn't one yet.
+      if (!existing.title || existing.title === "Untitled conversation") {
+        existing.title = title;
+      }
     } else {
       conversations.value.unshift({ id: conversationId, title, updatedAt });
+    }
+
+    if (isServerBacked.value) {
+      // Don't fire refreshConversations here — see sherpa.ts for full
+      // rationale. The server list may not contain locally-created
+      // conversations and replacing conversations.value destroys all
+      // prior optimistic sidebar entries.
+      return;
     }
     persistConversations(conversations.value);
   };
@@ -411,24 +424,107 @@ export const useLlmStore = defineStore("llm", () => {
       conversations.value = [];
       currentConversationId.value = null;
       messages.value = [];
+      lastConversationProjectId = null;
       return;
     }
 
-    const response = await api.get("/llm/conversations", {
-      params: { project_id: projectId },
-    });
-    conversations.value = (response.data as Array<Record<string, unknown>>).map((item) => ({
-      id: String(item.id),
-      title: String(item.title || "Untitled conversation"),
-      updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
-    }));
-    if (
-      currentConversationId.value
-      && !conversations.value.some((item) => item.id === currentConversationId.value)
-    ) {
-      currentConversationId.value = null;
-      messages.value = [];
+    // Failure modes handled — see sherpa.ts refreshConversations for
+    // the full design notes. This parallel implementation preserves the
+    // same contract: probe must run regardless of list outcome so project
+    // switches with list failures clear state correctly (via probe 404),
+    // and the active row is re-inserted optimistically if the list was
+    // healthy but stale.
+    let listResponse;
+    let listFailed = false;
+    const switchingProjects = lastConversationProjectId !== null && lastConversationProjectId !== projectId;
+    try {
+      listResponse = await api.get("/llm/conversations", {
+        params: { project_id: projectId },
+      });
+    } catch (err) {
+      console.warn(
+        "[llm] refreshConversations list fetch failed — will probe active id before deciding:",
+        err,
+      );
+      listFailed = true;
     }
+
+    if (listResponse) {
+      conversations.value = (listResponse.data as Array<Record<string, unknown>>).map(
+        (item) => ({
+          id: String(item.id),
+          title: String(item.title || "Untitled conversation"),
+          updatedAt: String(item.updated_at || item.updatedAt || new Date().toISOString()),
+        }),
+      );
+      lastConversationProjectId = projectId;
+    }
+
+    const activeId = currentConversationId.value;
+    if (!activeId) {
+      if (switchingProjects) {
+        currentConversationId.value = null;
+        messages.value = [];
+        if (listFailed) {
+          conversations.value = [];
+        }
+        lastConversationProjectId = projectId;
+      }
+      return;
+    }
+
+    if (!listFailed && conversations.value.some((item) => item.id === activeId)) {
+      return;
+    }
+
+    try {
+      await api.get(`/llm/conversation/${activeId}`, {
+        params: { project_id: projectId },
+      });
+      if (!listFailed) {
+        ensureOptimisticSidebarEntry(activeId);
+      }
+      lastConversationProjectId = projectId;
+    } catch (err) {
+      const status = (err as { response?: { status?: number } }).response?.status;
+      if (status === 404 && switchingProjects) {
+        // Project switch: stale id belongs to a different project.
+        // Clear so the next send doesn't pair an old id with a new project_id.
+        currentConversationId.value = null;
+        messages.value = [];
+        if (listFailed) {
+          conversations.value = [];
+        }
+        lastConversationProjectId = projectId;
+      } else if (status === 404) {
+        // Same-project 404: preserve state + restore sidebar entry.
+        console.warn(
+          "[llm] getConversation probe 404 on same project — preserving state + sidebar entry:",
+          { activeId, projectId },
+        );
+        ensureOptimisticSidebarEntry(activeId);
+        lastConversationProjectId = projectId;
+      } else {
+        console.warn(
+          "[llm] getConversation probe failed — keeping active thread intact:",
+          err,
+        );
+      }
+    }
+  };
+
+  const ensureOptimisticSidebarEntry = (conversationId: string): void => {
+    if (conversations.value.some((item) => item.id === conversationId)) {
+      return;
+    }
+    const firstUser = messages.value.find((message) => message.role === "user");
+    const derivedTitle =
+      firstUser?.content.slice(0, 60) || `Conversation ${conversations.value.length + 1}`;
+    conversations.value.unshift({
+      id: conversationId,
+      title: derivedTitle,
+      updatedAt: new Date().toISOString(),
+    });
   };
 
   const sendMessage = async (message: string, metadata?: Record<string, unknown>) => {
@@ -459,15 +555,33 @@ export const useLlmStore = defineStore("llm", () => {
   };
 
   const loadConversation = async (conversationId: string) => {
+    if (conversationId === currentConversationId.value && messages.value.length > 0) {
+      return;
+    }
     if (isServerBacked.value && projectStore.currentProjectId == null) {
       throw new Error("Select a project before loading a server-backed conversation.");
     }
     const params = isServerBacked.value
       ? { project_id: projectStore.currentProjectId }
       : undefined;
-    const response = await api.get(`/llm/conversation/${conversationId}`, { params });
-    currentConversationId.value = response.data.conversation_id;
-    messages.value = response.data.messages;
+    try {
+      const response = await api.get(`/llm/conversation/${conversationId}`, { params });
+      currentConversationId.value = response.data.conversation_id;
+      messages.value = response.data.messages;
+    } catch (err) {
+      const status = (err as { response?: { status?: number } }).response?.status;
+      if (status === 404) {
+        conversations.value = conversations.value.filter(
+          (item) => item.id !== conversationId,
+        );
+        if (currentConversationId.value === conversationId) {
+          currentConversationId.value = null;
+          messages.value = [];
+        }
+        throw new Error("This conversation is no longer available. It has been removed from Topics.");
+      }
+      throw err;
+    }
   };
 
   const deleteConversation = async (conversationId: string) => {

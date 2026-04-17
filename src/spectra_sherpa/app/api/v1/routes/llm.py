@@ -30,12 +30,25 @@ _llm_rate_limiter = RateLimiter(
 
 
 def _should_proxy_server_conversations() -> bool:
-    return app_config.mode in ("hybrid", "enterprise") or app_config.site_profile == "demo"
+    from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
+
+    # Proxy only when the deployment mode calls for it AND the subscription
+    # api_key is actually configured. Without the key the proxy target would
+    # 503, which previously broke conversation-related requests in demo mode —
+    # including get_conversation and delete_conversation, whose callers surface
+    # the 503 as "Sherpa Load Failed" on topic switch. Falling through to the
+    # local conversation_store branch is harmless (empty / 404) and matches
+    # what the frontend expects when no server-backed history exists yet.
+    if app_config.mode not in ("hybrid", "enterprise") and app_config.site_profile != "demo":
+        return False
+    return bool(spectrasherpa_config.api_key)
 
 
 def _server_proxy_target() -> tuple[str, dict[str, str]]:
     from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
 
+    # Defence-in-depth: callers are gated by _should_proxy_server_conversations(),
+    # but if anyone reaches here without a key, fail loudly with a clear message.
     if not spectrasherpa_config.api_key:
         raise HTTPException(status_code=503, detail="Sherpa subscription service is not configured.")
 
@@ -130,6 +143,12 @@ async def list_conversations(
     if not _should_proxy_server_conversations():
         return []
 
+    # No graceful-degradation wrapper: real proxy failures (missing api_key,
+    # 502/503/504 from upstream) propagate to the caller with real status
+    # codes. Frontend is responsible for handling those gracefully without
+    # destroying user state. Silent swallowing would make real outages
+    # indistinguishable from "no conversations," which is destructive for a
+    # critical Advisor path.
     response = await _proxy_server_request(
         "GET",
         "/conversations",
@@ -144,24 +163,33 @@ async def get_conversation(
     project_id: int | None = None,
     current_user: User = Depends(get_current_user),
 ) -> LLMConversation:
+    user_id = current_user.id if current_user.id else 0
+
     if _should_proxy_server_conversations():
         if project_id is None:
             raise HTTPException(status_code=400, detail="project_id is required for server-backed conversations")
-        response = await _proxy_server_request(
-            "GET",
-            f"/conversations/{conversation_id}",
-            params={"local_user_id": current_user.id, "project_id": project_id},
-        )
-        data = response.json()
-        return LLMConversation(
-            conversation_id=conversation_id,
-            messages=[
-                LLMMessage(role=message["role"], content=message["content"]) for message in data.get("messages", [])
-            ],
-        )
+        try:
+            response = await _proxy_server_request(
+                "GET",
+                f"/conversations/{conversation_id}",
+                params={"local_user_id": current_user.id, "project_id": project_id},
+            )
+            data = response.json()
+            return LLMConversation(
+                conversation_id=conversation_id,
+                messages=[
+                    LLMMessage(role=message["role"], content=message["content"]) for message in data.get("messages", [])
+                ],
+            )
+        except HTTPException as exc:
+            if exc.status_code == 404:
+                # Proxy 404 — conversation may exist in local store only
+                # (WebSocket chat creates conversations locally, not on the
+                # upstream spectrasherpa service). Fall through to local lookup.
+                pass
+            else:
+                raise
 
-    # Pass user_id to enforce ownership check
-    user_id = current_user.id if current_user.id else 0
     messages = conversation_store.get(conversation_id, user_id=user_id)
     if messages is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
