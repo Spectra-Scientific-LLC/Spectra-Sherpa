@@ -135,7 +135,6 @@ import QuickPlotModal from "./modals/QuickPlotModal.vue";
 import DataTableModal from "./modals/DataTableModal.vue";
 import { useWorkflowStore } from "@/stores/workflow";
 import { useProjectStore } from "@/stores/project";
-import { normalizeSampleLabel } from "@/utils/sampleLabels";
 import { useNodeLog } from "./node-detail/composables/useNodeLog";
 import { useNodeValidation } from "./node-detail/composables/useNodeValidation";
 import { useNodeOutput } from "./node-detail/composables/useNodeOutput";
@@ -149,257 +148,21 @@ import SettingsPanel from "./node-detail/panels/SettingsPanel.vue";
 import OutputPanel from "./node-detail/panels/OutputPanel.vue";
 import PlotsPanel from "./node-detail/panels/PlotsPanel.vue";
 
-
 const route = useRoute();
 const toast = useToast();
 
-// Trial execution + cross-tab broadcast — extracted to composable.
-// (STORAGE_KEY / BROADCAST_CHANNEL_NAME re-exported from the composable module.)
-
-// Section collapse state — extracted to composable
+// ── Section collapse state ──────────────────────────────────────────────
 const {
-  sections,
-  outputSubsections,
-  plotSections,
-  toggleSection,
-  toggleOutputSubsection,
-  togglePlot,
+  sections, outputSubsections, plotSections,
+  toggleSection, toggleOutputSubsection, togglePlot,
 } = useNodeSections();
 
-// Execution log entries — extracted to composable
+// ── Execution log entries ───────────────────────────────────────────────
 const { executionLogs, addLog, clearLogs, getLogIcon } = useNodeLog();
-const previewRowLimit = 50;
 
-// PLS-DA loadings view mode (lines or biplot)
+// ── Writable refs for panel v-model-style updates ───────────────────────
 const plsdaLoadingsViewMode = ref<"lines" | "biplot">("lines");
-
-// Regression correlation plot target selector
 const regressionTargetIdx = ref(0);
-
-// Modal state
-const showQuickPlotModal = ref(false);
-const showDataTableModal = ref(false);
-const showFullMetadata = ref(false);
-
-// Node data loaded from session storage
-const nodeData = ref<any>(null);
-const localParams = ref<Record<string, any>>({});
-const originalParams = ref<Record<string, any>>({});
-
-const workflowStore = useWorkflowStore();
-const projectStore = useProjectStore();
-
-// Node icon mapping
-const NODE_ICONS: Record<string, string> = {
-  "data.source": "📊",
-  "preprocess.normalize": "📏",
-  "preprocess.scale": "📏",
-  "baseline.penalized_ls": "📉",
-  "preprocess.smooth": "〰️",
-  "model.pca": "🔀",
-  "model.pls": "📈",
-  "model.mcr_als": "🧩",
-  "stats.summary": "📊",
-  "output.plot": "📈",
-  "output.contour": "🗺️",
-  "output.export": "💾",
-};
-
-// Computed properties
-const nodeId = computed(() => route.params.nodeId as string);
-const nodeType = computed(() => nodeData.value?.type || "Unknown");
-const nodeTypeKey = computed(() => nodeType.value);
-
-// Parameter validation — extracted to composable
-const {
-  displayedValidationErrors,
-  hasValidationErrors,
-  validateParams,
-  getParamError,
-} = useNodeValidation(workflowStore, nodeType, localParams);
-
-watch(localParams, () => validateParams(), { deep: true });
-watch(
-  () => workflowStore.isLoadingNodeLibrary,
-  (isLoading) => {
-    if (!isLoading && workflowStore.nodeLibrary.size > 0) {
-      validateParams();
-    }
-  },
-);
-const isDataNode = computed(() => nodeType.value.startsWith("data."));
-
-// Detect if data is spectral (vs generic like Iris dataset)
-const isSpectraData = computed(() => {
-  const metadata = nodeOutput.value?.metadata || {};
-
-  // Use explicit flag if available
-  if (metadata.is_spectra !== undefined) {
-    return metadata.is_spectra;
-  }
-
-  // Check data_type if available
-  if (metadata.data_type === "spectra") return true;
-  if (metadata.data_type === "generic") return false;
-
-  // Fallback: check if x_title contains spectral keywords
-  const xTitle = (metadata.x_title || "").toLowerCase();
-  const spectralKeywords = ['wavenumber', 'wavelength', 'raman', 'cm-1', 'cm⁻¹', 'nm', 'shift', 'frequency'];
-  return spectralKeywords.some(kw => xTitle.includes(kw));
-});
-
-// Detect if data is time-series (kinetic / evolving)
-// Detect if this is a generic dataset (like Iris) with feature names
-const isGenericDataNode = computed(() => {
-  if (!isDataNode.value) return false;
-  const metadata = nodeOutput.value?.metadata || {};
-  const hasFeatureNames = metadata.feature_names && metadata.feature_names.length > 0;
-  return !isSpectraData.value && hasFeatureNames;
-});
-
-const nodeLabel = computed(() => nodeData.value?.label || `Node ${nodeId.value}`);
-const nodeIcon = computed(() => NODE_ICONS[nodeType.value] || "📦");
-const nodeMetadata = computed(() => workflowStore.getNodeMetadata(nodeType.value));
-const mapMetadataParams = (_nodeType: string, parameters: any[]): any[] => {
-  return parameters.map((param) => {
-    return {
-      name: param.name,
-      label: param.label,
-      type: param.param_type,
-      min: param.min_value,
-      max: param.max_value,
-      step: param.step,
-      options: param.options?.map((opt: any) => typeof opt === 'string' ? { label: opt, value: opt } : opt),
-      description: param.description,
-      default: param.default,
-      required: param.required,
-      visible_when: param.visible_when || null,
-    };
-  });
-};
-
-/** Check if a parameter should be visible based on visible_when rules. */
-const isParamVisible = (param: any): boolean => {
-  if (!param.visible_when) return true;
-  for (const [controlParam, allowedValues] of Object.entries(param.visible_when)) {
-    const currentValue = String(localParams.value[controlParam] ?? '');
-    if (!(allowedValues as string[]).includes(currentValue)) return false;
-  }
-  return true;
-};
-
-const nodeParams = computed(() => {
-  let params: any[];
-  if (nodeMetadata.value?.parameters?.length) {
-    params = mapMetadataParams(nodeType.value, nodeMetadata.value.parameters);
-  } else {
-    params = nodeData.value?.paramDefinitions || [];
-  }
-  return params.filter(isParamVisible);
-});
-const nodeOutput = computed(() => nodeData.value?.output || null);
-
-const settingsCount = computed(() => nodeParams.value.length);
-
-const { normalizeNodeOutput, resolvePortPayload, primaryOutputPayload } = useNodeOutput(
-  nodeOutput,
-  nodeMetadata,
-);
-
-// Output-panel data + preview tables + regression selector extracted to composable.
-const {
-  hasInput,
-  hasOutput,
-  inputSummary,
-  outputSummary,
-  inputConnections,
-  inputData,
-  outputData,
-  outputMetadata,
-  datasetInfo,
-  datasetLabelTable,
-  labelPreviewLimit,
-  processingHistory,
-  provenanceInfo,
-  qualitySummary,
-  isRegressionNode,
-  isPCAOutput,
-  portSummaries,
-  fullMetadataJson,
-  getMetaTooltip,
-  formatMetaValue,
-  inputPreview,
-  inputPreviewColumns,
-  inputDataSummary,
-  outputPreview,
-  outputPreviewColumns,
-  outputDataSummary,
-  pcaDiagnosticsPreview,
-  pcaDiagnosticsColumns,
-  pcaDiagSummary,
-  regressionTargetOptions,
-  selectedRegressionR2,
-  selectedRegressionRmse,
-} = useNodeOutputData({
-  nodeOutput,
-  nodeData,
-  nodeTypeKey,
-  resolvePortPayload,
-  regressionTargetIdx,
-  previewRowLimit,
-});
-
-const pcaSampleLabels = computed<string[]>(() => {
-  const metadata = nodeOutput.value?.metadata || {};
-  const candidates = [
-    metadata.sample_labels,
-    metadata.labels,
-    primaryOutputPayload.value?.y_axis?.labels,
-  ];
-
-  for (const raw of candidates) {
-    if (Array.isArray(raw) && raw.length > 0) {
-      return raw.map((item) => normalizeSampleLabel(item));
-    }
-  }
-
-  return [];
-});
-
-const pcaLabelCategories = computed<string[]>(() => {
-  const labels = pcaSampleLabels.value;
-  if (labels.length === 0) return [];
-  const metadata = nodeOutput.value?.metadata || {};
-  const labelSet = new Set(labels);
-
-  const rawCategories = Array.isArray(metadata.label_categories)
-    ? metadata.label_categories.map((item: any) => normalizeSampleLabel(item))
-    : [];
-
-  let categories = rawCategories.filter((category: string) => labelSet.has(category));
-  if (categories.length === 0) {
-    categories = Array.from(labelSet);
-  }
-  return Array.from(new Set(categories));
-});
-
-const pcaUseCategorical = computed(() => {
-  const labels = pcaSampleLabels.value;
-  const categories = pcaLabelCategories.value;
-  if (labels.length === 0 || categories.length < 2) return false;
-  // Avoid one-trace-per-sample views (noisy and frequently unreadable).
-  if (categories.length >= labels.length) return false;
-  return categories.length <= 20;
-});
-
-
-
-// ============================================================================
-// PLOTS SECTION - writable refs + all data/layout via useNodePlotData
-// ============================================================================
-
-// Writable refs for panel v-model-style updates. Owned by the shell so they
-// survive past useNodePlotData and feed into useNodeDetailState.writable.
 const pcaXAxis = ref(0);
 const pcaYAxis = ref(1);
 const spectraDisplayMode = ref<"overlay" | "contour">("contour");
@@ -410,106 +173,111 @@ const contourClickPoint = ref<
   { sampleIdx: number; wavenumberIdx: number; wavenumber: number } | null
 >(null);
 
+// ── Modal state ─────────────────────────────────────────────────────────
+const showQuickPlotModal = ref(false);
+const showDataTableModal = ref(false);
+const showFullMetadata = ref(false);
+
+// ── Core node state ─────────────────────────────────────────────────────
+const nodeData = ref<any>(null);
+const localParams = ref<Record<string, any>>({});
+const originalParams = ref<Record<string, any>>({});
+const workflowStore = useWorkflowStore();
+const projectStore = useProjectStore();
+
+const NODE_ICONS: Record<string, string> = {
+  "data.source": "📊", "preprocess.normalize": "📏", "preprocess.scale": "📏",
+  "baseline.penalized_ls": "📉", "preprocess.smooth": "〰️", "model.pca": "🔀",
+  "model.pls": "📈", "model.mcr_als": "🧩", "stats.summary": "📊",
+  "output.plot": "📈", "output.contour": "🗺️", "output.export": "💾",
+};
+
+const nodeId = computed(() => route.params.nodeId as string);
+const nodeType = computed(() => nodeData.value?.type || "Unknown");
+const nodeTypeKey = computed(() => nodeType.value);
+const nodeLabel = computed(() => nodeData.value?.label || `Node ${nodeId.value}`);
+const nodeIcon = computed(() => NODE_ICONS[nodeType.value] || "📦");
+const nodeMetadata = computed(() => workflowStore.getNodeMetadata(nodeType.value));
+const nodeOutput = computed(() => nodeData.value?.output || null);
+
+// ── Parameter handling ──────────────────────────────────────────────────
 const {
-  availablePlots,
-  isPreprocessingNode,
-  pcaAxisOptions,
-  featureOptions,
-  spectraDisplayOptions,
-  genericDisplayOptions,
-  holdoutVisualization,
-  handleContourClick,
-  pcaScoresData, pcaScoresLayout, pcaScoresConfig,
-  pcaBiplotData, pcaBiplotLayout,
-  pcaLoadingsData, pcaLoadingsLayout, pcaLoadingsConfig,
-  pcaScreeData, pcaScreeLayout,
-  pcaDiagnosticsData, pcaDiagnosticsLayout,
-  mcrConcentrationData, mcrConcentrationLayout,
-  mcrSpectraData, mcrSpectraLayout,
-  efaEigenvalueData, efaEigenvalueLayout,
-  plsScoresData, plsScoresLayout,
-  plsLoadingsData, plsLoadingsLayout,
-  classificationScoresData, classificationScoresLayout,
-  plsdaLoadingsData, plsdaLoadingsLayout,
-  plsdaVipData, plsdaVipLayout,
-  plsdaConfusionTrainData, plsdaConfusionTrainLayout,
-  plsdaConfusionCVData, plsdaConfusionCVLayout,
-  classificationAccuracyData, classificationAccuracyLayout,
-  regressionCorrelationData, regressionCorrelationLayout,
-  hcaDendrogramData, hcaDendrogramLayout,
-  peakFindingPlotData, peakFindingPlotLayout,
-  plotNodeData, plotNodeLayout,
-  spectraOverlayData, spectraOverlayLayout,
-  spectraContourData, spectraContourLayout,
-  horizontalSliceData, horizontalSliceLayout,
-  verticalSliceData, verticalSliceLayout,
-  genericBoxPlotData, genericBoxPlotLayout,
-  genericScatterData, genericScatterLayout,
-  clusterScatterData, clusterScatterLayout,
-  outlierChartData, outlierChartLayout,
-  holdoutConfusionData, holdoutConfusionLayout,
-  holdoutRegressionData, holdoutRegressionLayout,
-  statsPlotData, statsPlotLayout,
-} = useNodePlotData({
-  nodeOutput,
-  nodeType,
-  nodeTypeKey,
-  hasOutput,
-  isPCAOutput,
-  isDataNode,
-  isSpectraData,
-  isGenericDataNode,
-  resolvePortPayload,
-  pcaSampleLabels,
-  pcaLabelCategories,
-  pcaUseCategorical,
-  pcaXAxis,
-  pcaYAxis,
-  plsdaLoadingsViewMode,
-  regressionTargetIdx,
-  featureXAxis,
-  featureYAxis,
-  contourClickPoint,
-  regressionTargetOptions,
-  selectedRegressionR2,
-  selectedRegressionRmse,
+  displayedValidationErrors, hasValidationErrors, validateParams, getParamError,
+} = useNodeValidation(workflowStore, nodeType, localParams);
+
+watch(localParams, () => validateParams(), { deep: true });
+watch(
+  () => workflowStore.isLoadingNodeLibrary,
+  (loading) => { if (!loading && workflowStore.nodeLibrary.size > 0) validateParams(); },
+);
+
+const mapMetadataParams = (_nodeType: string, parameters: any[]): any[] =>
+  parameters.map((p) => ({
+    name: p.name, label: p.label, type: p.param_type,
+    min: p.min_value, max: p.max_value, step: p.step,
+    options: p.options?.map((o: any) => typeof o === "string" ? { label: o, value: o } : o),
+    description: p.description, default: p.default, required: p.required,
+    visible_when: p.visible_when || null,
+  }));
+
+const isParamVisible = (param: any): boolean => {
+  if (!param.visible_when) return true;
+  for (const [ctrl, allowed] of Object.entries(param.visible_when)) {
+    if (!(allowed as string[]).includes(String(localParams.value[ctrl] ?? ""))) return false;
+  }
+  return true;
+};
+
+const nodeParams = computed(() => {
+  const params = nodeMetadata.value?.parameters?.length
+    ? mapMetadataParams(nodeType.value, nodeMetadata.value.parameters)
+    : nodeData.value?.paramDefinitions || [];
+  return params.filter(isParamVisible);
+});
+const settingsCount = computed(() => nodeParams.value.length);
+
+// ── Output composable ───────────────────────────────────────────────────
+const { normalizeNodeOutput, resolvePortPayload } = useNodeOutput(nodeOutput, nodeMetadata);
+
+const {
+  hasInput, hasOutput, inputSummary, outputSummary, inputConnections, inputData,
+  outputData, outputMetadata, datasetInfo, datasetLabelTable, labelPreviewLimit,
+  processingHistory, provenanceInfo, qualitySummary, isRegressionNode, isPCAOutput,
+  portSummaries, fullMetadataJson, getMetaTooltip, formatMetaValue,
+  inputPreview, inputPreviewColumns, inputDataSummary,
+  outputPreview, outputPreviewColumns, outputDataSummary,
+  pcaDiagnosticsPreview, pcaDiagnosticsColumns, pcaDiagSummary,
+  regressionTargetOptions, selectedRegressionR2, selectedRegressionRmse,
+} = useNodeOutputData({
+  nodeOutput, nodeData, nodeTypeKey, resolvePortPayload,
+  regressionTargetIdx, previewRowLimit: 50,
 });
 
-// Methods
+// ── Plot composable (owns all plot data/layout computeds + derived flags) ──
+const { plotBag, handleContourClick } = useNodePlotData({
+  nodeOutput, nodeType, nodeTypeKey, hasOutput, isPCAOutput,
+  pcaXAxis, pcaYAxis, plsdaLoadingsViewMode, regressionTargetIdx,
+  featureXAxis, featureYAxis, contourClickPoint,
+  regressionTargetOptions, selectedRegressionR2, selectedRegressionRmse,
+});
+
+// ── Actions ─────────────────────────────────────────────────────────────
 const resetToDefaults = () => {
-  for (const param of nodeParams.value) {
-    if (param.default !== undefined) {
-      localParams.value[param.name] = param.default;
-    }
+  for (const p of nodeParams.value) {
+    if (p.default !== undefined) localParams.value[p.name] = p.default;
   }
-  toast.add({
-    severity: "info",
-    summary: "Reset",
-    detail: "Parameters reset to defaults",
-    life: 2000,
-  });
+  toast.add({ severity: "info", summary: "Reset", detail: "Parameters reset to defaults", life: 2000 });
 };
 
-
-const openDataTable = () => {
-  showDataTableModal.value = true;
-};
-
-const openQuickPlot = () => {
-  showQuickPlotModal.value = true;
-};
+const openDataTable = () => { showDataTableModal.value = true; };
+const openQuickPlot = () => { showQuickPlotModal.value = true; };
 
 const exportOutput = () => {
   const data = nodeOutput.value?.data;
   if (!data || !Array.isArray(data)) return;
-
-  let csv = "";
-  if (Array.isArray(data[0])) {
-    csv = data.map((row: any[]) => row.join(",")).join("\n");
-  } else {
-    csv = data.join("\n");
-  }
-
+  const csv = Array.isArray(data[0])
+    ? data.map((row: any[]) => row.join(",")).join("\n")
+    : data.join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
@@ -518,223 +286,68 @@ const exportOutput = () => {
   URL.revokeObjectURL(link.href);
 };
 
-const handleCancel = () => {
-  // Close without saving
-  window.close();
-};
+const handleCancel = () => { window.close(); };
 
 const { isExecuting, broadcastParamsUpdate, handleRunTrial } = useNodeTrial({
-  nodeData,
-  localParams,
-  nodeType,
-  addLog,
-  normalizeNodeOutput,
-  toast,
+  nodeData, localParams, nodeType, addLog, normalizeNodeOutput, toast,
 });
 
 const handleSaveAndExit = () => {
-  // Broadcast params update to main tab
   broadcastParamsUpdate();
-
-  toast.add({
-    severity: "success",
-    summary: "Saved",
-    detail: "Settings saved successfully",
-    life: 1500,
-  });
-
-  // Attempt to close the tab. window.close() is advisory — browsers silently
-  // ignore it if the tab is not script-closable (e.g. opener navigated away,
-  // direct URL load, some reverse-proxy configurations). If it doesn't close
-  // within 400ms, focus the opener and show a persistent "you can close now"
-  // hint so the params aren't just broadcast-and-abandoned.
+  toast.add({ severity: "success", summary: "Saved", detail: "Settings saved successfully", life: 1500 });
   setTimeout(() => {
-    try {
-      window.close();
-    } catch {
-      /* no-op — browser may throw in strict modes */
-    }
+    try { window.close(); } catch { /* no-op */ }
     setTimeout(() => {
       if (!window.closed) {
         if (window.opener && !window.opener.closed) {
-          try {
-            window.opener.focus();
-          } catch {
-            /* cross-origin or stale opener — ignore */
-          }
+          try { window.opener.focus(); } catch { /* cross-origin */ }
         }
-        toast.add({
-          severity: "info",
-          summary: "Settings applied",
-          detail: "You may close this tab — changes are live in the workflow.",
-          life: 6000,
-        });
+        toast.add({ severity: "info", summary: "Settings applied", detail: "You may close this tab — changes are live in the workflow.", life: 6000 });
       }
     }, 400);
   }, 500);
 };
 
-
-// Lifecycle — BroadcastChannel setup/teardown lives in useNodeTrial
+// ── Lifecycle ───────────────────────────────────────────────────────────
 onMounted(() => {
-  // Load node data from session storage
   const storedData = sessionStorage.getItem(STORAGE_KEY);
   if (storedData) {
     try {
       nodeData.value = JSON.parse(storedData);
-
-      // Hydrate project context (Pinia doesn't sync across window.open tabs).
-      // Without this, clicking "Data"/"Experiments" from Detail View loses the
-      // project and lands on a bare listing.
       const storedProjectId = (nodeData.value as any)?.projectId;
       if (typeof storedProjectId === "number" && storedProjectId > 0) {
         projectStore.selectProject(storedProjectId);
       }
-
-      // Build params with defaults from paramDefinitions, then override with stored values
       const defaults: Record<string, any> = {};
-      const paramDefs = nodeParams.value || [];
-      for (const param of paramDefs) {
-        if (param.default !== undefined) {
-          defaults[param.name] = param.default;
-        }
+      for (const p of nodeParams.value || []) {
+        if (p.default !== undefined) defaults[p.name] = p.default;
       }
-
-      // Merge: defaults first, then stored params override
       localParams.value = { ...defaults, ...nodeData.value.params };
       originalParams.value = { ...localParams.value };
-
-      console.log('[NodeDetailView] Loaded params:', {
-        defaults,
-        stored: nodeData.value.params,
-        merged: localParams.value,
-      });
     } catch (e) {
       console.error("Failed to parse node data from session storage:", e);
-      toast.add({
-        severity: "error",
-        summary: "Error",
-        detail: "Failed to load node data",
-        life: 3000,
-      });
+      toast.add({ severity: "error", summary: "Error", detail: "Failed to load node data", life: 3000 });
     }
   } else {
-    toast.add({
-      severity: "warn",
-      summary: "No Data",
-      detail: "No node data found. Please open from the workflow inspector.",
-      life: 5000,
-    });
+    toast.add({ severity: "warn", summary: "No Data", detail: "No node data found. Please open from the workflow inspector.", life: 5000 });
   }
 });
 
-// Aggregate plot-related state for PlotsPanel (read-only surface).
-const plotState = computed(() => ({
-  hasOutput: hasOutput.value,
-  availablePlots: availablePlots.value,
-  nodeTypeKey: nodeTypeKey.value,
-  isPCAOutput: isPCAOutput.value,
-  isPreprocessingNode: isPreprocessingNode.value,
-  isDataNode: isDataNode.value,
-  isSpectraData: isSpectraData.value,
-  isGenericDataNode: isGenericDataNode.value,
-  nodeOutput: nodeOutput.value,
-  contourClickPoint: contourClickPoint.value,
-  pcaAxisOptions: pcaAxisOptions.value,
-  regressionTargetOptions: regressionTargetOptions.value,
-  spectraDisplayOptions,
-  genericDisplayOptions,
-  featureOptions: featureOptions.value,
-  holdoutVisualization: holdoutVisualization.value,
-  // PCA
-  pcaScoresData: pcaScoresData.value, pcaScoresLayout: pcaScoresLayout.value, pcaScoresConfig: pcaScoresConfig.value,
-  pcaBiplotData: pcaBiplotData.value, pcaBiplotLayout: pcaBiplotLayout.value,
-  pcaLoadingsData: pcaLoadingsData.value, pcaLoadingsLayout: pcaLoadingsLayout.value, pcaLoadingsConfig: pcaLoadingsConfig.value,
-  pcaScreeData: pcaScreeData.value, pcaScreeLayout: pcaScreeLayout.value,
-  pcaDiagnosticsData: pcaDiagnosticsData.value, pcaDiagnosticsLayout: pcaDiagnosticsLayout.value,
-  // MCR / SIMPLISMA / NMF / ICA
-  mcrConcentrationData: mcrConcentrationData.value, mcrConcentrationLayout: mcrConcentrationLayout.value,
-  mcrSpectraData: mcrSpectraData.value, mcrSpectraLayout: mcrSpectraLayout.value,
-  // EFA
-  efaEigenvalueData: efaEigenvalueData.value, efaEigenvalueLayout: efaEigenvalueLayout.value,
-  // PLS
-  plsScoresData: plsScoresData.value, plsScoresLayout: plsScoresLayout.value,
-  plsLoadingsData: plsLoadingsData.value, plsLoadingsLayout: plsLoadingsLayout.value,
-  // PLS-DA + classification
-  classificationScoresData: classificationScoresData.value, classificationScoresLayout: classificationScoresLayout.value,
-  plsdaLoadingsData: plsdaLoadingsData.value, plsdaLoadingsLayout: plsdaLoadingsLayout.value,
-  plsdaVipData: plsdaVipData.value, plsdaVipLayout: plsdaVipLayout.value,
-  plsdaConfusionTrainData: plsdaConfusionTrainData.value, plsdaConfusionTrainLayout: plsdaConfusionTrainLayout.value,
-  plsdaConfusionCVData: plsdaConfusionCVData.value, plsdaConfusionCVLayout: plsdaConfusionCVLayout.value,
-  classificationAccuracyData: classificationAccuracyData.value, classificationAccuracyLayout: classificationAccuracyLayout.value,
-  // Regression
-  regressionCorrelationData: regressionCorrelationData.value, regressionCorrelationLayout: regressionCorrelationLayout.value,
-  // HCA / Peak / Plot node
-  hcaDendrogramData: hcaDendrogramData.value, hcaDendrogramLayout: hcaDendrogramLayout.value,
-  peakFindingPlotData: peakFindingPlotData.value, peakFindingPlotLayout: peakFindingPlotLayout.value,
-  plotNodeData: plotNodeData.value, plotNodeLayout: plotNodeLayout.value,
-  // Spectra
-  spectraOverlayData: spectraOverlayData.value, spectraOverlayLayout: spectraOverlayLayout.value,
-  spectraContourData: spectraContourData.value, spectraContourLayout: spectraContourLayout.value,
-  horizontalSliceData: horizontalSliceData.value, horizontalSliceLayout: horizontalSliceLayout.value,
-  verticalSliceData: verticalSliceData.value, verticalSliceLayout: verticalSliceLayout.value,
-  // Generic
-  genericBoxPlotData: genericBoxPlotData.value, genericBoxPlotLayout: genericBoxPlotLayout.value,
-  genericScatterData: genericScatterData.value, genericScatterLayout: genericScatterLayout.value,
-  // Clusters / outliers / holdout / stats
-  clusterScatterData: clusterScatterData.value, clusterScatterLayout: clusterScatterLayout.value,
-  outlierChartData: outlierChartData.value, outlierChartLayout: outlierChartLayout.value,
-  holdoutConfusionData: holdoutConfusionData.value, holdoutConfusionLayout: holdoutConfusionLayout.value,
-  holdoutRegressionData: holdoutRegressionData.value, holdoutRegressionLayout: holdoutRegressionLayout.value,
-  statsPlotData: statsPlotData.value, statsPlotLayout: statsPlotLayout.value,
-}));
-
-// ── Provide canonical state to descendant panels (issue #24a) ─────────
-// Panels inject NODE_DETAIL_STATE_KEY instead of receiving the big prop
-// bags they used to. Readonly refs are passed through directly; the
-// writable slice gives panels typed handles for v-model-style updates.
+// ── Provide canonical state to descendant panels ────────────────────────
 const detailState: NodeDetailState = {
   output: {
-    summary: outputSummary,
-    hasOutput,
-    data: outputData,
-    metadata: outputMetadata,
-    subsections: outputSubsections,
-    datasetInfo,
-    datasetLabelTable,
-    labelPreviewLimit,
-    processingHistory,
-    provenance: provenanceInfo,
-    quality: qualitySummary,
-    portSummaries,
-    preview: computed(() => ({
-      rows: outputPreview.value,
-      columns: outputPreviewColumns.value,
-      summary: outputDataSummary.value,
-    })),
-    pcaDiagnostics: computed(() => ({
-      rows: pcaDiagnosticsPreview.value,
-      columns: pcaDiagnosticsColumns.value,
-      summary: pcaDiagSummary.value,
-    })),
-    isRegressionNode,
-    regressionTargetOptions,
-    selectedRegressionR2,
-    selectedRegressionRmse,
-    getMetaTooltip,
-    formatMetaValue,
+    summary: outputSummary, hasOutput, data: outputData, metadata: outputMetadata,
+    subsections: outputSubsections, datasetInfo, datasetLabelTable, labelPreviewLimit,
+    processingHistory, provenance: provenanceInfo, quality: qualitySummary, portSummaries,
+    preview: computed(() => ({ rows: outputPreview.value, columns: outputPreviewColumns.value, summary: outputDataSummary.value })),
+    pcaDiagnostics: computed(() => ({ rows: pcaDiagnosticsPreview.value, columns: pcaDiagnosticsColumns.value, summary: pcaDiagSummary.value })),
+    isRegressionNode, regressionTargetOptions, selectedRegressionR2, selectedRegressionRmse,
+    getMetaTooltip, formatMetaValue,
   },
-  plots: plotState,
+  plots: plotBag,
   writable: {
-    pcaXAxis,
-    pcaYAxis,
-    plsdaLoadingsViewMode,
-    regressionTargetIdx,
-    spectraDisplayMode,
-    genericDisplayMode,
-    featureXAxis,
-    featureYAxis,
-    contourClickPoint,
+    pcaXAxis, pcaYAxis, plsdaLoadingsViewMode, regressionTargetIdx,
+    spectraDisplayMode, genericDisplayMode, featureXAxis, featureYAxis, contourClickPoint,
   },
   plotSections,
 };
