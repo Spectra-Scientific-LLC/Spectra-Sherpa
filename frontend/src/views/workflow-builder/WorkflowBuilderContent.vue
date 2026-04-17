@@ -124,6 +124,7 @@ import WorkflowInspector from "./WorkflowInspector.vue";
 import { buildNodeOutput, type NodeOutput } from "@/utils/nodeOutput";
 import { downloadText } from "@/utils/download";
 import { getErrorMessage } from "@/utils/errors";
+import { handleBroadcastMessage as _handleBroadcastMessage } from "./handleBroadcastMessage";
 
 type ParamsMap = Record<string, unknown>;
 
@@ -186,16 +187,8 @@ const createNodeId = (nodeType: string): string => {
 
 // Handle BroadcastChannel messages from NodeDetailView.
 // DetailView is send-only for `node_params_updated` (fired on Save and Exit).
-const handleBroadcastMessage = (event: MessageEvent) => {
-  const { type, nodeId, params } = event.data;
-
-  if (type === 'node_params_updated') {
-    const node = nodes.value.find(n => n.id === nodeId);
-    if (node && params) {
-      workflowStore.updateNode(nodeId, { params });
-    }
-  }
-};
+const handleBroadcastMessage = (event: MessageEvent) =>
+  _handleBroadcastMessage(event, nodes, workflowStore.updateNode);
 
 // Load supporting data for the workflow bench
 onMounted(async () => {

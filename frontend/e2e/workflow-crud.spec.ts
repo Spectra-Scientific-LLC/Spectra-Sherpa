@@ -80,7 +80,7 @@ test.describe("Workflow CRUD", () => {
 
     // Fetch token from localStorage (the auth store persists it there).
     const token = await page.evaluate(() =>
-      localStorage.getItem("access_token"),
+      localStorage.getItem("token"),
     );
 
     // List workflows to find the one we just created.
@@ -149,7 +149,7 @@ test.describe("Workflow CRUD", () => {
       return meta?.getAttribute("content") ?? "/api/v1";
     });
     const token = await page.evaluate(() =>
-      localStorage.getItem("access_token"),
+      localStorage.getItem("token"),
     );
 
     // List and find our workflow.
