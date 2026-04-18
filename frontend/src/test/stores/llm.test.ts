@@ -9,12 +9,16 @@ const { apiGet } = vi.hoisted(() => ({
 vi.mock("@/api/client", () => ({
   default: {
     get: apiGet,
+    defaults: {
+      baseURL: "http://127.0.0.1:8000/api/v1",
+    },
   },
 }));
 
 vi.mock("@/composables/useAppConfig", () => ({
   useAppConfig: () => ({
     appMode: ref("enterprise"),
+    isFeatureEnabled: () => false,
   }),
 }));
 

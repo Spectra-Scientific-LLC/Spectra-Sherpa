@@ -25,6 +25,7 @@ exceptions are caught and turned into error messages.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Callable
 
 from fastapi import WebSocket
@@ -37,6 +38,14 @@ from spectra_sherpa.app.services.websocket_manager import ws_manager
 
 logger = logging.getLogger(__name__)
 
+_VALIDATE_WS = os.environ.get("SPECTRA_VALIDATE_WS", "").strip() == "1"
+if _VALIDATE_WS:
+    from jsonschema import ValidationError as _SchemaValidationError
+
+    from spectra_sherpa.app.contracts.ws_schema_validator import (
+        validate_ws_event as _validate_ws_event,
+    )
+
 
 def _ws_is_connected(ws: WebSocket) -> bool:
     state = getattr(ws, "client_state", None)
@@ -46,6 +55,11 @@ def _ws_is_connected(ws: WebSocket) -> bool:
 async def _safe_ws_send_json(ws: WebSocket, payload: dict[str, Any]) -> bool:
     if not _ws_is_connected(ws):
         return False
+    if _VALIDATE_WS and isinstance(payload.get("type"), str) and payload["type"].startswith("sherpa_"):
+        try:
+            _validate_ws_event(payload)
+        except _SchemaValidationError:
+            logger.warning("WS schema validation failed for %s", payload.get("type"), exc_info=True)
     try:
         await ws.send_json(payload)
         return True

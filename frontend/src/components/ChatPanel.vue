@@ -147,8 +147,7 @@
                 </div>
                 <div v-else-if="!llmChatEnabled && appMode === 'local'" class="no-key-notice">
                   <i class="pi pi-info-circle"></i>
-                  <span>Configure an LLM API key in Settings to enable chat.</span>
-                  <a class="setup-link" @click="router.push('/settings')">Setup</a>
+                  <span>Set <code>CHAT_ENDPOINT_URL</code> and <code>CHAT_ENDPOINT_KEY</code> in your environment, then restart to enable chat.</span>
                 </div>
                 <div v-else-if="!llmChatEnabled" class="no-key-notice">
                   <i class="pi pi-info-circle"></i>
@@ -536,7 +535,7 @@ onMounted(async () => {
     await loadEgressDefaults();
     await sherpaStore.refreshConversations(projectStore.currentProjectId);
     if (appMode.value === "local") {
-      // Fetch initial config only when authenticated (requires /llm/debug/config)
+      // Local mode derives chat readiness from /config rather than server-owned /llm/debug/config.
       await store.checkConfigChange();
     } else {
       await store.refreshConversations(projectStore.currentProjectId);

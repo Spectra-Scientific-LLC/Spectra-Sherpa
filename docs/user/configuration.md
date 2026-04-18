@@ -10,10 +10,13 @@ By default, all your data is stored in your home directory:
 ├── experiments/           # Uploaded files and results
 ├── calibrations/          # Saved models
 ├── exports/               # Saved Python and Jupyter workflow exports
-├── llm_dialogs/           # Saved LLM dialog state
 ├── references/            # App-managed reference assets
 └── nist_library/          # Downloaded reference spectra
 ```
+
+> The OSS chat assistant (see "Optional: BYO Chat Assistant" below) is
+> single-turn and holds no server-side transcript; chat history lives only
+> in your browser's local storage.
 
 See [App Data Directory](data-directory.md) for the complete layout and the distinction between app-owned output and external source data such as SpectroChemPy testdata.
 
@@ -42,12 +45,13 @@ These are the highest-signal settings for most deployments:
 |----------|------------------|-------|
 | `APP_MODE` | Runtime mode | `local`, `hybrid`, or `enterprise` |
 | `CORS_ORIGINS` | Browser origins allowed to call the backend | Required for non-local deployments |
-| `EGRESS_ENABLED` | Whether external network calls are allowed | Needed for BYOK LLM features and NIST fetches |
-| `MAX_LLM_REQUESTS_PER_HOUR` | Per-user hourly limit for paid Sherpa/LLM usage | Superusers bypass this limit |
-| `SHERPA_ENGINE_API_KEY` | Deployment key for server-backed Sherpa features | Used in hybrid/enterprise/demo |
-| `SHERPA_ENGINE_MODEL` | Server-side model name for Sherpa | Used in hybrid/enterprise/demo |
+| `EGRESS_ENABLED` | Whether external network calls are allowed | Needed for the BYO chat assistant and NIST fetches |
+| `CHAT_ENDPOINT_URL` | Base URL of an OpenAI-compatible chat completions endpoint | Enables the OSS BYO chat assistant |
+| `CHAT_ENDPOINT_KEY` | API key sent as `Authorization: Bearer <key>` | Paired with `CHAT_ENDPOINT_URL` |
+| `CHAT_ENDPOINT_MODEL` | Model identifier for the BYO chat assistant | Default: `deepseek-chat` |
 
-`RATE_LIMIT_EXECUTIONS` is no longer the primary user-facing quota for normal hybrid or enterprise use. Paid AI usage is governed by `MAX_LLM_REQUESTS_PER_HOUR`. Demo-profile execution quotas still exist separately under the demo contract.
+AI features beyond the BYO chat assistant are not part of the OSS
+distribution and are not configured through OSS environment variables.
 
 ## Exported Workflow Data Paths
 
@@ -55,40 +59,42 @@ Exported Python scripts and notebooks look for source files in a `data/` folder 
 
 Zip exports package the runnable script, notebook, requirements, source data files, and workflow/prepared-data manifests together so the exported workflow can resolve the same input files with relative paths.
 
-## Enabling AI Features (Optional)
-To use the BYOK LLM chat or **NIST Library Search**, you need to enable network access and provide API keys.
+## Optional: BYO Chat Assistant
+
+OSS SpectraSherpa ships a minimal "bring your own endpoint" chat assistant.
+It is a thin HTTP proxy to any OpenAI-compatible `/chat/completions`
+endpoint. It performs no prompt engineering, no tool calls, no persistence,
+and no agent loop — it exists so local-mode users have a simple chat box
+backed by a provider they control.
+
+To enable it:
 
 1.  Create a `.env` file in the folder where you run `spectra-sherpa`:
 
     ```bash
     # .env
     EGRESS_ENABLED=true
-    
-    # Add your LLM key (only one provider needed)
-    DEEPSEEK_API_KEY=sk-...
+
+    CHAT_ENDPOINT_URL=https://api.deepseek.com/v1
+    CHAT_ENDPOINT_KEY=sk-...
+    CHAT_ENDPOINT_MODEL=deepseek-chat     # optional, shown is the default
     ```
 
 2.  Restart the application.
 
-3.  Alternatively, you can add keys directly in the UI under **Settings > API Keys**.
+Any OpenAI-compatible endpoint works (DeepSeek, OpenAI, Groq, Together,
+a local vLLM / Ollama OpenAI-compatible server, etc.). The chat UI is
+gated by a `chatAssistant` capability flag that `/api/v1/config` sets to
+`true` whenever both `CHAT_ENDPOINT_URL` and `CHAT_ENDPOINT_KEY` are
+configured.
 
-> **Privacy Note:** In Local Mode, your API keys are stored encrypted on your machine. Data is only sent to the AI provider when you explicitly use an AI feature such as the BYOK chat assistant.
+The endpoint that backs this UI is `POST /api/v1/chat/stream` (OSS-owned,
+single-turn, server-sent-events streaming). It is deliberately *not*
+under `/api/v1/llm/*`; that prefix is reserved for extension packages
+that register an `AIServiceProvider` implementation and is not served by
+OSS alone.
 
-## Sherpa Advisor in Hybrid / Enterprise / Demo
-
-In `hybrid`, `enterprise`, and `demo` deployments, Sherpa Advisor and Data Story are typically backed by a server-side Sherpa deployment rather than local BYOK settings.
-
-- Configure the deployment with `SHERPA_ENGINE_API_KEY` and related server settings.
-- In the UI, use **Settings > Integrations** to verify the connection.
-- When the deployment is already configured, the button is **Validate Connection** rather than **Test Connection**.
-- In enterprise/demo mode, this integration check stays available even when the deployment is already connected.
-
-## Rate Limiting
-
-For multi-user deployments, the main auditable user quota is:
-
-```bash
-MAX_LLM_REQUESTS_PER_HOUR=100
-```
-
-This limit applies to Sherpa Advisor, Data Story, and other paid LLM-backed features. Superusers bypass it. If you run with `SITE_PROFILE=demo`, the separate demo contract quotas still apply in addition to this hourly limit.
+> **Privacy note:** In local mode, `CHAT_ENDPOINT_KEY` is read from your
+> `.env` (or process environment) and is only sent to the chat endpoint
+> you configured, and only when you actively use the chat panel. Your
+> spectral data is not attached to chat messages unless you paste it in.

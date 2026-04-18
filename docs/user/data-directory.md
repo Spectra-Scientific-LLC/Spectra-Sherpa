@@ -24,11 +24,15 @@ DATA_DIR/
 ├── exports/
 │   ├── python/                  # Saved workflow Python exports
 │   └── jupyter/                 # Saved workflow Jupyter exports
-├── llm_dialogs/
-│   └── conversations.json       # Persisted LLM dialog history
+├── llm_dialogs/                 # Reserved directory name; OSS itself
+│                                # writes nothing here. May be used by
+│                                # an extension package that registers
+│                                # an AIServiceProvider.
 ├── rate_limits/
 │   ├── execution.json
-│   ├── llm.json
+│   ├── llm.json                 # Reserved filename; OSS itself writes
+│   │                            # nothing here. May be populated by an
+│   │                            # AI-provider extension.
 │   ├── auth_login.json
 │   └── auth_register.json
 ├── demo/
@@ -44,10 +48,15 @@ These artifacts should always live under `DATA_DIR`:
 - workflow Python exports
 - workflow Jupyter exports
 - Data/Explore override sidecars for names, units, quantity, and time-series flags
-- LLM dialog persistence
 - rate-limit state
 - demo quota state
 - app-managed reference PDFs and similar generated reference assets
+
+The OSS BYO chat assistant (`POST /api/v1/chat/stream`) does not persist
+transcripts on the server — chat messages flow straight through to your
+configured `CHAT_ENDPOINT_URL`, and the UI keeps any local summary in
+browser storage only. The `llm_dialogs/` directory is a reserved path
+for AI-provider extensions; OSS itself writes nothing there.
 
 ## What does not belong here
 

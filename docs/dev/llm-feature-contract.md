@@ -1,206 +1,231 @@
-# LLM Feature Integration Contract
+# AI / LLM Integration — OSS Boundary
 
-**Every Sherpa LLM feature must follow this exact pattern across all three layers.**
-Deviating from this contract (e.g., calling `/llm/chat` directly from the frontend)
-bypasses entitlement enforcement, server-side prompt engineering, and template selection.
+SpectraSherpa's AI surface is defined as an extension contract. The
+OSS repo (`spectra-sherpa`, AGPL-3.0) owns only the *boundary*: type
+contracts, a registry seam, a small BYO chat proxy, and the WebSocket
+dispatcher that routes `sherpa_*` actions to whatever `AIServiceProvider`
+has been registered. Non-trivial LLM behavior — prompts, tools,
+conversation state, agentic loops, entitlements — is out of scope for
+this repo and is supplied by whichever extension package registers a
+concrete provider (if any).
 
----
+This page describes **only the OSS-side contract**. If no provider is
+registered, OSS serves `DisabledAIProvider` responses and the extension
+routes 404.
 
-## Layer 1: spectra-server
-
-### 1a. Route (`sherpa_llm.py`)
-
-```python
-class MyFeatureRequest(BaseModel):
-    dataset_info: dict[str, Any] = Field(...)
-
-@router.post("/sherpa/my-feature", response_model=LLMResponse)
-async def my_feature(
-    request: MyFeatureRequest,
-    _ent: None = Depends(entitlement_required("my_feature")),  # entitlement gate
-    engine=Depends(_require_engine),                            # engine availability
-) -> Any:
-    text = await engine.call_llm(MY_FEATURE_PROMPT, user_message)
-    return LLMResponse(response=text)
-```
-
-Three dependencies in order: entitlement check, engine check, request validation.
-
-### 1b. Entitlement (`entitlements.py`)
-
-Add the capability string to **every plan** in `PLAN_ENTITLEMENTS`:
-
-```python
-"none": { "my_feature": False, ... },
-"pro":  { "my_feature": True,  ... },
-"team": { "my_feature": True,  ... },
-"demo": { "my_feature": True,  ... },
-```
-
-### 1c. System prompt (`sherpa_engine.py`)
-
-Define as a module-level constant. The server owns all prompts — never build prompts
-on the frontend.
-
-```python
-MY_FEATURE_PROMPT = """\
-You are Sherpa, a specialist in ...
-"""
-```
-
-Use `engine.call_llm(prompt, message)` for single-shot, `engine.chat_with_tools_sse()`
-for agentic/streaming.
+> Authoritative reference: ADR-0001. Anything in this document that
+> disagrees with the ADR should be treated as a bug in this document.
 
 ---
 
-## Layer 2: spectra-sherpa backend (OSS)
+## 1. What OSS ships
 
-### 2a. Proxy method (`sherpa_advisor.py`)
+### 1a. `AIServiceProvider` Protocol — type surface only
+
+Module: `spectra_sherpa.app.contracts.ai_provider`.
+
+A `typing.Protocol` with the full advisor method surface (chat, peak ID,
+code-gen, data-story streaming, report, conversations CRUD, etc.). OSS
+makes **no behavioral promise** for these methods — it only guarantees
+the *shape* of the Protocol. A registered extension provider implements
+this Protocol; OSS code consumes it through the registry seam.
+
+OSS ships exactly one concrete implementation: `DisabledAIProvider`
+(same module). It returns `is_available=False`, `has_feature(...) →
+False`, and raises `FeatureDisabledError` from every streaming or
+tool-using method. It is the default advisor when no server is
+installed.
+
+### 1b. Registry seam
+
+Module: `spectra_sherpa.app.contracts.ai_provider_registry`.
+
+Three-function surface — stable across OSS minor versions:
 
 ```python
-async def my_feature(self, *, dataset_info: dict[str, Any]) -> dict[str, Any]:
-    """Proxy my-feature to the Sherpa server."""
-    payload = await self._request_json(
-        "POST", "/sherpa/my-feature",
-        json_body={"dataset_info": dataset_info},
-    )
-    return {"response": payload.get("response", "")}
+def set_sherpa_advisor(advisor: AIServiceProvider) -> None: ...
+def reset_sherpa_advisor() -> None: ...
+def get_sherpa_advisor() -> AIServiceProvider: ...
 ```
 
-- Single-shot: use `_request_json()`, return dict with `"response"` key
-- Streaming: use `_stream_sse()`, yield dicts
-- Raise `SherpaAuthorizationError` on `401/403`
-- Raise `SubscriptionRequiredError` on `402`
+Extension packages call `set_sherpa_advisor(...)` at startup. OSS
+dispatch code calls `get_sherpa_advisor()` at each request. If no one
+has called `set_`, the registry returns `DisabledAIProvider`.
 
-### 2b. WS handler (`ws_handlers.py`)
+Breaking these three signatures breaks any registered AI provider and
+requires a superseding ADR.
+
+### 1c. Protocol exception types
+
+Module: `spectra_sherpa.app.contracts.ai_provider_errors`.
 
 ```python
-async def handle_sherpa_my_feature(
-    ws: WebSocket, payload: dict, user: Any, rate_limiter: RateLimiter,
-) -> None:
+class SherpaAuthorizationError(Exception): ...
+class SubscriptionRequiredError(Exception): ...
+```
+
+These are raised by an extension-side Protocol implementation and
+caught by OSS's `ws_handlers.py`. They are part of the stable Protocol
+contract — renaming them is a breaking change.
+
+### 1d. Capability vocabulary
+
+Module: `spectra_sherpa.app.contracts.capabilities`.
+
+OSS defines the *names*; any extension config overlay supplies the
+*values* at `/api/v1/config` time. Frontend reads
+`config.features[CAPABILITY_NAME]` as booleans.
+
+- OSS-gated: `chatAssistant` (enabled whenever `CHAT_ENDPOINT_URL` and
+  `CHAT_ENDPOINT_KEY` are configured — see §1e).
+- Extension-gated: `sherpaAdvisor`, `sherpaPeakId`, `sherpaCodeGen`,
+  `sherpaWriteReport`, `sherpaAgenticTools`, `sherpaDataStory`,
+  `sherpaFullContext`. All default to `false` in OSS-only builds.
+
+### 1e. `basic_chat` — OSS-only BYO chat proxy
+
+Module: `spectra_sherpa.app.services.basic_chat` (≤100 lines).
+Route: `POST /api/v1/chat/stream` (deliberately not under
+`/api/v1/llm/*`; the `llm` prefix is reserved for extension-owned
+routes so the boundary is visible by URL prefix).
+
+Configuration (env only):
+
+- `CHAT_ENDPOINT_URL` — base URL of an OpenAI-compatible endpoint
+- `CHAT_ENDPOINT_KEY` — API key sent as `Authorization: Bearer <key>`
+- `CHAT_ENDPOINT_MODEL` — model ID (default `deepseek-chat`)
+
+No vendor SDKs (no `openai`, `anthropic`, etc.). No tools. No
+persistence. No agent loop. SSE shape:
+
+```json
+{"type": "chunk", "text": "..."}
+{"type": "done"}
+{"type": "error", "detail": "..."}
+```
+
+503 response when not configured:
+
+```json
+{
+  "code": "capability_unavailable",
+  "capability": "chatAssistant",
+  "message": "BYO chat endpoint not configured. Set CHAT_ENDPOINT_URL and CHAT_ENDPOINT_KEY."
+}
+```
+
+### 1f. WebSocket action vocabulary + schema
+
+- Actions: `spectra_sherpa.app.ws_actions` — `LLM_CHAT` (OSS-handled),
+  plus the `SHERPA_*` action set (OSS dispatches to advisor).
+- Event schema: `src/spectra_sherpa/contracts/sherpa-ws-v1.json` —
+  published alongside the package. Any provider implementation must
+  validate its events against this file via consumer-driven contract
+  tests.
+
+---
+
+## 2. How OSS dispatches a `sherpa_*` WS action
+
+```python
+# services/ws_handlers.py (OSS, paraphrased)
+from spectra_sherpa.app.contracts.ai_provider_registry import get_sherpa_advisor
+from spectra_sherpa.app.contracts.ai_provider_errors import (
+    SherpaAuthorizationError, SubscriptionRequiredError,
+)
+
+async def handle_sherpa_chat(ws, payload, user, rate_limiter):
     try:
-        if not await _sherpa_proxy_preamble(ws, user, rate_limiter):
-            return
-        from spectra_sherpa.app.services.sherpa_advisor import (
-            SherpaAuthorizationError, SubscriptionRequiredError, get_sherpa_advisor,
-        )
-        advisor = get_sherpa_advisor()
-        data = payload.get("payload", {})
-        result = await advisor.my_feature(dataset_info=data.get("dataset_info", {}))
-        await ws.send_json({"type": "sherpa_my_feature_result", **result})
+        advisor = get_sherpa_advisor()        # extension impl or DisabledAIProvider
+        async for event in advisor.chat(...): # Protocol method
+            await ws.send_json(event)
     except SherpaAuthorizationError as exc:
         await ws.send_json({"type": "sherpa_error", "detail": exc.detail})
     except SubscriptionRequiredError as exc:
-        await ws.send_json({"type": "sherpa_subscription_required", "detail": exc.detail})
-    except Exception as exc:
-        logger.exception("sherpa_my_feature failed: %s", exc)
-        await ws.send_json({"type": "sherpa_my_feature_error", "detail": "Failed."})
+        await ws.send_json({"type": "sherpa_subscription_required",
+                            "detail": exc.detail})
 ```
 
-Every handler: preamble check, try/except with authorization + subscription handling, generic fallback.
+OSS does **not** know about prompts, tool selection, model choice,
+entitlement tiers, conversation IDs, or any feature semantics. It only
+knows:
 
-`_sherpa_proxy_preamble()` is the shared gate for:
-
-- per-user LLM rate limiting
-- admin bypass
-- demo Sherpa quota checks
-- deployment availability
-- privacy / egress permission checks
-
-### 2c. Dispatcher (`main.py`)
-
-Import the handler and add to the elif chain:
-
-```python
-from spectra_sherpa.app.services.ws_handlers import handle_sherpa_my_feature
-# ...
-elif action == "sherpa_my_feature":
-    await handle_sherpa_my_feature(websocket, payload, ws_user, _llm_rate_limiter)
-```
+1. Which WS actions exist (`ws_actions.py`).
+2. How to reach the advisor (`get_sherpa_advisor()`).
+3. Which Protocol errors to convert into which WS event shapes
+   (per `sherpa-ws-v1.json`).
 
 ---
 
-## Layer 3: spectra-sherpa frontend
+## 3. Frontend contract
 
-### 3a. Feature flag (`types/config.ts`)
+The frontend gates every `sherpa_*` feature on `isFeatureEnabled(...)`
+against a capability flag from `/api/v1/config`. When the flag is
+`false` (OSS-only build, or no provider registered, or a provider
+rejects the caller), the UI hides or disables the corresponding
+control.
 
-```typescript
-export interface AppFeatures {
-  // ...
-  sherpaMyFeature?: boolean
-}
-```
+The OSS BYO chat UI is gated separately on `features.chatAssistant`.
 
-Loaded from `/api/v1/config` at startup. Maps to server entitlement.
+Canonical frontend constants:
 
-### 3b. WS send + listen pattern
-
-```typescript
-import { SHERPA_WS_ACTION, SHERPA_WS_EVENT } from "@/lib/sherpaWs"
-
-// Gate the feature first
-const { isFeatureEnabled } = useAppConfig()
-if (!isFeatureEnabled("sherpaMyFeature")) {
-  // show upgrade prompt or return
-  return
-}
-
-// Connect and send
-const llm = useLlmStore()
-await llm.connect()
-const ws = llm.wsRef
-if (!ws || ws.readyState !== WebSocket.OPEN) return
-
-const result = await new Promise<string>((resolve, reject) => {
-  const timeout = setTimeout(() => { cleanup(); reject(new Error("Timed out")); }, 60_000);
-  const handler = (event: Event) => {
-    const p = (event as CustomEvent).detail;
-    if (p.type === SHERPA_WS_EVENT.myFeatureResult) { cleanup(); resolve(p.response); }
-    else if (p.type === SHERPA_WS_EVENT.myFeatureError) { cleanup(); reject(new Error(p.detail)); }
-    else if (p.type === SHERPA_WS_EVENT.subscriptionRequired) { cleanup(); reject(new Error("Subscription required")); }
-  };
-  const cleanup = () => { clearTimeout(timeout); window.removeEventListener("sherpa-ws-message", handler); };
-  window.addEventListener("sherpa-ws-message", handler);
-  ws.send(JSON.stringify({ action: SHERPA_WS_ACTION.myFeature, payload: { dataset_info } }));
-});
-```
-
-Register listener **before** sending to avoid race conditions.
-Use the canonical `SHERPA_WS_ACTION` and `SHERPA_WS_EVENT` constants rather than hardcoded strings so frontend and backend action vocabularies stay in sync.
-
-When you add a new Sherpa feature, update:
-
-- `frontend/src/lib/sherpaWs.ts`
-- `src/spectra_sherpa/app/ws_actions.py`
-- `src/spectra_sherpa/app/ws_events.py` if the feature emits new events
-- `tests/test_ws_contract.py`
-
-The contract test must verify completeness against the backend-exported action/event sets, not only the subset already declared on the frontend.
+- `frontend/src/lib/sherpaWs.ts` → `SHERPA_WS_ACTION`, `SHERPA_WS_EVENT`
+  (source-of-truth for the TS side of the WS vocabulary).
+- `frontend/src/types/api-generated.ts` — generated from the extension
+  provider's published OpenAPI contract via `openapi-typescript`.
+  Regenerate with `npm run generate:types`. CI fails if this file is
+  stale.
 
 ---
 
-## Anti-patterns
+## 4. What is *not* in OSS anymore
 
-| Do NOT | Why | Do instead |
-|--------|-----|------------|
-| `api.post("/llm/chat", { message: prompt })` | Bypasses entitlements, server prompts, template selection | Use WS `sherpa_*` action |
-| Build prompts on frontend | Server owns all prompt engineering | Send raw data, let server build prompt |
-| Skip `isFeatureEnabled` check | UI shows button user can't use | Gate with feature flag before action |
-| Forget `SubscriptionRequiredError` handling | User gets generic error | Catch and show upgrade prompt |
-| Add server endpoint without entitlement | Feature is ungated | Always add to `PLAN_ENTITLEMENTS` |
+The following modules used to live in OSS and have been removed as part
+of the Track A yank (ADR-0001 §2):
+
+- `services/sherpa_advisor.py` concrete implementation
+- `services/llm.py` — conversation/LLM orchestrator and JSON
+  `ConversationStore`
+- `services/llm_rate_limits.py`
+- `services/deployment_ai_provider.py`
+- `core/llm_registry.py`
+- `api/v1/routes/llm.py` and `api/v1/routes/llm_config.py`
+- `models/llm_config.py` and `User.llm_config` relationship
+- `schemas/llm.py` and `schemas/llm_config.py`
+- `[sherpa]` extras with `anthropic` and `openai` optional dependencies
+- Prompt constants, tool-choice policy, context builders,
+  peak-ID/code-gen/report/data-story implementations
+
+OSS retains a one-minor-release deprecation shim at
+`services/sherpa_advisor.py` that re-exports `set_sherpa_advisor` /
+`reset_sherpa_advisor` / `get_sherpa_advisor` from the new registry
+path and emits a `DeprecationWarning`. It is removed in `0.N+2`.
+
+These items are not part of the OSS distribution. Re-introducing any of
+them into this repo requires a superseding ADR.
 
 ---
 
-## Checklist for new LLM features
+## 5. Checklist for new Sherpa features (OSS-side only)
 
-- [ ] Server: request schema in `sherpa_llm.py`
-- [ ] Server: route with `entitlement_required()` + `_require_engine`
-- [ ] Server: system prompt constant in `sherpa_engine.py`
-- [ ] Server: capability in all plans in `entitlements.py`
-- [ ] Backend: proxy method in `sherpa_advisor.py`
-- [ ] Backend: WS handler in `ws_handlers.py`
-- [ ] Backend: import + dispatch in `main.py`
-- [ ] Frontend: feature flag in `AppFeatures` interface
-- [ ] Frontend: WS send/listen pattern (not HTTP POST)
-- [ ] Frontend: `isFeatureEnabled()` gate before showing UI
-- [ ] Tests: entitlement enforcement, request validation, response contract
+For a new feature that needs a new WS action, the OSS-side changes are
+minimal:
+
+- [ ] Add the action constant to
+      `src/spectra_sherpa/app/ws_actions.py::SHERPA_WS_ACTIONS`.
+- [ ] Add a dispatch branch in `services/ws_handlers.py` that calls
+      `get_sherpa_advisor()` and funnels Protocol exceptions into
+      `sherpa_error` / `sherpa_subscription_required` events.
+- [ ] Add the corresponding TS action/event key in
+      `frontend/src/lib/sherpaWs.ts`.
+- [ ] If the feature emits new event types, extend
+      `src/spectra_sherpa/contracts/sherpa-ws-v1.json` (+ regenerate
+      fixtures) and update both repos' consumer-driven contract tests.
+- [ ] Update the OSS contract test
+      `tests/test_ws_contract.py` to assert the action/event vocabulary
+      stays in sync across `ws_actions.py`, `sherpaWs.ts`, and the JSON
+      schema.
+
+Everything else — the Protocol method body, HTTP route, prompt,
+tool-choice policy, conversation behavior — is outside the OSS repo and
+is owned by whichever extension package registers the provider.

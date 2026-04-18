@@ -446,8 +446,9 @@ Hover over any indicator for detailed status.
 - Check that files are uploaded
 
 **"LLM Disconnected"**
-- Check backend server is running
-- Verify WebSocket connection
+- Verify `CHAT_ENDPOINT_URL` and `CHAT_ENDPOINT_KEY` are set in your `.env`
+- Check that the configured chat endpoint is reachable
+- Restart SpectraSherpa after changing `.env` settings
 
 **"Workflow execution failed"**
 - Check node connections

@@ -2,6 +2,10 @@
 
 SpectraSherpa follows a clean, contract-first architecture: the OSS repo owns the scientific platform and extension contracts, while optional extension packages can compose additional auth, AI, and deployment behavior around that host.
 
+> The authoritative split between what OSS owns and what extension
+> packages may own is documented in ADR-0001. This document stays
+> consistent with §4 and §5 of that ADR.
+
 ## Overview
 
 ```
@@ -48,6 +52,12 @@ The frontend learns the active mode from the backend config endpoint. If config 
 src/spectra_sherpa/
 ├── app/
 │   ├── core/           # Configuration, Security, Mode Policy
+│   ├── contracts/      # Stable extension contracts
+│   │   ├── ai_provider.py           # AIServiceProvider Protocol (types only)
+│   │   ├── ai_provider_errors.py    # SherpaAuthorizationError, SubscriptionRequiredError
+│   │   ├── ai_provider_registry.py  # set_/reset_/get_sherpa_advisor, DisabledAIProvider
+│   │   ├── capabilities.py          # Feature-flag vocabulary
+│   │   └── sherpa-ws-v1.json        # Published WS event schema
 │   ├── lib/            # Core libraries (SherpaDataset, adapters)
 │   │   ├── adapters/   # Format converters (SCP, sklearn, numpy)
 │   │   └── sherpa_dataset.py  # Canonical data container
@@ -64,7 +74,8 @@ src/spectra_sherpa/
 │   │   │   ├── executor.py    # DAG execution engine
 │   │   │   └── node_base.py   # Node, NodeMetadata, registry
 │   │   ├── model_store.py     # Model artifact persistence
-│   │   └── llm/               # AI service integration
+│   │   ├── basic_chat.py      # ≤100-line BYO chat proxy (OSS-only)
+│   │   └── ws_handlers.py     # WS dispatch to advisor/chat
 │   ├── types/          # Type registry (registry.json + schemas)
 │   └── api/            # FastAPI routers
 └── static/             # Compiled Vue frontend
@@ -73,16 +84,27 @@ src/spectra_sherpa/
 ## Extension Boundary
 
 `spectra-sherpa` is the OSS host platform. It owns:
-- workflow engine
-- datasets, projects, provenance
-- local BYOK AI flows
-- extension contracts and app factory hooks
 
-Optional extension packages can add:
-- alternate auth models
-- config overlays
-- AI providers
-- extra WebSocket actions
+- the workflow engine, datasets, projects, provenance
+- a `basic_chat` BYO-endpoint chat client (OSS-only; ≤100 lines, no
+  vendor SDKs, no tools, no persistence)
+- the `AIServiceProvider` Protocol — the *type surface* that an
+  extension implementation fulfils
+- a small, neutral registry seam (`set_sherpa_advisor`,
+  `reset_sherpa_advisor`, `get_sherpa_advisor`) plus a default
+  `DisabledAIProvider` that returns `is_available=False` and raises
+  `FeatureDisabledError` everywhere else
+- WebSocket dispatch for the `sherpa_*` action vocabulary (routing only;
+  handler bodies are supplied by the registered provider, if any)
+- the published WS event schema (`contracts/sherpa-ws-v1.json`)
+
+The OSS host does not ship a concrete advisor implementation. An
+extension package may register one through the contract seam; when none
+is registered, OSS serves `DisabledAIProvider` responses and 404s the
+extension-owned routes.
+
+See ADR-0001 §5 for the three boundary surfaces (Python injection seam,
+HTTP routes, WebSocket schema) and their stability guarantees.
 
 ## Core Concepts
 
@@ -153,26 +175,54 @@ Extension packages integrate through explicit contracts:
 - actor bootstrap contract for `/auth/me`
 - injected config overlay provider
 - injected key and auth resolvers
-- AI provider registry
+- `AIServiceProvider` Protocol + `ai_provider_registry` seam
+  (`set_sherpa_advisor` / `reset_sherpa_advisor` / `get_sherpa_advisor`)
 - per-app WebSocket action registry
 
-OSS owns the host. Extensions register implementations.
+OSS owns the host. Extensions register implementations. The AI-provider
+seam in particular is a stable three-function signature; breaking it
+breaks any registered AI provider and requires a superseding ADR.
 
 ### 8. WebSocket Lifecycle
 
 Real-time communication uses a single WebSocket endpoint at `/ws`. Clients send JSON messages with an `"action"` key; the server responds with messages using a `"type"` key.
 
-1. **Connect** — Client opens `/ws`
-   In current hybrid/enterprise mode, explicit remote WebSocket auth is completed by sending an initial `{"action": "authenticate", ...}` message rather than relying on query parameters or request headers.
-2. **Subscribe** — Client sends `{"action": "subscribe", "workflow_id": "..."}` to watch a workflow
-3. **Unsubscribe** — Client sends `{"action": "unsubscribe", "workflow_id": "..."}`
-4. **LLM Chat** — Client sends `{"action": "llm_chat", ...}` → server streams `llm_start`, `llm_chunk`, `llm_done` responses
-5. **Sherpa AI** — clients use the canonical Sherpa action set from `app/ws_actions.py`, including:
-   `sherpa_sync`, `sherpa_decide`, `sherpa_chat`, `sherpa_identify_peaks`,
-   `sherpa_generate_code`, `sherpa_write_report`, `sherpa_data_story`,
-   and `sherpa_chat_with_tools`
-6. **MCP Tools** — `{"action": "tool_list"}` or `{"action": "tool_invoke", ...}`
-7. **Errors** — Server sends `{"type": "error", "detail": "..."}` for unknown actions or failures
+The action vocabulary is split into two tiers:
+
+- **OSS-owned actions** — handled entirely inside `spectra-sherpa`.
+  Always available.
+- **Sherpa actions** — dispatched by OSS to `get_sherpa_advisor()` via
+  the AI-provider registry. When an extension has registered a provider,
+  these reach that provider; otherwise the default `DisabledAIProvider`
+  responds with `sherpa_error` / `sherpa_subscription_required`
+  envelopes.
+
+Lifecycle:
+
+1. **Connect** — Client opens `/ws`.
+   In hybrid/enterprise mode, explicit remote WebSocket auth is completed
+   by sending an initial `{"action": "authenticate", ...}` message rather
+   than relying on query parameters or request headers.
+2. **Subscribe** — `{"action": "subscribe", "workflow_id": "..."}` to watch a workflow.
+3. **Unsubscribe** — `{"action": "unsubscribe", "workflow_id": "..."}`.
+4. **BYO chat** — in local OSS mode, the UI calls
+   `POST /api/v1/chat/stream`, which runs through OSS's `basic_chat`
+   proxy when `CHAT_ENDPOINT_URL` / `CHAT_ENDPOINT_KEY` are configured.
+   The SSE stream yields `{type:"chunk"}`, `{type:"done"}`, and
+   `{type:"error"}` payloads. Gated by the `chatAssistant` capability
+   flag.
+5. **Sherpa AI** — the canonical Sherpa action set declared in
+   `app/ws_actions.py`: `sherpa_sync`, `sherpa_decide`, `sherpa_chat`,
+   `sherpa_identify_peaks`, `sherpa_generate_code`,
+   `sherpa_write_report`, `sherpa_data_story`, `sherpa_chat_with_tools`.
+   OSS dispatches; a registered `AIServiceProvider` implements. Event
+   shapes are published in `contracts/sherpa-ws-v1.json` and validated
+   by consumer-driven contract tests.
+6. **MCP tools** — `{"action": "tool_list"}` or `{"action": "tool_invoke", ...}`.
+7. **Errors** — `{"type": "error", "detail": "..."}` for unknown actions
+   or generic failures; advisor-specific authorization/subscription
+   errors use the structured `sherpa_error` /
+   `sherpa_subscription_required` types defined in the WS schema.
 
 The WebSocket host carries a per-app action registry so OSS-only builds expose only OSS actions, while extension-enabled builds register extra actions explicitly at startup.
 

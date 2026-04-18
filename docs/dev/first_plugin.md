@@ -6,12 +6,10 @@ register it, and validate the result with PCA — all in under 10 minutes.
 > **Case study:** Loading 120 UV-Vis spectra from a raw CSV, then running
 > PCA to get explained variance per principal component.
 
-**Two methods:**
-
-| Method | Tool | Status |
-|--------|------|--------|
-| **(a)** [Claude Code in VS Code](#method-a-claude-code-in-vs-code) | Anthropic Claude Opus 4.6 | Documented below |
-| **(b)** [SpectraSherpa in-app chat](#method-b-spectrasherpa-in-app-llm-chat) | Built-in LLM chat panel | Coming soon |
+This guide uses an external LLM coding tool (Claude Code in VS Code) to
+generate the plugin. Any workspace-aware LLM tool with access to the
+repository will work; the steps below use Claude Code as a concrete
+example.
 
 ---
 
@@ -76,7 +74,7 @@ scores, loadings, and explained variance ratios. It lives in the
 
 ---
 
-## Method (a): Claude Code in VS Code
+## Generate the plugin with an LLM coding tool
 
 ### Step 1 — Open the workspace
 
@@ -177,26 +175,6 @@ This is the value of workspace-aware LLM coding: the model reads
 **actual framework code** rather than relying on potentially stale
 documentation.
 </details>
-
----
-
-## Method (b): SpectraSherpa In-App LLM Chat
-
-*Coming soon — to be implemented and tested.*
-
-This path will allow generating plugin nodes directly from the Workflow
-Builder's chat panel, using any configured LLM provider (DeepSeek,
-OpenAI, Anthropic, Gemini, or a custom endpoint via
-Settings > API Keys).
-
-The in-app flow will:
-
-1. Accept a natural language description of the data format
-2. Generate the plugin `.py` file
-3. Hot-reload it into the running node registry
-4. Make the node immediately available in the toolbar
-
-See [architecture.md](architecture.md) for LLM provider details.
 
 ---
 

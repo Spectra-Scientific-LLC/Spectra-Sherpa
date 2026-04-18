@@ -57,7 +57,7 @@ src/
 | `useWorkflowStore` | `stores/workflow.ts` | DAG state, node/edge CRUD, execution |
 | `useDataStore` | `stores/data.ts` | Dataset catalog, file inspection |
 | `useAuthStore` | `stores/auth.ts` | Login, registration, JWT tokens |
-| `useLlmStore` | `stores/llm.ts` | LLM chat, streaming, MCP tool calls |
+| `useLlmStore` | `stores/llm.ts` | OSS BYO chat, local conversation history, server-backed chat transport |
 | `useSherpaStore` | `stores/sherpa.ts` | AI advisor, workflow recommendations |
 | `useJobStore` | `stores/job.ts` | Job tracking via WebSocket |
 
@@ -73,17 +73,16 @@ src/
 
 ## API Type Generation
 
-TypeScript types can be generated from the backend OpenAPI schema to keep
-frontend types in sync with backend models:
+TypeScript types are generated from the committed OpenAPI contract at
+`spectra-server/docs/contracts/openapi-llm-v1.json` (no running server needed):
 
 ```bash
-# Start the backend server first, then:
 npm run generate:types
 ```
 
-This writes `src/types/api-generated.ts` using `openapi-typescript`. From the
-repo root you can also run `make generate-types`. Re-run whenever backend
-schemas change.
+This writes `src/types/api-generated.ts` using `openapi-typescript`. Re-run
+whenever the OpenAPI spec changes (the server provides
+`make update-openapi-snapshot` to regenerate the spec from live routes).
 
 ## Build Output
 

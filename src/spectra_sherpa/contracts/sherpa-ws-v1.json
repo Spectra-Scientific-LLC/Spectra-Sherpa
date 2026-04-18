@@ -1,0 +1,273 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Sherpa WebSocket Events v1",
+  "description": "Contract schema for all sherpa.* WebSocket events exchanged between spectra-sherpa (OSS) and spectra-server. Published by OSS; validated in both repos.",
+  "definitions": {
+    "timing": {
+      "type": "object",
+      "description": "Optional timing metadata attached to server events.",
+      "properties": {
+        "elapsed_ms": { "type": "number" },
+        "server_ts": { "type": "number" }
+      }
+    },
+    "sherpa_chat_start": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "sherpa_chat_start" },
+        "request_id": { "type": "string" },
+        "conversation_id": { "type": ["string", "null"] },
+        "timing": { "$ref": "#/definitions/timing" }
+      },
+      "additionalProperties": false
+    },
+    "sherpa_chat_chunk": {
+      "type": "object",
+      "required": ["type", "chunk"],
+      "properties": {
+        "type": { "const": "sherpa_chat_chunk" },
+        "request_id": { "type": "string" },
+        "conversation_id": { "type": ["string", "null"] },
+        "chunk": { "type": "string" },
+        "timing": { "$ref": "#/definitions/timing" }
+      },
+      "additionalProperties": false
+    },
+    "sherpa_chat_done": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "sherpa_chat_done" },
+        "request_id": { "type": "string" },
+        "conversation_id": { "type": ["string", "null"] },
+        "chunk_count": { "type": "integer" },
+        "first_chunk_ms": { "type": ["integer", "null"] },
+        "event_count": { "type": "integer" },
+        "tool_rounds": { "type": "integer" },
+        "first_activity_ms": { "type": ["integer", "null"] },
+        "timing": { "$ref": "#/definitions/timing" }
+      },
+      "additionalProperties": false
+    },
+    "sherpa_error": {
+      "type": "object",
+      "required": ["type", "detail"],
+      "properties": {
+        "type": { "const": "sherpa_error" },
+        "request_id": { "type": "string" },
+        "detail": { "type": "string" },
+        "code": { "type": "string" },
+        "timing": { "$ref": "#/definitions/timing" }
+      },
+      "additionalProperties": false
+    },
+    "sherpa_status": {
+      "type": "object",
+      "required": ["type", "payload"],
+      "properties": {
+        "type": { "const": "sherpa_status" },
+        "request_id": { "type": "string" },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "connected": { "type": "boolean" },
+            "stage": { "type": "string" },
+            "detail": { "type": "string" },
+            "reason": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "timing": { "$ref": "#/definitions/timing" }
+      },
+      "additionalProperties": false
+    },
+    "sherpa_recommendations": {
+      "type": "object",
+      "required": ["type", "payload"],
+      "properties": {
+        "type": { "const": "sherpa_recommendations" },
+        "request_id": { "type": "string" },
+        "payload": { "type": "array", "items": { "type": "object" } },
+        "timing": { "$ref": "#/definitions/timing" }
+      },
+      "additionalProperties": false
+    },
+    "sherpa_decision_ack": {
+      "type": "object",
+      "required": ["type", "payload"],
+      "properties": {
+        "type": { "const": "sherpa_decision_ack" },
+        "request_id": { "type": "string" },
+        "payload": {
+          "type": "object",
+          "required": ["delivered"],
+          "properties": {
+            "delivered": { "type": "boolean" },
+            "suggestion_id": { "type": ["string", "null"] }
+          }
+        },
+        "timing": { "$ref": "#/definitions/timing" }
+      },
+      "additionalProperties": false
+    },
+    "sherpa_peaks_result": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "sherpa_peaks_result" },
+        "request_id": { "type": "string" },
+        "response": { "type": "string" },
+        "timing": { "$ref": "#/definitions/timing" }
+      },
+      "additionalProperties": true
+    },
+    "sherpa_peaks_error": {
+      "type": "object",
+      "required": ["type", "detail"],
+      "properties": {
+        "type": { "const": "sherpa_peaks_error" },
+        "request_id": { "type": "string" },
+        "detail": { "type": "string" },
+        "timing": { "$ref": "#/definitions/timing" }
+      },
+      "additionalProperties": false
+    },
+    "sherpa_code_result": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "sherpa_code_result" },
+        "request_id": { "type": "string" },
+        "response": { "type": "string" },
+        "timing": { "$ref": "#/definitions/timing" }
+      },
+      "additionalProperties": true
+    },
+    "sherpa_code_error": {
+      "type": "object",
+      "required": ["type", "detail"],
+      "properties": {
+        "type": { "const": "sherpa_code_error" },
+        "request_id": { "type": "string" },
+        "detail": { "type": "string" },
+        "timing": { "$ref": "#/definitions/timing" }
+      },
+      "additionalProperties": false
+    },
+    "sherpa_report_result": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "sherpa_report_result" },
+        "request_id": { "type": "string" },
+        "response": { "type": "string" },
+        "timing": { "$ref": "#/definitions/timing" }
+      },
+      "additionalProperties": true
+    },
+    "sherpa_report_error": {
+      "type": "object",
+      "required": ["type", "detail"],
+      "properties": {
+        "type": { "const": "sherpa_report_error" },
+        "request_id": { "type": "string" },
+        "detail": { "type": "string" },
+        "timing": { "$ref": "#/definitions/timing" }
+      },
+      "additionalProperties": false
+    },
+    "sherpa_tool_start": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "sherpa_tool_start" },
+        "request_id": { "type": "string" },
+        "tool_name": { "type": "string" },
+        "tool_call_id": { "type": "string" },
+        "timing": { "$ref": "#/definitions/timing" }
+      },
+      "additionalProperties": true
+    },
+    "sherpa_tool_result": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "sherpa_tool_result" },
+        "request_id": { "type": "string" },
+        "tool_name": { "type": "string" },
+        "tool_call_id": { "type": "string" },
+        "result": {},
+        "timing": { "$ref": "#/definitions/timing" }
+      },
+      "additionalProperties": true
+    },
+    "sherpa_subscription_required": {
+      "type": "object",
+      "required": ["type", "detail"],
+      "properties": {
+        "type": { "const": "sherpa_subscription_required" },
+        "request_id": { "type": "string" },
+        "detail": { "type": "string" },
+        "timing": { "$ref": "#/definitions/timing" }
+      },
+      "additionalProperties": false
+    },
+    "sherpa_data_story_chunk": {
+      "type": "object",
+      "required": ["type", "text"],
+      "properties": {
+        "type": { "const": "sherpa_data_story_chunk" },
+        "request_id": { "type": "string" },
+        "text": { "type": "string" },
+        "timing": { "$ref": "#/definitions/timing" }
+      },
+      "additionalProperties": false
+    },
+    "sherpa_data_story_result": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "sherpa_data_story_result" },
+        "request_id": { "type": "string" },
+        "response": { "type": "string" },
+        "diagnostics": { "type": "object" },
+        "timing": { "$ref": "#/definitions/timing" }
+      },
+      "additionalProperties": true
+    },
+    "sherpa_data_story_error": {
+      "type": "object",
+      "required": ["type", "detail"],
+      "properties": {
+        "type": { "const": "sherpa_data_story_error" },
+        "request_id": { "type": "string" },
+        "detail": { "type": "string" },
+        "diagnostics": { "type": "object" },
+        "timing": { "$ref": "#/definitions/timing" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/definitions/sherpa_chat_start" },
+    { "$ref": "#/definitions/sherpa_chat_chunk" },
+    { "$ref": "#/definitions/sherpa_chat_done" },
+    { "$ref": "#/definitions/sherpa_error" },
+    { "$ref": "#/definitions/sherpa_status" },
+    { "$ref": "#/definitions/sherpa_recommendations" },
+    { "$ref": "#/definitions/sherpa_decision_ack" },
+    { "$ref": "#/definitions/sherpa_peaks_result" },
+    { "$ref": "#/definitions/sherpa_peaks_error" },
+    { "$ref": "#/definitions/sherpa_code_result" },
+    { "$ref": "#/definitions/sherpa_code_error" },
+    { "$ref": "#/definitions/sherpa_report_result" },
+    { "$ref": "#/definitions/sherpa_report_error" },
+    { "$ref": "#/definitions/sherpa_tool_start" },
+    { "$ref": "#/definitions/sherpa_tool_result" },
+    { "$ref": "#/definitions/sherpa_subscription_required" },
+    { "$ref": "#/definitions/sherpa_data_story_chunk" },
+    { "$ref": "#/definitions/sherpa_data_story_result" },
+    { "$ref": "#/definitions/sherpa_data_story_error" }
+  ]
+}

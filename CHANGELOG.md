@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Exported-script artifact location** — `export_artifacts()` (used by generated Python scripts and notebooks) now writes timestamped output to `./exports/<workflow>_<ts>/` by default instead of directly into the current working directory. Set `SPECTRA_SHERPA_EXPORT_DIR=<path>` to override. This prevents repo-root pollution when users run exported scripts from inside a checkout.
+- **AI advisor implementation removed from OSS** (ADR-0001, Week 0 Track A). OSS no longer ships a concrete advisor implementation, prompt templates, tool-choice policy, conversation orchestrator, LLM registry, vendor SDK dependencies (`anthropic`, `openai`), `/api/v1/llm/*` routes, or `/api/v1/llm-config` routes. What OSS retains: the `AIServiceProvider` Protocol (types only), a `DisabledAIProvider` default, a neutral registry seam (`set_/reset_/get_sherpa_advisor`), a `basic_chat` BYO-endpoint proxy at `POST /api/v1/chat/stream`, the `chatAssistant` capability flag, and WebSocket dispatch for the `sherpa_*` action vocabulary. If an extension package registers an `AIServiceProvider` at startup, the dispatcher routes `sherpa_*` actions to it; otherwise `DisabledAIProvider` serves them. See ADR-0001 §2 / §5 for the decision and `docs/dev/llm-feature-contract.md` for the retained OSS-side surface.
+- **BYO chat configuration moved to `CHAT_ENDPOINT_*`** — The OSS chat assistant is now configured via `CHAT_ENDPOINT_URL`, `CHAT_ENDPOINT_KEY`, and `CHAT_ENDPOINT_MODEL` environment variables (any OpenAI-compatible endpoint). Vendor-specific keys such as `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` no longer power the OSS chat path.
+- **Contract schema lives as package data** — `sherpa-ws-v1.json` is now at `src/spectra_sherpa/contracts/sherpa-ws-v1.json` and is loaded via `importlib.resources`, so it is present in installed wheels. Contract tests in both OSS and server validate against this single file.
+
+### Added
+- **`spectra_sherpa.app.contracts.ai_provider_registry`** — canonical home of `set_sherpa_advisor`, `reset_sherpa_advisor`, `get_sherpa_advisor`, `DisabledAIProvider`, and `FeatureDisabledError`. Module is pure — no imports from `services/`.
+- **`spectra_sherpa.app.contracts.ai_provider_errors`** — relocated `SherpaAuthorizationError` and `SubscriptionRequiredError` (previously at `services/ai_provider_errors.py`) so both OSS and server import the Protocol's exception types from a stable, neutral path.
+- **`POST /api/v1/chat/stream`** — OSS-owned BYO chat SSE endpoint. Returns 503 with structured `{"code": "capability_unavailable", "capability": "chatAssistant", ...}` detail when `CHAT_ENDPOINT_*` is not configured.
+- **Opt-in WS payload validator** — Set `SPECTRA_VALIDATE_WS=1` to have the OSS sender validate every outbound `sherpa_*` event against `sherpa-ws-v1.json` and log validation failures without interrupting the stream. Off by default.
+- **CI drift guard for `frontend/src/types/api-generated.ts`** — The `frontend` CI job now sparse-checks-out only `docs/contracts/` from `spectra-server`, regenerates the TS client into `/tmp`, and fails the build if the committed file does not match `openapi-llm-v1.json`.
+
+### Deprecated
+- **`spectra_sherpa.app.services.sherpa_advisor`** — now a small compatibility shim that re-exports `set_sherpa_advisor` / `reset_sherpa_advisor` / `get_sherpa_advisor` from `contracts.ai_provider_registry` and emits a `DeprecationWarning`. Removed in `0.N+2`.
+
+### Removed
+- **`services/llm.py`** — full ~761-line conversation/LLM orchestrator and JSON `ConversationStore` (moved to `spectra-server`).
+- **`services/llm_rate_limits.py`, `services/deployment_ai_provider.py`** — moved to `spectra-server`.
+- **`core/llm_registry.py`** — moved to `spectra-server`.
+- **`api/v1/routes/llm.py`, `api/v1/routes/llm_config.py`** — moved to `spectra-server` verbatim. OSS-only builds now 404 on `/api/v1/llm*` and `/api/v1/llm-config`; OSS+server builds serve them with byte-identical request/response shapes.
+- **`models/llm_config.py`** and the `User.llm_config` SQLAlchemy relationship attribute — moved to `spectra-server`. OSS Alembic no longer autogenerates the `llm_configs` table.
+- **`schemas/llm.py`, `schemas/llm_config.py`** — moved to `spectra-server`.
+- **`[sherpa]` extras with `anthropic ^0.39.0` and `openai ^1.40.0`** — no vendor LLM SDKs remain in OSS dependency graph.
 
 ## [0.3.0] - 2026-03-30
 

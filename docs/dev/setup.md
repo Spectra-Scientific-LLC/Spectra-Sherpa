@@ -98,7 +98,9 @@ For direct Python launches, the app also loads `~/.env` as a shared base layer a
 | `APP_MODE` | `local` | `local`, `hybrid`, or `enterprise` |
 | `DATA_DIR` | `./data` in source checkout, `~/.spectra_sherpa` when installed | App data root for experiments, exports, manifests, and prepared-data override sidecars |
 | `DATABASE_URL` | `sqlite:///./spectra_sherpa.db` | Database connection string |
-| `DEEPSEEK_API_KEY` | (none) | LLM API key (or configure in Settings UI) |
+| `CHAT_ENDPOINT_URL` | (none) | Base URL of an OpenAI-compatible endpoint for the OSS BYO chat assistant |
+| `CHAT_ENDPOINT_KEY` | (none) | API key for the BYO chat endpoint |
+| `CHAT_ENDPOINT_MODEL` | `deepseek-chat` | Model identifier for the BYO chat endpoint |
 
 Experiment-backed files and materialized example/template files are resolved against the active `DATA_DIR` at runtime, not at module import time. This matters when switching between local, hybrid, enterprise, test, or packaged deployments.
 

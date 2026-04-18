@@ -419,12 +419,12 @@ describe("ChatPanel", () => {
     mocks.authStore.user = { id: 7, username: "alice" };
   });
 
-  it("shows local BYOK setup copy and local settings control in local mode", async () => {
+  it("shows local BYO endpoint setup copy in local mode", async () => {
     const wrapper = mountWithUiStubs(ChatPanel);
     await flushPromises();
 
-    expect(wrapper.text()).toContain("Configure an LLM API key in Settings to enable chat.");
-    expect(wrapper.find(".llm-settings-btn").exists()).toBe(true);
+    expect(wrapper.text()).toContain("Set CHAT_ENDPOINT_URL and CHAT_ENDPOINT_KEY in your environment, then restart to enable chat.");
+    expect(wrapper.find(".setup-link").exists()).toBe(false);
   });
 
   it("shows subscription-required copy and hides local settings in non-local mode without chat access", async () => {
@@ -463,7 +463,7 @@ describe("ChatPanel", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("AI chat is disabled in Settings > Data & Privacy.");
-    expect(wrapper.text()).not.toContain("Configure an LLM API key in Settings to enable chat.");
+    expect(wrapper.text()).not.toContain("Set CHAT_ENDPOINT_URL and CHAT_ENDPOINT_KEY in your environment, then restart to enable chat.");
   });
 
   it("shows only Sherpa Advisor in demo mode when Sherpa is available", async () => {

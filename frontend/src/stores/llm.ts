@@ -1,5 +1,4 @@
 import { defineStore } from "pinia";
-import axios from "axios";
 import { computed, ref } from "vue";
 import api from "@/api/client";
 import { dispatchSherpaEvent } from "@/lib/sherpaEvents";
@@ -11,8 +10,28 @@ import { useProjectStore } from "@/stores/project";
 import { buildAuthMessage, buildWsUrl, withCredentials } from "@/utils/ws";
 
 const STORAGE_KEY = "llm_conversations";
+const RECORD_STORAGE_KEY = "llm_conversation_records";
 
-const loadConversations = (): ConversationSummary[] => {
+interface LocalConversationRecord extends ConversationSummary {
+  messages: LlmMessage[];
+}
+
+const createConversationId = (): string => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `conv-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const deriveConversationTitle = (
+  messages: LlmMessage[],
+  fallbackIndex: number
+): string => {
+  const firstUser = messages.find((message) => message.role === "user");
+  return firstUser?.content.slice(0, 60) || `Conversation ${fallbackIndex}`;
+};
+
+const loadLegacyConversationSummaries = (): ConversationSummary[] => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
@@ -20,13 +39,44 @@ const loadConversations = (): ConversationSummary[] => {
     }
     return JSON.parse(raw) as ConversationSummary[];
   } catch (error) {
-    console.error('Failed to load conversations from localStorage:', error);
+    console.error("Failed to load conversations from localStorage:", error);
     return [];
   }
 };
 
-const persistConversations = (items: ConversationSummary[]) => {
+const persistConversationSummaries = (items: ConversationSummary[]) => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+};
+
+const loadLocalConversationRecords = (): LocalConversationRecord[] => {
+  try {
+    const raw = localStorage.getItem(RECORD_STORAGE_KEY);
+    if (raw) {
+      return JSON.parse(raw) as LocalConversationRecord[];
+    }
+  } catch (error) {
+    console.error("Failed to load local conversation records:", error);
+  }
+
+  return loadLegacyConversationSummaries().map((item) => ({
+    ...item,
+    messages: [],
+  }));
+};
+
+const persistLocalConversationRecords = (items: LocalConversationRecord[]) => {
+  localStorage.setItem(RECORD_STORAGE_KEY, JSON.stringify(items));
+  persistConversationSummaries(
+    items.map(({ id, title, updatedAt }) => ({ id, title, updatedAt }))
+  );
+};
+
+const loadConversations = (): ConversationSummary[] => {
+  return loadLocalConversationRecords().map(({ id, title, updatedAt }) => ({
+    id,
+    title,
+    updatedAt,
+  }));
 };
 
 const emitWsTransport = (kind: string, detail?: string) => {
@@ -37,6 +87,68 @@ const emitWsTransport = (kind: string, detail?: string) => {
   );
 };
 
+const buildApiUrl = (path: string): string => {
+  const baseUrl = (api.defaults.baseURL || "/api/v1").replace(/\/$/, "");
+  if (baseUrl.startsWith("http://") || baseUrl.startsWith("https://")) {
+    return `${baseUrl}${path}`;
+  }
+  return `${window.location.origin}${baseUrl}${path}`;
+};
+
+const getRequestHeaders = (): HeadersInit => {
+  const headers: Record<string, string> = {
+    Accept: "text/event-stream",
+    "Content-Type": "application/json",
+  };
+  const token = localStorage.getItem("token");
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  const apiKey = localStorage.getItem("api_key");
+  if (apiKey) {
+    headers["X-API-Key"] = apiKey;
+  }
+  return headers;
+};
+
+async function* streamSsePayloads(
+  response: Response
+): AsyncGenerator<Record<string, unknown>> {
+  if (!response.body) {
+    throw new Error("Chat stream returned no response body.");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+
+    let boundary = buffer.indexOf("\n\n");
+    while (boundary >= 0) {
+      const rawEvent = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+
+      const dataLines = rawEvent
+        .split("\n")
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trimStart());
+
+      if (dataLines.length > 0) {
+        yield JSON.parse(dataLines.join("\n")) as Record<string, unknown>;
+      }
+
+      boundary = buffer.indexOf("\n\n");
+    }
+
+    if (done) {
+      break;
+    }
+  }
+}
+
 interface LlmConfig {
   provider: string;
   base_url: string;
@@ -45,7 +157,7 @@ interface LlmConfig {
 }
 
 export const useLlmStore = defineStore("llm", () => {
-  const { appMode } = useAppConfig();
+  const { appMode, isFeatureEnabled } = useAppConfig();
   const authStore = useAuthStore();
   const notifications = useNotificationStore();
   const projectStore = useProjectStore();
@@ -80,6 +192,29 @@ export const useLlmStore = defineStore("llm", () => {
   let connectAttempt = 0;
   let authFallbackRetried = false;
   let lastConversationProjectId: number | null = null;
+
+  const persistLocalConversationState = (conversationId: string) => {
+    const records = loadLocalConversationRecords();
+    const existing = records.find((item) => item.id === conversationId);
+    const nextRecord: LocalConversationRecord = {
+      id: conversationId,
+      title: existing?.title || deriveConversationTitle(messages.value, records.length + 1),
+      updatedAt: new Date().toISOString(),
+      messages: messages.value.map((message) => ({ ...message })),
+    };
+
+    const nextRecords = [
+      nextRecord,
+      ...records.filter((item) => item.id !== conversationId),
+    ];
+
+    persistLocalConversationRecords(nextRecords);
+    conversations.value = nextRecords.map(({ id, title, updatedAt }) => ({
+      id,
+      title,
+      updatedAt,
+    }));
+  };
 
   const formatChatWarning = (
     payload: Record<string, unknown>
@@ -362,6 +497,10 @@ export const useLlmStore = defineStore("llm", () => {
   };
 
   const connect = (): Promise<void> => {
+    if (!isServerBacked.value) {
+      connectionStatus.value = "disconnected";
+      return Promise.resolve();
+    }
     if (wsRef.value && wsRef.value.readyState === WebSocket.OPEN) {
       connectionStatus.value = "connected";
       return Promise.resolve();
@@ -412,7 +551,7 @@ export const useLlmStore = defineStore("llm", () => {
       // prior optimistic sidebar entries.
       return;
     }
-    persistConversations(conversations.value);
+    persistConversationSummaries(conversations.value);
   };
 
   const refreshConversations = async (projectId = projectStore.currentProjectId) => {
@@ -531,10 +670,82 @@ export const useLlmStore = defineStore("llm", () => {
     if (!message.trim()) {
       return;
     }
+
+    if (!isServerBacked.value) {
+      const conversationId = currentConversationId.value || createConversationId();
+      currentConversationId.value = conversationId;
+      loading.value = true;
+      streaming.value = true;
+      messages.value.push({ role: "user", content: message });
+      messages.value.push({ role: "assistant", content: "" });
+      persistLocalConversationState(conversationId);
+
+      try {
+        const response = await fetch(buildApiUrl("/chat/stream"), {
+          method: "POST",
+          headers: getRequestHeaders(),
+          body: JSON.stringify({ message, metadata: metadata || null }),
+        });
+
+        if (!response.ok) {
+          let detail = `Chat request failed (HTTP ${response.status}).`;
+          try {
+            const body = await response.json();
+            if (typeof body?.detail === "string") {
+              detail = body.detail;
+            } else if (
+              body?.detail &&
+              typeof body.detail === "object" &&
+              typeof body.detail.message === "string"
+            ) {
+              detail = body.detail.message;
+            }
+          } catch {
+            // Fall back to the generic HTTP status message.
+          }
+          throw new Error(detail);
+        }
+
+        for await (const payload of streamSsePayloads(response)) {
+          if (payload.type === "chunk") {
+            const text = typeof payload.text === "string" ? payload.text : "";
+            const lastMessage = messages.value[messages.value.length - 1];
+            if (lastMessage?.role === "assistant") {
+              lastMessage.content += text;
+            }
+          } else if (payload.type === "error") {
+            throw new Error(
+              typeof payload.detail === "string"
+                ? payload.detail
+                : "Chat request failed."
+            );
+          } else if (payload.type === "done") {
+            break;
+          }
+        }
+      } catch (error) {
+        const detail =
+          error instanceof Error
+            ? error.message
+            : "Unable to reach the configured chat endpoint.";
+        const lastMessage = messages.value[messages.value.length - 1];
+        if (lastMessage?.role === "assistant") {
+          lastMessage.content = detail;
+        } else {
+          messages.value.push({ role: "assistant", content: detail });
+        }
+      } finally {
+        loading.value = false;
+        streaming.value = false;
+        persistLocalConversationState(conversationId);
+      }
+      return;
+    }
+
     try {
       await connect();
     } catch (error) {
-      console.error('Failed to connect WebSocket:', error);
+      console.error("Failed to connect WebSocket:", error);
       messages.value.push({
         role: "assistant",
         content: "Unable to connect for streaming. Check the API key and try again.",
@@ -556,6 +767,22 @@ export const useLlmStore = defineStore("llm", () => {
 
   const loadConversation = async (conversationId: string) => {
     if (conversationId === currentConversationId.value && messages.value.length > 0) {
+      return;
+    }
+    if (!isServerBacked.value) {
+      const conversation = loadLocalConversationRecords().find(
+        (item) => item.id === conversationId
+      );
+      if (!conversation) {
+        conversations.value = conversations.value.filter(
+          (item) => item.id !== conversationId
+        );
+        throw new Error(
+          "This conversation is no longer available. It has been removed from Topics."
+        );
+      }
+      currentConversationId.value = conversation.id;
+      messages.value = conversation.messages.map((message) => ({ ...message }));
       return;
     }
     if (isServerBacked.value && projectStore.currentProjectId == null) {
@@ -585,16 +812,16 @@ export const useLlmStore = defineStore("llm", () => {
   };
 
   const deleteConversation = async (conversationId: string) => {
-    if (isServerBacked.value) {
-      if (projectStore.currentProjectId == null) {
-        throw new Error("Select a project before deleting a server-backed conversation.");
-      }
-      await api.delete(`/llm/conversation/${conversationId}`, {
-        params: { project_id: projectStore.currentProjectId },
-      });
-      conversations.value = conversations.value.filter(
+    if (!isServerBacked.value) {
+      const nextRecords = loadLocalConversationRecords().filter(
         (item) => item.id !== conversationId
       );
+      persistLocalConversationRecords(nextRecords);
+      conversations.value = nextRecords.map(({ id, title, updatedAt }) => ({
+        id,
+        title,
+        updatedAt,
+      }));
       if (currentConversationId.value === conversationId) {
         currentConversationId.value = null;
         messages.value = [];
@@ -602,18 +829,15 @@ export const useLlmStore = defineStore("llm", () => {
       return;
     }
 
-    try {
-      await api.delete(`/llm/conversation/${conversationId}`);
-    } catch (error: unknown) {
-      if (!axios.isAxiosError(error) || error.response?.status !== 404) {
-        throw error;
-      }
+    if (projectStore.currentProjectId == null) {
+      throw new Error("Select a project before deleting a server-backed conversation.");
     }
-
+    await api.delete(`/llm/conversation/${conversationId}`, {
+      params: { project_id: projectStore.currentProjectId },
+    });
     conversations.value = conversations.value.filter(
       (item) => item.id !== conversationId
     );
-    persistConversations(conversations.value);
     if (currentConversationId.value === conversationId) {
       currentConversationId.value = null;
       messages.value = [];
@@ -646,11 +870,21 @@ export const useLlmStore = defineStore("llm", () => {
   };
 
   const fetchConfig = async (): Promise<LlmConfig | null> => {
+    if (!isServerBacked.value) {
+      return isFeatureEnabled("chatAssistant")
+        ? {
+            provider: "byo-endpoint",
+            base_url: "",
+            model: "configured-via-env",
+            verbose: false,
+          }
+        : null;
+    }
     try {
       const response = await api.get("/llm/debug/config");
       return response.data as LlmConfig;
     } catch (error) {
-      console.error('Failed to fetch LLM config:', error);
+      console.error("Failed to fetch LLM config:", error);
       return null;
     }
   };

@@ -1,6 +1,6 @@
 # Start from Zero: Full Setup Guide
 
-Complete procedure for setting up SpectraSherpa from scratch using GitHub Desktop, Visual Studio Code, and the built-in AI chatbot. Written for chemists and spectroscopists — no prior coding experience required.
+Complete procedure for setting up SpectraSherpa from scratch using GitHub Desktop and Visual Studio Code, with an optional bring-your-own-endpoint chat assistant. Written for chemists and spectroscopists — no prior coding experience required.
 
 ## Prerequisites checklist
 
@@ -154,9 +154,14 @@ Your default browser automatically opens to `http://localhost:8000`. No login re
 
 ---
 
-## Step 9 — Enable the AI chatbot (optional but recommended)
+## Step 9 — Enable the BYO chat assistant (optional)
 
-The built-in LLM assistant can help you understand your data, suggest workflows, and explain results. You need an API key from any supported provider.
+OSS SpectraSherpa ships a minimal "bring your own endpoint" chat
+assistant. It is a thin HTTP proxy: you give it a URL and an API key for
+any OpenAI-compatible `/chat/completions` endpoint, and the chat panel
+in the UI will stream single-turn replies from it. There are no tools,
+no server-side conversation store, and no agent loop — just a plain
+chat box backed by a provider you control.
 
 **Cheapest option: DeepSeek** (~$0.14/million tokens — practically free for lab use)
 
@@ -166,7 +171,9 @@ The built-in LLM assistant can help you understand your data, suggest workflows,
 
 ```
 EGRESS_ENABLED=true
-DEEPSEEK_API_KEY=sk-your-key-here
+CHAT_ENDPOINT_URL=https://api.deepseek.com/v1
+CHAT_ENDPOINT_KEY=sk-your-key-here
+CHAT_ENDPOINT_MODEL=deepseek-chat
 ```
 
 4. Stop SpectraSherpa in the terminal (`Ctrl+C`) and restart it:
@@ -174,15 +181,29 @@ DEEPSEEK_API_KEY=sk-your-key-here
 spectra-sherpa
 ```
 
-5. In the browser, go to **Settings > API Keys** to verify the key is recognized. Click **Test Connection**.
+5. Open the chat panel from the sidebar and send a test message. If the
+   panel doesn't appear, check that `/api/v1/config` reports
+   `chatAssistant: true` (both `CHAT_ENDPOINT_URL` and
+   `CHAT_ENDPOINT_KEY` must be set).
 
-**Alternative providers** (same `.env` pattern):
+**Other OpenAI-compatible endpoints** (same `.env` pattern, just
+different `CHAT_ENDPOINT_URL` / `CHAT_ENDPOINT_MODEL` values):
+
 ```
-OPENAI_API_KEY=sk-...          # OpenAI (GPT-4o, etc.)
-ANTHROPIC_API_KEY=sk-ant-...   # Anthropic (Claude)
+# OpenAI
+CHAT_ENDPOINT_URL=https://api.openai.com/v1
+CHAT_ENDPOINT_KEY=sk-...
+CHAT_ENDPOINT_MODEL=gpt-4o-mini
+
+# A local OpenAI-compatible server (vLLM, Ollama, llama.cpp, ...)
+CHAT_ENDPOINT_URL=http://localhost:8080/v1
+CHAT_ENDPOINT_KEY=anything
+CHAT_ENDPOINT_MODEL=llama-3.1-8b-instruct
 ```
 
-> **Privacy:** Your spectral data is never sent to the LLM unless you explicitly ask the chatbot a question. The `EGRESS_ENABLED=true` flag only unlocks the *option* — it doesn't auto-transmit anything.
+> **Privacy:** Your spectral data is never sent to the chat endpoint
+> unless you paste it into a chat message. The `EGRESS_ENABLED=true`
+> flag only unlocks the *option* — it doesn't auto-transmit anything.
 
 ---
 
@@ -219,12 +240,18 @@ Click **Execute Workflow** (play button in the toolbar). Watch the nodes turn ye
 
 Click the **PCA** node — the results panel shows your score plot and explained variance.
 
-### D. Ask the chatbot
+### D. Ask the BYO chat assistant (optional)
 
-Click the **chat icon** in the sidebar. Try questions like:
-- "What does this score plot tell me about my samples?"
-- "Should I try a different number of components?"
+If you configured a `CHAT_ENDPOINT_*` in Step 9, click the **chat icon**
+in the sidebar. Try single-turn questions like:
+- "What does a PCA score plot typically show?"
+- "When would I choose Savitzky-Golay smoothing over Whittaker?"
 - "How do I add a PLS regression with concentration data?"
+
+> The OSS chat assistant is single-turn and has no access to your
+> workflow or data. It cannot answer workflow-aware questions such as
+> "is my PCA good?" or "what preprocessing should I try for this FTIR
+> dataset?".
 
 ### E. Export to Python
 
@@ -292,4 +319,4 @@ When the SpectraSherpa team releases updates:
 | Port 8000 already in use | Use `spectra-sherpa --port 9000` or add `KILL_PORT_ON_START=true` to `.env` |
 | SpectroChemPy import errors | Make sure you installed with `pip install -e ".[scp]"` not just `pip install -e .` |
 | Browser doesn't open | Navigate manually to `http://localhost:8000` |
-| LLM chatbot not working | Check that `.env` has `EGRESS_ENABLED=true` and a valid API key, then restart |
+| BYO chat assistant not appearing | Check that `.env` has `EGRESS_ENABLED=true`, `CHAT_ENDPOINT_URL`, and `CHAT_ENDPOINT_KEY`, then restart |
