@@ -19,6 +19,7 @@ import {
   STORAGE_KEY,
   BROADCAST_CHANNEL_NAME,
 } from "@/views/workflow-builder/node-detail/composables/useNodeTrial";
+import { handleBroadcastMessage } from "@/views/workflow-builder/handleBroadcastMessage";
 
 /**
  * Minimal in-process BroadcastChannel shim. All instances with the same
@@ -199,5 +200,94 @@ describe("Cross-tab sync — BroadcastChannel seam", () => {
     // and critically: senders do not receive their own messages.
     expect(received).toHaveLength(4);
     expect(received.every((r) => (r.data as { type: string }).type === "node_params_updated")).toBe(true);
+  });
+});
+
+/**
+ * Receiver-side integration: verify that the production
+ * `handleBroadcastMessage` (extracted from WorkflowBuilderContent.vue)
+ * calls `updateNode(nodeId, { params })` with the payload the sender emits.
+ *
+ * The function is imported directly — no replicated stub — so if the real
+ * handler drifts, these tests break.
+ */
+describe("Receiver side — handleBroadcastMessage → updateNode", () => {
+  function makeReceiverHandler(
+    nodesRef: { value: Array<{ id: string; params?: Record<string, unknown> }> },
+    updateNode: ReturnType<typeof vi.fn>,
+  ) {
+    return (event: MessageEvent) =>
+      handleBroadcastMessage(event, nodesRef, updateNode);
+  }
+
+  it("calls updateNode when the broadcast matches a known node", () => {
+    const updateNode = vi.fn();
+    const nodesRef = { value: [{ id: "42", params: { n_components: 2 } }] };
+    const handler = makeReceiverHandler(nodesRef, updateNode);
+
+    // Wire the handler on a receiver channel, then have a sender post.
+    const receiver = new FakeBroadcastChannel(BROADCAST_CHANNEL_NAME);
+    receiver.onmessage = handler;
+
+    const { api } = mountSender({
+      nodeData: { id: "42", type: "model.pca", params: { n_components: 2 } },
+      params: { n_components: 5 },
+    });
+    api().broadcastParamsUpdate();
+
+    expect(updateNode).toHaveBeenCalledTimes(1);
+    expect(updateNode).toHaveBeenCalledWith("42", {
+      params: { n_components: 5 },
+    });
+  });
+
+  it("is a no-op when the broadcast refers to a node not in the store", () => {
+    const updateNode = vi.fn();
+    const nodesRef = { value: [{ id: "99", params: {} }] };
+    const handler = makeReceiverHandler(nodesRef, updateNode);
+
+    const receiver = new FakeBroadcastChannel(BROADCAST_CHANNEL_NAME);
+    receiver.onmessage = handler;
+
+    const { api } = mountSender({
+      nodeData: { id: "1", type: "model.pca", params: {} },
+      params: { x: 1 },
+    });
+    api().broadcastParamsUpdate();
+
+    expect(updateNode).not.toHaveBeenCalled();
+  });
+
+  it("ignores messages with types other than node_params_updated", () => {
+    const updateNode = vi.fn();
+    const nodesRef = { value: [{ id: "1", params: {} }] };
+    const handler = makeReceiverHandler(nodesRef, updateNode);
+
+    // Simulate a raw channel message with a different type.
+    handler({ data: { type: "something_else", nodeId: "1", params: { x: 1 } } } as MessageEvent);
+
+    expect(updateNode).not.toHaveBeenCalled();
+  });
+
+  it("round-trips sender → receiver with correct param merge", () => {
+    const updateNode = vi.fn();
+    const nodesRef = {
+      value: [{ id: "10", params: { alpha: 0.1, beta: 0.2 } }],
+    };
+    const handler = makeReceiverHandler(nodesRef, updateNode);
+
+    const receiver = new FakeBroadcastChannel(BROADCAST_CHANNEL_NAME);
+    receiver.onmessage = handler;
+
+    // Sender changes only alpha.
+    const { api } = mountSender({
+      nodeData: { id: "10", type: "preprocess.snv", params: { alpha: 0.1 } },
+      params: { alpha: 0.9, beta: 0.2 },
+    });
+    api().broadcastParamsUpdate();
+
+    expect(updateNode).toHaveBeenCalledWith("10", {
+      params: { alpha: 0.9, beta: 0.2 },
+    });
   });
 });

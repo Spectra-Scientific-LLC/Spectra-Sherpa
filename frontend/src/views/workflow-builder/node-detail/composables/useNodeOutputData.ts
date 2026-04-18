@@ -250,14 +250,39 @@ export function useNodeOutputData({
     return Array.isArray(hist) && hist.length > 0 ? hist : null;
   });
 
+  const PROVENANCE_KNOWN_KEYS = new Set(["source_type", "operations", "last_modified"]);
+
   const provenanceInfo = computed(() => {
-    const prov = nodeOutput.value?.metadata?.provenance;
-    return prov && typeof prov === "object" ? prov : null;
+    const prov = nodeOutput.value?.metadata?.provenance as Record<string, any> | undefined;
+    if (!prov || typeof prov !== "object") return null;
+    const extras: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(prov)) {
+      if (!PROVENANCE_KNOWN_KEYS.has(k)) extras[k] = v;
+    }
+    return {
+      source_type: prov.source_type as string | undefined,
+      operations: prov.operations as string[] | undefined,
+      last_modified: prov.last_modified as string | undefined,
+      ...(Object.keys(extras).length > 0 ? { extras } : {}),
+    };
   });
 
+  const QUALITY_KNOWN_KEYS = new Set(["latest_model_type", "latest_r2", "latest_rmse", "n_evaluations"]);
+
   const qualitySummary = computed(() => {
-    const qs = nodeOutput.value?.metadata?.quality_summary;
-    return qs && typeof qs === "object" ? (qs as Record<string, unknown>) : null;
+    const qs = nodeOutput.value?.metadata?.quality_summary as Record<string, any> | undefined;
+    if (!qs || typeof qs !== "object") return null;
+    const extras: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(qs)) {
+      if (!QUALITY_KNOWN_KEYS.has(k)) extras[k] = v;
+    }
+    return {
+      latest_model_type: qs.latest_model_type as string | undefined,
+      latest_r2: qs.latest_r2 as number | undefined,
+      latest_rmse: qs.latest_rmse as number | undefined,
+      n_evaluations: qs.n_evaluations as number | undefined,
+      ...(Object.keys(extras).length > 0 ? { extras } : {}),
+    };
   });
 
   const isRegressionNode = computed(() =>

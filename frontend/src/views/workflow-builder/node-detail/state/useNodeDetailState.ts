@@ -63,7 +63,8 @@ export interface ProvenanceInfo {
   source_type?: string;
   operations?: string[];
   last_modified?: string;
-  [key: string]: any;
+  /** Catch-all for backend-supplied keys not covered above. */
+  extras?: Record<string, unknown>;
 }
 
 export interface QualitySummary {
@@ -71,7 +72,8 @@ export interface QualitySummary {
   latest_r2?: number;
   latest_rmse?: number;
   n_evaluations?: number;
-  [key: string]: any;
+  /** Catch-all for backend-supplied keys not covered above. */
+  extras?: Record<string, unknown>;
 }
 
 export interface PortSummary {
