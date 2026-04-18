@@ -1,20 +1,22 @@
-# SpectraSherpa
+# SpectraSherpa by [Spectra Scientific LLC](https://spectrascientific.ai)
 
 [![CI](https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/actions/workflows/ci.yml/badge.svg)](https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-spectrascientific.ai-blue)](https://docs.spectrascientific.ai)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-green)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue)]()
 
-**DAG-based workflow platform for chemometrics.**
+**Open-source, local-first chemometrics platform, AI-ready.**
 
-SpectraSherpa is a DAG-based workflow engine for multivariate analysis of spectral and sensor data. It provides a visual workflow builder, over 60 processing nodes, model training and persistence, experiment tracking, and Python / Jupyter export.
+SpectraSherpa brings transparent, reproducible multivariate analysis to spectroscopists and analytical chemists. Build visual analysis pipelines, train and deploy calibration models, and extend with custom Python — all without your data leaving your machine.
 
-## What SpectraSherpa is
+## Why SpectraSherpa?
 
-- **Open source (AGPL-3.0)** — every preprocessing step, decomposition, and calibration model is source-visible.
-- **Local-first** — runs as a single-user desktop app by default; network egress is denied unless explicitly enabled.
-- **Visual workflow builder** — drag-and-drop canvas with 60+ processing nodes across 11 categories.
-- **Exportable** — any workflow can be exported to a standalone Python script or Jupyter notebook.
-- **Extensible** — plugins can register additional nodes; a stable `AIServiceProvider` contract allows extension packages to register an AI advisor implementation. OSS itself ships only a thin BYO-endpoint chat proxy (see [BYO Chat](#byo-chat)).
+- **Transparent algorithms** — Open source means every preprocessing step, decomposition, and calibration model is auditable. No black boxes.
+- **Data stays on your machine** — Built for IP-sensitive labs in pharma, semiconductor, food science, and materials. Network egress is denied by default.
+- **No coding required** — Visual drag-and-drop workflow builder with over 60 processing nodes. Go from raw spectra to a deployed PLS model without writing Python.
+- **Extensible when you need it** — Export any workflow to standalone Python or Jupyter notebooks. Add custom nodes via plugins or drop-in scripts.
+- **Modern metadata management** — Versioned projects, experiments, workflows, and model artifacts with full provenance tracking and audit trails.
+- **AI-ready** — Built-in chat assistant connects to any OpenAI-compatible endpoint you choose (bring your own key and URL). Full AI advisor with agentic tools, peak identification, code generation, and contextual workflow analysis [available via subscription](https://spectrascientific.ai).
 
 ## For Python data analysts and chemometricians
 
@@ -54,11 +56,8 @@ See the **[Scientist Contributor Guide](docs/contributing/scientist-guide.md)** 
 
 ## Try It
 
-**Free online demo** — A hosted SpectraSherpa demo environment is
-available at [demo.spectrascientific.ai](https://demo.spectrascientific.ai/register).
-Use the access code `welcome_to_spectra_sherpa` to create an account. No
-upload of proprietary data to the demo server is allowed. Accounts
-inactive for more than a week are automatically deleted.
+**Free online demo** — Register and explore SpectraSherpa at [demo.spectrascientific.ai](https://demo.spectrascientific.ai/register) with all features including the AI advisor enabled.
+*(Note: For a limited time, use the access code `welcome_to_spectra_sherpa` to create an account. No upload of proprietary data to the demo server is allowed. Accounts inactive for more than a week will be automatically deleted.)*
 
 **Install locally:**
 
@@ -69,18 +68,6 @@ spectra-sherpa
 
 Opens `http://localhost:8000` in your browser. No login required.
 Install `spectra-sherpa[scp]` as well if you want the SpectroChemPy-backed example datasets and workflows.
-
-## BYO Chat
-
-OSS ships a single AI feature: a thin HTTP proxy (`POST /api/v1/chat/stream`) to any OpenAI-compatible `/chat/completions` endpoint. Set `CHAT_ENDPOINT_URL` and `CHAT_ENDPOINT_KEY` in `.env` and the chat panel becomes available. It is single-turn, has no tools, no agent loop, no vendor SDK dependencies, and does not persist transcripts on the server. See [Configuration](docs/user/configuration.md).
-
-Beyond this proxy, OSS exposes a stable `AIServiceProvider` contract (`spectra_sherpa.app.contracts.ai_provider`) and registry seam. An extension package may register a concrete provider to add capabilities; if none is registered, the `DisabledAIProvider` default responds to all `sherpa_*` actions and the `/api/v1/llm/*` routes are not served.
-
-### Where to run
-
-- **Local install (this repo)** — `pip install spectra-sherpa` as shown above.
-- **Hosted cloud** — [demo.spectrascientific.ai](https://demo.spectrascientific.ai).
-- **Self-hosted with an AI provider extension** — install `spectra-sherpa` alongside an extension package that registers an `AIServiceProvider` (for example, [`spectrasherpa-server`](https://github.com/Spectra-Scientific-LLC/spectra-server)) for on-premise deployments with your own LLM API keys.
 
 ## Supported Techniques
 
@@ -109,7 +96,7 @@ See the [Applications Guide](docs/user/applications.md) for the current support 
 - **Project Management** — Organize experiments, workflows, scripts, and models with versioned snapshots
 - **Experiment Tracking** — DOE support with 96-well plate layouts, samples, mixtures, and factor definitions
 - **Deploy** — Batch prediction, folder watching, and execution run tracking with model provenance
-- **BYO Chat** — Connect any OpenAI-compatible chat endpoint for basic AI assistance (no vendor SDK required)
+- **AI Chat** — Connect any OpenAI-compatible chat endpoint for AI-assisted analysis and workflow guidance. See [Configuration](docs/user/configuration.md) for setup.
 - **Plugin System** — Add your own processing nodes by dropping a Python file into a folder or installing a package
 - **Privacy Controls** — Fine-grained egress permissions; "deny all" network policy by default; local-first architecture for IP-sensitive labs
 
@@ -199,11 +186,13 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for deta
 
 ## License
 
-Copyright (C) 2026 Spectra Scientific LLC.
+Copyright (C) 2026 [Spectra Scientific LLC](https://spectrascientific.ai).
 
 SpectraSherpa is licensed under the AGPL-3.0. See [LICENSE](./LICENSE) for details.
 
 You are free to use, modify, and distribute SpectraSherpa. If you distribute a modified version — including as a network service — you must make your modifications available under the same license.
 
 > [!WARNING]
-> This software is provided "AS IS" without warranty of any kind. Spectra Scientific LLC disclaims all liability for damages arising from use of this software, including reliance on analytical results. See [DISCLAIMER](./DISCLAIMER) for full terms.
+> This software is provided "AS IS" without warranty of any kind. [Spectra Scientific LLC](https://spectrascientific.ai) disclaims all liability for damages arising from use of this software, including reliance on analytical results. See [DISCLAIMER](./DISCLAIMER) for full terms.
+
+Enterprise features and commercial licensing are available from [Spectra Scientific LLC](https://spectrascientific.ai).
