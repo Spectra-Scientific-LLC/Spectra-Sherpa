@@ -180,6 +180,54 @@ describe("normalizeMathMarkdown", () => {
       expect(result).toContain("\\mathbf{C}_{\\text{new}}");
       expect(result).toContain("\\mathbf{C}_{\\text{constrained}}");
     });
+
+    // Nested braces in base (decorator + font command)
+
+    it("repairs \\hat{\\mathbf{x}}{new,k} with nested braces in base", () => {
+      const source =
+        "$$\\hat{\\mathbf{x}}{new,k} = \\mathbf{t}{new,k} \\mathbf{P}_k^T$$";
+
+      const result = normalizeMathMarkdown(source, ds);
+      expect(result).toContain("\\hat{\\mathbf{x}}_{new,k}");
+      expect(result).toContain("\\mathbf{t}_{new,k}");
+    });
+
+    it("does not insert _ in \\frac{a}{b}", () => {
+      const source = "$$\\frac{a}{b} + \\binom{n}{k}$$";
+
+      const result = normalizeMathMarkdown(source, ds);
+      expect(result).toContain("\\frac{a}{b}");
+      expect(result).toContain("\\binom{n}{k}");
+    });
+
+    // Inline subscript expressions in prose
+
+    it("wraps bare A_k in prose", () => {
+      const source = "retaining a small number A_k of principal components";
+
+      const result = normalizeMathMarkdown(source, ds);
+      expect(result).toContain("$A_k$");
+    });
+
+    it("wraps bare s_{new,k}^2 in prose", () => {
+      const source = "We compare s_{new,k}^2 to the pooled variance";
+
+      const result = normalizeMathMarkdown(source, ds);
+      expect(result).toContain("$s_{new,k}^2$");
+    });
+
+    // Full bare-bracket block from SIMCA output
+
+    it("handles SIMCA-style bare-bracket equation with nested commands", () => {
+      const source =
+        "The residual:\n[\n\\mathbf{e}{new,k} = \\mathbf{x}{new} - \\hat{\\mathbf{x}}{new,k}\n]\n";
+
+      const result = normalizeMathMarkdown(source, ds);
+      expect(result).toContain("$$");
+      expect(result).toContain("\\mathbf{e}_{new,k}");
+      expect(result).toContain("\\mathbf{x}_{new}");
+      expect(result).toContain("\\hat{\\mathbf{x}}_{new,k}");
+    });
   });
 
   // ── Unknown supplier (no-op pre-processing) ────────────────────

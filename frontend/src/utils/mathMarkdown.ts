@@ -14,13 +14,26 @@
 
 // ── Shared helpers ──────────────────────────────────────────────────
 
+/**
+ * Commands that legitimately take two brace-group arguments.
+ * Pattern A must NOT insert `_` between their arguments.
+ */
+const TWO_ARG_COMMANDS = new Set([
+  "frac", "dfrac", "tfrac", "cfrac",
+  "binom", "dbinom", "tbinom",
+  "overset", "underset", "stackrel",
+  "xrightarrow", "xleftarrow",
+]);
+
+/**
+ * Font/decorator commands where a trailing bare character (Pattern B)
+ * is almost certainly a dropped subscript.
+ */
 const SUBSCRIPTABLE_COMMANDS = new Set([
-  "mathbf",
-  "mathrm",
-  "mathit",
-  "mathsf",
-  "mathtt",
-  "boldsymbol",
+  "mathbf", "mathrm", "mathit", "mathsf", "mathtt", "boldsymbol",
+  "hat", "tilde", "bar", "vec", "dot", "ddot", "check", "breve",
+  "overline", "underline", "widehat", "widetilde",
+  "text", "textbf", "textit", "textrm",
 ]);
 
 /**
@@ -47,12 +60,14 @@ function normalizeLatexBody(body: string): string {
   let normalized = body;
 
   // Pattern A: \cmd{base}{suffix} — two consecutive brace groups.
-  // The suffix may contain nested \text{...} or \mathrm{...} commands
-  // (e.g. \mathbf{C}{\text{new}} → \mathbf{C}_{\text{new}}).
+  // Base may contain nested braces (e.g. \hat{\mathbf{x}}{new,k}).
+  // Suffix may contain \text{...} commands (e.g. \mathbf{C}{\text{new}}).
+  // We EXCLUDE known two-argument commands (\frac, \binom, etc.)
+  // rather than maintaining a whitelist of subscriptable ones.
   normalized = normalized.replace(
-    /\\([A-Za-z]+)\{([^{}]+)\}\{((?:[^{}]|\\[A-Za-z]+\{[^{}]*\})+)\}/g,
+    /\\([A-Za-z]+)\{((?:[^{}]|\{[^{}]*\})+)\}\{((?:[^{}]|\\[A-Za-z]+\{[^{}]*\})+)\}/g,
     (match, command: string, base: string, suffix: string) => {
-      if (!SUBSCRIPTABLE_COMMANDS.has(command)) return match;
+      if (TWO_ARG_COMMANDS.has(command)) return match;
       return `\\${command}{${base}}_{${suffix}}`;
     },
   );
