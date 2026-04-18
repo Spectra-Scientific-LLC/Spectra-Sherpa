@@ -277,7 +277,7 @@ class AppConfig(BaseModel):
 
         mode = raw_mode
 
-        # Provider metadata — inlined in OSS after the ADR-0001 boundary cleanup.
+        # Provider metadata — inlined for the /config endpoint's availability checks.
         # Previously imported from spectra_sherpa.app.core.llm_registry; the server
         # now owns provider selection policy (see spectrasherpa_server/routes/admin.py).
         # OSS keeps a minimal static list here solely to populate AppConfig.llms

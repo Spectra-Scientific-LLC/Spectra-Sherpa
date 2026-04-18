@@ -33,7 +33,7 @@ be provided by a separate package.
 
 ## Boundary enforcement
 
-The boundary is defined in ADR-0001 and is mechanically enforced by:
+The boundary is mechanically enforced by:
 
 1. **Python injection seam** — `contracts/ai_provider_registry.py` (3 functions)
 2. **WS event contract** — `sherpa-ws-v1.json` (JSON Schema)

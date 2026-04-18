@@ -57,7 +57,7 @@ const route = useRoute();
 const store = useLlmStore();
 const toast = useToast();
 const { appMode, isFeatureEnabled } = useAppConfig();
-// Capability gate (ADR-0001): provider switching writes to /llm-config which
+// Capability gate: provider switching writes to /llm-config which
 // is server-only. Hide the settings cog on OSS-only installs.
 const canConfigureLlm = computed(() => isFeatureEnabled("sherpaAdvisor"));
 const pageTitle = computed(() => (route.query.tab === "sherpa" ? "Sherpa Advisor" : "LLM assistant"));

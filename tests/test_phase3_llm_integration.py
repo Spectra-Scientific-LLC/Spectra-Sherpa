@@ -1,9 +1,7 @@
 """Phase 3: LLM Integration + MCP tests.
 
-LLM service/orchestration test classes (TestSummarizeMetadata, TestLlmStorage,
-TestChatContextRouting, TestHttpLlmRateLimits, TestAnthropicPayload,
-TestDeploymentAIProvider) were removed as part of the ADR-0001 boundary
-cleanup — that functionality now lives in spectra-server.
+LLM service/orchestration test classes were removed — that functionality
+is not part of the OSS distribution.
 """
 
 from __future__ import annotations

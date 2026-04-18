@@ -1,6 +1,6 @@
 """OSS-only BYO chat streaming endpoint.
 
-Capability-gated behind ``CHAT_ASSISTANT`` (ADR-0001 §6.1). This is deliberately
+Capability-gated behind ``CHAT_ASSISTANT``. This is deliberately
 NOT under ``/api/v1/llm/*`` so the OSS/server boundary is visible by URL prefix.
 The ``chatAssistant`` capability is enabled whenever the BYO chat endpoint is
 configured (see ``routes/config.py`` ``has_llm or byo_chat_configured()``).

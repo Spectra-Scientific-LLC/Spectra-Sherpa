@@ -13,9 +13,6 @@ This page describes **only the OSS-side contract**. If no provider is
 registered, OSS serves `DisabledAIProvider` responses and the extension
 routes 404.
 
-> Authoritative reference: ADR-0001. Anything in this document that
-> disagrees with the ADR should be treated as a bug in this document.
-
 ---
 
 ## 1. What OSS ships
@@ -178,54 +175,3 @@ Canonical frontend constants:
 
 ---
 
-## 4. What is *not* in OSS anymore
-
-The following modules used to live in OSS and have been removed as part
-of the Track A yank (ADR-0001 §2):
-
-- `services/sherpa_advisor.py` concrete implementation
-- `services/llm.py` — conversation/LLM orchestrator and JSON
-  `ConversationStore`
-- `services/llm_rate_limits.py`
-- `services/deployment_ai_provider.py`
-- `core/llm_registry.py`
-- `api/v1/routes/llm.py` and `api/v1/routes/llm_config.py`
-- `models/llm_config.py` and `User.llm_config` relationship
-- `schemas/llm.py` and `schemas/llm_config.py`
-- `[sherpa]` extras with `anthropic` and `openai` optional dependencies
-- Prompt constants, tool-choice policy, context builders,
-  peak-ID/code-gen/report/data-story implementations
-
-OSS retains a one-minor-release deprecation shim at
-`services/sherpa_advisor.py` that re-exports `set_sherpa_advisor` /
-`reset_sherpa_advisor` / `get_sherpa_advisor` from the new registry
-path and emits a `DeprecationWarning`. It is removed in `0.N+2`.
-
-These items are not part of the OSS distribution. Re-introducing any of
-them into this repo requires a superseding ADR.
-
----
-
-## 5. Checklist for new Sherpa features (OSS-side only)
-
-For a new feature that needs a new WS action, the OSS-side changes are
-minimal:
-
-- [ ] Add the action constant to
-      `src/spectra_sherpa/app/ws_actions.py::SHERPA_WS_ACTIONS`.
-- [ ] Add a dispatch branch in `services/ws_handlers.py` that calls
-      `get_sherpa_advisor()` and funnels Protocol exceptions into
-      `sherpa_error` / `sherpa_subscription_required` events.
-- [ ] Add the corresponding TS action/event key in
-      `frontend/src/lib/sherpaWs.ts`.
-- [ ] If the feature emits new event types, extend
-      `src/spectra_sherpa/contracts/sherpa-ws-v1.json` (+ regenerate
-      fixtures) and update both repos' consumer-driven contract tests.
-- [ ] Update the OSS contract test
-      `tests/test_ws_contract.py` to assert the action/event vocabulary
-      stays in sync across `ws_actions.py`, `sherpaWs.ts`, and the JSON
-      schema.
-
-Everything else — the Protocol method body, HTTP route, prompt,
-tool-choice policy, conversation behavior — is outside the OSS repo and
-is owned by whichever extension package registers the provider.

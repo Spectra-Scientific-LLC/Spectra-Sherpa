@@ -2,10 +2,6 @@
 
 SpectraSherpa follows a clean, contract-first architecture: the OSS repo owns the scientific platform and extension contracts, while optional extension packages can compose additional auth, AI, and deployment behavior around that host.
 
-> The authoritative split between what OSS owns and what extension
-> packages may own is documented in ADR-0001. This document stays
-> consistent with §4 and §5 of that ADR.
-
 ## Overview
 
 ```
@@ -103,8 +99,8 @@ extension package may register one through the contract seam; when none
 is registered, OSS serves `DisabledAIProvider` responses and 404s the
 extension-owned routes.
 
-See ADR-0001 §5 for the three boundary surfaces (Python injection seam,
-HTTP routes, WebSocket schema) and their stability guarantees.
+The three boundary surfaces (Python injection seam, HTTP routes,
+WebSocket schema) are documented in [OSS_SCOPE.md](../../OSS_SCOPE.md).
 
 ## Core Concepts
 

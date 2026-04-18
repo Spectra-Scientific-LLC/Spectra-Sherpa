@@ -171,7 +171,7 @@ async def test_first_time_user_journey(
     assert exec_data.get("error") is None, f"Execution error: {exec_data['error']}"
 
     # ── Step 5: Verify LLM chat routes are not available in OSS-only mode ──
-    # The /api/v1/llm/* routes moved to spectra-server (ADR-0001).
+    # The /api/v1/llm/* routes are extension-owned and not registered in OSS.
     # In OSS-only builds the router is not registered so these return 404.
     chat_response = await auth_client.post(
         "/api/v1/llm/chat",

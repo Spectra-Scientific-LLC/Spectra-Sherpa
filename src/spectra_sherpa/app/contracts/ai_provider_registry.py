@@ -1,10 +1,8 @@
 """Mutable registry for the Sherpa AI service provider.
 
 Kept separate from contracts/ai_provider.py so that the Protocol module
-remains pure (types only, no mutable state). Server calls set_sherpa_advisor
-at startup; OSS dispatch code calls get_sherpa_advisor.
-
-This module is the Python injection seam defined in ADR-0001 SS5.1.
+remains pure (types only, no mutable state). An extension package calls
+set_sherpa_advisor at startup; OSS dispatch code calls get_sherpa_advisor.
 """
 
 from __future__ import annotations

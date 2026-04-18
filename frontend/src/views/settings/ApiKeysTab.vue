@@ -40,7 +40,7 @@
     </div>
 
     <!-- LLM Provider Configuration -->
-    <!-- Gated by sherpaAdvisor capability (ADR-0001). Hidden in OSS-only mode
+    <!-- Gated by sherpaAdvisor capability. Hidden in OSS-only mode
          where /llm-config and /llm/chat are not served. -->
     <div v-if="canConfigureLlm" class="key-section">
       <div class="section-header">
@@ -215,7 +215,7 @@ import api from "@/api/client";
 import { useAppConfig } from "@/composables/useAppConfig";
 
 // Capability gate: only show the LLM-config surface when the server has
-// announced sherpaAdvisor support. Per ADR-0001, /llm-config and /llm/*
+// announced sherpaAdvisor support. Per /llm-config and /llm/*
 // live on the commercial server only; OSS-only installs would 404 here.
 const { isFeatureEnabled } = useAppConfig();
 const canConfigureLlm = computed(() => isFeatureEnabled("sherpaAdvisor"));
@@ -325,7 +325,7 @@ const loadSavedKeys = async () => {
     );
 
     // Load LLM configuration — only when Sherpa advisor is available.
-    // OSS-only installs have no /llm-config endpoint (ADR-0001).
+    // OSS-only installs have no /llm-config endpoint.
     if (canConfigureLlm.value) {
       try {
         const configResponse = await api.get("/llm-config");
