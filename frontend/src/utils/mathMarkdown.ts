@@ -21,7 +21,7 @@ function normalizeLatexBody(body: string): string {
   );
 
   normalized = normalized.replace(
-    /\\([A-Za-z]+)\{([^{}]+)\}([A-Za-z0-9])(?=[\^_])/g,
+    /\\([A-Za-z]+)\{([^{}]+)\}([A-Za-z0-9])(?=[\s=,\^_\\)}$]|$)/g,
     (match, command: string, base: string, suffix: string) => {
       if (!SUBSCRIPTABLE_COMMANDS.has(command)) {
         return match;

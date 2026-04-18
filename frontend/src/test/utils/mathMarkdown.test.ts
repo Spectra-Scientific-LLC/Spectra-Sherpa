@@ -68,4 +68,23 @@ describe("normalizeMathMarkdown", () => {
 
     expect(normalizeMathMarkdown(source)).toBe(source);
   });
+
+  // --- Missing underscore before bare subscript (DeepSeek pattern) ---
+
+  it("repairs missing underscore before bare subscript followed by space", () => {
+    const source =
+      "$$\\mathbf{t}a = \\mathbf{X}{a-1} \\mathbf{w}_a$$";
+
+    expect(normalizeMathMarkdown(source)).toContain(
+      "$$\\mathbf{t}_a = \\mathbf{X}_{a-1} \\mathbf{w}_a$$",
+    );
+  });
+
+  it("repairs missing underscore in bare-bracket block after conversion", () => {
+    const source =
+      "Scores:\n[\n\\mathbf{t}a = \\mathbf{X}{a-1} \\mathbf{w}_a\n]\n";
+
+    const result = normalizeMathMarkdown(source);
+    expect(result).toContain("$$\\mathbf{t}_a = \\mathbf{X}_{a-1} \\mathbf{w}_a$$");
+  });
 });
