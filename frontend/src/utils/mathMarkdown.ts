@@ -1,3 +1,19 @@
+/**
+ * Supplier-aware math markdown normalizer.
+ *
+ * Different LLM engines emit math notation with different quirks.
+ * This module provides a generic normalization pipeline plus
+ * per-supplier pre-processing passes that convert engine-specific
+ * patterns into standard delimited LaTeX before KaTeX rendering.
+ *
+ * To add support for a new engine:
+ *   1. Write a `normalize<Engine>Math(source)` function.
+ *   2. Register it in `SUPPLIER_NORMALIZERS`.
+ *   3. Add tests in mathMarkdown.test.ts.
+ */
+
+// ── Shared helpers ──────────────────────────────────────────────────
+
 const SUBSCRIPTABLE_COMMANDS = new Set([
   "mathbf",
   "mathrm",
@@ -7,25 +23,43 @@ const SUBSCRIPTABLE_COMMANDS = new Set([
   "boldsymbol",
 ]);
 
+/**
+ * Detect whether a block of text looks like LaTeX math content.
+ */
+function looksLikeLatex(text: string): boolean {
+  if (/\\[A-Za-z]{2,}/.test(text)) return true;
+  if (/[_^]\{/.test(text)) return true;
+  if (/[A-Za-z][_^][A-Za-z0-9]/.test(text)) return true;
+  if (/[A-Za-z]\s*=\s*[A-Za-z]/.test(text) && /[_^{}\\]/.test(text)) return true;
+  return false;
+}
+
+// ── Generic normalization (all suppliers) ────────────────────────────
+
+/**
+ * Fix malformed subscript patterns inside already-delimited LaTeX.
+ *
+ * Handles two DeepSeek-originated patterns that can appear from any engine:
+ *   \mathbf{X}{a-1}  →  \mathbf{X}_{a-1}   (braced suffix)
+ *   \mathbf{t}a      →  \mathbf{t}_a        (bare suffix)
+ */
 function normalizeLatexBody(body: string): string {
   let normalized = body;
 
+  // Pattern A: \cmd{base}{suffix} — two consecutive brace groups
   normalized = normalized.replace(
     /\\([A-Za-z]+)\{([^{}]+)\}\{([^{}\\]+)\}/g,
     (match, command: string, base: string, suffix: string) => {
-      if (!SUBSCRIPTABLE_COMMANDS.has(command)) {
-        return match;
-      }
+      if (!SUBSCRIPTABLE_COMMANDS.has(command)) return match;
       return `\\${command}{${base}}_{${suffix}}`;
     },
   );
 
+  // Pattern B: \cmd{base}X — bare character after brace group
   normalized = normalized.replace(
     /\\([A-Za-z]+)\{([^{}]+)\}([A-Za-z0-9])(?=[\s=,\^_\\)}$]|$)/g,
     (match, command: string, base: string, suffix: string) => {
-      if (!SUBSCRIPTABLE_COMMANDS.has(command)) {
-        return match;
-      }
+      if (!SUBSCRIPTABLE_COMMANDS.has(command)) return match;
       return `\\${command}{${base}}_${suffix}`;
     },
   );
@@ -34,41 +68,54 @@ function normalizeLatexBody(body: string): string {
 }
 
 /**
- * Detect whether a block of text looks like LaTeX math content.
- *
- * Checks for common LaTeX commands (`\frac`, `\mathbf`, …), operators
- * (`^`, `_`), and structural tokens (`{`, `}`) that wouldn't appear in
- * normal prose.
+ * Normalize LaTeX bodies inside all standard math delimiters.
+ * Runs after any supplier-specific pre-processing.
  */
-function looksLikeLatex(text: string): boolean {
-  // Backslash commands (\frac, \mathbf, \hat, …)
-  if (/\\[A-Za-z]{2,}/.test(text)) return true;
-  // Braced sub/superscripts: _{...} or ^{...}
-  if (/[_^]\{/.test(text)) return true;
-  // Bare sub/superscript with single token: x_h, t^T
-  if (/[A-Za-z][_^][A-Za-z0-9]/.test(text)) return true;
-  // Equals with surrounding identifiers (equation-like): X = T P^T
-  if (/[A-Za-z]\s*=\s*[A-Za-z]/.test(text) && /[_^{}\\]/.test(text)) return true;
-  return false;
+function normalizeDelimitedMath(source: string): string {
+  let normalized = source;
+
+  normalized = normalized.replace(/\$\$([\s\S]+?)\$\$/g, (_match, body: string) => {
+    return `$$${normalizeLatexBody(body)}$$`;
+  });
+
+  normalized = normalized.replace(/\\\[([\s\S]+?)\\\]/g, (_match, body: string) => {
+    return `\\[${normalizeLatexBody(body)}\\]`;
+  });
+
+  normalized = normalized.replace(/\\\(([\s\S]+?)\\\)/g, (_match, body: string) => {
+    return `\\(${normalizeLatexBody(body)}\\)`;
+  });
+
+  normalized = normalized.replace(/\$(?!\$)([^$\n]+?)\$(?!\$)/g, (_match, body: string) => {
+    return `$${normalizeLatexBody(body)}$`;
+  });
+
+  return normalized;
 }
 
+// ── DeepSeek normalizer ─────────────────────────────────────────────
+//
+// DeepSeek quirks observed:
+//   1. Display math uses bare [ / ] on own lines instead of $$ or \[
+//   2. Drops `_` between font commands and subscripts (\mathbf{t}a)
+//   3. Emits bare single-letter variables without $ delimiters in prose
+//      (e.g. "applied to \nC\nC after calculation")
+//
+// Quirk 2 is handled generically by normalizeLatexBody (Pattern B).
+// Quirks 1 and 3 are DeepSeek-specific pre-processing below.
+
 /**
- * Convert bare-bracket display math blocks emitted by some LLM engines
- * (notably DeepSeek) into proper `$$…$$` delimiters that KaTeX can render.
+ * Convert bare-bracket display math blocks into `$$…$$`.
  *
- * Matches a `[` on its own line, one or more lines of LaTeX-like content,
- * and a closing `]` on its own line.
+ * Matches `[` on its own line, LaTeX body lines, `]` on its own line.
  */
-function normalizeBareBlockMath(source: string): string {
-  // Split into lines so we can walk them and handle consecutive blocks.
+function convertBareBlockMath(source: string): string {
   const lines = source.split("\n");
   const out: string[] = [];
   let i = 0;
 
   while (i < lines.length) {
-    // Look for a line that is just `[` (with optional whitespace)
     if (/^\s*\[\s*$/.test(lines[i])) {
-      // Collect body lines until we hit a closing `]` on its own line
       const bodyLines: string[] = [];
       let j = i + 1;
       let closed = false;
@@ -94,28 +141,88 @@ function normalizeBareBlockMath(source: string): string {
   return out.join("\n");
 }
 
-export function normalizeMathMarkdown(source: string): string {
+/**
+ * Wrap bare single-letter math variables that DeepSeek leaves undelimited.
+ *
+ * DeepSeek often emits a line like:
+ *   "constraints are applied to \n$C$\nC after calculation"
+ * where the first $C$ renders but the second bare C does not. It also
+ * produces patterns where a variable stands alone on its own line
+ * between prose lines.
+ *
+ * Strategy: find isolated single uppercase letters (or very short
+ * LaTeX-like tokens) on their own line that sit between prose lines
+ * and wrap them in $…$. This is intentionally conservative.
+ */
+function wrapBareInlineVars(source: string): string {
+  const lines = source.split("\n");
+  const out: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+
+    // Single uppercase letter alone on a line (e.g. "C", "X", "Y")
+    // between non-empty prose lines
+    if (/^[A-Z]$/.test(trimmed)) {
+      const prevLine = i > 0 ? lines[i - 1].trim() : "";
+      const nextLine = i < lines.length - 1 ? lines[i + 1].trim() : "";
+      const prevIsProse = prevLine.length > 0 && !/^\$/.test(prevLine) && !/^\[/.test(prevLine);
+      const nextIsProse = nextLine.length > 0 && !/^\$/.test(nextLine) && !/^\]/.test(nextLine);
+
+      if (prevIsProse || nextIsProse) {
+        out.push(`$${trimmed}$`);
+        continue;
+      }
+    }
+
+    out.push(lines[i]);
+  }
+
+  return out.join("\n");
+}
+
+function normalizeDeepSeekMath(source: string): string {
+  let normalized = source;
+  normalized = convertBareBlockMath(normalized);
+  normalized = wrapBareInlineVars(normalized);
+  return normalized;
+}
+
+// ── Supplier dispatch ───────────────────────────────────────────────
+
+type SupplierNormalizer = (source: string) => string;
+
+/**
+ * Registry of supplier-specific normalizers.
+ *
+ * Keys are the `provider` values from LlmConfig (as returned by the
+ * /config endpoint). To add a new engine, register its normalizer here.
+ */
+const SUPPLIER_NORMALIZERS: Record<string, SupplierNormalizer> = {
+  deepseek: normalizeDeepSeekMath,
+};
+
+/**
+ * Normalize math markdown for KaTeX rendering.
+ *
+ * @param source   Raw markdown from the LLM.
+ * @param supplier LLM provider key (e.g. "deepseek", "openai").
+ *                 When supplied, engine-specific pre-processing runs
+ *                 before the generic delimiter normalization.
+ */
+export function normalizeMathMarkdown(source: string, supplier?: string): string {
   let normalized = source;
 
-  // --- Phase 1: recover bare-bracket display math ---
-  normalized = normalizeBareBlockMath(normalized);
+  // Phase 1: supplier-specific pre-processing
+  if (supplier) {
+    const supplierNorm = SUPPLIER_NORMALIZERS[supplier];
+    if (supplierNorm) {
+      normalized = supplierNorm(normalized);
+    }
+  }
 
-  // --- Phase 2: normalize LaTeX bodies inside known delimiters ---
-  normalized = normalized.replace(/\$\$([\s\S]+?)\$\$/g, (_match, body: string) => {
-    return `$$${normalizeLatexBody(body)}$$`;
-  });
-
-  normalized = normalized.replace(/\\\[([\s\S]+?)\\\]/g, (_match, body: string) => {
-    return `\\[${normalizeLatexBody(body)}\\]`;
-  });
-
-  normalized = normalized.replace(/\\\(([\s\S]+?)\\\)/g, (_match, body: string) => {
-    return `\\(${normalizeLatexBody(body)}\\)`;
-  });
-
-  normalized = normalized.replace(/\$(?!\$)([^$\n]+?)\$(?!\$)/g, (_match, body: string) => {
-    return `$${normalizeLatexBody(body)}$`;
-  });
+  // Phase 2: generic delimiter normalization (all suppliers)
+  normalized = normalizeDelimitedMath(normalized);
 
   return normalized;
 }

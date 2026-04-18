@@ -18,9 +18,10 @@ import "katex/dist/katex.min.css";
 
 const props = defineProps<{
   source: string;
+  supplier?: string;
 }>();
 
-const normalizedSource = computed(() => normalizeMathMarkdown(props.source));
+const normalizedSource = computed(() => normalizeMathMarkdown(props.source, props.supplier));
 
 const markdownOptions = {
   breaks: true,
