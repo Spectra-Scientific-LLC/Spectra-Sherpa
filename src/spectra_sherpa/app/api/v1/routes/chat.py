@@ -41,10 +41,7 @@ async def chat_stream(
             detail={
                 "code": "capability_unavailable",
                 "capability": CHAT_ASSISTANT,
-                "message": (
-                    "BYO chat endpoint not configured. "
-                    "Set CHAT_ENDPOINT_URL and CHAT_ENDPOINT_KEY."
-                ),
+                "message": ("BYO chat endpoint not configured. " "Set CHAT_ENDPOINT_URL and CHAT_ENDPOINT_KEY."),
             },
         )
 

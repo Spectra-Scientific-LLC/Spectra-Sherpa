@@ -75,7 +75,6 @@ class TestSalientFeaturesDataclass:
             assert sf.method == method
 
 
-
 # ============================================================================
 # LLM integration tests removed — functionality moved to spectra-server
 # (ADR-0001). See spectra-server/tests/ for LLMService and salient-feature

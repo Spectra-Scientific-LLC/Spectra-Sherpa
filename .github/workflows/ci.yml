@@ -117,6 +117,8 @@ jobs:
   frontend:
     name: Frontend Build
     runs-on: ubuntu-latest
+    env:
+      HAS_SERVER_TOKEN: ${{ secrets.SERVER_CHECKOUT_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v5
 
@@ -148,6 +150,7 @@ jobs:
       # repo becomes public, the `token:` line can be removed.
       # ------------------------------------------------------------------
       - name: Check out spectra-server (sparse — OpenAPI spec only)
+        if: env.HAS_SERVER_TOKEN == 'true'
         uses: actions/checkout@v5
         with:
           repository: Spectra-Scientific-LLC/spectra-server
@@ -157,6 +160,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Verify api-generated.ts matches committed OpenAPI spec
+        if: env.HAS_SERVER_TOKEN == 'true'
         working-directory: frontend
         run: |
           npx openapi-typescript \
