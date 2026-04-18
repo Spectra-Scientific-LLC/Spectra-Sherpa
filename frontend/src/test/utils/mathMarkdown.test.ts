@@ -131,6 +131,55 @@ describe("normalizeMathMarkdown", () => {
       // Single letter with no surrounding prose — leave alone
       expect(normalizeMathMarkdown(source, ds)).toBe(source);
     });
+
+    // Bare inline expressions with ^ or _
+
+    it("wraps bare S^T in prose", () => {
+      const source = "hold the spectral profiles S^T constant and solve";
+
+      const result = normalizeMathMarkdown(source, ds);
+      expect(result).toContain("$S^T$");
+      expect(result).not.toContain(" S^T ");
+    });
+
+    it("wraps bare S^\\text{T} in prose", () => {
+      const source = "if S^\\text{T} is known";
+
+      const result = normalizeMathMarkdown(source, ds);
+      expect(result).toContain("$S^\\text{T}$");
+    });
+
+    it("wraps bare p_h^T in prose", () => {
+      const source = "the loading vector p_h^T is orthogonal";
+
+      const result = normalizeMathMarkdown(source, ds);
+      expect(result).toContain("$p_h^T$");
+    });
+
+    it("does not double-wrap tokens already inside $$", () => {
+      const source = "$$X_h = X_{h-1} - t_h p_h^T$$";
+
+      const result = normalizeMathMarkdown(source, ds);
+      // Should NOT produce $$...$t_h$...$$
+      expect(result).not.toMatch(/\$\$[^$]*\$[^$]+\$[^$]*\$\$/);
+    });
+
+    it("does not double-wrap tokens already inside $", () => {
+      const source = "the matrix $S^T$ is transposed";
+
+      expect(normalizeMathMarkdown(source, ds)).toBe(source);
+    });
+
+    // Dropped underscore with \text{...} suffix
+
+    it("repairs \\mathbf{C}{\\text{new}} inside display math", () => {
+      const source =
+        "$$\\mathbf{C}{\\text{new}} = \\mathbf{C}{\\text{constrained}}$$";
+
+      const result = normalizeMathMarkdown(source, ds);
+      expect(result).toContain("\\mathbf{C}_{\\text{new}}");
+      expect(result).toContain("\\mathbf{C}_{\\text{constrained}}");
+    });
   });
 
   // ── Unknown supplier (no-op pre-processing) ────────────────────

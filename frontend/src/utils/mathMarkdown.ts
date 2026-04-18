@@ -46,9 +46,11 @@ function looksLikeLatex(text: string): boolean {
 function normalizeLatexBody(body: string): string {
   let normalized = body;
 
-  // Pattern A: \cmd{base}{suffix} — two consecutive brace groups
+  // Pattern A: \cmd{base}{suffix} — two consecutive brace groups.
+  // The suffix may contain nested \text{...} or \mathrm{...} commands
+  // (e.g. \mathbf{C}{\text{new}} → \mathbf{C}_{\text{new}}).
   normalized = normalized.replace(
-    /\\([A-Za-z]+)\{([^{}]+)\}\{([^{}\\]+)\}/g,
+    /\\([A-Za-z]+)\{([^{}]+)\}\{((?:[^{}]|\\[A-Za-z]+\{[^{}]*\})+)\}/g,
     (match, command: string, base: string, suffix: string) => {
       if (!SUBSCRIPTABLE_COMMANDS.has(command)) return match;
       return `\\${command}{${base}}_{${suffix}}`;
@@ -181,10 +183,53 @@ function wrapBareInlineVars(source: string): string {
   return out.join("\n");
 }
 
+/**
+ * Wrap bare inline math expressions that DeepSeek leaves undelimited.
+ *
+ * DeepSeek often drops `$` around short expressions containing `^`, `_`,
+ * or LaTeX commands, e.g.:
+ *   "hold S^T constant"        → "hold $S^T$ constant"
+ *   "pseudoinverse ( )^+"      → left alone (too ambiguous)
+ *   "E = D - C S^T"            → left alone (multi-token equation)
+ *
+ * Strategy: split the source on existing math delimiters so we only
+ * process prose segments. In those segments, find tokens containing
+ * `^` or `_` that look like single math identifiers and wrap in $…$.
+ */
+function wrapBareInlineExpressions(source: string): string {
+  // Split on $$ … $$, \[ … \], \( … \), and $ … $ to isolate prose
+  const mathPattern = /(\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\$[^$\n]+?\$)/g;
+  const parts = source.split(mathPattern);
+
+  // Superscript/subscript target: braced group, \cmd{...}, or single char
+  const target = String.raw`(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*)?\}|\\[A-Za-z]+\{[^{}]*\}|[A-Za-z0-9+\-])`;
+  // Full token: letter followed by one or more ^target or _target
+  const bareTokenRe = new RegExp(
+    String.raw`(?<=\s|^|[,(])([A-Za-z](?:[_^]${target})+)(?=[\s.,;:)!?]|$)`,
+    "g",
+  );
+
+  return parts
+    .map((part) => {
+      // If this part is a math delimiter region, pass through unchanged
+      if (/^\$/.test(part) || /^\\\(/.test(part) || /^\\\[/.test(part)) {
+        return part;
+      }
+      // Prose segment: wrap bare math tokens
+      return part.replace(bareTokenRe, (match, token: string) => {
+        if (!/[_^]/.test(token)) return match;
+        if (token.length > 40) return match;
+        return `$${token}$`;
+      });
+    })
+    .join("");
+}
+
 function normalizeDeepSeekMath(source: string): string {
   let normalized = source;
   normalized = convertBareBlockMath(normalized);
   normalized = wrapBareInlineVars(normalized);
+  normalized = wrapBareInlineExpressions(normalized);
   return normalized;
 }
 
