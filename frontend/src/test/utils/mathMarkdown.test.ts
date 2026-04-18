@@ -272,6 +272,31 @@ describe("normalizeMathMarkdown", () => {
       const result = normalizeMathMarkdown(source, ds);
       expect(result).toContain("$$\\mathbf{Z} = \\mathbf{U} \\mathbf{\\Sigma} \\mathbf{V}^T$$");
     });
+
+    // Norm subscripts
+
+    it("inserts _ before Frobenius norm indicator ||F^2", () => {
+      const source =
+        "[\n||X - \\hat{X}||F^2 = \\sum{i=r+1}^p \\lambda_i\n]";
+
+      const result = normalizeMathMarkdown(source, ds);
+      expect(result).toContain("||_F^2");
+      expect(result).toContain("\\sum_{i=r+1}");
+    });
+
+    it("inserts _ before L2 norm indicator ||2^2", () => {
+      const source =
+        "[\n\\max_{w_1} \\frac{1}{n} ||X w_1||2^2\n]";
+
+      const result = normalizeMathMarkdown(source, ds);
+      expect(result).toContain("||_2^2");
+    });
+
+    it("leaves ||_F^2 unchanged", () => {
+      const source = "$$||X||_F^2$$";
+
+      expect(normalizeMathMarkdown(source, ds)).toBe(source);
+    });
   });
 
   // ── Unknown supplier (no-op pre-processing) ────────────────────
