@@ -26,4 +26,46 @@ describe("normalizeMathMarkdown", () => {
 
     expect(normalizeMathMarkdown(source)).toBe(source);
   });
+
+  // --- Bare-bracket display math (DeepSeek pattern) ---
+
+  it("converts bare-bracket display math to $$...$$ delimiters", () => {
+    const source =
+      "Weight vector:\n[\nw_h = X_{h-1}^T y_{h-1} / \\| X_{h-1}^T y_{h-1} \\|\n]\nThis is the direction.";
+
+    const result = normalizeMathMarkdown(source);
+    expect(result).toContain("$$w_h = X_{h-1}^T y_{h-1}");
+    expect(result).toContain("$$");
+    expect(result).not.toContain("\n[\n");
+  });
+
+  it("converts multiple bare-bracket blocks in one string", () => {
+    const source =
+      "X-scores:\n[\nt_h = X_{h-1} w_h\n]\nY-loadings:\n[\nc_h = \\frac{y_{h-1}^T t_h}{t_h^T t_h}\n]\n";
+
+    const result = normalizeMathMarkdown(source);
+    expect(result).toContain("$$t_h = X_{h-1} w_h$$");
+    expect(result).toContain("$$c_h = \\frac{y_{h-1}^T t_h}{t_h^T t_h}$$");
+  });
+
+  it("leaves bare brackets alone when content is not LaTeX", () => {
+    const source = "Some list:\n[\nitem one\nitem two\n]\nDone.";
+
+    expect(normalizeMathMarkdown(source)).toBe(source);
+  });
+
+  it("handles multiline bare-bracket equations", () => {
+    const source =
+      "Deflation:\n[\nX_h = X_{h-1} - t_h p_h^T\n]\n[\ny_h = y_{h-1} - c_h t_h\n]\n";
+
+    const result = normalizeMathMarkdown(source);
+    expect(result).toContain("$$X_h = X_{h-1} - t_h p_h^T$$");
+    expect(result).toContain("$$y_h = y_{h-1} - c_h t_h$$");
+  });
+
+  it("does not match inline brackets in prose", () => {
+    const source = "Use [this link](http://example.com) and [another].";
+
+    expect(normalizeMathMarkdown(source)).toBe(source);
+  });
 });
