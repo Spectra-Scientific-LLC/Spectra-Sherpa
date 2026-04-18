@@ -18,7 +18,6 @@ from spectra_sherpa.app.lib.sherpa_dataset import (
 )
 from spectra_sherpa.app.services.dataset_registry import dataset_registry
 
-
 # ---------------------------------------------------------------------------
 # Slice 2: Dataset tool registration
 # ---------------------------------------------------------------------------

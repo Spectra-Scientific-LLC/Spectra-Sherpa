@@ -1,23 +1,51 @@
 from __future__ import annotations
 
-from spectra_sherpa.app.services import sherpa_advisor
+from spectra_sherpa.app.contracts.ai_provider_registry import (
+    DisabledAIProvider,
+    get_sherpa_advisor,
+    reset_sherpa_advisor,
+    set_sherpa_advisor,
+)
 
 
-def test_get_sherpa_advisor_defaults_to_disabled_provider(monkeypatch):
-    sherpa_advisor.reset_sherpa_advisor()
-    monkeypatch.setattr("spectra_sherpa.app.services.spectrasherpa.spectrasherpa_config.api_key", None)
+def test_get_sherpa_advisor_defaults_to_disabled_provider():
+    reset_sherpa_advisor()
 
-    advisor = sherpa_advisor.get_sherpa_advisor()
+    advisor = get_sherpa_advisor()
 
-    assert type(advisor).__name__ == "DisabledAIProvider"
+    assert isinstance(advisor, DisabledAIProvider)
     assert advisor.is_available is False
 
 
-def test_get_sherpa_advisor_uses_deployment_proxy_when_api_key_present(monkeypatch):
-    sherpa_advisor.reset_sherpa_advisor()
-    monkeypatch.setattr("spectra_sherpa.app.services.spectrasherpa.spectrasherpa_config.api_key", "dk_test_123")
+def test_set_and_reset_sherpa_advisor():
+    reset_sherpa_advisor()
 
-    advisor = sherpa_advisor.get_sherpa_advisor()
+    class FakeProvider:
+        is_available = True
 
-    assert type(advisor).__name__ == "DeploymentAIProvider"
+    set_sherpa_advisor(FakeProvider())
+    advisor = get_sherpa_advisor()
+    assert type(advisor).__name__ == "FakeProvider"
     assert advisor.is_available is True
+
+    reset_sherpa_advisor()
+    advisor = get_sherpa_advisor()
+    assert isinstance(advisor, DisabledAIProvider)
+
+
+def test_deprecated_shim_still_works():
+    """The services.sherpa_advisor shim re-exports correctly."""
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        from spectra_sherpa.app.services.sherpa_advisor import (
+            get_sherpa_advisor as get_via_shim,
+        )
+        from spectra_sherpa.app.services.sherpa_advisor import (
+            reset_sherpa_advisor as reset_via_shim,
+        )
+
+    reset_via_shim()
+    advisor = get_via_shim()
+    assert isinstance(advisor, DisabledAIProvider)
