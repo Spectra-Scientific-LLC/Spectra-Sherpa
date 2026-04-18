@@ -81,6 +81,18 @@ function normalizeLatexBody(body: string): string {
     },
   );
 
+  // Pattern C: \operator{limit} — big operators missing _ before limit.
+  // e.g. \sum{j=1} → \sum_{j=1}, \prod{i} → \prod_{i}
+  // Only triggers for known limit operators, and only when no _ precedes {.
+  normalized = normalized.replace(
+    /\\(sum|prod|coprod|int|oint|iint|iiint|bigcup|bigcap|bigoplus|bigotimes|lim|limsup|liminf|max|min|sup|inf|arg\s*min|arg\s*max)\{([^{}]+)\}/g,
+    (match, operator: string, limit: string, offset: number) => {
+      // Check the character before the match — if it's already _, skip
+      if (offset > 0 && normalized[offset - 1] === "_") return match;
+      return `\\${operator}_{${limit}}`;
+    },
+  );
+
   return normalized;
 }
 

@@ -228,6 +228,50 @@ describe("normalizeMathMarkdown", () => {
       expect(result).toContain("\\mathbf{x}_{new}");
       expect(result).toContain("\\hat{\\mathbf{x}}_{new,k}");
     });
+
+    // Operator limit subscripts
+
+    it("inserts _ before \\sum{j=1}", () => {
+      const source =
+        "$$\\frac{\\lambda_i}{\\sum{j=1}^p \\lambda_j}$$";
+
+      const result = normalizeMathMarkdown(source, ds);
+      expect(result).toContain("\\sum_{j=1}");
+    });
+
+    it("leaves \\sum_{j=1} unchanged", () => {
+      const source = "$$\\sum_{j=1}^p \\lambda_j$$";
+
+      expect(normalizeMathMarkdown(source, ds)).toBe(source);
+    });
+
+    it("fixes \\text{Variance explained}i with \\sum{j=1} in bare block", () => {
+      const source =
+        "Ratio:\n[\n\\text{Variance explained}i = \\frac{\\lambda_i}{\\sum{j=1}^p \\lambda_j}\n]\ndone";
+
+      const result = normalizeMathMarkdown(source, ds);
+      expect(result).toContain("\\text{Variance explained}_i");
+      expect(result).toContain("\\sum_{j=1}");
+      expect(result).toContain("$$");
+    });
+
+    // PCA bare-bracket cases
+
+    it("converts simple eigenvalue equation bare block", () => {
+      const source =
+        "Eigen:\n[\n\\mathbf{C} \\mathbf{v}_i = \\lambda_i \\mathbf{v}_i\n]\ndone";
+
+      const result = normalizeMathMarkdown(source, ds);
+      expect(result).toContain("$$\\mathbf{C} \\mathbf{v}_i = \\lambda_i \\mathbf{v}_i$$");
+    });
+
+    it("converts SVD equation bare block", () => {
+      const source =
+        "SVD:\n[\n\\mathbf{Z} = \\mathbf{U} \\mathbf{\\Sigma} \\mathbf{V}^T\n]\ndone";
+
+      const result = normalizeMathMarkdown(source, ds);
+      expect(result).toContain("$$\\mathbf{Z} = \\mathbf{U} \\mathbf{\\Sigma} \\mathbf{V}^T$$");
+    });
   });
 
   // ── Unknown supplier (no-op pre-processing) ────────────────────
