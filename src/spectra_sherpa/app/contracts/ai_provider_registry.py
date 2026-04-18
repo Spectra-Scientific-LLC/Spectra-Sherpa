@@ -76,4 +76,4 @@ def reset_sherpa_advisor() -> None:
 
 
 def get_sherpa_advisor() -> AIServiceProvider:
-    return _advisor or DisabledAIProvider()
+    return _advisor or DisabledAIProvider()  # type: ignore[return-value]
