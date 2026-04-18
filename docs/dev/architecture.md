@@ -100,7 +100,7 @@ is registered, OSS serves `DisabledAIProvider` responses and 404s the
 extension-owned routes.
 
 The three boundary surfaces (Python injection seam, HTTP routes,
-WebSocket schema) are documented in [OSS_SCOPE.md](../../OSS_SCOPE.md).
+WebSocket schema) are documented in `OSS_SCOPE.md` at the repo root.
 
 ## Core Concepts
 
