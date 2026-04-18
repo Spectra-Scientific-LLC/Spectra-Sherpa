@@ -20,12 +20,6 @@ from .experiments import (
     VersionInfo,
 )
 from .jobs import JobInfo
-from .llm import (
-    LLMChatRequest,
-    LLMChatResponse,
-    LLMConversation,
-    LLMMessage,
-)
 from .logs import LogEntry, LogResponse
 from .project_scripts import (
     GenerateScriptRequest,
@@ -63,10 +57,6 @@ __all__ = [
     "ExperimentSummary",
     "ExperimentUpdate",
     "JobInfo",
-    "LLMChatRequest",
-    "LLMChatResponse",
-    "LLMConversation",
-    "LLMMessage",
     "GenerateScriptRequest",
     "ProjectCreate",
     "ProjectDetail",

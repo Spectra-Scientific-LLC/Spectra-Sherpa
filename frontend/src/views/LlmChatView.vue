@@ -8,7 +8,7 @@
       </div>
       <div class="llm-chat-header-actions">
         <Button
-          v-if="appMode === 'local'"
+          v-if="appMode === 'local' && canConfigureLlm"
           icon="pi pi-cog"
           class="p-button-text llm-settings-btn"
           aria-label="LLM Settings"
@@ -56,7 +56,10 @@ const router = useRouter();
 const route = useRoute();
 const store = useLlmStore();
 const toast = useToast();
-const { appMode } = useAppConfig();
+const { appMode, isFeatureEnabled } = useAppConfig();
+// Capability gate (ADR-0001): provider switching writes to /llm-config which
+// is server-only. Hide the settings cog on OSS-only installs.
+const canConfigureLlm = computed(() => isFeatureEnabled("sherpaAdvisor"));
 const pageTitle = computed(() => (route.query.tab === "sherpa" ? "Sherpa Advisor" : "LLM assistant"));
 
 const goBack = () => {
@@ -104,6 +107,7 @@ watch(
 
 const onProviderChange = async () => {
   if (appMode.value !== "local") return;
+  if (!canConfigureLlm.value) return;
   if (!store.currentConfig) return;
 
   const newProvider = selectedProvider.value;

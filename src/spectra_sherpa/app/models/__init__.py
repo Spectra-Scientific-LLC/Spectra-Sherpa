@@ -12,7 +12,6 @@ from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
 from spectra_sherpa.app.models.factor_definition import FactorDefinition
 from spectra_sherpa.app.models.folder_watch import FolderWatch
-from spectra_sherpa.app.models.llm_config import LLMConfig
 from spectra_sherpa.app.models.matched_acquisition import MatchedAcquisition
 from spectra_sherpa.app.models.mixture import Mixture
 from spectra_sherpa.app.models.mixture_component import MixtureComponent
@@ -47,7 +46,6 @@ __all__ = [
     "ExperimentFile",
     "FactorDefinition",
     "FolderWatch",
-    "LLMConfig",
     "MatchedAcquisition",
     "Mixture",
     "ModelArtifact",

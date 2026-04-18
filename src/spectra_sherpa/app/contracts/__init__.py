@@ -11,6 +11,17 @@ their own dedicated modules to avoid name collisions with feature flags.
 
 from spectra_sherpa.app.contracts.actors import CurrentActor
 from spectra_sherpa.app.contracts.ai_provider import AIServiceProvider
+from spectra_sherpa.app.contracts.ai_provider_errors import (
+    SherpaAuthorizationError,
+    SubscriptionRequiredError,
+)
+from spectra_sherpa.app.contracts.ai_provider_registry import (
+    DisabledAIProvider,
+    FeatureDisabledError,
+    get_sherpa_advisor,
+    reset_sherpa_advisor,
+    set_sherpa_advisor,
+)
 from spectra_sherpa.app.contracts.auth_resolver import (
     ExtraUserAPIKeyAuthenticator,
     clear_extra_user_api_key_authenticator,
@@ -46,6 +57,13 @@ from spectra_sherpa.app.contracts.key_resolver import (
 
 __all__ = [
     "AIServiceProvider",
+    "DisabledAIProvider",
+    "FeatureDisabledError",
+    "SherpaAuthorizationError",
+    "SubscriptionRequiredError",
+    "get_sherpa_advisor",
+    "reset_sherpa_advisor",
+    "set_sherpa_advisor",
     "clear_extra_user_api_key_authenticator",
     "CurrentActor",
     "ExtraUserAPIKeyAuthenticator",

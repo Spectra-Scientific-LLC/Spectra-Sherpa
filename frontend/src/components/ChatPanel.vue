@@ -60,9 +60,11 @@
               v-tooltip.bottom="'New Sherpa conversation'"
             />
           </div>
-          <!-- LLM settings (only on LLM tab, local mode only — server owns model selection) -->
+          <!-- LLM settings (only on LLM tab, local mode only — server owns model selection).
+               Further gated by sherpaAdvisor capability (ADR-0001): provider switching writes
+               to /llm-config which is server-only. Hidden on OSS-only installs. -->
           <Button
-            v-if="activeTab === 'llm' && appMode === 'local'"
+            v-if="activeTab === 'llm' && appMode === 'local' && isFeatureEnabled('sherpaAdvisor')"
             icon="pi pi-cog"
             class="p-button-text p-button-sm llm-settings-btn"
             aria-label="LLM Settings"
@@ -926,6 +928,10 @@ const openInNewTab = () => {
 
 const onProviderChange = async () => {
   if (!store.currentConfig) return;
+  // Capability gate (ADR-0001): /llm-config is server-only. On OSS-only
+  // installs, silently no-op — the settings UI should be hidden already
+  // but this guards direct invocation paths.
+  if (!isFeatureEnabled("sherpaAdvisor")) return;
 
   const newProvider = selectedProvider.value;
   const providerNames: Record<string, string> = {

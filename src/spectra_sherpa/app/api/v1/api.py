@@ -9,6 +9,7 @@ from fastapi import APIRouter
 from spectra_sherpa.app.api.v1.routes import (
     api_keys,
     builder,
+    chat,
     compute,
     config,
     datasets,
@@ -20,8 +21,6 @@ from spectra_sherpa.app.api.v1.routes import (
     experiments,
     health,
     jobs,
-    llm,
-    llm_config,
     logs,
     models,
     predict,
@@ -76,7 +75,6 @@ def build_api_router(
     router.include_router(health.router, tags=["health"])
     router.include_router(config.router, tags=["config"])
     router.include_router(logs.router, tags=["logs"])
-    router.include_router(llm_config.router, tags=["llm-config"])
     router.include_router(experiments.router, tags=["experiments"])
     router.include_router(doe.router, tags=["doe"])
     router.include_router(doe_config.router, prefix="/doe-configs", tags=["doe-configs"])
@@ -89,13 +87,15 @@ def build_api_router(
     router.include_router(builder.router, tags=["builder"])
     router.include_router(compute.router, prefix="/compute", tags=["compute"])
     router.include_router(datasets.router, tags=["datasets"])
-    router.include_router(llm.router, tags=["llm"])
     router.include_router(jobs.router, tags=["jobs"])
     router.include_router(egress.router, tags=["egress"])
     router.include_router(deploy.router, tags=["deploy"])
     router.include_router(projects.router, tags=["projects"])
     router.include_router(project_scripts.router, tags=["project-scripts"])
     router.include_router(models.router, tags=["models"])
+
+    # BYO chat endpoint (OSS-only, capability-gated by CHAT_ASSISTANT)
+    router.include_router(chat.router, tags=["chat"])
 
     # API key management (BYOK) — available in all modes
     router.include_router(api_keys.router, tags=["api-keys"])

@@ -37,8 +37,6 @@ class User(Base):
     background_jobs = relationship("BackgroundJob", back_populates="user", cascade="all, delete-orphan")
     api_keys = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
     doe_configs = relationship("DOEConfig", back_populates="user", cascade="all, delete-orphan")
-    llm_config = relationship("LLMConfig", back_populates="user", uselist=False, cascade="all, delete-orphan")
-
     # Data egress permissions (HYBRID mode)
     egress_permissions = relationship("DataEgressPermission", back_populates="user", cascade="all, delete-orphan")
     egress_defaults = relationship(

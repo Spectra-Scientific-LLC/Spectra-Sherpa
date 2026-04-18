@@ -40,7 +40,9 @@
     </div>
 
     <!-- LLM Provider Configuration -->
-    <div class="key-section">
+    <!-- Gated by sherpaAdvisor capability (ADR-0001). Hidden in OSS-only mode
+         where /llm-config and /llm/chat are not served. -->
+    <div v-if="canConfigureLlm" class="key-section">
       <div class="section-header">
         <h3>AI Assistant / LLM Configuration</h3>
         <span class="badge optional">Optional</span>
@@ -168,8 +170,8 @@
       </div>
     </div>
 
-    <!-- Current Saved Keys -->
-    <div class="key-section">
+    <!-- Current Saved Keys — LLM provider keys, hidden alongside the LLM config UI. -->
+    <div v-if="canConfigureLlm" class="key-section">
       <h3>Saved API Keys</h3>
       <p class="description">
         API keys currently stored in the database (encrypted).
@@ -210,6 +212,13 @@ import InputText from "primevue/inputtext";
 import InputSwitch from "primevue/inputswitch";
 import Dropdown from "primevue/dropdown";
 import api from "@/api/client";
+import { useAppConfig } from "@/composables/useAppConfig";
+
+// Capability gate: only show the LLM-config surface when the server has
+// announced sherpaAdvisor support. Per ADR-0001, /llm-config and /llm/*
+// live on the commercial server only; OSS-only installs would 404 here.
+const { isFeatureEnabled } = useAppConfig();
+const canConfigureLlm = computed(() => isFeatureEnabled("sherpaAdvisor"));
 
 interface SavedKeyInfo {
   service_name: string;
@@ -315,17 +324,20 @@ const loadSavedKeys = async () => {
       k.service_name === "gemini"
     );
 
-    // Load LLM configuration
-    try {
-      const configResponse = await api.get("/llm-config");
-      if (configResponse.data) {
-        llmProvider.value = configResponse.data.provider;
-        llmBaseUrl.value = configResponse.data.base_url;
-        llmModel.value = configResponse.data.model;
-        llmVerbose.value = configResponse.data.verbose;
+    // Load LLM configuration — only when Sherpa advisor is available.
+    // OSS-only installs have no /llm-config endpoint (ADR-0001).
+    if (canConfigureLlm.value) {
+      try {
+        const configResponse = await api.get("/llm-config");
+        if (configResponse.data) {
+          llmProvider.value = configResponse.data.provider;
+          llmBaseUrl.value = configResponse.data.base_url;
+          llmModel.value = configResponse.data.model;
+          llmVerbose.value = configResponse.data.verbose;
+        }
+      } catch {
+        console.log("No LLM config found, using defaults");
       }
-    } catch {
-      console.log("No LLM config found, using defaults");
     }
   } catch (error) {
     console.error("Failed to load saved keys:", error);

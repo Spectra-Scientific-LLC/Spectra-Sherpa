@@ -32,8 +32,6 @@ from starlette.websockets import WebSocketState
 
 from spectra_sherpa.app.core.security import check_egress_permission
 from spectra_sherpa.app.db.session import async_session
-from spectra_sherpa.app.services.llm import LLMService, conversation_store
-from spectra_sherpa.app.services.llm_rate_limits import allow_llm_request
 from spectra_sherpa.app.services.rate_limiter import RateLimiter
 from spectra_sherpa.app.services.websocket_manager import ws_manager
 
@@ -98,18 +96,6 @@ async def handle_unsubscribe(
 # ---------------------------------------------------------------------------
 
 
-def _should_use_server_chat() -> bool:
-    """Return True when LLM chat should be routed to the server engine."""
-    from spectra_sherpa.app.core.config import app_config
-
-    return app_config.mode in ("hybrid", "enterprise") or app_config.site_profile == "demo"
-
-
-def _is_contextual_server_channel(use_server_chat: bool) -> bool:
-    """Only the server-backed Sherpa channel is allowed to consume workflow context."""
-    return use_server_chat
-
-
 async def _proxy_server_chat(
     ws: WebSocket,
     message: str,
@@ -123,11 +109,11 @@ async def _proxy_server_chat(
     proxies, in-process engine calls for server mode).  This handler maps
     provider events to WebSocket messages.
     """
-    from spectra_sherpa.app.services.ai_provider_errors import (
+    from spectra_sherpa.app.contracts.ai_provider_errors import (
         SherpaAuthorizationError,
         SubscriptionRequiredError,
     )
-    from spectra_sherpa.app.services.sherpa_advisor import get_sherpa_advisor
+    from spectra_sherpa.app.contracts.ai_provider_registry import get_sherpa_advisor
 
     advisor = get_sherpa_advisor()
     if not advisor.is_available:
@@ -137,34 +123,9 @@ async def _proxy_server_chat(
     workflow_context = metadata.get("workflow_context") if metadata else None
     user_id = user.id if user else None
 
-    def _persist_fallback_transcript(convo_id: str | None, assistant_text: str) -> None:
-        """Mirror completed proxied chats into the local fallback store.
-
-        Server-backed chats stream from the deployment advisor, but the REST
-        ``GET /llm/conversation/{id}`` route falls back to ``conversation_store``
-        when the upstream service 404s or loses history. Persisting the final
-        transcript here makes sidebar topics durably loadable even when the
-        server-side list/history views lag or drop the conversation.
-        """
-        if user_id is None or not convo_id:
-            return
-        try:
-            persisted_id, history = conversation_store.get_or_create(convo_id, user_id)
-            updated_history = list(history)
-            updated_history.append({"role": "user", "content": message})
-            if assistant_text:
-                updated_history.append({"role": "assistant", "content": assistant_text})
-            conversation_store.save_messages(persisted_id, updated_history)
-        except Exception:
-            logger.warning(
-                "Failed to persist proxied chat transcript to local conversation_store",
-                exc_info=True,
-            )
-
     try:
         started = False
         active_conversation_id = conversation_id
-        response_parts: list[str] = []
         event_stream = advisor.stream_llm_chat(
             message=message,
             conversation_id=conversation_id,
@@ -194,7 +155,6 @@ async def _proxy_server_chat(
                         ):
                             return
                     chunk_text = str(event.get("text", ""))
-                    response_parts.append(chunk_text)
                     if not await _safe_ws_send_json(
                         ws,
                         {
@@ -205,10 +165,6 @@ async def _proxy_server_chat(
                     ):
                         return
                 elif etype == "done":
-                    _persist_fallback_transcript(
-                        active_conversation_id,
-                        "".join(response_parts),
-                    )
                     await _safe_ws_send_json(
                         ws,
                         {"type": "llm_done", "conversation_id": active_conversation_id},
@@ -242,37 +198,12 @@ async def _proxy_server_chat(
         await _safe_ws_send_json(ws, {"type": "error", "detail": f"Server chat failed: {exc}"})
 
 
-async def _local_llm_chat(
-    ws: WebSocket,
-    message: str,
-    conversation_id: str | None,
-    metadata: dict | None,
-    user: Any,
-) -> None:
-    """Local LLM chat via BYOK provider (OSS / local mode)."""
-    async with async_session() as session:
-        service = LLMService(session, user=user)
-        stream = None
-        try:
-            convo_id, stream = await service.stream_chat(
-                message=message,
-                conversation_id=conversation_id,
-                metadata=metadata,
-            )
-        except ValueError as exc:
-            await _safe_ws_send_json(ws, {"type": "error", "detail": str(exc)})
-            return
-        try:
-            if not await _safe_ws_send_json(ws, {"type": "llm_start", "conversation_id": convo_id}):
-                return
-            async for chunk in stream:
-                if not await _safe_ws_send_json(ws, {"type": "llm_chunk", "conversation_id": convo_id, "chunk": chunk}):
-                    return
-            await _safe_ws_send_json(ws, {"type": "llm_done", "conversation_id": convo_id})
-        finally:
-            aclose = getattr(stream, "aclose", None)
-            if callable(aclose):
-                await aclose()
+def _allow_llm_request(limiter: RateLimiter, user: Any) -> bool:
+    """Check quota consumption for a user, honoring admin bypass."""
+    if user and getattr(user, "is_superuser", False):
+        return True
+    key = f"user_{user.id}" if user and getattr(user, "id", None) else "anonymous"
+    return limiter.allow(key)
 
 
 async def handle_llm_chat(
@@ -288,13 +219,12 @@ async def handle_llm_chat(
             return
 
         # Rate limit
-        if not allow_llm_request(rate_limiter, user):
+        if not _allow_llm_request(rate_limiter, user):
             await _safe_ws_send_json(ws, {"type": "error", "detail": "LLM rate limit exceeded. Try again later."})
             return
 
         conversation_id = payload.get("conversation_id")
         metadata = payload.get("metadata")
-        use_server_chat = _should_use_server_chat()
 
         async with async_session() as permission_session:
             if not await check_egress_permission(
@@ -310,7 +240,7 @@ async def handle_llm_chat(
                 return
 
         # Only the server-backed Sherpa channel consumes workflow context.
-        if _is_contextual_server_channel(use_server_chat) and metadata and metadata.get("workflow_context"):
+        if metadata and metadata.get("workflow_context"):
             async with async_session() as permission_session:
                 include_context = await check_egress_permission(
                     user,
@@ -323,11 +253,8 @@ async def handle_llm_chat(
             if not include_context:
                 metadata = {k: v for k, v in metadata.items() if k != "workflow_context"}
 
-        # Route: server-backed (hybrid/enterprise/demo) vs local BYOK
-        if use_server_chat:
-            await _proxy_server_chat(ws, message, conversation_id, metadata, user)
-        else:
-            await _local_llm_chat(ws, message, conversation_id, metadata, user)
+        # All chat routes through the AI provider (server-injected or disabled default).
+        await _proxy_server_chat(ws, message, conversation_id, metadata, user)
     except Exception as exc:
         logger.exception("llm_chat failed: %s", exc)
         await _safe_ws_send_json(ws, {"type": "error", "detail": "LLM request failed. Check server logs for details."})

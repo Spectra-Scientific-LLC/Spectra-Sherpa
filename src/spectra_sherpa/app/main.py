@@ -401,8 +401,15 @@ def _mount_frontend(app: FastAPI) -> None:
 
 
 async def websocket_endpoint(websocket: WebSocket) -> None:
-    # Import rate limiter here to avoid circular imports
-    from spectra_sherpa.app.api.v1.routes.llm import _llm_rate_limiter
+    # Build a local WS rate limiter (the llm route module is no longer in OSS).
+    from spectra_sherpa.app.core.app_paths import get_app_data_paths
+    from spectra_sherpa.app.services.rate_limiter import RateLimiter
+
+    _llm_rate_limiter = RateLimiter(
+        max_calls=settings.max_llm_requests_per_hour,
+        period_sec=3600,
+        state_path=get_app_data_paths(settings.data_dir).llm_rate_limits_state,
+    )
 
     # Determine if auth is required for this connection (mode-dependent).
     from spectra_sherpa.app.core.mode_policy import requires_ws_auth as _requires_ws_auth

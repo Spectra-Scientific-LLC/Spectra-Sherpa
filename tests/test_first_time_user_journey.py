@@ -13,7 +13,6 @@ always available without file uploads.
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 from httpx import AsyncClient
@@ -171,28 +170,17 @@ async def test_first_time_user_journey(
     # Verify result persistence didn't fail (no NaN/MissingGreenlet regressions)
     assert exec_data.get("error") is None, f"Execution error: {exec_data['error']}"
 
-    # ── Step 5: Ask Sherpa "what does this template do?" ──────────────
-    mock_response = (
-        "This template loads spectral data and applies SNV normalization " "to correct for scattering effects."
+    # ── Step 5: Verify LLM chat routes are not available in OSS-only mode ──
+    # The /api/v1/llm/* routes moved to spectra-server (ADR-0001).
+    # In OSS-only builds the router is not registered so these return 404.
+    chat_response = await auth_client.post(
+        "/api/v1/llm/chat",
+        json={
+            "message": "what does this template do?",
+            "metadata": {},
+        },
     )
-
-    async def mock_chat(self, *, message, conversation_id=None, metadata=None):
-        return "conv-first-time", mock_response
-
-    with patch(
-        "spectra_sherpa.app.services.llm.LLMService.chat",
-        new=mock_chat,
-    ):
-        chat_response = await auth_client.post(
-            "/api/v1/llm/chat",
-            json={
-                "message": "what does this template do?",
-                "metadata": {},
-            },
-        )
-
-    assert chat_response.status_code == 200, chat_response.text
-    chat_data = chat_response.json()
-    assert chat_data["conversation_id"] == "conv-first-time"
-    assert "SNV" in chat_data["response"]
-    assert len(chat_data["response"]) > 20
+    assert chat_response.status_code in (
+        404,
+        405,
+    ), f"Expected 404/405 for /llm/chat in OSS-only mode, got {chat_response.status_code}"

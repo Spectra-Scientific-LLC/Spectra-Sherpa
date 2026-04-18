@@ -277,83 +277,48 @@ class AppConfig(BaseModel):
 
         mode = raw_mode
 
-        # Import registry to get provider metadata
-        try:
-            from spectra_sherpa.app.core.llm_registry import PROVIDERS, ProviderMetadata
-        except ImportError:
-            # Fallback if registry not available (shouldn't happen)
-            PROVIDERS: dict[str, ProviderMetadata] = {  # type: ignore[no-redef]
-                "openai": {
-                    "id": "openai",
-                    "name": "OpenAI",
-                    "default_model": "gpt-4o",
-                    "base_url": "https://api.openai.com/v1",
-                    "env_var": "OPENAI_API_KEY",
-                    "client_type": "openai",
-                    "supports_streaming": True,
-                    "cost_per_million_input": 0.0,
-                    "cost_per_million_output": 0.0,
-                    "max_tokens": 128000,
-                    "supports_vision": True,
-                    "supports_function_calling": True,
-                },
-                "anthropic": {
-                    "id": "anthropic",
-                    "name": "Anthropic",
-                    "default_model": "claude-3-5-sonnet-20241022",
-                    "base_url": "https://api.anthropic.com",
-                    "env_var": "ANTHROPIC_API_KEY",
-                    "client_type": "anthropic",
-                    "supports_streaming": True,
-                    "cost_per_million_input": 0.0,
-                    "cost_per_million_output": 0.0,
-                    "max_tokens": 200000,
-                    "supports_vision": True,
-                    "supports_function_calling": True,
-                },
-                "deepseek": {
-                    "id": "deepseek",
-                    "name": "DeepSeek",
-                    "default_model": "deepseek-chat",
-                    "base_url": "https://api.deepseek.com",
-                    "env_var": "DEEPSEEK_API_KEY",
-                    "client_type": "openai",
-                    "supports_streaming": True,
-                    "cost_per_million_input": 0.0,
-                    "cost_per_million_output": 0.0,
-                    "max_tokens": 64000,
-                    "supports_vision": False,
-                    "supports_function_calling": True,
-                },
-                "gemini": {
-                    "id": "gemini",
-                    "name": "Google Gemini",
-                    "default_model": "gemini-1.5-pro",
-                    "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-                    "env_var": "GEMINI_API_KEY",
-                    "client_type": "openai",
-                    "supports_streaming": True,
-                    "cost_per_million_input": 0.0,
-                    "cost_per_million_output": 0.0,
-                    "max_tokens": 2000000,
-                    "supports_vision": True,
-                    "supports_function_calling": True,
-                },
-                "custom_llm": {
-                    "id": "custom_llm",
-                    "name": "Custom LLM",
-                    "default_model": "custom-model",
-                    "base_url": "",
-                    "env_var": "CUSTOM_LLM_API_KEY",
-                    "client_type": "openai",
-                    "supports_streaming": True,
-                    "cost_per_million_input": 0.0,
-                    "cost_per_million_output": 0.0,
-                    "max_tokens": 128000,
-                    "supports_vision": False,
-                    "supports_function_calling": True,
-                },
-            }
+        # Provider metadata — inlined in OSS after the ADR-0001 boundary cleanup.
+        # Previously imported from spectra_sherpa.app.core.llm_registry; the server
+        # now owns provider selection policy (see spectrasherpa_server/routes/admin.py).
+        # OSS keeps a minimal static list here solely to populate AppConfig.llms
+        # so that /api/v1/config can report provider availability to the frontend.
+        PROVIDERS: dict[str, dict[str, Any]] = {
+            "openai": {
+                "id": "openai",
+                "name": "OpenAI",
+                "default_model": "gpt-4o",
+                "base_url": "https://api.openai.com/v1",
+                "env_var": "OPENAI_API_KEY",
+            },
+            "anthropic": {
+                "id": "anthropic",
+                "name": "Anthropic",
+                "default_model": "claude-3-5-sonnet-20241022",
+                "base_url": "https://api.anthropic.com",
+                "env_var": "ANTHROPIC_API_KEY",
+            },
+            "deepseek": {
+                "id": "deepseek",
+                "name": "DeepSeek",
+                "default_model": "deepseek-chat",
+                "base_url": "https://api.deepseek.com",
+                "env_var": "DEEPSEEK_API_KEY",
+            },
+            "gemini": {
+                "id": "gemini",
+                "name": "Google Gemini",
+                "default_model": "gemini-1.5-pro",
+                "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+                "env_var": "GEMINI_API_KEY",
+            },
+            "custom_llm": {
+                "id": "custom_llm",
+                "name": "Custom LLM",
+                "default_model": "custom-model",
+                "base_url": "",
+                "env_var": "CUSTOM_LLM_API_KEY",
+            },
+        }
 
         # Build LLM configs from registry
         llm_configs: dict[str, LLMConfig] = {}

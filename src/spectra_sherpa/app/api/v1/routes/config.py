@@ -10,6 +10,7 @@ Returns client-safe configuration including:
 
 import logging
 import os
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -23,8 +24,71 @@ logger = logging.getLogger(__name__)
 from spectra_sherpa.app.api.deps import get_session, get_user_from_credentials
 from spectra_sherpa.app.contracts.capabilities import CHAT_ASSISTANT
 from spectra_sherpa.app.core.config import app_config, settings
-from spectra_sherpa.app.core.llm_registry import PROVIDERS, get_provider
 from spectra_sherpa.app.core.security import get_bearer_token_optional
+
+# Provider metadata previously lived in core/llm_registry.py (moved to server).
+# Kept inline here for the /config endpoint's availability checks.
+PROVIDERS: dict[str, dict[str, Any]] = {
+    "openai": {
+        "id": "openai",
+        "name": "OpenAI",
+        "default_model": "gpt-4o",
+        "env_var": "OPENAI_API_KEY",
+        "supports_streaming": True,
+        "cost_per_million_input": 2.50,
+        "cost_per_million_output": 10.00,
+        "supports_vision": True,
+    },
+    "anthropic": {
+        "id": "anthropic",
+        "name": "Anthropic",
+        "default_model": "claude-sonnet-4-5-20250514",
+        "env_var": "ANTHROPIC_API_KEY",
+        "supports_streaming": True,
+        "cost_per_million_input": 3.00,
+        "cost_per_million_output": 15.00,
+        "supports_vision": True,
+    },
+    "deepseek": {
+        "id": "deepseek",
+        "name": "DeepSeek",
+        "default_model": "deepseek-chat",
+        "env_var": "DEEPSEEK_API_KEY",
+        "supports_streaming": True,
+        "cost_per_million_input": 0.27,
+        "cost_per_million_output": 1.10,
+        "supports_vision": False,
+    },
+    "gemini": {
+        "id": "gemini",
+        "name": "Google Gemini",
+        "default_model": "gemini-1.5-pro",
+        "env_var": "GEMINI_API_KEY",
+        "supports_streaming": True,
+        "cost_per_million_input": 1.25,
+        "cost_per_million_output": 5.00,
+        "supports_vision": True,
+    },
+    "custom_llm": {
+        "id": "custom_llm",
+        "name": "Custom LLM",
+        "default_model": "custom-model",
+        "env_var": "CUSTOM_LLM_API_KEY",
+        "supports_streaming": True,
+        "cost_per_million_input": 0.0,
+        "cost_per_million_output": 0.0,
+        "supports_vision": False,
+    },
+}
+
+
+def _get_provider(provider_id: str) -> dict[str, Any]:
+    """Look up provider metadata by ID."""
+    if provider_id not in PROVIDERS:
+        raise ValueError(f"Unknown provider: {provider_id}")
+    return PROVIDERS[provider_id]
+
+
 from spectra_sherpa.app.models.api_key import APIKey
 from spectra_sherpa.app.models.user import User
 
@@ -68,7 +132,7 @@ async def _check_provider_availability(
         True if API key is available from any source
     """
     try:
-        provider = get_provider(provider_id)
+        provider = _get_provider(provider_id)
     except ValueError:
         return False
 
@@ -123,9 +187,12 @@ async def get_config(
             config["llms"][provider_id]["enabled"] = is_available
 
     if app_config.mode == "local":
-        # Recalculate feature flags with true provider availability.
+        # chatAssistant is enabled when the BYO chat endpoint is configured,
+        # OR when any legacy provider env var is set (for display purposes).
+        from spectra_sherpa.app.services.basic_chat import is_configured as byo_chat_configured
+
         has_llm = any(llm["enabled"] for llm in config["llms"].values())
-        config["features"][CHAT_ASSISTANT] = has_llm
+        config["features"][CHAT_ASSISTANT] = has_llm or byo_chat_configured()
     else:
         # Server-backed modes use subscription entitlements, not local BYOK keys.
         for provider_config in config["llms"].values():
