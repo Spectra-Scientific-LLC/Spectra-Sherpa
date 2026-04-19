@@ -82,7 +82,7 @@ function hasRepairablePattern(body: string): boolean {
     /\\([A-Za-z]+)\{((?:[^{}]|\{[^{}]*\})+)\}\{((?:[^{}]|\\[A-Za-z]+\{[^{}]*\})+)\}/.test(
       body
     ) ||
-    /\\([A-Za-z]+)\{([^{}]+)\}([A-Za-z0-9])(?=[\s=,\^_\\)}$]|$)/.test(body) ||
+    /\\([A-Za-z]+)\{([^{}]+)\}([A-Za-z0-9])(?=[\s=,^_\\)}$]|$)/.test(body) ||
     new RegExp(String.raw`\\(${BIG_OPERATOR_PATTERN})\{([^{}]+)\}`).test(body) ||
     /(\|{1,2})([A-Za-z0-9])(\^)/.test(body)
   );
@@ -100,7 +100,7 @@ function normalizeLatexBody(body: string): string {
   );
 
   normalized = normalized.replace(
-    /\\([A-Za-z]+)\{([^{}]+)\}([A-Za-z0-9])(?=[\s=,\^_\\)}$]|$)/g,
+    /\\([A-Za-z]+)\{([^{}]+)\}([A-Za-z0-9])(?=[\s=,^_\\)}$]|$)/g,
     (match, command: string, base: string, suffix: string) => {
       if (!SUBSCRIPTABLE_COMMANDS.has(command)) return match;
       return `\\${command}{${base}}_${suffix}`;
