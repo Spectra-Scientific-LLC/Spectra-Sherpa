@@ -297,6 +297,15 @@ describe("normalizeMathMarkdown", () => {
 
       expect(normalizeMathMarkdown(source, ds)).toBe(source);
     });
+
+    it("inserts _ before single-pipe Frobenius norm |F^2", () => {
+      const source =
+        "[\n|\\mathbf{Z} - \\hat{\\mathbf{Z}}|F^2 = \\sum{i=k+1}^p \\lambda_i\n]";
+
+      const result = normalizeMathMarkdown(source, ds);
+      expect(result).toContain("|_F^2");
+      expect(result).toContain("\\sum_{i=k+1}");
+    });
   });
 
   // ── Unknown supplier (no-op pre-processing) ────────────────────

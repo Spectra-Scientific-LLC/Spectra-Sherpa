@@ -93,15 +93,13 @@ function normalizeLatexBody(body: string): string {
     },
   );
 
-  // Pattern D: ||X||F^2 → ||X||_F^2  (norm subscripts)
-  // DeepSeek drops _ between closing || and the norm indicator (F, 2, 1, p, etc.)
+  // Pattern D: ||F^2 → ||_F^2 and |F^2 → |_F^2  (norm subscripts)
+  // DeepSeek drops _ between closing |/|| and the norm indicator (F, 2, 1, p, etc.)
   normalized = normalized.replace(
-    /\|\|([A-Za-z0-9])(\^)/g,
-    (match, indicator: string, caret: string, offset: number) => {
-      // Only insert _ if the char before || indicator is indeed the closing ||
-      // and not already preceded by _
+    /(\|{1,2})([A-Za-z0-9])(\^)/g,
+    (match, pipes: string, indicator: string, caret: string, offset: number) => {
       if (offset > 0 && normalized[offset - 1] === "_") return match;
-      return `||_${indicator}${caret}`;
+      return `${pipes}_${indicator}${caret}`;
     },
   );
 
