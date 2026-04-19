@@ -60,6 +60,41 @@
               v-tooltip.bottom="'New Sherpa conversation'"
             />
           </div>
+          <div v-if="activeTab === 'llm'" class="sherpa-conversation-picker">
+            <Button
+              icon="pi pi-list"
+              label="Conversations"
+              class="p-button-text p-button-sm sherpa-topics-btn"
+              aria-label="LLM conversations"
+              @click="toggleLlmConversationMenu"
+              v-tooltip.bottom="'LLM conversations'"
+            />
+            <Menu ref="llmConversationMenu" :model="llmConversationMenuItems" :popup="true" class="sherpa-menu">
+              <template #item="{ item }">
+                <div
+                  class="sherpa-menu-item"
+                  :class="{
+                    active: item.active,
+                    'sherpa-menu-item--disabled': item.disabled,
+                    'sherpa-menu-item--action': item.isAction,
+                  }"
+                >
+                  <i v-if="item.icon" :class="item.icon"></i>
+                  <div class="sherpa-menu-copy">
+                    <span class="sherpa-menu-title">{{ item.label }}</span>
+                    <span v-if="item.updatedAt" class="sherpa-menu-meta">{{ item.updatedAt }}</span>
+                  </div>
+                </div>
+              </template>
+            </Menu>
+            <Button
+              icon="pi pi-plus"
+              class="p-button-text p-button-sm llm-new-conv-btn"
+              aria-label="Start new LLM conversation"
+              @click="startNewLlmConversation"
+              v-tooltip.bottom="'New conversation'"
+            />
+          </div>
           <!-- LLM settings (only on LLM tab, local mode only — server owns model selection).
                Further gated by sherpaAdvisor capability: provider switching writes
                to /llm-config which is server-only. Hidden on OSS-only installs. -->
@@ -412,6 +447,7 @@ const activeSherpaTools = computed(() =>
 
 const llmMenu = ref();
 const sherpaConversationMenu = ref();
+const llmConversationMenu = ref();
 const selectedProvider = ref<string>("deepseek");
 
 const llmProviders = [
@@ -470,6 +506,45 @@ const sherpaConversationMenuItems = computed(() => {
 
 const toggleSherpaConversationMenu = (event: Event) => {
   sherpaConversationMenu.value?.toggle(event);
+};
+
+const llmConversationMenuItems = computed(() => {
+  const items: Array<Record<string, unknown>> = [
+    {
+      label: "New conversation",
+      icon: "pi pi-plus",
+      isAction: true,
+      command: () => startNewLlmConversation(),
+    },
+  ];
+
+  if (store.conversations.length > 0) {
+    items.push({ separator: true });
+    items.push(
+      ...store.conversations.map((conversation) => ({
+        label: conversation.title,
+        updatedAt: formatDateTime(conversation.updatedAt),
+        icon: conversation.id === store.currentConversationId ? "pi pi-check" : "pi pi-comment",
+        active: conversation.id === store.currentConversationId,
+        command: () => {
+          void loadConversation(conversation.id);
+        },
+      }))
+    );
+  } else {
+    items.push({ separator: true });
+    items.push({
+      label: "No saved conversations yet",
+      icon: "pi pi-info-circle",
+      disabled: true,
+    });
+  }
+
+  return items;
+});
+
+const toggleLlmConversationMenu = (event: Event) => {
+  llmConversationMenu.value?.toggle(event);
 };
 
 const switchProvider = async (provider: string) => {
@@ -899,6 +974,17 @@ const onSherpaConversationSelect = async (conversationId: string | null) => {
   }
 };
 
+const startNewLlmConversation = () => {
+  store.startNewConversation();
+  userMessage.value = "";
+  toast.add({
+    severity: "success",
+    summary: "New Conversation",
+    detail: "Started a new conversation",
+    life: 2000,
+  });
+};
+
 const startNewSherpaConversation = () => {
   sherpaStore.startNewConversation();
   userMessage.value = "";
@@ -1141,7 +1227,8 @@ const collapsed = computed(() => props.collapsed);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
-.llm-settings-btn {
+.llm-settings-btn,
+.llm-new-conv-btn {
   color: #64748b;
 }
 
