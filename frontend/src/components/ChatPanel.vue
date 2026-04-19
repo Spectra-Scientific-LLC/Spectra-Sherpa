@@ -167,7 +167,7 @@
                       v-else-if="message.role === 'assistant'"
                       class="chat-bubble chat-bubble--md"
                     >
-                      <ChatMarkdown :source="message.content" />
+                      <ChatMarkdown :source="message.content" :supplier="llmSupplier" />
                     </div>
                     <div v-else class="chat-bubble">{{ message.content }}</div>
                   </div>
@@ -292,6 +292,8 @@ const authStore = useAuthStore();
 const toast = useToast();
 const { appMode, appConfig, isFeatureEnabled } = useAppConfig();
 const { isDemoMode } = useDemoMode();
+
+const llmSupplier = computed(() => store.currentConfig?.provider ?? undefined);
 
 const userMessage = ref("");
 const messageContainer = ref<HTMLDivElement | null>(null);

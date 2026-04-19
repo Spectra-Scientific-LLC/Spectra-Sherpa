@@ -380,10 +380,7 @@ export const useLlmStore = defineStore("llm", () => {
           streaming.value = false;
           loading.value = false;
           const detail = payload.detail || "Streaming error.";
-          messages.value.push({
-            role: "assistant",
-            content: detail,
-          });
+          messages.value.push({ role: "assistant", content: detail });
           emitWsTransport("message_error", detail);
         } else if (payload.type?.startsWith("sherpa_")) {
           dispatchSherpaEvent(payload);

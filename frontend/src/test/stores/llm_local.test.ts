@@ -88,6 +88,7 @@ describe("LLM Store local BYO chat", () => {
   });
 
   it("streams local chat over /chat/stream and persists browser-local history", async () => {
+    mocks.featureFlags.chatAssistant = true;
     fetchMock.mockResolvedValue(
       makeSseResponse(
         { type: "chunk", text: "Hello " },
