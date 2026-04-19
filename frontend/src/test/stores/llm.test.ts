@@ -246,6 +246,7 @@ describe("LLM Store WebSocket handshake", () => {
       "Conversation history could not be loaded. Sherpa is replying without prior chat context."
     );
   });
+
 });
 
 describe("LLM Store refreshConversations project-scope cleanup", () => {

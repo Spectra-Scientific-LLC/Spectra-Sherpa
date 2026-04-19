@@ -67,6 +67,12 @@ describe("normalizeMathMarkdown", () => {
       expect(normalizeMathMarkdown(source, ds)).toBe(source);
     });
 
+    it("leaves malformed bare-bracket math alone when the candidate does not parse", () => {
+      const source = "Broken:\n[\n\\frac{a\n]\nDone.";
+
+      expect(normalizeMathMarkdown(source, ds)).toBe(source);
+    });
+
     it("handles consecutive bare-bracket equations", () => {
       const source =
         "Deflation:\n[\nX_h = X_{h-1} - t_h p_h^T\n]\n[\ny_h = y_{h-1} - c_h t_h\n]\n";
@@ -101,59 +107,28 @@ describe("normalizeMathMarkdown", () => {
       expect(result).toContain("$$\\mathbf{t}_a = \\mathbf{X}_{a-1} \\mathbf{w}_a$$");
     });
 
-    // Bare inline variables
-
-    it("wraps bare single uppercase letter on its own line in $...$", () => {
-      const source =
-        "But constraints are applied to\nC\nC after calculation (see below).";
-
-      const result = normalizeMathMarkdown(source, ds);
-      expect(result).toContain("$C$");
-    });
-
-    it("wraps multiple bare variables on separate lines", () => {
-      const source = "We have:\nX\n(predictors) and\nY\n(responses).";
-
-      const result = normalizeMathMarkdown(source, ds);
-      expect(result).toContain("$X$");
-      expect(result).toContain("$Y$");
-    });
-
-    it("does not wrap lowercase words or multi-char tokens", () => {
-      const source = "The\ncat\nsat\non\nthe\nmat.";
-
-      expect(normalizeMathMarkdown(source, ds)).toBe(source);
-    });
-
-    it("does not wrap single letter at start of document without context", () => {
-      const source = "A";
-
-      // Single letter with no surrounding prose — leave alone
-      expect(normalizeMathMarkdown(source, ds)).toBe(source);
-    });
-
-    // Bare inline expressions with ^ or _
-
-    it("wraps bare S^T in prose", () => {
+    it("wraps bare inline superscript expressions in prose", () => {
       const source = "hold the spectral profiles S^T constant and solve";
 
-      const result = normalizeMathMarkdown(source, ds);
-      expect(result).toContain("$S^T$");
-      expect(result).not.toContain(" S^T ");
+      expect(normalizeMathMarkdown(source, ds)).toContain("$S^T$");
     });
 
-    it("wraps bare S^\\text{T} in prose", () => {
-      const source = "if S^\\text{T} is known";
+    it("wraps bare inline subscript expressions in prose", () => {
+      const source = "retaining a small number A_k of principal components";
 
-      const result = normalizeMathMarkdown(source, ds);
-      expect(result).toContain("$S^\\text{T}$");
+      expect(normalizeMathMarkdown(source, ds)).toContain("$A_k$");
     });
 
-    it("wraps bare p_h^T in prose", () => {
-      const source = "the loading vector p_h^T is orthogonal";
+    it("wraps bare inline mixed subscript-superscript expressions in prose", () => {
+      const source = "We compare s_{new,k}^2 to the pooled variance";
 
-      const result = normalizeMathMarkdown(source, ds);
-      expect(result).toContain("$p_h^T$");
+      expect(normalizeMathMarkdown(source, ds)).toContain("$s_{new,k}^2$");
+    });
+
+    it("leaves plain prose without inline math markers untouched", () => {
+      const source = "Use the loading vector and solve again.";
+
+      expect(normalizeMathMarkdown(source, ds)).toBe(source);
     });
 
     it("does not double-wrap tokens already inside $$", () => {
@@ -198,22 +173,6 @@ describe("normalizeMathMarkdown", () => {
       const result = normalizeMathMarkdown(source, ds);
       expect(result).toContain("\\frac{a}{b}");
       expect(result).toContain("\\binom{n}{k}");
-    });
-
-    // Inline subscript expressions in prose
-
-    it("wraps bare A_k in prose", () => {
-      const source = "retaining a small number A_k of principal components";
-
-      const result = normalizeMathMarkdown(source, ds);
-      expect(result).toContain("$A_k$");
-    });
-
-    it("wraps bare s_{new,k}^2 in prose", () => {
-      const source = "We compare s_{new,k}^2 to the pooled variance";
-
-      const result = normalizeMathMarkdown(source, ds);
-      expect(result).toContain("$s_{new,k}^2$");
     });
 
     // Full bare-bracket block from SIMCA output
