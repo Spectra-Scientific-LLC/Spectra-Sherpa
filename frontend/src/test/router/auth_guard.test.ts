@@ -1,15 +1,19 @@
 /**
- * Router auth guard tests
+ * Router auth guard tests (OSS-registered routes only).
  *
- * Exercises the five main branches in the beforeEach guard defined in
- * src/router/index.ts:
+ * Post-v0.4.1 Phase 1b, /login /register /admin are registered by the
+ * server-provided auth+admin modules at boot — not by OSS. These
+ * tests cover only the OSS-owned guard behavior:
  *
  *  1. Local mode — bypass all authentication
- *  2. Hybrid mode — loopback user resolved, remote falls through
+ *  2. Hybrid mode — loopback user resolved via /auth/me, remote falls
+ *     through to the (server-registered or absent) /login
  *  3. Enterprise / unauthenticated — redirect to /login
  *  4. Enterprise / authenticated — allow protected routes
- *  5. Admin route — require capabilities.admin
- *  6. Registration route — gated by registrationEnabled
+ *  5. Config load failure — fail closed (redirect to /login)
+ *
+ * /login /register /admin behavior in the presence of the server
+ * module is tested in server-frontend's own suite (commit 5).
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,24 +26,16 @@ const makeViewStub = (name: string) => ({
   },
 });
 
-// ---------------------------------------------------------------------------
-// Controllable mock refs — vi.hoisted() runs before mock factories so these
-// values are available when the factory closure is created.
-// ---------------------------------------------------------------------------
-const { mockAppMode, mockRegistrationEnabled, mockLoadConfig } = vi.hoisted(
-  () => ({
-    mockAppMode: { value: "local" as string },
-    mockRegistrationEnabled: { value: true as boolean },
-    mockLoadConfig: vi.fn().mockResolvedValue(true),
-  })
-);
+const { mockAppMode, mockLoadConfig } = vi.hoisted(() => ({
+  mockAppMode: { value: "local" as string },
+  mockLoadConfig: vi.fn().mockResolvedValue(true),
+}));
 
 vi.mock("@/composables/useAppConfig", () => ({
   useAppConfig: () => ({
     config: { value: null },
     appMode: mockAppMode,
     loadConfig: mockLoadConfig,
-    registrationEnabled: mockRegistrationEnabled,
   }),
 }));
 
@@ -52,33 +48,21 @@ vi.mock("@/api/client", () => ({
   },
 }));
 
-vi.mock("@/views/LoginView.vue", () => makeViewStub("LoginView"));
-vi.mock("@/views/RegisterView.vue", () => makeViewStub("RegisterView"));
 vi.mock("@/views/project/ProjectContent.vue", () => makeViewStub("ProjectContent"));
 vi.mock("@/views/data/DataContent.vue", () => makeViewStub("DataContent"));
 vi.mock("@/views/workflow-builder/WorkflowBuilderContent.vue", () => makeViewStub("WorkflowBuilderContent"));
-vi.mock("@/views/AdminView.vue", () => makeViewStub("AdminView"));
 
-// ---------------------------------------------------------------------------
-// Imports after mocks so the router picks up the mocked composable/api.
-// ---------------------------------------------------------------------------
 import api from "@/api/client";
 import router from "@/router";
 import { useAuthStore } from "@/stores/auth";
 
 const HOME_PATH = "/project";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Navigate and return the resolved path. */
 async function navigateTo(path: string): Promise<string> {
   await router.push(path);
   return router.currentRoute.value.path;
 }
 
-/** Seed a fully-authenticated user into a fresh auth store. */
 function authenticateAs(opts: { admin: boolean } = { admin: false }) {
   const store = useAuthStore();
   store.token = "test-jwt-token";
@@ -89,40 +73,21 @@ function authenticateAs(opts: { admin: boolean } = { admin: false }) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-describe("Router auth guard", () => {
+describe("Router auth guard (OSS routes)", () => {
   beforeEach(async () => {
-    // Prevent the auth store from calling fetchUser() on init.
     localStorage.clear();
     setActivePinia(createPinia());
     vi.clearAllMocks();
-
-    // Default: local mode, registration enabled.
     mockAppMode.value = "local";
-    mockRegistrationEnabled.value = true;
-
-    // Reset router to a clean state.
     await router.push("/");
   });
 
-  // -------------------------------------------------------------------------
   describe("local mode", () => {
     beforeEach(() => {
       mockAppMode.value = "local";
     });
 
-    it("redirects /login → /", async () => {
-      expect(await navigateTo("/login")).toBe(HOME_PATH);
-    });
-
-    it("redirects /register → /", async () => {
-      expect(await navigateTo("/register")).toBe(HOME_PATH);
-    });
-
-    it("allows protected route without credentials", async () => {
+    it("allows protected routes without credentials", async () => {
       expect(await navigateTo("/workflow")).toBe("/workflow");
     });
 
@@ -131,7 +96,6 @@ describe("Router auth guard", () => {
     });
   });
 
-  // -------------------------------------------------------------------------
   describe("enterprise mode — unauthenticated", () => {
     beforeEach(() => {
       mockAppMode.value = "enterprise";
@@ -145,27 +109,12 @@ describe("Router auth guard", () => {
       expect(await navigateTo("/data")).toBe("/login");
     });
 
-    it("allows /login (public route)", async () => {
-      expect(await navigateTo("/login")).toBe("/login");
-    });
-
-    it("allows /register when registrationEnabled is true", async () => {
-      mockRegistrationEnabled.value = true;
-      expect(await navigateTo("/register")).toBe("/register");
-    });
-
-    it("blocks /register → /login when registrationEnabled is false", async () => {
-      mockRegistrationEnabled.value = false;
-      expect(await navigateTo("/register")).toBe("/login");
-    });
-
     it("fails closed when config load fails", async () => {
       mockLoadConfig.mockResolvedValueOnce(false);
       expect(await navigateTo("/workflow")).toBe("/login");
     });
   });
 
-  // -------------------------------------------------------------------------
   describe("enterprise mode — authenticated", () => {
     beforeEach(() => {
       mockAppMode.value = "enterprise";
@@ -179,35 +128,8 @@ describe("Router auth guard", () => {
     it("allows /data when authenticated", async () => {
       expect(await navigateTo("/data")).toBe("/data");
     });
-
-    it("redirects /login → / when already authenticated", async () => {
-      expect(await navigateTo("/login")).toBe(HOME_PATH);
-    });
   });
 
-  // -------------------------------------------------------------------------
-  describe("admin route (/admin)", () => {
-    beforeEach(() => {
-      mockAppMode.value = "enterprise";
-    });
-
-    it("redirects non-admin → /", async () => {
-      authenticateAs({ admin: false });
-      expect(await navigateTo("/admin")).toBe(HOME_PATH);
-    });
-
-    it("allows admin-capability user to access /admin", async () => {
-      authenticateAs({ admin: true });
-      expect(await navigateTo("/admin")).toBe("/admin");
-    });
-
-    it("redirects unauthenticated user → /login (not /)", async () => {
-      // Unauthenticated always hits the login redirect before the admin check.
-      expect(await navigateTo("/admin")).toBe("/login");
-    });
-  });
-
-  // -------------------------------------------------------------------------
   describe("hybrid mode", () => {
     beforeEach(() => {
       mockAppMode.value = "hybrid";
@@ -221,7 +143,7 @@ describe("Router auth guard", () => {
     });
 
     it("remote client: falls through to /login when /auth/me rejects", async () => {
-      vi.mocked(api.get).mockRejectedValueOnce(new Error("401 Unauthorized"));
+      vi.mocked(api.get).mockRejectedValueOnce(new Error("401"));
       expect(await navigateTo("/workflow")).toBe("/login");
     });
   });

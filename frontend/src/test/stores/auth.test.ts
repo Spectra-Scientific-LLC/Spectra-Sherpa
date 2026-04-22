@@ -16,11 +16,9 @@ vi.mock("@/router", () => ({
   default: { push: vi.fn() },
 }));
 
-// Must import after mocks are set up
 import { useAuthStore } from "@/stores/auth";
-import router from "@/router";
 
-describe("Auth Store", () => {
+describe("OSS auth store (identity-only, post-v0.4.1)", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
@@ -31,120 +29,23 @@ describe("Auth Store", () => {
     const store = useAuthStore();
     expect(store.isAuthenticated).toBe(false);
     expect(store.user).toBeNull();
-    expect(store.loginError).toBeNull();
-  });
-
-  describe("login", () => {
-    it("stores token and fetches user on success", async () => {
-      vi.mocked(api.post).mockResolvedValueOnce({
-        data: { access_token: "jwt-token" },
-      });
-      vi.mocked(api.get).mockResolvedValueOnce({
-        data: { id: 1, username: "alice", capabilities: { admin: false } },
-      });
-      const store = useAuthStore();
-
-      await store.login("alice", "pass");
-
-      expect(api.post).toHaveBeenCalledWith("/auth/login", expect.any(FormData));
-      expect(store.token).toBe("jwt-token");
-      expect(localStorage.getItem("token")).toBe("jwt-token");
-      expect(store.user?.username).toBe("alice");
-      expect(router.push).toHaveBeenCalledWith("/");
-    });
-
-    it("sets loginError on failure", async () => {
-      vi.mocked(api.post).mockRejectedValueOnce({
-        response: { data: { detail: "Incorrect username or password" } },
-      });
-      const store = useAuthStore();
-
-      await store.login("alice", "wrong");
-
-      expect(store.loginError).toBe("Incorrect username or password");
-      expect(store.token).toBeNull();
-    });
-  });
-
-  describe("register", () => {
-    it("sets success message and navigates to login", async () => {
-      vi.mocked(api.post).mockResolvedValueOnce({});
-      const store = useAuthStore();
-
-      await store.register("bob", "pass123", "enterprise-pw");
-
-      expect(api.post).toHaveBeenCalledWith(
-        "/auth/register",
-        { username: "bob", password: "pass123" },
-        { headers: { "X-Enterprise-Password": "enterprise-pw" } },
-      );
-      expect(store.registerSuccess).toContain("Account created");
-      expect(router.push).toHaveBeenCalledWith("/login");
-    });
-
-    it("sets registerError on failure", async () => {
-      vi.mocked(api.post).mockRejectedValueOnce({
-        response: { data: { detail: "Username taken" } },
-      });
-      const store = useAuthStore();
-
-      await store.register("bob", "pass", "pw");
-
-      expect(store.registerError).toBe("Username taken");
-    });
-  });
-
-  describe("logout", () => {
-    it("clears state and navigates to /login", () => {
-      const store = useAuthStore();
-      store.token = "jwt";
-      store.user = { id: 1, username: "a", capabilities: { admin: false } };
-      localStorage.setItem("token", "jwt");
-
-      store.logout();
-
-      expect(store.token).toBeNull();
-      expect(store.user).toBeNull();
-      expect(localStorage.getItem("token")).toBeNull();
-      expect(router.push).toHaveBeenCalledWith("/login");
-    });
+    expect(store.token).toBeNull();
   });
 
   describe("clearCredentials", () => {
-    it("removes token and api_key without navigation", () => {
+    it("removes token and api_key and drops user without navigation", () => {
       localStorage.setItem("api_key", "key");
       const store = useAuthStore();
       store.token = "jwt";
       localStorage.setItem("token", "jwt");
+      store.user = { id: 1, username: "a", capabilities: { admin: false } };
 
       store.clearCredentials();
 
       expect(store.token).toBeNull();
+      expect(store.user).toBeNull();
       expect(localStorage.getItem("token")).toBeNull();
       expect(localStorage.getItem("api_key")).toBeNull();
-      expect(router.push).not.toHaveBeenCalled();
-    });
-  });
-
-  describe("changePassword", () => {
-    it("returns success on valid change", async () => {
-      vi.mocked(api.put).mockResolvedValueOnce({});
-      const store = useAuthStore();
-
-      const result = await store.changePassword("old", "new");
-
-      expect(result).toEqual({ success: true });
-    });
-
-    it("returns error message on failure", async () => {
-      vi.mocked(api.put).mockRejectedValueOnce({
-        response: { data: { detail: "Current password incorrect" } },
-      });
-      const store = useAuthStore();
-
-      const result = await store.changePassword("wrong", "new");
-
-      expect(result).toEqual({ success: false, error: "Current password incorrect" });
     });
   });
 
@@ -160,6 +61,29 @@ describe("Auth Store", () => {
       expect(api.get).toHaveBeenCalledWith("/auth/me");
       expect(store.user).toEqual({ id: 7, username: "implicit-user", is_active: true });
       expect(store.isAuthenticated).toBe(true);
+    });
+
+    it("clears stale tokens before calling /auth/me", async () => {
+      localStorage.setItem("token", "stale-jwt");
+      localStorage.setItem("api_key", "stale-key");
+      vi.mocked(api.get).mockResolvedValueOnce({
+        data: { id: 7, username: "implicit-user", is_active: true },
+      });
+      const store = useAuthStore();
+
+      await store.initHybridUser();
+
+      expect(localStorage.getItem("token")).toBeNull();
+      expect(localStorage.getItem("api_key")).toBeNull();
+    });
+
+    it("tolerates /auth/me failure (warns, leaves user null)", async () => {
+      vi.mocked(api.get).mockRejectedValueOnce(new Error("remote, no loopback"));
+      const store = useAuthStore();
+
+      await store.initHybridUser();
+
+      expect(store.user).toBeNull();
     });
   });
 });

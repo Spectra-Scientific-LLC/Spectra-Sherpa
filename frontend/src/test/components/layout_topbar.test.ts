@@ -198,12 +198,17 @@ vi.mock("primevue/toast", () => ({
   default: defineComponent({ name: "Toast", template: "<div />" }),
 }));
 
-vi.mock("@/components/ChangePasswordDialog.vue", () => ({
-  default: defineComponent({ name: "ChangePasswordDialog", template: "<div />" }),
-}));
+// ChangePasswordDialog and UserProfileDialog were removed from OSS in
+// Phase 1b — they live in the server-provided auth module now.
 
-vi.mock("@/components/UserProfileDialog.vue", () => ({
-  default: defineComponent({ name: "UserProfileDialog", template: "<div />" }),
+vi.mock("@/composables/useTopbarMenu", () => ({
+  useTopbarMenu: () => ({
+    items: { value: [] as unknown[] },
+    addItems: vi.fn(),
+    removeItems: vi.fn(),
+    clear: vi.fn(),
+    _internal: { value: [] as unknown[] },
+  }),
 }));
 
 vi.mock("@/components/ProjectDialog.vue", () => ({

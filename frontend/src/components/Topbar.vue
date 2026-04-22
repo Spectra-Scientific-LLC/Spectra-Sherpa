@@ -115,6 +115,11 @@
         badgeClass="p-badge-danger"
         @click="notificationDrawerVisible = !notificationDrawerVisible"
       />
+      <!-- Admin shield: the /admin route is registered dynamically by
+           the server-provided admin module when the user has
+           capabilities.admin. Until that module registers the route,
+           navigating to /admin is a no-op, so gating the button on the
+           capability (rather than on the route existing) is correct. -->
       <Button
         v-if="authStore.user?.capabilities?.admin && appMode !== 'local'"
         icon="pi pi-shield"
@@ -132,12 +137,6 @@
       />
       <Menu ref="userMenu" :model="userMenuItems" :popup="true" />
     </div>
-
-    <!-- Change Password Dialog -->
-    <ChangePasswordDialog v-model:visible="changePasswordVisible" />
-
-    <!-- User Profile Dialog -->
-    <UserProfileDialog v-model:visible="profileVisible" />
 
     <!-- Project Dialog -->
     <ProjectDialog
@@ -169,8 +168,6 @@ import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import Button from "primevue/button";
 import Dropdown from "primevue/dropdown";
 import Menu from "primevue/menu";
-import ChangePasswordDialog from "./ChangePasswordDialog.vue";
-import UserProfileDialog from "./UserProfileDialog.vue";
 import { useToast } from "primevue/usetoast";
 import { useProjectStore } from "@/stores/project";
 import { useNotificationStore } from "@/stores/notification";
@@ -182,6 +179,7 @@ import { useLlmStore } from "@/stores/llm";
 import { useAuthStore } from "@/stores/auth";
 import { useRouter } from "vue-router";
 import { useBackendStatus } from "@/composables/useBackendStatus";
+import { useTopbarMenu } from "@/composables/useTopbarMenu";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useNotifier } from "@/composables/useNotifier";
 import ProjectDialog from "./ProjectDialog.vue";
@@ -213,10 +211,12 @@ const { appMode, hasLLMConfigured } = useAppConfig();
 const fileInput = ref<HTMLInputElement | null>(null);
 const notificationDrawerVisible = ref(false);
 
-// User menu
+// User menu. Managed-auth items (My Profile, Change Password, Sign Out)
+// are contributed at runtime by the server-provided auth module via
+// `useTopbarMenu` when the server is present. OSS ships only the items
+// that work without a server.
 const userMenu = ref();
-const changePasswordVisible = ref(false);
-const profileVisible = ref(false);
+const { items: contributedMenuItems } = useTopbarMenu();
 
 const userMenuItems = computed(() => [
   {
@@ -227,16 +227,6 @@ const userMenuItems = computed(() => [
   },
   { separator: true },
   {
-    label: 'My Profile',
-    icon: 'pi pi-id-card',
-    command: () => { profileVisible.value = true; },
-  },
-  {
-    label: 'Change Password',
-    icon: 'pi pi-key',
-    command: () => { changePasswordVisible.value = true; },
-  },
-  {
     label: 'Settings',
     icon: 'pi pi-cog',
     command: () => { router.push('/settings'); },
@@ -246,12 +236,9 @@ const userMenuItems = computed(() => [
     icon: 'pi pi-book',
     command: () => { window.open('https://docs.spectrascientific.ai', '_blank'); },
   },
-  { separator: true },
-  {
-    label: 'Sign Out',
-    icon: 'pi pi-sign-out',
-    command: () => { authStore.logout(); },
-  },
+  // Server-module contributions (Sign Out / My Profile / Change Password
+  // in managed-auth modes). Empty array in local mode.
+  ...contributedMenuItems.value,
 ]);
 
 const toggleUserMenu = (event: Event) => {
