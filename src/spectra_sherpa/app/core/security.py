@@ -3,14 +3,10 @@ import ipaddress
 import logging
 import os
 import time
-from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, Optional
 
-import bcrypt
-import jwt
 from fastapi import Depends, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jwt.exceptions import PyJWTError as JWTError
 
 from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.core.mode_policy import (
@@ -149,55 +145,6 @@ async def get_bearer_token_optional(
 ) -> Optional[str]:
     """FastAPI dependency that returns an optional Bearer token string."""
     return extract_bearer_token(credentials)
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against a hash."""
-    return bool(
-        bcrypt.checkpw(
-            plain_password.encode("utf-8"),
-            hashed_password.encode("utf-8"),
-        )
-    )
-
-
-def get_password_hash(password: str) -> str:
-    """Generate a password hash."""
-    hashed = bcrypt.hashpw(
-        password.encode("utf-8"),
-        bcrypt.gensalt(),
-    )
-    return str(hashed.decode("utf-8"))
-
-
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """Create a JWT access token."""
-    to_encode = data.copy()
-    now = datetime.now(timezone.utc)
-    if expires_delta:
-        expire = now + expires_delta
-    else:
-        expire = now + timedelta(minutes=15)
-
-    to_encode.update({"exp": expire, "iat": now})
-    encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
-    return cast(str, encoded_jwt)
-
-
-def decode_access_token(token: str) -> Optional[dict]:
-    """Decode and validate a JWT access token."""
-    try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-        return cast(dict[Any, Any], payload)
-    except JWTError:
-        return None
-
-
-def is_valid_bearer_token(token: Optional[str]) -> bool:
-    """Fast JWT validity check used by gateway middleware and WebSocket auth."""
-    if not token:
-        return False
-    return decode_access_token(token) is not None
 
 
 async def is_valid_api_key(api_key: Optional[str]) -> bool:
@@ -378,18 +325,19 @@ async def api_key_middleware(request: Request, call_next) -> Response:
     ):
         return await call_next(request)  # type: ignore[no-any-return]
 
-    # Check for API key or Bearer token
+    # JWT handoff: if an earlier middleware (spectra-server's
+    # EnterpriseEnforcementMiddleware) already validated a Bearer token and
+    # stamped ``request.state.authenticated``, pass through. After Phase 2,
+    # OSS neither issues nor validates JWTs — managed-auth modes rely
+    # entirely on this handoff.
+    if getattr(request.state, "authenticated", False):
+        return await call_next(request)  # type: ignore[no-any-return]
+
+    # Check for API key.
     api_key = request.headers.get("X-API-Key")
-    auth_header = request.headers.get("Authorization")
 
     is_authenticated = False
-
-    if auth_header and auth_header.startswith("Bearer "):
-        token = auth_header[7:]
-        if is_valid_bearer_token(token):
-            is_authenticated = True
-
-    if not is_authenticated and api_key and await is_valid_api_key(api_key):
+    if api_key and await is_valid_api_key(api_key):
         is_authenticated = True
 
     # In non-local modes, REQUIRE authentication - reject unauthenticated requests

@@ -9,19 +9,19 @@ if TYPE_CHECKING:
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import APIKeyHeader
-from jwt.exceptions import PyJWTError as JWTError
-from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from spectra_sherpa.app import schemas
 from spectra_sherpa.app.core import security
 from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.core.mode_policy import is_hybrid, is_local, is_loopback
 
 logger = __import__("logging").getLogger(__name__)
 from spectra_sherpa.app.contracts.actors import CurrentActor  # noqa: F401 — re-export for new code
-from spectra_sherpa.app.contracts.auth_resolver import get_extra_user_api_key_authenticator
+from spectra_sherpa.app.contracts.auth_resolver import (
+    get_extra_bearer_token_resolver,
+    get_extra_user_api_key_authenticator,
+)
 from spectra_sherpa.app.db.session import async_session
 from spectra_sherpa.app.models.user import User
 
@@ -68,11 +68,19 @@ async def _resolve_user(
     api_key: Optional[str] = None,
     token: Optional[str] = None,
     client_host: Optional[str] = None,
+    authenticated_subject: Optional[str] = None,
 ) -> Optional[User]:
     """
     Core authentication logic shared by get_current_user and get_user_from_credentials.
 
     Returns the authenticated User or None if credentials are invalid.
+
+    ``authenticated_subject`` is populated in managed-auth modes by the
+    server's ``EnterpriseEnforcementMiddleware`` after a successful JWT
+    decode (it writes the token's ``sub`` claim to
+    ``request.state.authenticated_subject``). OSS trusts that handoff
+    rather than decoding JWTs itself — Phase 2 of v0.4.1 deleted the
+    OSS-side decode primitives.
     """
     # 0. Local mode: implicit user identity (single-user, no login needed)
     if is_local():
@@ -116,19 +124,29 @@ async def _resolve_user(
                     security._cache_api_key(api_key, user.id)
                     return user
 
-    # 2. JWT Auth (User Login)
-    if token:
+    # 2. JWT handoff — the server's EnterpriseEnforcementMiddleware decoded
+    # the Bearer token and stamped request.state.authenticated_subject.
+    # OSS just loads the user by that id.
+    subject_id: Optional[int] = None
+    if authenticated_subject is not None:
         try:
-            payload = security.decode_access_token(token)
-            if payload:
-                token_data = schemas.TokenPayload(**payload)
-                if token_data.sub is not None:
-                    result = await session.execute(select(User).where(User.id == token_data.sub))
-                    user = cast(Optional[User], result.scalar_one_or_none())
-                    if user:
-                        return user
-        except (JWTError, ValidationError):
-            pass
+            subject_id = int(authenticated_subject)
+        except (TypeError, ValueError):
+            subject_id = None
+
+    # 2b. WebSocket fallback: the request-scope stamp isn't available on
+    # the WS path. If a raw token was presented, delegate decoding to
+    # the server-injected BearerTokenSubjectResolver contract.
+    if subject_id is None and token:
+        bearer_resolver = get_extra_bearer_token_resolver()
+        if bearer_resolver is not None:
+            subject_id = await bearer_resolver(token)
+
+    if subject_id is not None:
+        result = await session.execute(select(User).where(User.id == subject_id, User.is_active.is_(True)))
+        user = cast(Optional[User], result.scalar_one_or_none())
+        if user:
+            return user
 
     # 3. Hybrid fallback: allow implicit local identity only when no
     # credentials were provided AND the client is loopback (defense-in-depth;
@@ -161,6 +179,7 @@ async def get_current_user(
         api_key=api_key,
         token=token,
         client_host=security.get_client_host(request),
+        authenticated_subject=getattr(request.state, "authenticated_subject", None),
     )
     if user is None:
         raise HTTPException(
