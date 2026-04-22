@@ -608,34 +608,52 @@ class TestScopeFiltering:
 
     @pytest.mark.asyncio
     async def test_admin_scope_requires_superuser(self):
-        """Admin-scoped tools reject non-superuser callers."""
-        reg = ToolRegistry()
-        defn = ToolDefinition(name="admin_op", description="Admin only", scope=ToolScope.admin)
-        reg.register(defn, lambda: "secret")
+        """Admin-scoped tools reject non-superuser callers.
 
-        # No user
-        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg):
-            result = await execute_tool(ToolInvocation(tool_name="admin_op"))
-        assert result.success is False
-        assert "admin" in result.error.lower()
+        After v0.4.1 Phase 2 the OSS User model no longer carries
+        ``is_superuser``; admin status flows through the server-
+        registered ``AdminResolver`` contract. We stub a resolver that
+        keys admin-ness by user id.
+        """
+        from spectra_sherpa.app.contracts.auth_resolver import (
+            clear_extra_admin_resolver,
+            set_extra_admin_resolver,
+        )
 
-        # Regular user (not superuser)
-        regular = MagicMock()
-        regular.is_superuser = False
-        ctx = ToolExecutionContext(user=regular)
-        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg):
-            result = await execute_tool(ToolInvocation(tool_name="admin_op"), ctx)
-        assert result.success is False
-        assert "admin" in result.error.lower()
+        async def _stub_resolver(user_id: int) -> bool:
+            return user_id == 99  # 99 is the "admin" id in this test
 
-        # Superuser succeeds
-        admin = MagicMock()
-        admin.is_superuser = True
-        ctx = ToolExecutionContext(user=admin)
-        with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg):
-            result = await execute_tool(ToolInvocation(tool_name="admin_op"), ctx)
-        assert result.success is True
-        assert result.result == "secret"
+        set_extra_admin_resolver(_stub_resolver)
+        try:
+            reg = ToolRegistry()
+            defn = ToolDefinition(name="admin_op", description="Admin only", scope=ToolScope.admin)
+            reg.register(defn, lambda: "secret")
+
+            # No user
+            with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg):
+                result = await execute_tool(ToolInvocation(tool_name="admin_op"))
+            assert result.success is False
+            assert "admin" in result.error.lower()
+
+            # Regular user (not superuser)
+            regular = MagicMock()
+            regular.id = 10
+            ctx = ToolExecutionContext(user=regular)
+            with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg):
+                result = await execute_tool(ToolInvocation(tool_name="admin_op"), ctx)
+            assert result.success is False
+            assert "admin" in result.error.lower()
+
+            # Superuser succeeds
+            admin = MagicMock()
+            admin.id = 99
+            ctx = ToolExecutionContext(user=admin)
+            with patch("spectra_sherpa.app.services.tools.executor.tool_registry", reg):
+                result = await execute_tool(ToolInvocation(tool_name="admin_op"), ctx)
+            assert result.success is True
+            assert result.result == "secret"
+        finally:
+            clear_extra_admin_resolver()
 
     @pytest.mark.asyncio
     async def test_internal_scope_denied_by_default(self):

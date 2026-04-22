@@ -443,13 +443,20 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     job_channel = f"jobs:{ws_user.id}" if ws_user and ws_user.id is not None else None
     ws_registry = getattr(websocket.app.state, "ws_action_registry", None)
 
-    def _resolve_channel(requested: str | None) -> str | None:
+    async def _resolve_channel(requested: str | None) -> str | None:
         if not requested:
             return None
         if requested == "jobs":
             return job_channel
         if requested.startswith("jobs:"):
-            if ws_user and getattr(ws_user, "is_superuser", False):
+            # v0.4.1 Phase 2: is_superuser moved to ManagedUserAccount;
+            # OSS asks the server-registered admin resolver instead of
+            # reading an attribute that no longer exists on the OSS
+            # User model. Local mode has no superusers, so is_admin_user
+            # returns False there (correct default).
+            from spectra_sherpa.app.contracts.auth_resolver import is_admin_user
+
+            if ws_user and await is_admin_user(ws_user):
                 return requested
             if requested == job_channel:
                 return requested

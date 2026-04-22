@@ -25,8 +25,9 @@ scikit-learn>=1.5.0,<2.0.0
 beautifulsoup4>=4.12.3,<5.0.0
 pypdf>=6.9.2,<7.0.0
 
-PyJWT>=2.8.0,<3.0.0
-bcrypt>=4.0.1
+# NOTE: PyJWT and bcrypt were removed from OSS in v0.4.1 Phase 2.
+# OSS no longer issues, validates, or hashes credentials — that's the
+# server's responsibility. See packages/spectra-server/pyproject.toml.
 
 # Optional: spectral file I/O via SpectroChemPy (CeCILL-B license, not AGPL-compatible)
 # Install with: pip install spectra-sherpa[scp]

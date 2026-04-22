@@ -1752,10 +1752,10 @@ export interface components {
             /** Email */
             email?: string | null;
             /**
-             * Is Superuser
+             * Admin
              * @default false
              */
-            is_superuser: boolean;
+            admin: boolean;
         };
         /** ManagedUserResponse */
         ManagedUserResponse: {
@@ -1765,11 +1765,6 @@ export interface components {
             username: string;
             /** Email */
             email?: string | null;
-            /**
-             * Is Superuser
-             * @default false
-             */
-            is_superuser: boolean;
             capabilities?: components["schemas"]["Capabilities"];
             /**
              * Is Active

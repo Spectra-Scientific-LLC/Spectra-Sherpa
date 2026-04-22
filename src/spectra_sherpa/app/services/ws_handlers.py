@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 from fastapi import WebSocket
 from starlette.websockets import WebSocketState
@@ -79,9 +79,9 @@ async def handle_subscribe(
     user: Any,
     rate_limiter: RateLimiter,
     *,
-    resolve_channel: Callable[[str | None], str | None],
+    resolve_channel: Callable[[str | None], Awaitable[str | None]],
 ) -> None:
-    channel = resolve_channel(payload.get("channel"))
+    channel = await resolve_channel(payload.get("channel"))
     if not channel:
         await _safe_ws_send_json(ws, {"type": "error", "detail": "Missing or unauthorized channel"})
         return
@@ -95,9 +95,9 @@ async def handle_unsubscribe(
     user: Any,
     rate_limiter: RateLimiter,
     *,
-    resolve_channel: Callable[[str | None], str | None],
+    resolve_channel: Callable[[str | None], Awaitable[str | None]],
 ) -> None:
-    channel = resolve_channel(payload.get("channel"))
+    channel = await resolve_channel(payload.get("channel"))
     if not channel:
         await _safe_ws_send_json(ws, {"type": "error", "detail": "Missing or unauthorized channel"})
         return
@@ -212,9 +212,16 @@ async def _proxy_server_chat(
         await _safe_ws_send_json(ws, {"type": "error", "detail": f"Server chat failed: {exc}"})
 
 
-def _allow_llm_request(limiter: RateLimiter, user: Any) -> bool:
-    """Check quota consumption for a user, honoring admin bypass."""
-    if user and getattr(user, "is_superuser", False):
+async def _allow_llm_request(limiter: RateLimiter, user: Any) -> bool:
+    """Check quota consumption for a user, honoring admin bypass.
+
+    Admin bypass reads through the server-registered AdminResolver
+    contract (v0.4.1 Phase 2) because ``is_superuser`` lives on
+    ``ManagedUserAccount``, not the OSS User model.
+    """
+    from spectra_sherpa.app.contracts.auth_resolver import is_admin_user
+
+    if await is_admin_user(user):
         return True
     key = f"user_{user.id}" if user and getattr(user, "id", None) else "anonymous"
     return limiter.allow(key)
@@ -233,7 +240,7 @@ async def handle_llm_chat(
             return
 
         # Rate limit
-        if not _allow_llm_request(rate_limiter, user):
+        if not await _allow_llm_request(rate_limiter, user):
             await _safe_ws_send_json(ws, {"type": "error", "detail": "LLM rate limit exceeded. Try again later."})
             return
 

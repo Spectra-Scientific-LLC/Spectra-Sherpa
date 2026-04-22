@@ -4130,9 +4130,9 @@
             ],
             "title": "Email"
           },
-          "is_superuser": {
+          "admin": {
             "type": "boolean",
-            "title": "Is Superuser",
+            "title": "Admin",
             "default": false
           }
         },
@@ -4163,11 +4163,6 @@
               }
             ],
             "title": "Email"
-          },
-          "is_superuser": {
-            "type": "boolean",
-            "title": "Is Superuser",
-            "default": false
           },
           "capabilities": {
             "$ref": "#/components/schemas/Capabilities"
