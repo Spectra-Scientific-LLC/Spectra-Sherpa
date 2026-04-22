@@ -59,9 +59,7 @@ def register_public_paths(paths: Iterable[str]) -> None:
         if not path:
             continue
         if not path.startswith("/"):
-            raise ValueError(
-                f"register_public_paths: paths must start with '/'; got {raw!r}"
-            )
+            raise ValueError(f"register_public_paths: paths must start with '/'; got {raw!r}")
         if path in OSS_PUBLIC_PATHS or path in _extra_paths:
             continue
         _extra_paths.append(path)

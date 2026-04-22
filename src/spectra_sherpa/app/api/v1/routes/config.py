@@ -226,9 +226,7 @@ async def get_config(
                 if "registrationEnabled" in overlay:
                     config["registrationEnabled"] = bool(overlay["registrationEnabled"])
                 if "registrationRequiresCode" in overlay:
-                    config["registrationRequiresCode"] = bool(
-                        overlay["registrationRequiresCode"]
-                    )
+                    config["registrationRequiresCode"] = bool(overlay["registrationRequiresCode"])
             else:
                 config["configStatus"] = CONFIG_STATUS_DEGRADED
                 config["configError"] = CONFIG_ERROR_SUBSCRIPTION_OVERLAY_UNAVAILABLE

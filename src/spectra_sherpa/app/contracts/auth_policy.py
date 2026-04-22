@@ -67,9 +67,7 @@ def set_registration_requires_code(flag: bool) -> None:
     """
     global _registration_requires_code
     _registration_requires_code = bool(flag)
-    logger.info(
-        "auth_policy: registration_requires_code=%s", _registration_requires_code
-    )
+    logger.info("auth_policy: registration_requires_code=%s", _registration_requires_code)
 
 
 def registration_requires_code() -> bool:
