@@ -13,7 +13,7 @@
     "lint": "eslint src/ --max-warnings 300",
     "format": "prettier --write \"src/**/*.{ts,vue,css}\"",
     "test:e2e": "playwright test",
-    "generate:types": "openapi-typescript ../../spectra-server/docs/contracts/openapi-llm-v1.json -o src/types/api-generated.ts"
+    "generate:types": "openapi-typescript contracts/openapi-llm-v1.json -o src/types/api-generated.ts"
   },
   "dependencies": {
     "@monaco-editor/loader": "^1.7.0",
