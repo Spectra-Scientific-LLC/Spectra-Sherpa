@@ -23,15 +23,14 @@ npm run generate:types
 
 ## Server conformance
 
-The server's test suite includes a snapshot check (`packages/spectra-server/
-tests/test_openapi_snapshot.py`) that exports the server's live
-OpenAPI and diffs against this file. If the server diverges, either:
+The commercial server's test suite includes a snapshot check that
+exports the server's live OpenAPI and diffs against this file. If the
+server diverges, either:
 
 1. The server implementation is wrong — fix the server route, OR
-2. The spec needs to evolve — regenerate via
-   `cd packages/spectra-server && make update-openapi-snapshot`,
-   which writes back here, then update `api-generated.ts` in the
-   same PR.
+2. The spec needs to evolve — regenerate the spec from the server
+   (which writes back into this file), then update `api-generated.ts`
+   in the same PR.
 
 Conflicts resolve by boundary ownership (governance §6): divergences
 on the public surface default to "OSS spec is canonical; server

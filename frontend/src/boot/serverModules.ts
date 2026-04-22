@@ -80,8 +80,9 @@ export const nonCriticalModuleLoadFailures = ref<
 >([]);
 
 /**
- * Re-export the shape that server modules expect — keep this in sync
- * with `packages/spectra-server/frontend/src/types/context.ts`.
+ * Re-export the shape that server modules expect — kept in sync with
+ * the server-side host-context type definitions that the auth/admin
+ * modules consume.
  *
  * The authStore bridge exposes `user` and `token` as real Vue refs:
  * setup-store proxies unwrap refs on property access, so the server

@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`spectra_sherpa.app.contracts.ai_provider_errors`** — relocated `SherpaAuthorizationError` and `SubscriptionRequiredError` (previously at `services/ai_provider_errors.py`) so both OSS and server import the Protocol's exception types from a stable, neutral path.
 - **`POST /api/v1/chat/stream`** — OSS-owned BYO chat SSE endpoint. Returns 503 with structured `{"code": "capability_unavailable", "capability": "chatAssistant", ...}` detail when `CHAT_ENDPOINT_*` is not configured.
 - **Opt-in WS payload validator** — Set `SPECTRA_VALIDATE_WS=1` to have the OSS sender validate every outbound `sherpa_*` event against `sherpa-ws-v1.json` and log validation failures without interrupting the stream. Off by default.
-- **CI drift guard for `frontend/src/types/api-generated.ts`** — The `frontend` CI job now sparse-checks-out only `docs/contracts/` from `spectra-server`, regenerates the TS client into `/tmp`, and fails the build if the committed file does not match `openapi-llm-v1.json`.
+- **CI drift guard for `frontend/src/types/api-generated.ts`** — The `frontend` CI job now regenerates the TS client from the committed `openapi-llm-v1.json` contract into `/tmp` and fails the build if the checked-in file does not match, preventing silent client/contract drift.
 
 ### Deprecated
 - **`spectra_sherpa.app.services.sherpa_advisor`** — now a small compatibility shim that re-exports `set_sherpa_advisor` / `reset_sherpa_advisor` / `get_sherpa_advisor` from `contracts.ai_provider_registry` and emits a `DeprecationWarning`. Removed in `0.N+2`.

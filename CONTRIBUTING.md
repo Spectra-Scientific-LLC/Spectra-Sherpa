@@ -5,6 +5,31 @@ chemometricians, data analysts, and software engineers are all welcome.
 
 ---
 
+## How contributions flow through the project
+
+External contributions happen on the public
+[`Spectra-Sherpa`](https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa)
+repository. Released OSS history is whatever lands on the maintainers'
+internal monorepo `main` after full-stack validation, then synchronized
+back to the public repo. Practically, this means:
+
+- Open your PR against the public `Spectra-Sherpa` repo.
+- Public-repo CI runs the OSS-only checks (Python + frontend unit tests,
+  lint, type checks, boundary checks).
+- Once a maintainer approves and merges your PR on the public repo, a
+  sync bot mirrors the change into the maintainers' internal monorepo
+  as a bot branch, where the full-stack CI (OSS + commercial server)
+  runs. After that PR lands on monorepo `main`, the resulting OSS slice
+  is published back to the public repo as the next canonical state.
+- Maintainer-only concern: while a `sync/oss-*` PR is in flight in the
+  monorepo, additional OSS merges are held to avoid a drift window
+  where two concurrent public-repo merges would race each other.
+
+You do not need access to the monorepo to contribute. Everything a
+contributor needs (source, tests, CI) is in the public repo.
+
+---
+
 ## Which guide is right for you?
 
 | I am… | Go here |

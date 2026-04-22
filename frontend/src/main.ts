@@ -12,10 +12,9 @@ import Tooltip from "primevue/tooltip";
 // `<script type="importmap">` in index.html to per-component shims
 // under /vendor/primevue/, which read from window.__OSS_VENDOR__
 // .primevue.<name> — populated below. Keep this list in sync with
-// whatever paths the ported views in packages/spectra-server/frontend
-// import (currently enumerated by grep'ing that tree); if a module
-// imports a new primevue path, add it here AND add a corresponding
-// shim file at packages/spectra-sherpa/frontend/public/vendor/primevue/.
+// whatever paths the server-provided auth/admin modules import; if a
+// server module imports a new primevue path, add it here AND add a
+// corresponding shim file at frontend/public/vendor/primevue/.
 import * as pvButton from "primevue/button";
 import * as pvCard from "primevue/card";
 import * as pvCheckbox from "primevue/checkbox";

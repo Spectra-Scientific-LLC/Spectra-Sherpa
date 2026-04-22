@@ -118,35 +118,11 @@ under `frontend/src/`.
 
 ### For maintainers
 
-After CI passes on a pull request, deploy the branch to the staging
-environment for manual verification before merging:
-
-```bash
-ssh root@<STAGING_IP>
-cd ~/spectra-platform/spectra
-git fetch origin
-git checkout <branch-name>
-
-# Frontend-only change:
-cd packages/spectra-ops/docker
-docker compose -f docker-compose.prod.yaml up -d --build frontend
-
-# Backend or full-stack change:
-cd packages/spectra-ops/docker
-docker compose -f docker-compose.prod.yaml up -d --build
-```
-
-Verify the change on the staging URL, then merge the PR on GitHub.
-After merging, return staging to `main`:
-
-```bash
-cd ~/spectra-platform/spectra
-git checkout main && git pull
-cd packages/spectra-ops/docker
-docker compose -f docker-compose.prod.yaml up -d --build
-```
-
-Merging to `main` automatically deploys to production via GitHub Actions.
+After CI passes on a pull request, maintainers deploy the branch to a
+staging environment for manual verification before merging, then merge
+on GitHub. Deployment tooling and staging infrastructure are operated
+by the project maintainers and are out of scope for this contributor
+guide. Merging to `main` triggers the automated release pipeline.
 
 ---
 

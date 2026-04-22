@@ -27,7 +27,7 @@ pypdf>=6.9.2,<7.0.0
 
 # NOTE: PyJWT and bcrypt were removed from OSS in v0.4.1 Phase 2.
 # OSS no longer issues, validates, or hashes credentials — that's the
-# server's responsibility. See packages/spectra-server/pyproject.toml.
+# commercial server's responsibility.
 
 # Optional: spectral file I/O via SpectroChemPy (CeCILL-B license, not AGPL-compatible)
 # Install with: pip install spectra-sherpa[scp]

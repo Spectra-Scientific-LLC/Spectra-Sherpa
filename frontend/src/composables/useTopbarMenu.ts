@@ -13,9 +13,10 @@
  * same backing array. Reactivity is preserved via `ref`.
  *
  * This composable is part of the OSS public contract surface as of
- * v0.4.1. Its shape is mirrored in
- * `packages/spectra-server/frontend/src/types/context.ts` as
- * `HostTopbarMenu`; changes here must update that type too.
+ * v0.4.1. Its shape is mirrored by the server-provided frontend
+ * modules as `HostTopbarMenu` in their host-context type definitions;
+ * changes here must be coordinated with the corresponding server-side
+ * types.
  */
 import { computed, ref, readonly, type ComputedRef, type Ref } from "vue";
 

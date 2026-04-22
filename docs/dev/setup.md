@@ -12,8 +12,8 @@ This guide is for contributors who want to modify the SpectraSherpa codebase.
 
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/Spectra-Scientific-LLC/spectra-sherpa.git
-    cd spectra-sherpa
+    git clone https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa.git
+    cd Spectra-Sherpa
     ```
 
 2.  Install dependencies with Poetry:

@@ -258,7 +258,7 @@ describe("bootServerModules", () => {
     expect(isRef(capturedCtx!.authStore.user)).toBe(true);
     expect(isRef(capturedCtx!.authStore.token)).toBe(true);
 
-    // Mirror what setHostUser() does in packages/spectra-server/.../host.ts.
+    // Mirror what the server's auth module's setHostUser() helper does.
     capturedCtx!.authStore.user.value = {
       id: 7,
       username: "eva",

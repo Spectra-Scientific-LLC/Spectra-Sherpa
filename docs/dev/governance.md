@@ -5,10 +5,12 @@ contracts, specs, and extension points are owned across the OSS core
 (`spectra-sherpa`) and the commercial server (`spectra-server`), and how
 conflicts are resolved.
 
-It generalizes the boundary principles established in
-[ADR-0001](https://github.com/spectra-scientific/spectra-server/blob/main/ADR-0001-oss-commercial-boundary.md)
-(which covers the Sherpa Advisor specifically) to cover every contract surface
-on the platform.
+It generalizes the boundary principles originally established for the
+Sherpa Advisor in an internal ADR (ADR-0001, "OSS / Commercial Boundary")
+to cover every contract surface on the platform. The advisor-specific ADR
+is maintained alongside the commercial server and is not part of the OSS
+distribution; this document is the authoritative public statement of the
+boundary model.
 
 > **Scope of "OSS."** In this document, "OSS" means the `spectra-sherpa`
 > package as installed from the public repo. It is AGPL-3.0 licensed and
@@ -193,9 +195,9 @@ They mount at the OSS-global `/api/v1` prefix but are owned by the server.
 ### 4.3 Server-private contracts
 
 Specs for server-only routes (admin, subscription entitlements, deployment
-keys, managed auth internals) live in `spectra-server/docs/contracts/` and
-are validated against server implementations. They are not mirrored into OSS
-and are not part of the public API surface.
+keys, managed auth internals) are maintained alongside the commercial
+server and validated against server implementations. They are not
+mirrored into OSS and are not part of the public API surface.
 
 ### 4.4 Proprietary node plugin packages
 
@@ -286,8 +288,8 @@ correction, not automated "OSS wins" enforcement.
 - Server ships proprietary node plugin packages that register through the
   OSS plugin contract
 - Server owns its own OpenAPI/route/schema specs for server-only surfaces
-- Server overrides OSS-default implementations (e.g., AuthPrimitives) via
-  registered contracts
+- Server overrides OSS-default implementations (e.g., actor resolver,
+  config overlay, key resolver, demo policy) via registered contracts
 - OSS assumes its own default implementation when no server is registered
   (this is how the standalone invariant is preserved)
 
@@ -298,11 +300,10 @@ correction, not automated "OSS wins" enforcement.
 This governance document is load-bearing. Changes that alter ownership
 boundaries, add new seams, or revise stability guarantees should:
 
-1. Be proposed as a PR with rationale (in the PR body and/or a new ADR under
-   `spectra-server` for commercial-boundary changes)
-2. Update both this document and the related section of
-   [ADR-0001](https://github.com/spectra-scientific/spectra-server/blob/main/ADR-0001-oss-commercial-boundary.md)
-   where applicable
-3. Be reflected in `OSS_SCOPE.md` in the server repo
+1. Be proposed as a PR with rationale (in the PR body and/or a new ADR
+   maintained alongside the commercial server for commercial-boundary
+   changes)
+2. Update both this document and the related ADR text where applicable
+3. Be reflected in the server-side `OSS_SCOPE.md` companion document
 
 Changes that clarify wording without altering ownership do not require an ADR.

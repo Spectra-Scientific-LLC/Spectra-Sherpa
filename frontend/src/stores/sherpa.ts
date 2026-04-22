@@ -943,7 +943,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
 
     // Scientific scalars and structured fields that Sherpa's context builder
     // can summarize. Keep this list in sync with the per-node-type summarizers
-    // in spectra-server/src/spectrasherpa_server/context_builder.py.
+    // in the commercial server's context builder.
     const SCIENTIFIC_KEYS = new Set([
       // Shapes and identity
       "type",

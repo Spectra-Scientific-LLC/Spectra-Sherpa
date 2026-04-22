@@ -74,7 +74,7 @@ src/
 ## API Type Generation
 
 TypeScript types are generated from the committed OpenAPI contract at
-`spectra-server/docs/contracts/openapi-llm-v1.json` (no running server needed):
+`contracts/openapi-llm-v1.json` (no running server needed):
 
 ```bash
 npm run generate:types
