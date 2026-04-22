@@ -16,8 +16,10 @@
  * store, menu-extension composable, and resolved AppConfig.
  *
  * Fail-closed: any fetch/register error is logged and surfaced on a
- * module-local `serverModuleLoadFailed` ref so the SPA shell can render
- * a fail-closed view. (The visible error UI lands in Phase 1b commit 5.)
+ * module-local `serverModuleLoadFailed` ref. The OSS shell reads that
+ * ref to render a fail-closed overlay — server-backed deployments
+ * must not fall through to a functional UI when the auth module is
+ * missing, since that would expose protected routes without identity.
  *
  * Cross-bundle runtime: the server modules import `vue`, `vue-router`,
  * `pinia`, and `primevue/*` as Vite externals. They resolve via the
@@ -25,7 +27,8 @@
  * `/vendor/*.js` shims. Those shims read from `window.__OSS_VENDOR__`,
  * populated in main.ts BEFORE this bootstrap runs.
  */
-import { ref, watch } from "vue";
+import { markRaw, ref, watch } from "vue";
+import type { Component } from "vue";
 import type { Router, RouteRecordRaw } from "vue-router";
 
 import { useAppConfig } from "@/composables/useAppConfig";
@@ -35,6 +38,25 @@ import {
 } from "@/composables/useTopbarMenu";
 import { useAuthStore } from "@/stores/auth";
 
+export interface ServerModuleShell {
+  component: Component;
+  contributorId: string;
+}
+
+/**
+ * Reactive list of shell components contributed by server modules.
+ * The OSS App shell renders each entry via `<component :is="..."/>`
+ * so modules can own persistent UI (e.g. AuthShell owns
+ * ChangePasswordDialog + UserProfileDialog).
+ */
+export const serverModuleShells = ref<ServerModuleShell[]>([]);
+
+/**
+ * Set when any server module fetch/register throws. The OSS App shell
+ * consumes this to render a fail-closed overlay — required because a
+ * silent failure in a server-backed deployment would otherwise expose
+ * a partially-functional UI without identity.
+ */
 export const serverModuleLoadFailed = ref<null | {
   module: string;
   error: unknown;
@@ -54,12 +76,23 @@ interface HostContext {
   appConfig: Record<string, unknown>;
   contributorId: string;
   addRoute(route: RouteRecordRaw): void;
+  mountShell(component: Component, contributorId?: string): void;
+  unmountShells(contributorId: string): void;
 }
 
 interface ServerModule {
   register?: (ctx: HostContext) => void | Promise<void>;
   default?: (ctx: HostContext) => void | Promise<void>;
 }
+
+export type ImportModuleFn = (url: string) => Promise<ServerModule>;
+
+const defaultImportModule: ImportModuleFn = (url) =>
+  // Vite's dev server resolves dynamic imports through its module
+  // graph; at production/runtime the browser fetches the URL directly
+  // and resolves bare imports via the importmap in index.html.
+  // `/* @vite-ignore */` keeps Vite from pre-analyzing the dynamic URL.
+  import(/* @vite-ignore */ url) as Promise<ServerModule>;
 
 function buildContext(
   contributorId: string,
@@ -73,6 +106,19 @@ function buildContext(
     appConfig,
     contributorId,
     addRoute: (route) => router.addRoute(route),
+    mountShell: (component, id) => {
+      serverModuleShells.value.push({
+        // markRaw: Vue components are already immutable; wrapping
+        // them in reactivity is wasteful and triggers a devtools warning.
+        component: markRaw(component),
+        contributorId: id ?? contributorId,
+      });
+    },
+    unmountShells: (id) => {
+      serverModuleShells.value = serverModuleShells.value.filter(
+        (entry) => entry.contributorId !== id,
+      );
+    },
   };
 }
 
@@ -81,14 +127,10 @@ async function loadAndRegister(
   contributorId: string,
   router: Router,
   appConfig: Record<string, unknown>,
+  importModule: ImportModuleFn,
 ): Promise<boolean> {
   try {
-    // Vite's dev server resolves dynamic imports through its module
-    // graph; at production/runtime the browser fetches the URL
-    // directly and resolves bare imports via the importmap in
-    // index.html. `/* @vite-ignore */` keeps Vite from trying to
-    // pre-analyze this dynamic URL at build time.
-    const mod: ServerModule = await import(/* @vite-ignore */ url);
+    const mod = await importModule(url);
     const register = mod.register ?? mod.default;
     if (typeof register !== "function") {
       throw new Error(
@@ -109,12 +151,35 @@ async function loadAndRegister(
 
 let adminLoaded = false;
 
+export interface BootServerModulesOptions {
+  /**
+   * Override the module loader. Tests inject a stub that returns a
+   * fake `register()` instead of fetching over the network.
+   */
+  importModule?: ImportModuleFn;
+}
+
+/**
+ * Reset module-local state. Exposed only so tests can run
+ * `bootServerModules` repeatedly without cross-test contamination; OSS
+ * runtime never calls this.
+ */
+export function __resetServerModulesForTests(): void {
+  adminLoaded = false;
+  serverModuleShells.value = [];
+  serverModuleLoadFailed.value = null;
+}
+
 /**
  * Orchestrate server-module loading. Called once from main.ts after
  * the Vue app is created but BEFORE app.mount() — so the first
  * navigation sees any routes the modules register.
  */
-export async function bootServerModules(router: Router): Promise<void> {
+export async function bootServerModules(
+  router: Router,
+  options: BootServerModulesOptions = {},
+): Promise<void> {
+  const importModule = options.importModule ?? defaultImportModule;
   const { config, loadConfig } = useAppConfig();
 
   // Config must be loaded before we can decide what to fetch.
@@ -131,7 +196,13 @@ export async function bootServerModules(router: Router): Promise<void> {
   // Deployment-level: auth UI module. Eagerly loaded when the
   // feature flag is set (server-backed modes only).
   if (features.authUI) {
-    await loadAndRegister("/ui/auth.js", "server:auth", router, cfg);
+    await loadAndRegister(
+      "/ui/auth.js",
+      "server:auth",
+      router,
+      cfg,
+      importModule,
+    );
   }
 
   // User-level: admin UI module. Lazily loaded when the host user
@@ -148,6 +219,7 @@ export async function bootServerModules(router: Router): Promise<void> {
           "server:admin",
           router,
           cfg,
+          importModule,
         );
         if (ok) adminLoaded = true;
       }
