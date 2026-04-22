@@ -1,7 +1,7 @@
 import asyncio
 
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 
 from spectra_sherpa.app.services.batch_predict import discover_files
 
@@ -34,7 +34,9 @@ async def test_headless_api_predict_missing_executor():
     """Test that headless API returns 500 when _executor is missing."""
     from spectra_sherpa.app.api.headless_app import app
 
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    # httpx ≥0.28 removed the ``app=`` kwarg; ASGI apps must be passed
+    # through an explicit transport.
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.post("/predict", json={"sample": {"data": [[1, 2]]}})
         assert response.status_code == 500
         assert "Model executor not initialized" in response.text
