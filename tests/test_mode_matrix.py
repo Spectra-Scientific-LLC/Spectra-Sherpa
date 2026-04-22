@@ -482,38 +482,48 @@ class TestMCPToolSystem:
 
 
 class TestRegistrationRequiresCode:
-    """registrationRequiresCode must only be True in enterprise mode with ENTERPRISE_PASSWORD set."""
+    """registrationRequiresCode surfaces the ``auth_policy`` contract flag.
 
-    def test_local_mode_never_requires_code(self):
-        """Local mode: registrationRequiresCode is False even with ENTERPRISE_PASSWORD."""
-        with patch.dict("os.environ", {"ENTERPRISE_PASSWORD": "secret123"}):
-            cfg = _make_config(mode="local")
+    The server (spectra-server) decides whether an access code is required
+    based on its own configuration (mode + ``ENTERPRISE_PASSWORD``) and
+    registers the result at startup via
+    ``auth_policy.set_registration_requires_code``. OSS only surfaces
+    whatever the server has declared. Server-side tests cover the
+    mode-and-env-var logic itself.
+    """
+
+    def setup_method(self):
+        from spectra_sherpa.app.contracts.auth_policy import _reset_for_tests
+
+        _reset_for_tests()
+
+    def teardown_method(self):
+        from spectra_sherpa.app.contracts.auth_policy import _reset_for_tests
+
+        _reset_for_tests()
+
+    def test_default_is_false_when_no_server_registered(self):
+        """OSS-only installs: the flag is False by default."""
+        for mode in ("local", "hybrid", "enterprise"):
+            cfg = _make_config(mode=mode)
             assert cfg.to_client_safe()["registrationRequiresCode"] is False
 
-    def test_hybrid_mode_never_requires_code(self):
-        """Hybrid mode: registrationRequiresCode is False even with ENTERPRISE_PASSWORD."""
-        with patch.dict("os.environ", {"ENTERPRISE_PASSWORD": "secret123"}):
-            cfg = _make_config(mode="hybrid")
-            assert cfg.to_client_safe()["registrationRequiresCode"] is False
+    def test_flag_surfaces_when_server_sets_true(self):
+        """When the server registers True, OSS surfaces True in client config."""
+        from spectra_sherpa.app.contracts.auth_policy import (
+            set_registration_requires_code,
+        )
 
-    def test_enterprise_mode_requires_code_when_password_set(self):
-        """Enterprise mode + ENTERPRISE_PASSWORD: registrationRequiresCode is True."""
-        with patch.dict("os.environ", {"ENTERPRISE_PASSWORD": "secret123"}):
-            cfg = _make_config(mode="enterprise")
+        set_registration_requires_code(True)
+        for mode in ("local", "hybrid", "enterprise"):
+            cfg = _make_config(mode=mode)
             assert cfg.to_client_safe()["registrationRequiresCode"] is True
 
-    def test_enterprise_mode_no_code_when_password_empty(self):
-        """Enterprise mode without ENTERPRISE_PASSWORD: registrationRequiresCode is False."""
-        with patch.dict("os.environ", {"ENTERPRISE_PASSWORD": ""}, clear=False):
+    def test_flag_independent_of_env_var(self):
+        """OSS does NOT read ENTERPRISE_PASSWORD directly; only the contract flag matters."""
+        with patch.dict("os.environ", {"ENTERPRISE_PASSWORD": "secret123"}):
             cfg = _make_config(mode="enterprise")
-            assert cfg.to_client_safe()["registrationRequiresCode"] is False
-
-    def test_enterprise_mode_no_code_when_password_missing(self):
-        """Enterprise mode without ENTERPRISE_PASSWORD env var: registrationRequiresCode is False."""
-        env = os.environ.copy()
-        env.pop("ENTERPRISE_PASSWORD", None)
-        with patch.dict("os.environ", env, clear=True):
-            cfg = _make_config(mode="enterprise")
+            # No server registered the flag, so the env var should have no effect.
             assert cfg.to_client_safe()["registrationRequiresCode"] is False
 
 

@@ -348,21 +348,12 @@ async def api_key_middleware(request: Request, call_next) -> Response:
     """
     from fastapi.responses import JSONResponse
 
-    # Skip auth check for public paths
-    public_paths = [
-        "/",
-        "/health",
-        "/api/health",
-        "/api/ready",
-        "/api/v1/health",
-        "/api/v1/auth/login",
-        "/api/v1/auth/register",
-        "/api/v1/config",
-        "/docs",
-        "/redoc",
-        "/openapi.json",
-        "/api/openapi.json",
-    ]
+    from spectra_sherpa.app.contracts.public_path_provider import get_public_paths
+
+    # Skip auth check for public paths. Core list lives in the contract;
+    # server-side extensions (e.g. /api/v1/auth/login, /api/v1/auth/register)
+    # are appended via register_public_paths() at startup.
+    public_paths = get_public_paths()
 
     path = request.url.path
 

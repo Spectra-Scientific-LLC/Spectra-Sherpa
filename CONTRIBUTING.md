@@ -18,6 +18,12 @@ Not sure which applies to you? Start with the
 [Scientist Contributor Guide](docs/contributing/scientist-guide.md) — it is
 shorter and does not require any background in web development.
 
+For contributions that touch extension contracts, plugin interfaces, API
+specs, or the boundary with the commercial server, read
+[docs/dev/governance.md](docs/dev/governance.md) first. It defines what
+OSS owns, how conflicts are resolved, and what counts as a stability
+surface.
+
 ---
 
 ## Before any contribution: the CLA

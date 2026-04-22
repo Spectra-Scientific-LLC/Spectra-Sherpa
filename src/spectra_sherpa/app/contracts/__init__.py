@@ -49,10 +49,21 @@ from spectra_sherpa.app.contracts.demo_policy import (
     get_demo_policy,
     set_demo_policy_provider,
 )
+from spectra_sherpa.app.contracts.auth_policy import (
+    registration_enabled,
+    registration_requires_code,
+    set_registration_enabled,
+    set_registration_requires_code,
+)
 from spectra_sherpa.app.contracts.key_resolver import (
     ExtraKeyResolver,
     get_extra_key_resolver,
     set_extra_key_resolver,
+)
+from spectra_sherpa.app.contracts.public_path_provider import (
+    OSS_PUBLIC_PATHS,
+    get_public_paths,
+    register_public_paths,
 )
 
 __all__ = [
@@ -87,4 +98,11 @@ __all__ = [
     "DemoPolicyProvider",
     "get_demo_policy",
     "set_demo_policy_provider",
+    "OSS_PUBLIC_PATHS",
+    "get_public_paths",
+    "register_public_paths",
+    "registration_enabled",
+    "registration_requires_code",
+    "set_registration_enabled",
+    "set_registration_requires_code",
 ]

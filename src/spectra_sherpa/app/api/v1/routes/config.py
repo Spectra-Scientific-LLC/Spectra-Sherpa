@@ -218,6 +218,17 @@ async def get_config(
                     config["limits"] = overlay["limits"]
                 if overlay.get("demo") is not None:
                     config["demo"] = overlay["demo"]
+                # Explicit merge of server-owned auth-policy flags. The
+                # base shape defaults both to False (see
+                # AppConfig.to_client_safe); the overlay may override
+                # per-request, and the names are listed here so a future
+                # overlay-structure change does not silently drop them.
+                if "registrationEnabled" in overlay:
+                    config["registrationEnabled"] = bool(overlay["registrationEnabled"])
+                if "registrationRequiresCode" in overlay:
+                    config["registrationRequiresCode"] = bool(
+                        overlay["registrationRequiresCode"]
+                    )
             else:
                 config["configStatus"] = CONFIG_STATUS_DEGRADED
                 config["configError"] = CONFIG_ERROR_SUBSCRIPTION_OVERLAY_UNAVAILABLE

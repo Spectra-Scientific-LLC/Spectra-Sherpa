@@ -102,6 +102,12 @@ extension-owned routes.
 The three boundary surfaces (Python injection seam, HTTP routes,
 WebSocket schema) are documented in `OSS_SCOPE.md` at the repo root.
 
+The full ownership model — what lives where, how conflicts are resolved,
+and which plugin contracts are stability surface — is documented in
+[governance.md](governance.md). Implementers of server-side extensions
+(proprietary routes, plugin packages, AI providers) should read it before
+adding a new seam.
+
 ## Core Concepts
 
 ### 1. The Mode Contract

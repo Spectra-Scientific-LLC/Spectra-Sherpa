@@ -372,19 +372,31 @@ class AppConfig(BaseModel):
         return {name: llm_config for name, llm_config in self.llms.items() if llm_config.is_configured}
 
     def to_client_safe(self) -> dict:
-        """Return client-safe configuration (no secrets)"""
+        """Return client-safe configuration (no secrets).
+
+        ``registrationEnabled`` and ``registrationRequiresCode`` are
+        server-owned flags. The commercial server declares their values
+        at startup via ``spectra_sherpa.app.contracts.auth_policy``; OSS
+        reads them here. In OSS-only installs both default to ``False``
+        — the base shape carries those defaults, which is the correct
+        behavior for distributions without managed auth. If the server
+        overlay provider overrides them in its payload, the config
+        route merges those values on top.
+        """
         has_llm = len(self.get_configured_llms()) > 0
 
-        # Single source of truth for registration visibility across distributions/modes.
+        from spectra_sherpa.app.contracts.auth_policy import (
+            registration_requires_code as _registration_requires_code_flag,
+        )
         from spectra_sherpa.app.core.mode_policy import allows_registration
 
+        # ``allows_registration()`` layers the multi-user mode check on
+        # top of the server-registered flag.
         registration_enabled = allows_registration()
-
-        # Enterprise password gating — only in enterprise mode with password set
-        registration_requires_code = False
-        if self.mode == "enterprise":
-            enterprise_pw = os.getenv("ENTERPRISE_PASSWORD", "").strip()
-            registration_requires_code = bool(enterprise_pw)
+        # ``registration_requires_code`` is independent of mode: the
+        # server declares whether an access code is required; OSS
+        # simply surfaces it.
+        registration_requires_code = _registration_requires_code_flag()
 
         # User-facing quota model: one Sherpa/LLM hourly limit plus optional
         # session expiry metadata. Execution throttling is no longer exposed.
