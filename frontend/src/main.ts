@@ -1,4 +1,7 @@
+import * as Vue from "vue";
 import { createApp } from "vue";
+import * as VueRouter from "vue-router";
+import * as Pinia from "pinia";
 import { createPinia } from "pinia";
 import PrimeVue from "primevue/config";
 import ToastService from "primevue/toastservice";
@@ -13,6 +16,30 @@ import "primevue/resources/themes/lara-light-blue/theme.css";
 import "primevue/resources/primevue.min.css";
 import "primeicons/primeicons.css";
 import "./assets/main.css";
+
+// Expose bundled Vue/Vue-Router/Pinia on globalThis so the thin shims
+// in /vendor/*.js can re-export them for server-provided modules
+// (/ui/auth.js, /ui/admin.js). MUST happen before any dynamic
+// import("/ui/*.js") fires.
+//
+// PrimeVue components are registered lazily from the bundle the
+// server module itself provides, so no primevue shim is populated
+// here — the module handles its own component imports against the
+// /vendor/primevue/* import-map prefix.
+declare global {
+  interface Window {
+    __OSS_VENDOR__?: {
+      vue?: typeof Vue;
+      vueRouter?: typeof VueRouter;
+      pinia?: typeof Pinia;
+    };
+  }
+}
+window.__OSS_VENDOR__ = {
+  vue: Vue,
+  vueRouter: VueRouter,
+  pinia: Pinia,
+};
 
 const app = createApp(App);
 

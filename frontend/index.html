@@ -5,6 +5,38 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Spectra Sherpa</title>
     <link rel="icon" type="image/png" href="/logo.png" />
+
+    <!--
+      Import map for server-provided frontend modules.
+
+      The OSS bundle dynamically imports /ui/auth.js and /ui/admin.js
+      from spectra-server at boot time (when features.authUI or
+      user.capabilities.admin is set). Those modules declare vue,
+      vue-router, pinia, and primevue/* as Vite externals so the
+      runtime can reuse OSS's already-loaded instances rather than
+      shipping a second copy (which would break Pinia/router/reactive
+      state sharing).
+
+      Each import map target points at a thin shim served from
+      /vendor/*.js that re-exports from `globalThis.__OSS_VENDOR__`,
+      which `src/main.ts` populates during OSS bootstrap.
+
+      STATUS (2026-04): shim pair is scaffolded here for commit 4 of
+      Phase 1b to verify end-to-end. The actual dynamic-import boot
+      sequence is not wired yet; do not merge this branch to main
+      until commit 4 confirms the runtime path works in a running
+      dev environment.
+    -->
+    <script type="importmap">
+      {
+        "imports": {
+          "vue": "/vendor/vue.js",
+          "vue-router": "/vendor/vue-router.js",
+          "pinia": "/vendor/pinia.js",
+          "primevue/": "/vendor/primevue/"
+        }
+      }
+    </script>
   </head>
   <body>
     <div id="app"></div>
