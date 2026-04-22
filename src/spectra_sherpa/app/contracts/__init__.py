@@ -29,9 +29,13 @@ from spectra_sherpa.app.contracts.auth_policy import (
     set_registration_requires_code,
 )
 from spectra_sherpa.app.contracts.auth_resolver import (
+    BearerTokenSubjectResolver,
     ExtraUserAPIKeyAuthenticator,
+    clear_extra_bearer_token_resolver,
     clear_extra_user_api_key_authenticator,
+    get_extra_bearer_token_resolver,
     get_extra_user_api_key_authenticator,
+    set_extra_bearer_token_resolver,
     set_extra_user_api_key_authenticator,
 )
 from spectra_sherpa.app.contracts.capabilities import (
@@ -75,12 +79,16 @@ __all__ = [
     "get_sherpa_advisor",
     "reset_sherpa_advisor",
     "set_sherpa_advisor",
+    "BearerTokenSubjectResolver",
+    "clear_extra_bearer_token_resolver",
     "clear_extra_user_api_key_authenticator",
     "CurrentActor",
     "ExtraUserAPIKeyAuthenticator",
     "ExtraKeyResolver",
+    "get_extra_bearer_token_resolver",
     "get_extra_user_api_key_authenticator",
     "get_extra_key_resolver",
+    "set_extra_bearer_token_resolver",
     "set_extra_user_api_key_authenticator",
     "set_extra_key_resolver",
     "ConfigOverlayProvider",

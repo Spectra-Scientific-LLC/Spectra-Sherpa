@@ -42,3 +42,40 @@ def clear_extra_user_api_key_authenticator() -> None:
     """Reset the injected managed API-key authenticator."""
     global _extra_user_api_key_authenticator
     _extra_user_api_key_authenticator = None
+
+
+# ---------------------------------------------------------------------------
+# Bearer-token subject resolver (server-owned JWT decode)
+# ---------------------------------------------------------------------------
+#
+# OSS deleted its JWT primitives in v0.4.1 Phase 2. For HTTP requests,
+# the server's EnterpriseEnforcementMiddleware runs before the OSS
+# gateway and writes the decoded ``sub`` claim to
+# ``request.state.authenticated_subject``; OSS reads that and loads the
+# user (see ``deps._resolve_user``). WebSocket auth does not go through
+# that middleware, so OSS exposes this contract as an alternative: the
+# server registers a resolver that returns the user-id for a raw JWT.
+# OSS default: no resolver (WS JWT auth returns None). Server populates
+# with real decode.
+
+BearerTokenSubjectResolver = Callable[[str], Awaitable[int | None]]
+
+_extra_bearer_token_resolver: BearerTokenSubjectResolver | None = None
+
+
+def get_extra_bearer_token_resolver() -> BearerTokenSubjectResolver | None:
+    """Return the injected JWT-subject resolver, if configured."""
+    return _extra_bearer_token_resolver
+
+
+def set_extra_bearer_token_resolver(resolver: BearerTokenSubjectResolver) -> None:
+    """Inject a server-provided resolver that maps a JWT to a user id."""
+    global _extra_bearer_token_resolver
+    _extra_bearer_token_resolver = resolver
+    logger.info("ExtraBearerTokenResolver: custom implementation injected")
+
+
+def clear_extra_bearer_token_resolver() -> None:
+    """Reset the injected JWT-subject resolver."""
+    global _extra_bearer_token_resolver
+    _extra_bearer_token_resolver = None
