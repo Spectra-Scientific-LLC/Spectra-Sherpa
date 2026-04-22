@@ -399,6 +399,23 @@ export interface components {
             permissions: components["schemas"]["DataEgressPermissionCreate"][];
         };
         /**
+         * Capabilities
+         * @description User-scoped capability flags surfaced to the OSS frontend.
+         *
+         *     The frontend consults these to decide which UI modules to load
+         *     dynamically (e.g. the server-served Admin module only loads when
+         *     ``capabilities.admin`` is true). Unlike deployment-level
+         *     ``features.*`` flags (set via the config overlay), capabilities are
+         *     per-user and are populated by the server's /auth/me response.
+         */
+        Capabilities: {
+            /**
+             * Admin
+             * @default false
+             */
+            admin: boolean;
+        };
+        /**
          * ChangePasswordRequest
          * @description Password change request
          */
@@ -1753,6 +1770,7 @@ export interface components {
              * @default false
              */
             is_superuser: boolean;
+            capabilities?: components["schemas"]["Capabilities"];
             /**
              * Is Active
              * @default true

@@ -4,11 +4,24 @@ import { ref, computed } from 'vue'
 import api from '@/api/client'
 import router from '@/router'
 
+/** Per-user capability flags populated by the server's /auth/me response. */
+interface UserCapabilities {
+    admin?: boolean
+}
+
 interface User {
     id: number
     username: string
     is_active?: boolean
-    is_superuser?: boolean
+    /**
+     * Per-user capability flags. Absent in local mode (OSS Actor
+     * schema); populated by the server in managed-auth modes from
+     * ManagedUserAccount state. Gate admin UI with
+     * ``user?.capabilities?.admin``. The legacy ``is_superuser`` field
+     * is still on the wire for backward compat but is intentionally
+     * not surfaced on this type — new code must use capabilities.
+     */
+    capabilities?: UserCapabilities
 }
 
 export const useAuthStore = defineStore('auth', () => {

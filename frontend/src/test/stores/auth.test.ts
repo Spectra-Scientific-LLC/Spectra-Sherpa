@@ -40,7 +40,7 @@ describe("Auth Store", () => {
         data: { access_token: "jwt-token" },
       });
       vi.mocked(api.get).mockResolvedValueOnce({
-        data: { id: 1, username: "alice", is_superuser: false },
+        data: { id: 1, username: "alice", capabilities: { admin: false } },
       });
       const store = useAuthStore();
 
@@ -98,7 +98,7 @@ describe("Auth Store", () => {
     it("clears state and navigates to /login", () => {
       const store = useAuthStore();
       store.token = "jwt";
-      store.user = { id: 1, username: "a", is_superuser: false };
+      store.user = { id: 1, username: "a", capabilities: { admin: false } };
       localStorage.setItem("token", "jwt");
 
       store.logout();

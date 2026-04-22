@@ -1108,6 +1108,18 @@
         "title": "BulkPermissionUpdate",
         "description": "Schema for bulk updating permissions"
       },
+      "Capabilities": {
+        "properties": {
+          "admin": {
+            "type": "boolean",
+            "title": "Admin",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "Capabilities",
+        "description": "User-scoped capability flags surfaced to the OSS frontend.\n\nThe frontend consults these to decide which UI modules to load\ndynamically (e.g. the server-served Admin module only loads when\n``capabilities.admin`` is true). Unlike deployment-level\n``features.*`` flags (set via the config overlay), capabilities are\nper-user and are populated by the server's /auth/me response."
+      },
       "ChangePasswordRequest": {
         "properties": {
           "current_password": {
@@ -4156,6 +4168,9 @@
             "type": "boolean",
             "title": "Is Superuser",
             "default": false
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/Capabilities"
           },
           "is_active": {
             "type": "boolean",

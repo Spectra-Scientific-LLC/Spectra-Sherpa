@@ -116,7 +116,7 @@
         @click="notificationDrawerVisible = !notificationDrawerVisible"
       />
       <Button
-        v-if="authStore.user?.is_superuser && appMode !== 'local'"
+        v-if="authStore.user?.capabilities?.admin && appMode !== 'local'"
         icon="pi pi-shield"
         class="p-button-text p-button-rounded p-button-danger"
         aria-label="Admin Dashboard"

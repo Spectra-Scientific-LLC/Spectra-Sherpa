@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => ({
     disconnect: vi.fn(),
   },
   authStore: {
-    user: { id: 7, username: "alice", is_superuser: false },
+    user: { id: 7, username: "alice", capabilities: { admin: false } },
     logout: vi.fn(),
   },
   projectStore: {
@@ -277,7 +277,7 @@ describe("Topbar action hover labels", () => {
   beforeEach(() => {
     mocks.projectStore.currentProject = { id: 1, name: "Demo Project" };
     mocks.projectStore.currentProjectId = 1;
-    mocks.authStore.user = { id: 7, username: "alice", is_superuser: false };
+    mocks.authStore.user = { id: 7, username: "alice", capabilities: { admin: false } };
     mocks.appMode.value = "local";
   });
 

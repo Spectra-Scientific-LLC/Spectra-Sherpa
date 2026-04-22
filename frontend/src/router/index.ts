@@ -134,9 +134,9 @@ router.beforeEach(async (to, from, next) => {
     return next('/login')
   }
 
-  // Admin pages (requires superuser in enterprise mode)
+  // Admin pages (requires admin capability in server-backed modes)
   if (to.meta.requiresAdmin) {
-    if (!authStore.user?.is_superuser) {
+    if (!authStore.user?.capabilities?.admin) {
       return next('/')
     }
   }

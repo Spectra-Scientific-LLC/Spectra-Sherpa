@@ -8,7 +8,7 @@
  *  2. Hybrid mode — loopback user resolved, remote falls through
  *  3. Enterprise / unauthenticated — redirect to /login
  *  4. Enterprise / authenticated — allow protected routes
- *  5. Admin route — require is_superuser
+ *  5. Admin route — require capabilities.admin
  *  6. Registration route — gated by registrationEnabled
  */
 
@@ -79,10 +79,14 @@ async function navigateTo(path: string): Promise<string> {
 }
 
 /** Seed a fully-authenticated user into a fresh auth store. */
-function authenticateAs(opts: { is_superuser: boolean } = { is_superuser: false }) {
+function authenticateAs(opts: { admin: boolean } = { admin: false }) {
   const store = useAuthStore();
   store.token = "test-jwt-token";
-  store.user = { id: 1, username: "testuser", is_superuser: opts.is_superuser };
+  store.user = {
+    id: 1,
+    username: "testuser",
+    capabilities: { admin: opts.admin },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -187,13 +191,13 @@ describe("Router auth guard", () => {
       mockAppMode.value = "enterprise";
     });
 
-    it("redirects non-superuser → /", async () => {
-      authenticateAs({ is_superuser: false });
+    it("redirects non-admin → /", async () => {
+      authenticateAs({ admin: false });
       expect(await navigateTo("/admin")).toBe(HOME_PATH);
     });
 
-    it("allows superuser to access /admin", async () => {
-      authenticateAs({ is_superuser: true });
+    it("allows admin-capability user to access /admin", async () => {
+      authenticateAs({ admin: true });
       expect(await navigateTo("/admin")).toBe("/admin");
     });
 
