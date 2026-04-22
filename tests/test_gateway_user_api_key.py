@@ -30,7 +30,16 @@ async def test_gateway_accepts_user_api_key(
     considered loopback and exempt from auth in hybrid mode.  We patch
     ``get_client_host`` to simulate a remote client so the gateway actually
     enforces authentication.
+
+    The injected authenticator mirrors the server's production path —
+    hash the candidate with sha256 and compare against the stored
+    digest (see ``spectrasherpa_server.security.verify_api_key_hash``).
+    No dependency on OSS password-hashing primitives, which Phase 2 is
+    deleting from OSS.
     """
+    import hashlib
+    import hmac
+
     original_mode = app_config.mode
     app_config.mode = "hybrid"
     try:
@@ -46,10 +55,11 @@ async def test_gateway_accepts_user_api_key(
         user = User(username="gatewayuser")
         test_session.add(user)
         await test_session.commit()
-        api_key_hash = security.get_password_hash(api_key)
+        api_key_hash = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
 
         async def _authenticate_user_api_key(candidate: str, _session: AsyncSession) -> int | None:
-            if security.verify_password(candidate, api_key_hash):
+            candidate_hash = hashlib.sha256(candidate.encode("utf-8")).hexdigest()
+            if hmac.compare_digest(candidate_hash, api_key_hash):
                 return user.id
             return None
 
