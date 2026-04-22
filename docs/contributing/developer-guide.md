@@ -123,16 +123,16 @@ environment for manual verification before merging:
 
 ```bash
 ssh root@<STAGING_IP>
-cd ~/spectra-platform/spectra-sherpa
+cd ~/spectra-platform/spectra
 git fetch origin
 git checkout <branch-name>
 
 # Frontend-only change:
-cd ~/spectra-platform/spectra-ops/docker
+cd packages/spectra-ops/docker
 docker compose -f docker-compose.prod.yaml up -d --build frontend
 
 # Backend or full-stack change:
-cd ~/spectra-platform/spectra-ops/docker
+cd packages/spectra-ops/docker
 docker compose -f docker-compose.prod.yaml up -d --build
 ```
 
@@ -140,9 +140,9 @@ Verify the change on the staging URL, then merge the PR on GitHub.
 After merging, return staging to `main`:
 
 ```bash
-cd ~/spectra-platform/spectra-sherpa
+cd ~/spectra-platform/spectra
 git checkout main && git pull
-cd ~/spectra-platform/spectra-ops/docker
+cd packages/spectra-ops/docker
 docker compose -f docker-compose.prod.yaml up -d --build
 ```
 

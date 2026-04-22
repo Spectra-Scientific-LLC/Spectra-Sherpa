@@ -108,6 +108,6 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           command_timeout: 12m
           script: |
-            bash ~/spectra-platform/spectra-ops/scripts/deploy.sh \
+            bash ~/spectra-platform/spectra/packages/spectra-ops/scripts/deploy.sh \
               ${{ steps.env.outputs.target }} \
               ${{ steps.env.outputs.branch }}
