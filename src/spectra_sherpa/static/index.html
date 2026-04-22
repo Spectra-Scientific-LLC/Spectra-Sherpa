@@ -5,22 +5,57 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Spectra Sherpa</title>
     <link rel="icon" type="image/png" href="/logo.png" />
-    <script type="module" crossorigin src="/assets/index-0DE5w4L-.js"></script>
+
+    <!--
+      Import map for server-provided frontend modules.
+
+      The OSS bundle dynamically imports /ui/auth.js and /ui/admin.js
+      from spectra-server at boot time (when features.authUI or
+      user.capabilities.admin is set). Those modules declare vue,
+      vue-router, pinia, and primevue/* as Vite externals so the
+      runtime can reuse OSS's already-loaded instances rather than
+      shipping a second copy (which would break Pinia/router/reactive
+      state sharing).
+
+      Each import map target points at a thin shim served from
+      /vendor/*.js that re-exports from `globalThis.__OSS_VENDOR__`,
+      which `src/main.ts` populates during OSS bootstrap.
+
+      STATUS (2026-04): shim pair is scaffolded here for commit 4 of
+      Phase 1b to verify end-to-end. The actual dynamic-import boot
+      sequence is not wired yet; do not merge this branch to main
+      until commit 4 confirms the runtime path works in a running
+      dev environment.
+    -->
+
+    <script type="importmap">
+      {
+        "imports": {
+          "vue": "/vendor/vue.js",
+          "vue-router": "/vendor/vue-router.js",
+          "pinia": "/vendor/pinia.js",
+          "primevue/": "/vendor/primevue/"
+        }
+      }
+    </script>
+    <script type="module" crossorigin src="/assets/index-BKylAMCN.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-Dw2cE7zH.js">
-    <link rel="modulepreload" crossorigin href="/assets/client-Cl0Ouslb.js">
-    <link rel="modulepreload" crossorigin href="/assets/_plugin-vue_export-helper-CcGEDuz9.js">
-    <link rel="modulepreload" crossorigin href="/assets/preload-helper-CM8YhcCa.js">
-    <link rel="modulepreload" crossorigin href="/assets/dropdown.esm-Bfw6Ni1G.js">
-    <link rel="modulepreload" crossorigin href="/assets/dialog.esm-DwCp_L6T.js">
-    <link rel="modulepreload" crossorigin href="/assets/inputtext.esm-qSiPIVaJ.js">
-    <link rel="modulepreload" crossorigin href="/assets/menu.esm-1wnfAU4w.js">
-    <link rel="modulepreload" crossorigin href="/assets/textarea.esm-CzZToeYg.js">
-    <link rel="modulepreload" crossorigin href="/assets/vue-router-DFpne4mS.js">
-    <link rel="modulepreload" crossorigin href="/assets/useAppConfig-Bx0HfPqP.js">
-    <link rel="modulepreload" crossorigin href="/assets/ws-rWeLe32x.js">
-    <link rel="modulepreload" crossorigin href="/assets/project-cNdG9uqB.js">
-    <link rel="modulepreload" crossorigin href="/assets/llm-B-gBoJyS.js">
-    <link rel="modulepreload" crossorigin href="/assets/sherpaWs-BR8CnBnr.js">
+    <link rel="modulepreload" crossorigin href="/assets/client-DM0emCh-.js">
+    <link rel="modulepreload" crossorigin href="/assets/_plugin-vue_export-helper-BQLJe4u9.js">
+    <link rel="modulepreload" crossorigin href="/assets/preload-helper-CQ36nxok.js">
+    <link rel="modulepreload" crossorigin href="/assets/dropdown.esm-BNJQrglB.js">
+    <link rel="modulepreload" crossorigin href="/assets/checkbox.esm-C5a9WvQw.js">
+    <link rel="modulepreload" crossorigin href="/assets/dialog.esm-Cnv8f694.js">
+    <link rel="modulepreload" crossorigin href="/assets/index.esm-BLHPpush.js">
+    <link rel="modulepreload" crossorigin href="/assets/inputtext.esm-Ctdinaqu.js">
+    <link rel="modulepreload" crossorigin href="/assets/menu.esm-q38FF3Ok.js">
+    <link rel="modulepreload" crossorigin href="/assets/textarea.esm-DJtvx6Fz.js">
+    <link rel="modulepreload" crossorigin href="/assets/vue-router-DfzJ2y9s.js">
+    <link rel="modulepreload" crossorigin href="/assets/useAppConfig-BEPWe7Rf.js">
+    <link rel="modulepreload" crossorigin href="/assets/ws-DKEssNIy.js">
+    <link rel="modulepreload" crossorigin href="/assets/project-BWgGzavZ.js">
+    <link rel="modulepreload" crossorigin href="/assets/llm-BRctkepS.js">
+    <link rel="modulepreload" crossorigin href="/assets/sherpaWs-DAjp0l-p.js">
     <link rel="stylesheet" crossorigin href="/assets/index-CJY3Hxg0.css">
   </head>
   <body>

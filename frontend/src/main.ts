@@ -7,6 +7,30 @@ import PrimeVue from "primevue/config";
 import ToastService from "primevue/toastservice";
 import Tooltip from "primevue/tooltip";
 
+// Server-provided frontend modules import individual primevue
+// components via `primevue/<name>` paths. Those paths resolve via
+// `<script type="importmap">` in index.html to per-component shims
+// under /vendor/primevue/, which read from window.__OSS_VENDOR__
+// .primevue.<name> — populated below. Keep this list in sync with
+// whatever paths the ported views in packages/spectra-server/frontend
+// import (currently enumerated by grep'ing that tree); if a module
+// imports a new primevue path, add it here AND add a corresponding
+// shim file at packages/spectra-sherpa/frontend/public/vendor/primevue/.
+import * as pvButton from "primevue/button";
+import * as pvCard from "primevue/card";
+import * as pvCheckbox from "primevue/checkbox";
+import * as pvColumn from "primevue/column";
+import * as pvDatatable from "primevue/datatable";
+import * as pvDialog from "primevue/dialog";
+import * as pvInputtext from "primevue/inputtext";
+import * as pvMessage from "primevue/message";
+import * as pvPassword from "primevue/password";
+import * as pvProgressbar from "primevue/progressbar";
+import * as pvTabpanel from "primevue/tabpanel";
+import * as pvTabview from "primevue/tabview";
+import * as pvTag from "primevue/tag";
+import * as pvUsetoast from "primevue/usetoast";
+
 import App from "./App.vue";
 import router from "./router";
 import { useWorkflowStore } from "./stores/workflow";
@@ -17,21 +41,17 @@ import "primevue/resources/primevue.min.css";
 import "primeicons/primeicons.css";
 import "./assets/main.css";
 
-// Expose bundled Vue/Vue-Router/Pinia on globalThis so the thin shims
-// in /vendor/*.js can re-export them for server-provided modules
-// (/ui/auth.js, /ui/admin.js). MUST happen before any dynamic
+// Expose bundled Vue/Vue-Router/Pinia/primevue on globalThis so the
+// thin shims in /vendor/*.js can re-export them for server-provided
+// modules (/ui/auth.js, /ui/admin.js). MUST happen before any dynamic
 // import("/ui/*.js") fires.
-//
-// PrimeVue components are registered lazily from the bundle the
-// server module itself provides, so no primevue shim is populated
-// here — the module handles its own component imports against the
-// /vendor/primevue/* import-map prefix.
 declare global {
   interface Window {
     __OSS_VENDOR__?: {
       vue?: typeof Vue;
       vueRouter?: typeof VueRouter;
       pinia?: typeof Pinia;
+      primevue?: Record<string, unknown>;
     };
   }
 }
@@ -39,6 +59,22 @@ window.__OSS_VENDOR__ = {
   vue: Vue,
   vueRouter: VueRouter,
   pinia: Pinia,
+  primevue: {
+    button: pvButton,
+    card: pvCard,
+    checkbox: pvCheckbox,
+    column: pvColumn,
+    datatable: pvDatatable,
+    dialog: pvDialog,
+    inputtext: pvInputtext,
+    message: pvMessage,
+    password: pvPassword,
+    progressbar: pvProgressbar,
+    tabpanel: pvTabpanel,
+    tabview: pvTabview,
+    tag: pvTag,
+    usetoast: pvUsetoast,
+  },
 };
 
 const app = createApp(App);
@@ -127,7 +163,21 @@ const initWorkflowMetadataRefresh = async () => {
 
 void initWorkflowMetadataRefresh();
 
-app.mount("#app");
+// Load server-provided frontend modules (auth, admin) BEFORE mount so
+// the first navigation sees any routes they register. This is async
+// but the await is bounded (one config fetch + one or two dynamic
+// imports); failure is fail-closed (console error + reactive flag
+// consumed by the fail-closed UI in Phase 1b commit 5).
+import { bootServerModules } from "./boot/serverModules";
+
+void (async () => {
+  try {
+    await bootServerModules(router);
+  } catch (err) {
+    console.error("[Spectra] server-module bootstrap threw:", err);
+  }
+  app.mount("#app");
+})();
 
 // Cleanup on HMR to prevent stacked intervals and leaked listeners
 if (import.meta.hot) {
