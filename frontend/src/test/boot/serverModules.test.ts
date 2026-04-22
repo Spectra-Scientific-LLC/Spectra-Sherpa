@@ -1,13 +1,18 @@
 /**
  * Boot-time loader coverage.
  *
- * Exercises the four paths the OSS shell depends on when resolving
- * which server-provided frontend modules to load:
+ * Exercises the paths the OSS shell depends on when resolving which
+ * server-provided frontend modules to load:
  *
- *   1. features.authUI=true  → /ui/auth.js loaded eagerly
+ *   1. features.authUI=true  → /ui/auth.js loaded eagerly (fail-closed)
  *   2. features absent       → neither module loads (local-mode default)
  *   3. admin capability      → /ui/admin.js lazy-loads after identity
- *   4. fetch/register throws → serverModuleLoadFailed is set
+ *   4. auth.js throws        → serverModuleLoadFailed is set (app bricked)
+ *   5. admin.js throws       → non-critical failure list grows, shell
+ *                              stays usable (no fail-closed)
+ *   6. context authStore     → `user` is a real Vue ref — writes via
+ *                              `ctx.authStore.user.value = …` flow back
+ *                              into the OSS Pinia store
  *
  * The boot module exports an injectable `importModule` so tests can
  * avoid Vite's network-only dynamic import; each test wires its own
@@ -15,7 +20,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { nextTick } from "vue";
+import { isRef, nextTick } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { createPinia, setActivePinia } from "pinia";
 
@@ -34,6 +39,7 @@ vi.mock("@/composables/useAppConfig", () => ({
 import {
   __resetServerModulesForTests,
   bootServerModules,
+  nonCriticalModuleLoadFailures,
   serverModuleLoadFailed,
   serverModuleShells,
   type ImportModuleFn,
@@ -45,6 +51,17 @@ const makeRouter = () =>
     history: createMemoryHistory(),
     routes: [{ path: "/", component: { template: "<div />" } }],
   });
+
+/**
+ * Flush the microtask queue enough times for the watcher + the
+ * promise chain inside loadAndRegister to settle.
+ */
+async function flushAsync() {
+  await nextTick();
+  await Promise.resolve();
+  await Promise.resolve();
+  await nextTick();
+}
 
 describe("bootServerModules", () => {
   beforeEach(() => {
@@ -98,33 +115,52 @@ describe("bootServerModules", () => {
     expect(calledUrls).not.toContain("/ui/admin.js");
   });
 
-  it("lazy-loads /ui/admin.js when user gains capabilities.admin", async () => {
+  it("lazy-loads /ui/admin.js when host identity is set via the context ref", async () => {
     mockConfig.value = { mode: "enterprise", features: { authUI: true } };
     mockLoadConfig.mockResolvedValue(true);
 
-    const importModule = vi.fn(async () => ({ register: vi.fn() }));
+    // Capture the ctx the auth module's register() would see so we can
+    // drive identity through the SAME path the real server bundle uses
+    // (ctx.authStore.user.value = …), not by mutating Pinia directly.
+    let capturedCtx: Parameters<NonNullable<Awaited<ReturnType<ImportModuleFn>>["register"]>>[0] | null = null;
+    const importModule = vi.fn(async (url: string) => {
+      if (url === "/ui/auth.js") {
+        return {
+          register: (ctx) => {
+            capturedCtx = ctx;
+          },
+        };
+      }
+      return { register: vi.fn() };
+    });
 
     await bootServerModules(makeRouter(), { importModule });
+    expect(capturedCtx).not.toBeNull();
+    expect(isRef(capturedCtx!.authStore.user)).toBe(true);
+
+    // Admin has not loaded yet.
     const urlsBeforeAdmin = importModule.mock.calls.map((c) => c[0]);
     expect(urlsBeforeAdmin).not.toContain("/ui/admin.js");
 
-    const authStore = useAuthStore();
-    authStore.user = {
+    // Drive identity via the ref the server module got.
+    capturedCtx!.authStore.user.value = {
       id: 42,
       username: "admin",
       capabilities: { admin: true },
     };
-    await nextTick();
-    // The dynamic import is scheduled by the watcher callback; give it
-    // another tick for the promise chain inside loadAndRegister to flush.
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushAsync();
 
     const urlsAfterAdmin = importModule.mock.calls.map((c) => c[0]);
     expect(urlsAfterAdmin).toContain("/ui/admin.js");
+
+    // The ref-write went through to the OSS Pinia store too —
+    // isAuthenticated should flip true.
+    const authStore = useAuthStore();
+    expect(authStore.user?.username).toBe("admin");
+    expect(authStore.isAuthenticated).toBe(true);
   });
 
-  it("sets serverModuleLoadFailed when auth module import throws", async () => {
+  it("sets serverModuleLoadFailed when auth module import throws (fail-closed)", async () => {
     mockConfig.value = { mode: "enterprise", features: { authUI: true } };
     mockLoadConfig.mockResolvedValue(true);
 
@@ -132,7 +168,6 @@ describe("bootServerModules", () => {
       throw new Error("network unreachable");
     });
 
-    // Suppress the expected console.error so test output stays clean.
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await bootServerModules(makeRouter(), { importModule });
@@ -142,7 +177,7 @@ describe("bootServerModules", () => {
     errorSpy.mockRestore();
   });
 
-  it("sets serverModuleLoadFailed when the module lacks a register()", async () => {
+  it("sets serverModuleLoadFailed when the auth module lacks a register()", async () => {
     mockConfig.value = { mode: "enterprise", features: { authUI: true } };
     mockLoadConfig.mockResolvedValue(true);
 
@@ -157,6 +192,43 @@ describe("bootServerModules", () => {
     errorSpy.mockRestore();
   });
 
+  it("does not fail-closed when /ui/admin.js fails — auth stays healthy", async () => {
+    mockConfig.value = { mode: "enterprise", features: { authUI: true } };
+    mockLoadConfig.mockResolvedValue(true);
+
+    let capturedCtx: Parameters<NonNullable<Awaited<ReturnType<ImportModuleFn>>["register"]>>[0] | null = null;
+    const importModule = vi.fn(async (url: string) => {
+      if (url === "/ui/auth.js") {
+        return {
+          register: (ctx) => {
+            capturedCtx = ctx;
+          },
+        };
+      }
+      // /ui/admin.js — simulate a fetch / parse failure.
+      throw new Error("admin bundle 502");
+    });
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await bootServerModules(makeRouter(), { importModule });
+    // Flip admin identity so the lazy admin load fires.
+    capturedCtx!.authStore.user.value = {
+      id: 1,
+      username: "admin",
+      capabilities: { admin: true },
+    };
+    await flushAsync();
+
+    // Fail-closed flag stays null — the app shell is NOT bricked.
+    expect(serverModuleLoadFailed.value).toBeNull();
+    // But the non-critical failure WAS recorded for diagnostics.
+    expect(nonCriticalModuleLoadFailures.value).toHaveLength(1);
+    expect(nonCriticalModuleLoadFailures.value[0].module).toBe("/ui/admin.js");
+
+    errorSpy.mockRestore();
+  });
+
   it("does nothing when loadConfig fails (no modules loaded)", async () => {
     mockLoadConfig.mockResolvedValue(false);
     mockConfig.value = null;
@@ -167,6 +239,35 @@ describe("bootServerModules", () => {
 
     expect(importModule).not.toHaveBeenCalled();
     expect(serverModuleLoadFailed.value).toBeNull();
+  });
+
+  it("ctx.authStore exposes real refs — setHostUser-style writes flow back to OSS", async () => {
+    mockConfig.value = { mode: "enterprise", features: { authUI: true } };
+    mockLoadConfig.mockResolvedValue(true);
+
+    let capturedCtx: Parameters<NonNullable<Awaited<ReturnType<ImportModuleFn>>["register"]>>[0] | null = null;
+    const importModule = vi.fn(async () => ({
+      register: (ctx) => {
+        capturedCtx = ctx;
+      },
+    }));
+
+    await bootServerModules(makeRouter(), { importModule });
+
+    expect(capturedCtx).not.toBeNull();
+    expect(isRef(capturedCtx!.authStore.user)).toBe(true);
+    expect(isRef(capturedCtx!.authStore.token)).toBe(true);
+
+    // Mirror what setHostUser() does in packages/spectra-server/.../host.ts.
+    capturedCtx!.authStore.user.value = {
+      id: 7,
+      username: "eva",
+      capabilities: { admin: false },
+    };
+
+    const authStore = useAuthStore();
+    expect(authStore.user?.id).toBe(7);
+    expect(authStore.isAuthenticated).toBe(true);
   });
 
   it("invokes register() with a context exposing mountShell", async () => {

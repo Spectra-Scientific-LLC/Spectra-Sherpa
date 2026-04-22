@@ -28,8 +28,9 @@
  * populated in main.ts BEFORE this bootstrap runs.
  */
 import { markRaw, ref, watch } from "vue";
-import type { Component } from "vue";
+import type { Component, Ref } from "vue";
 import type { Router, RouteRecordRaw } from "vue-router";
+import { storeToRefs } from "pinia";
 
 import { useAppConfig } from "@/composables/useAppConfig";
 import {
@@ -52,10 +53,17 @@ export interface ServerModuleShell {
 export const serverModuleShells = ref<ServerModuleShell[]>([]);
 
 /**
- * Set when any server module fetch/register throws. The OSS App shell
- * consumes this to render a fail-closed overlay — required because a
- * silent failure in a server-backed deployment would otherwise expose
- * a partially-functional UI without identity.
+ * Set only when a fail-closed server module (currently /ui/auth.js)
+ * fails to load. The OSS App shell consumes this to render a
+ * fail-closed overlay — required because a silent failure in a
+ * server-backed deployment would otherwise expose a partially-
+ * functional UI without identity.
+ *
+ * Non-fail-closed modules (e.g. /ui/admin.js) record their failure
+ * on `nonCriticalModuleLoadFailures` instead; those failures are
+ * logged but the OSS shell stays usable. Rationale: an admin-only
+ * bundle failure should not brick the product for admin users when
+ * identity and the rest of the app are healthy.
  */
 export const serverModuleLoadFailed = ref<null | {
   module: string;
@@ -63,12 +71,36 @@ export const serverModuleLoadFailed = ref<null | {
 }>(null);
 
 /**
+ * Non-fatal server-module load failures (e.g. /ui/admin.js). Exposed
+ * so the shell can surface a less-intrusive banner if it wants to;
+ * the app stays fully navigable regardless.
+ */
+export const nonCriticalModuleLoadFailures = ref<
+  Array<{ module: string; error: unknown }>
+>([]);
+
+/**
  * Re-export the shape that server modules expect — keep this in sync
  * with `packages/spectra-server/frontend/src/types/context.ts`.
+ *
+ * The authStore bridge exposes `user` and `token` as real Vue refs:
+ * setup-store proxies unwrap refs on property access, so the server
+ * module sees `User | null` rather than `Ref<User | null>` unless we
+ * pass the refs explicitly (via Pinia's `storeToRefs`). A proxied
+ * read works, but writes (`store.user = ...` from the other bundle)
+ * do NOT flow back because the proxy's setter lives in the OSS
+ * bundle's Pinia instance — we must expose the underlying ref so
+ * `user.value = ...` mutates the OSS reactive state.
  */
+interface HostAuthStoreBridge {
+  user: Ref<ReturnType<typeof useAuthStore>["user"]>;
+  token: Ref<ReturnType<typeof useAuthStore>["token"]>;
+  clearCredentials(): void;
+}
+
 interface HostContext {
   router: Router;
-  authStore: ReturnType<typeof useAuthStore>;
+  authStore: HostAuthStoreBridge;
   topbarMenu: {
     addItems(items: TopbarMenuItem[], contributorId?: string): void;
     removeItems(contributorId: string): void;
@@ -99,9 +131,15 @@ function buildContext(
   router: Router,
   appConfig: Record<string, unknown>,
 ): HostContext {
+  const authStore = useAuthStore();
+  const { user, token } = storeToRefs(authStore);
   return {
     router,
-    authStore: useAuthStore(),
+    authStore: {
+      user: user as Ref<ReturnType<typeof useAuthStore>["user"]>,
+      token: token as Ref<ReturnType<typeof useAuthStore>["token"]>,
+      clearCredentials: authStore.clearCredentials,
+    },
     topbarMenu: useTopbarMenu(),
     appConfig,
     contributorId,
@@ -128,6 +166,7 @@ async function loadAndRegister(
   router: Router,
   appConfig: Record<string, unknown>,
   importModule: ImportModuleFn,
+  failClosed: boolean,
 ): Promise<boolean> {
   try {
     const mod = await importModule(url);
@@ -144,7 +183,14 @@ async function loadAndRegister(
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error(`[boot] failed to load server module ${url}:`, error);
-    serverModuleLoadFailed.value = { module: url, error };
+    if (failClosed) {
+      serverModuleLoadFailed.value = { module: url, error };
+    } else {
+      nonCriticalModuleLoadFailures.value = [
+        ...nonCriticalModuleLoadFailures.value,
+        { module: url, error },
+      ];
+    }
     return false;
   }
 }
@@ -168,6 +214,7 @@ export function __resetServerModulesForTests(): void {
   adminLoaded = false;
   serverModuleShells.value = [];
   serverModuleLoadFailed.value = null;
+  nonCriticalModuleLoadFailures.value = [];
 }
 
 /**
@@ -194,7 +241,9 @@ export async function bootServerModules(
   const features = (cfg.features ?? {}) as Record<string, unknown>;
 
   // Deployment-level: auth UI module. Eagerly loaded when the
-  // feature flag is set (server-backed modes only).
+  // feature flag is set (server-backed modes only). Fail-closed:
+  // without identity the rest of the UI would expose protected
+  // views, so a load failure here brings down the whole shell.
   if (features.authUI) {
     await loadAndRegister(
       "/ui/auth.js",
@@ -202,13 +251,16 @@ export async function bootServerModules(
       router,
       cfg,
       importModule,
+      true,
     );
   }
 
   // User-level: admin UI module. Lazily loaded when the host user
   // resolves with capabilities.admin. Watched rather than eagerly
   // loaded because identity may not be known at boot time (e.g.
-  // hybrid mode calls /auth/me asynchronously).
+  // hybrid mode calls /auth/me asynchronously). NOT fail-closed:
+  // a bundle fetch failure here should hide admin UI, not brick
+  // the whole product for admin users.
   const authStore = useAuthStore();
   watch(
     () => authStore.user?.capabilities?.admin,
@@ -220,6 +272,7 @@ export async function bootServerModules(
           router,
           cfg,
           importModule,
+          false,
         );
         if (ok) adminLoaded = true;
       }
