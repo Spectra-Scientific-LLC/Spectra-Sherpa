@@ -207,24 +207,41 @@ def test_ws_enterprise_user_cannot_subscribe_other_users_jobs(ws_client, monkeyp
 
 
 def test_ws_enterprise_superuser_can_subscribe_any_jobs_channel(ws_client, monkeypatch):
+    """After v0.4.1 Phase 2, is_superuser moved to ManagedUserAccount
+    and OSS admin gates read through the ``AdminResolver`` contract.
+    Registering a resolver that returns True for user id 99 simulates
+    the server's startup wiring; is_superuser attribute is ignored.
+    """
+    from spectra_sherpa.app.contracts.auth_resolver import (
+        clear_extra_admin_resolver,
+        set_extra_admin_resolver,
+    )
+
     app_config.mode = "enterprise"
     _install_noop_async_session(monkeypatch)
 
     async def _resolve_user(_session, api_key=None, token=None, client_host=None):
         if api_key == "root-key":
-            return SimpleNamespace(id=99, is_superuser=True, is_active=True)
+            return SimpleNamespace(id=99, is_active=True)
         return None
 
     monkeypatch.setattr(ws_auth_mod, "get_user_from_credentials", _resolve_user)
 
-    with ws_client.websocket_connect("/ws") as ws:
-        ws.send_json({"action": "authenticate", "api_key": "root-key"})
-        response = ws.receive_json()
-        assert response == {"type": "authenticated", "user_id": 99}
+    async def _admin_resolver(user_id: int) -> bool:
+        return user_id == 99
 
-        ws.send_json({"action": "subscribe", "channel": "jobs:2"})
-        response = ws.receive_json()
-        assert response == {"type": "subscribed", "channel": "jobs:2"}
+    set_extra_admin_resolver(_admin_resolver)
+    try:
+        with ws_client.websocket_connect("/ws") as ws:
+            ws.send_json({"action": "authenticate", "api_key": "root-key"})
+            response = ws.receive_json()
+            assert response == {"type": "authenticated", "user_id": 99}
+
+            ws.send_json({"action": "subscribe", "channel": "jobs:2"})
+            response = ws.receive_json()
+            assert response == {"type": "subscribed", "channel": "jobs:2"}
+    finally:
+        clear_extra_admin_resolver()
 
 
 def test_ws_data_import_action_is_no_longer_supported(ws_client, monkeypatch):

@@ -79,3 +79,63 @@ def clear_extra_bearer_token_resolver() -> None:
     """Reset the injected JWT-subject resolver."""
     global _extra_bearer_token_resolver
     _extra_bearer_token_resolver = None
+
+
+# ---------------------------------------------------------------------------
+# Admin-capability resolver (server-owned superuser lookup)
+# ---------------------------------------------------------------------------
+#
+# After v0.4.1 Trim A, OSS's ``User`` model no longer carries
+# ``is_superuser`` — that flag lives on ``ManagedUserAccount`` in the
+# server package. Any OSS code path that previously gated admin-only
+# behavior via ``getattr(user, "is_superuser", False)`` will silently
+# return False for a real server superuser (WebSocket admin-jobs
+# channel, tool scope check, ws rate-limit bypass).
+#
+# This contract lets OSS ask "is this user an admin?" without
+# importing server internals. The server registers an async resolver
+# that joins to ``ManagedUserAccount``; OSS default returns False
+# (local mode has no superuser concept). Callers should use the
+# convenience helper ``is_admin_user(user)`` below so the contract
+# plumbing stays private.
+
+AdminResolver = Callable[[int], Awaitable[bool]]
+
+_extra_admin_resolver: AdminResolver | None = None
+
+
+def get_extra_admin_resolver() -> AdminResolver | None:
+    """Return the injected admin resolver, if configured."""
+    return _extra_admin_resolver
+
+
+def set_extra_admin_resolver(resolver: AdminResolver) -> None:
+    """Inject a server-provided resolver mapping user-id -> admin bool."""
+    global _extra_admin_resolver
+    _extra_admin_resolver = resolver
+    logger.info("ExtraAdminResolver: custom implementation injected")
+
+
+def clear_extra_admin_resolver() -> None:
+    """Reset the injected admin resolver."""
+    global _extra_admin_resolver
+    _extra_admin_resolver = None
+
+
+async def is_admin_user(user: Any) -> bool:
+    """Return True when ``user`` resolves to a server-side superuser.
+
+    Safe convenience helper for OSS admin gates: returns False for
+    None, for users missing an id, and when no admin resolver is
+    registered. In local mode (no server) there are no superusers,
+    so the default False is the correct answer.
+    """
+    if user is None:
+        return False
+    user_id = getattr(user, "id", None)
+    if user_id is None:
+        return False
+    resolver = get_extra_admin_resolver()
+    if resolver is None:
+        return False
+    return bool(await resolver(int(user_id)))

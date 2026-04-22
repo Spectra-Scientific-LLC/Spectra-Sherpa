@@ -110,7 +110,12 @@ async def execute_tool(
 
     if defn.scope == ToolScope.admin:
         user = context.user if context else None
-        if not user or not getattr(user, "is_superuser", False):
+        # v0.4.1 Phase 2: is_superuser moved to ManagedUserAccount; OSS
+        # asks the server-registered admin resolver. Local mode (no
+        # server) has no superusers, so this fail-closes as before.
+        from spectra_sherpa.app.contracts.auth_resolver import is_admin_user
+
+        if not user or not await is_admin_user(user):
             return ToolResult(
                 invocation_id=invocation.invocation_id,
                 tool_name=invocation.tool_name,
