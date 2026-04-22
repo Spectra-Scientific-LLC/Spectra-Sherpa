@@ -36,6 +36,14 @@ export default defineConfig({
         target: "http://127.0.0.1:8000",
         ws: true,
       },
+      // Server-provided frontend modules (/ui/auth.js, /ui/admin.js) —
+      // served by spectrasherpa-server's StaticFiles mount. Without
+      // this the OSS SPA dev server would 404 the dynamic imports
+      // because its SPA catch-all consumes them.
+      "/ui": {
+        target: "http://127.0.0.1:8000",
+        changeOrigin: true,
+      },
     },
   },
 });
