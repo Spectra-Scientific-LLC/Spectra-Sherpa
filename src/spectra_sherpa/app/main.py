@@ -579,14 +579,26 @@ def create_app(
     for registrar in extra_ws_action_registrars or []:
         registrar(_app)
 
-    # --- Middleware (last added = outermost in Starlette's onion model) ---
-    # Extra middleware (e.g. EnterpriseEnforcementMiddleware) is added first
-    # so that CORSMiddleware wraps it — ensuring CORS headers appear even
-    # on early 401/403 rejection responses from enforcement middleware.
-    for mw in extra_middleware or []:
-        mw(_app)
+    # --- Middleware ---
+    # Starlette's ``add_middleware`` prepends to ``user_middleware`` (so the
+    # LAST-registered middleware becomes the OUTERMOST wrapper and runs FIRST
+    # on an incoming request). The v0.4.1 Phase 2 JWT handshake requires a
+    # specific inbound order:
+    #
+    #     CORS  →  extra_middleware (EnterpriseEnforcementMiddleware)
+    #           →  RateLimitMiddleware  →  api_key_middleware  →  route
+    #
+    # EEM must run BEFORE ``api_key_middleware`` so the Bearer-token stamp
+    # (``request.state.authenticated``) is in place by the time the OSS
+    # gateway checks it — otherwise every managed-auth Bearer request 401s
+    # at the gateway even though the server validated the token. Register
+    # innermost-first so this inbound order falls out of the prepend
+    # semantics. CORS stays outermost so its headers wrap early 401/403s
+    # from any inner middleware.
     _app.middleware("http")(api_key_middleware)
     _app.add_middleware(RateLimitMiddleware)
+    for mw in extra_middleware or []:
+        mw(_app)
     _app.add_middleware(
         CORSMiddleware,
         allow_origins=origins if not _allow_all else [],
