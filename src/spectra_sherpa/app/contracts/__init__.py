@@ -22,6 +22,12 @@ from spectra_sherpa.app.contracts.ai_provider_registry import (
     reset_sherpa_advisor,
     set_sherpa_advisor,
 )
+from spectra_sherpa.app.contracts.auth_policy import (
+    registration_enabled,
+    registration_requires_code,
+    set_registration_enabled,
+    set_registration_requires_code,
+)
 from spectra_sherpa.app.contracts.auth_resolver import (
     ExtraUserAPIKeyAuthenticator,
     clear_extra_user_api_key_authenticator,
@@ -48,12 +54,6 @@ from spectra_sherpa.app.contracts.demo_policy import (
     DemoPolicyProvider,
     get_demo_policy,
     set_demo_policy_provider,
-)
-from spectra_sherpa.app.contracts.auth_policy import (
-    registration_enabled,
-    registration_requires_code,
-    set_registration_enabled,
-    set_registration_requires_code,
 )
 from spectra_sherpa.app.contracts.key_resolver import (
     ExtraKeyResolver,
