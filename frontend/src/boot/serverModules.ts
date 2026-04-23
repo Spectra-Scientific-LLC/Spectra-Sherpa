@@ -161,6 +161,38 @@ function buildContext(
   };
 }
 
+/**
+ * Server-bundle CSS injection.
+ *
+ * Vite library mode emits a separate `/ui/style.css` containing scoped
+ * styles for the server-owned Vue components (LoginView, AdminView,
+ * dialogs...). The JS entry points do not reference it, so without this
+ * injector the auth/admin views render without their scoped styles —
+ * e.g. `.auth-form` and `.field-group` gaps are lost and the login form
+ * collapses to tight default spacing.
+ *
+ * Idempotent via a data attribute so repeated `bootServerModules`
+ * invocations (tests, HMR) do not duplicate the <link>. Loads lazily
+ * alongside the first server module import so local OSS-only
+ * deployments (where /ui/* does not exist) never fetch the file.
+ */
+let serverStylesInjected = false;
+
+function ensureServerStylesheet(): void {
+  if (serverStylesInjected) return;
+  if (typeof document === "undefined") return;
+  if (document.querySelector('link[data-server-styles]')) {
+    serverStylesInjected = true;
+    return;
+  }
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = "/ui/style.css";
+  link.setAttribute("data-server-styles", "");
+  document.head.appendChild(link);
+  serverStylesInjected = true;
+}
+
 async function loadAndRegister(
   url: string,
   contributorId: string,
@@ -169,6 +201,7 @@ async function loadAndRegister(
   importModule: ImportModuleFn,
   failClosed: boolean,
 ): Promise<boolean> {
+  ensureServerStylesheet();
   try {
     const mod = await importModule(url);
     const register = mod.register ?? mod.default;
@@ -213,6 +246,12 @@ export interface BootServerModulesOptions {
  */
 export function __resetServerModulesForTests(): void {
   adminLoaded = false;
+  serverStylesInjected = false;
+  if (typeof document !== "undefined") {
+    document
+      .querySelectorAll('link[data-server-styles]')
+      .forEach((node) => node.remove());
+  }
   serverModuleShells.value = [];
   serverModuleLoadFailed.value = null;
   nonCriticalModuleLoadFailures.value = [];
