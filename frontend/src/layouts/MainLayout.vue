@@ -1,5 +1,20 @@
 <template>
-  <div class="app-shell" :style="layoutStyle">
+  <!--
+    Public routes (login, register) render full-bleed without the
+    OSS shell — sidebar + topbar + chat panel are workspace
+    affordances aimed at authenticated users, and visually compete
+    with the centered auth Card if rendered alongside it. Toast and
+    upgrade modals are still mounted so error / upgrade flows work
+    on the public pages.
+  -->
+  <template v-if="isPublicRoute">
+    <Toast position="top-right" />
+    <SherpaUpgradeModal />
+    <DemoUpgradeModal />
+    <router-view />
+  </template>
+
+  <div v-else class="app-shell" :style="layoutStyle">
     <Toast position="top-right" />
     <SherpaUpgradeModal />
     <DemoUpgradeModal />
@@ -28,7 +43,7 @@
         <Topbar
           :nav-collapsed="navCollapsed"
           :chat-collapsed="chatCollapsed"
-          :show-chat-toggle="!isPublicRoute"
+          :show-chat-toggle="true"
           @toggle-nav="toggleNav"
           @toggle-chat="toggleChat"
         />
@@ -37,13 +52,12 @@
         </main>
       </div>
       <div
-        v-show="!chatCollapsed && !isPublicRoute"
+        v-show="!chatCollapsed"
         class="chat-resize-handle"
         :class="{ active: isResizing }"
         @mousedown="startResize"
       ></div>
       <ChatPanel
-        v-if="!isPublicRoute"
         :compact="true"
         :collapsed="chatCollapsed"
         @toggle="toggleChat"
