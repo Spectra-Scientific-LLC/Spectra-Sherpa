@@ -325,7 +325,8 @@ async def api_key_middleware(request: Request, call_next) -> Response:
     ):
         return await call_next(request)  # type: ignore[no-any-return]
 
-    # JWT handoff: if an earlier server middleware already validated a Bearer token and
+    # JWT handoff: if an earlier middleware (spectra-server's
+    # EnterpriseEnforcementMiddleware) already validated a Bearer token and
     # stamped ``request.state.authenticated``, pass through. After Phase 2,
     # OSS neither issues nor validates JWTs — managed-auth modes rely
     # entirely on this handoff.
