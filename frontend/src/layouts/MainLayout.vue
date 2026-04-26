@@ -7,12 +7,12 @@
     upgrade modals are still mounted so error / upgrade flows work
     on the public pages.
   -->
-  <template v-if="isPublicRoute">
+  <div v-if="isPublicRoute" class="public-shell">
     <Toast position="top-right" />
     <SherpaUpgradeModal />
     <DemoUpgradeModal />
     <router-view />
-  </template>
+  </div>
 
   <div v-else class="app-shell" :style="layoutStyle">
     <Toast position="top-right" />
