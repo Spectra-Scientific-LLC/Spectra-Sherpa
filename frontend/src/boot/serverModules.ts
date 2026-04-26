@@ -211,6 +211,34 @@ async function loadAndRegister(
       );
     }
     await register(buildContext(contributorId, router, appConfig));
+
+    // vue-router resolves the initial navigation when `app.use(router)`
+    // installs the plugin — BEFORE bootServerModules has a chance to
+    // register dynamic routes. `router.addRoute()` does not retro-
+    // actively re-match an already-resolved navigation, so a route the
+    // server module registered (e.g. `/login`) ends up in the route
+    // table but the current navigation still has `matched: []` and
+    // `route.meta = {}`. The user sees the URL `/login` but
+    // `<router-view>` renders nothing and any layout-meta logic
+    // (e.g. `meta.public`) treats the route as untagged.
+    //
+    // After register() returns, if the current route is unmatched,
+    // re-resolve the current location with the freshly-augmented route
+    // table.
+    const cur = router.currentRoute.value;
+    if (cur.matched.length === 0 && cur.fullPath) {
+      try {
+        await router.replace(cur.fullPath);
+      } catch (err) {
+        // Re-resolve can throw on guard-driven redirects; that's
+        // fine — the navigation still completes.
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[boot] re-resolve after addRoute(${url}) failed:`,
+          err,
+        );
+      }
+    }
     // eslint-disable-next-line no-console
     console.info(`[boot] loaded server module ${url}`);
     return true;
