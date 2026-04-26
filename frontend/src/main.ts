@@ -107,6 +107,40 @@ if (import.meta.env.DEV) {
   );
 }
 
+// Self-heal stale tabs after a deploy. Vite emits hash-named JS chunks
+// under /assets/<file>-<hash>.js that the SPA lazy-loads via
+// `() => import(...)`. After a frontend rebuild, the old chunk hashes
+// no longer exist on the server; nginx falls back to /index.html
+// (text/html) for the missing path; the browser receives HTML for what
+// the running JS asked for as a JS module → router throws
+// "Failed to fetch dynamically imported module".
+//
+// On that specific error class, reload the page once (guarded by
+// sessionStorage so a genuine bug can't trap the user in a refresh
+// loop). Reload pulls the current /index.html with current chunk
+// hashes; the deploy mismatch is gone.
+const CHUNK_RELOAD_FLAG = "__spectra_chunk_reload";
+router.onError((err) => {
+  const msg = err instanceof Error ? err.message : String(err);
+  const isChunkError =
+    /Failed to fetch dynamically imported module/i.test(msg) ||
+    /Importing a module script failed/i.test(msg) ||
+    /Loading chunk \S+ failed/i.test(msg);
+  if (!isChunkError) return;
+  if (sessionStorage.getItem(CHUNK_RELOAD_FLAG)) {
+    // Already reloaded once this session and still failing — surface
+    // the error rather than loop. Likely a genuine deployment problem.
+    console.error("[Spectra] Chunk load error after reload; not retrying:", err);
+    return;
+  }
+  sessionStorage.setItem(CHUNK_RELOAD_FLAG, "1");
+  console.warn(
+    "[Spectra] Detected stale chunk reference (likely after a deploy); reloading once.",
+    err,
+  );
+  window.location.reload();
+});
+
 const pinia = createPinia();
 app.use(pinia);
 app.use(router);
