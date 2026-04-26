@@ -168,7 +168,7 @@ class WorkflowChatContext(BaseModel):
     """Rich workflow context for contextual LLM chat.
 
     Assembled by the frontend, proxied by spectra-sherpa, and consumed by
-    spectra-server's context builder.  This is a **data contract** — it
+    the commercial server's context builder.  This is a **data contract** — it
     carries structured facts, not prompt text.
     """
 

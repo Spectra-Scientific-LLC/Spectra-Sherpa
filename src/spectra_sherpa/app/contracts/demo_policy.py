@@ -17,7 +17,7 @@ from typing import Callable
 class DemoPolicy:
     """Read-only snapshot of demo restrictions.
 
-    Populated by spectra-server's ``DemoContract`` at startup; OSS never
+    Populated by the server extension's demo contract at startup; OSS never
     constructs this directly.
     """
 
@@ -53,6 +53,6 @@ def get_demo_policy() -> DemoPolicy:
 
 
 def set_demo_policy_provider(provider: DemoPolicyProvider) -> None:
-    """Install a demo policy provider (called by spectra-server at startup)."""
+    """Install a demo policy provider (called by a server extension at startup)."""
     global _demo_policy_provider
     _demo_policy_provider = provider

@@ -61,7 +61,8 @@ The boundary is enforced by:
    public_path_provider, config_overlay, actors, demo_policy,
    auth_policy)
 2. **Import-boundary check** — `scripts/check_import_boundary.py`
-   refuses any `import spectrasherpa_server.*` in OSS sources
+   refuses imports from the commercial server implementation package in
+   OSS sources
 3. **WS event contract** — `sherpa-ws-v1.json` (JSON Schema)
 4. **OpenAPI contract** — `openapi-llm-v1.json` (snapshot-tested)
 

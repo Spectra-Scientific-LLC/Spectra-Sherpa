@@ -238,19 +238,20 @@ class AppConfig(BaseModel):
     )
     api_base_url: str = Field(default="http://localhost:8000", description="Backend API base URL")
 
-    # Integration fields for spectra-server (enterprise/hybrid/demo)
-    # These are None in OSS mode but can be injected by spectra-server
+    # Integration fields for commercial server extensions (enterprise/hybrid/demo).
+    # These are None in OSS mode but can be injected by an extension package.
     site_profile: Optional[str] = Field(
-        default=None, description="Site profile (e.g., 'demo', 'internal') - used by spectra-server"
+        default=None, description="Site profile (e.g., 'demo', 'internal') - used by server extensions"
     )
     rate_limit_executions: Optional[int] = Field(
-        default=None, description="Max executions per hour per user (enterprise/hybrid mode) - used by spectra-server"
+        default=None,
+        description="Max executions per hour per user (enterprise/hybrid mode) - used by server extensions",
     )
     session_expiry_hours: Optional[int] = Field(
-        default=None, description="Session expiry in hours (enterprise/hybrid mode) - used by spectra-server"
+        default=None, description="Session expiry in hours (enterprise/hybrid mode) - used by server extensions"
     )
     spectrasherpa_log_url: Optional[str] = Field(
-        default=None, description="Remote audit log URL for hybrid/enterprise mode - used by spectra-server"
+        default=None, description="Remote audit log URL for hybrid/enterprise mode - used by server extensions"
     )
 
     # LLM configurations
@@ -279,7 +280,7 @@ class AppConfig(BaseModel):
 
         # Provider metadata — inlined for the /config endpoint's availability checks.
         # Previously imported from spectra_sherpa.app.core.llm_registry; the server
-        # now owns provider selection policy (see spectrasherpa_server/routes/admin.py).
+        # now owns provider selection policy through its admin routes.
         # OSS keeps a minimal static list here solely to populate AppConfig.llms
         # so that /api/v1/config can report provider availability to the frontend.
         PROVIDERS: dict[str, dict[str, Any]] = {

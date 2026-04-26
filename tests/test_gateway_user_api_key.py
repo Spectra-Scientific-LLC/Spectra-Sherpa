@@ -33,9 +33,9 @@ async def test_gateway_accepts_user_api_key(
 
     The injected authenticator mirrors the server's production path —
     hash the candidate with sha256 and compare against the stored
-    digest (see ``spectrasherpa_server.security.verify_api_key_hash``).
-    No dependency on OSS password-hashing primitives, which Phase 2 is
-    deleting from OSS.
+    digest using the same sha256 comparison contract as the server.
+    No dependency on OSS password-hashing primitives, which Phase 2 deletes
+    from OSS.
     """
     import hashlib
     import hmac

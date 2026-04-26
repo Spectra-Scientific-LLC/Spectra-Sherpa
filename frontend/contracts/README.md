@@ -8,7 +8,7 @@ what lives here.
 
 | File | Owner | Consumer | Stability |
 |------|-------|----------|-----------|
-| `openapi-llm-v1.json` | `spectra-sherpa` (this repo) | `frontend/src/types/api-generated.ts` (generated); third-party API clients; `spectra-server` conformance tests | Versioned by the `/api/v1` prefix |
+| `openapi-llm-v1.json` | `spectra-sherpa` (this repo) | `frontend/src/types/api-generated.ts` (generated); third-party API clients; commercial server conformance tests | Versioned by the `/api/v1` prefix |
 
 See [governance.md](../../docs/dev/governance.md) for the full
 ownership model.

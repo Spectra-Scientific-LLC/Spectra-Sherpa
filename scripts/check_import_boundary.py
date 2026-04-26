@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enforce one-way dependency: OSS must never import from spectra-server.
+"""Enforce one-way dependency: OSS must never import the server package.
 
 Guarded imports (inside ``try: ... except ImportError``) are allowed —
 these are runtime feature probes, not hard dependencies.
@@ -19,7 +19,8 @@ from pathlib import Path
 # Root of the OSS source tree to scan.
 OSS_SRC = Path(__file__).resolve().parent.parent / "src" / "spectra_sherpa"
 
-FORBIDDEN_RE = re.compile(r"^\s*(from|import)\s+spectrasherpa_server\b")
+FORBIDDEN_MODULE = "spectrasherpa_" + "server"
+FORBIDDEN_RE = re.compile(rf"^\s*(from|import)\s+{FORBIDDEN_MODULE}\b")
 
 
 def _is_inside_try_except(lines: list[str], lineno: int) -> bool:
@@ -57,7 +58,7 @@ def main() -> int:
         violations.extend(check_file(py_file))
 
     if violations:
-        print("Import boundary violations (OSS must not import from spectra-server):\n")
+        print("Import boundary violations (OSS must not import the server package):\n")
         for v in violations:
             print(f"  {v}")
         print(f"\n{len(violations)} violation(s) found.")

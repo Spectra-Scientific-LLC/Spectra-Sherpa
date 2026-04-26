@@ -16,7 +16,7 @@ class User(Base):
     The protocol requires only ``id``, ``username``, and ``is_active``.
 
     This ORM now owns only local-platform identity fields. Managed auth,
-    admin, and account metadata belong to spectra-server.
+    admin, and account metadata belong to the commercial server.
     """
 
     __tablename__ = "user"

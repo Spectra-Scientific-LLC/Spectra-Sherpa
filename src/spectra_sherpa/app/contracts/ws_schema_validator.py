@@ -2,7 +2,7 @@
 
 Loads the published ``sherpa-ws-v1.json`` schema from package data and
 exposes a ``validate_ws_event`` function used by contract tests in
-both spectra-sherpa (OSS) and spectra-server.
+both spectra-sherpa (OSS) and server extensions.
 """
 
 from __future__ import annotations

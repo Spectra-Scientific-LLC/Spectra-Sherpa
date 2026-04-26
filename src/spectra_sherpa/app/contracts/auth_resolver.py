@@ -4,7 +4,7 @@ OSS does not own managed password/API-key identity. When the proprietary
 server is mounted, it can inject an ``ExtraUserAPIKeyAuthenticator`` that
 maps a presented gateway API key to a user id.
 
-Usage (in spectra-server startup)::
+Usage (in server extension startup)::
 
     from spectra_sherpa.app.contracts import set_extra_user_api_key_authenticator
 

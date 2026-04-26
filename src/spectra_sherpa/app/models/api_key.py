@@ -14,7 +14,7 @@ class APIKey(Base):
 
     OSS owns only user-scoped keys. Older deployments may still contain
     legacy system rows with ``user_id=None``; the OSS runtime ignores them.
-    Server-managed shared keys live in spectra-server tables instead.
+    Server-managed shared keys live in commercial server tables instead.
     """
 
     __tablename__ = "api_key"

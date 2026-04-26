@@ -4,7 +4,7 @@ OSS resolves LLM API keys from environment variables and per-user BYOK
 keys only.  The server can inject an ``ExtraKeyResolver`` to add
 system-wide admin-managed keys as a final fallback.
 
-Usage (in spectra-server startup)::
+Usage (in server extension startup)::
 
     from spectra_sherpa.app.contracts import set_extra_key_resolver
 
@@ -36,7 +36,7 @@ def get_extra_key_resolver() -> ExtraKeyResolver | None:
 def set_extra_key_resolver(resolver: ExtraKeyResolver) -> None:
     """Inject a server-provided key resolver for system-wide API keys.
 
-    Called by spectra-server during startup to add system key lookup
+    Called by a server extension during startup to add system key lookup
     as a fallback after environment variables and per-user BYOK keys.
     """
     global _extra_key_resolver

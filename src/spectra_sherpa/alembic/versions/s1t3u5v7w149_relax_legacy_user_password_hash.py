@@ -1,6 +1,6 @@
 """Relax legacy auth columns on user table after managed-auth split.
 
-Migration 0004 in spectra-server moved password_hash, is_superuser, and
+Migration 0004 in the commercial server moved password_hash, is_superuser, and
 login_count to the managed_user_account table, but never relaxed the NOT
 NULL constraints on the original user columns.  The OSS User ORM model
 no longer maps these columns, so INSERTs fail on databases that still
@@ -26,7 +26,7 @@ depends_on = None
 _LEGACY_DUMMY_HASH = "__managed_auth_moved__"
 
 # Legacy auth columns that must become nullable now that they are owned
-# by managed_user_account (spectra-server migration 0004).
+# by managed_user_account (commercial server migration 0004).
 _COLUMNS_TO_RELAX = [
     ("password_hash", sa.String(length=255)),
     ("is_superuser", sa.Boolean()),

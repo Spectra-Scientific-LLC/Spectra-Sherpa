@@ -1,7 +1,7 @@
 """Extension contracts for the SpectraSherpa platform.
 
 This package exposes the stable OSS-owned integration surface that
-commercial extensions (``spectra-server``) consume.  Keep this namespace
+commercial extensions consume.  Keep this namespace
 limited to cross-repo contracts such as actor protocols, injected
 resolvers, and capability names.
 

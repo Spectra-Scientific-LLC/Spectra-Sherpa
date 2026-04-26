@@ -24,12 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`spectra_sherpa.app.services.sherpa_advisor`** — now a small compatibility shim that re-exports `set_sherpa_advisor` / `reset_sherpa_advisor` / `get_sherpa_advisor` from `contracts.ai_provider_registry` and emits a `DeprecationWarning`. Removed in `0.N+2`.
 
 ### Removed
-- **`services/llm.py`** — full ~761-line conversation/LLM orchestrator and JSON `ConversationStore` (moved to `spectra-server`).
-- **`services/llm_rate_limits.py`, `services/deployment_ai_provider.py`** — moved to `spectra-server`.
-- **`core/llm_registry.py`** — moved to `spectra-server`.
-- **`api/v1/routes/llm.py`, `api/v1/routes/llm_config.py`** — moved to `spectra-server` verbatim. OSS-only builds now 404 on `/api/v1/llm*` and `/api/v1/llm-config`; OSS+server builds serve them with byte-identical request/response shapes.
-- **`models/llm_config.py`** and the `User.llm_config` SQLAlchemy relationship attribute — moved to `spectra-server`. OSS Alembic no longer autogenerates the `llm_configs` table.
-- **`schemas/llm.py`, `schemas/llm_config.py`** — moved to `spectra-server`.
+- **`services/llm.py`** — full ~761-line conversation/LLM orchestrator and JSON `ConversationStore` (moved to the commercial server).
+- **`services/llm_rate_limits.py`, `services/deployment_ai_provider.py`** — moved to the commercial server.
+- **`core/llm_registry.py`** — moved to the commercial server.
+- **`api/v1/routes/llm.py`, `api/v1/routes/llm_config.py`** — moved to the commercial server verbatim. OSS-only builds now 404 on `/api/v1/llm*` and `/api/v1/llm-config`; OSS+server builds serve them with byte-identical request/response shapes.
+- **`models/llm_config.py`** and the `User.llm_config` SQLAlchemy relationship attribute — moved to the commercial server. OSS Alembic no longer autogenerates the `llm_configs` table.
+- **`schemas/llm.py`, `schemas/llm_config.py`** — moved to the commercial server.
 - **`[sherpa]` extras with `anthropic ^0.39.0` and `openai ^1.40.0`** — no vendor LLM SDKs remain in OSS dependency graph.
 
 ## [0.3.0] - 2026-03-30

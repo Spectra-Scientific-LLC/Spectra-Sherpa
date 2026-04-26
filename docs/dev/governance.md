@@ -2,15 +2,13 @@
 
 This document defines the governance model for the SpectraSherpa platform: how
 contracts, specs, and extension points are owned across the OSS core
-(`spectra-sherpa`) and the commercial server (`spectra-server`), and how
-conflicts are resolved.
+(`spectra-sherpa`) and the commercial server, and how conflicts are
+resolved.
 
-It generalizes the boundary principles originally established for the
-Sherpa Advisor in an internal ADR (ADR-0001, "OSS / Commercial Boundary")
-to cover every contract surface on the platform. The advisor-specific ADR
-is maintained alongside the commercial server and is not part of the OSS
-distribution; this document is the authoritative public statement of the
-boundary model.
+This document is the authoritative public statement of the boundary model.
+Commercial-side design notes may exist in private repositories, but public
+OSS contributors should rely on this document rather than private ADR
+references.
 
 > **Scope of "OSS."** In this document, "OSS" means the `spectra-sherpa`
 > package as installed from the public repo. It is AGPL-3.0 licensed and
@@ -88,7 +86,7 @@ to carry managed-auth UX or OSS-issued JWT.**
 
 Designs that break this invariant are rejected. In particular:
 
-- OSS must not `import spectrasherpa_server.*`.
+- OSS must not import the commercial server implementation package.
 - OSS must not mirror proprietary server artifacts into the public slice.
 - OSS must not have a "no-server" fallback that silently invokes server-only
   code paths. If OSS needs behavior, it ships a default implementation in OSS;
@@ -173,7 +171,7 @@ outside the Alembic migration chain that the OSS package ships.
 
 ### 4.1 Proprietary domains
 
-- Sherpa Advisor (see ADR-0001): prompts, context builder, conversation store,
+- Sherpa Advisor: prompts, context builder, conversation store,
   agentic tools, vendor SDK dependencies, cost attribution
 - Managed authentication: registration, login, password change, admin user CRUD
 - Subscription and entitlement state
@@ -273,13 +271,13 @@ correction, not automated "OSS wins" enforcement.
 
 ### Rejected
 
-- OSS imports from `spectrasherpa_server.*`
+- OSS imports from the commercial server implementation package
 - OSS mirrors proprietary server artifacts into the public slice (e.g.,
   mirroring server's admin OpenAPI spec into OSS)
 - OSS has a "fallback to server" code path that imports server modules
   dynamically when the user installs them
-- OSS source grep turns up a `spectra-server` or `spectrasherpa_server`
-  identifier outside of commentary
+- OSS source grep turns up server package identifiers outside of controlled
+  boundary checks or explanatory commentary
 
 ### Allowed
 
@@ -304,6 +302,6 @@ boundaries, add new seams, or revise stability guarantees should:
    maintained alongside the commercial server for commercial-boundary
    changes)
 2. Update both this document and the related ADR text where applicable
-3. Be reflected in the server-side `OSS_SCOPE.md` companion document
+3. Be reflected in the server-side `SERVER_SCOPE.md` companion document
 
 Changes that clarify wording without altering ownership do not require an ADR.

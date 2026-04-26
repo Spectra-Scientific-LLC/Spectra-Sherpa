@@ -3,19 +3,19 @@
 OSS cannot authoritatively decide whether user self-registration is
 enabled or whether an access-code (``ENTERPRISE_PASSWORD``) gate is
 active — those are server concerns. Before this contract existed, OSS
-relied on a ``try: import spectrasherpa_server.routes.auth`` heuristic,
+relied on an import-probe heuristic against the server implementation,
 which silently returned ``True`` under a monorepo layout where the
 server package is always importable even when its routes are not
 actively mounted.
 
 This contract replaces the heuristic with explicit startup registration:
-spectra-server calls :func:`set_registration_enabled` and
+A server extension calls :func:`set_registration_enabled` and
 :func:`set_registration_requires_code` from its startup hooks based on
 its own configuration. OSS reads the flags via
 :func:`registration_enabled` and :func:`registration_requires_code`,
 both of which default to ``False`` in OSS-only installs.
 
-Typical usage (in spectra-server startup)::
+Typical usage (in server extension startup)::
 
     from spectra_sherpa.app.contracts.auth_policy import (
         set_registration_enabled,

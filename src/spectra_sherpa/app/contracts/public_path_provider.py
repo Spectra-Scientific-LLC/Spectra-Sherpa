@@ -2,7 +2,7 @@
 
 OSS owns the core list of paths that must be reachable without
 authentication (health endpoints, client config, the SPA catchall is
-handled separately). Extension packages (e.g. ``spectra-server``) can
+handled separately). Server extension packages can
 append additional paths at startup — for example ``/api/v1/auth/login``
 and ``/api/v1/auth/register`` — by calling :func:`register_public_paths`.
 
@@ -10,7 +10,7 @@ Call ``register_public_paths`` at most once per logical registrar; paths
 are appended (deduped) rather than replaced so multiple extensions can
 coexist without clobbering each other.
 
-Usage (in spectra-server startup)::
+Usage (in server extension startup)::
 
     from spectra_sherpa.app.contracts.public_path_provider import (
         register_public_paths,

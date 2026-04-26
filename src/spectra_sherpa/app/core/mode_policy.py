@@ -12,7 +12,7 @@ Mode summary for developers:
   advisor stub returns before any network call.
 
 - **hybrid** — Local user + optional cloud features. The local spectra-sherpa
-  instance calls the cloud spectrasherpa-server via ``DeploymentAIProvider``
+  instance calls the cloud server via ``DeploymentAIProvider``
   (HTTP with ``X-Deployment-Key``). Loopback browser connections need no auth;
   non-loopback connections (defense-in-depth if bound to 0.0.0.0) require
   first-message WebSocket auth. Egress permission
@@ -21,7 +21,7 @@ Mode summary for developers:
 
 - **enterprise** — Cloud-hosted multi-user deployment. All connections require
   first-message WebSocket auth with a valid JWT. Sherpa advisor runs
-  in-process via ``ServerAIProvider`` (injected by spectra-server).
+  in-process via ``ServerAIProvider`` (injected by a server extension).
   Subscriptions gate individual features via entitlements.
 """
 
@@ -67,7 +67,7 @@ def is_multi_user() -> bool:
 def allows_admin() -> bool:
     """Whether admin routes are enabled.
 
-    Backward-compatible helper used by spectra-server admin routes.
+    Backward-compatible helper used by server admin routes.
     Admin capabilities are only meaningful in multi-user modes.
     """
     return is_multi_user()
@@ -103,12 +103,11 @@ def allows_registration() -> bool:
     """Whether user self-registration is open.
 
     This is a thin wrapper over the ``auth_policy`` contract: the
-    spectra-server startup registers a flag declaring whether
+    server extension startup registers a flag declaring whether
     registration is active; OSS reads it here. The earlier heuristic
-    of ``try: import spectrasherpa_server.routes.auth`` is unsafe
-    under a monorepo layout (where the server package is always
-    importable even when its routes are not actively mounted), so it
-    has been removed.
+    of probing the server implementation package is unsafe under a monorepo
+    layout (where the package can be importable even when its routes are not
+    actively mounted), so it has been removed.
 
     Returns ``True`` only when:
     - the runtime mode is multi-user (hybrid/enterprise), AND

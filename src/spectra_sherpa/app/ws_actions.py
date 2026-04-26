@@ -7,7 +7,7 @@ To add a new Sherpa action:
 1. Define the constant here.
 2. Add it to ``SHERPA_WS_ACTIONS``.
 3. Add the matching key in ``frontend/src/lib/sherpaWs.ts → SHERPA_WS_ACTION``.
-4. Register the handler in ``spectra-server/ws_handlers.py → register_sherpa_ws_actions()``.
+4. Register the handler in the commercial server's WS registrar.
 5. Run ``pytest tests/test_ws_contract.py`` — it will fail until all three are in sync.
 """
 

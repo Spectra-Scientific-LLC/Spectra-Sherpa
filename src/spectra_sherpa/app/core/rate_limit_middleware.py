@@ -3,14 +3,14 @@ Rate Limit Middleware
 
 Enforces conservative auth endpoint throttling for HYBRID and ENTERPRISE mode
 deployments.  User-facing paid usage is governed separately by the Sherpa/LLM
-rate limiter.  Demo-profile execution quotas are enforced by spectra-server's
+rate limiter.  Demo-profile execution quotas are enforced by the commercial server's
 ``EnterpriseEnforcementMiddleware``.
 
 Rate limiting uses the persistent file-backed RateLimiter so state survives
 restarts and is consistent across Gunicorn workers.
 
 Enterprise-specific enforcement (password gating, session expiry, CORS
-validation) lives in spectra-server and is injected via create_app() hooks.
+validation) lives in the commercial server and is injected via create_app() hooks.
 """
 
 import json

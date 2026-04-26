@@ -3,7 +3,7 @@ SpectraSherpa Cloud Service Stub
 
 This module provides a minimal stub implementation for the SpectraSherpa cloud service
 integration. In OSS mode, hybrid features are disabled. In hybrid/enterprise mode, this
-module can be replaced by spectra-server with a full implementation.
+module can be replaced by a server extension with a full implementation.
 
 The stub ensures that config endpoints and network health checks don't crash when
 the full cloud service is unavailable.
@@ -50,7 +50,7 @@ class SpectraSherpaService:
     Stub implementation of SpectraSherpa cloud service.
 
     In OSS mode, all cloud features are disabled.
-    spectra-server can inject a full implementation that connects to cloud services.
+    A server extension can inject a full implementation that connects to cloud services.
     """
 
     def __init__(self, config: SpectraSherpaConfig | None = None):
@@ -116,7 +116,7 @@ class SpectraSherpaService:
             "success": False,
             "error": (
                 "Hybrid mode is not available in the OSS version. "
-                "Please use spectra-server for hybrid/enterprise features."
+                "Please use the commercial server for hybrid/enterprise features."
             ),
         }
 
@@ -196,7 +196,7 @@ def set_spectrasherpa_service(service: SpectraSherpaService):
     """
     Inject a custom SpectraSherpa service implementation.
 
-    Used by spectra-server to replace the OSS stub with a full cloud-connected implementation.
+    Used by server extensions to replace the OSS stub with a full cloud-connected implementation.
 
     Args:
         service: Custom SpectraSherpaService instance

@@ -483,9 +483,9 @@ class TestMCPToolSystem:
 class TestRegistrationRequiresCode:
     """registrationRequiresCode surfaces the ``auth_policy`` contract flag.
 
-    The server (spectra-server) decides whether an access code is required
-    based on its own configuration (mode + ``ENTERPRISE_PASSWORD``) and
-    registers the result at startup via
+    The commercial server decides whether an access code is required based
+    on its own configuration (mode + ``ENTERPRISE_PASSWORD``) and registers
+    the result at startup via
     ``auth_policy.set_registration_requires_code``. OSS only surfaces
     whatever the server has declared. Server-side tests cover the
     mode-and-env-var logic itself.

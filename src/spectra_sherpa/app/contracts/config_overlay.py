@@ -1,10 +1,10 @@
 """Optional hook for server-injected config overlay.
 
 OSS returns base configuration with all Sherpa capabilities disabled.
-The server can inject a ``ConfigOverlayProvider`` to merge subscription
+A server extension can inject a ``ConfigOverlayProvider`` to merge subscription
 entitlements, demo metadata, and rate limits into the client config.
 
-Usage (in spectra-server startup)::
+Usage (in server extension startup)::
 
     from spectra_sherpa.app.contracts import set_config_overlay_provider
 
@@ -36,7 +36,7 @@ def get_config_overlay_provider() -> ConfigOverlayProvider | None:
 def set_config_overlay_provider(provider: ConfigOverlayProvider) -> None:
     """Inject a server-provided config overlay provider.
 
-    Called by spectra-server during startup to add subscription
+    Called by a server extension during startup to add subscription
     entitlements, demo metadata, and rate limits to client config.
     """
     global _config_overlay_provider

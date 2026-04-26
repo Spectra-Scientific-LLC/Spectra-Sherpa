@@ -1,6 +1,6 @@
 """OSS-compatible actor routes for local/hybrid modes.
 
-When ``spectra-server`` is installed its full auth module takes priority.
+When a server extension is installed its full auth module takes priority.
 This module intentionally exposes only the narrow actor endpoint needed by
 the OSS frontend bootstrap. Password login and JWT issuance are server-owned.
 """

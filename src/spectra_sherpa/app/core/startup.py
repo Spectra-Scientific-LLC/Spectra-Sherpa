@@ -246,7 +246,7 @@ def _validate_database_mode() -> list[ConfigIssue]:
     # The OSS layer is database-agnostic (SQLAlchemy handles the abstraction).
     # Database-engine enforcement (e.g. requiring a production-grade backend
     # for multi-user deployments) is the responsibility of the deployment layer
-    # (spectra-server or equivalent), not the core application.
+    # (commercial server or equivalent), not the core application.
     return []
 
 

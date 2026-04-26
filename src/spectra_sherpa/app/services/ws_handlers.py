@@ -6,8 +6,8 @@ This keeps ``main.py`` as a thin dispatcher and makes individual handlers
 independently testable.
 
 Premium Sherpa handlers (sync, decide, chat, peaks, code, report, data story,
-tools) live in ``spectrasherpa_server.ws_handlers`` and are registered by
-the server's ``extra_ws_action_registrars`` hook.
+tools) live in the commercial server package and are registered by the
+server's ``extra_ws_action_registrars`` hook.
 
 All handlers follow the same signature::
 

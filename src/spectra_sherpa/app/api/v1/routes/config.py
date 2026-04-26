@@ -141,7 +141,7 @@ async def _check_provider_availability(
         return True
 
     # Check database — BYOK (per-user) keys only.
-    # System-wide keys are managed by spectra-server and resolved via
+    # System-wide keys are managed by server extensions and resolved via
     # the injected ExtraKeyResolver at runtime, not at availability check.
     if user_id is not None:
         query = select(APIKey.id).where(APIKey.service_name == provider_id, APIKey.user_id == user_id).limit(1)
@@ -203,7 +203,7 @@ async def get_config(
         config["features"][CHAT_ASSISTANT] = False
         config["subscription"] = None
 
-        # Delegate overlay assembly to the injected provider (spectra-server).
+        # Delegate overlay assembly to the injected provider.
         from spectra_sherpa.app.contracts.config_overlay import get_config_overlay_provider
 
         overlay_provider = get_config_overlay_provider()
