@@ -39,7 +39,13 @@ interface User {
 export const useAuthStore = defineStore('auth', () => {
     const token = ref<string | null>(localStorage.getItem('token'))
     const user = ref<User | null>(null)
-    const isAuthenticated = computed(() => !!token.value || !!user.value)
+    // "Authenticated" requires a server-validated identity, not just the
+    // presence of a token. A token alone may be stale or revoked; only
+    // the user ref — populated by /auth/me — proves the credential was
+    // accepted. Loose token-only semantics caused the v0.4.1 staging
+    // boot bug where a stale JWT in localStorage let the router guard
+    // pass through to /project, after which every API call 401'd.
+    const isAuthenticated = computed(() => !!user.value)
 
     /**
      * Clear stale auth artifacts without navigating. Called when
