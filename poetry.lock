@@ -1045,7 +1045,6 @@ description = "Lightweight in-process concurrent programming"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
-markers = "platform_machine == \"aarch64\" or platform_machine == \"ppc64le\" or platform_machine == \"x86_64\" or platform_machine == \"amd64\" or platform_machine == \"AMD64\" or platform_machine == \"win32\" or platform_machine == \"WIN32\" or extra == \"cloud\""
 files = [
     {file = "greenlet-3.3.0-cp310-cp310-macosx_11_0_universal2.whl", hash = "sha256:6f8496d434d5cb2dce025773ba5597f71f5410ae499d5dd9533e0653258cdb3d"},
     {file = "greenlet-3.3.0-cp310-cp310-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:b96dc7eef78fd404e022e165ec55327f935b9b52ff355b067eb4a0267fc1cffb"},
@@ -4128,10 +4127,10 @@ docs = ["sphinx"]
 test = ["pytest", "pytest-cov"]
 
 [extras]
-cloud = ["asyncpg", "greenlet", "gunicorn"]
+cloud = ["asyncpg", "gunicorn"]
 scp = ["spectrochempy"]
 
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "e98ca4a49a7de46410d356d779c17bf1ae9de5e130bcf63ddf2fcbd42ba41c56"
+content-hash = "81e5f4cc15ad8029ef6e7a0d07bd4a473222af70dfc640bddfe624552e61ec02"

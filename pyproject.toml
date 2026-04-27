@@ -35,16 +35,26 @@ beautifulsoup4 = "^4.12.3"
 scikit-learn = "^1.5.0"
 pypdf = "^6.10.1"
 jsonschema = "^4.20.0"
+# greenlet is required at runtime by SQLAlchemy 2.x async on every platform —
+# AsyncEngine.connect() bridges sync internals via greenlet_spawn regardless of
+# driver (including aiosqlite). SQLAlchemy auto-pulls greenlet only on a subset
+# of platforms (mainly x86_64 Linux/Windows on older Python via PEP 513 wheels);
+# on Apple Silicon and Python 3.13+ it does not, and OSS local mode crashes at
+# lifespan startup with "No module named 'greenlet'". Declare it as a base dep
+# so the OSS standalone invariant holds on every supported platform.
+greenlet = ">=3.0"
 spectrochempy = {version = ">=0.8.1,<0.9.0", optional = true, python = ">=3.11,<3.15"}
 asyncpg = {version = "^0.29.0", optional = true}
-greenlet = {version = ">=3.0", optional = true}
 gunicorn = {version = "^22.0.0", optional = true}
 
 [tool.poetry.extras]
 # SpectroChemPy MUST remain an opt-in extra — never move to core dependencies.
 # CeCILL-B is incompatible with AGPL; bundling would create a license conflict.
 scp = ["spectrochempy"]
-cloud = ["asyncpg", "greenlet", "gunicorn"]
+# `cloud` covers Postgres + production WSGI server. `greenlet` was previously
+# listed here as well, but SQLAlchemy async needs it for OSS local mode (SQLite
+# via aiosqlite) too — moved to base deps above.
+cloud = ["asyncpg", "gunicorn"]
 
 [tool.poetry.group.dev.dependencies]
 black = "^24.4.2"

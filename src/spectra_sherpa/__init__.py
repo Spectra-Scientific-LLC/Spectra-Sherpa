@@ -2,7 +2,18 @@
 
 from __future__ import annotations
 
-__version__ = "0.3.0"
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
+
+# Source of truth is ``[tool.poetry] version`` in pyproject.toml; read it via
+# importlib.metadata so the runtime banner cannot drift from the installed
+# package's actual version. The hard-coded fallback is only for editable
+# checkouts where metadata is missing (e.g. running directly from ``src/``
+# without ``pip install -e``).
+try:
+    __version__ = _pkg_version("spectra-sherpa")
+except PackageNotFoundError:  # pragma: no cover — uninstalled checkout
+    __version__ = "0.0.0+unknown"
 
 from spectra_sherpa.app.lib.adapters.numpy_adapter import from_numpy, to_numpy
 from spectra_sherpa.app.lib.axes import (
