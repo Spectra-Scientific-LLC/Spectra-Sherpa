@@ -4,21 +4,28 @@ Get from zero to your first analysis in under 2 minutes.
 
 ## 1. Install & Launch
 
-```bash
-pip install spectra-sherpa
-spectra-sherpa
-```
-
-Your browser opens automatically to `http://localhost:8000`. In local mode, no login is required and SpectraSherpa behaves like a desktop tool. In hybrid or enterprise deployments, protected pages require the backend config to load successfully and then enforce normal authentication. The default route opens the **Projects** page, which is the current starting point for template-first onboarding.
-
-If you want the SpectroChemPy-backed example datasets and workflows, install the optional extra:
+Recommended Python: **3.11 or 3.12**. (3.13+ may work but the scientific stack does not yet ship full wheels for every platform; 3.14 is not currently recommended.)
 
 ```bash
 pip install "spectra-sherpa[scp]"
+spectra-sherpa
 ```
 
-> **Tip:** Use `spectra-sherpa --port 9000` to pick a different port, or `--no-browser` if you prefer to open the URL yourself.  
+The `[scp]` extra adds the SpectroChemPy-backed example datasets and ~11 spectral-analysis nodes. If you only want the core nodes, drop the extra and run `pip install spectra-sherpa`.
+
+**First launch takes 30–90 seconds** while SpectroChemPy populates its font cache and Alembic initializes the local database. The server is ready when the terminal prints:
+
+```
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+```
+
+Wait for that line before opening the browser. Subsequent launches start in a few seconds.
+
+In local mode, no login is required and SpectraSherpa behaves like a desktop tool. In hybrid or enterprise deployments, protected pages require the backend config to load successfully and then enforce normal authentication. The default route opens the **Projects** page, which is the current starting point for template-first onboarding.
+
+> **Tip:** Use `spectra-sherpa --port 9000` to pick a different port, or `--no-browser` if you prefer to open the URL yourself.
 > If you frequently hit port conflicts, set `KILL_PORT_ON_START=true` in `.env` to auto-clear the selected port.
+> If you hit a startup error (greenlet, port conflict, stale lock, etc.), see [Installation → Troubleshooting](installation.md#troubleshooting).
 
 ---
 

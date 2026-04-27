@@ -135,7 +135,7 @@ Project
 
 ## Installation
 
-**Requirements:** Python 3.11+. That is all you need to install and run SpectraSherpa. [Node.js](https://nodejs.org) is only needed if you want to modify the browser interface itself.
+**Requirements:** Python **3.11 or 3.12** (3.13 may work but the scientific stack — numpy, scipy, scikit-learn, SpectroChemPy — does not yet ship full wheels for 3.13+, so installs may try to compile from source and fail; 3.14 is not recommended). [Node.js](https://nodejs.org) is only needed if you want to modify the browser interface itself.
 
 ```bash
 # Install and run (all you need as a user)
@@ -146,7 +146,9 @@ spectra-sherpa
 git clone https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa.git
 cd Spectra-Sherpa
 pip install poetry                              # Poetry manages Python dependencies
+poetry env use python3.11                       # pin the venv to a supported Python (3.11 or 3.12)
 poetry install --with dev --extras "scp"
+poetry run spectra-sherpa                       # launches the app from the source checkout
 
 # Only needed to change the browser interface
 cd frontend && npm install && npm run dev       # npm is the JavaScript package manager
@@ -158,6 +160,24 @@ poetry run pytest tests/ -v --no-cov
 | Extra | Install | Description |
 |-------|---------|-------------|
 | `scp` | `pip install spectra-sherpa[scp]` | [SpectroChemPy](https://www.spectrochempy.fr/) algorithms and file readers |
+
+### First-run notes
+
+The very first launch initializes a local SQLite database, runs Alembic migrations, and (when the `[scp]` extra is installed) lets SpectroChemPy populate its font and stylesheet cache. Allow **30–90 seconds** the first time before opening your browser. The server is ready when you see this line in the terminal:
+
+```
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+```
+
+Subsequent launches start in a few seconds because the SCP cache is now populated.
+
+### Troubleshooting
+
+- **`ValueError: the greenlet library is required to use this function. No module named 'greenlet'`** — `greenlet` is a base dependency, so a clean `pip install spectra-sherpa` (or `poetry install`) pulls it. If you see this in an existing venv, re-run the install or `pip install greenlet` directly.
+- **`pyproject.toml changed significantly since poetry.lock was last generated`** — run `poetry lock` (the `--no-update` flag was removed in Poetry 2.x; bare `poetry lock` is the equivalent), then re-run `poetry install`.
+- **`ERR_CONNECTION_REFUSED` when opening `http://127.0.0.1:8000` immediately after launch** — the server is still in lifespan startup. Wait for the `Uvicorn running on http://127.0.0.1:8000` log line before opening the browser.
+- **Banner reads an old version (e.g. `v0.3.0`) after upgrading** — caused by stale state in an existing venv. `poetry env remove --all` then re-run `poetry install` to rebuild from the new lock; the banner now reads the version live from package metadata so it cannot drift.
+- **Port 8000 already in use** — relaunch with `spectra-sherpa --port 9000`, or set `KILL_PORT_ON_START=true` in `.env` to free the port automatically.
 
 ## Documentation
 
