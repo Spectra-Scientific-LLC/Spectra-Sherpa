@@ -2,17 +2,10 @@
 
 OSS cannot authoritatively decide whether user self-registration is
 enabled or whether an access-code (``ENTERPRISE_PASSWORD``) gate is
-active — those are server concerns. Before this contract existed, OSS
-relied on a ``try: import spectrasherpa_server.routes.auth`` heuristic,
-which silently returned ``True`` under a monorepo layout where the
-server package is always importable even when its routes are not
-actively mounted.
-
-This contract replaces the heuristic with explicit startup registration:
-spectra-server calls :func:`set_registration_enabled` and
-:func:`set_registration_requires_code` from its startup hooks based on
-its own configuration. OSS reads the flags via
-:func:`registration_enabled` and :func:`registration_requires_code`,
+active — those are server concerns. The commercial spectra-server calls
+:func:`set_registration_enabled` and :func:`set_registration_requires_code`
+from its startup hooks based on its own configuration. OSS reads the
+flags via :func:`registration_enabled` and :func:`registration_requires_code`,
 both of which default to ``False`` in OSS-only installs.
 
 Typical usage (in spectra-server startup)::
@@ -44,7 +37,10 @@ def set_registration_enabled(flag: bool) -> None:
     value on every request.
     """
     global _registration_enabled
-    _registration_enabled = bool(flag)
+    new = bool(flag)
+    if new == _registration_enabled:
+        return
+    _registration_enabled = new
     logger.info("auth_policy: registration_enabled=%s", _registration_enabled)
 
 
@@ -66,7 +62,10 @@ def set_registration_requires_code(flag: bool) -> None:
     startup. OSS does not read the env var directly.
     """
     global _registration_requires_code
-    _registration_requires_code = bool(flag)
+    new = bool(flag)
+    if new == _registration_requires_code:
+        return
+    _registration_requires_code = new
     logger.info(
         "auth_policy: registration_requires_code=%s", _registration_requires_code
     )

@@ -27,6 +27,7 @@ Mode summary for developers:
 
 from __future__ import annotations
 
+from spectra_sherpa.app.contracts.auth_policy import registration_enabled
 from spectra_sherpa.app.core.config import app_config
 
 
@@ -102,28 +103,14 @@ def requires_ws_auth(client_host: str | None) -> bool:
 def allows_registration() -> bool:
     """Whether user self-registration is open.
 
-    This is a thin wrapper over the ``auth_policy`` contract: the
-    spectra-server startup registers a flag declaring whether
-    registration is active; OSS reads it here. The earlier heuristic
-    of ``try: import spectrasherpa_server.routes.auth`` is unsafe
-    under a monorepo layout (where the server package is always
-    importable even when its routes are not actively mounted), so it
-    has been removed.
-
-    Returns ``True`` only when:
-    - the runtime mode is multi-user (hybrid/enterprise), AND
-    - the server has called ``auth_policy.set_registration_enabled(True)``
-      at startup.
-
-    When no server has registered (OSS-only installs) this returns
-    ``False``, which is the correct default — OSS does not ship the
-    ``/auth/register`` route.
+    Thin wrapper over the ``auth_policy`` contract. Returns ``True``
+    only when the runtime mode is multi-user (hybrid/enterprise) AND
+    the server has called ``auth_policy.set_registration_enabled(True)``
+    at startup. OSS-only installs always return ``False`` because they
+    do not ship the ``/auth/register`` route.
     """
     if not is_multi_user():
         return False
-
-    from spectra_sherpa.app.contracts.auth_policy import registration_enabled
-
     return registration_enabled()
 
 

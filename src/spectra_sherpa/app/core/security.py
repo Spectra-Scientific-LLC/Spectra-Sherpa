@@ -12,6 +12,7 @@ from fastapi import Depends, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.exceptions import PyJWTError as JWTError
 
+from spectra_sherpa.app.contracts.public_path_provider import get_public_paths
 from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.core.mode_policy import (
     api_key_always_valid,
@@ -348,11 +349,9 @@ async def api_key_middleware(request: Request, call_next) -> Response:
     """
     from fastapi.responses import JSONResponse
 
-    from spectra_sherpa.app.contracts.public_path_provider import get_public_paths
-
-    # Skip auth check for public paths. Core list lives in the contract;
-    # server-side extensions (e.g. /api/v1/auth/login, /api/v1/auth/register)
-    # are appended via register_public_paths() at startup.
+    # Public-path set is owned by the public_path_provider contract;
+    # server-side extensions append routes (e.g. /api/v1/auth/login) at
+    # startup via register_public_paths().
     public_paths = get_public_paths()
 
     path = request.url.path

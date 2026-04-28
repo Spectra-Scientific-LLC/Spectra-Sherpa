@@ -14,6 +14,9 @@ from spectra_sherpa._paths import (
     get_project_root,
     load_layered_env_files,
 )
+from spectra_sherpa.app.contracts.auth_policy import (
+    registration_requires_code as _registration_requires_code_flag,
+)
 from spectra_sherpa.app.contracts.capabilities import (
     ALL_SHERPA_CAPABILITIES,
     CHAT_ASSISTANT,
@@ -375,27 +378,18 @@ class AppConfig(BaseModel):
         """Return client-safe configuration (no secrets).
 
         ``registrationEnabled`` and ``registrationRequiresCode`` are
-        server-owned flags. The commercial server declares their values
-        at startup via ``spectra_sherpa.app.contracts.auth_policy``; OSS
-        reads them here. In OSS-only installs both default to ``False``
-        — the base shape carries those defaults, which is the correct
-        behavior for distributions without managed auth. If the server
-        overlay provider overrides them in its payload, the config
-        route merges those values on top.
+        server-owned flags declared at startup via
+        ``spectra_sherpa.app.contracts.auth_policy``. Both default to
+        ``False`` for OSS-only installs. The config route may merge
+        overlay overrides on top.
         """
         has_llm = len(self.get_configured_llms()) > 0
 
-        from spectra_sherpa.app.contracts.auth_policy import (
-            registration_requires_code as _registration_requires_code_flag,
-        )
+        # mode_policy has a top-level import of ``app_config`` from this
+        # module, so its import must stay function-local to avoid a cycle.
         from spectra_sherpa.app.core.mode_policy import allows_registration
 
-        # ``allows_registration()`` layers the multi-user mode check on
-        # top of the server-registered flag.
         registration_enabled = allows_registration()
-        # ``registration_requires_code`` is independent of mode: the
-        # server declares whether an access code is required; OSS
-        # simply surfaces it.
         registration_requires_code = _registration_requires_code_flag()
 
         # User-facing quota model: one Sherpa/LLM hourly limit plus optional

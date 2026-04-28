@@ -11,7 +11,6 @@ Run:
 
 from __future__ import annotations
 
-import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -492,14 +491,12 @@ class TestRegistrationRequiresCode:
     mode-and-env-var logic itself.
     """
 
-    def setup_method(self):
+    @pytest.fixture(autouse=True)
+    def _reset_auth_policy(self):
         from spectra_sherpa.app.contracts.auth_policy import _reset_for_tests
 
         _reset_for_tests()
-
-    def teardown_method(self):
-        from spectra_sherpa.app.contracts.auth_policy import _reset_for_tests
-
+        yield
         _reset_for_tests()
 
     def test_default_is_false_when_no_server_registered(self):
