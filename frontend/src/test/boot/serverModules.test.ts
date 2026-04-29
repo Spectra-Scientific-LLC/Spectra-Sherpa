@@ -90,6 +90,25 @@ describe("bootServerModules", () => {
     expect(serverModuleLoadFailed.value).toBeNull();
   });
 
+  it("can skip current-route re-resolve when boot runs before router install", async () => {
+    mockConfig.value = {
+      mode: "enterprise",
+      features: { authUI: true },
+    };
+    mockLoadConfig.mockResolvedValue(true);
+
+    const router = makeRouter();
+    const replaceSpy = vi.spyOn(router, "replace");
+    const importModule = vi.fn(async () => ({ register: vi.fn() }));
+
+    await bootServerModules(router, {
+      importModule,
+      reresolveCurrentRoute: false,
+    });
+
+    expect(replaceSpy).not.toHaveBeenCalled();
+  });
+
   it("skips /ui/auth.js when features.authUI is falsy (local-mode default)", async () => {
     mockConfig.value = { mode: "local", features: {} };
     mockLoadConfig.mockResolvedValue(true);

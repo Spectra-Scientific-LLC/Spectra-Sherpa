@@ -1,13 +1,13 @@
 <template>
   <!--
-    Public routes (login, register) render full-bleed without the
-    OSS shell — sidebar + topbar + chat panel are workspace
-    affordances aimed at authenticated users, and visually compete
-    with the centered auth Card if rendered alongside it. Toast and
-    upgrade modals are still mounted so error / upgrade flows work
-    on the public pages.
+    Public routes (login, register) and standalone tools render
+    full-bleed without the OSS shell — sidebar + topbar + chat
+    panel are workspace affordances aimed at authenticated users,
+    and visually compete with centered auth Cards and focused detail
+    views. Toast and upgrade modals are still mounted so error /
+    upgrade flows work on these pages.
   -->
-  <div v-if="isPublicRoute" class="public-shell">
+  <div v-if="isShelllessRoute" class="public-shell">
     <Toast position="top-right" />
     <SherpaUpgradeModal />
     <DemoUpgradeModal />
@@ -99,6 +99,8 @@ const chatCollapsed = ref(readBooleanPreference("chatCollapsed", true));
 const chatWidth = ref(360);
 const isResizing = ref(false);
 const isPublicRoute = computed(() => Boolean(route.meta.public));
+const isStandaloneRoute = computed(() => Boolean(route.meta.standalone));
+const isShelllessRoute = computed(() => isPublicRoute.value || isStandaloneRoute.value);
 
 // Backend connection status
 const {

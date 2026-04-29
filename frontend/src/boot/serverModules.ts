@@ -200,6 +200,7 @@ async function loadAndRegister(
   appConfig: Record<string, unknown>,
   importModule: ImportModuleFn,
   failClosed: boolean,
+  reresolveCurrentRoute: boolean,
 ): Promise<boolean> {
   ensureServerStylesheet();
   try {
@@ -226,7 +227,7 @@ async function loadAndRegister(
     // re-resolve the current location with the freshly-augmented route
     // table.
     const cur = router.currentRoute.value;
-    if (cur.matched.length === 0 && cur.fullPath) {
+    if (reresolveCurrentRoute && cur.matched.length === 0 && cur.fullPath) {
       try {
         await router.replace(cur.fullPath);
       } catch (err) {
@@ -265,6 +266,14 @@ export interface BootServerModulesOptions {
    * fake `register()` instead of fetching over the network.
    */
   importModule?: ImportModuleFn;
+  /**
+   * Re-match the current route after dynamic routes are registered.
+   *
+   * Keep this enabled when booting after the router has started. Disable
+   * it when booting before `app.use(router)`, otherwise the start route
+   * (`/`) can be resolved prematurely and erase the browser deep link.
+   */
+  reresolveCurrentRoute?: boolean;
 }
 
 /**
@@ -295,6 +304,7 @@ export async function bootServerModules(
   options: BootServerModulesOptions = {},
 ): Promise<void> {
   const importModule = options.importModule ?? defaultImportModule;
+  const reresolveCurrentRoute = options.reresolveCurrentRoute ?? true;
   const { config, loadConfig } = useAppConfig();
 
   // Config must be loaded before we can decide what to fetch.
@@ -320,6 +330,7 @@ export async function bootServerModules(
       cfg,
       importModule,
       true,
+      reresolveCurrentRoute,
     );
   }
 
@@ -341,6 +352,7 @@ export async function bootServerModules(
           cfg,
           importModule,
           false,
+          reresolveCurrentRoute,
         );
         if (ok) adminLoaded = true;
       }
