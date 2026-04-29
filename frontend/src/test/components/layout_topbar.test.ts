@@ -4,7 +4,7 @@ import { defineComponent } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  routeMeta: { public: false as boolean },
+  routeMeta: { public: false as boolean, standalone: false as boolean },
   appMode: { __v_isRef: true, value: "local" },
   hasLLMConfigured: { __v_isRef: true, value: false },
   backendConnected: { __v_isRef: true, value: true },
@@ -257,6 +257,7 @@ describe("MainLayout chat panel defaults", () => {
   beforeEach(() => {
     localStorage.clear();
     mocks.routeMeta.public = false;
+    mocks.routeMeta.standalone = false;
     mocks.jobStore.connect.mockClear();
     mocks.jobStore.disconnect.mockClear();
   });
@@ -275,6 +276,16 @@ describe("MainLayout chat panel defaults", () => {
 
     expect(wrapper.findComponent(TopbarStub).props("chatCollapsed")).toBe(false);
     expect(wrapper.findComponent(ChatPanelStub).props("collapsed")).toBe(false);
+  });
+
+  it("renders standalone routes without the application chrome", () => {
+    mocks.routeMeta.standalone = true;
+    const wrapper = mount(MainLayout, mainLayoutMountOptions);
+
+    expect(wrapper.find('[data-test="router-view"]').exists()).toBe(true);
+    expect(wrapper.findComponent(TopbarStub).exists()).toBe(false);
+    expect(wrapper.findComponent(SidebarStub).exists()).toBe(false);
+    expect(wrapper.findComponent(ChatPanelStub).exists()).toBe(false);
   });
 });
 
