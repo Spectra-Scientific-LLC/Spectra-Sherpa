@@ -12,14 +12,23 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from spectra_sherpa.app.contracts.ai_provider import AIServiceProvider
+from spectra_sherpa.app.contracts.ai_provider_errors import SherpaAdvisorUnavailable
 
 logger = logging.getLogger(__name__)
 
 _advisor: AIServiceProvider | None = None
 
 
-class FeatureDisabledError(RuntimeError):
-    """Raised when an advisor feature is invoked in the Disabled default."""
+class FeatureDisabledError(SherpaAdvisorUnavailable):
+    """Raised when an advisor feature is invoked in the Disabled default.
+
+    Inherits from :class:`SherpaAdvisorUnavailable` so callers that don't
+    distinguish between disabled / unauthorized / subscription-gated
+    failures can catch the base class.
+    """
+
+    def __init__(self, detail: str = "Sherpa advisor not available"):
+        super().__init__(detail)
 
 
 class DisabledAIProvider:

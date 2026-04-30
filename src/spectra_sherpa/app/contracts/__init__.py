@@ -12,6 +12,7 @@ their own dedicated modules to avoid name collisions with feature flags.
 from spectra_sherpa.app.contracts.actors import CurrentActor
 from spectra_sherpa.app.contracts.ai_provider import AIServiceProvider
 from spectra_sherpa.app.contracts.ai_provider_errors import (
+    SherpaAdvisorUnavailable,
     SherpaAuthorizationError,
     SubscriptionRequiredError,
 )
@@ -79,6 +80,7 @@ __all__ = [
     "AIServiceProvider",
     "DisabledAIProvider",
     "FeatureDisabledError",
+    "SherpaAdvisorUnavailable",
     "SherpaAuthorizationError",
     "SubscriptionRequiredError",
     "get_sherpa_advisor",

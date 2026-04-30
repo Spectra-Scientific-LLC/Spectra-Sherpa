@@ -30,7 +30,12 @@ from typing import Any
 import pytest
 
 from spectra_sherpa.app.contracts.ai_provider import AIServiceProvider
-from spectra_sherpa.app.contracts.ai_provider_registry import DisabledAIProvider
+from spectra_sherpa.app.contracts.ai_provider_errors import (
+    SherpaAdvisorUnavailable,
+    SherpaAuthorizationError,
+    SubscriptionRequiredError,
+)
+from spectra_sherpa.app.contracts.ai_provider_registry import DisabledAIProvider, FeatureDisabledError
 
 
 class MockPremiumProvider:
@@ -165,6 +170,38 @@ def test_disabled_provider_is_safe_default() -> None:
     provider = DisabledAIProvider()
     assert provider.is_available is False
     assert provider.has_feature("anything") is False
+
+
+@pytest.mark.parametrize(
+    "subclass",
+    [FeatureDisabledError, SherpaAuthorizationError, SubscriptionRequiredError],
+)
+def test_advisor_unavailable_errors_share_a_common_base(subclass: type[Exception]) -> None:
+    """All three advisor-unavailable errors inherit from ``SherpaAdvisorUnavailable``.
+
+    Callers that don't need to distinguish between disabled / unauthorized /
+    subscription-gated failures can then write a single
+    ``except SherpaAdvisorUnavailable`` block.
+    """
+    assert issubclass(subclass, SherpaAdvisorUnavailable)
+
+
+def test_advisor_unavailable_carries_detail_string() -> None:
+    """The base class normalizes the ``detail`` attribute used by callers."""
+    err = SherpaAdvisorUnavailable("custom message")
+    assert err.detail == "custom message"
+    assert str(err) == "custom message"
+
+
+def test_subclass_default_details_are_distinct() -> None:
+    """Each subclass's default detail string is recognizably different.
+
+    Callers that want a uniform user-facing message catch the base; callers
+    that want specific text dispatch on the subclass and read ``detail``.
+    """
+    assert FeatureDisabledError().detail == "Sherpa advisor not available"
+    assert SherpaAuthorizationError().detail == "Sherpa authorization failed"
+    assert SubscriptionRequiredError().detail == "Subscription required"
 
 
 def test_protocol_method_set_is_documented() -> None:

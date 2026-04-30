@@ -29,9 +29,18 @@ from typing import Iterable, List
 
 logger = logging.getLogger(__name__)
 
-# Core paths the OSS gateway always treats as public. Keep this list in
-# sync with the gateway's own expectations in
-# ``spectra_sherpa.app.core.security.api_key_middleware``.
+# Core paths the OSS gateway always treats as public. The gateway
+# (``spectra_sherpa.app.core.security.api_key_middleware``) consumes
+# this list via :func:`get_public_paths` — there is no parallel
+# hardcoded list to keep in sync. The middleware additionally:
+#
+#   * Allows any non-``/api/``, non-``/ws`` path through as a frontend
+#     SPA route catchall.
+#   * Treats ``/docs`` and ``/redoc`` as prefixes (so e.g.
+#     ``/docs/oauth2-redirect`` is also public), which is broader than
+#     the exact-match entries below.
+#
+# So this list only needs to enumerate the *exact-match* public paths.
 OSS_PUBLIC_PATHS: List[str] = [
     "/",
     "/health",
