@@ -143,7 +143,6 @@ router.onError((err) => {
 
 const pinia = createPinia();
 app.use(pinia);
-app.use(router);
 app.use(PrimeVue);
 app.use(ToastService);
 app.directive("tooltip", Tooltip);
@@ -205,10 +204,11 @@ import { bootServerModules } from "./boot/serverModules";
 
 void (async () => {
   try {
-    await bootServerModules(router);
+    await bootServerModules(router, { reresolveCurrentRoute: false });
   } catch (err) {
     console.error("[Spectra] server-module bootstrap threw:", err);
   }
+  app.use(router);
   app.mount("#app");
 })();
 
