@@ -27,7 +27,7 @@ class DisabledAIProvider:
 
     is_available: bool = False
 
-    def has_feature(self, _feature: str) -> bool:
+    def has_feature(self, feature: str) -> bool:
         return False
 
     async def sync_workflow(self, *_a: Any, **_k: Any) -> list[Any]:
