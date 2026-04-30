@@ -14,6 +14,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from spectra_sherpa.app.core.request_id import get_request_id
 from spectra_sherpa.app.models.execution_run import ExecutionRun
 
 logger = logging.getLogger(__name__)
@@ -93,14 +94,15 @@ async def _auto_persist_run(
 
 
 def _raise_execution_persistence_error() -> None:
-    request_id = uuid4().hex[:8]
-    logger.error(
-        "Workflow execution completed but results could not be persisted [req %s]",
-        request_id,
-    )
+    # See ``predict.py`` for the same pattern: full ID lands in the log
+    # via the ``[req=%(request_id)s]`` formatter; the short form is for
+    # the user-facing detail string.
+    full_request_id = get_request_id() or uuid4().hex
+    short_id = full_request_id[:8]
+    logger.error("Workflow execution completed but results could not be persisted")
     raise HTTPException(
         status_code=500,
-        detail=("Workflow execution completed but results could not be saved. " f"Reference request ID: {request_id}"),
+        detail=("Workflow execution completed but results could not be saved. " f"Reference request ID: {short_id}"),
     )
 
 

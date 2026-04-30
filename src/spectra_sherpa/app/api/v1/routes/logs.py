@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.core.logging import RemoteAuditHandler, log_buffer
-from spectra_sherpa.app.core.mode_policy import is_loopback
+from spectra_sherpa.app.core.mode_policy import is_hybrid, is_loopback
 from spectra_sherpa.app.core.security import get_client_host
 from spectra_sherpa.app.schemas.logs import LogResponse
 
@@ -44,7 +44,7 @@ async def get_log_sync_status(request: Request):
             remote_handler = handler
             break
 
-    if app_config.mode != "hybrid":
+    if not is_hybrid():
         return {
             "mode": app_config.mode,
             "remote_logging_enabled": False,

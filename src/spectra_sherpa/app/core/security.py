@@ -12,6 +12,8 @@ from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.core.mode_policy import (
     api_key_always_valid,
     export_always_allowed,
+    is_hybrid,
+    is_local,
     requires_http_auth,
     system_api_key_always_accepted,
 )
@@ -39,7 +41,12 @@ _invalid_api_key_cache: dict[str, float] = {}  # {key_hash: expires_at}
 
 def llm_egress_defaults_enabled() -> bool:
     """Whether new users should default LLM chat/context egress to enabled."""
-    return app_config.site_profile == "demo" or app_config.mode == "local"
+    # Mode portion routed through ``is_local()``. The ``site_profile``
+    # check stays as a literal — there's only one caller for the
+    # combined "dev or demo" concept; factoring a shared helper would
+    # be premature. See ``docs/dev/_diagnostics/mode-policy-helpers.md``
+    # Cluster C.
+    return app_config.site_profile == "demo" or is_local()
 
 
 def llm_egress_defaults_forced() -> bool:
@@ -365,7 +372,7 @@ def is_egress_enabled() -> bool:
         True if egress is allowed, False otherwise
     """
     # Check if we're in degraded mode (hybrid fallback to local)
-    if app_config.mode == "hybrid":
+    if is_hybrid():
         try:
             from spectra_sherpa.app.services.network_health import get_network_health_service
 

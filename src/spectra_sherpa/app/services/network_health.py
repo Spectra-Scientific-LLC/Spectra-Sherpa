@@ -22,6 +22,7 @@ from enum import Enum
 from typing import Callable, Optional
 
 from spectra_sherpa.app.core.config import app_config
+from spectra_sherpa.app.core.mode_policy import is_hybrid
 
 logger = logging.getLogger(__name__)
 
@@ -226,7 +227,7 @@ class NetworkHealthService:
             return
 
         # Only run in hybrid mode
-        if app_config.mode != "hybrid":
+        if not is_hybrid():
             logger.info("Network health monitoring disabled (not in hybrid mode)")
             return
 
@@ -256,7 +257,7 @@ class NetworkHealthService:
 
         In hybrid mode, returns "local" if degraded, otherwise "hybrid".
         """
-        if app_config.mode == "hybrid" and self._state.is_degraded_mode:
+        if is_hybrid() and self._state.is_degraded_mode:
             return "local"
         return app_config.mode
 

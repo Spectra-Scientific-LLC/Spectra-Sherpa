@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session
+from spectra_sherpa.app.core.request_id import get_request_id
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, SpectralAxis
 from spectra_sherpa.app.models.user import User
@@ -197,11 +198,17 @@ async def predict(
     try:
         results = await executor.execute()
     except Exception:
-        request_id = uuid4().hex[:8]
-        logger.exception("Prediction execution failed [req %s]", request_id)
+        # The full request ID is auto-injected into log lines via the
+        # formatter (see ``app/core/request_id.py``); we surface a short
+        # form to the user for support-ticket correlation. ``or uuid4``
+        # is a defensive fallback for paths that bypass the middleware
+        # (e.g. unit tests calling this route function directly).
+        full_request_id = get_request_id() or uuid4().hex
+        short_id = full_request_id[:8]
+        logger.exception("Prediction execution failed")
         raise HTTPException(
             status_code=500,
-            detail=f"Execution failed. Reference request ID: {request_id}",
+            detail=f"Execution failed. Reference request ID: {short_id}",
         )
 
     # --- 7. Collect and serialize exit-node results ----------------------

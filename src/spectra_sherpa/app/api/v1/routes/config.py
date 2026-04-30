@@ -186,7 +186,9 @@ async def get_config(
         if provider_id in config["llms"]:
             config["llms"][provider_id]["enabled"] = is_available
 
-    if app_config.mode == "local":
+    from spectra_sherpa.app.core.mode_policy import is_local
+
+    if is_local():
         # In OSS local mode, the chat surface is the BYO endpoint proxy only.
         # Legacy provider-key presence no longer enables the chat assistant.
         from spectra_sherpa.app.services.basic_chat import is_configured as byo_chat_configured

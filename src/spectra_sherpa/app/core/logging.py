@@ -13,6 +13,7 @@ from typing import Any, Deque
 import httpx
 
 from spectra_sherpa.app.core.config import app_config, settings
+from spectra_sherpa.app.core.mode_policy import is_hybrid
 
 log_buffer: Deque[dict[str, Any]] = deque(maxlen=settings.log_buffer_size)
 
@@ -39,6 +40,7 @@ class BufferHandler(logging.Handler):
                     "level": record.levelname,
                     "message": message,
                     "logger": record.name,
+                    "request_id": getattr(record, "request_id", "-"),
                 }
             )
         except Exception:
@@ -91,7 +93,7 @@ class RemoteAuditHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         # Only send logs in hybrid mode
-        if app_config.mode != "hybrid":
+        if not is_hybrid():
             return
 
         # SECURITY: Don't send logs when degraded (strict local-only fallback)
@@ -226,6 +228,14 @@ class RemoteAuditHandler(logging.Handler):
 
 
 def configure_logging(level: int = logging.INFO) -> None:
+    from spectra_sherpa.app.core.request_id import install_request_id_log_factory
+
+    # Install once before any handler is added: this sets
+    # ``record.request_id`` at LogRecord creation time, so handler
+    # formatters that reference ``%(request_id)s`` always find the
+    # attribute even for records that propagate up from child loggers.
+    install_request_id_log_factory()
+
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
 
@@ -238,7 +248,7 @@ def configure_logging(level: int = logging.INFO) -> None:
     if not any(isinstance(h, logging.StreamHandler) for h in root_logger.handlers):
         stream_handler = logging.StreamHandler()
         stream_handler.setLevel(level)
-        stream_handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+        stream_handler.setFormatter(logging.Formatter("%(levelname)s [req=%(request_id)s] %(name)s: %(message)s"))
         root_logger.addHandler(stream_handler)
 
     # Persistent file logging (local audit log)
@@ -255,7 +265,10 @@ def configure_logging(level: int = logging.INFO) -> None:
             )
             file_handler.setLevel(level)
             file_handler.setFormatter(
-                logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+                logging.Formatter(
+                    "%(asctime)s %(levelname)s [req=%(request_id)s] %(name)s: %(message)s",
+                    datefmt="%Y-%m-%d %H:%M:%S",
+                )
             )
 
             # Add a filter to redact sensitive data before writing to file
@@ -268,7 +281,7 @@ def configure_logging(level: int = logging.INFO) -> None:
             root_logger.addHandler(file_handler)
 
     # Remote audit logging (hybrid mode only)
-    if app_config.mode == "hybrid" and app_config.spectrasherpa_log_url:
+    if is_hybrid() and app_config.spectrasherpa_log_url:
         if not any(isinstance(h, RemoteAuditHandler) for h in root_logger.handlers):
             remote_handler = RemoteAuditHandler(app_config.spectrasherpa_log_url)
             remote_handler.setLevel(level)

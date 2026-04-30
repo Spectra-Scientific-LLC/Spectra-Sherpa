@@ -85,7 +85,9 @@ def get_cors_origins() -> list[str]:
 
     # In non-local modes without explicit CORS_ORIGINS, warn loudly.
     # Local mode is fine with localhost defaults (single-user desktop).
-    if app_config.mode != "local":
+    from spectra_sherpa.app.core.mode_policy import is_multi_user
+
+    if is_multi_user():
         logger.critical(
             "CORS_ORIGINS not set for %s mode — falling back to localhost-only "
             "origins. Set CORS_ORIGINS to your production domain(s) before "
@@ -413,6 +415,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
     # Determine if auth is required for this connection (mode-dependent).
     from spectra_sherpa.app.core.mode_policy import requires_ws_auth as _requires_ws_auth
+    from spectra_sherpa.app.core.request_id import mint_request_id, use_request_id
     from spectra_sherpa.app.services.ws_auth import (
         authenticate_ws_message,
         require_authenticated_action,
@@ -485,55 +488,63 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     break  # Write failed: socket is gone, fall through to disconnect
                 continue
 
-            action = payload.get("action") or payload.get("type")
-            logger.info("WS action received: %s", action)
+            # Bind a per-message request_id so every log line emitted by
+            # the dispatch path (and the action handlers it calls) is
+            # correlatable. Inbound ``request_id`` from the client wins;
+            # otherwise mint one. Symmetric to the HTTP middleware.
+            inbound_id = payload.get("request_id") if isinstance(payload, dict) else None
+            with use_request_id(str(inbound_id) if inbound_id else mint_request_id()):
+                action = payload.get("action") or payload.get("type")
+                logger.info("WS action received: %s", action)
 
-            if action == "ping":
-                await websocket.send_json({"type": "pong"})
-                continue
-            if action == "pong":
-                continue
+                if action == "ping":
+                    await websocket.send_json({"type": "pong"})
+                    continue
+                if action == "pong":
+                    continue
 
-            # ── First-message auth (canonical path for browsers) ──
-            # Clients send credentials as the first WebSocket frame instead
-            # of via URL query params.  Preferred because it keeps tokens
-            # out of server logs and browser history.
-            if action == "authenticate":
-                ws_user = await authenticate_ws_message(
-                    payload,
-                    client_host=ws_client_host,
-                    current_user=ws_user,
-                )
-                if ws_user and ws_user.id is not None:
-                    job_channel = f"jobs:{ws_user.id}"
-                    await stamp_last_active(ws_user)
+                # ── First-message auth (canonical path for browsers) ──
+                # Clients send credentials as the first WebSocket frame instead
+                # of via URL query params.  Preferred because it keeps tokens
+                # out of server logs and browser history.
+                if action == "authenticate":
+                    ws_user = await authenticate_ws_message(
+                        payload,
+                        client_host=ws_client_host,
+                        current_user=ws_user,
+                    )
+                    if ws_user and ws_user.id is not None:
+                        job_channel = f"jobs:{ws_user.id}"
+                        await stamp_last_active(ws_user)
+                    if require_authenticated_action(requires_auth=requires_ws_auth, ws_user=ws_user):
+                        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                        break
+                    await websocket.send_json({"type": "authenticated", "user_id": ws_user.id if ws_user else None})
+                    continue
+
+                # Guard: reject any action before auth on enterprise connections
                 if require_authenticated_action(requires_auth=requires_ws_auth, ws_user=ws_user):
                     await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
                     break
-                await websocket.send_json({"type": "authenticated", "user_id": ws_user.id if ws_user else None})
-                continue
 
-            # Guard: reject any action before auth on enterprise connections
-            if require_authenticated_action(requires_auth=requires_ws_auth, ws_user=ws_user):
-                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-                break
-
-            if action == "subscribe":
-                await handle_subscribe(websocket, payload, ws_user, _llm_rate_limiter, resolve_channel=_resolve_channel)
-            elif action == "unsubscribe":
-                await handle_unsubscribe(
-                    websocket, payload, ws_user, _llm_rate_limiter, resolve_channel=_resolve_channel
-                )
-            elif ws_registry is not None and await ws_registry.dispatch(
-                action,
-                websocket,
-                payload,
-                ws_user,
-                _llm_rate_limiter,
-            ):
-                continue
-            else:
-                await websocket.send_json({"type": "error", "detail": "Unknown action"})
+                if action == "subscribe":
+                    await handle_subscribe(
+                        websocket, payload, ws_user, _llm_rate_limiter, resolve_channel=_resolve_channel
+                    )
+                elif action == "unsubscribe":
+                    await handle_unsubscribe(
+                        websocket, payload, ws_user, _llm_rate_limiter, resolve_channel=_resolve_channel
+                    )
+                elif ws_registry is not None and await ws_registry.dispatch(
+                    action,
+                    websocket,
+                    payload,
+                    ws_user,
+                    _llm_rate_limiter,
+                ):
+                    continue
+                else:
+                    await websocket.send_json({"type": "error", "detail": "Unknown action"})
     except WebSocketDisconnect:
         await ws_manager.disconnect(websocket)
 
@@ -585,7 +596,7 @@ def create_app(
     # on an incoming request). The v0.4.1 Phase 2 JWT handshake requires a
     # specific inbound order:
     #
-    #     CORS  →  extra_middleware (EnterpriseEnforcementMiddleware)
+    #     CORS  →  RequestIDMiddleware  →  extra_middleware (EEM)
     #           →  RateLimitMiddleware  →  api_key_middleware  →  route
     #
     # EEM must run BEFORE ``api_key_middleware`` so the Bearer-token stamp
@@ -594,11 +605,16 @@ def create_app(
     # at the gateway even though the server validated the token. Register
     # innermost-first so this inbound order falls out of the prepend
     # semantics. CORS stays outermost so its headers wrap early 401/403s
-    # from any inner middleware.
+    # from any inner middleware. RequestIDMiddleware sits just inside CORS
+    # so every middleware downstream (and every route logger) sees the
+    # request ID via the ``request_id`` ContextVar / log filter.
+    from spectra_sherpa.app.core.request_id import RequestIDMiddleware
+
     _app.middleware("http")(api_key_middleware)
     _app.add_middleware(RateLimitMiddleware)
     for mw in extra_middleware or []:
         mw(_app)
+    _app.add_middleware(RequestIDMiddleware)
     _app.add_middleware(
         CORSMiddleware,
         allow_origins=origins if not _allow_all else [],
