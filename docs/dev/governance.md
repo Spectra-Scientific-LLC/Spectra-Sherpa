@@ -6,9 +6,8 @@ contracts, specs, and extension points are owned across the OSS core
 resolved.
 
 This document is the authoritative public statement of the boundary model.
-Commercial-side design notes may exist in private repositories, but public
-OSS contributors should rely on this document rather than private ADR
-references.
+Commercial-side design notes may exist outside this repository, but public
+OSS contributors should rely on this document for the public boundary model.
 
 > **Scope of "OSS."** In this document, "OSS" means the `spectra-sherpa`
 > package as installed from the public repo. It is AGPL-3.0 licensed and
@@ -112,7 +111,7 @@ Designs that break this invariant are rejected. In particular:
   is the **canonical** source; the frontend's generated TypeScript client is
   derived from it; the server validates its implementations of public-surface
   routes against it
-- WebSocket event contract: `docs/contracts/sherpa-ws-v1.json`
+- WebSocket event contract: `src/spectra_sherpa/contracts/sherpa-ws-v1.json`
 
 ### 3.3 Extension contracts
 
