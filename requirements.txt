@@ -27,15 +27,15 @@ pypdf>=6.9.2,<7.0.0
 
 # NOTE: PyJWT and bcrypt were removed from OSS in v0.4.1 Phase 2.
 # OSS no longer issues, validates, or hashes credentials — that's the
-# server's responsibility. See packages/spectra-server/pyproject.toml.
+# responsibility of managed-auth server extensions.
 
 # Optional: spectral file I/O via SpectroChemPy (CeCILL-B license, not AGPL-compatible)
 # Install with: pip install spectra-sherpa[scp]
 # spectrochempy>=0.8.1,<0.9.0
 
-# Optional: LLM providers (install with: pip install spectra-sherpa[sherpa])
-# openai>=1.40.0,<2.0.0
-# anthropic>=0.39.0,<1.0.0
+# LLM provider SDKs are intentionally not listed here. The OSS package exposes
+# contracts for LLM-backed features; provider implementations are supplied by
+# extensions.
 
 # Optional: server deployment extras (install with: pip install spectra-sherpa[cloud])
 # asyncpg>=0.29.0,<0.30.0

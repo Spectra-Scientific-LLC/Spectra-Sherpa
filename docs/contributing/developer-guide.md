@@ -112,17 +112,14 @@ under `frontend/src/`.
    - evidence that your tests pass
    - any notes on behavior that changes for existing users
 5. Wait for CI to pass (all checks must be green).
-6. A maintainer will deploy your branch to staging for final validation.
-7. Once verified on staging, the maintainer merges to `main`.
-8. Merging to `main` triggers an automatic deploy to production.
+6. A maintainer reviews the PR and may ask for changes.
+7. Once accepted, the change is included in a future release.
 
-### For maintainers
+### Release handling
 
-After CI passes on a pull request, maintainers deploy the branch to a
-staging environment for manual verification before merging, then merge
-on GitHub. Deployment tooling and staging infrastructure are operated
-by the project maintainers and are out of scope for this contributor
-guide. Merging to `main` triggers the automated release pipeline.
+Maintainers handle release timing and deployment outside this contributor
+guide. Contributors only need to keep the pull request focused, reviewed, and
+green in public CI.
 
 ---
 
