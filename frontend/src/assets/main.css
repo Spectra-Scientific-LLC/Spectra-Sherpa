@@ -1,5 +1,9 @@
 :root {
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
   color: #1b1f23;
   background-color: #f5f7fa;
 }
@@ -292,27 +296,31 @@ body.chat-resizing {
   gap: 24px;
 }
 
-@media (max-width: 900px) {
-  .app-shell {
-    flex-direction: column;
-  }
-
-  .sidebar {
-    width: 100%;
-  }
-
-  .workspace {
-    flex-direction: column;
+/*
+ * Narrow viewport (smartphone / portrait tablet).
+ *
+ * Keep the row layout — sidebar | main | chat — at all widths. The
+ * sidebar is forced to its 72px icon rail by JS via --nav-width, and
+ * a PrimeVue drawer renders an expanded copy on demand. When the chat
+ * panel is open it takes over the workspace and main is hidden
+ * (binary toggle, no resize handle).
+ */
+@media (max-width: 768px) {
+  /* Chat takes all the workspace width when open; specificity bump
+     overrides the row-mode rule .chat-panel { width: var(--chat-width) }. */
+  .app-shell .chat-panel {
+    width: auto;
+    flex: 1;
+    min-width: 0;
   }
 
   .chat-resize-handle {
     display: none;
   }
 
-  .chat-panel {
-    width: 100%;
-    border-left: none;
-    border-top: 1px solid #e2e8f0;
+  /* Binary main-or-chat: when chat is open, hide main entirely. */
+  .app-shell.chat-open .main {
+    display: none;
   }
 
   .two-column {
@@ -324,9 +332,17 @@ body.chat-resizing {
     grid-template-columns: 1fr;
   }
 
-  /* Responsive collapse for section layouts */
   .section-two-column,
   .section-three-column {
     grid-template-columns: 1fr;
   }
+}
+
+/* Narrow-mode nav drawer cosmetics. PrimeVue's Sidebar is teleported
+   to body, so scoped styles in MainLayout cannot reach it. */
+.p-sidebar.nav-drawer .p-sidebar-content {
+  padding: 0;
+}
+.p-sidebar.nav-drawer .p-sidebar-header {
+  display: none;
 }

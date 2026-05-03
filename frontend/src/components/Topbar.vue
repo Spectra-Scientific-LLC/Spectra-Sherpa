@@ -111,7 +111,9 @@
         class="p-button-text p-button-rounded"
         aria-label="Notifications"
         title="Open notifications"
-        :badge="notificationStore.unreadCount > 0 ? String(notificationStore.unreadCount) : undefined"
+        :badge="
+          notificationStore.unreadCount > 0 ? String(notificationStore.unreadCount) : undefined
+        "
         badgeClass="p-badge-danger"
         @click="notificationDrawerVisible = !notificationDrawerVisible"
       />
@@ -220,21 +222,25 @@ const { items: contributedMenuItems } = useTopbarMenu();
 
 const userMenuItems = computed(() => [
   {
-    label: authStore.user?.username || 'User',
-    icon: 'pi pi-user',
+    label: authStore.user?.username || "User",
+    icon: "pi pi-user",
     disabled: true,
-    class: 'user-menu-header',
+    class: "user-menu-header",
   },
   { separator: true },
   {
-    label: 'Settings',
-    icon: 'pi pi-cog',
-    command: () => { router.push('/settings'); },
+    label: "Settings",
+    icon: "pi pi-cog",
+    command: () => {
+      router.push("/settings");
+    },
   },
   {
-    label: 'Documentation',
-    icon: 'pi pi-book',
-    command: () => { window.open('https://docs.spectrascientific.ai', '_blank'); },
+    label: "Documentation",
+    icon: "pi pi-book",
+    command: () => {
+      window.open("https://docs.spectrascientific.ai", "_blank");
+    },
   },
   // Server-module contributions (Sign Out / My Profile / Change Password
   // in managed-auth modes). Empty array in local mode.
@@ -246,52 +252,50 @@ const toggleUserMenu = (event: Event) => {
 };
 
 const chatToggleTitle = computed(() =>
-  props.chatCollapsed ? "Open chat panel" : "Collapse chat panel"
+  props.chatCollapsed ? "Open chat panel" : "Collapse chat panel",
 );
 
 // Status indicator computed properties (Traffic Lights)
 const backendStatus = computed(() => {
   if (backendConnected.value) {
-    return { class: 'status-green', tooltip: 'Backend: Connected' };
+    return { class: "status-green", tooltip: "Backend: Connected" };
   }
-  return { class: 'status-red status-pulse', tooltip: 'Backend: Server offline' };
+  return { class: "status-red status-pulse", tooltip: "Backend: Server offline" };
 });
 
 const dataStatus = computed(() => {
   const hasExperiments = experimentStore.experiments.length > 0;
-  const hasNodeOutput = workflowStore.nodes.some(
-    (n) => n.executionState?.status === "completed"
-  );
+  const hasNodeOutput = workflowStore.nodes.some((n) => n.executionState?.status === "completed");
   if (hasExperiments || hasNodeOutput) {
-    return { class: 'status-green', tooltip: 'Data: Loaded' };
+    return { class: "status-green", tooltip: "Data: Loaded" };
   }
-  return { class: 'status-gray', tooltip: 'Data: No data loaded' };
+  return { class: "status-gray", tooltip: "Data: No data loaded" };
 });
 
 const workflowStatus = computed(() => {
   if (workflowStore.nodes.length === 0) {
-    return { class: 'status-gray', tooltip: 'Workflow: Empty canvas' };
+    return { class: "status-gray", tooltip: "Workflow: Empty canvas" };
   }
   if (workflowStore.hasUnsavedChanges) {
-    return { class: 'status-yellow', tooltip: 'Workflow: Unsaved changes' };
+    return { class: "status-yellow", tooltip: "Workflow: Unsaved changes" };
   }
-  return { class: 'status-green', tooltip: 'Workflow: Ready' };
+  return { class: "status-green", tooltip: "Workflow: Ready" };
 });
 
 const llmStatus = computed(() => {
-  if (llmStore.connectionStatus === 'connected') {
-    return { class: 'status-green', tooltip: 'LLM: Connected' };
+  if (llmStore.connectionStatus === "connected") {
+    return { class: "status-green", tooltip: "LLM: Connected" };
   }
-  if (llmStore.connectionStatus === 'connecting') {
-    return { class: 'status-yellow status-pulse', tooltip: 'LLM: Connecting...' };
+  if (llmStore.connectionStatus === "connecting") {
+    return { class: "status-yellow status-pulse", tooltip: "LLM: Connecting..." };
   }
-  if (llmStore.configStatus === 'configured' || hasLLMConfigured.value) {
-    return { class: 'status-blue', tooltip: 'LLM: Ready' };
+  if (llmStore.configStatus === "configured" || hasLLMConfigured.value) {
+    return { class: "status-blue", tooltip: "LLM: Ready" };
   }
-  if (llmStore.configStatus === 'unknown') {
-    return { class: 'status-yellow', tooltip: 'LLM: Checking...' };
+  if (llmStore.configStatus === "unknown") {
+    return { class: "status-yellow", tooltip: "LLM: Checking..." };
   }
-  return { class: 'status-red', tooltip: 'LLM: Not Configured' };
+  return { class: "status-red", tooltip: "LLM: Not Configured" };
 });
 
 onMounted(() => {
@@ -306,7 +310,7 @@ onUnmounted(() => {
 });
 
 const computeStatus = computed(() => {
-  return { class: 'status-blue', tooltip: 'Compute: Local' };
+  return { class: "status-blue", tooltip: "Compute: Local" };
 });
 
 // Project selection
@@ -317,7 +321,7 @@ watch(
   () => projectStore.currentProjectId,
   (id) => {
     selectedProjectId.value = id;
-  }
+  },
 );
 
 // System notifications: backend online/offline transitions
@@ -589,7 +593,9 @@ const onFileSelected = async (event: Event) => {
   border-radius: 50%;
   position: relative;
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
 }
 
 .status-light:hover {
@@ -621,7 +627,7 @@ const onFileSelected = async (event: Event) => {
 }
 
 .status-tooltip::before {
-  content: '';
+  content: "";
   position: absolute;
   bottom: 100%;
   left: 50%;
@@ -662,21 +668,37 @@ const onFileSelected = async (event: Event) => {
 }
 
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     box-shadow: 0 0 6px currentColor;
   }
   50% {
-    box-shadow: 0 0 12px currentColor, 0 0 18px currentColor;
+    box-shadow:
+      0 0 12px currentColor,
+      0 0 18px currentColor;
   }
 }
 
+/*
+ * At narrow widths the topbar drops the project selector first
+ * (hamburger stays in topbar-left to open the nav drawer; status
+ * lights and the right-side actions stay). If even that overflows,
+ * the status indicators drop next.
+ */
 @media (max-width: 768px) {
-  .topbar-center {
-    display: none;
+  .topbar {
+    padding: 8px 12px;
+    gap: 8px;
   }
 
-  .project-dropdown {
-    min-width: 150px;
+  .project-selector {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .topbar-center {
+    display: none;
   }
 }
 </style>

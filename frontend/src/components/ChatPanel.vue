@@ -34,7 +34,12 @@
               @click="toggleSherpaConversationMenu"
               v-tooltip.bottom="'Sherpa topics'"
             />
-            <Menu ref="sherpaConversationMenu" :model="sherpaConversationMenuItems" :popup="true" class="sherpa-menu">
+            <Menu
+              ref="sherpaConversationMenu"
+              :model="sherpaConversationMenuItems"
+              :popup="true"
+              class="sherpa-menu"
+            >
               <template #item="{ item }">
                 <div
                   class="sherpa-menu-item"
@@ -69,7 +74,12 @@
               @click="toggleLlmConversationMenu"
               v-tooltip.bottom="'LLM conversations'"
             />
-            <Menu ref="llmConversationMenu" :model="llmConversationMenuItems" :popup="true" class="sherpa-menu">
+            <Menu
+              ref="llmConversationMenu"
+              :model="llmConversationMenuItems"
+              :popup="true"
+              class="sherpa-menu"
+            >
               <template #item="{ item }">
                 <div
                   class="sherpa-menu-item"
@@ -142,6 +152,16 @@
             @click="openInNewTab"
             v-tooltip.bottom="'Open in new tab'"
           />
+          <!-- Narrow-mode only: at widths where chat takes over the
+               workspace, the Topbar (and its chat toggle) is hidden,
+               so the panel needs its own close affordance. -->
+          <Button
+            icon="pi pi-times"
+            class="p-button-text p-button-sm chat-close-btn-narrow"
+            aria-label="Close chat panel"
+            @click="emit('toggle')"
+            v-tooltip.bottom="'Close'"
+          />
         </div>
       </div>
 
@@ -182,11 +202,18 @@
                 </div>
                 <div v-else-if="!llmChatEnabled && appMode === 'local'" class="no-key-notice">
                   <i class="pi pi-info-circle"></i>
-                  <span>Set <code>CHAT_ENDPOINT_URL</code> and <code>CHAT_ENDPOINT_KEY</code> in your environment, then restart to enable chat.</span>
+                  <span
+                    >Set <code>CHAT_ENDPOINT_URL</code> and <code>CHAT_ENDPOINT_KEY</code> in your
+                    environment, then restart to enable chat.</span
+                  >
                 </div>
                 <div v-else-if="!llmChatEnabled" class="no-key-notice">
                   <i class="pi pi-info-circle"></i>
-                  <span>{{ hasSherpaSubscription ? "Chat is unavailable for this deployment." : "Chat requires a Sherpa subscription." }}</span>
+                  <span>{{
+                    hasSherpaSubscription
+                      ? "Chat is unavailable for this deployment."
+                      : "Chat requires a Sherpa subscription."
+                  }}</span>
                 </div>
                 <template v-else>
                   <div
@@ -241,7 +268,11 @@
                   class="chat-message assistant"
                 >
                   <div class="chat-bubble">
-                    {{ tool.status === "started" ? `Running tool: ${tool.tool_name}...` : `Completed tool: ${tool.tool_name}.` }}
+                    {{
+                      tool.status === "started"
+                        ? `Running tool: ${tool.tool_name}...`
+                        : `Completed tool: ${tool.tool_name}.`
+                    }}
                   </div>
                 </div>
                 <div v-if="sherpaStatusMessage" class="chat-message assistant">
@@ -252,7 +283,11 @@
 
             <div class="chat-input-shell">
               <div
-                v-if="activeTab === 'sherpa' && sherpaStore.subscriptionRequired && sherpaStore.subscriptionUpgradeUrl"
+                v-if="
+                  activeTab === 'sherpa' &&
+                  sherpaStore.subscriptionRequired &&
+                  sherpaStore.subscriptionUpgradeUrl
+                "
                 class="chat-upgrade-row"
               >
                 <Button
@@ -313,8 +348,12 @@ const props = withDefaults(
   {
     compact: false,
     collapsed: false,
-  }
+  },
 );
+
+const emit = defineEmits<{
+  (event: "toggle"): void;
+}>();
 
 const router = useRouter();
 const route = useRoute();
@@ -351,12 +390,14 @@ const sherpaEnabled = computed(() => isFeatureEnabled("sherpaAdvisor"));
 const llmChatEnabled = computed(() => isFeatureEnabled("chatAssistant"));
 const showLlmTab = computed(() => !(isDemoMode.value && sherpaEnabled.value));
 const showTabToggle = computed(() => showLlmTab.value && sherpaEnabled.value);
-const activeTabLabel = computed(() => (activeTab.value === "sherpa" ? "Sherpa Advisor" : "LLM Chat"));
+const activeTabLabel = computed(() =>
+  activeTab.value === "sherpa" ? "Sherpa Advisor" : "LLM Chat",
+);
 const hasSherpaSubscription = computed(
-  () => (appConfig.value?.subscription?.plan || "none") !== "none"
+  () => (appConfig.value?.subscription?.plan || "none") !== "none",
 );
 const hasExecutionResults = computed(
-  () => Object.keys(workflowStore.lastExecutionResults || {}).length > 0
+  () => Object.keys(workflowStore.lastExecutionResults || {}).length > 0,
 );
 
 const requestedTab = computed<ChatTab | null>(() => {
@@ -419,9 +460,7 @@ const sherpaStatusMessage = computed(() => {
   }
 
   const lastMessage =
-    sherpaStore.messages.length > 0
-      ? sherpaStore.messages[sherpaStore.messages.length - 1]
-      : null;
+    sherpaStore.messages.length > 0 ? sherpaStore.messages[sherpaStore.messages.length - 1] : null;
   const hasRunningTools = sherpaStore.activeTools.some((tool) => tool.status === "started");
 
   if (!lastMessage || lastMessage.role !== "assistant") {
@@ -440,7 +479,7 @@ const sherpaStatusMessage = computed(() => {
 });
 
 const activeSherpaTools = computed(() =>
-  sherpaStore.activeTools.filter((tool) => tool.status === "started")
+  sherpaStore.activeTools.filter((tool) => tool.status === "started"),
 );
 
 // ── LLM Provider Menu ────────────────────────────────────────
@@ -457,11 +496,11 @@ const llmProviders = [
 ];
 
 const llmMenuItems = computed(() => {
-  return llmProviders.map(provider => ({
+  return llmProviders.map((provider) => ({
     label: provider.label,
     model: provider.model,
     active: store.currentConfig?.provider === provider.value,
-    command: () => switchProvider(provider.value)
+    command: () => switchProvider(provider.value),
   }));
 });
 
@@ -485,12 +524,13 @@ const sherpaConversationMenuItems = computed(() => {
       ...sherpaStore.conversations.map((conversation) => ({
         label: conversation.title,
         updatedAt: formatDateTime(conversation.updatedAt),
-        icon: conversation.id === sherpaStore.currentConversationId ? "pi pi-check" : "pi pi-comment",
+        icon:
+          conversation.id === sherpaStore.currentConversationId ? "pi pi-check" : "pi pi-comment",
         active: conversation.id === sherpaStore.currentConversationId,
         command: () => {
           void onSherpaConversationSelect(conversation.id);
         },
-      }))
+      })),
     );
   } else {
     items.push({ separator: true });
@@ -529,7 +569,7 @@ const llmConversationMenuItems = computed(() => {
         command: () => {
           void loadConversation(conversation.id);
         },
-      }))
+      })),
     );
   } else {
     items.push({ separator: true });
@@ -572,7 +612,7 @@ watch(
       setActiveTab("llm");
     }
   },
-  { immediate: true }
+  { immediate: true },
 );
 
 watch(
@@ -582,7 +622,7 @@ watch(
       selectedProvider.value = config.provider;
     }
   },
-  { immediate: true }
+  { immediate: true },
 );
 
 const handleConfigChange = async () => {
@@ -638,7 +678,7 @@ watch(
     if (activeTab.value === "llm") {
       await scrollToBottom();
     }
-  }
+  },
 );
 
 watch(
@@ -647,7 +687,7 @@ watch(
     if (activeTab.value === "llm" && (store.streaming || store.loading)) {
       await scrollToBottom();
     }
-  }
+  },
 );
 
 watch(
@@ -656,16 +696,22 @@ watch(
     if (activeTab.value === "sherpa") {
       await scrollToBottom();
     }
-  }
+  },
 );
 
 // ── Auto-scroll for active tab messages ───────────────────────
 
 watch(
-  () => [activeTab.value, store.loading, store.streaming, sherpaStore.isSyncing, sherpaStore.isChatting],
+  () => [
+    activeTab.value,
+    store.loading,
+    store.streaming,
+    sherpaStore.isSyncing,
+    sherpaStore.isChatting,
+  ],
   async () => {
     await scrollToBottom();
-  }
+  },
 );
 
 watch(
@@ -675,7 +721,7 @@ watch(
     if (appMode.value !== "local") {
       await store.refreshConversations(projectId);
     }
-  }
+  },
 );
 
 // ── Connection status toasts ─────────────────────────────────
@@ -702,19 +748,28 @@ watch(
       }
       hadRealtime.value = true;
     }
-  }
+  },
 );
 
 // ── Build typed workflow context for server-side LLM ──────────
 
 function buildWorkflowChatContext(): Record<string, unknown> | null {
-  const { nodes, edges, workflowName, workflowDescription, currentTemplateId,
-    lastExecutionResults, lastExecutionDiagnostics, getNodeMetadata, workflowId } = workflowStore;
+  const {
+    nodes,
+    edges,
+    workflowName,
+    workflowDescription,
+    currentTemplateId,
+    lastExecutionResults,
+    lastExecutionDiagnostics,
+    getNodeMetadata,
+    workflowId,
+  } = workflowStore;
 
   if (nodes.length === 0) return null;
 
   const deriveShapeAndType = (
-    result: Record<string, unknown> | null | undefined
+    result: Record<string, unknown> | null | undefined,
   ): { resultShape: number[] | null; outputType: string | null } => {
     let resultShape: number[] | null = null;
     let outputType: string | null = null;
@@ -754,10 +809,10 @@ function buildWorkflowChatContext(): Record<string, unknown> | null {
 
     // Filter param_descriptions to params actually set on this node
     const setParamNames = new Set(Object.keys(n.params || {}));
-    const paramDescriptions = meta?.parameters
-      ?.filter((p) => setParamNames.has(p.name))
-      .map((p) => ({ name: p.name, label: p.label, description: p.description || null }))
-      ?? null;
+    const paramDescriptions =
+      meta?.parameters
+        ?.filter((p) => setParamNames.has(p.name))
+        .map((p) => ({ name: p.name, label: p.label, description: p.description || null })) ?? null;
 
     // Result summary for this node (strip raw arrays, keep scalars + shapes)
     const resultShape = execState?.output_shape ?? inferredResult.resultShape;
@@ -767,7 +822,7 @@ function buildWorkflowChatContext(): Record<string, unknown> | null {
         ? execState.status
         : hasPersistedResult
           ? "completed"
-          : execState?.status ?? null;
+          : (execState?.status ?? null);
 
     return {
       node_id: n.id,
@@ -826,8 +881,8 @@ function buildWorkflowChatContext(): Record<string, unknown> | null {
                     value == null ||
                     typeof value === "string" ||
                     typeof value === "number" ||
-                    typeof value === "boolean"
-                )
+                    typeof value === "boolean",
+                ),
               )
             : null,
       };
@@ -844,9 +899,7 @@ function buildWorkflowChatContext(): Record<string, unknown> | null {
     edges: contextEdges,
     n_samples: nSamples,
     n_features: nFeatures,
-    diagnostics: Object.keys(lastExecutionDiagnostics).length > 0
-      ? lastExecutionDiagnostics
-      : null,
+    diagnostics: Object.keys(lastExecutionDiagnostics).length > 0 ? lastExecutionDiagnostics : null,
     results_summary: resultsSummary,
   };
 }
@@ -921,7 +974,7 @@ const loadConversation = async (conversationId: string) => {
       life: 2000,
     });
   } catch (error: unknown) {
-    console.error('Failed to load conversation:', error);
+    console.error("Failed to load conversation:", error);
     toast.add({
       severity: "error",
       summary: "Load Failed",
@@ -941,7 +994,7 @@ const deleteConversation = async (conversationId: string) => {
       life: 2000,
     });
   } catch (error: unknown) {
-    console.error('Failed to delete conversation:', error);
+    console.error("Failed to delete conversation:", error);
     toast.add({
       severity: "error",
       summary: "Delete Failed",
@@ -1629,6 +1682,18 @@ const collapsed = computed(() => props.collapsed);
   .chat-sidebar {
     border-right: none;
     padding-right: 0;
+  }
+}
+
+/* Close button is only meaningful at narrow widths where main (and its
+   chat toggle) is hidden. Hide it elsewhere to avoid duplicating the
+   Topbar control. */
+.chat-close-btn-narrow {
+  display: none !important;
+}
+@media (max-width: 768px) {
+  .chat-close-btn-narrow {
+    display: inline-flex !important;
   }
 }
 </style>

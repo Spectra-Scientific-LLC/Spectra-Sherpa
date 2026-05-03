@@ -14,7 +14,7 @@
     <router-view />
   </div>
 
-  <div v-else class="app-shell" :style="layoutStyle">
+  <div v-else class="app-shell" :class="{ 'chat-open': !chatCollapsed }" :style="layoutStyle">
     <Toast position="top-right" />
     <SherpaUpgradeModal />
     <DemoUpgradeModal />
@@ -25,7 +25,7 @@
       <span>Unable to reach the backend server. Please check your connection.</span>
       <button @click="checkBackendStatus" class="retry-btn" :disabled="checkingStatus">
         <i class="pi pi-refresh" :class="{ 'pi-spin': checkingStatus }"></i>
-        {{ checkingStatus ? 'Checking...' : 'Retry' }}
+        {{ checkingStatus ? "Checking..." : "Retry" }}
       </button>
     </div>
 
@@ -37,11 +37,11 @@
       </span>
     </div>
 
-    <Sidebar :collapsed="navCollapsed" />
+    <Sidebar :collapsed="effectiveNavCollapsed" />
     <div class="workspace">
       <div class="main">
         <Topbar
-          :nav-collapsed="navCollapsed"
+          :nav-collapsed="effectiveNavCollapsed"
           :chat-collapsed="chatCollapsed"
           :show-chat-toggle="true"
           @toggle-nav="toggleNav"
@@ -52,17 +52,29 @@
         </main>
       </div>
       <div
-        v-show="!chatCollapsed"
+        v-show="!chatCollapsed && !isNarrow"
         class="chat-resize-handle"
         :class="{ active: isResizing }"
         @mousedown="startResize"
       ></div>
       <ChatPanel
+        v-show="!isNarrow || !chatCollapsed"
         :compact="true"
         :collapsed="chatCollapsed"
         @toggle="toggleChat"
       />
     </div>
+
+    <!-- Narrow-mode expanded nav drawer. Tapping a link or scrim closes it. -->
+    <PrimeSidebar
+      v-if="isNarrow"
+      v-model:visible="navDrawerOpen"
+      position="left"
+      :style="{ width: '240px' }"
+      class="nav-drawer"
+    >
+      <Sidebar :collapsed="false" @click="navDrawerOpen = false" />
+    </PrimeSidebar>
   </div>
 </template>
 
@@ -76,8 +88,10 @@ import DemoUpgradeModal from "@/components/DemoUpgradeModal.vue";
 import Sidebar from "@/components/Sidebar.vue";
 import Topbar from "@/components/Topbar.vue";
 import Toast from "primevue/toast";
+import PrimeSidebar from "primevue/sidebar";
 import { useBackendStatus } from "@/composables/useBackendStatus";
 import { useAppConfig } from "@/composables/useAppConfig";
+import { useViewport } from "@/composables/useViewport";
 import { useAuthStore } from "@/stores/auth";
 import { useJobStore } from "@/stores/job";
 
@@ -102,6 +116,13 @@ const isPublicRoute = computed(() => Boolean(route.meta.public));
 const isStandaloneRoute = computed(() => Boolean(route.meta.standalone));
 const isShelllessRoute = computed(() => isPublicRoute.value || isStandaloneRoute.value);
 
+// Narrow viewport (smartphone / portrait). At this width the sidebar
+// always renders as the icon rail and main vs. chat are mutually
+// exclusive — chat takes over the workspace when toggled open.
+const { isNarrow } = useViewport();
+const navDrawerOpen = ref(false);
+const effectiveNavCollapsed = computed(() => isNarrow.value || navCollapsed.value);
+
 // Backend connection status
 const {
   backendConnected,
@@ -120,14 +141,29 @@ const clampChatWidth = (value: number) => {
 };
 
 const layoutStyle = computed(() => ({
-  "--nav-width": navCollapsed.value ? "72px" : "240px",
+  "--nav-width": effectiveNavCollapsed.value ? "72px" : "240px",
   "--chat-width": chatCollapsed.value ? "0px" : `${chatWidth.value}px`,
 }));
 
 const toggleNav = () => {
+  if (isNarrow.value) {
+    navDrawerOpen.value = !navDrawerOpen.value;
+    return;
+  }
   navCollapsed.value = !navCollapsed.value;
   localStorage.setItem("navCollapsed", String(navCollapsed.value));
 };
+
+watch(
+  () => route.fullPath,
+  () => {
+    if (navDrawerOpen.value) navDrawerOpen.value = false;
+  },
+);
+
+watch(isNarrow, (narrow) => {
+  if (!narrow && navDrawerOpen.value) navDrawerOpen.value = false;
+});
 
 const toggleChat = () => {
   chatCollapsed.value = !chatCollapsed.value;
@@ -171,9 +207,10 @@ onMounted(() => {
     localStorage.setItem("chatCollapsed", "true");
   }
   const storedWidth = Number(localStorage.getItem("chatWidth"));
-  const initialWidth = Number.isFinite(storedWidth) && storedWidth > 0
-    ? storedWidth
-    : Math.round(window.innerWidth * 0.3);
+  const initialWidth =
+    Number.isFinite(storedWidth) && storedWidth > 0
+      ? storedWidth
+      : Math.round(window.innerWidth * 0.3);
   chatWidth.value = clampChatWidth(initialWidth);
   window.addEventListener("mousemove", onResizeMove);
   window.addEventListener("mouseup", stopResize);
@@ -199,16 +236,13 @@ watch(chatWidth, (value) => {
 // background job progress (batch predict, folder watches) reaches the UI.
 // Use authStore.user (not isAuthenticated) to avoid connecting with a stale
 // localStorage token before /auth/me validates it.
-watch(
-  [backendConnected, () => authStore.user],
-  ([isConnected, user]) => {
-    if (isConnected && (user || appMode.value === "local")) {
-      jobStore.connect().catch(() => undefined);
-    } else {
-      jobStore.disconnect();
-    }
+watch([backendConnected, () => authStore.user], ([isConnected, user]) => {
+  if (isConnected && (user || appMode.value === "local")) {
+    jobStore.connect().catch(() => undefined);
+  } else {
+    jobStore.disconnect();
   }
-);
+});
 </script>
 
 <style scoped>
@@ -261,7 +295,8 @@ watch(
 }
 
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {
@@ -283,7 +318,7 @@ watch(
   background: rgba(255, 255, 255, 0.2);
   padding: 2px 8px;
   border-radius: 4px;
-  font-family: 'Monaco', 'Courier New', monospace;
+  font-family: "Monaco", "Courier New", monospace;
   font-size: 13px;
 }
 
@@ -330,5 +365,4 @@ watch(
 .app-shell:has(.backend-warning-banner) {
   padding-top: 48px;
 }
-
 </style>
