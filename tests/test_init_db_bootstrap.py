@@ -185,9 +185,7 @@ class TestBootstrapLegacyWithOldCustomAlgo:
         # Create minimal tables mimicking pre-CASCADE schema
         sync_engine = sa.create_engine(sync_url)
         with sync_engine.begin() as conn:
-            conn.execute(
-                text(
-                    """
+            conn.execute(text("""
                 CREATE TABLE "user" (
                     id INTEGER PRIMARY KEY,
                     username VARCHAR(100) NOT NULL UNIQUE,
@@ -197,12 +195,8 @@ class TestBootstrapLegacyWithOldCustomAlgo:
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            """
-                )
-            )
-            conn.execute(
-                text(
-                    """
+            """))
+            conn.execute(text("""
                 CREATE TABLE project (
                     id INTEGER PRIMARY KEY,
                     user_id INTEGER NOT NULL REFERENCES "user"(id),
@@ -210,13 +204,9 @@ class TestBootstrapLegacyWithOldCustomAlgo:
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            """
-                )
-            )
+            """))
             # custom_algo WITHOUT CASCADE on user_id
-            conn.execute(
-                text(
-                    """
+            conn.execute(text("""
                 CREATE TABLE custom_algo (
                     id INTEGER PRIMARY KEY,
                     project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
@@ -231,9 +221,7 @@ class TestBootstrapLegacyWithOldCustomAlgo:
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            """
-                )
-            )
+            """))
 
         # Verify custom_algo exists before migration
         inspector = sa_inspect(sync_engine)
@@ -259,9 +247,7 @@ class TestTrackedLegacyAuthSplit:
 
         sync_engine = sa.create_engine(sync_url)
         with sync_engine.begin() as conn:
-            conn.execute(
-                text(
-                    """
+            conn.execute(text("""
                 CREATE TABLE "user" (
                     id INTEGER PRIMARY KEY,
                     username VARCHAR(100) NOT NULL UNIQUE,
@@ -276,26 +262,16 @@ class TestTrackedLegacyAuthSplit:
                     last_login_at DATETIME,
                     login_count INTEGER NOT NULL DEFAULT 0
                 )
-            """
-                )
-            )
-            conn.execute(
-                text(
-                    """
+            """))
+            conn.execute(text("""
                 CREATE TABLE alembic_version (
                     version_num VARCHAR(32) NOT NULL PRIMARY KEY
                 )
-            """
-                )
-            )
-            conn.execute(
-                text(
-                    """
+            """))
+            conn.execute(text("""
                 INSERT INTO alembic_version (version_num)
                 VALUES ('r8s0t2u4v037')
-            """
-                )
-            )
+            """))
 
         with Session(sync_engine) as session:
             session.add(User(username="before-upgrade"))
@@ -318,13 +294,11 @@ class TestTrackedLegacyAuthSplit:
             session.flush()
             row = (
                 session.execute(
-                    text(
-                        """
+                    text("""
                     SELECT username, password_hash, is_superuser, login_count
                     FROM "user"
                     WHERE username = :username
-                    """
-                    ),
+                    """),
                     {"username": "after-upgrade"},
                 )
                 .mappings()
@@ -347,9 +321,7 @@ class TestLegacyAuthDefaults:
         sync_engine = sa.create_engine(_sync_url(db_path))
 
         with sync_engine.begin() as conn:
-            conn.execute(
-                text(
-                    """
+            conn.execute(text("""
                 CREATE TABLE "user" (
                     id INTEGER PRIMARY KEY,
                     username VARCHAR(100) NOT NULL UNIQUE,
@@ -364,22 +336,18 @@ class TestLegacyAuthDefaults:
                     last_login_at DATETIME,
                     login_count INTEGER NOT NULL DEFAULT 0
                 )
-            """
-                )
-            )
+            """))
 
         with Session(sync_engine) as session:
             session.add(User(username="password-hash-only"))
             session.flush()
             row = (
                 session.execute(
-                    text(
-                        """
+                    text("""
                     SELECT password_hash, is_superuser, login_count
                     FROM "user"
                     WHERE username = :username
-                    """
-                    ),
+                    """),
                     {"username": "password-hash-only"},
                 )
                 .mappings()

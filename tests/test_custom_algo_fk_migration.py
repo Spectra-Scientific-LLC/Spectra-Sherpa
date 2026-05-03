@@ -27,9 +27,7 @@ def test_custom_algo_upgrade_enforces_user_fk_cascade(tmp_path) -> None:
 
         conn.execute(sa.text("CREATE TABLE user (id INTEGER PRIMARY KEY)"))
         conn.execute(sa.text("CREATE TABLE project (id INTEGER PRIMARY KEY)"))
-        conn.execute(
-            sa.text(
-                """
+        conn.execute(sa.text("""
                 CREATE TABLE custom_algo (
                     id INTEGER PRIMARY KEY,
                     project_id INTEGER NOT NULL,
@@ -46,22 +44,16 @@ def test_custom_algo_upgrade_enforces_user_fk_cascade(tmp_path) -> None:
                     FOREIGN KEY(project_id) REFERENCES project (id) ON DELETE CASCADE,
                     FOREIGN KEY(user_id) REFERENCES user (id)
                 )
-                """
-            )
-        )
+                """))
         conn.execute(sa.text("CREATE INDEX ix_custom_algo_project_id ON custom_algo (project_id)"))
         conn.execute(sa.text("CREATE INDEX ix_custom_algo_user_id ON custom_algo (user_id)"))
 
         conn.execute(sa.text("INSERT INTO user (id) VALUES (1)"))
         conn.execute(sa.text("INSERT INTO project (id) VALUES (1)"))
-        conn.execute(
-            sa.text(
-                """
+        conn.execute(sa.text("""
                 INSERT INTO custom_algo (id, project_id, user_id, name, slug, code, mode, icon, node_type)
                 VALUES (1, 1, 1, 'algo', 'algo', 'result = data', 'simple', 'x', 'ualgo.1.algo')
-                """
-            )
-        )
+                """))
 
         _run_upgrade(conn)
 

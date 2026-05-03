@@ -76,9 +76,7 @@ def _rebuild_custom_algo(*, user_ondelete: str | None) -> None:
     _assert_expected_source_table()
     _create_custom_algo_new(user_ondelete=user_ondelete)
 
-    op.execute(
-        sa.text(
-            """
+    op.execute(sa.text("""
             INSERT INTO custom_algo_new (
                 id, project_id, user_id, name, slug, description, code,
                 mode, icon, node_type, created_at, updated_at
@@ -87,9 +85,7 @@ def _rebuild_custom_algo(*, user_ondelete: str | None) -> None:
                 id, project_id, user_id, name, slug, description, code,
                 mode, icon, node_type, created_at, updated_at
             FROM custom_algo
-            """
-        )
-    )
+            """))
 
     op.drop_table("custom_algo")
     op.rename_table("custom_algo_new", "custom_algo")
