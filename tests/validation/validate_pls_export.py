@@ -124,8 +124,7 @@ def main():
 
         # Build the full executable script
         y_col = properties[:, target_idx].astype(np.float64)
-        script = textwrap.dedent(
-            f"""\
+        script = textwrap.dedent(f"""\
             import numpy as np
             import spectrochempy as scp
 
@@ -137,8 +136,7 @@ def main():
                 'target': np.array({y_col.tolist()}, dtype=np.float64),
             }}
 
-        """
-        )
+        """)
         script += code_block
         script += "\n"
 
