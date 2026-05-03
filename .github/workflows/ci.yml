@@ -20,7 +20,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install linters
-        run: pip install "black>=24.4,<25" "ruff>=0.5,<1" mypy
+        run: pip install "black>=26.3.1,<27" "ruff>=0.5,<1" mypy
 
       - name: black --check
         run: black --check src/ tests/
