@@ -719,23 +719,46 @@ const createNewWorkflow = () => {
 };
 
 const onSaveMemoryClick = async () => {
-  // Compaction (writing summary facts into the memory graph) lands in
-  // the R2 PR.  In R1 the Save Memory button is wired but no-ops with
-  // an info toast so users get feedback rather than a silent click.
-  toast.add({
-    severity: "info",
-    summary: "Memory saving comes in R2",
-    detail: "Scope memory compaction will land in the next release.",
-    life: 2500,
-  });
+  if (isCompactingMemory.value || activeAdvisorNodeId.value === null) return;
+  isCompactingMemory.value = true;
+  try {
+    const result = await advisorStore.compactScope();
+    if (result?.compacted) {
+      toast.add({
+        severity: "success",
+        summary: "Memory saved",
+        detail: `Compacted ${result.messageCount ?? 0} messages into scope memory v${result.version ?? "?"}.`,
+        life: 2500,
+      });
+    } else {
+      toast.add({
+        severity: "info",
+        summary: "Nothing to save",
+        detail: "Not enough new conversation to compact yet.",
+        life: 2500,
+      });
+    }
+  } catch (err: unknown) {
+    toast.add({
+      severity: "warn",
+      summary: "Save Memory failed",
+      detail: getErrorMessage(err, "Could not compact scope memory"),
+      life: 3000,
+    });
+  } finally {
+    isCompactingMemory.value = false;
+  }
 };
 
 const saveWorkflow = async () => {
   try {
     const savedId = await workflowStore.saveWorkflow();
-    // R2 (scope-based compaction on save) is intentionally not wired
-    // in this build.  Auto-save-memory becomes meaningful once the R2
-    // fact schema and routes land.
+    if (autoSaveMemory.value && activeAdvisorNodeId.value !== null) {
+      // Fire-and-forget: workflow save is the primary user action, so
+      // we don't await compaction.  Failures are surfaced via the
+      // adapter's own error path; success is silent (no toast spam).
+      void advisorStore.compactScope();
+    }
     autosaveStatus.value = 'saved';
     toast.add({
       severity: "success",

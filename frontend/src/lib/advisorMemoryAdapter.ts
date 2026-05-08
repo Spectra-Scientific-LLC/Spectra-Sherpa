@@ -56,11 +56,22 @@ export interface ScopeStateEnvelope {
   active_topic_id: number | null;
 }
 
+export interface CompactScopeResult {
+  nodeId: number;
+  /** ``false`` when the node had nothing to compact (no active topic, < 2 messages, or local mode). */
+  compacted: boolean;
+  factId: number | null;
+  version: number | null;
+  messageCount: number | null;
+}
+
 export interface AdvisorMemoryAdapter {
   switchScope(args: ScopeArgs): Promise<ScopeStateEnvelope>;
   listTopics(nodeId: number): Promise<Topic[]>;
   createTopic(nodeId: number, init?: { title?: string | null; conversationId?: string | null }): Promise<Topic>;
   setActiveTopic(nodeId: number, topicId: number | null): Promise<ScopeStateEnvelope>;
+  /** R2: compact the active topic into a summary fact.  Local-mode no-op. */
+  compactScope(nodeId: number): Promise<CompactScopeResult>;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,6 +113,23 @@ class ServerAdvisorMemoryAdapter implements AdvisorMemoryAdapter {
       { topic_id: topicId },
     );
     return data;
+  }
+
+  async compactScope(nodeId: number): Promise<CompactScopeResult> {
+    const { data } = await api.post<{
+      node_id: number;
+      compacted: boolean;
+      fact_id: number | null;
+      version: number | null;
+      message_count: number | null;
+    }>(`/memory/nodes/${nodeId}/compact`);
+    return {
+      nodeId: data.node_id,
+      compacted: data.compacted,
+      factId: data.fact_id,
+      version: data.version,
+      messageCount: data.message_count,
+    };
   }
 }
 
@@ -252,6 +280,13 @@ class LocalAdvisorMemoryAdapter implements AdvisorMemoryAdapter {
       topics: [...topics],
       active_topic_id: topicId,
     };
+  }
+
+  async compactScope(nodeId: number): Promise<CompactScopeResult> {
+    // Local mode has no facts table — compaction is a no-op.  The
+    // ``compacted: false`` result tells the UI to show the
+    // "nothing to save" toast instead of "memory saved".
+    return { nodeId, compacted: false, factId: null, version: null, messageCount: null };
   }
 }
 

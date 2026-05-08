@@ -4,6 +4,7 @@ import api from "@/api/client";
 import { useAppConfig } from "@/composables/useAppConfig";
 import {
   getAdvisorMemoryAdapter,
+  type CompactScopeResult,
   type MemoryNode,
   type ScopeArgs,
   type ScopeStateEnvelope,
@@ -106,6 +107,24 @@ export const useAdvisorStore = defineStore("advisor", () => {
       _applyScopeEnvelope(envelope);
     } catch (err) {
       error.value = getErrorMessage(err);
+    }
+  }
+
+  /**
+   * R2 — compact the active scope's conversation into a summary fact.
+   * Returns ``null`` when there is no active node.  In server-backed
+   * modes this hits ``POST /memory/nodes/{id}/compact``; in local mode
+   * the adapter no-ops with ``{compacted: false}`` so the UI can show
+   * a clean "nothing to save yet" toast.
+   */
+  async function compactScope(): Promise<CompactScopeResult | null> {
+    if (activeNode.value === null) return null;
+    try {
+      const adapter = getAdvisorMemoryAdapter(isServerBacked.value);
+      return await adapter.compactScope(activeNode.value.id);
+    } catch (err) {
+      error.value = getErrorMessage(err);
+      return null;
     }
   }
 
@@ -238,6 +257,7 @@ export const useAdvisorStore = defineStore("advisor", () => {
     switchScope,
     createTopic,
     setActiveTopic,
+    compactScope,
 
     // Legacy channel-based state (kept for parallel operation in R1)
     projectId,
