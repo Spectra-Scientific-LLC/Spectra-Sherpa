@@ -12,7 +12,7 @@ vi.mock("@/stores/auth", () => ({
 }));
 
 const advisorStoreMock = vi.hoisted(() => ({
-  switchToWorkflowChannel: vi.fn(),
+  switchScope: vi.fn(),
 }));
 
 vi.mock("@/stores/advisor", () => ({
@@ -44,8 +44,8 @@ describe("useWorkbookStore", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     localStorage.clear();
-    advisorStoreMock.switchToWorkflowChannel.mockResolvedValue(undefined);
-    advisorStoreMock.switchToWorkflowChannel.mockClear();
+    advisorStoreMock.switchScope.mockResolvedValue(undefined);
+    advisorStoreMock.switchScope.mockClear();
   });
 
   describe("setLastSelectedNodeId", () => {
@@ -108,7 +108,14 @@ describe("useWorkbookStore", () => {
 
       await store.switchSheet(1);
 
-      expect(advisorStoreMock.switchToWorkflowChannel).toHaveBeenCalledWith(20, 200, 5);
+      expect(advisorStoreMock.switchScope).toHaveBeenCalledWith({
+        projectId: 5,
+        tabKey: "workflow",
+        subscopeKey: "sheet:20",
+        resourceType: "workflow",
+        resourceId: 20,
+        title: "Sheet 1",
+      });
     });
 
     it("uses the source workflow advisor channel for trial tabs", async () => {
@@ -129,7 +136,14 @@ describe("useWorkbookStore", () => {
 
       await store.switchSheet(1);
 
-      expect(advisorStoreMock.switchToWorkflowChannel).toHaveBeenCalledWith(10, 100, 5);
+      expect(advisorStoreMock.switchScope).toHaveBeenCalledWith({
+        projectId: 5,
+        tabKey: "workflow",
+        subscopeKey: "sheet:10",
+        resourceType: "workflow",
+        resourceId: 10,
+        title: "Sheet 1",
+      });
     });
   });
 });

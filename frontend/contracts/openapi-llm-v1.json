@@ -1129,7 +1129,7 @@
       "APIKeyHeader": {
         "type": "apiKey",
         "in": "header",
-        "name": "X-Deployment-Key"
+        "name": "X-API-Key"
       }
     }
   }

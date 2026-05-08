@@ -106,7 +106,9 @@ export const useSherpaStore = defineStore("sherpa", () => {
   const chatServerAcknowledged = ref(false);
   const currentChatRequestId = ref<string | null>(null);
   const currentSyncRequestId = ref<string | null>(null);
-  const pendingAdvisorChannelId = ref<number | null>(null);
+  // R1 canonical routing — captured at sendMessage time so a sheet
+  // switch mid-stream cannot rebind the conversation to the wrong scope.
+  const pendingAdvisorNodeId = ref<number | null>(null);
   const conversationSnapshots = new Map<
     string,
     { messages: SherpaMessage[]; summary: ConversationSummary }
@@ -358,22 +360,6 @@ export const useSherpaStore = defineStore("sherpa", () => {
     persistConversations(conversations.value);
   }
 
-  async function bindCurrentConversationToPendingAdvisorChannel(): Promise<void> {
-    const channelId = pendingAdvisorChannelId.value;
-    const conversationId = currentConversationId.value;
-    if (channelId === null || !conversationId) {
-      return;
-    }
-
-    const advisorStore = useAdvisorStore();
-    const channel = advisorStore.channels.find((item) => item.id === channelId);
-    if (!channel || channel.conversation_id === conversationId) {
-      return;
-    }
-
-    await advisorStore.updateChannel(channelId, { conversation_id: conversationId });
-  }
-
   async function loadConversation(conversationId: string): Promise<void> {
     if (conversationId === currentConversationId.value && messages.value.length > 0) {
       if (isServerBacked.value) {
@@ -447,7 +433,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
     activeTools.value = [];
     subscriptionRequired.value = null;
     subscriptionUpgradeUrl.value = null;
-    pendingAdvisorChannelId.value = null;
+    pendingAdvisorNodeId.value = null;
   }
 
   async function deleteConversation(conversationId: string): Promise<void> {
@@ -466,22 +452,6 @@ export const useSherpaStore = defineStore("sherpa", () => {
     }
     if (currentConversationId.value === conversationId) {
       startNewConversation();
-    }
-  }
-
-  async function compactConversationMemory(conversationId = currentConversationId.value): Promise<boolean> {
-    if (!conversationId || !isServerBacked.value || projectStore.currentProjectId == null) {
-      return false;
-    }
-
-    try {
-      await api.post(`/llm/conversation/${conversationId}/compact`, null, {
-        params: { project_id: projectStore.currentProjectId },
-      });
-      return true;
-    } catch (err) {
-      console.warn("[sherpa] Unable to compact worksheet memory:", err);
-      return false;
     }
   }
 
@@ -661,7 +631,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
             ? `Chat response timed out while Sherpa was waiting for tool: ${inFlightTool}.`
             : "Chat response timed out. The server may be processing a complex request — check the workflow and try again."
         );
-        pendingAdvisorChannelId.value = null;
+        pendingAdvisorNodeId.value = null;
         currentChatRequestId.value = null;
         unsubscribeChatEvents?.();
         unsubscribeChatEvents = null;
@@ -722,7 +692,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
     chatState.value = "idle";
     syncState.value = "idle";
     streamingIndex.value = null;
-    pendingAdvisorChannelId.value = null;
+    pendingAdvisorNodeId.value = null;
     currentChatRequestId.value = null;
     currentSyncRequestId.value = null;
     lastSyncError.value = detail;
@@ -1319,7 +1289,8 @@ export const useSherpaStore = defineStore("sherpa", () => {
     unsubscribeChatEvents?.();
     unsubscribeChatEvents = null;
     currentChatRequestId.value = requestId;
-    pendingAdvisorChannelId.value = useAdvisorStore().activeChannelId;
+    const advisorStoreSnapshot = useAdvisorStore();
+    pendingAdvisorNodeId.value = advisorStoreSnapshot.activeNodeId;
     _recordActivity(`User asked Sherpa: ${_truncateForLog(message)}`, {
       notify: true,
       detail: message,
@@ -1348,7 +1319,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
       finalizeChatCommunication();
       chatState.value = "idle";
       currentChatRequestId.value = null;
-      pendingAdvisorChannelId.value = null;
+      pendingAdvisorNodeId.value = null;
       messages.value.push({
         role: "assistant",
         content: "Unable to connect. Check the server and try again.",
@@ -1360,7 +1331,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
       finalizeChatCommunication();
       chatState.value = "idle";
       currentChatRequestId.value = null;
-      pendingAdvisorChannelId.value = null;
+      pendingAdvisorNodeId.value = null;
       messages.value.push({
         role: "system",
         content: "Connection is not ready. Please try again in a moment.",
@@ -1393,6 +1364,10 @@ export const useSherpaStore = defineStore("sherpa", () => {
         payload: {
           request_id: requestId,
           message,
+          // R1 canonical routing key.  Server resolves to topic →
+          // conversation_id internally.  Legacy conversation_id field
+          // retained in parallel for one release; retired in R2.
+          advisor_node_id: pendingAdvisorNodeId.value,
           conversation_id: currentConversationId.value,
           project_id: projectStore.currentProjectId,
           workflow_id: workflow.workflowId,
@@ -1619,7 +1594,6 @@ export const useSherpaStore = defineStore("sherpa", () => {
         if (response.trim()) {
           if (currentConversationId.value) {
             updateConversationSummary(currentConversationId.value);
-            await bindCurrentConversationToPendingAdvisorChannel();
           }
           _recordActivity(
             `Sherpa response received${_formatRequestSuffix(payload.request_id)}: ${_truncateForLog(response)}${_formatTimingSuffix(payload.timing)}`,
@@ -1640,7 +1614,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
           );
         }
         currentChatRequestId.value = null;
-        pendingAdvisorChannelId.value = null;
+        pendingAdvisorNodeId.value = null;
         return;
       }
 
@@ -1704,49 +1678,28 @@ export const useSherpaStore = defineStore("sherpa", () => {
         // and generated sheet. Clear the normal chat completion binder before
         // any awaited work so a following chat_done event cannot race in and
         // re-bind the source sheet to the generated conversation.
-        pendingAdvisorChannelId.value = null;
+        pendingAdvisorNodeId.value = null;
         const newWorkflowId = Number(payload.new_workflow_id);
-        const newChannelId = Number(payload.new_channel_id);
-        const parentWorkflowId = Number(payload.parent_workflow_id);
         const suggestedName = String(payload.suggested_name || "Alternative");
         const newConversationId = (payload as any).conversation_id;
         const parentConversationId = (payload as any).parent_conversation_id;
 
         const workbookStore = useWorkbookStore();
-        const advisorStore = useAdvisorStore();
         const workflowStore = useWorkflowStore();
         const configStore = useWorkflowBuilderConfigStore();
 
         await workbookStore.refreshSheets();
-        if (Number.isFinite(newChannelId) && workbookStore.projectId !== null) {
-          await advisorStore.loadAdvisorChannels(workbookStore.projectId);
-        }
-        if (
-          parentConversationId
-          && typeof parentConversationId === "string"
-        ) {
+
+        // Conversation → topic binding is handled server-side via
+        // ``_persist_advisor_node_conversation`` after every chat turn,
+        // and the parent/child memory_node rows are created on the
+        // first switchScope call against each scope.  The frontend's
+        // job is just to surface the new conversation ids in the
+        // Topics sidebar.
+        if (parentConversationId && typeof parentConversationId === "string") {
           ensureOptimisticSidebarEntry(parentConversationId);
-          const parentChannel = advisorStore.channels.find(
-            (channel) =>
-              channel.workflow_id === parentWorkflowId
-              && channel.channel_type === "sheet",
-          );
-          if (
-            parentChannel
-            && parentChannel.conversation_id !== parentConversationId
-          ) {
-            await advisorStore.updateChannel(parentChannel.id, {
-              conversation_id: parentConversationId,
-            });
-          }
         }
         if (newConversationId && typeof newConversationId === "string") {
-          const newChannel = advisorStore.channels.find((channel) => channel.id === newChannelId);
-          if (newChannel && newChannel.conversation_id !== newConversationId) {
-            await advisorStore.updateChannel(newChannel.id, {
-              conversation_id: newConversationId,
-            });
-          }
           currentConversationId.value = newConversationId;
           ensureOptimisticSidebarEntry(newConversationId);
         }
@@ -1823,7 +1776,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
             : upgradeMessage
         );
         currentChatRequestId.value = null;
-        pendingAdvisorChannelId.value = null;
+        pendingAdvisorNodeId.value = null;
         return;
       }
 
@@ -1862,7 +1815,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
           );
         }
         currentChatRequestId.value = null;
-        pendingAdvisorChannelId.value = null;
+        pendingAdvisorNodeId.value = null;
       }
     } catch (error) {
       const message =
@@ -1871,7 +1824,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
       chatState.value = "error";
       streamingIndex.value = null;
       currentChatRequestId.value = null;
-      pendingAdvisorChannelId.value = null;
+      pendingAdvisorNodeId.value = null;
       unsubscribeChatEvents?.();
       unsubscribeChatEvents = null;
       subscriptionUpgradeUrl.value = null;
@@ -2042,7 +1995,6 @@ export const useSherpaStore = defineStore("sherpa", () => {
     updateConversationSummary,
     loadConversation,
     deleteConversation,
-    compactConversationMemory,
     openSubscriptionUpgrade,
     init,
     dispose,

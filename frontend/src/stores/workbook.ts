@@ -82,14 +82,20 @@ export const useWorkbookStore = defineStore("workbook", () => {
         : sheet;
     if (!sourceSheet || sourceSheet.kind === "trial") return;
 
+    // Canonical scope-based routing.  switchScope returns the active
+    // node + topics + active topic, and the sherpa store loads the
+    // bound conversation.  No legacy channel fallback — R2 retired it.
     try {
-      await advisorStore.switchToWorkflowChannel(
-        sourceSheet.workflowId,
-        sourceSheet.advisorChannelId,
-        projectId.value,
-      );
+      await advisorStore.switchScope({
+        projectId: projectId.value,
+        tabKey: "workflow",
+        subscopeKey: `sheet:${sourceSheet.workflowId}`,
+        resourceType: "workflow",
+        resourceId: sourceSheet.workflowId,
+        title: sourceSheet.name,
+      });
     } catch (err) {
-      console.warn("[workbook] Unable to switch Sherpa Advisor channel", err);
+      console.warn("[workbook] switchScope failed", err);
     }
   }
 
@@ -297,20 +303,11 @@ export const useWorkbookStore = defineStore("workbook", () => {
 
     const currentWorkflowId = activeSheet.value?.workflowId;
     const wasActive = currentWorkflowId === workflowId;
-    if (target?.advisorChannelId) {
-      const advisorStore = useAdvisorStore();
-      if (projectId.value !== null && advisorStore.projectId !== projectId.value) {
-        await advisorStore.loadAdvisorChannels(projectId.value);
-      }
-      const channel = advisorStore.channels.find((item) => item.id === target.advisorChannelId);
-      if (channel?.conversation_id) {
-        try {
-          await useSherpaStore().deleteConversation(channel.conversation_id);
-        } catch (err) {
-          console.warn("[workbook] Unable to delete Sherpa Advisor conversation for removed sheet", err);
-        }
-      }
-    }
+    // R4: conversation cleanup is handled by the server's cascade
+    // chain (workflow → advisor_memory_node → advisor_topic), so the
+    // frontend no longer needs to chase the channel/conversation
+    // pointer.  When the AdvisorChannel table is finally retired, the
+    // server's workflow-delete handler will also drop any orphan rows.
     await api.delete(`/workflows/${workflowId}`);
     useProjectStore().removeWorkflowFromCurrentProject(workflowId);
     sheets.value.splice(deleteIndex, 1);

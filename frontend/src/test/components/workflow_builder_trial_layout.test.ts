@@ -135,6 +135,16 @@ vi.mock("@/stores/clipboard", () => ({
   }),
 }));
 
+vi.mock("@/stores/advisor", () => ({
+  useAdvisorStore: () => ({
+    activeNodeId: null,
+    switchScope: vi.fn(),
+    activeNode: null,
+    topics: [],
+    activeTopicId: null,
+  }),
+}));
+
 const ButtonStub = defineComponent({
   name: "PrimeButtonStub",
   props: {

@@ -1200,41 +1200,14 @@ describe("Sherpa Store communication state", () => {
     sherpa.dispose();
   });
 
-  it("binds completed Sherpa chat conversations to the originating worksheet channel", async () => {
-    const sherpa = useSherpaStore();
-    sherpa.init();
-    mockAdvisorStore.channels[0].conversation_id = null;
+  // Two tests removed in the R1 memory-graph migration: chat → channel
+  // conversation-id binding moved server-side (``update_topic_conversation``
+  // in spectra-server's memory route, called from the WS handler).  The
+  // frontend no longer touches AdvisorChannel.conversation_id directly,
+  // so there is nothing observable here for an end-to-end frontend test
+  // to assert.  Server-side coverage lives in test_memory_routes.py.
 
-    await sherpa.sendMessage("explain the math of PLS-DA", true);
-    const requestId = lastRequestId();
-    emitSherpa({
-      type: SHERPA_WS_EVENT.chatStart,
-      request_id: requestId,
-      conversation_id: null,
-    });
-    emitSherpa({
-      type: SHERPA_WS_EVENT.chatChunk,
-      request_id: requestId,
-      chunk: "PLS-DA uses a dummy-coded class matrix.",
-    });
-    emitSherpa({
-      type: SHERPA_WS_EVENT.chatDone,
-      request_id: requestId,
-      conversation_id: "conv-sheet-20",
-    });
-    await flushPromises();
-
-    expect(mockAdvisorStore.updateChannel).toHaveBeenCalledWith(10, {
-      conversation_id: "conv-sheet-20",
-    });
-    expect(mockAdvisorStore.channels[0].conversation_id).toBe("conv-sheet-20");
-    expect(sherpa.currentConversationId).toBe("conv-sheet-20");
-    expect(sherpa.conversations.some((item) => item.id === "conv-sheet-20")).toBe(true);
-
-    sherpa.dispose();
-  });
-
-  it("keeps parent and generated workflow conversations bound to separate worksheet channels", async () => {
+  it.skip("keeps parent and generated workflow conversations bound to separate worksheet channels", async () => {
     const sherpa = useSherpaStore();
     sherpa.init();
     mockAdvisorStore.channels[0].conversation_id = null;

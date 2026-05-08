@@ -1,23 +1,113 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import api from "@/api/client";
+import { useAppConfig } from "@/composables/useAppConfig";
+import {
+  getAdvisorMemoryAdapter,
+  type MemoryNode,
+  type ScopeArgs,
+  type ScopeStateEnvelope,
+  type Topic,
+} from "@/lib/advisorMemoryAdapter";
 import { useSherpaStore } from "@/stores/sherpa";
 import type { AdvisorChannel } from "@/types";
 import { getErrorMessage } from "@/utils/errors";
 
 export const useAdvisorStore = defineStore("advisor", () => {
+  const { appMode } = useAppConfig();
+  const isServerBacked = computed(() => appMode.value !== "local");
+
+  // R1 canonical state — drives all future routing.  ``advisor_node_id``
+  // is the only routing key the WS chat payload carries.
+  const activeNode = ref<MemoryNode | null>(null);
+  const topics = ref<Topic[]>([]);
+  const activeTopicId = ref<number | null>(null);
+
+  // Legacy state — still populated for any UI that has not been
+  // migrated to the scope-based model.  Retired in R2.
   const projectId = ref<number | null>(null);
   const channels = ref<AdvisorChannel[]>([]);
   const activeChannelId = ref<number | null>(null);
   const isLoading = ref(false);
   const error = ref<string | null>(null);
 
+  const activeNodeId = computed(() => activeNode.value?.id ?? null);
   const activeChannel = computed(
     () => channels.value.find((channel) => channel.id === activeChannelId.value) ?? null
   );
   const projectChannel = computed(
     () => channels.value.find((channel) => channel.channel_type === "project" && channel.workflow_id == null) ?? null
   );
+
+  function _applyScopeEnvelope(envelope: ScopeStateEnvelope): void {
+    activeNode.value = envelope.active_node;
+    topics.value = envelope.topics;
+    activeTopicId.value = envelope.active_topic_id;
+  }
+
+  /**
+   * Canonical entry point for tab/subtab/sheet navigation.  Sends the
+   * scope triple to the server, applies the returned state envelope,
+   * and tells the sherpa store to load the bound conversation.
+   *
+   * Frontend's only job: detect the route, send it, render what comes
+   * back.  All graph traversal is server-side.
+   */
+  async function switchScope(args: ScopeArgs): Promise<MemoryNode | null> {
+    isLoading.value = true;
+    error.value = null;
+    try {
+      const adapter = getAdvisorMemoryAdapter(isServerBacked.value);
+      const envelope = await adapter.switchScope(args);
+      _applyScopeEnvelope(envelope);
+      projectId.value = args.projectId;
+
+      const sherpaStore = useSherpaStore();
+      const activeTopic = envelope.topics.find((t) => t.id === envelope.active_topic_id) ?? null;
+      if (activeTopic?.conversation_id) {
+        try {
+          await sherpaStore.loadConversation(activeTopic.conversation_id);
+        } catch (err) {
+          console.warn("[advisor] Could not load topic conversation; starting fresh", err);
+          sherpaStore.startNewConversation();
+        }
+      } else {
+        sherpaStore.startNewConversation();
+      }
+      return envelope.active_node;
+    } catch (err) {
+      error.value = getErrorMessage(err);
+      return null;
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  async function createTopic(
+    init: { title?: string | null; conversationId?: string | null } = {},
+  ): Promise<Topic | null> {
+    if (activeNode.value === null) return null;
+    try {
+      const adapter = getAdvisorMemoryAdapter(isServerBacked.value);
+      const topic = await adapter.createTopic(activeNode.value.id, init);
+      topics.value = [topic, ...topics.value];
+      return topic;
+    } catch (err) {
+      error.value = getErrorMessage(err);
+      return null;
+    }
+  }
+
+  async function setActiveTopic(topicId: number | null): Promise<void> {
+    if (activeNode.value === null) return;
+    try {
+      const adapter = getAdvisorMemoryAdapter(isServerBacked.value);
+      const envelope = await adapter.setActiveTopic(activeNode.value.id, topicId);
+      _applyScopeEnvelope(envelope);
+    } catch (err) {
+      error.value = getErrorMessage(err);
+    }
+  }
 
   function upsertChannel(channel: AdvisorChannel): void {
     const index = channels.value.findIndex((item) => item.id === channel.id);
@@ -140,6 +230,16 @@ export const useAdvisorStore = defineStore("advisor", () => {
   }
 
   return {
+    // R1 canonical scope-based state
+    activeNode,
+    activeNodeId,
+    topics,
+    activeTopicId,
+    switchScope,
+    createTopic,
+    setActiveTopic,
+
+    // Legacy channel-based state (kept for parallel operation in R1)
     projectId,
     channels,
     activeChannelId,

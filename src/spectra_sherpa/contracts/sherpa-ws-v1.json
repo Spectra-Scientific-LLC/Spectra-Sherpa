@@ -41,6 +41,7 @@
         "type": { "const": "sherpa_chat_done" },
         "request_id": { "type": "string" },
         "conversation_id": { "type": ["string", "null"] },
+        "advisor_node_id": { "type": ["integer", "null"] },
         "chunk_count": { "type": "integer" },
         "first_chunk_ms": { "type": ["integer", "null"] },
         "event_count": { "type": "integer" },

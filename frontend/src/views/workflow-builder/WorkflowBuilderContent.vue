@@ -40,6 +40,14 @@
             title="Save workflow definition"
           />
           <Button
+            :label="memoryButtonLabel"
+            :icon="isCompactingMemory ? 'pi pi-spin pi-spinner' : 'pi pi-bookmark'"
+            class="toolbar-btn toolbar-action-btn"
+            :disabled="isTrialTabActive || isCompactingMemory || activeAdvisorNodeId === null"
+            @click="onSaveMemoryClick"
+            title="Compact this scope's Sherpa Advisor conversation into durable memory"
+          />
+          <Button
             label="Export"
             icon="pi pi-download"
             class="toolbar-btn toolbar-action-btn"
@@ -228,7 +236,7 @@ import { useProjectStore } from "@/stores/project";
 import { useWorkbookStore } from "@/stores/workbook";
 import { useWorkflowBuilderConfigStore } from "@/stores/workflowBuilderConfig";
 import { useClipboardStore, type ClipboardPayload } from "@/stores/clipboard";
-import { useSherpaStore } from "@/stores/sherpa";
+import { useAdvisorStore } from "@/stores/advisor";
 import WorkbookSheetTabs from "@/components/WorkbookSheetTabs.vue";
 import WorkflowToolbar from "./WorkflowToolbar.vue";
 import WorkflowCanvas from "./WorkflowCanvas.vue";
@@ -250,7 +258,10 @@ const workbookStore = useWorkbookStore();
 const workflowBuilderConfigStore = useWorkflowBuilderConfigStore();
 const { autoExecute, autoSaveMemory } = storeToRefs(workflowBuilderConfigStore);
 const clipboardStore = useClipboardStore();
-const sherpaStore = useSherpaStore();
+const advisorStore = useAdvisorStore();
+const isCompactingMemory = ref(false);
+const activeAdvisorNodeId = computed(() => advisorStore.activeNodeId);
+const memoryButtonLabel = computed(() => (isCompactingMemory.value ? "Saving…" : "Save Memory"));
 const canvasRef = ref();
 const exportMenuRef = ref();
 const actionMenuRef = ref();
@@ -707,12 +718,24 @@ const createNewWorkflow = () => {
   });
 };
 
+const onSaveMemoryClick = async () => {
+  // Compaction (writing summary facts into the memory graph) lands in
+  // the R2 PR.  In R1 the Save Memory button is wired but no-ops with
+  // an info toast so users get feedback rather than a silent click.
+  toast.add({
+    severity: "info",
+    summary: "Memory saving comes in R2",
+    detail: "Scope memory compaction will land in the next release.",
+    life: 2500,
+  });
+};
+
 const saveWorkflow = async () => {
   try {
     const savedId = await workflowStore.saveWorkflow();
-    if (autoSaveMemory.value) {
-      void sherpaStore.compactConversationMemory();
-    }
+    // R2 (scope-based compaction on save) is intentionally not wired
+    // in this build.  Auto-save-memory becomes meaningful once the R2
+    // fact schema and routes land.
     autosaveStatus.value = 'saved';
     toast.add({
       severity: "success",
