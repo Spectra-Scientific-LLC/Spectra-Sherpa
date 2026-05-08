@@ -10,6 +10,7 @@ Verifies DAGExecutor.validate_full() catches:
 from __future__ import annotations
 
 import warnings
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -21,6 +22,8 @@ from spectra_sherpa.app.services.dag.executor import (
     WorkflowEdge,
     WorkflowNode,
 )
+
+TYPES_DIR = Path(__file__).resolve().parent.parent / "src" / "spectra_sherpa" / "app" / "types"
 
 # ---------------------------------------------------------------------------
 # Helpers — ensure node modules are registered
@@ -406,13 +409,9 @@ class TestPortTypeValidation:
             WorkflowNode(node_id="snv1", node_type="preprocess.normalize", parameters={"method": "snv"}),
             WorkflowEdge(from_node="src1", to_node="snv1"),
         )
-        # Load type registry if available
-        try:
-            from spectra_sherpa.app.types import type_registry
+        from spectra_sherpa.app.types import type_registry
 
-            type_registry.load()
-        except Exception:
-            pytest.skip("Type registry not available")
+        type_registry.load(TYPES_DIR)
 
         result = executor.validate_full()
         port_warnings = [w for w in result.warnings if "mismatch" in w.message.lower()]

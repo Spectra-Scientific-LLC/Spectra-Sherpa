@@ -22,7 +22,7 @@ pytestmark = pytest.mark.skipif(not HAS_SCP, reason="requires SpectroChemPy")
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 @pytest.fixture

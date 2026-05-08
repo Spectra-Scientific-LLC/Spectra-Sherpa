@@ -294,7 +294,7 @@ class AppConfig(BaseModel):
             "anthropic": {
                 "id": "anthropic",
                 "name": "Anthropic",
-                "default_model": "claude-3-5-sonnet-20241022",
+                "default_model": "claude-sonnet-4-6",
                 "base_url": "https://api.anthropic.com",
                 "env_var": "ANTHROPIC_API_KEY",
             },

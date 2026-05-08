@@ -109,6 +109,56 @@ def _data_loader_fingerprints(nodes: list[dict[str, Any]]) -> set[str]:
     return fingerprints
 
 
+def substitute_parent_data_loaders(dag_spec: Any, parent_nodes: list[Any]) -> None:
+    """Replace LLM-emitted loader params with the parent's verbatim, in place.
+
+    The agentic prompt instructs the model to copy parent data-loader nodes
+    verbatim, but cheaper models (Haiku 4.5 and below) drift on loader
+    params — most commonly omitting ``stage`` so it defaults to ``"raw"`` —
+    which flips the data-source fingerprint and fails parent-inheritance
+    validation. Substituting params from the matching parent loader (by
+    node-type, in workflow order) makes the agentic feature robust to
+    loader-param drift regardless of which model proposed the DAG.
+
+    Mutates ``dag_spec`` in place. Accepts both Pydantic ``WorkflowDagSpec``
+    instances (route-handler path) and plain dicts (LLM tool path).
+    """
+    from spectra_sherpa.app.services.project_data_sources import _node_value, describe_node_data_source
+
+    parent_fingerprints = {
+        candidate.fingerprint
+        for parent_node in parent_nodes
+        if (candidate := describe_node_data_source(parent_node)) is not None
+    }
+    if not parent_fingerprints:
+        return
+
+    parent_pool: dict[str, list[dict[str, Any]]] = {}
+    for parent_node in parent_nodes:
+        if describe_node_data_source(parent_node) is None:
+            continue
+        node_type = _node_value(parent_node, "node_type", None) or _node_value(parent_node, "type", None)
+        if not node_type:
+            continue
+        params = _node_value(parent_node, "parameters", None) or _node_value(parent_node, "params", None) or {}
+        parent_pool.setdefault(str(node_type), []).append(dict(params))
+
+    proposed_nodes = dag_spec.nodes if hasattr(dag_spec, "nodes") else dag_spec.get("nodes", [])
+    for proposed_node in proposed_nodes:
+        candidate = describe_node_data_source(proposed_node)
+        if candidate is None or candidate.fingerprint in parent_fingerprints:
+            continue
+        node_type = _node_value(proposed_node, "type", None) or _node_value(proposed_node, "node_type", None)
+        pool = parent_pool.get(str(node_type)) if node_type else None
+        if not pool:
+            continue
+        substituted = pool.pop(0)
+        if hasattr(proposed_node, "parameters"):
+            proposed_node.parameters = substituted
+        elif isinstance(proposed_node, dict):
+            proposed_node["parameters"] = substituted
+
+
 def _partition_outputs_upstream_of(
     node_id: str,
     node_types: dict[str, str],
@@ -496,7 +546,6 @@ async def validate_dag_spec_for_parent(
     from spectra_sherpa.app.models.workflow import Workflow
     from spectra_sherpa.app.services.project_data_sources import describe_node_data_source
 
-    nodes, edges = _normalize_dag_spec(dag_spec)
     result = await session.execute(
         select(Workflow)
         .options(selectinload(Workflow.nodes))
@@ -510,6 +559,13 @@ async def validate_dag_spec_for_parent(
             "issues": [_issue("error", "Parent workflow not found.", code="parent_workflow_missing")],
         }
 
+    # Substitute parent loader params into the proposal before fingerprinting,
+    # so models that drift on loader fields (e.g. omit `stage`) still pass
+    # parent-inheritance validation. Mutation propagates to the route-handler
+    # persist path, which iterates the same dag_spec after this call.
+    substitute_parent_data_loaders(dag_spec, parent.nodes)
+
+    nodes, edges = _normalize_dag_spec(dag_spec)
     parent_fingerprints = {
         candidate.fingerprint for node in parent.nodes if (candidate := describe_node_data_source(node)) is not None
     }

@@ -43,7 +43,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     "anthropic": {
         "id": "anthropic",
         "name": "Anthropic",
-        "default_model": "claude-sonnet-4-5-20250514",
+        "default_model": "claude-sonnet-4-6",
         "env_var": "ANTHROPIC_API_KEY",
         "supports_streaming": True,
         "cost_per_million_input": 3.00,

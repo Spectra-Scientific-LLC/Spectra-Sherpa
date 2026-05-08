@@ -37,26 +37,20 @@ class TestSamplePartitionTargetPreservation:
         return ds
 
     def test_xcal_has_target(self, partition_node, dataset_with_target):
-        result = asyncio.get_event_loop().run_until_complete(
-            partition_node.execute(X=dataset_with_target, y=dataset_with_target.target)
-        )
+        result = asyncio.run(partition_node.execute(X=dataset_with_target, y=dataset_with_target.target))
         X_cal = result.outputs["X_cal"]
         assert X_cal.target is not None, "X_cal must have target reattached"
         assert len(X_cal.target) == X_cal.data.shape[0]
 
     def test_xtest_has_target(self, partition_node, dataset_with_target):
-        result = asyncio.get_event_loop().run_until_complete(
-            partition_node.execute(X=dataset_with_target, y=dataset_with_target.target)
-        )
+        result = asyncio.run(partition_node.execute(X=dataset_with_target, y=dataset_with_target.target))
         X_test = result.outputs["X_test"]
         assert X_test.target is not None, "X_test must have target reattached"
         assert len(X_test.target) == X_test.data.shape[0]
 
     def test_target_values_match_indices(self, partition_node, dataset_with_target):
         """Targets on X_cal/X_test must be the correct slices, not shuffled."""
-        result = asyncio.get_event_loop().run_until_complete(
-            partition_node.execute(X=dataset_with_target, y=dataset_with_target.target)
-        )
+        result = asyncio.run(partition_node.execute(X=dataset_with_target, y=dataset_with_target.target))
         cal_idx = result.outputs["cal_indices"]
         test_idx = result.outputs["test_indices"]
         y_full = dataset_with_target.target
@@ -69,7 +63,7 @@ class TestSamplePartitionTargetPreservation:
         from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
         ds = SherpaDataset(X=np.random.randn(20, 50))
-        result = asyncio.get_event_loop().run_until_complete(partition_node.execute(X=ds))
+        result = asyncio.run(partition_node.execute(X=ds))
         # Target may or may not be None depending on source, but y_cal/y_test should not be in outputs
         assert "y_cal" not in result.outputs
         assert "y_test" not in result.outputs
@@ -255,7 +249,7 @@ class TestLoadApplyFeatureMask:
             node_id="vs_mask",
             parameters={"method": "interval", "region_start": 2000, "region_end": 3000},
         )
-        result = asyncio.get_event_loop().run_until_complete(node.execute(X=ds))
+        result = asyncio.run(node.execute(X=ds))
         X_selected = result.outputs["X_selected"]
 
         # Must have feature_mask in meta
