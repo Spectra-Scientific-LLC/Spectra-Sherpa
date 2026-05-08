@@ -134,6 +134,10 @@ export interface WorkflowCreatePayload {
   description?: string;
   status: string;
   canvas_state?: UnknownRecord;
+  project_id?: number | null;
+  tab_color?: string | null;
+  color_source?: "blank" | "ai" | "data" | "manual" | null;
+  primary_data_source_id?: number | null;
   nodes: BackendWorkflowNode[];
   edges: BackendWorkflowEdge[];
 }
@@ -197,4 +201,18 @@ export interface WorkflowListItem {
   updated_at: string;
   description?: string | null;
   status?: string;
+  project_id?: number | null;
+  tab_color?: string | null;
+  tab_color_override?: string | null;
+  color_source?: "blank" | "ai" | "data" | "manual";
+  primary_data_source_id?: number | null;
+  data_source_ids?: number[];
+  advisor_channel_id?: number | null;
+  created_from_template_name?: string | null;
+  created_from_template_version?: string | null;
+  created_from_workflow_id?: number | null;
+  created_from_workflow_name?: string | null;
+  sheet_order?: number;
+  node_count?: number;
+  edge_count?: number;
 }

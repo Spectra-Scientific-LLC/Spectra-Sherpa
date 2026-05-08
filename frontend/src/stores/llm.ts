@@ -154,6 +154,7 @@ interface LlmConfig {
   base_url: string;
   model: string;
   verbose: boolean;
+  max_paragraphs: number;
 }
 
 export const useLlmStore = defineStore("llm", () => {
@@ -681,7 +682,7 @@ export const useLlmStore = defineStore("llm", () => {
         const response = await fetch(buildApiUrl("/chat/stream"), {
           method: "POST",
           headers: getRequestHeaders(),
-          body: JSON.stringify({ message, metadata: metadata || null }),
+          body: JSON.stringify({ message, metadata: metadata || null, verbose: currentConfig.value?.verbose ?? true, max_paragraphs: currentConfig.value?.max_paragraphs ?? 2 }),
         });
 
         if (!response.ok) {
@@ -873,7 +874,8 @@ export const useLlmStore = defineStore("llm", () => {
             provider: "byo-endpoint",
             base_url: "",
             model: "configured-via-env",
-            verbose: false,
+            verbose: localStorage.getItem("llm_verbose") !== "false",
+            max_paragraphs: parseInt(localStorage.getItem("llm_max_paragraphs") ?? "2", 10) || 2,
           }
         : null;
     }

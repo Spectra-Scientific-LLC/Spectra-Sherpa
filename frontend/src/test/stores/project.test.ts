@@ -14,6 +14,10 @@ vi.mock("@/api/client", () => ({
   },
 }));
 
+vi.mock("@/stores/auth", () => ({
+  useAuthStore: () => ({ user: { id: 7 } }),
+}));
+
 const mockProject = {
   id: 1,
   name: "Test Project",
@@ -32,6 +36,7 @@ describe("Project Store", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    localStorage.clear();
   });
 
   it("initializes with empty state", () => {
@@ -148,6 +153,71 @@ describe("Project Store", () => {
 
       expect(success).toBe(false);
       expect(store.error).toBe("Forbidden");
+    });
+  });
+
+  describe("removeWorkflowFromCurrentProject", () => {
+    it("removes the workflow from current project details and decrements project summary count", () => {
+      const store = useProjectStore();
+      store.projects = [{ ...mockProject, workflow_count: 2 }];
+      store.currentProjectId = 1;
+      store.currentProject = {
+        ...mockProject,
+        workflow_count: 2,
+        metadata: {},
+        experiments: [],
+        workflows: [
+          { id: 10, name: "Keep", description: null, status: "draft", integrity_hash: null },
+          { id: 20, name: "Delete", description: null, status: "draft", integrity_hash: null },
+        ],
+        scripts: [],
+        models: [],
+        children: [],
+      } satisfies ProjectDetail;
+
+      store.removeWorkflowFromCurrentProject(20);
+
+      expect(store.currentProject?.workflows.map((workflow) => workflow.id)).toEqual([10]);
+      expect(store.currentProject?.workflow_count).toBe(1);
+      expect(store.projects[0].workflow_count).toBe(1);
+    });
+  });
+
+  describe("getLastActiveProjectId / fetchProject localStorage", () => {
+    it("returns null when nothing is stored", () => {
+      const store = useProjectStore();
+      expect(store.getLastActiveProjectId()).toBeNull();
+    });
+
+    it("fetchProject writes the project id to localStorage keyed by userId", async () => {
+      const detail = { ...mockProject, experiments: [], workflows: [] };
+      vi.mocked(api.get).mockResolvedValueOnce({ data: detail });
+      const store = useProjectStore();
+
+      await store.fetchProject(1);
+
+      // Key format: spectra_sherpa_last_project_<userId>
+      expect(localStorage.getItem("spectra_sherpa_last_project_7")).toBe("1");
+    });
+
+    it("getLastActiveProjectId reads back what fetchProject stored", async () => {
+      const detail = { ...mockProject, experiments: [], workflows: [] };
+      vi.mocked(api.get).mockResolvedValueOnce({ data: detail });
+      const store = useProjectStore();
+
+      await store.fetchProject(1);
+      const remembered = store.getLastActiveProjectId();
+
+      expect(remembered).toBe(1);
+    });
+
+    it("ignores stale entries written by a different user", () => {
+      // Simulate a value written under a different user key
+      localStorage.setItem("spectra_sherpa_last_project_99", "42");
+      const store = useProjectStore();
+
+      // Auth mock returns userId=7, so key spectra_sherpa_last_project_7 is absent
+      expect(store.getLastActiveProjectId()).toBeNull();
     });
   });
 

@@ -1,14 +1,15 @@
 <template>
   <div class="api-keys-container">
-    <!-- App Authentication Key -->
-    <div class="key-section">
+    <!-- App Authentication Key — local and hybrid only (not enterprise managed-auth) -->
+    <div v-if="isFeatureEnabled('apiTokenSettings')" class="key-section">
       <div class="section-header">
         <h3>App Authentication Key</h3>
         <span class="badge required">Required</span>
       </div>
       <p class="description">
-        This key is required for authenticating with the local backend server (WebSocket connections, API requests).
-        The default key is <code>default-local-key</code> for local development.
+        This key must match the <code>APP_API_KEY</code> environment variable set on the backend.
+        The default for local development is <code>default-local-key</code>.
+        It is stored in your browser only — never sent to any external service.
       </p>
       <div class="field">
         <label for="app-key">App API Key</label>
@@ -39,6 +40,140 @@
       </div>
     </div>
 
+    <!-- BYO Chat Config — local/OSS mode only. Uses CHAT_ENDPOINT_URL/KEY/MODEL env vars. -->
+    <div v-if="appMode === 'local'" class="key-section">
+      <div class="section-header">
+        <h3>AI Assistant / LLM Configuration</h3>
+        <Tag v-if="byoChatConfigured" severity="success" value="Configured" />
+        <span v-else class="badge optional">Optional</span>
+      </div>
+      <p class="description">
+        Configure your LLM provider for basic AI chat in local/OSS mode.
+        DeepSeek is preconfigured but you can change to another OpenAI-compatible provider.
+        Settings are saved to your local <code>.env</code> file.
+      </p>
+
+      <div class="field">
+        <label for="byo-provider">LLM Provider</label>
+        <Dropdown
+          id="byo-provider"
+          v-model="byoProvider"
+          :options="byoProviders"
+          optionLabel="label"
+          optionValue="value"
+          class="provider-dropdown"
+          @change="onByoProviderChange"
+        />
+      </div>
+
+      <div class="field">
+        <label for="byo-url">API Base URL</label>
+        <InputText
+          id="byo-url"
+          v-model="byoUrl"
+          placeholder="https://api.deepseek.com/v1"
+          class="key-input"
+          :disabled="byoProvider !== 'custom'"
+        />
+        <small class="hint">Base URL for the LLM API endpoint. Auto-configured for known providers.</small>
+      </div>
+
+      <div class="field">
+        <label for="byo-model">Model Name</label>
+        <InputText
+          id="byo-model"
+          v-model="byoModel"
+          placeholder="deepseek-chat"
+          class="key-input"
+          :disabled="byoProvider !== 'custom'"
+        />
+        <small class="hint">Model identifier. Auto-configured for known providers.</small>
+      </div>
+
+      <div class="field">
+        <label for="byo-key">
+          {{ byoProviderLabel }} API Key
+          <span v-if="byoChatConfigured" class="saved-indicator"><i class="pi pi-check-circle" /> Saved</span>
+        </label>
+        <div class="password-input-wrapper">
+          <InputText
+            id="byo-key"
+            v-model="byoKey"
+            :type="showByoKey ? 'text' : 'password'"
+            :placeholder="byoChatConfigured ? 'Leave empty to keep existing key' : `Enter your ${byoProviderLabel} API key`"
+            class="key-input"
+            autocomplete="off"
+          />
+          <Button
+            :icon="showByoKey ? 'pi pi-eye-slash' : 'pi pi-eye'"
+            class="p-button-text p-button-sm toggle-visibility"
+            @click="showByoKey = !showByoKey"
+          />
+        </div>
+        <small class="hint">
+          <span v-if="!byoChatConfigured">
+            Get your API key from
+            <a :href="byoProviderUrl" target="_blank" rel="noopener">{{ byoProviderUrl }}</a>
+          </span>
+        </small>
+      </div>
+
+      <div class="field">
+        <div class="switch-field">
+          <InputSwitch v-model="byoVerbose" inputId="byo-verbose" />
+          <label for="byo-verbose">Verbose Responses</label>
+        </div>
+        <small class="hint">When disabled, AI responses are capped at the paragraph limit below.</small>
+      </div>
+
+      <div v-if="!byoVerbose" class="field">
+        <label for="byo-max-paragraphs">
+          Max Paragraphs
+          <span class="paragraph-count">{{ byoMaxParagraphs }}</span>
+        </label>
+        <div class="slider-row">
+          <span class="slider-bound">1</span>
+          <input
+            id="byo-max-paragraphs"
+            v-model.number="byoMaxParagraphs"
+            type="range"
+            min="1"
+            max="10"
+            step="1"
+            class="paragraph-slider"
+          />
+          <span class="slider-bound">10</span>
+        </div>
+        <small class="hint">AI will respond in at most {{ byoMaxParagraphs }} paragraph{{ byoMaxParagraphs === 1 ? '' : 's' }}.</small>
+      </div>
+
+      <div class="actions">
+        <Button
+          label="Save LLM Configuration"
+          icon="pi pi-save"
+          :loading="savingByo"
+          :disabled="(!byoChatConfigured && !byoKey.trim()) || savingByo || testingByo"
+          @click="saveByoChatConfig"
+        />
+        <Button
+          label="Test Connection"
+          icon="pi pi-bolt"
+          class="p-button-outlined"
+          :loading="testingByo"
+          :disabled="testingByo || (!byoChatConfigured && !byoKey.trim())"
+          @click="testByoChatConnection"
+        />
+      </div>
+      <div v-if="byoMessage" class="message success">
+        <i class="pi pi-check-circle" />
+        {{ byoMessage }}
+      </div>
+      <div v-if="byoError" class="message error">
+        <i class="pi pi-times-circle" />
+        {{ byoError }}
+      </div>
+    </div>
+
     <!-- LLM Provider Configuration -->
     <!-- Gated by sherpaAdvisor capability. Hidden in OSS-only mode
          where /llm-config and /llm/chat are not served. -->
@@ -51,6 +186,10 @@
         Configure your LLM provider for AI assistant features (workflow suggestions, code generation, peak identification).
         DeepSeek is preconfigured but you can change to another OpenAI-compatible provider.
       </p>
+      <div v-if="isDemoMode" class="message info">
+        <i class="pi pi-info-circle" />
+        Demo mode uses managed AI settings. Saving or deleting API keys is disabled.
+      </div>
 
       <!-- LLM Provider Selection -->
       <div class="field">
@@ -144,6 +283,7 @@
 
       <div class="actions">
         <Button
+          v-if="!isDemoMode"
           label="Save LLM Configuration"
           icon="pi pi-save"
           :loading="savingLlm"
@@ -194,6 +334,7 @@
             <span v-else class="last-used">Never used</span>
           </div>
           <Button
+            v-if="!isDemoMode"
             icon="pi pi-trash"
             class="p-button-text p-button-sm p-button-danger"
             @click="deleteKey(keyInfo.service_name)"
@@ -211,14 +352,16 @@ import Button from "primevue/button";
 import InputText from "primevue/inputtext";
 import InputSwitch from "primevue/inputswitch";
 import Dropdown from "primevue/dropdown";
+import Tag from "primevue/tag";
 import api from "@/api/client";
 import { useAppConfig } from "@/composables/useAppConfig";
 
 // Capability gate: only show the LLM-config surface when the server has
 // announced sherpaAdvisor support. Per /llm-config and /llm/*
 // live on the commercial server only; OSS-only installs would 404 here.
-const { isFeatureEnabled } = useAppConfig();
+const { isFeatureEnabled, appMode, appConfig } = useAppConfig();
 const canConfigureLlm = computed(() => isFeatureEnabled("sherpaAdvisor"));
+const isDemoMode = computed(() => Boolean(appConfig.value?.demo));
 
 interface SavedKeyInfo {
   service_name: string;
@@ -245,6 +388,122 @@ const loading = ref(true);
 
 const savedKeys = ref<SavedKeyInfo[]>([]);
 const hasLlmKey = ref(false);
+
+// BYO Chat (local mode)
+const byoProviders = [
+  { label: "DeepSeek", value: "deepseek" },
+  { label: "OpenAI", value: "openai" },
+  { label: "Ollama (local)", value: "ollama" },
+  { label: "Custom", value: "custom" },
+];
+const byoProviderDefaults: Record<string, { url: string; model: string }> = {
+  deepseek: { url: "https://api.deepseek.com/v1", model: "deepseek-chat" },
+  openai: { url: "https://api.openai.com/v1", model: "gpt-4o-mini" },
+  ollama: { url: "http://localhost:11434/v1", model: "llama3" },
+  custom: { url: "", model: "" },
+};
+const byoProvider = ref("deepseek");
+const byoUrl = ref("https://api.deepseek.com/v1");
+const byoModel = ref("deepseek-chat");
+const byoKey = ref("");
+const showByoKey = ref(false);
+const byoChatConfigured = ref(false);
+const byoVerbose = ref(localStorage.getItem("llm_verbose") !== "false");
+const byoMaxParagraphs = ref(parseInt(localStorage.getItem("llm_max_paragraphs") ?? "2", 10) || 2);
+const byoMessage = ref("");
+const byoError = ref("");
+const savingByo = ref(false);
+const testingByo = ref(false);
+
+watch(byoVerbose, (val) => localStorage.setItem("llm_verbose", val ? "true" : "false"));
+watch(byoMaxParagraphs, (val) => localStorage.setItem("llm_max_paragraphs", String(val)));
+watch(byoProvider, (val) => localStorage.setItem("llm_provider", val));
+watch(byoUrl, (val) => localStorage.setItem("llm_url", val));
+watch(byoModel, (val) => localStorage.setItem("llm_model", val));
+
+const byoProviderLabel = computed(() => byoProviders.find(p => p.value === byoProvider.value)?.label ?? "LLM");
+const byoProviderUrls: Record<string, string> = {
+  deepseek: "https://platform.deepseek.com/api_keys",
+  openai: "https://platform.openai.com/api-keys",
+  ollama: "http://localhost:11434",
+  custom: "",
+};
+const byoProviderUrl = computed(() => byoProviderUrls[byoProvider.value] ?? "");
+
+const onByoProviderChange = () => {
+  const defaults = byoProviderDefaults[byoProvider.value];
+  if (defaults && byoProvider.value !== "custom") {
+    byoUrl.value = defaults.url;
+    byoModel.value = defaults.model;
+  }
+};
+
+const loadByoChatConfig = async () => {
+  try {
+    const res = await api.get("/config/byo-chat-config");
+    byoChatConfigured.value = res.data.configured;
+    if (res.data.endpoint_url) byoUrl.value = res.data.endpoint_url;
+    if (res.data.model) byoModel.value = res.data.model;
+    // Auto-select provider from URL
+    for (const [key, defaults] of Object.entries(byoProviderDefaults)) {
+      if (key !== "custom" && res.data.endpoint_url?.includes(new URL(defaults.url).hostname)) {
+        byoProvider.value = key;
+        break;
+      }
+    }
+  } catch {
+    // Not critical if this fails
+  }
+};
+
+const saveByoChatConfig = async () => {
+  byoMessage.value = "";
+  byoError.value = "";
+  savingByo.value = true;
+  try {
+    if (!byoChatConfigured.value && !byoKey.value.trim()) {
+      byoError.value = "API key is required.";
+      return;
+    }
+    await api.post("/config/byo-chat-config", {
+      endpoint_url: byoUrl.value.trim(),
+      endpoint_key: byoKey.value.trim(),
+      model: byoModel.value.trim() || "deepseek-chat",
+    });
+    byoChatConfigured.value = true;
+    byoKey.value = "";
+    localStorage.setItem("llm_verbose", byoVerbose.value ? "true" : "false");
+    localStorage.setItem("llm_max_paragraphs", String(byoMaxParagraphs.value));
+    window.dispatchEvent(new CustomEvent("llm-config-changed"));
+    byoMessage.value = "LLM configuration saved! The AI chat panel will use the new settings.";
+  } catch (err: any) {
+    byoError.value = err.response?.data?.detail || "Failed to save chat configuration.";
+  } finally {
+    savingByo.value = false;
+  }
+};
+
+const testByoChatConnection = async () => {
+  byoMessage.value = "";
+  byoError.value = "";
+  testingByo.value = true;
+  try {
+    const response = await api.post("/config/byo-chat-config/test", {
+      endpoint_url: byoUrl.value.trim(),
+      endpoint_key: byoKey.value.trim(),
+      model: byoModel.value.trim() || "deepseek-chat",
+    });
+    if (response.data.success) {
+      byoMessage.value = response.data.message || "LLM connection successful.";
+    } else {
+      byoError.value = response.data.message || "LLM connection failed.";
+    }
+  } catch (err: any) {
+    byoError.value = err.response?.data?.detail || "Failed to test chat configuration.";
+  } finally {
+    testingByo.value = false;
+  }
+};
 
 const llmProviders = [
   { label: "DeepSeek", value: "deepseek" },
@@ -347,24 +606,23 @@ const loadSavedKeys = async () => {
 };
 
 const saveAppKey = async () => {
-  const previousKey = localStorage.getItem("api_key") || "";
   appMessage.value = "";
   appError.value = "";
   savingApp.value = true;
 
   try {
-    if (appApiKey.value.trim()) {
-      await api.post(
-        "/api-keys",
-        { service_name: "app", key: appApiKey.value.trim() },
-        { headers: { "X-API-Key": previousKey || appApiKey.value.trim() } }
-      );
+    const newKey = appApiKey.value.trim();
+    if (!newKey) {
+      appError.value = "Key cannot be empty.";
+      return;
     }
-    localStorage.setItem("api_key", appApiKey.value.trim());
+    // The app key is a client-side localStorage value — no server storage needed.
+    // Validate that the key authenticates via /auth/me before committing to localStorage.
+    await api.get("/auth/me", { headers: { "X-API-Key": newKey } });
+    localStorage.setItem("api_key", newKey);
     appMessage.value = "App API key saved successfully!";
-    await loadSavedKeys();
   } catch {
-    appError.value = "Failed to save app API key. Please try again.";
+    appError.value = "Key validation failed — the key was not accepted by the backend.";
   } finally {
     savingApp.value = false;
   }
@@ -463,6 +721,9 @@ const deleteKey = async (serviceName: string) => {
 
 onMounted(async () => {
   await loadSavedKeys();
+  if (appMode.value === "local") {
+    await loadByoChatConfig();
+  }
 });
 </script>
 
@@ -600,6 +861,76 @@ onMounted(async () => {
   color: #9ca3af;
 }
 
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.paragraph-slider {
+  flex: 1;
+  height: 24px;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.paragraph-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  background: #d1d5db;
+  border-radius: 2px;
+}
+
+.paragraph-slider::-moz-range-track {
+  height: 4px;
+  background: #d1d5db;
+  border-radius: 2px;
+}
+
+.paragraph-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: #3b82f6;
+  border: none;
+  cursor: grab;
+}
+
+.paragraph-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #3b82f6;
+  border: none;
+  cursor: grab;
+}
+
+.slider-bound {
+  font-size: 0.8rem;
+  color: #9ca3af;
+  min-width: 14px;
+  text-align: center;
+}
+
+.paragraph-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  width: 22px;
+  height: 18px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
 .hint a {
   color: #2563eb;
   text-decoration: none;
@@ -642,6 +973,12 @@ onMounted(async () => {
   background: #fee2e2;
   color: #991b1b;
   border: 1px solid #fca5a5;
+}
+
+.message.info {
+  background: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
 }
 
 .saved-keys-list {

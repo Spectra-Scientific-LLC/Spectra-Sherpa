@@ -247,6 +247,17 @@
         "timing": { "$ref": "#/definitions/timing" }
       },
       "additionalProperties": true
+    },
+    "sherpa_workflow_proposed": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "sherpa_workflow_proposed" },
+        "request_id": { "type": "string" },
+        "payload": { "type": "object" },
+        "timing": { "$ref": "#/definitions/timing" }
+      },
+      "additionalProperties": true
     }
   },
   "oneOf": [
@@ -268,6 +279,7 @@
     { "$ref": "#/definitions/sherpa_subscription_required" },
     { "$ref": "#/definitions/sherpa_data_story_chunk" },
     { "$ref": "#/definitions/sherpa_data_story_result" },
-    { "$ref": "#/definitions/sherpa_data_story_error" }
+    { "$ref": "#/definitions/sherpa_data_story_error" },
+    { "$ref": "#/definitions/sherpa_workflow_proposed" }
   ]
 }

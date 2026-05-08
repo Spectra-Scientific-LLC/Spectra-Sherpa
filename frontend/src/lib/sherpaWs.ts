@@ -32,6 +32,7 @@ export const SHERPA_WS_EVENT = {
   codeError: "sherpa_code_error",
   toolStart: "sherpa_tool_start",
   toolResult: "sherpa_tool_result",
+  workflowProposed: "sherpa_workflow_proposed",
   subscriptionRequired: "sherpa_subscription_required",
   error: "sherpa_error",
   reportResult: "sherpa_report_result",

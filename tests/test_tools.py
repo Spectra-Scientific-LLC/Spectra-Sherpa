@@ -479,6 +479,19 @@ class TestBuiltinWorkflowTools:
         assert result["valid"] is False
         assert any("Unknown node type" in i["message"] for i in result["issues"])
 
+    def test_validate_workflow_duplicate_node_id(self):
+        from spectra_sherpa.app.services.tools.builtin.workflow import validate_workflow
+
+        nodes = [
+            {"node_id": "n1", "node_type": "data.source", "parameters": {}},
+            {"node_id": "n1", "node_type": "model.pca", "parameters": {"n_components": 2}},
+        ]
+
+        result = validate_workflow(nodes=nodes, edges=[])
+
+        assert result["valid"] is False
+        assert any(i.get("code") == "duplicate_node_id" for i in result["issues"])
+
     def test_validate_workflow_dangling_edge(self):
         from spectra_sherpa.app.services.tools.builtin.workflow import validate_workflow
 
@@ -507,6 +520,99 @@ class TestBuiltinWorkflowTools:
         assert result["valid"] is False
         assert any("cycle" in i["message"].lower() for i in result["issues"])
 
+    @pytest.mark.asyncio
+    async def test_list_nodes_uses_existing_registry_without_missing_helper(self, monkeypatch):
+        from spectra_sherpa.app.models.data_egress import DataType
+        from spectra_sherpa.app.services.tools.builtin import workflow as workflow_tools
+
+        async def _allow_all(session, user):
+            return {
+                DataType.WORKFLOWS: True,
+                DataType.METADATA: True,
+                DataType.MODELS: True,
+                DataType.SPECTRA: True,
+            }
+
+        monkeypatch.setattr(workflow_tools, "_llm_context_permissions", _allow_all)
+
+        result = await workflow_tools.list_nodes(search="pca", session=MagicMock(), user=MagicMock())
+
+        assert result
+        assert all("type" in item for item in result)
+
+    @pytest.mark.asyncio
+    async def test_describe_nodes_returns_per_entry_error_for_unknown_type(self, monkeypatch):
+        from spectra_sherpa.app.models.data_egress import DataType
+        from spectra_sherpa.app.services.tools.builtin import workflow as workflow_tools
+
+        async def _allow_all(session, user):
+            return {
+                DataType.WORKFLOWS: True,
+                DataType.METADATA: True,
+                DataType.MODELS: True,
+                DataType.SPECTRA: True,
+            }
+
+        monkeypatch.setattr(workflow_tools, "_llm_context_permissions", _allow_all)
+
+        result = await workflow_tools.describe_nodes(
+            ["model.pca", "unknown.node"],
+            session=MagicMock(),
+            user=MagicMock(),
+        )
+
+        assert len(result["descriptions"]) == 2
+        assert result["descriptions"][0]["type"] == "model.pca"
+        assert result["descriptions"][1]["error"] == "Unknown node type: unknown.node"
+
+    @pytest.mark.asyncio
+    async def test_describe_nodes_compacts_large_requests(self, monkeypatch):
+        from spectra_sherpa.app.models.data_egress import DataType
+        from spectra_sherpa.app.services.dag.node_base import node_registry
+        from spectra_sherpa.app.services.tools.builtin import workflow as workflow_tools
+
+        async def _allow_all(session, user):
+            return {
+                DataType.WORKFLOWS: True,
+                DataType.METADATA: True,
+                DataType.MODELS: True,
+                DataType.SPECTRA: True,
+            }
+
+        monkeypatch.setattr(workflow_tools, "_llm_context_permissions", _allow_all)
+
+        node_types = sorted(node_registry._nodes)[: workflow_tools.MAX_DESCRIBE_NODE_TYPES + 2]
+        result = await workflow_tools.describe_nodes(node_types, session=MagicMock(), user=MagicMock())
+
+        assert len(result["descriptions"]) == workflow_tools.MAX_DESCRIBE_NODE_TYPES
+        assert result["omitted_node_types"] == node_types[workflow_tools.MAX_DESCRIBE_NODE_TYPES :]
+        assert "warning" in result
+        for entry in result["descriptions"]:
+            assert "label" in entry
+            assert "summary" in entry
+            assert len(entry["summary"]) <= workflow_tools.MAX_DESCRIPTION_CHARS
+
+    @pytest.mark.asyncio
+    async def test_node_catalog_tools_remain_available_when_workflow_context_blocked(self, monkeypatch):
+        from spectra_sherpa.app.models.data_egress import DataType
+        from spectra_sherpa.app.services.tools.builtin import workflow as workflow_tools
+
+        async def _block_workflows(session, user):
+            return {
+                DataType.WORKFLOWS: False,
+                DataType.METADATA: True,
+                DataType.MODELS: True,
+                DataType.SPECTRA: True,
+            }
+
+        monkeypatch.setattr(workflow_tools, "_llm_context_permissions", _block_workflows)
+
+        nodes = await workflow_tools.list_nodes(search="pca", session=MagicMock(), user=MagicMock())
+        assert any(node["type"] == "model.pca" for node in nodes)
+        result = await workflow_tools.describe_nodes(["model.pca"], session=MagicMock(), user=MagicMock())
+        assert result["descriptions"][0]["type"] == "model.pca"
+        assert "parameters" in result["descriptions"][0]
+
 
 # ===========================================================================
 # 5. Integration: global registry has built-in tools
@@ -526,6 +632,9 @@ class TestGlobalRegistry:
             "suggest_preprocessing",
             "get_workflow_summary",
             "validate_workflow",
+            "list_nodes",
+            "describe_nodes",
+            "propose_workflow",
             "list_workflows",
         ]
         for name in expected:
@@ -556,6 +665,46 @@ class TestGlobalRegistry:
         assert len(workflow) >= 3  # get_workflow_summary, validate_workflow, list_workflows
         for d in workflow:
             assert d.category == ToolCategory.workflow
+
+    @pytest.mark.asyncio
+    async def test_propose_workflow_executes_without_session_or_user(self):
+        """propose_workflow must succeed with no session/user context.
+
+        The tool is designed to be intercepted by the WS orchestrator — it
+        must return success=True so the interception condition fires.  Any
+        requires_session/requires_user flag would cause the executor to reject
+        it before it runs (session=None, user=None in the agentic engine) and
+        the fork would silently be skipped.
+        """
+        import spectra_sherpa.app.services.tools.builtin  # noqa: F401
+
+        dag_spec = {
+            "nodes": [{"id": "src_1", "type": "data.source", "parameters": {}}],
+            "edges": [],
+        }
+        result = await execute_tool(
+            ToolInvocation(
+                tool_name="propose_workflow",
+                arguments={
+                    "dag_spec": dag_spec,
+                    "suggested_name": "Test Workflow",
+                    "human_explanation": "A test proposal.",
+                },
+            ),
+        )
+        assert result.success is True, f"propose_workflow failed: {result.error}"
+        assert result.result["status"] == "intercepted"
+        assert result.result["dag_spec"] == dag_spec
+
+    def test_propose_workflow_not_requires_session_or_user(self):
+        """propose_workflow definition must not require session or user."""
+        import spectra_sherpa.app.services.tools.builtin  # noqa: F401
+
+        defns = tool_registry.list_definitions()
+        pw = next((d for d in defns if d.name == "propose_workflow"), None)
+        assert pw is not None
+        assert pw.requires_session is False, "propose_workflow must not require a session"
+        assert pw.requires_user is False, "propose_workflow must not require a user"
 
 
 # ===========================================================================

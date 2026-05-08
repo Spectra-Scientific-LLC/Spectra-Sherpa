@@ -19,10 +19,11 @@
         </div>
         <div class="header-actions">
           <Button
-            icon="pi pi-external-link"
-            class="p-button-text p-button-secondary p-button-sm"
-            @click="openInNewTab"
-            title="Open in new tab"
+            icon="pi pi-sliders-h"
+            class="p-button-text p-button-secondary p-button-sm trial-launch-btn"
+            @click="openToRunTrials"
+            title="Open to Run Trials"
+            aria-label="Open to Run Trials"
           />
           <Button
             icon="pi pi-times"
@@ -1398,6 +1399,8 @@ const emit = defineEmits<{
   (e: 'update-params', nodeId: string, params: ParamsMap): void;
   (e: 'execute-node', nodeId: string): void;
   (e: 'delete-node', nodeId: string): void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- reuses the existing NodeDetailView payload shape.
+  (e: 'open-trial', nodeData: any): void;
   (e: 'close'): void;
 }>();
 
@@ -2570,10 +2573,10 @@ const runPreview = async () => {
   }
 };
 
-// Open node detail in new tab for full inspection
+// Open node detail in a temporary builder sheet for trial execution.
 const STORAGE_KEY = "node_detail_data";
 
-const openInNewTab = () => {
+const openToRunTrials = () => {
   if (!props.selectedNode) return;
 
   // Build input connections with icons and labels
@@ -2600,8 +2603,7 @@ const openInNewTab = () => {
     }
   }
 
-  // Get workflow nodes and edges from the store (needed for trial execution)
-  // Since Pinia stores don't sync across tabs, we must pass this data via sessionStorage
+  // Get workflow nodes and edges from the store for isolated trial execution.
   const workflowNodes = workflowStore.nodes.map(node => ({
     id: node.id,
     type: node.type,
@@ -2692,35 +2694,15 @@ const openInNewTab = () => {
       inputData: includeData ? inputData : (inputData ? { ...inputData, data: null } : null),
       // Include param definitions for the settings form
       paramDefinitions: getParamDefinitions(props.selectedNode.type),
-      // Include full workflow context for trial execution (Pinia doesn't sync across tabs)
+      // Include full workflow context for isolated trial execution.
       workflowNodes: workflowNodes,
       workflowEdges: workflowEdges,
-      // Carry project context into the new tab (Pinia doesn't sync across window.open)
+      // Carry project context into the trial surface.
       projectId: projectStore.currentProjectId,
     };
   };
 
-  // Store in sessionStorage for the new tab to read.
-  // Three tiers: full (all ports), primary (data+metadata only), minimal (no data).
-  // Multi-port nodes (MCR-ALS, PCA, PLS) often exceed the ~5 MB sessionStorage
-  // quota when secondary ports carry large matrices (residuals, loadings).
-  try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(buildNodeDetailData("full")));
-  } catch {
-    try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(buildNodeDetailData("primary")));
-    } catch {
-      try {
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(buildNodeDetailData("minimal")));
-      } catch (fallbackError) {
-        console.error('[WorkflowInspector] Failed to store node detail data:', fallbackError);
-      }
-    }
-  }
-
-  // Open new tab
-  const url = `/workflow/node/${props.selectedNode.id}`;
-  window.open(url, '_blank');
+  emit("open-trial", buildNodeDetailData("full"));
 };
 
 const mapMetadataParams = (
@@ -2873,6 +2855,7 @@ onUnmounted(() => {
 }
 
 .workflow-inspector.hidden {
+  display: none;
   width: 0;
   min-width: 0;
   opacity: 0;
@@ -2954,6 +2937,25 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   flex-shrink: 0;
+}
+
+/* "Open to Run Trials" — the previous icon `pi pi-flask` is not part of the
+   primeicons 7 set in this project, so it rendered as an empty glyph (the
+   adjacent `pi pi-times` X was visible because that icon does exist). The
+   icon is now `pi pi-sliders-h` (parameter tuning — semantically a trial)
+   and the front color is forced white to win against PrimeVue's muted
+   secondary-text default on dark backgrounds. */
+.header-actions :deep(.trial-launch-btn),
+.header-actions :deep(.trial-launch-btn:hover),
+.header-actions :deep(.trial-launch-btn:focus),
+.header-actions :deep(.trial-launch-btn .p-button-icon),
+.header-actions :deep(.trial-launch-btn:hover .p-button-icon),
+.header-actions :deep(.trial-launch-btn:focus .p-button-icon) {
+  color: #ffffff !important;
+}
+
+.header-actions :deep(.trial-launch-btn:hover) {
+  background: rgba(96, 165, 250, 0.18) !important;
 }
 
 /* Action buttons row */

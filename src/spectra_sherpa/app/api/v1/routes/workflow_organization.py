@@ -129,7 +129,10 @@ async def update_tag(
     return WorkflowTagOut.model_validate(tag)
 
 
-@router.delete("/tags/{tag_id}", status_code=204)
+from fastapi import Response
+
+
+@router.delete("/tags/{tag_id}", status_code=204, response_class=Response)
 async def delete_tag(
     tag_id: int,
     session: AsyncSession = Depends(get_session),
@@ -272,7 +275,7 @@ async def update_folder(
     return WorkflowFolderOut.model_validate(folder)
 
 
-@router.delete("/folders/{folder_id}", status_code=204)
+@router.delete("/folders/{folder_id}", status_code=204, response_class=Response)
 async def delete_folder(
     folder_id: int,
     session: AsyncSession = Depends(get_session),

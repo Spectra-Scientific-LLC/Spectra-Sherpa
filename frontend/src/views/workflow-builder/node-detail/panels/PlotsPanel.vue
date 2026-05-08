@@ -1,5 +1,5 @@
 <template>
-  <section class="detail-section" v-if="state.hasOutput && state.availablePlots.length > 0">
+  <section class="detail-section">
     <div class="section-header" @click="$emit('toggle')">
       <div class="section-title">
         <i :class="expanded ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
@@ -9,88 +9,97 @@
     </div>
     <Transition name="collapse">
       <div v-if="expanded" class="section-content plots-content">
-        <!-- PCA Plots -->
-        <template v-if="state.isPCAOutput">
-          <div class="plot-subsection">
-            <div class="plot-subsection-header" @click="$emit('togglePlot', 'pcaScores')">
-              <i :class="plotSections.pcaScores ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-              <span>Scores Plot</span>
-            </div>
-            <Transition name="collapse">
-              <div v-if="plotSections.pcaScores" class="plot-container">
-                <div class="plot-controls">
-                  <div class="control-group">
-                    <label>X Axis</label>
-                    <Dropdown v-model="pcaXAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
+        <div v-if="!state.hasOutput" class="empty-plot-message">
+          <i class="pi pi-play" />
+          <span>Run the node to generate visualizations.</span>
+        </div>
+        <div v-else-if="state.availablePlots.length === 0" class="empty-plot-message">
+          <i class="pi pi-chart-line" />
+          <span>No visualizations available for this node type.</span>
+        </div>
+        <template v-else>
+          <!-- PCA Plots -->
+          <template v-if="state.isPCAOutput">
+            <div class="plot-subsection">
+              <div class="plot-subsection-header" @click="$emit('togglePlot', 'pcaScores')">
+                <i :class="plotSections.pcaScores ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                <span>Scores Plot</span>
+              </div>
+              <Transition name="collapse">
+                <div v-if="plotSections.pcaScores" class="plot-container">
+                  <div class="plot-controls">
+                    <div class="control-group">
+                      <label>X Axis</label>
+                      <Dropdown v-model="pcaXAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
+                    </div>
+                    <div class="control-group">
+                      <label>Y Axis</label>
+                      <Dropdown v-model="pcaYAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
+                    </div>
                   </div>
-                  <div class="control-group">
-                    <label>Y Axis</label>
-                    <Dropdown v-model="pcaYAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
-                  </div>
+                  <PlotlyChart :data="state.pcaScoresData" :layout="state.pcaScoresLayout" :config="state.pcaScoresConfig" />
                 </div>
-                <PlotlyChart :data="state.pcaScoresData" :layout="state.pcaScoresLayout" :config="state.pcaScoresConfig" />
-              </div>
-            </Transition>
-          </div>
-
-          <div class="plot-subsection">
-            <div class="plot-subsection-header" @click="$emit('togglePlot', 'pcaBiplot')">
-              <i :class="plotSections.pcaBiplot ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-              <span>Biplot (Scores + Loadings)</span>
+              </Transition>
             </div>
-            <Transition name="collapse">
-              <div v-if="plotSections.pcaBiplot" class="plot-container">
-                <div class="plot-controls">
-                  <div class="control-group">
-                    <label>X Axis</label>
-                    <Dropdown v-model="pcaXAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
+
+            <div class="plot-subsection">
+              <div class="plot-subsection-header" @click="$emit('togglePlot', 'pcaBiplot')">
+                <i :class="plotSections.pcaBiplot ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                <span>Biplot (Scores + Loadings)</span>
+              </div>
+              <Transition name="collapse">
+                <div v-if="plotSections.pcaBiplot" class="plot-container">
+                  <div class="plot-controls">
+                    <div class="control-group">
+                      <label>X Axis</label>
+                      <Dropdown v-model="pcaXAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
+                    </div>
+                    <div class="control-group">
+                      <label>Y Axis</label>
+                      <Dropdown v-model="pcaYAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
+                    </div>
                   </div>
-                  <div class="control-group">
-                    <label>Y Axis</label>
-                    <Dropdown v-model="pcaYAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
-                  </div>
+                  <PlotlyChart :data="state.pcaBiplotData" :layout="state.pcaBiplotLayout" :config="state.pcaScoresConfig" />
                 </div>
-                <PlotlyChart :data="state.pcaBiplotData" :layout="state.pcaBiplotLayout" :config="state.pcaScoresConfig" />
-              </div>
-            </Transition>
-          </div>
-
-          <div class="plot-subsection">
-            <div class="plot-subsection-header" @click="$emit('togglePlot', 'pcaLoadings')">
-              <i :class="plotSections.pcaLoadings ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-              <span>Loadings Plot</span>
+              </Transition>
             </div>
-            <Transition name="collapse">
-              <div v-if="plotSections.pcaLoadings" class="plot-container">
-                <PlotlyChart :data="state.pcaLoadingsData" :layout="state.pcaLoadingsLayout" :config="state.pcaLoadingsConfig" />
-              </div>
-            </Transition>
-          </div>
 
-          <div class="plot-subsection">
-            <div class="plot-subsection-header" @click="$emit('togglePlot', 'pcaScree')">
-              <i :class="plotSections.pcaScree ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-              <span>Scree Plot (Explained Variance)</span>
-            </div>
-            <Transition name="collapse">
-              <div v-if="plotSections.pcaScree" class="plot-container">
-                <PlotlyChart :data="state.pcaScreeData" :layout="state.pcaScreeLayout" />
+            <div class="plot-subsection">
+              <div class="plot-subsection-header" @click="$emit('togglePlot', 'pcaLoadings')">
+                <i :class="plotSections.pcaLoadings ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                <span>Loadings Plot</span>
               </div>
-            </Transition>
-          </div>
+              <Transition name="collapse">
+                <div v-if="plotSections.pcaLoadings" class="plot-container">
+                  <PlotlyChart :data="state.pcaLoadingsData" :layout="state.pcaLoadingsLayout" :config="state.pcaLoadingsConfig" />
+                </div>
+              </Transition>
+            </div>
 
-          <div class="plot-subsection">
-            <div class="plot-subsection-header" @click="$emit('togglePlot', 'pcaDiagnostics')">
-              <i :class="plotSections.pcaDiagnostics ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-              <span>Diagnostics Plot (T² / SPE)</span>
-            </div>
-            <Transition name="collapse">
-              <div v-if="plotSections.pcaDiagnostics" class="plot-container">
-                <PlotlyChart :data="state.pcaDiagnosticsData" :layout="state.pcaDiagnosticsLayout" />
+            <div class="plot-subsection">
+              <div class="plot-subsection-header" @click="$emit('togglePlot', 'pcaScree')">
+                <i :class="plotSections.pcaScree ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                <span>Scree Plot (Explained Variance)</span>
               </div>
-            </Transition>
-          </div>
-        </template>
+              <Transition name="collapse">
+                <div v-if="plotSections.pcaScree" class="plot-container">
+                  <PlotlyChart :data="state.pcaScreeData" :layout="state.pcaScreeLayout" />
+                </div>
+              </Transition>
+            </div>
+
+            <div class="plot-subsection">
+              <div class="plot-subsection-header" @click="$emit('togglePlot', 'pcaDiagnostics')">
+                <i :class="plotSections.pcaDiagnostics ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                <span>Diagnostics Plot (T² / SPE)</span>
+              </div>
+              <Transition name="collapse">
+                <div v-if="plotSections.pcaDiagnostics" class="plot-container">
+                  <PlotlyChart :data="state.pcaDiagnosticsData" :layout="state.pcaDiagnosticsLayout" />
+                </div>
+              </Transition>
+            </div>
+          </template>
 
         <!-- MCR-ALS / SIMPLISMA -->
         <template v-if="state.nodeTypeKey === 'model.mcr_als' || state.nodeTypeKey === 'model.simplisma'">
@@ -113,6 +122,43 @@
             <Transition name="collapse">
               <div v-if="plotSections.mcrSpectra" class="plot-container">
                 <PlotlyChart :data="state.mcrSpectraData" :layout="state.mcrSpectraLayout" />
+              </div>
+            </Transition>
+          </div>
+        </template>
+
+        <!-- MCR-ALS only: contour diagnostics -->
+        <template v-if="state.nodeTypeKey === 'model.mcr_als'">
+          <div class="plot-subsection">
+            <div class="plot-subsection-header" @click="$emit('togglePlot', 'mcrOriginalContour')">
+              <i :class="plotSections.mcrOriginalContour ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+              <span>Original Data Contour</span>
+            </div>
+            <Transition name="collapse">
+              <div v-if="plotSections.mcrOriginalContour" class="plot-container">
+                <PlotlyChart :data="state.mcrOriginalContourData" :layout="state.mcrOriginalContourLayout" />
+              </div>
+            </Transition>
+          </div>
+          <div class="plot-subsection">
+            <div class="plot-subsection-header" @click="$emit('togglePlot', 'mcrReconstructedContour')">
+              <i :class="plotSections.mcrReconstructedContour ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+              <span>Reconstructed Contour (D̂ = C·S<sup>T</sup>)</span>
+            </div>
+            <Transition name="collapse">
+              <div v-if="plotSections.mcrReconstructedContour" class="plot-container">
+                <PlotlyChart :data="state.mcrReconstructedContourData" :layout="state.mcrReconstructedContourLayout" />
+              </div>
+            </Transition>
+          </div>
+          <div class="plot-subsection">
+            <div class="plot-subsection-header" @click="$emit('togglePlot', 'mcrResidualContour')">
+              <i :class="plotSections.mcrResidualContour ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+              <span>Residual Contour (D − D̂)</span>
+            </div>
+            <Transition name="collapse">
+              <div v-if="plotSections.mcrResidualContour" class="plot-container">
+                <PlotlyChart :data="state.mcrResidualContourData" :layout="state.mcrResidualContourLayout" />
               </div>
             </Transition>
           </div>
@@ -433,8 +479,8 @@
           </div>
         </template>
 
-        <!-- Generic Data Overview -->
-        <template v-if="state.isGenericDataNode">
+        <!-- Generic Data Overview (also covers preprocessing nodes with non-spectral output) -->
+        <template v-if="state.isGenericDataNode || (state.isPreprocessingNode && !state.isSpectraData)">
           <div class="plot-subsection">
             <div class="plot-subsection-header" @click="$emit('togglePlot', 'dataOverview')">
               <i :class="plotSections.dataOverview ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
@@ -577,6 +623,7 @@
               </div>
             </Transition>
           </div>
+        </template>
         </template>
       </div>
     </Transition>

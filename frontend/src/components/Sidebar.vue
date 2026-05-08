@@ -26,32 +26,26 @@
         v-for="item in secondaryNavItems"
         :key="item.to"
         class="nav-link secondary"
+        :class="{ 'nav-dimmed': item.dimInDemo && isDemoMode }"
         :to="item.to"
-        :title="item.label"
+        :title="item.dimInDemo && isDemoMode ? 'Managed by administrator' : item.label"
         :aria-label="item.label"
       >
         <i :class="item.icon" aria-hidden="true"></i>
         <span v-if="!collapsed" class="nav-label">{{ item.label }}</span>
       </RouterLink>
-      <a
-        href="https://docs.spectrascientific.ai"
-        target="_blank"
-        rel="noopener"
-        class="nav-link secondary"
-        title="Documentation"
-        aria-label="Documentation"
-      >
-        <i class="pi pi-book" aria-hidden="true"></i>
-        <span v-if="!collapsed" class="nav-label">Documentation</span>
-      </a>
     </nav>
   </aside>
 </template>
 
 <script setup lang="ts">
+import { useDemoMode } from "@/composables/useDemoMode";
+
 defineProps<{
   collapsed: boolean;
 }>();
+
+const { isDemoMode } = useDemoMode();
 
 // Main navigation — chemometrician workflow
 const mainNavItems = [
@@ -65,7 +59,8 @@ const mainNavItems = [
 
 // Secondary navigation
 const secondaryNavItems = [
-  { label: "Settings", to: "/settings", icon: "pi pi-sliders-h" },
+  { label: "Settings", to: "/settings", icon: "pi pi-sliders-h", dimInDemo: true },
+  { label: "Documentation", to: "/documentation", icon: "pi pi-book", dimInDemo: false },
 ];
 </script>
 
@@ -76,7 +71,7 @@ const secondaryNavItems = [
   display: flex;
   flex-direction: column;
   transition: width 0.2s ease;
-  width: var(--nav-width, 240px);
+  width: var(--nav-width, 224px);
   flex-shrink: 0;
   padding: 0;
   gap: 0;
@@ -172,7 +167,7 @@ const secondaryNavItems = [
 }
 
 .nav-link.secondary.router-link-active {
-  background: #334155;
+  background: #3b82f6;
   color: white;
 }
 
@@ -183,5 +178,13 @@ const secondaryNavItems = [
 
 .collapsed .nav-link i {
   margin: 0;
+}
+
+.nav-dimmed {
+  opacity: 0.4;
+}
+
+.nav-dimmed:hover {
+  opacity: 0.6;
 }
 </style>

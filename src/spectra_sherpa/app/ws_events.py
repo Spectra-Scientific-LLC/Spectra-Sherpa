@@ -23,6 +23,7 @@ SHERPA_CODE_RESULT = "sherpa_code_result"
 SHERPA_CODE_ERROR = "sherpa_code_error"
 SHERPA_TOOL_START = "sherpa_tool_start"
 SHERPA_TOOL_RESULT = "sherpa_tool_result"
+SHERPA_WORKFLOW_PROPOSED = "sherpa_workflow_proposed"
 SHERPA_SUBSCRIPTION_REQUIRED = "sherpa_subscription_required"
 SHERPA_ERROR = "sherpa_error"
 SHERPA_REPORT_RESULT = "sherpa_report_result"
@@ -44,6 +45,7 @@ SHERPA_WS_EVENTS: tuple[str, ...] = (
     SHERPA_CODE_ERROR,
     SHERPA_TOOL_START,
     SHERPA_TOOL_RESULT,
+    SHERPA_WORKFLOW_PROPOSED,
     SHERPA_SUBSCRIPTION_REQUIRED,
     SHERPA_ERROR,
     SHERPA_REPORT_RESULT,

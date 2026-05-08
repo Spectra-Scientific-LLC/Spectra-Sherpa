@@ -201,8 +201,8 @@ class MCRNode(Node):
         lines.append(f"{indent}_C0_ndd = scp.NDDataset(_C0)")
         lines.append(f"{indent}_mcr = scp.MCRALS(")
         lines.append(f"{indent}    _X_ndd, _C0_ndd,")
-        lines.append(f"{indent}    nonnegConc=[0, 1] if {nn_C} else [],")
-        lines.append(f"{indent}    nonnegSpec=[0, 1] if {nn_St} else [],")
+        lines.append(f"{indent}    nonnegConc=list(range({n_components})) if {nn_C} else [],")
+        lines.append(f"{indent}    nonnegSpec=list(range({n_components})) if {nn_St} else [],")
         lines.append(f"{indent}    maxdiv={max_iter}, tol={tol},")
         lines.append(f"{indent})")
         lines.append(f"{indent}_C = np.asarray(_mcr.C.data, dtype=np.float64)")
@@ -264,11 +264,16 @@ class MCRNode(Node):
         data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
         U, S, Vt = svd(data, full_matrices=False)
 
-        # Initial C estimate from first n_components of U*S
-        C0_data = U[:, :n_components] @ np.diag(S[:n_components])
-        # If non-negative, shift/scale to avoid negative initial guesses
-        if non_negative_C:
-            C0_data = np.abs(C0_data)
+        # Initial C estimate from first n_components of U*S.
+        # Always take abs() for initialization regardless of the ALS non-negativity
+        # setting: SVD left-singular vectors have arbitrary sign convention and the
+        # leading column is frequently all-negative for non-negative data. SCP's
+        # _guess_profile derives St0 from this C0 using NNLS when solverSpec="nnls"
+        # (the default), and NNLS on an all-negative regressor returns exactly zero,
+        # killing Component 0 before any ALS iteration runs. Applying abs() here is
+        # initialization-only — the ALS solver constraints (solverConc/solverSpec)
+        # govern non-negativity during the actual alternating least-squares loop.
+        C0_data = np.abs(U[:, :n_components] @ np.diag(S[:n_components]))
         C0 = scp.NDDataset(C0_data)
 
         # Determine appropriate solvers based on constraints

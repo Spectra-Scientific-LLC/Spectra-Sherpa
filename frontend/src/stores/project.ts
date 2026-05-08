@@ -1,7 +1,32 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import api from "@/api/client";
+import { useAuthStore } from "@/stores/auth";
 import { getErrorMessage } from "@/utils/errors";
+
+const LAST_ACTIVE_PROJECT_PREFIX = "spectra_sherpa_last_project_";
+
+const lastActiveProjectKey = (userId: number | string | null): string =>
+  `${LAST_ACTIVE_PROJECT_PREFIX}${userId ?? "anon"}`;
+
+const readLastActiveProjectId = (userId: number | string | null): number | null => {
+  try {
+    const raw = localStorage.getItem(lastActiveProjectKey(userId));
+    const parsed = raw === null ? NaN : Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeLastActiveProjectId = (userId: number | string | null, id: number | null): void => {
+  try {
+    if (id === null) localStorage.removeItem(lastActiveProjectKey(userId));
+    else localStorage.setItem(lastActiveProjectKey(userId), String(id));
+  } catch {
+    /* localStorage may be unavailable in some sandboxes */
+  }
+};
 import type {
   ProjectSummary,
   ProjectDetail,
@@ -66,6 +91,8 @@ export const useProjectStore = defineStore("project", () => {
       .slice(0, 5)
   );
 
+  const activeProjectTitle = computed(() => currentProject.value?.name ?? "No Project");
+
   // ── CRUD ───────────────────────────────────────────────────────
 
   async function fetchProjects(): Promise<void> {
@@ -88,6 +115,7 @@ export const useProjectStore = defineStore("project", () => {
       const { data } = await api.get<ProjectDetail>(`/projects/${id}`);
       currentProject.value = data;
       currentProjectId.value = id;
+      writeLastActiveProjectId(useAuthStore().user?.id ?? null, id);
       return data;
     } catch (e) {
       error.value = getErrorMessage(e);
@@ -95,6 +123,10 @@ export const useProjectStore = defineStore("project", () => {
     } finally {
       isLoading.value = false;
     }
+  }
+
+  function getLastActiveProjectId(): number | null {
+    return readLastActiveProjectId(useAuthStore().user?.id ?? null);
   }
 
   async function createProject(payload: ProjectCreate): Promise<ProjectDetail | null> {
@@ -146,6 +178,28 @@ export const useProjectStore = defineStore("project", () => {
   async function selectProject(id: number): Promise<void> {
     currentProjectId.value = id;
     await fetchProject(id);
+  }
+
+  async function loadProjectContext(id: number): Promise<ProjectDetail | null> {
+    return fetchProject(id);
+  }
+
+  async function ensureProjectForBrowserTab(): Promise<ProjectDetail | null> {
+    if (currentProject.value) {
+      return currentProject.value;
+    }
+
+    if (projects.value.length === 0) {
+      await fetchProjects();
+    }
+
+    const lastActiveId = getLastActiveProjectId();
+    if (lastActiveId && projects.value.some((project) => project.id === lastActiveId)) {
+      return fetchProject(lastActiveId);
+    }
+
+    const recent = recentProjects.value[0];
+    return recent ? fetchProject(recent.id) : null;
   }
 
   // ── Link / Unlink ─────────────────────────────────────────────
@@ -200,6 +254,25 @@ export const useProjectStore = defineStore("project", () => {
     } catch (e) {
       error.value = getErrorMessage(e);
     }
+  }
+
+  function removeWorkflowFromCurrentProject(workflowId: number): void {
+    const project = currentProject.value;
+    if (!project?.workflows.some((workflow) => workflow.id === workflowId)) {
+      return;
+    }
+
+    currentProject.value = {
+      ...project,
+      workflow_count: Math.max(0, project.workflow_count - 1),
+      workflows: project.workflows.filter((workflow) => workflow.id !== workflowId),
+    };
+
+    projects.value = projects.value.map((summary) =>
+      summary.id === project.id
+        ? { ...summary, workflow_count: Math.max(0, summary.workflow_count - 1) }
+        : summary
+    );
   }
 
   // ── Save All + Versioning ─────────────────────────────────────
@@ -390,6 +463,7 @@ export const useProjectStore = defineStore("project", () => {
     // Getters
     projectList,
     recentProjects,
+    activeProjectTitle,
 
     // CRUD
     fetchProjects,
@@ -398,12 +472,16 @@ export const useProjectStore = defineStore("project", () => {
     updateProject,
     deleteProject,
     selectProject,
+    loadProjectContext,
+    ensureProjectForBrowserTab,
+    getLastActiveProjectId,
 
     // Link / Unlink
     linkExperiment,
     unlinkExperiment,
     linkWorkflow,
     unlinkWorkflow,
+    removeWorkflowFromCurrentProject,
 
     // Save All + Versioning
     saveProject,

@@ -3,10 +3,12 @@
     ref="canvasRef"
     class="workflow-canvas"
     @mousemove="handleMouseMove"
-    @mouseup="handleMouseUp"
-    @mouseleave="handleMouseUp"
+    @mouseup="handleCanvasMouseUp"
+    @mouseleave="handleCanvasMouseUp"
+    @mousedown="handleCanvasMouseDown"
+    @contextmenu="handleCanvasContextMenu"
   >
-    <div class="canvas-surface">
+    <div class="canvas-surface" ref="surfaceRef">
       <!-- SVG layer for edges -->
       <svg class="edges-layer">
         <defs>
@@ -115,28 +117,70 @@
       :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
       @click.stop
     >
-      <div class="context-menu-item" @click="runNode">
-        <i class="pi pi-play"></i>
-        <span>Run Node</span>
-      </div>
-      <div
-        class="context-menu-item"
-        :class="{ disabled: !hasOutput(contextMenu.nodeId) }"
-        @click="viewOutput"
-      >
-        <i class="pi pi-eye"></i>
-        <span>View Output</span>
-      </div>
-      <div class="context-menu-divider"></div>
-      <div class="context-menu-item" @click="copyNode">
-        <i class="pi pi-copy"></i>
-        <span>Copy Node</span>
-      </div>
-      <div class="context-menu-item danger" @click="deleteNodeFromMenu">
-        <i class="pi pi-trash"></i>
-        <span>Delete Node</span>
-      </div>
+      <template v-if="contextMenu.nodeId !== null">
+        <div class="context-menu-item" @click="runNode">
+          <i class="pi pi-play"></i>
+          <span>Run Node</span>
+        </div>
+        <div
+          class="context-menu-item"
+          :class="{ disabled: !hasOutput(contextMenu.nodeId) }"
+          @click="viewOutput"
+        >
+          <i class="pi pi-eye"></i>
+          <span>View Output</span>
+        </div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item" @click="cutSelection">
+          <i class="pi pi-scissors"></i>
+          <span v-if="selectedNodeIds.size > 1">Cut {{ selectedNodeIds.size }} Nodes</span>
+          <span v-else>Cut Node</span>
+        </div>
+        <div class="context-menu-item" @click="copySelection">
+          <i class="pi pi-copy"></i>
+          <span v-if="selectedNodeIds.size > 1">Copy {{ selectedNodeIds.size }} Nodes</span>
+          <span v-else>Copy Node</span>
+        </div>
+        <div class="context-menu-item" @click="pasteSelection">
+          <i class="pi pi-clipboard"></i>
+          <span>Paste</span>
+        </div>
+        <div class="context-menu-item" @click="duplicateSelection">
+          <i class="pi pi-clone"></i>
+          <span v-if="selectedNodeIds.size > 1">Duplicate {{ selectedNodeIds.size }} Nodes</span>
+          <span v-else>Duplicate Node</span>
+        </div>
+        <div class="context-menu-item danger" @click="deleteSelection">
+          <i class="pi pi-trash"></i>
+          <span v-if="selectedNodeIds.size > 1">Delete {{ selectedNodeIds.size }} Nodes</span>
+          <span v-else>Delete Node</span>
+        </div>
+      </template>
+      <template v-else>
+        <!-- Canvas background context menu -->
+        <div class="context-menu-item" @click="pasteSelection">
+          <i class="pi pi-clipboard"></i>
+          <span>Paste</span>
+        </div>
+      </template>
     </div>
+
+      <!-- Rubber-band selection box -->
+      <div
+        v-if="isRubberBanding"
+        class="rubber-band"
+        :style="{
+          left: `${Math.min(rubberBandStart.x, rubberBandCurrent.x)}px`,
+          top: `${Math.min(rubberBandStart.y, rubberBandCurrent.y)}px`,
+          width: `${Math.abs(rubberBandCurrent.x - rubberBandStart.x)}px`,
+          height: `${Math.abs(rubberBandCurrent.y - rubberBandStart.y)}px`
+        }"
+      ></div>
+
+      <!-- Selection Badge -->
+      <div v-if="selectedNodeIds.size > 1" class="selection-badge">
+        {{ selectedNodeIds.size }} nodes selected
+      </div>
 
       <!-- Nodes layer -->
       <div
@@ -144,8 +188,8 @@
         :key="node.id"
         class="workflow-node"
         :class="{
-          'is-selected': selectedNodeId === node.id,
-          'is-dragging': dragging === node.id,
+          'is-selected': selectedNodeIds.has(node.id),
+          'is-dragging': isDragging && selectedNodeIds.has(node.id),
           'is-connecting-source': connecting === node.id,
           'is-compatible-target': isConnecting && connecting !== node.id && isNodeCompatibleTarget(node.id),
           'is-incompatible-target': isConnecting && connecting !== node.id && !isNodeCompatibleTarget(node.id),
@@ -333,7 +377,12 @@
       <!-- Empty state -->
       <div v-if="nodes.length === 0" class="empty-state">
         <div class="empty-icon">🔧</div>
-        <p>Add nodes from the toolbar to build your workflow</p>
+        <h3 class="empty-title">Start your workflow</h3>
+        <p>Drag a node from the toolbar on the left, or pick a starter from the Actions menu.</p>
+        <div class="empty-pointer">
+          <i class="pi pi-arrow-left"></i>
+          <span>Pick a node category to begin</span>
+        </div>
       </div>
     </div>
   </div>
@@ -362,7 +411,11 @@ const emit = defineEmits<{
   (e: 'connection-error', error: string): void;
   (e: 'run-node', nodeId: string): void;
   (e: 'view-output', nodeId: string): void;
-  (e: 'copy-node', nodeId: string): void;
+  (e: 'cut-selection'): void;
+  (e: 'copy-selection'): void;
+  (e: 'paste-selection'): void;
+  (e: 'duplicate-selection'): void;
+  (e: 'delete-selection'): void;
 }>();
 
 // Port color scheme by category
@@ -558,9 +611,17 @@ const formatShape = (shape: number[]): string => {
 
 // Canvas state
 const canvasRef = ref<HTMLElement | null>(null);
-const selectedNodeId = ref<string | null>(null);
-const dragging = ref<string | null>(null);
-const dragOffset = ref({ x: 0, y: 0 });
+const surfaceRef = ref<HTMLElement | null>(null);
+
+const selectedNodeIds = ref<Set<string>>(new Set());
+const isDragging = ref(false);
+const dragOrigin = ref<{ x: number; y: number } | null>(null);
+const dragStartPositions = ref<Map<string, { x: number; y: number }>>(new Map());
+
+const isRubberBanding = ref(false);
+const rubberBandStart = ref({ x: 0, y: 0 });
+const rubberBandCurrent = ref({ x: 0, y: 0 });
+const rubberBandInitialSelection = ref<Set<string>>(new Set());
 const connecting = ref<string | null>(null);
 const connectingFromPort = ref<string | null>(null); // Track selected output port
 const mousePos = ref<{ x: number; y: number } | null>(null);
@@ -617,23 +678,35 @@ const isNodeCompatibleTarget = (nodeId: string): boolean => {
   return isPortCompatible(nodeId);
 };
 
+// Node coordinates map for O(1) lookups during edge rendering
+const nodePositionMap = computed(() => {
+  const map = new Map<string, { x: number; y: number }>();
+  for (const node of props.nodes) {
+    map.set(node.id, { x: node.x, y: node.y });
+  }
+  return map;
+});
+
 // Get node center position for edge drawing
 const getNodeCenter = (nodeId: string | null) => {
-  const node = props.nodes.find(n => n.id === nodeId);
-  if (!node) return { x: 0, y: 0 };
+  if (!nodeId) return { x: 0, y: 0 };
+  const pos = nodePositionMap.value.get(nodeId);
+  if (!pos) return { x: 0, y: 0 };
   return {
-    x: node.x + 80, // Half of node width
-    y: node.y + 50, // Half of node height
+    x: pos.x + 80, // Half of node width
+    y: pos.y + 50, // Half of node height
   };
 };
 
 // Mouse event handlers
-// Track if actual drag movement occurred to avoid opening inspector during drag
-const dragStartPos = ref<{ x: number; y: number } | null>(null);
 const hasDragged = ref(false);
 const DRAG_THRESHOLD = 5; // Pixels before considering it a drag
 
 const handleNodeMouseDown = (event: MouseEvent, nodeId: string) => {
+  if (event.button !== 0) {
+    return;
+  }
+
   const node = props.nodes.find(n => n.id === nodeId);
   if (!node) return;
 
@@ -643,60 +716,150 @@ const handleNodeMouseDown = (event: MouseEvent, nodeId: string) => {
     return;
   }
 
-  dragging.value = nodeId;
-  selectedNodeId.value = nodeId;
-  hasDragged.value = false;
-  dragStartPos.value = { x: event.clientX, y: event.clientY };
+  // Handle selection state based on modifiers
+  const isCtrlOrCmd = event.ctrlKey || event.metaKey;
+  const isShift = event.shiftKey;
 
-  dragOffset.value = {
-    x: event.clientX - node.x,
-    y: event.clientY - node.y,
-  };
+  if (isCtrlOrCmd) {
+    // Toggle selection
+    if (selectedNodeIds.value.has(nodeId)) {
+      selectedNodeIds.value.delete(nodeId);
+    } else {
+      selectedNodeIds.value.add(nodeId);
+    }
+  } else if (isShift) {
+    // Add to selection
+    selectedNodeIds.value.add(nodeId);
+  } else {
+    // If clicking a node that isn't selected without modifiers, select only it
+    if (!selectedNodeIds.value.has(nodeId)) {
+      selectedNodeIds.value.clear();
+      selectedNodeIds.value.add(nodeId);
+    }
+  }
+
+  // Always emit single node-select for the inspector if we just clicked one
+  if (selectedNodeIds.value.has(nodeId)) {
+    emit('node-select', node);
+  }
+
+  // Prepare for potential dragging of all selected nodes
+  isDragging.value = true;
+  hasDragged.value = false;
+  dragOrigin.value = { x: event.clientX, y: event.clientY };
+  
+  dragStartPositions.value.clear();
+  selectedNodeIds.value.forEach(id => {
+    const n = props.nodes.find(x => x.id === id);
+    if (n) {
+      dragStartPositions.value.set(id, { x: n.x, y: n.y });
+    }
+  });
 };
 
 const handleMouseMove = (event: MouseEvent) => {
   const rect = canvasRef.value?.getBoundingClientRect();
   if (!rect) return;
 
-  mousePos.value = {
-    x: event.clientX - rect.left + (canvasRef.value?.scrollLeft || 0),
-    y: event.clientY - rect.top + (canvasRef.value?.scrollTop || 0),
-  };
+  const localX = event.clientX - rect.left + (canvasRef.value?.scrollLeft || 0);
+  const localY = event.clientY - rect.top + (canvasRef.value?.scrollTop || 0);
+  mousePos.value = { x: localX, y: localY };
 
-  if (dragging.value === null) return;
+  if (isRubberBanding.value) {
+    rubberBandCurrent.value = { x: localX, y: localY };
+    
+    // Compute intersection
+    const rx1 = Math.min(rubberBandStart.value.x, rubberBandCurrent.value.x);
+    const ry1 = Math.min(rubberBandStart.value.y, rubberBandCurrent.value.y);
+    const rx2 = Math.max(rubberBandStart.value.x, rubberBandCurrent.value.x);
+    const ry2 = Math.max(rubberBandStart.value.y, rubberBandCurrent.value.y);
 
-  // Check if we've moved enough to consider it a drag
-  if (dragStartPos.value && !hasDragged.value) {
-    const dx = Math.abs(event.clientX - dragStartPos.value.x);
-    const dy = Math.abs(event.clientY - dragStartPos.value.y);
-    if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
-      hasDragged.value = true;
-    }
+    const isShift = event.shiftKey;
+    const newSelection = isShift ? new Set(rubberBandInitialSelection.value) : new Set<string>();
+
+    props.nodes.forEach(n => {
+      // Node dimensions: 160px wide, ~100px high (approximate)
+      const nx1 = n.x, ny1 = n.y, nx2 = n.x + 160, ny2 = n.y + 100;
+      const intersects = !(rx2 < nx1 || rx1 > nx2 || ry2 < ny1 || ry1 > ny2);
+      
+      if (intersects) {
+        newSelection.add(n.id);
+      }
+    });
+    
+    selectedNodeIds.value = newSelection;
+    return;
   }
 
-  const newX = event.clientX - dragOffset.value.x;
-  const newY = event.clientY - dragOffset.value.y;
+  if (!isDragging.value || !dragOrigin.value) return;
 
-  const updatedNodes = props.nodes.map(n =>
-    n.id === dragging.value
-      ? { ...n, x: Math.max(0, newX), y: Math.max(0, newY) }
-      : n
-  );
+  const dx = event.clientX - dragOrigin.value.x;
+  const dy = event.clientY - dragOrigin.value.y;
 
-  emit('update:nodes', updatedNodes);
+  if (!hasDragged.value && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
+    hasDragged.value = true;
+  }
+
+  if (hasDragged.value) {
+    const updatedNodes = props.nodes.map(n => {
+      if (selectedNodeIds.value.has(n.id)) {
+        const startPos = dragStartPositions.value.get(n.id);
+        if (startPos) {
+          return { ...n, x: Math.max(0, startPos.x + dx), y: Math.max(0, startPos.y + dy) };
+        }
+      }
+      return n;
+    });
+    emit('update:nodes', updatedNodes);
+  }
 };
 
-const handleMouseUp = () => {
-  // Only open inspector if we didn't drag (just a click)
-  if (dragging.value !== null && !hasDragged.value) {
-    const node = props.nodes.find(n => n.id === dragging.value);
-    if (node) {
-      emit('node-select', node);
+const handleCanvasMouseDown = (event: MouseEvent) => {
+  if (event.button !== 0) {
+    return;
+  }
+
+  if ((event.target as HTMLElement).closest('.workflow-node') || 
+      (event.target as HTMLElement).closest('.context-menu')) {
+    return;
+  }
+  
+  // Clicked on empty canvas -> start rubber banding
+  const rect = canvasRef.value?.getBoundingClientRect();
+  if (!rect) return;
+
+  const localX = event.clientX - rect.left + (canvasRef.value?.scrollLeft || 0);
+  const localY = event.clientY - rect.top + (canvasRef.value?.scrollTop || 0);
+
+  isRubberBanding.value = true;
+  rubberBandStart.value = { x: localX, y: localY };
+  rubberBandCurrent.value = { x: localX, y: localY };
+  
+  if (event.shiftKey) {
+    rubberBandInitialSelection.value = new Set(selectedNodeIds.value);
+  } else {
+    rubberBandInitialSelection.value = new Set();
+    selectedNodeIds.value.clear();
+    emit('node-select', null);
+  }
+};
+
+const handleCanvasMouseUp = () => {
+  if (isRubberBanding.value) {
+    isRubberBanding.value = false;
+    
+    // If they just clicked without dragging, clear selection
+    if (rubberBandStart.value.x === rubberBandCurrent.value.x && 
+        rubberBandStart.value.y === rubberBandCurrent.value.y && 
+        !rubberBandInitialSelection.value.size) {
+      selectedNodeIds.value.clear();
+      emit('node-select', null);
     }
   }
 
-  dragging.value = null;
-  dragStartPos.value = null;
+  isDragging.value = false;
+  dragOrigin.value = null;
+  dragStartPositions.value.clear();
   hasDragged.value = false;
 };
 
@@ -756,9 +919,11 @@ const deleteNode = (nodeId: string) => {
   emit('update:nodes', updatedNodes);
   emit('update:edges', updatedEdges);
 
-  if (selectedNodeId.value === nodeId) {
-    selectedNodeId.value = null;
-    emit('node-select', null);
+  if (selectedNodeIds.value.has(nodeId)) {
+    selectedNodeIds.value.delete(nodeId);
+    if (selectedNodeIds.value.size === 0) {
+      emit('node-select', null);
+    }
   }
 };
 
@@ -782,7 +947,34 @@ const handleEdgeClick = (edge: WorkflowEdge) => {
 };
 
 // Context menu handlers
+const handleCanvasContextMenu = (event: MouseEvent) => {
+  // If clicking on a node or an existing context menu, let their handlers run
+  if ((event.target as HTMLElement).closest('.workflow-node') || 
+      (event.target as HTMLElement).closest('.context-menu')) {
+    return;
+  }
+  
+  event.preventDefault();
+  const rect = canvasRef.value?.getBoundingClientRect();
+  if (!rect) return;
+
+  contextMenu.value = {
+    show: true,
+    x: event.clientX - rect.left + (canvasRef.value?.scrollLeft || 0),
+    y: event.clientY - rect.top + (canvasRef.value?.scrollTop || 0),
+    nodeId: null, // null means canvas background
+  };
+
+  const closeMenu = () => {
+    contextMenu.value.show = false;
+    document.removeEventListener('click', closeMenu);
+  };
+  setTimeout(() => document.addEventListener('click', closeMenu), 0);
+};
+
 const handleNodeContextMenu = (event: MouseEvent, nodeId: string) => {
+  event.preventDefault();
+  event.stopPropagation();
   const rect = canvasRef.value?.getBoundingClientRect();
   if (!rect) return;
 
@@ -792,6 +984,14 @@ const handleNodeContextMenu = (event: MouseEvent, nodeId: string) => {
     y: event.clientY - rect.top + (canvasRef.value?.scrollTop || 0),
     nodeId,
   };
+
+  // If node isn't selected, select it (unless right-clicking a multi-selection)
+  if (!selectedNodeIds.value.has(nodeId)) {
+    selectedNodeIds.value.clear();
+    selectedNodeIds.value.add(nodeId);
+    const node = props.nodes.find(n => n.id === nodeId);
+    if (node) emit('node-select', node);
+  }
 
   // Close context menu when clicking elsewhere
   const closeMenu = () => {
@@ -820,28 +1020,42 @@ const viewOutput = () => {
   contextMenu.value.show = false;
 };
 
-const copyNode = () => {
-  if (contextMenu.value.nodeId !== null) {
-    emit('copy-node', contextMenu.value.nodeId);
-  }
+const cutSelection = () => {
+  emit('cut-selection');
   contextMenu.value.show = false;
 };
 
-const deleteNodeFromMenu = () => {
-  if (contextMenu.value.nodeId !== null) {
-    deleteNode(contextMenu.value.nodeId);
-  }
+const copySelection = () => {
+  emit('copy-selection');
   contextMenu.value.show = false;
 };
 
-// Watch for external selection changes
+const pasteSelection = () => {
+  emit('paste-selection');
+  contextMenu.value.show = false;
+};
+
+const duplicateSelection = () => {
+  emit('duplicate-selection');
+  contextMenu.value.show = false;
+};
+
+const deleteSelection = () => {
+  emit('delete-selection');
+  contextMenu.value.show = false;
+};
+
+// Watch for external selection changes (if nodes are deleted externally)
 watch(() => props.nodes, () => {
-  if (selectedNodeId.value !== null) {
-    const stillExists = props.nodes.some(n => n.id === selectedNodeId.value);
-    if (!stillExists) {
-      selectedNodeId.value = null;
-      emit('node-select', null);
+  let changed = false;
+  for (const id of selectedNodeIds.value) {
+    if (!props.nodes.some(n => n.id === id)) {
+      selectedNodeIds.value.delete(id);
+      changed = true;
     }
+  }
+  if (changed && selectedNodeIds.value.size === 0) {
+    emit('node-select', null);
   }
 });
 
@@ -862,7 +1076,16 @@ const centerNode = (nodeId: string) => {
   });
 };
 
-defineExpose({ centerNode });
+const selectAll = () => {
+  selectedNodeIds.value = new Set(props.nodes.map(n => n.id));
+};
+
+const clearSelection = () => {
+  selectedNodeIds.value.clear();
+  emit('node-select', null);
+};
+
+defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection });
 </script>
 
 <style scoped>
@@ -956,7 +1179,7 @@ defineExpose({ centerNode });
 
 .workflow-node.is-selected {
   border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4), 0 0 15px rgba(59, 130, 246, 0.2);
 }
 
 .workflow-node.is-dragging {
@@ -1173,17 +1396,41 @@ defineExpose({ centerNode });
   left: 50%;
   transform: translate(-50%, -50%);
   text-align: center;
-  color: #64748b;
+  color: #94a3b8;
+  max-width: 28rem;
 }
 
 .empty-icon {
   font-size: 3rem;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+}
+
+.empty-title {
+  margin: 0 0 8px;
+  color: #e2e8f0;
+  font-size: 1.05rem;
+  font-weight: 600;
 }
 
 .empty-state p {
-  margin: 0;
-  font-size: 0.95rem;
+  margin: 0 0 14px;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.empty-pointer {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px dashed #475569;
+  border-radius: 999px;
+  color: #cbd5e1;
+  font-size: 0.8rem;
+}
+
+.empty-pointer i {
+  color: #60a5fa;
 }
 
 /* Context Menu */
@@ -1402,5 +1649,36 @@ defineExpose({ centerNode });
   50% {
     box-shadow: 0 0 16px currentColor;
   }
+}
+
+/* Rubber band selection */
+.rubber-band {
+  position: absolute;
+  background: rgba(59, 130, 246, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.6);
+  pointer-events: none;
+  z-index: 50;
+}
+
+/* Selection Badge */
+.selection-badge {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  background: #2563eb;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 </style>

@@ -159,29 +159,36 @@ async def test_byo_chat_stream_sse_events_are_well_formed():
     from collections.abc import AsyncIterator
     from unittest.mock import patch
 
-    async def _fake_stream(message: str) -> AsyncIterator[str]:
+    async def _fake_stream(
+        message: str,
+        *,
+        verbose: bool = True,
+        max_paragraphs: int = 2,
+        metadata: dict | None = None,
+    ) -> AsyncIterator[str]:
         yield "chunk one"
         yield " chunk two"
 
-    with patch("spectra_sherpa.app.services.basic_chat.is_configured", return_value=True):
-        with patch("spectra_sherpa.app.services.basic_chat.stream_chat", side_effect=_fake_stream):
-            from spectra_sherpa.app.api.v1.routes.chat import chat_stream
+    with patch("spectra_sherpa.app.core.mode_policy.is_local", return_value=True):
+        with patch("spectra_sherpa.app.services.basic_chat.is_configured", return_value=True):
+            with patch("spectra_sherpa.app.services.basic_chat.stream_chat", side_effect=_fake_stream):
+                from spectra_sherpa.app.api.v1.routes.chat import chat_stream
 
-            # Build a minimal fake request
-            class FakeRequest:
-                async def json(self):
-                    return {"message": "test"}
+                # Build a minimal fake request
+                class FakeRequest:
+                    async def json(self):
+                        return {"message": "test"}
 
-            class FakeUser:
-                id = 1
+                class FakeUser:
+                    id = 1
 
-            response = await chat_stream(request=FakeRequest(), user=FakeUser())
+                response = await chat_stream(request=FakeRequest(), user=FakeUser())
 
-            # Collect SSE frames from the streaming response body
-            frames = []
-            async for chunk in response.body_iterator:
-                if chunk.startswith("data: "):
-                    frames.append(json.loads(chunk[6:].strip()))
+                # Collect SSE frames from the streaming response body
+                frames = []
+                async for chunk in response.body_iterator:
+                    if chunk.startswith("data: "):
+                        frames.append(json.loads(chunk[6:].strip()))
 
     assert len(frames) == 3  # 2 chunks + 1 done
     assert frames[0]["type"] == "chunk"

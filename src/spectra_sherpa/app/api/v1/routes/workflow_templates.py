@@ -39,6 +39,10 @@ from spectra_sherpa.app.services.experiments import (
     resolve_data_path,
     write_metadata,
 )
+from spectra_sherpa.app.services.project_data_sources import (
+    ensure_sheet_advisor_channel,
+    sync_workflow_data_sources,
+)
 
 router = APIRouter(prefix="/workflow-templates")
 logger = logging.getLogger(__name__)
@@ -1021,6 +1025,7 @@ async def instantiate_template(
         session.add(workflow)
         await session.flush()
 
+        workflow_nodes: list[WorkflowNode] = []
         for node_data in nodes_data:
             node = WorkflowNode(
                 workflow_id=workflow.id,
@@ -1031,6 +1036,7 @@ async def instantiate_template(
                 position_x=node_data.get("position_x"),
                 position_y=node_data.get("position_y"),
             )
+            workflow_nodes.append(node)
             session.add(node)
 
         for edge_data in edges_data:
@@ -1043,6 +1049,8 @@ async def instantiate_template(
             )
             session.add(edge)
 
+        await sync_workflow_data_sources(workflow, session, workflow_nodes)
+        await ensure_sheet_advisor_channel(workflow, session, color=workflow.tab_color)
         await session.commit()
         committed = True
         await session.refresh(workflow)
@@ -1057,6 +1065,9 @@ async def instantiate_template(
                 selectinload(Workflow.edges),
                 selectinload(Workflow.tags),
                 selectinload(Workflow.folder),
+                selectinload(Workflow.primary_data_source),
+                selectinload(Workflow.data_source_links),
+                selectinload(Workflow.advisor_channels),
             )
         )
         reload_result = await session.execute(reload_query)

@@ -4,6 +4,7 @@ import api from "@/api/client";
 import type { NodeTypeMetadata, NodeLibraryResponse, NodeExecutionStatus } from "@/types";
 import { getErrorMessage } from "@/utils/errors";
 import { useJobStore } from "@/stores/job";
+import { useWorkbookStore } from "@/stores/workbook";
 
 // Types extracted to workflow-types.ts for module size reduction.
 // Re-exported here for backward compatibility.
@@ -351,10 +352,11 @@ export const useWorkflowStore = defineStore("workflow", () => {
   }
 
   // API Methods
-  async function saveWorkflow(): Promise<number> {
+  async function saveWorkflow(options: { createVersion?: boolean; projectId?: number | null } = {}): Promise<number> {
     isLoading.value = true;
     try {
       const { nodes: backendNodes, edges: backendEdges } = toBackendFormat();
+      const createVersion = options.createVersion ?? true;
 
       if (workflowId.value) {
         // Update existing workflow
@@ -362,6 +364,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
           name: workflowName.value,
           description: workflowDescription.value,
           status: "draft",
+          create_version: createVersion,
           nodes: backendNodes,
           edges: backendEdges,
         });
@@ -374,6 +377,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
           name: workflowName.value,
           description: workflowDescription.value,
           status: "draft",
+          project_id: options.projectId ?? null,
           nodes: backendNodes,
           edges: backendEdges,
         };
@@ -480,6 +484,11 @@ export const useWorkflowStore = defineStore("workflow", () => {
     return response.data;
   }
 
+  async function duplicateWorkflow(id: number): Promise<WorkflowListItem> {
+    const response = await api.post<WorkflowListItem>(`/workflows/${id}/duplicate`);
+    return response.data;
+  }
+
   async function fetchTemplates(category?: string): Promise<WorkflowTemplate[]> {
     templatesLoading.value = true;
     templatesError.value = null;
@@ -577,6 +586,8 @@ export const useWorkflowStore = defineStore("workflow", () => {
       await saveWorkflow();
     }
 
+    const executingWorkflowId = workflowId.value;
+
     // Mark all nodes as queued before execution
     for (const node of nodes.value) {
       setNodeExecutionState(node.id, { status: "pending" });
@@ -596,6 +607,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
     }
 
     const _onNodeStatus = (ev: Event) => {
+      if (workflowId.value !== executingWorkflowId) return;
       const detail = (ev as CustomEvent).detail;
       if (!detail?.node_id || !detail?.status) return;
       const frontendId = String(detail.node_id);
@@ -608,10 +620,26 @@ export const useWorkflowStore = defineStore("workflow", () => {
     };
     window.addEventListener("workflow-node-status", _onNodeStatus);
 
+    const workbookStore = useWorkbookStore();
+    const sheet = workbookStore.sheets.find((s) => s.workflowId === executingWorkflowId);
+    
+    if (sheet) {
+      sheet.executionStatus = "running";
+    }
+
     try {
-      const response = await api.post(`/workflows/${workflowId.value}/execute`, {
+      const response = await api.post(`/workflows/${executingWorkflowId}/execute`, {
         initial_data: initialData || {},
       });
+
+      const isStillActiveWorkflow = workflowId.value === executingWorkflowId;
+      if (!isStillActiveWorkflow) {
+        if (sheet) {
+          sheet.executionStatus = "success";
+          setTimeout(() => { if (sheet.executionStatus === "success") sheet.executionStatus = "idle"; }, 3000);
+        }
+        return response.data;
+      }
 
       // Store results and integrity hash
       lastExecutionResults.value = response.data.results;
@@ -663,16 +691,27 @@ export const useWorkflowStore = defineStore("workflow", () => {
       // Clear stale flag after successful execution
       clearWorkflowStale();
 
+      if (sheet) {
+        sheet.executionStatus = "success";
+        setTimeout(() => { if (sheet.executionStatus === "success") sheet.executionStatus = "idle"; }, 3000);
+      }
+
       return response.data;
     } catch (error: unknown) {
       // Mark all nodes as error on workflow execution failure
       const errorMsg = getErrorMessage(error, "Execution failed");
-      for (const node of nodes.value) {
-        setNodeExecutionState(node.id, {
-          status: "error",
-          error_message: errorMsg,
-          error_details: errorMsg,
-        });
+      if (workflowId.value === executingWorkflowId) {
+        for (const node of nodes.value) {
+          setNodeExecutionState(node.id, {
+            status: "error",
+            error_message: errorMsg,
+            error_details: errorMsg,
+          });
+        }
+      }
+      if (sheet) {
+        sheet.executionStatus = "error";
+        setTimeout(() => { if (sheet.executionStatus === "error") sheet.executionStatus = "idle"; }, 3000);
       }
       throw error;
     } finally {
@@ -687,6 +726,39 @@ export const useWorkflowStore = defineStore("workflow", () => {
     }
   }
 
+  async function executeStoredWorkflow(
+    targetWorkflowId: number,
+    initialData?: ParamsMap
+  ): Promise<WorkflowExecuteResponse> {
+    const workbookStore = useWorkbookStore();
+    const sheet = workbookStore.sheets.find((s) => s.workflowId === targetWorkflowId);
+    if (sheet) {
+      sheet.executionStatus = "running";
+    }
+
+    try {
+      const response = await api.post<WorkflowExecuteResponse>(
+        `/workflows/${targetWorkflowId}/execute`,
+        { initial_data: initialData || {} },
+      );
+      if (sheet) {
+        sheet.executionStatus = "success";
+        setTimeout(() => {
+          if (sheet.executionStatus === "success") sheet.executionStatus = "idle";
+        }, 3000);
+      }
+      return response.data;
+    } catch (error) {
+      if (sheet) {
+        sheet.executionStatus = "error";
+        setTimeout(() => {
+          if (sheet.executionStatus === "error") sheet.executionStatus = "idle";
+        }, 3000);
+      }
+      throw error;
+    }
+  }
+
   async function executeNode(
     nodeId: string,
     initialData?: ParamsMap
@@ -695,6 +767,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
     if (!workflowId.value || hasUnsavedChanges.value) {
       await saveWorkflow();
     }
+    const executingWorkflowId = workflowId.value;
 
     // Mark target node and its dependencies as running
     const backendNodeId = nodeId;
@@ -704,10 +777,14 @@ export const useWorkflowStore = defineStore("workflow", () => {
 
     isLoading.value = true;
     try {
-      const response = await api.post(`/workflows/${workflowId.value}/execute`, {
+      const response = await api.post(`/workflows/${executingWorkflowId}/execute`, {
         node_id: backendNodeId,
         initial_data: initialData || {},
       });
+
+      if (workflowId.value !== executingWorkflowId) {
+        return response.data;
+      }
 
       // Update results for the specific node
       if (!lastExecutionResults.value) {
@@ -761,7 +838,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
     } catch (error: unknown) {
       // Mark node as error
       const errorMsg = getErrorMessage(error, "Execution failed");
-      if (nodes.value.some((node) => node.id === nodeId)) {
+      if (workflowId.value === executingWorkflowId && nodes.value.some((node) => node.id === nodeId)) {
         setNodeExecutionState(nodeId, {
           status: "error",
           error_message: errorMsg,
@@ -1573,11 +1650,13 @@ export const useWorkflowStore = defineStore("workflow", () => {
     saveWorkflow,
     loadWorkflow,
     listWorkflows,
+    duplicateWorkflow,
     fetchTemplates,
     fetchTemplate,
     instantiateTemplate,
     deleteWorkflow,
     executeWorkflow,
+    executeStoredWorkflow,
     executeNode,
     executeTrial,
     exportToPython,

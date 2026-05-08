@@ -722,6 +722,89 @@ function mcrSpectraLayout(metadata: any): Record<string, any> {
 }
 
 // ============================================================================
+// MCR-ALS Contour Plots (Original, Reconstructed, Residual)
+// ============================================================================
+
+function getMCRContourAxes(output: any): { x: number[]; y: number[]; xLabel: string; shouldReverse: boolean } {
+  const metadata = output?.metadata || {};
+  const St = metadata.St as number[][] | undefined;
+  const nFeatures = St?.[0]?.length ?? 0;
+  const cands = (metadata.spectral_wavenumbers ?? metadata.wavenumbers) as number[] | undefined;
+  const hasReal = Array.isArray(cands) && cands.length === nFeatures;
+  const xTitle = hasReal ? (metadata.spectral_x_title ?? metadata.x_title ?? "") as string : "";
+  const xUnits = hasReal ? (metadata.spectral_x_units ?? metadata.x_units ?? "") as string : "";
+  const x = hasReal ? cands! : Array.from({ length: nFeatures }, (_, i) => i);
+  const nSamples = Array.isArray(output?.data) ? output.data.length : 0;
+  const y = Array.from({ length: nSamples }, (_, i) => i + 1);
+  return {
+    x,
+    y,
+    xLabel: xUnits ? `${xTitle} (${xUnits})` : (xTitle || "Feature Index"),
+    shouldReverse: hasReal && (xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber")),
+  };
+}
+
+function buildMCRContourLayout(metadata: any, title: string, axes: { xLabel: string; shouldReverse: boolean }): Record<string, any> {
+  const yLabel = (metadata.y_title as string | undefined) ?? (metadata.is_time_series ? "Time" : "Sample");
+  return {
+    ...BASE_PLOT_LAYOUT,
+    title: { text: title, font: { color: "#94a3b8", size: 13 } },
+    xaxis: { ...BASE_PLOT_LAYOUT.xaxis, title: axes.xLabel, autorange: axes.shouldReverse ? "reversed" : true },
+    yaxis: { ...BASE_PLOT_LAYOUT.yaxis, title: yLabel },
+  };
+}
+
+function buildMCROriginalContourTraces(output: any): any[] {
+  const C = output?.data as number[][] | undefined;
+  const St = output?.metadata?.St as number[][] | undefined;
+  const res = output?.ports?.residuals?.data as number[][] | undefined;
+  if (!C?.length || !St?.length || !Array.isArray(C[0]) || !Array.isArray(St[0])) return [];
+  if (!res?.length || !Array.isArray(res[0]) || res.length !== C.length) return [];
+  const nFeatures = St[0].length;
+  const axes = getMCRContourAxes(output);
+  const rec = Array.from({ length: C.length }, (_, i) =>
+    Array.from({ length: nFeatures }, (_, j) => C[i].reduce((s, _, k) => s + C[i][k] * St[k][j], 0))
+  );
+  const z = rec.map((row, i) => row.map((v, j) => v + res[i][j]));
+  return [{ type: "heatmap", z, x: axes.x, y: axes.y, colorscale: "Viridis", hovertemplate: "%{x:.2f}<br>Sample %{y}<br>Intensity: %{z:.4f}<extra></extra>" }];
+}
+
+function mcrOriginalContourLayout(output: any): Record<string, any> {
+  const axes = getMCRContourAxes(output);
+  return buildMCRContourLayout(output?.metadata || {}, "Original Data (D)", axes);
+}
+
+function buildMCRReconstructedContourTraces(output: any): any[] {
+  const C = output?.data as number[][] | undefined;
+  const St = output?.metadata?.St as number[][] | undefined;
+  if (!C?.length || !St?.length || !Array.isArray(C[0]) || !Array.isArray(St[0])) return [];
+  const nFeatures = St[0].length;
+  const axes = getMCRContourAxes(output);
+  const rec = Array.from({ length: C.length }, (_, i) =>
+    Array.from({ length: nFeatures }, (_, j) => C[i].reduce((s, _, k) => s + C[i][k] * St[k][j], 0))
+  );
+  return [{ type: "heatmap", z: rec, x: axes.x, y: axes.y, colorscale: "Viridis", hovertemplate: "%{x:.2f}<br>Sample %{y}<br>Intensity: %{z:.4f}<extra></extra>" }];
+}
+
+function mcrReconstructedContourLayout(output: any): Record<string, any> {
+  const axes = getMCRContourAxes(output);
+  return buildMCRContourLayout(output?.metadata || {}, "Reconstructed (D̂ = C·Sᵀ)", axes);
+}
+
+function buildMCRResidualContourTraces(output: any): any[] {
+  const res = output?.ports?.residuals?.data as number[][] | undefined;
+  if (!res?.length || !Array.isArray(res[0])) return [];
+  const axes = getMCRContourAxes(output);
+  const maxAbs = res.reduce((m, row) => row.reduce((rm, v) => Math.max(rm, Math.abs(v)), m), 0);
+  return [{ type: "heatmap", z: res, x: axes.x, y: axes.y, colorscale: "RdBu", zmid: 0, zmin: -maxAbs, zmax: maxAbs, hovertemplate: "%{x:.2f}<br>Sample %{y}<br>Residual: %{z:.4f}<extra></extra>" }];
+}
+
+function mcrResidualContourLayout(output: any): Record<string, any> {
+  const axes = getMCRContourAxes(output);
+  return buildMCRContourLayout(output?.metadata || {}, "Residuals (D − D̂)", axes);
+}
+
+// ============================================================================
 // Pre-built plot helpers (PLS-DA, HCA, Peak Finding, Plot nodes)
 // ============================================================================
 
@@ -1487,6 +1570,13 @@ export function usePlotData(
         { key: "mcr_concentrations", label: cLabel },
         { key: "mcr_spectra", label: sLabel },
       );
+      if (t === "MCR_ALS") {
+        plots.push(
+          { key: "mcr_original_contour", label: "Original Contour" },
+          { key: "mcr_reconstructed_contour", label: "Reconstructed Contour" },
+          { key: "mcr_residual_contour", label: "Residual Contour" },
+        );
+      }
       return plots;
     }
 
@@ -1673,6 +1763,12 @@ export function usePlotData(
         return { data: buildMCRConcentrationTraces(output), layout: mcrConcentrationLayout(metadata) };
       case "mcr_spectra":
         return { data: buildMCRSpectraTraces(metadata), layout: mcrSpectraLayout(metadata) };
+      case "mcr_original_contour":
+        return { data: buildMCROriginalContourTraces(output), layout: mcrOriginalContourLayout(output) };
+      case "mcr_reconstructed_contour":
+        return { data: buildMCRReconstructedContourTraces(output), layout: mcrReconstructedContourLayout(output) };
+      case "mcr_residual_contour":
+        return { data: buildMCRResidualContourTraces(output), layout: mcrResidualContourLayout(output) };
 
       // PLS
       case "pls_scores":

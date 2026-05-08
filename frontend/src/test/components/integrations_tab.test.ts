@@ -41,6 +41,7 @@ vi.mock('primevue/usetoast', () => ({
 vi.mock('@/composables/useAppConfig', () => ({
   useAppConfig: () => ({
     appConfig: mocks.appConfig,
+    siteProfile: { __v_isRef: true, value: 'enterprise' },
     loadConfig: mocks.loadConfig,
     isFeatureEnabled: mocks.isFeatureEnabled,
   }),
@@ -51,6 +52,12 @@ vi.mock('@/api/client', () => ({
     get: mocks.apiGet,
     post: mocks.apiPost,
   },
+}));
+
+vi.mock('@/composables/useDemoMode', () => ({
+  useDemoMode: () => ({
+    isDemoMode: { value: false },
+  }),
 }));
 
 const ButtonStub = defineComponent({

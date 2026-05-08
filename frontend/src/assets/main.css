@@ -33,7 +33,7 @@ a {
   background: #0f2a3f;
   color: #f1f5f9;
   padding: 24px;
-  width: var(--nav-width, 240px);
+  width: var(--nav-width, 224px);
   transition: width 0.2s ease;
   display: flex;
   flex-direction: column;

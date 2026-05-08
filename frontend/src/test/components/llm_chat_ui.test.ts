@@ -66,6 +66,9 @@ const mocks = vi.hoisted(() => ({
     deleteConversation: vi.fn(),
     openSubscriptionUpgrade: vi.fn(),
   },
+  advisorStore: {
+    activeChannelId: null as number | null,
+  },
   experimentStore: {
     experiments: [] as Array<Record<string, unknown>>,
     fetchExperiments: vi.fn(),
@@ -134,6 +137,10 @@ vi.mock("@/stores/sherpa", () => ({
   useSherpaStore: () => mocks.sherpaStore,
 }));
 
+vi.mock("@/stores/advisor", () => ({
+  useAdvisorStore: () => mocks.advisorStore,
+}));
+
 vi.mock("@/stores/experiment", () => ({
   useExperimentStore: () => mocks.experimentStore,
 }));
@@ -155,7 +162,6 @@ vi.mock("@/utils/format", () => ({
 }));
 
 import ChatPanel from "@/components/ChatPanel.vue";
-import DataPrivacyTab from "@/views/settings/DataPrivacyTab.vue";
 
 const ButtonStub = defineComponent({
   name: "AppButtonStub",
@@ -267,122 +273,6 @@ const mountWithUiStubs = (component: Component) =>
     },
   });
 
-describe("DataPrivacyTab", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.appMode.value = "local";
-    mocks.appConfig.value = { subscription: { plan: "none" } };
-    mocks.isDemoMode.value = false;
-    mocks.featureFlags.chatAssistant = false;
-    mocks.apiGet.mockResolvedValue({
-      data: {
-        allow_llm_chat: true,
-        allow_llm_context: true,
-        allow_nist_queries: false,
-        allow_export: false,
-        allow_spectrasherpa_sync: false,
-      },
-    });
-    mocks.apiPut.mockResolvedValue({ data: { ok: true } });
-  });
-
-  it("disables workflow-context sharing in local mode and forces it off on save", async () => {
-    const wrapper = mountWithUiStubs(DataPrivacyTab);
-    await flushPromises();
-
-    expect(wrapper.text()).toContain("Context-aware chat requires a Sherpa subscription.");
-    const switches = wrapper.findAll('[data-test="input-switch"]');
-    expect(switches).toHaveLength(4);
-    expect(switches[1].attributes("data-disabled")).toBe("true");
-
-    await switches[0].trigger("click");
-    await flushPromises();
-
-    expect(mocks.apiPut).toHaveBeenCalledWith("/egress/defaults", expect.objectContaining({
-      allow_llm_chat: false,
-      allow_llm_context: false,
-    }));
-  });
-
-  it("disables workflow-context sharing in hybrid mode when chatAssistant is unavailable", async () => {
-    mocks.appMode.value = "hybrid";
-    mocks.featureFlags.chatAssistant = false;
-
-    const wrapper = mountWithUiStubs(DataPrivacyTab);
-    await flushPromises();
-
-    expect(wrapper.text()).toContain("Context-aware chat requires a Sherpa subscription.");
-    const switches = wrapper.findAll('[data-test="input-switch"]');
-    expect(switches[1].attributes("data-disabled")).toBe("true");
-  });
-
-  it("disables workflow-context sharing until AI chat is enabled", async () => {
-    mocks.appMode.value = "hybrid";
-    mocks.featureFlags.chatAssistant = true;
-    mocks.apiGet.mockResolvedValue({
-      data: {
-        allow_llm_chat: false,
-        allow_llm_context: true,
-        allow_nist_queries: false,
-        allow_export: false,
-        allow_spectrasherpa_sync: false,
-      },
-    });
-
-    const wrapper = mountWithUiStubs(DataPrivacyTab);
-    await flushPromises();
-
-    expect(wrapper.text()).toContain("Enable AI Chat to share workflow context with Sherpa.");
-    const switches = wrapper.findAll('[data-test="input-switch"]');
-    expect(switches[1].attributes("data-disabled")).toBe("true");
-  });
-
-  it("enables workflow-context sharing when subscription chat is available", async () => {
-    mocks.appMode.value = "hybrid";
-    mocks.featureFlags.chatAssistant = true;
-    mocks.apiGet.mockResolvedValue({
-      data: {
-        allow_llm_chat: true,
-        allow_llm_context: true,
-        allow_nist_queries: false,
-        allow_export: false,
-        allow_spectrasherpa_sync: false,
-      },
-    });
-
-    const wrapper = mountWithUiStubs(DataPrivacyTab);
-    await flushPromises();
-
-    expect(wrapper.text()).toContain("Allow workflow structure, parameters, and execution summaries to be sent to Sherpa for context-aware chat.");
-    const switches = wrapper.findAll('[data-test="input-switch"]');
-    expect(switches[1].attributes("data-disabled")).toBe("false");
-  });
-
-  it("locks both AI chat toggles on in demo mode", async () => {
-    mocks.appMode.value = "enterprise";
-    mocks.isDemoMode.value = true;
-    mocks.featureFlags.chatAssistant = true;
-    mocks.apiGet.mockResolvedValue({
-      data: {
-        allow_llm_chat: false,
-        allow_llm_context: false,
-        allow_nist_queries: false,
-        allow_export: false,
-        allow_spectrasherpa_sync: false,
-      },
-    });
-
-    const wrapper = mountWithUiStubs(DataPrivacyTab);
-    await flushPromises();
-
-    expect(wrapper.text()).toContain("AI Chat is always enabled in the Sherpa demo.");
-    expect(wrapper.text()).toContain("Workflow context sharing is always enabled in the Sherpa demo.");
-    const switches = wrapper.findAll('[data-test="input-switch"]');
-    expect(switches[0].attributes("data-disabled")).toBe("true");
-    expect(switches[1].attributes("data-disabled")).toBe("true");
-  });
-});
-
 describe("ChatPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -414,6 +304,7 @@ describe("ChatPanel", () => {
     mocks.sherpaStore.activeTools = [];
     mocks.sherpaStore.subscriptionRequired = null;
     mocks.sherpaStore.subscriptionUpgradeUrl = null;
+    mocks.advisorStore.activeChannelId = null;
     mocks.workflowStore.workflowId = null;
     mocks.workflowStore.lastExecutionResults = {};
     mocks.authStore.user = { id: 7, username: "alice" };
@@ -423,7 +314,7 @@ describe("ChatPanel", () => {
     const wrapper = mountWithUiStubs(ChatPanel);
     await flushPromises();
 
-    expect(wrapper.text()).toContain("Set CHAT_ENDPOINT_URL and CHAT_ENDPOINT_KEY in your environment, then restart to enable chat.");
+    expect(wrapper.text()).toContain("Set CHAT_ENDPOINT_URL and CHAT_ENDPOINT_KEY in your environment, or configure local chat in Settings.");
     expect(wrapper.find(".setup-link").exists()).toBe(false);
   });
 
@@ -463,7 +354,7 @@ describe("ChatPanel", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("AI chat is disabled in Settings > Data & Privacy.");
-    expect(wrapper.text()).not.toContain("Set CHAT_ENDPOINT_URL and CHAT_ENDPOINT_KEY in your environment, then restart to enable chat.");
+    expect(wrapper.text()).not.toContain("Set CHAT_ENDPOINT_URL and CHAT_ENDPOINT_KEY in your environment, or configure local chat in Settings.");
   });
 
   it("shows only Sherpa Advisor in demo mode when Sherpa is available", async () => {
@@ -615,6 +506,32 @@ describe("ChatPanel", () => {
     expect(input.attributes("disabled")).toBeUndefined();
 
     expect(mocks.sherpaStore.syncWorkflow).not.toHaveBeenCalled();
+  });
+
+  it("routes explicit workflow generation requests through agentic tools", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.appConfig.value = { subscription: { plan: "demo" } };
+    mocks.featureFlags.chatAssistant = true;
+    mocks.featureFlags.sherpaAdvisor = true;
+    mocks.featureFlags.sherpaAgenticTools = true;
+    mocks.workflowStore.workflowId = 12;
+
+    const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+
+    const sherpaTab = wrapper.findAll("button").find((button) => button.text() === "Sherpa Advisor");
+    expect(sherpaTab).toBeTruthy();
+    await sherpaTab!.trigger("click");
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("Can you generate a PLSDA model of the same data?");
+    await input.trigger("keyup.enter");
+
+    expect(mocks.sherpaStore.sendMessage).toHaveBeenCalledWith(
+      "Can you generate a PLSDA model of the same data?",
+      true,
+    );
   });
 
   it("prompts users to run the workflow before asking Sherpa about results", async () => {

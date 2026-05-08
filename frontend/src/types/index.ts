@@ -388,6 +388,43 @@ export interface WorkflowBrief {
   description: string | null;
   status: string;
   integrity_hash: string | null;
+  tab_color?: string | null;
+  sheet_order?: number;
+  primary_data_source_id?: number | null;
+  data_source_ids?: number[];
+  color_source?: "blank" | "ai" | "data" | "manual";
+  tab_color_override?: string | null;
+  advisor_channel_id?: number | null;
+  created_from_template_name?: string | null;
+  created_from_template_version?: string | null;
+  created_from_workflow_id?: number | null;
+  created_from_workflow_name?: string | null;
+}
+
+export interface ProjectDataSource {
+  id: number;
+  project_id: number;
+  display_name: string;
+  source_type: string;
+  source_ref: string | null;
+  fingerprint: string | null;
+  color: string;
+  metadata: Record<string, unknown>;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdvisorChannel {
+  id: number;
+  project_id: number;
+  workflow_id: number | null;
+  channel_type: "project" | "sheet" | string;
+  title: string;
+  color: string | null;
+  conversation_id: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ScriptBrief {
@@ -430,7 +467,9 @@ export interface ProjectScriptDetail extends ProjectScriptSummary {
 export interface ProjectDetail extends ProjectSummary {
   metadata: Record<string, unknown>;
   experiments: ExperimentBrief[];
+  data_sources: ProjectDataSource[];
   workflows: WorkflowBrief[];
+  advisor_channels: AdvisorChannel[];
   scripts: ScriptBrief[];
   models: ModelBrief[];
   children: ProjectSummary[];

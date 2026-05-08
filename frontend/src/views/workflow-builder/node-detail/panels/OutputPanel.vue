@@ -622,6 +622,8 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   background: #0f172a;
   border-radius: 8px;
   border: 1px solid #1e293b;
+  overflow: hidden;
+  min-width: 0;
 }
 .inspector-toggle {
   display: flex;
@@ -685,18 +687,23 @@ const regressionTargetIdx = writable.regressionTargetIdx;
 .insp-more { display: block; margin-top: 6px; color: #64748b; font-size: 0.8rem; }
 
 .metadata-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 8px;
-  margin-top: 10px;
-}
-.metadata-item {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 8px 10px;
+  gap: 6px;
+  margin-top: 10px;
+  max-width: 100%;
+  overflow: hidden;
+}
+.metadata-item {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  align-items: start;
+  gap: 8px;
+  padding: 6px 10px;
   background: #020617;
   border-radius: 6px;
+  min-width: 0;
+  overflow: hidden;
 }
 .meta-key {
   display: flex;
@@ -706,9 +713,17 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   color: #64748b;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  min-width: 0;
+  word-break: break-word;
 }
-.meta-info-icon { color: #475569; font-size: 0.75rem; cursor: help; }
-.meta-value { font-size: 0.85rem; color: #f8fafc; word-break: break-word; }
+.meta-info-icon { color: #475569; font-size: 0.75rem; cursor: help; flex-shrink: 0; }
+.meta-value {
+  font-size: 0.85rem;
+  color: #f8fafc;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  min-width: 0;
+}
 
 /* Processing timeline */
 .processing-timeline {

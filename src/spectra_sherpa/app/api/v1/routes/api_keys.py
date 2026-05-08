@@ -62,7 +62,15 @@ async def set_api_key(
     return {"status": "stored"}
 
 
-@router.delete("/api-keys/{service_name}", status_code=204, dependencies=[Depends(demo_guard("api_key_management"))])
+from fastapi import Response
+
+
+@router.delete(
+    "/api-keys/{service_name}",
+    status_code=204,
+    response_class=Response,
+    dependencies=[Depends(demo_guard("api_key_management"))],
+)
 async def delete_api_key(
     service_name: str,
     session: AsyncSession = Depends(get_session),

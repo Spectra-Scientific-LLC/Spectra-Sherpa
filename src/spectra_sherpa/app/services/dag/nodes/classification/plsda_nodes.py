@@ -283,6 +283,8 @@ class PLSDANode(Node):
         )
 
         n_components = self.parameters.get("n_components", 2)
+        requested_n_components = int(n_components)
+        component_limit_reason = None
         scale = self.parameters.get("scale", True)
         cv_folds = self.parameters.get("cv_folds", 5)
 
@@ -302,6 +304,10 @@ class PLSDANode(Node):
                 max_components,
             )
             n_components = max_components
+            component_limit_reason = (
+                f"Requested {requested_n_components} components, but PLS-DA is limited to "
+                f"min(n_samples - 1, n_features) = {max_components} for this dataset."
+            )
 
         # Get unique classes
         classes = np.unique(y_array)
@@ -310,11 +316,9 @@ class PLSDANode(Node):
         if n_classes < 2:
             raise ValueError(f"Need at least 2 classes, got {n_classes}")
 
-        # For PLS-DA, max components is further constrained by number of classes
-        # The Y matrix has n_classes columns (one-hot encoded), so max rank is n_classes
-        max_components_plsda = min(max_components, n_classes)
-        if n_components > max_components_plsda:
-            n_components = max_components_plsda
+        # PLS-DA uses class labels to construct Y, but its latent variables are
+        # still PLS components of X. Do not cap components by n_classes; binary
+        # PLS-DA can legitimately fit more than two LVs when X has enough rank.
 
         class_counts = np.array([(y_array == cls).sum() for cls in classes])
         min_class_count = int(class_counts.min()) if class_counts.size else 0
@@ -542,6 +546,9 @@ class PLSDANode(Node):
             {
                 "type": "PLS_DA",
                 "n_components": n_components,
+                "requested_n_components": requested_n_components,
+                "effective_n_components": int(n_components),
+                "component_limit_warning": component_limit_reason,
                 "probabilities_calibrated": calibrate,
                 "probabilities_warning": (
                     "Class probabilities are softmax-transformed raw PLS regression outputs. "
@@ -567,6 +574,8 @@ class PLSDANode(Node):
                 "quality_summary": {
                     "accuracy": float(cv_accuracy),
                     "n_components": int(n_components),
+                    "requested_n_components": requested_n_components,
+                    "effective_n_components": int(n_components),
                     "n_classes": int(len(classes)),
                     "cv_method": f"k-fold (k={cv_folds})",
                     "f1": float(cv_f1_macro),
@@ -594,6 +603,9 @@ class PLSDANode(Node):
                 "cv_balanced_accuracy": cv_balanced_accuracy,
                 "f1_score": cv_f1_macro,
                 "n_components": n_components,
+                "requested_n_components": requested_n_components,
+                "effective_n_components": int(n_components),
+                "component_limit_warning": component_limit_reason,
                 "n_classes": len(classes),
                 "confusion_matrix_cv": cm_cv.tolist(),
             },

@@ -151,6 +151,10 @@ class WorkflowCreate(WorkflowBase):
 
     nodes: list[WorkflowNodeCreate] = Field(default_factory=list)
     edges: list[WorkflowEdgeCreate] = Field(default_factory=list)
+    project_id: int | None = Field(None, description="Project that owns this workflow sheet")
+    tab_color: str | None = Field(None, pattern=r"^#[0-9a-fA-F]{6}$", description="Hex color for sheet tab")
+    color_source: str | None = Field(None, description="Sheet color rule: blank, ai, data, or manual")
+    primary_data_source_id: int | None = Field(None, description="Primary project data source for this workflow")
 
 
 class WorkflowUpdate(BaseModel):
@@ -164,10 +168,36 @@ class WorkflowUpdate(BaseModel):
     technique: str | None = Field(None, max_length=50)
     sample_type: str | None = Field(None, max_length=100)
     folder_id: int | None = Field(None, description="Folder ID to organize workflow")
+    tab_color: str | None = Field(None, pattern=r"^#[0-9a-fA-F]{6}$", description="Hex color for sheet tab")
+    tab_color_override: str | None = Field(
+        None, pattern=r"^#[0-9a-fA-F]{6}$", description="Manual sheet tab color override"
+    )
+    color_source: str | None = Field(None, description="Sheet color rule: blank, ai, data, or manual")
+    primary_data_source_id: int | None = Field(None, description="Primary project data source for this workflow")
+    create_version: bool = Field(True, description="Whether to create a version snapshot on save")
     nodes: list[WorkflowNodeCreate] | None = Field(None)
     edges: list[WorkflowEdgeCreate] | None = Field(None)
     tag_ids: list[int] | None = Field(None, description="Tag IDs to apply to workflow")
     change_description: str | None = Field(None, description="Optional description of changes for version history")
+
+
+class WorkflowDataSourcesUpdate(BaseModel):
+    """Schema for explicitly associating project data sources with a workflow."""
+
+    data_source_ids: list[int] = Field(default_factory=list, description="Project data sources used by this workflow")
+    primary_data_source_id: int | None = Field(None, description="Primary data source for sheet color/context")
+
+
+class WorkflowPrimaryDataSourceUpdate(BaseModel):
+    """Schema for changing the primary project data source for a workflow."""
+
+    primary_data_source_id: int | None = Field(None, description="Primary project data source, or null for none")
+
+
+class WorkflowTabColorUpdate(BaseModel):
+    """Schema for setting or clearing a manual workflow tab color override."""
+
+    tab_color: str | None = Field(None, pattern=r"^#[0-9a-fA-F]{6}$", description="Manual hex color override")
 
 
 class WorkflowSummary(WorkflowBase):
@@ -179,6 +209,16 @@ class WorkflowSummary(WorkflowBase):
     user_id: int
     project_id: int | None = Field(None, description="Project owning this workflow")
     folder_id: int | None
+    tab_color: str | None = Field(None, description="Hex color for sheet tab")
+    tab_color_override: str | None = Field(None, description="Manual sheet tab color override")
+    color_source: str = Field("blank", description="Sheet color rule: blank, ai, data, or manual")
+    primary_data_source_id: int | None = Field(None, description="Primary project data source")
+    data_source_ids: list[int] = Field(default_factory=list, description="All data sources used by this workflow")
+    advisor_channel_id: int | None = Field(None, description="Sheet-scoped Sherpa Advisor channel")
+    created_from_template_name: str | None = Field(None, description="Template provenance display name")
+    created_from_template_version: str | None = Field(None, description="Template provenance version")
+    created_from_workflow_id: int | None = Field(None, description="ID of the workflow this was generated from")
+    sheet_order: int = Field(0, description="Position in workbook tab order")
     created_at: datetime
     updated_at: datetime
     last_executed_at: datetime | None
@@ -346,6 +386,13 @@ class TrialExecuteResponse(BaseModel):
     error: str | None = Field(None, description="Error message if execution failed")
 
 
+# Sheet tabs / workbook schemas
+class ReorderSheetsRequest(BaseModel):
+    """Schema for reordering sheets within a workbook (project)."""
+
+    ordered_ids: list[int] = Field(..., min_length=1, description="Workflow IDs in new tab order")
+
+
 # Workflow version history schemas
 class WorkflowVersionSummary(BaseModel):
     """Schema for workflow version list item."""
@@ -371,3 +418,40 @@ class WorkflowVersionListResponse(BaseModel):
 
     versions: list[WorkflowVersionSummary] = Field(..., description="Version history")
     total: int = Field(..., description="Total number of versions")
+
+
+# Agentic Workflow Generation schemas
+class Position(BaseModel):
+    x: float
+    y: float
+
+
+class WorkflowDagSpecNode(BaseModel):
+    id: str
+    type: str
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    position: Position | None = None
+
+
+class WorkflowDagSpecEdge(BaseModel):
+    source: str  # node id
+    target: str
+    from_output: str = "default"
+    to_input: str = "default"
+
+
+class WorkflowDagSpec(BaseModel):
+    nodes: list[WorkflowDagSpecNode]
+    edges: list[WorkflowDagSpecEdge]
+
+
+class AIForkRequest(BaseModel):
+    dag_spec: WorkflowDagSpec
+    new_conversation_id: str
+    suggested_name: str | None = None
+    sheet_name: str | None = None
+
+
+class AIForkResponse(BaseModel):
+    new_workflow_id: int
+    new_channel_id: int

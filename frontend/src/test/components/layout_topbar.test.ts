@@ -306,6 +306,12 @@ describe("Topbar action hover labels", () => {
     expect(wrapper.get('[aria-label="User menu"]').attributes("title")).toBe("Open user menu");
   });
 
+  it("shows the active project title as standalone topbar context", () => {
+    const wrapper = mountTopbar(true);
+
+    expect(wrapper.get('[data-test="active-project-title"]').text()).toBe("Demo Project");
+  });
+
   it("updates the chat toggle label when the chat panel is open", () => {
     const wrapper = mountTopbar(false);
 

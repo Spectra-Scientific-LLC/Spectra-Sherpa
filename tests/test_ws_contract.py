@@ -42,6 +42,7 @@ from spectra_sherpa.app.ws_events import (
     SHERPA_SUBSCRIPTION_REQUIRED,
     SHERPA_TOOL_RESULT,
     SHERPA_TOOL_START,
+    SHERPA_WORKFLOW_PROPOSED,
     SHERPA_WS_EVENTS,
 )
 
@@ -89,6 +90,7 @@ def test_frontend_sherpa_ws_contract_matches_backend_constants():
         "codeError": SHERPA_CODE_ERROR,
         "toolStart": SHERPA_TOOL_START,
         "toolResult": SHERPA_TOOL_RESULT,
+        "workflowProposed": SHERPA_WORKFLOW_PROPOSED,
         "subscriptionRequired": SHERPA_SUBSCRIPTION_REQUIRED,
         "error": SHERPA_ERROR,
         "reportResult": SHERPA_REPORT_RESULT,

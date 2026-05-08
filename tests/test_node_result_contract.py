@@ -122,6 +122,36 @@ class TestClassificationNodesEmitDiagnostics:
 
     @_requires_scp
     @pytest.mark.asyncio
+    async def test_plsda_components_are_not_capped_by_class_count(self):
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+        rng = np.random.default_rng(7)
+        X = rng.normal(size=(60, 12))
+        y = np.array(["a"] * 30 + ["b"] * 30, dtype=object)
+        X[y == "b", :3] += 1.5
+
+        node = node_registry.create_node(
+            node_type="classification.plsda",
+            node_id="test_plsda_component_count",
+            parameters={"n_components": 5, "cv_folds": 3},
+        )
+        result = await node.execute(X=SherpaDataset(X=X), y=y)
+
+        assert result.diagnostics["n_classes"] == 2
+        assert result.diagnostics["n_components"] == 5
+        assert result.diagnostics["effective_n_components"] == 5
+        assert result.outputs["default"].shape == (60, 5)
+        assert result.outputs["loadings"].shape == (5, 12)
+        assert [trace["name"] for trace in result.outputs["plots"]["loadings_lines"]["data"]] == [
+            "LV1",
+            "LV2",
+            "LV3",
+            "LV4",
+            "LV5",
+        ]
+
+    @_requires_scp
+    @pytest.mark.asyncio
     async def test_knn_emits_diagnostics(self):
         from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 

@@ -188,6 +188,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/llm/conversation/{conversation_id}/compact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compact Conversation
+         * @description Compact a worksheet-scoped conversation into saved memory.
+         */
+        post: operations["compact_conversation_api_v1_llm_conversation__conversation_id__compact_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -295,6 +315,15 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** CompactConversationResponse */
+        CompactConversationResponse: {
+            /** Conversation Id */
+            conversation_id: string;
+            /** Compacted */
+            compacted: boolean;
+            /** Message Count */
+            message_count: number;
         };
         /** ConversationDetail */
         ConversationDetail: {
@@ -725,6 +754,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compact_conversation_api_v1_llm_conversation__conversation_id__compact_post: {
+        parameters: {
+            query: {
+                project_id: number;
+            };
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompactConversationResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

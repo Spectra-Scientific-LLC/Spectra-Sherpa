@@ -3,6 +3,13 @@ import { createPinia, setActivePinia } from "pinia";
 import { reactive } from "vue";
 import { dispatchSherpaEvent } from "@/lib/sherpaEvents";
 
+const mockApi = vi.hoisted(() => ({
+  get: vi.fn(),
+  post: vi.fn(),
+  put: vi.fn(),
+  delete: vi.fn(),
+}));
+
 const mockWs = {
   readyState: WebSocket.OPEN,
   send: vi.fn(),
@@ -23,6 +30,7 @@ const mockWorkflowStore = reactive({
   edges: [] as Array<Record<string, unknown>>,
   lastExecutionResults: null as Record<string, Record<string, unknown>> | null,
   lastExecutionDiagnostics: {} as Record<string, Record<string, unknown>>,
+  executeStoredWorkflow: vi.fn(),
   getNodeMetadata: vi.fn((nodeType: string) => {
     if (nodeType === "model.pls") {
       return {
@@ -55,8 +63,57 @@ const mockDataStore = reactive({
   fileInfo: null as Record<string, unknown> | null,
 });
 
+const mockAdvisorStore = reactive({
+  activeChannelId: 10 as number | null,
+  get activeChannel() {
+    return mockAdvisorStore.channels.find((item) => item.id === mockAdvisorStore.activeChannelId) ?? null;
+  },
+  channels: [
+    {
+      id: 10,
+      project_id: 42,
+      workflow_id: 20,
+      channel_type: "sheet",
+      title: "SIMCA",
+      color: null,
+      conversation_id: "conv-parent",
+    },
+    {
+      id: 40,
+      project_id: 42,
+      workflow_id: 30,
+      channel_type: "sheet",
+      title: "AI PLS-DA",
+      color: null,
+      conversation_id: "conv-ai",
+    },
+  ] as Array<Record<string, unknown>>,
+  loadAdvisorChannels: vi.fn(async () => mockAdvisorStore.channels),
+  updateChannel: vi.fn(async (channelId: number, payload: Record<string, unknown>) => {
+    const channel = mockAdvisorStore.channels.find((item) => item.id === channelId);
+    if (channel) {
+      Object.assign(channel, payload);
+    }
+    return channel ?? null;
+  }),
+});
+
+const mockWorkbookStore = reactive({
+  projectId: 42 as number | null,
+  refreshSheets: vi.fn(async () => undefined),
+  selectWorkflowSheet: vi.fn(async () => undefined),
+});
+
+const mockWorkflowBuilderConfigStore = reactive({
+  autoExecute: false,
+});
+
 vi.mock("@/stores/llm", () => ({
   useLlmStore: () => mockLlmStore,
+}));
+
+vi.mock("@/api/client", () => ({
+  default: mockApi,
 }));
 
 vi.mock("@/stores/workflow", () => ({
@@ -149,6 +206,18 @@ vi.mock("@/stores/data", () => ({
   },
 }));
 
+vi.mock("@/stores/advisor", () => ({
+  useAdvisorStore: () => mockAdvisorStore,
+}));
+
+vi.mock("@/stores/workbook", () => ({
+  useWorkbookStore: () => mockWorkbookStore,
+}));
+
+vi.mock("@/stores/workflowBuilderConfig", () => ({
+  useWorkflowBuilderConfigStore: () => mockWorkflowBuilderConfigStore,
+}));
+
 import { SHERPA_WS_EVENT } from "@/lib/sherpaWs";
 import { useNotificationStore } from "@/stores/notification";
 import { useSherpaStore } from "@/stores/sherpa";
@@ -165,11 +234,21 @@ const emitSherpa = (payload: Record<string, unknown>) => {
   dispatchSherpaEvent(payload as { type: string; request_id?: string | null });
 };
 
+const flushPromises = async (cycles = 6) => {
+  for (let index = 0; index < cycles; index += 1) {
+    await Promise.resolve();
+  }
+};
+
 describe("Sherpa Store communication state", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     setActivePinia(createPinia());
     mockWs.send.mockReset();
+    mockApi.get.mockReset();
+    mockApi.post.mockReset();
+    mockApi.put.mockReset();
+    mockApi.delete.mockReset();
     mockLlmStore.connect.mockReset();
     mockLlmStore.connect.mockResolvedValue(undefined);
     mockLlmStore.connectionStatus = "connected";
@@ -181,9 +260,37 @@ describe("Sherpa Store communication state", () => {
     mockWorkflowStore.edges = [];
     mockWorkflowStore.lastExecutionResults = null;
     mockWorkflowStore.lastExecutionDiagnostics = {};
+    mockWorkflowStore.executeStoredWorkflow.mockReset();
     mockWorkflowStore.getNodeMetadata.mockClear();
     mockDataStore.catalogDatasetInfo = null;
     mockDataStore.fileInfo = null;
+    mockAdvisorStore.activeChannelId = 10;
+    mockAdvisorStore.channels = [
+      {
+        id: 10,
+        project_id: 42,
+        workflow_id: 20,
+        channel_type: "sheet",
+        title: "SIMCA",
+        color: null,
+        conversation_id: "conv-parent",
+      },
+      {
+        id: 40,
+        project_id: 42,
+        workflow_id: 30,
+        channel_type: "sheet",
+        title: "AI PLS-DA",
+        color: null,
+        conversation_id: "conv-ai",
+      },
+    ];
+    mockAdvisorStore.loadAdvisorChannels.mockClear();
+    mockAdvisorStore.updateChannel.mockClear();
+    mockWorkbookStore.projectId = 42;
+    mockWorkbookStore.refreshSheets.mockClear();
+    mockWorkbookStore.selectWorkflowSheet.mockClear();
+    mockWorkflowBuilderConfigStore.autoExecute = false;
   });
 
   afterEach(() => {
@@ -1091,6 +1198,182 @@ describe("Sherpa Store communication state", () => {
     expect(sherpa.currentConversationId).toBe("conv-42");
 
     sherpa.dispose();
+  });
+
+  it("binds completed Sherpa chat conversations to the originating worksheet channel", async () => {
+    const sherpa = useSherpaStore();
+    sherpa.init();
+    mockAdvisorStore.channels[0].conversation_id = null;
+
+    await sherpa.sendMessage("explain the math of PLS-DA", true);
+    const requestId = lastRequestId();
+    emitSherpa({
+      type: SHERPA_WS_EVENT.chatStart,
+      request_id: requestId,
+      conversation_id: null,
+    });
+    emitSherpa({
+      type: SHERPA_WS_EVENT.chatChunk,
+      request_id: requestId,
+      chunk: "PLS-DA uses a dummy-coded class matrix.",
+    });
+    emitSherpa({
+      type: SHERPA_WS_EVENT.chatDone,
+      request_id: requestId,
+      conversation_id: "conv-sheet-20",
+    });
+    await flushPromises();
+
+    expect(mockAdvisorStore.updateChannel).toHaveBeenCalledWith(10, {
+      conversation_id: "conv-sheet-20",
+    });
+    expect(mockAdvisorStore.channels[0].conversation_id).toBe("conv-sheet-20");
+    expect(sherpa.currentConversationId).toBe("conv-sheet-20");
+    expect(sherpa.conversations.some((item) => item.id === "conv-sheet-20")).toBe(true);
+
+    sherpa.dispose();
+  });
+
+  it("keeps parent and generated workflow conversations bound to separate worksheet channels", async () => {
+    const sherpa = useSherpaStore();
+    sherpa.init();
+    mockAdvisorStore.channels[0].conversation_id = null;
+
+    await sherpa.sendMessage("Build a PLS-DA workflow", true);
+    const requestId = lastRequestId();
+    emitSherpa({
+      type: SHERPA_WS_EVENT.chatStart,
+      request_id: requestId,
+      conversation_id: null,
+    });
+    emitSherpa({
+      type: SHERPA_WS_EVENT.workflowProposed,
+      request_id: requestId,
+      parent_workflow_id: "20",
+      parent_conversation_id: "conv-parent",
+      new_workflow_id: "30",
+      new_channel_id: "40",
+      suggested_name: "AI PLS-DA",
+      conversation_id: "conv-ai",
+    });
+    emitSherpa({
+      type: SHERPA_WS_EVENT.chatChunk,
+      request_id: requestId,
+      conversation_id: "conv-ai",
+      chunk: "I generated a PLS-DA workflow.",
+    });
+    emitSherpa({
+      type: SHERPA_WS_EVENT.chatDone,
+      request_id: requestId,
+      conversation_id: "conv-ai",
+    });
+    await flushPromises();
+
+    expect(mockAdvisorStore.updateChannel).toHaveBeenCalledWith(10, {
+      conversation_id: "conv-parent",
+    });
+    expect(mockAdvisorStore.updateChannel).not.toHaveBeenCalledWith(10, {
+      conversation_id: "conv-ai",
+    });
+    expect(mockWorkbookStore.refreshSheets).toHaveBeenCalled();
+    expect(mockAdvisorStore.loadAdvisorChannels).toHaveBeenCalledWith(42);
+    expect(mockWorkbookStore.selectWorkflowSheet).toHaveBeenCalledWith(30);
+    expect(sherpa.currentConversationId).toBe("conv-ai");
+    expect(mockAdvisorStore.channels[0].conversation_id).toBe("conv-parent");
+    expect(mockAdvisorStore.channels[1].conversation_id).toBe("conv-ai");
+    expect(mockAdvisorStore.channels[0].conversation_id).not.toBe(
+      mockAdvisorStore.channels[1].conversation_id,
+    );
+    expect(sherpa.conversations.some((item) => item.id === "conv-ai")).toBe(true);
+
+    sherpa.dispose();
+  });
+
+  it("loads server conversation details by id and scopes Topics to the active worksheet", async () => {
+    const { useProjectStore } = await import("@/stores/project");
+    useProjectStore().currentProjectId = 42;
+    const sherpa = useSherpaStore();
+    sherpa.init();
+    mockApi.get.mockImplementation(async (url: string) => {
+      if (url.endsWith("/conv-parent")) {
+        return {
+          data: {
+            id: "conv-parent",
+            title: "Mother SIMCA",
+            messages: [
+              { role: "user", content: "Build an alternative." },
+              { role: "assistant", content: "Generated alternative → opened as Sheet 'AI PLS-DA'." },
+            ],
+          },
+        };
+      }
+      if (url.endsWith("/conv-ai")) {
+        return {
+          data: {
+            id: "conv-ai",
+            title: "AI PLS-DA",
+            messages: [
+              { role: "user", content: "Build an alternative." },
+              { role: "assistant", content: "Here is the PLS-DA workflow." },
+              { role: "user", content: "Explain the model math." },
+              { role: "assistant", content: "PLS-DA uses a dummy-coded class matrix." },
+            ],
+          },
+        };
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    await sherpa.loadConversation("conv-ai");
+    expect(sherpa.currentConversationId).toBe("conv-ai");
+    expect(sherpa.messages.at(-1)?.content).toContain("dummy-coded");
+    expect(sherpa.conversations.map((item) => item.id)).toEqual(["conv-ai"]);
+
+    await sherpa.loadConversation("conv-parent");
+    expect(sherpa.currentConversationId).toBe("conv-parent");
+    expect(sherpa.messages.map((item) => item.content).join("\n")).toContain(
+      "Generated alternative",
+    );
+    expect(sherpa.messages.map((item) => item.content).join("\n")).not.toContain(
+      "dummy-coded",
+    );
+    expect(sherpa.conversations.map((item) => item.id)).toEqual(["conv-parent"]);
+
+    await sherpa.loadConversation("conv-ai");
+    expect(sherpa.currentConversationId).toBe("conv-ai");
+    expect(sherpa.messages.at(-1)?.content).toContain("dummy-coded");
+    expect(sherpa.conversations.map((item) => item.id)).toEqual(["conv-ai"]);
+
+    sherpa.dispose();
+  });
+
+  it("refreshes Sherpa Topics from the active worksheet channel only", async () => {
+    const { useProjectStore } = await import("@/stores/project");
+    useProjectStore().currentProjectId = 42;
+    mockAdvisorStore.activeChannelId = 40;
+    const sherpa = useSherpaStore();
+    sherpa.init();
+    mockApi.get.mockResolvedValue({
+      data: {
+        id: "conv-ai",
+        title: "AI child topic",
+        updated_at: "2026-05-07T00:00:00Z",
+        messages: [],
+      },
+    });
+
+    await sherpa.refreshConversations(42);
+
+    expect(mockApi.get).toHaveBeenCalledWith("/llm/conversation/conv-ai", {
+      params: { project_id: 42 },
+    });
+    expect(sherpa.conversations).toEqual([
+      {
+        id: "conv-ai",
+        title: "AI child topic",
+        updatedAt: "2026-05-07T00:00:00Z",
+      },
+    ]);
   });
 
   it("treats persisted results as completed when executionState is still pending", async () => {

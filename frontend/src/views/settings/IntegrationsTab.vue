@@ -1,12 +1,21 @@
 <template>
   <div class="integrations-tab">
+    <div class="info-callout">
+      <i class="pi pi-info-circle"></i>
+      <span>
+        <strong>Looking to set up DeepSeek, OpenAI, or another LLM provider?</strong>
+        Go to the <strong>API Keys</strong> tab — the AI Assistant / LLM Configuration section is there.
+        This page is for connecting to a SpectraSherpa Cloud server instance (enterprise / hybrid mode).
+      </span>
+    </div>
+
     <div class="section">
       <div class="section-header">
         <h3>SpectraSherpa Cloud</h3>
         <Tag v-if="connectionStatus" :severity="connectionSeverity" :value="connectionLabel" />
       </div>
       <p class="muted-text">
-        Connect to SpectraSherpa for managed LLM keys, cloud sync, and hybrid identity linking.
+        Connect to a SpectraSherpa Cloud server for managed LLM keys, cloud sync, and hybrid identity linking.
       </p>
 
       <div class="connection-panel">
@@ -173,6 +182,76 @@
       </div>
     </div>
 
+    <!-- Data & Privacy -->
+    <div class="section">
+      <h3>Data &amp; Privacy</h3>
+      <p class="muted-text">Control how your data is shared with external services. Changes take effect immediately.</p>
+
+      <div v-if="privacyLoadError" class="message error">
+        <i class="pi pi-times-circle" />
+        {{ privacyLoadError }}
+      </div>
+
+      <div class="panel" v-if="!privacyLoadError">
+        <div v-if="privacyLoading" class="loading-row">
+          <i class="pi pi-spin pi-spinner" /> Loading privacy settings...
+        </div>
+
+        <template v-else>
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <strong>Enable AI Chat</strong>
+              <p v-if="chatToggleReason">{{ chatToggleReason }}</p>
+              <p v-else>Allow Spectra Sherpa to call an LLM for chat and assistant features.</p>
+            </div>
+            <InputSwitch v-model="privacyForm.allow_llm_chat" :disabled="!chatToggleEnabled" @change="savePrivacy" />
+          </div>
+
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <strong>Share Workflow Context with Sherpa</strong>
+              <p v-if="contextToggleReason">{{ contextToggleReason }}</p>
+              <p v-else>Allow workflow structure, parameters, and execution summaries to be sent to Sherpa for context-aware chat.</p>
+            </div>
+            <InputSwitch v-model="privacyForm.allow_llm_context" :disabled="!contextToggleEnabled" @change="savePrivacy" />
+          </div>
+
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <strong>NIST WebBook Queries</strong>
+              <p>Allow outbound requests to the NIST WebBook for spectral library lookups.</p>
+            </div>
+            <InputSwitch v-model="privacyForm.allow_nist_queries" @change="savePrivacy" />
+          </div>
+
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <strong>Data Export</strong>
+              <p>Allow downloading processed spectra and results to your browser.</p>
+            </div>
+            <InputSwitch v-model="privacyForm.allow_export" @change="savePrivacy" />
+          </div>
+
+          <div class="toggle-row" v-if="showSyncOption">
+            <div class="toggle-info">
+              <strong>SpectraSherpa Cloud Sync</strong>
+              <p>Allow syncing workflow data with the SpectraSherpa cloud service.</p>
+            </div>
+            <InputSwitch v-model="privacyForm.allow_spectrasherpa_sync" @change="savePrivacy" />
+          </div>
+        </template>
+
+        <div v-if="privacySaveMessage" class="message success">
+          <i class="pi pi-check-circle" />
+          {{ privacySaveMessage }}
+        </div>
+        <div v-if="privacySaveError" class="message error">
+          <i class="pi pi-times-circle" />
+          {{ privacySaveError }}
+        </div>
+      </div>
+    </div>
+
     <Dialog v-model:visible="showTestResult" header="Connection Test" modal :style="{ width: '420px' }">
       <div class="test-result">
         <div v-if="testResult?.success" class="success">
@@ -202,18 +281,84 @@
 
 <script setup lang="ts">
 /* eslint-disable @typescript-eslint/no-explicit-any -- provider config responses are heterogeneous until normalized by the backend. */
-import { ref, computed, onMounted } from 'vue';
+import axios from 'axios';
+import { ref, reactive, computed, onMounted } from 'vue';
 import api from '@/api/client';
 import { useToast } from 'primevue/usetoast';
 import { useAppConfig } from '@/composables/useAppConfig';
+import { useDemoMode } from '@/composables/useDemoMode';
+import { getErrorMessage } from '@/utils/errors';
 
 import InputText from 'primevue/inputtext';
+import InputSwitch from 'primevue/inputswitch';
 import Button from 'primevue/button';
 import Tag from 'primevue/tag';
 import Dialog from 'primevue/dialog';
 
 const toast = useToast();
 const { appConfig, loadConfig, isFeatureEnabled } = useAppConfig();
+const { isDemoMode } = useDemoMode();
+
+// --- Data & Privacy state ---
+const privacyLoading = ref(true);
+const privacyLoadError = ref('');
+const privacySaveMessage = ref('');
+const privacySaveError = ref('');
+const showSyncOption = ref(false);
+const privacyForm = reactive({
+  allow_llm_chat: false,
+  allow_llm_context: false,
+  allow_nist_queries: false,
+  allow_export: false,
+  allow_spectrasherpa_sync: false,
+});
+
+const chatToggleEnabled = computed(() => !isDemoMode.value);
+const chatToggleReason = computed(() =>
+  isDemoMode.value ? 'AI Chat is always enabled in the Sherpa demo.' : ''
+);
+const contextToggleEnabled = computed(() => {
+  if (isDemoMode.value) return false;
+  if (appMode.value === 'local') return false;
+  if (!privacyForm.allow_llm_chat) return false;
+  return isFeatureEnabled('chatAssistant');
+});
+const contextToggleReason = computed(() => {
+  if (isDemoMode.value) return 'Workflow context sharing is always enabled in the Sherpa demo.';
+  if (appMode.value === 'local') return 'Context-aware chat requires a Sherpa subscription.';
+  if (!privacyForm.allow_llm_chat) return 'Enable AI Chat to share workflow context with Sherpa.';
+  if (!isFeatureEnabled('chatAssistant')) return 'Context-aware chat requires a Sherpa subscription.';
+  return '';
+});
+
+let privacySaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function savePrivacy() {
+  privacySaveError.value = '';
+  privacySaveMessage.value = '';
+  try {
+    if (isDemoMode.value) {
+      privacyForm.allow_llm_chat = true;
+      privacyForm.allow_llm_context = true;
+    } else {
+      if (!contextToggleEnabled.value) privacyForm.allow_llm_context = false;
+      if (!privacyForm.allow_llm_chat) privacyForm.allow_llm_context = false;
+    }
+    await api.put('/egress/defaults', {
+      allow_llm_chat: isDemoMode.value ? true : privacyForm.allow_llm_chat,
+      allow_llm_context: isDemoMode.value ? true : (contextToggleEnabled.value ? privacyForm.allow_llm_context : false),
+      allow_nist_queries: privacyForm.allow_nist_queries,
+      allow_export: privacyForm.allow_export,
+      allow_spectrasherpa_sync: privacyForm.allow_spectrasherpa_sync,
+    });
+    window.dispatchEvent(new CustomEvent('egress-defaults-changed'));
+    privacySaveMessage.value = 'Privacy settings updated.';
+    if (privacySaveTimer) clearTimeout(privacySaveTimer);
+    privacySaveTimer = setTimeout(() => { privacySaveMessage.value = ''; }, 3000);
+  } catch (err: unknown) {
+    privacySaveError.value = getErrorMessage(err, 'Failed to save privacy settings');
+  }
+}
 
 const serverUrl = ref('');
 const apiKey = ref('');
@@ -300,6 +445,33 @@ const modeDescription = computed(() => {
 onMounted(async () => {
   await loadConfig();
   await loadConnectionState();
+
+  // Load privacy settings
+  showSyncOption.value = appMode.value !== 'local';
+  if (isDemoMode.value) {
+    privacyForm.allow_llm_chat = true;
+    privacyForm.allow_llm_context = true;
+  }
+  try {
+    const { data } = await api.get('/egress/defaults');
+    if (data) {
+      privacyForm.allow_llm_chat = isDemoMode.value ? true : (data.allow_llm_chat ?? false);
+      privacyForm.allow_llm_context = isDemoMode.value
+        ? true
+        : (appMode.value === 'local' || !(data.allow_llm_chat ?? false)
+            ? false
+            : (data.allow_llm_context ?? false));
+      privacyForm.allow_nist_queries = data.allow_nist_queries ?? false;
+      privacyForm.allow_export = data.allow_export ?? false;
+      privacyForm.allow_spectrasherpa_sync = data.allow_spectrasherpa_sync ?? false;
+    }
+  } catch (err: unknown) {
+    if (!axios.isAxiosError(err) || err.response?.status !== 404) {
+      privacyLoadError.value = getErrorMessage(err, 'Failed to load privacy settings');
+    }
+  } finally {
+    privacyLoading.value = false;
+  }
 });
 
 const loadConnectionState = async () => {
@@ -475,6 +647,27 @@ const refreshConnection = async () => {
 <style scoped>
 .integrations-tab {
   padding: 1rem 0;
+}
+
+.info-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  background: #1e3a5f;
+  border: 1px solid #3b82f6;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.5rem;
+  color: #bfdbfe;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.info-callout .pi {
+  color: #3b82f6;
+  font-size: 1rem;
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .section {
@@ -728,5 +921,69 @@ const refreshConnection = async () => {
 
 .test-result .details p {
   margin: 0.25rem 0;
+}
+
+.panel {
+  background: var(--surface-card);
+  border-radius: 12px;
+  padding: 1.5rem;
+  border: 1px solid var(--surface-border);
+}
+
+.toggle-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.toggle-row:last-of-type {
+  border-bottom: none;
+}
+
+.toggle-info {
+  flex: 1;
+}
+
+.toggle-info strong {
+  font-size: 0.95rem;
+  color: var(--text-color);
+}
+
+.toggle-info p {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  color: var(--text-color-secondary);
+}
+
+.loading-row {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-color-secondary);
+  font-size: 0.9rem;
+}
+
+.message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  margin-top: 12px;
+  font-size: 0.85rem;
+}
+
+.message.success {
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.message.error {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
 }
 </style>

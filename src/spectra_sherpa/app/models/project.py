@@ -21,8 +21,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from spectra_sherpa.app.db.base import Base
 
 if TYPE_CHECKING:
+    from spectra_sherpa.app.models.advisor_channel import AdvisorChannel
     from spectra_sherpa.app.models.experiment import Experiment
     from spectra_sherpa.app.models.model_artifact import ModelArtifact
+    from spectra_sherpa.app.models.project_data_source import ProjectDataSource
     from spectra_sherpa.app.models.project_script import ProjectScript
     from spectra_sherpa.app.models.user import User
     from spectra_sherpa.app.models.workflow import Workflow
@@ -59,6 +61,17 @@ class Project(Base):
     children: Mapped[list[Project]] = relationship("Project", back_populates="parent", cascade="all, delete-orphan")
     experiments: Mapped[list[Experiment]] = relationship("Experiment", back_populates="project")
     workflows: Mapped[list[Workflow]] = relationship("Workflow", back_populates="project")
+    data_sources: Mapped[list[ProjectDataSource]] = relationship(
+        "ProjectDataSource",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        order_by="ProjectDataSource.sort_order",
+    )
+    advisor_channels: Mapped[list[AdvisorChannel]] = relationship(
+        "AdvisorChannel",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
     models: Mapped[list[ModelArtifact]] = relationship("ModelArtifact", back_populates="project")
     scripts: Mapped[list[ProjectScript]] = relationship(
         "ProjectScript",

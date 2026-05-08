@@ -1,3 +1,4 @@
+from spectra_sherpa.app.models.advisor_channel import AdvisorChannel
 from spectra_sherpa.app.models.api_key import APIKey
 from spectra_sherpa.app.models.background_job import BackgroundJob
 from spectra_sherpa.app.models.batch_prediction import BatchPrediction
@@ -19,6 +20,7 @@ from spectra_sherpa.app.models.model_artifact import ModelArtifact
 from spectra_sherpa.app.models.nist_library import NistLibrary
 from spectra_sherpa.app.models.plate_well import PlateWell
 from spectra_sherpa.app.models.project import Project, ProjectVersion
+from spectra_sherpa.app.models.project_data_source import ProjectDataSource, WorkflowDataSource
 from spectra_sherpa.app.models.project_script import ProjectScript
 from spectra_sherpa.app.models.run_level import RunLevel
 from spectra_sherpa.app.models.sample import Sample
@@ -33,6 +35,7 @@ from spectra_sherpa.app.models.workflow_version import WorkflowVersion
 
 __all__ = [
     "APIKey",
+    "AdvisorChannel",
     "BackgroundJob",
     "BatchPrediction",
     "CalModel",
@@ -53,6 +56,7 @@ __all__ = [
     "NistLibrary",
     "PlateWell",
     "Project",
+    "ProjectDataSource",
     "ProjectScript",
     "ProjectVersion",
     "RunLevel",
@@ -60,6 +64,7 @@ __all__ = [
     "User",
     "UserEgressDefaults",
     "Workflow",
+    "WorkflowDataSource",
     "WorkflowEdge",
     "WorkflowFolder",
     "WorkflowNode",

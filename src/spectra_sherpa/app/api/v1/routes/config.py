@@ -10,6 +10,7 @@ Returns client-safe configuration including:
 
 import logging
 import os
+from ipaddress import ip_address
 from typing import Any
 
 import httpx
@@ -21,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
-from spectra_sherpa.app.api.deps import get_session, get_user_from_credentials
+from spectra_sherpa.app.api.deps import get_current_user, get_session, get_user_from_credentials
 from spectra_sherpa.app.contracts.capabilities import CHAT_ASSISTANT
 from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.core.security import get_bearer_token_optional
@@ -351,8 +352,8 @@ class SpectraSherpaTestRequest(BaseModel):
 
 # Allowlist of valid SpectraSherpa server hosts (SSRF protection).
 # Override via SPECTRASHERPA_ALLOWED_HOSTS env var (comma-separated).
-_extra = [h.strip() for h in os.getenv("SPECTRASHERPA_ALLOWED_HOSTS", "").split(",") if h.strip()]
-ALLOWED_SPECTRASHERPA_HOSTS = ["localhost", "127.0.0.1"] + _extra
+_extra = [h.strip().lower() for h in os.getenv("SPECTRASHERPA_ALLOWED_HOSTS", "").split(",") if h.strip()]
+ALLOWED_SPECTRASHERPA_HOSTS = ["localhost", "127.0.0.1", "::1"] + _extra
 
 
 def _mask_api_key(key: str | None) -> str | None:
@@ -363,15 +364,60 @@ def _mask_api_key(key: str | None) -> str | None:
 
 
 def _is_allowed_url(url: str) -> bool:
-    """Check if a URL is in the allowed hosts list (SSRF protection)."""
+    """Check if a SpectraSherpa URL is safe to contact.
+
+    Explicitly configured hosts are always allowed. Otherwise, HTTPS public
+    hostnames are allowed for hybrid cloud onboarding, while direct IPs and
+    non-HTTPS URLs remain restricted unless allowlisted.
+    """
     from urllib.parse import urlparse
 
     try:
         parsed = urlparse(url)
-        host = parsed.hostname or ""
-        return host in ALLOWED_SPECTRASHERPA_HOSTS
+        host = (parsed.hostname or "").lower()
+        if not host:
+            return False
+        if host in ALLOWED_SPECTRASHERPA_HOSTS:
+            return True
+        if parsed.scheme != "https":
+            return False
+
+        try:
+            ip = ip_address(host)
+        except ValueError:
+            # Public DNS hostnames are accepted for remote SpectraSherpa.
+            return host != "localhost" and "." in host
+
+        return ip.is_global
     except Exception:
         return False
+
+
+def _csv_env(name: str) -> set[str]:
+    return {item.strip().lower() for item in os.getenv(name, "").split(",") if item.strip()}
+
+
+def _is_private_address(host: str | None) -> bool:
+    if not host:
+        return False
+    try:
+        return ip_address(host).is_private
+    except ValueError:
+        return False
+
+
+def _can_manage_byo_chat(http_request: Request) -> bool:
+    """Local BYO chat config may mutate .env, so LAN access is explicit opt-in."""
+    from spectra_sherpa.app.core.mode_policy import is_loopback
+    from spectra_sherpa.app.core.security import get_client_host
+
+    host = (get_client_host(http_request) or "").lower()
+    if is_loopback(host):
+        return True
+    if host in _csv_env("SPECTRASHERPA_LOCAL_CONFIG_HOSTS"):
+        return True
+    allow_private = os.getenv("SPECTRASHERPA_ALLOW_PRIVATE_CONFIG_CLIENTS", "").strip().lower()
+    return allow_private in {"1", "true", "yes", "y", "on"} and _is_private_address(host)
 
 
 def _normalize_spectrasherpa_url(url: str) -> str:
@@ -716,3 +762,110 @@ async def deactivate_hybrid(http_request: Request):
     logger.info("Reverted to local mode")
 
     return {"success": True, "config": app_config.to_client_safe()}
+
+
+# ── BYO Chat Config (local mode) ────────────────────────────────────────────
+
+
+class ByoChatConfigRequest(BaseModel):
+    endpoint_url: str
+    endpoint_key: str
+    model: str = "deepseek-chat"
+
+
+@router.get("/byo-chat-config")
+async def get_byo_chat_config(http_request: Request):
+    """Return current BYO chat endpoint configuration (key masked). Local mode only."""
+    from spectra_sherpa.app.core.mode_policy import is_local
+
+    if not is_local() or not _can_manage_byo_chat(http_request):
+        raise HTTPException(status_code=404, detail="Not found.")
+
+    from spectra_sherpa.app.services import basic_chat
+
+    config = basic_chat.get_config()
+    return {
+        "endpoint_url": config.url,
+        "model": config.model,
+        "has_key": bool(config.key),
+        "configured": bool(config.url and config.key),
+    }
+
+
+@router.post("/byo-chat-config/test")
+async def test_byo_chat_config(
+    request: ByoChatConfigRequest,
+    http_request: Request,
+    user=Depends(get_current_user),
+):
+    """Test a BYO chat endpoint before saving it. Local mode only."""
+    from spectra_sherpa.app.core.mode_policy import is_local
+    from spectra_sherpa.app.services import basic_chat
+
+    if not is_local():
+        raise HTTPException(status_code=404, detail="Not found.")
+    if not _can_manage_byo_chat(http_request):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "BYO chat config is only available from localhost unless "
+                "SPECTRASHERPA_LOCAL_CONFIG_HOSTS or "
+                "SPECTRASHERPA_ALLOW_PRIVATE_CONFIG_CLIENTS is configured."
+            ),
+        )
+
+    configured = basic_chat.get_config()
+    endpoint_key = request.endpoint_key.strip() or configured.key
+    success, message = await basic_chat.test_connection(
+        request.endpoint_url,
+        endpoint_key,
+        request.model,
+    )
+    return {"success": success, "message": message}
+
+
+@router.post("/byo-chat-config")
+async def save_byo_chat_config(
+    request: ByoChatConfigRequest,
+    http_request: Request,
+    user=Depends(get_current_user),
+):
+    """Persist BYO chat endpoint config to .env. Local mode only."""
+    from dotenv import set_key as dotenv_set_key
+
+    from spectra_sherpa.app.core.mode_policy import is_local
+
+    if not is_local():
+        raise HTTPException(status_code=404, detail="Not found.")
+    if not _can_manage_byo_chat(http_request):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "BYO chat config is only available from localhost unless "
+                "SPECTRASHERPA_LOCAL_CONFIG_HOSTS or "
+                "SPECTRASHERPA_ALLOW_PRIVATE_CONFIG_CLIENTS is configured."
+            ),
+        )
+
+    url = request.endpoint_url.strip().rstrip("/")
+    if not url:
+        raise HTTPException(status_code=400, detail="endpoint_url is required.")
+    endpoint_key = request.endpoint_key.strip()
+    existing_key = os.getenv("CHAT_ENDPOINT_KEY", "")
+    if not endpoint_key and not existing_key:
+        raise HTTPException(status_code=400, detail="endpoint_key is required.")
+    model = request.model.strip() or "deepseek-chat"
+
+    env_path = _find_or_create_env_path()
+    dotenv_set_key(env_path, "CHAT_ENDPOINT_URL", url)
+    if endpoint_key:
+        dotenv_set_key(env_path, "CHAT_ENDPOINT_KEY", endpoint_key)
+    dotenv_set_key(env_path, "CHAT_ENDPOINT_MODEL", model)
+
+    os.environ["CHAT_ENDPOINT_URL"] = url
+    if endpoint_key:
+        os.environ["CHAT_ENDPOINT_KEY"] = endpoint_key
+    os.environ["CHAT_ENDPOINT_MODEL"] = model
+
+    logger.info("BYO chat endpoint configured: %s / %s", url, model)
+    return {"success": True, "configured": True}

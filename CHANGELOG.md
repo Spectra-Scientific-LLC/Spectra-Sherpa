@@ -7,30 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-- **Exported-script artifact location** — `export_artifacts()` (used by generated Python scripts and notebooks) now writes timestamped output to `./exports/<workflow>_<ts>/` by default instead of directly into the current working directory. Set `SPECTRA_SHERPA_EXPORT_DIR=<path>` to override. This prevents repo-root pollution when users run exported scripts from inside a checkout.
-- **AI surface refactored to extension contract.** OSS no longer ships a concrete advisor implementation, prompt templates, tool-choice policy, conversation orchestrator, LLM registry, vendor SDK dependencies (`anthropic`, `openai`), `/api/v1/llm/*` routes, or `/api/v1/llm-config` routes. What OSS retains: the `AIServiceProvider` Protocol (types only), a `DisabledAIProvider` default, a neutral registry seam (`set_/reset_/get_sherpa_advisor`), a `basic_chat` BYO-endpoint proxy at `POST /api/v1/chat/stream`, the `chatAssistant` capability flag, and WebSocket dispatch for the `sherpa_*` action vocabulary. If an extension package registers an `AIServiceProvider` at startup, the dispatcher routes `sherpa_*` actions to it; otherwise `DisabledAIProvider` serves them. See `docs/dev/llm-feature-contract.md` for the retained OSS-side surface.
-- **BYO chat configuration moved to `CHAT_ENDPOINT_*`** — The OSS chat assistant is now configured via `CHAT_ENDPOINT_URL`, `CHAT_ENDPOINT_KEY`, and `CHAT_ENDPOINT_MODEL` environment variables (any OpenAI-compatible endpoint). Vendor-specific keys such as `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` no longer power the OSS chat path.
-- **Contract schema lives as package data** — `sherpa-ws-v1.json` is now at `src/spectra_sherpa/contracts/sherpa-ws-v1.json` and is loaded via `importlib.resources`, so it is present in installed wheels. Contract tests in both OSS and server validate against this single file.
+## [0.4.2] - 2026-05-07
 
 ### Added
-- **`spectra_sherpa.app.contracts.ai_provider_registry`** — canonical home of `set_sherpa_advisor`, `reset_sherpa_advisor`, `get_sherpa_advisor`, `DisabledAIProvider`, and `FeatureDisabledError`. Module is pure — no imports from `services/`.
-- **`spectra_sherpa.app.contracts.ai_provider_errors`** — relocated `SherpaAuthorizationError` and `SubscriptionRequiredError` (previously at `services/ai_provider_errors.py`) so both OSS and server import the Protocol's exception types from a stable, neutral path.
-- **`POST /api/v1/chat/stream`** — OSS-owned BYO chat SSE endpoint. Returns 503 with structured `{"code": "capability_unavailable", "capability": "chatAssistant", ...}` detail when `CHAT_ENDPOINT_*` is not configured.
-- **Opt-in WS payload validator** — Set `SPECTRA_VALIDATE_WS=1` to have the OSS sender validate every outbound `sherpa_*` event against `sherpa-ws-v1.json` and log validation failures without interrupting the stream. Off by default.
-- **CI drift guard for `frontend/src/types/api-generated.ts`** — The `frontend` CI job now regenerates the TS client from the committed `openapi-llm-v1.json` contract into `/tmp` and fails the build if the checked-in file does not match, preventing silent client/contract drift.
+- **Workflow builder sheet tabs** — Projects can organize workflows as worksheet tabs with per-sheet ordering, colors, duplication, deletion guards, trial tabs, and worksheet-scoped state restoration.
+- **Project data-source associations** — Project Details now tracks data sources and workflow/data-source links so sheets can inherit dataset color and provenance.
+- **Worksheet advisor channels** — Workflow sheets can bind to dedicated Sherpa Advisor channels so Topics follow the active worksheet.
+- **`POST /api/v1/chat/stream`** — BYO chat SSE endpoint for local mode, with active workflow context included when available.
+- **Packaged Sherpa WebSocket contract** — `sherpa-ws-v1.json` is installed as package data and can be used for runtime validation with `SPECTRA_VALIDATE_WS=1`.
+- **CI drift guard for `frontend/src/types/api-generated.ts`** — The frontend CI job validates generated API types against the committed OpenAPI contract.
 
-### Deprecated
-- **`spectra_sherpa.app.services.sherpa_advisor`** — now a small compatibility shim that re-exports `set_sherpa_advisor` / `reset_sherpa_advisor` / `get_sherpa_advisor` from `contracts.ai_provider_registry` and emits a `DeprecationWarning`. Removed in `0.N+2`.
-
-### Removed
-- **`services/llm.py`** — full ~761-line conversation/LLM orchestrator and JSON `ConversationStore` (moved to the commercial server).
-- **`services/llm_rate_limits.py`, `services/deployment_ai_provider.py`** — moved to the commercial server.
-- **`core/llm_registry.py`** — moved to the commercial server.
-- **`api/v1/routes/llm.py`, `api/v1/routes/llm_config.py`** — moved to the commercial server verbatim. OSS-only builds now 404 on `/api/v1/llm*` and `/api/v1/llm-config`; OSS+server builds serve them with byte-identical request/response shapes.
-- **`models/llm_config.py`** and the `User.llm_config` SQLAlchemy relationship attribute — moved to the commercial server. OSS Alembic no longer autogenerates the `llm_configs` table.
-- **`schemas/llm.py`, `schemas/llm_config.py`** — moved to the commercial server.
-- **`[sherpa]` extras with `anthropic ^0.39.0` and `openai ^1.40.0`** — no vendor LLM SDKs remain in OSS dependency graph.
+### Changed
+- **Exported-script artifact location** — `export_artifacts()` (used by generated Python scripts and notebooks) now writes timestamped output to `./exports/<workflow>_<ts>/` by default instead of directly into the current working directory. Set `SPECTRA_SHERPA_EXPORT_DIR=<path>` to override. This prevents repo-root pollution when users run exported scripts from inside a checkout.
+- **BYO chat configuration moved to `CHAT_ENDPOINT_*`** — The OSS chat assistant is now configured via `CHAT_ENDPOINT_URL`, `CHAT_ENDPOINT_KEY`, and `CHAT_ENDPOINT_MODEL` environment variables (any OpenAI-compatible endpoint). Vendor-specific keys such as `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` no longer power the OSS chat path.
+- **Workflow builder actions and layout** — Header actions, sheet tabs, trial detail views, Add Nodes, and Inspector interactions were refined for narrower windows and repeated sheet switching.
 
 ## [0.3.0] - 2026-03-30
 

@@ -606,6 +606,66 @@
           }
         }
       }
+    },
+    "/api/v1/llm/conversation/{conversation_id}/compact": {
+      "post": {
+        "tags": [
+          "llm"
+        ],
+        "summary": "Compact Conversation",
+        "description": "Compact a worksheet-scoped conversation into saved memory.",
+        "operationId": "compact_conversation_api_v1_llm_conversation__conversation_id__compact_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conversation Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompactConversationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -920,6 +980,29 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "CompactConversationResponse": {
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "title": "Conversation Id"
+          },
+          "compacted": {
+            "type": "boolean",
+            "title": "Compacted"
+          },
+          "message_count": {
+            "type": "integer",
+            "title": "Message Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "compacted",
+          "message_count"
+        ],
+        "title": "CompactConversationResponse"
       },
       "ConversationDetail": {
         "properties": {

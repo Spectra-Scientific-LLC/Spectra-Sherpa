@@ -161,6 +161,9 @@ export interface PcaPlotSlice {
 export interface McrPlotSlice {
   mcrConcentrationData: any[]; mcrConcentrationLayout: Record<string, any>;
   mcrSpectraData: any[]; mcrSpectraLayout: Record<string, any>;
+  mcrOriginalContourData: any[]; mcrOriginalContourLayout: Record<string, any>;
+  mcrReconstructedContourData: any[]; mcrReconstructedContourLayout: Record<string, any>;
+  mcrResidualContourData: any[]; mcrResidualContourLayout: Record<string, any>;
 }
 
 export interface EfaPlotSlice {

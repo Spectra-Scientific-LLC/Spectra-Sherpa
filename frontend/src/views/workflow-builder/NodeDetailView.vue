@@ -1,5 +1,5 @@
 <template>
-  <div class="node-detail-view">
+  <div class="node-detail-view" :class="{ embedded }">
     <!-- Header -->
     <header class="detail-header">
       <div class="header-left">
@@ -35,61 +35,65 @@
     </header>
 
     <!-- Main Content -->
-    <main class="detail-content">
-      <!-- Input Section -->
-      <InputPanel
-        :expanded="sections.input"
-        :has-input="hasInput"
-        :input-summary="inputSummary"
-        :input-data="inputData"
-        :input-connections="inputConnections"
-        :input-preview="inputPreview"
-        :input-data-summary="inputDataSummary"
-        :input-preview-columns="inputPreviewColumns"
-        @toggle="toggleSection('input')"
-      />
+    <main class="detail-content two-column-layout">
+      <div class="column-left">
+        <!-- Input Section -->
+        <InputPanel
+          :expanded="sections.input"
+          :has-input="hasInput"
+          :input-summary="inputSummary"
+          :input-data="inputData"
+          :input-connections="inputConnections"
+          :input-preview="inputPreview"
+          :input-data-summary="inputDataSummary"
+          :input-preview-columns="inputPreviewColumns"
+          @toggle="toggleSection('input')"
+        />
 
-      <!-- Settings Section -->
-      <SettingsPanel
-        :expanded="sections.settings"
-        :settings-count="settingsCount"
-        :params="nodeParams"
-        :local-params="localParams"
-        :has-validation-errors="hasValidationErrors"
-        :displayed-validation-errors="displayedValidationErrors"
-        :get-param-error="getParamError"
-        @toggle="toggleSection('settings')"
-        @reset="resetToDefaults"
-        @update-param="(name, v) => (localParams[name] = v)"
-      />
+        <!-- Settings Section -->
+        <SettingsPanel
+          :expanded="sections.settings"
+          :settings-count="settingsCount"
+          :params="nodeParams"
+          :local-params="localParams"
+          :has-validation-errors="hasValidationErrors"
+          :displayed-validation-errors="displayedValidationErrors"
+          :get-param-error="getParamError"
+          @toggle="toggleSection('settings')"
+          @reset="resetToDefaults"
+          @update-param="(name, v) => (localParams[name] = v)"
+        />
 
-      <!-- Output Section -->
-      <OutputPanel
-        :expanded="sections.output"
-        @toggle="toggleSection('output')"
-        @toggle-sub="toggleOutputSubsection"
-        @show-full-metadata="showFullMetadata = true"
-        @open-data-table="openDataTable"
-        @open-quick-plot="openQuickPlot"
-        @export-output="exportOutput"
-      />
+        <!-- Output Section -->
+        <OutputPanel
+          :expanded="sections.output"
+          @toggle="toggleSection('output')"
+          @toggle-sub="toggleOutputSubsection"
+          @show-full-metadata="showFullMetadata = true"
+          @open-data-table="openDataTable"
+          @open-quick-plot="openQuickPlot"
+          @export-output="exportOutput"
+        />
+      </div>
 
-      <!-- Plots Section -->
-      <PlotsPanel
-        :expanded="sections.plots"
-        @toggle="toggleSection('plots')"
-        @toggle-plot="togglePlot"
-        @contour-click="handleContourClick"
-      />
+      <div class="column-right">
+        <!-- Plots Section -->
+        <PlotsPanel
+          :expanded="sections.plots"
+          @toggle="toggleSection('plots')"
+          @toggle-plot="togglePlot"
+          @contour-click="handleContourClick"
+        />
 
-      <!-- Log Section -->
-      <LogPanel
-        :logs="executionLogs"
-        :expanded="sections.log"
-        :get-log-icon="getLogIcon"
-        @toggle="toggleSection('log')"
-        @clear="clearLogs"
-      />
+        <!-- Log Section -->
+        <LogPanel
+          :logs="executionLogs"
+          :expanded="sections.log"
+          :get-log-icon="getLogIcon"
+          @toggle="toggleSection('log')"
+          @clear="clearLogs"
+        />
+      </div>
     </main>
 
     <!-- Modals -->
@@ -151,6 +155,20 @@ import PlotsPanel from "./node-detail/panels/PlotsPanel.vue";
 const route = useRoute();
 const toast = useToast();
 
+const props = withDefaults(defineProps<{
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- embedded trial tabs pass the existing node-detail payload.
+  initialNodeData?: any | null;
+  embedded?: boolean;
+}>(), {
+  initialNodeData: null,
+  embedded: false,
+});
+
+const emit = defineEmits<{
+  (event: "save", nodeId: string, params: Record<string, unknown>): void;
+  (event: "close"): void;
+}>();
+
 // ── Section collapse state ──────────────────────────────────────────────
 const {
   sections, outputSubsections, plotSections,
@@ -192,7 +210,8 @@ const NODE_ICONS: Record<string, string> = {
   "output.plot": "📈", "output.contour": "🗺️", "output.export": "💾",
 };
 
-const nodeId = computed(() => route.params.nodeId as string);
+const embedded = computed(() => props.embedded);
+const nodeId = computed(() => String(props.initialNodeData?.id ?? route.params.nodeId ?? ""));
 const nodeType = computed(() => nodeData.value?.type || "Unknown");
 const nodeTypeKey = computed(() => nodeType.value);
 const nodeLabel = computed(() => nodeData.value?.label || `Node ${nodeId.value}`);
@@ -286,7 +305,13 @@ const exportOutput = () => {
   URL.revokeObjectURL(link.href);
 };
 
-const handleCancel = () => { window.close(); };
+const handleCancel = () => {
+  if (embedded.value) {
+    emit("close");
+    return;
+  }
+  window.close();
+};
 
 const { isExecuting, broadcastParamsUpdate, handleRunTrial } = useNodeTrial({
   nodeData, localParams, nodeType, addLog, normalizeNodeOutput, toast,
@@ -294,6 +319,12 @@ const { isExecuting, broadcastParamsUpdate, handleRunTrial } = useNodeTrial({
 
 const handleSaveAndExit = () => {
   broadcastParamsUpdate();
+  if (embedded.value) {
+    emit("save", String(nodeData.value?.id ?? nodeId.value), { ...localParams.value });
+    toast.add({ severity: "success", summary: "Saved", detail: "Settings applied to the workflow", life: 1500 });
+    emit("close");
+    return;
+  }
   toast.add({ severity: "success", summary: "Saved", detail: "Settings saved successfully", life: 1500 });
   setTimeout(() => {
     try { window.close(); } catch { /* no-op */ }
@@ -310,7 +341,7 @@ const handleSaveAndExit = () => {
 
 // ── Lifecycle ───────────────────────────────────────────────────────────
 onMounted(() => {
-  const storedData = sessionStorage.getItem(STORAGE_KEY);
+  const storedData = props.initialNodeData ? JSON.stringify(props.initialNodeData) : sessionStorage.getItem(STORAGE_KEY);
   if (storedData) {
     try {
       nodeData.value = JSON.parse(storedData);
@@ -363,6 +394,11 @@ provide(NODE_DETAIL_STATE_KEY, detailState);
   color: #f8fafc;
 }
 
+.node-detail-view.embedded {
+  min-height: 100%;
+  width: 100%;
+}
+
 .detail-header {
   display: flex;
   justify-content: space-between;
@@ -409,9 +445,22 @@ provide(NODE_DETAIL_STATE_KEY, detailState);
 }
 
 .detail-content {
-  max-width: 1000px;
+  max-width: 1600px;
   margin: 0 auto;
   padding: 32px;
+}
+
+.two-column-layout {
+  display: grid;
+  grid-template-columns: minmax(400px, 1fr) minmax(400px, 1.2fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.column-left, .column-right {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .full-metadata-json {
@@ -444,6 +493,12 @@ provide(NODE_DETAIL_STATE_KEY, detailState);
   }
   .detail-content {
     padding: 16px;
+  }
+}
+
+@media (max-width: 1100px) {
+  .two-column-layout {
+    grid-template-columns: 1fr;
   }
 }
 </style>

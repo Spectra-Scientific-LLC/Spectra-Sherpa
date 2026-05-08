@@ -45,6 +45,53 @@
         </div>
       </section>
 
+      <!-- Data Sources Section -->
+      <section class="section">
+        <div class="section-header">
+          <h4 class="section-subtitle">
+            <i class="pi pi-database"></i>
+            Data Sources ({{ project.data_sources?.length ?? 0 }})
+          </h4>
+          <Button
+            icon="pi pi-external-link"
+            class="p-button-text p-button-sm"
+            title="Go to Data"
+            @click="navigateToData"
+          />
+        </div>
+
+        <div v-if="(project.data_sources?.length ?? 0) === 0" class="empty-state">
+          <i class="pi pi-inbox"></i>
+          <span>No data sources detected for this project</span>
+        </div>
+
+        <div v-else class="data-source-list">
+          <div
+            v-for="dataSource in project.data_sources ?? []"
+            :key="dataSource.id"
+            class="data-source-card"
+          >
+            <div class="data-source-header">
+              <span
+                class="data-source-color"
+                :style="{ backgroundColor: dataSource.color }"
+                aria-hidden="true"
+              ></span>
+              <div class="data-source-copy">
+                <span class="data-source-name">{{ dataSource.display_name }}</span>
+                <span class="data-source-meta">{{ dataSource.source_type }}</span>
+              </div>
+            </div>
+            <div class="data-source-workflows">
+              <span class="data-source-label">Sheets</span>
+              <span class="data-source-value">
+                {{ workflowNamesForDataSource(dataSource.id) || "\u2014" }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Experiments Section -->
       <section class="section">
         <div class="section-header">
@@ -108,12 +155,24 @@
             v-for="wf in project.workflows"
             :key="wf.id"
             class="workflow-item"
+            :class="{ active: isActiveWorkflow(wf.id) }"
             @click="openWorkflow(wf.id)"
           >
             <i class="pi pi-share-alt"></i>
             <div class="workflow-info">
               <span class="workflow-name">{{ wf.name }}</span>
               <span class="workflow-status">{{ wf.status }}</span>
+              <span v-if="workflowPrimaryDataName(wf)" class="workflow-data">
+                {{ workflowPrimaryDataName(wf) }}
+              </span>
+              <span v-if="wf.created_from_template_name" class="workflow-template">
+                Created from {{ wf.created_from_template_name }}
+              </span>
+              <span v-else-if="wf.created_from_workflow_id" class="workflow-template ai-generated">
+                <i class="pi pi-sparkles"></i>
+                <span class="ai-chip">AI</span>
+                Generated from: {{ wf.created_from_workflow_name || `Sheet #${wf.created_from_workflow_id}` }}
+              </span>
             </div>
           </div>
         </div>
@@ -149,12 +208,15 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRouter } from "vue-router";
+import { useToast } from "primevue/usetoast";
 import Sidebar from "primevue/sidebar";
 import Button from "primevue/button";
 import Tag from "primevue/tag";
 import Badge from "primevue/badge";
 import { useProjectStore } from "@/stores/project";
-import type { ProjectDetail } from "@/types";
+import { useWorkbookStore } from "@/stores/workbook";
+import { getErrorMessage } from "@/utils/errors";
+import type { ProjectDetail, WorkflowBrief } from "@/types";
 
 const props = defineProps<{
   modelValue: boolean;
@@ -165,7 +227,9 @@ const emit = defineEmits<{
 }>();
 
 const router = useRouter();
+const toast = useToast();
 const projectStore = useProjectStore();
+const workbookStore = useWorkbookStore();
 
 const visible = computed({
   get: () => props.modelValue,
@@ -196,24 +260,81 @@ function truncate(text: string, maxLength: number): string {
   return text.slice(0, maxLength) + "...";
 }
 
-function navigateToData() {
-  visible.value = false;
-  router.push("/data");
+function workflowNamesForDataSource(dataSourceId: number): string {
+  const names =
+    project.value?.workflows
+      .filter((workflow) => workflow.data_source_ids?.includes(dataSourceId))
+      .map((workflow) => workflow.name) ?? [];
+  return names.join(", ");
 }
 
-function navigateToWorkflows() {
-  visible.value = false;
-  router.push("/workflow");
+function workflowPrimaryDataName(workflow: WorkflowBrief): string {
+  const dataSourceId = workflow.primary_data_source_id;
+  if (!dataSourceId) return "";
+  const dataSource = project.value?.data_sources?.find((item) => item.id === dataSourceId);
+  return dataSource ? `Data: ${dataSource.display_name}` : "";
 }
 
-function openExperiment(_experimentId: number) {
+async function navigateToData() {
+  // Pin the drawer's project as the destination context so the Data view
+  // doesn't read from a stale `currentProjectId` set by an earlier session.
+  const targetProjectId = project.value?.id ?? projectStore.currentProjectId;
   visible.value = false;
-  router.push("/data");
+  if (targetProjectId !== null && projectStore.currentProjectId !== targetProjectId) {
+    await projectStore.selectProject(targetProjectId);
+  }
+  router.push({
+    path: "/data",
+    query: targetProjectId !== null ? { project_id: String(targetProjectId) } : {},
+  });
 }
 
-function openWorkflow(_workflowId: number) {
+async function navigateToWorkflows() {
+  const targetProjectId = project.value?.id ?? projectStore.currentProjectId;
   visible.value = false;
-  router.push("/workflow");
+  if (targetProjectId !== null && projectStore.currentProjectId !== targetProjectId) {
+    await projectStore.selectProject(targetProjectId);
+  }
+  router.push({
+    path: "/workflow",
+    query: targetProjectId !== null ? { project_id: String(targetProjectId) } : {},
+  });
+}
+
+async function openExperiment(_experimentId: number) {
+  const targetProjectId = project.value?.id ?? projectStore.currentProjectId;
+  visible.value = false;
+  if (targetProjectId !== null && projectStore.currentProjectId !== targetProjectId) {
+    await projectStore.selectProject(targetProjectId);
+  }
+  router.push({
+    path: "/data",
+    query: targetProjectId !== null ? { project_id: String(targetProjectId) } : {},
+  });
+}
+
+function isActiveWorkflow(workflowId: number): boolean {
+  return workbookStore.activeSheet?.workflowId === workflowId;
+}
+
+async function openWorkflow(workflowId: number) {
+  const targetProjectId = project.value?.id ?? projectStore.currentProjectId;
+  if (targetProjectId === null) {
+    return;
+  }
+
+  try {
+    await workbookStore.selectWorkflowSheet(workflowId, targetProjectId);
+    visible.value = false;
+    await router.push("/workflow");
+  } catch (err: unknown) {
+    toast.add({
+      severity: "error",
+      summary: "Workflow Selection Failed",
+      detail: getErrorMessage(err, "Unable to open the selected workflow"),
+      life: 4000,
+    });
+  }
 }
 
 async function openSubProject(projectId: number) {
@@ -345,6 +466,87 @@ async function openSubProject(projectId: number) {
   gap: 8px;
 }
 
+.data-source-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.data-source-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.data-source-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.data-source-color {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  flex: 0 0 auto;
+}
+
+.data-source-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.data-source-name {
+  color: #1e293b;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-source-meta,
+.data-source-label,
+.workflow-data,
+.workflow-template {
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.ai-generated i {
+  color: #a855f7;
+  font-size: 0.7rem;
+  margin-right: 4px;
+}
+
+.ai-chip {
+  background: #a855f7;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 0.625rem;
+  font-weight: 700;
+  margin-right: 4px;
+  padding: 1px 4px;
+}
+
+.data-source-workflows {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 8px;
+  align-items: start;
+}
+
+.data-source-value {
+  color: #334155;
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+
 .experiment-card {
   padding: 12px;
   background: #f8fafc;
@@ -395,6 +597,7 @@ async function openSubProject(projectId: number) {
   gap: 10px;
   padding: 10px 12px;
   background: #f8fafc;
+  border: 1px solid transparent;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
@@ -403,6 +606,11 @@ async function openSubProject(projectId: number) {
 .workflow-item:hover {
   background: #f1f5f9;
   transform: translateX(4px);
+}
+
+.workflow-item.active {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
 }
 
 .workflow-item i {

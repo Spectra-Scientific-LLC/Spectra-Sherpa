@@ -142,7 +142,8 @@ describe("LLM Store local BYO chat", () => {
       provider: "byo-endpoint",
       base_url: "",
       model: "configured-via-env",
-      verbose: false,
+      verbose: true,
+      max_paragraphs: 2,
     });
   });
 });

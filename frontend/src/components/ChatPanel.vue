@@ -204,7 +204,7 @@
                   <i class="pi pi-info-circle"></i>
                   <span
                     >Set <code>CHAT_ENDPOINT_URL</code> and <code>CHAT_ENDPOINT_KEY</code> in your
-                    environment, then restart to enable chat.</span
+                    environment, or configure local chat in Settings.</span
                   >
                 </div>
                 <div v-else-if="!llmChatEnabled" class="no-key-notice">
@@ -422,6 +422,15 @@ const resolveInitialTab = (): ChatTab => {
 };
 
 const activeTab = ref<ChatTab>(resolveInitialTab());
+
+const workflowGenerationRequestPattern =
+  /\b(generate|create|build|make|draft|propose)\b[\s\S]{0,120}\b(workflow|pipeline|sheet|model|pls-?da|pca|simca|mcr)\b/i;
+
+const shouldUseAgenticToolsForMessage = (message: string): boolean =>
+  toolsActive.value ||
+  (activeTab.value === "sherpa" &&
+    isFeatureEnabled("sherpaAgenticTools") &&
+    workflowGenerationRequestPattern.test(message));
 
 const setActiveTab = (tab: ChatTab) => {
   if (tab === "sherpa" && !sherpaEnabled.value) {
@@ -925,8 +934,10 @@ const sendMessage = async () => {
       userMessage.value = "";
       return;
     }
-    await sherpaStore.sendMessage(userMessage.value, toolsActive.value);
+    const messageBody = userMessage.value;
     userMessage.value = "";
+    const useAgenticTools = shouldUseAgenticToolsForMessage(messageBody);
+    await sherpaStore.sendMessage(messageBody, useAgenticTools);
     return;
   }
 

@@ -127,7 +127,10 @@ async def update_doe_config(
     return config
 
 
-@router.delete("/{config_id}", status_code=204)
+from fastapi import Response
+
+
+@router.delete("/{config_id}", status_code=204, response_class=Response)
 async def delete_doe_config(
     config_id: int,
     session: AsyncSession = Depends(get_session),

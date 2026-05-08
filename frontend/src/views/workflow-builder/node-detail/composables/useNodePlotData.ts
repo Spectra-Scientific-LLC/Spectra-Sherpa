@@ -182,6 +182,8 @@ const availablePlots = computed(() => {
   }
   switch (nodeTypeKey.value) {
     case "model.mcr_als":
+      plots.push("Concentration Profiles", "Pure Spectra", "Original Contour", "Reconstructed Contour", "Residual Contour");
+      break;
     case "model.simplisma":
       plots.push("Concentration Profiles", "Pure Spectra");
       break;
@@ -321,16 +323,20 @@ watch(
 // ============================================================================
 
 /**
- * Derive PC axis labels from explained_variance_ratio.
- * Falls back to metadata.pc_labels for backwards compat with old node outputs.
+ * Derive PC/LV axis labels.
+ * Priority: pc_labels (legacy) → explained_variance_ratio → lv_labels (PLS-DA/PLS).
  */
 const pcLabels = computed(() => {
   const metadata = nodeOutput.value?.metadata || {};
   // Backwards compat: use pre-computed pc_labels if available
   if (metadata.pc_labels?.length) return metadata.pc_labels;
-  // Derive from explained_variance_ratio
+  // Derive from explained_variance_ratio (PCA)
   const evr = metadata.explained_variance_ratio || [];
-  if (!evr.length) return [];
+  if (!evr.length) {
+    // LV-based methods (PLS-DA, PLS) ship lv_labels directly
+    if (metadata.lv_labels?.length) return metadata.lv_labels;
+    return [];
+  }
   const yTitle = metadata.y_title;
   const suffix = yTitle && yTitle !== "Response" ? ` [${yTitle}]` : "";
   return evr.map((v: number, i: number) => {
@@ -1184,6 +1190,134 @@ const mcrSpectraLayout = computed(() => {
 });
 
 // ============================================================================
+// MCR-ALS Contour Plots (Original, Reconstructed, Residual)
+// ============================================================================
+
+// Reconstructed matrix D̂ = C · Sᵀ, computed client-side from existing outputs.
+const mcrReconstructedMatrix = computed<number[][] | null>(() => {
+  if (nodeTypeKey.value !== "model.mcr_als" || !hasOutput.value) return null;
+  const C = nodeOutput.value?.data as number[][] | undefined;
+  const St = (nodeOutput.value?.metadata?.St) as number[][] | undefined;
+  if (!C?.length || !St?.length || !Array.isArray(C[0]) || !Array.isArray(St[0])) return null;
+  const nSamples = C.length;
+  const nFeatures = St[0].length;
+  return Array.from({ length: nSamples }, (_, i) =>
+    Array.from({ length: nFeatures }, (_, j) =>
+      C[i].reduce((sum, _, k) => sum + C[i][k] * St[k][j], 0)
+    )
+  );
+});
+
+// Residuals 2D matrix from the secondary port (already computed by the node).
+const mcrResidualsMatrix = computed<number[][] | null>(() => {
+  if (nodeTypeKey.value !== "model.mcr_als" || !hasOutput.value) return null;
+  const res = nodeOutput.value?.ports?.residuals?.data as number[][] | undefined;
+  if (!res?.length || !Array.isArray(res[0])) return null;
+  return res;
+});
+
+// Shared axis helpers for the three contour plots.
+const mcrContourX = computed(() => {
+  const metadata = nodeOutput.value?.metadata || {};
+  const St = metadata.St as number[][] | undefined;
+  const nFeatures = St?.[0]?.length ?? 0;
+  const cands = (metadata.spectral_wavenumbers ?? metadata.wavenumbers) as number[] | undefined;
+  return Array.isArray(cands) && cands.length === nFeatures
+    ? cands
+    : Array.from({ length: nFeatures }, (_, i) => i);
+});
+
+const mcrContourXMeta = computed(() => {
+  const metadata = nodeOutput.value?.metadata || {};
+  const St = metadata.St as number[][] | undefined;
+  const nFeatures = St?.[0]?.length ?? 0;
+  const cands = (metadata.spectral_wavenumbers ?? metadata.wavenumbers) as number[] | undefined;
+  const real = Array.isArray(cands) && cands.length === nFeatures;
+  const xTitle = real ? (metadata.spectral_x_title ?? metadata.x_title ?? "") as string : "";
+  const xUnits = real ? (metadata.spectral_x_units ?? metadata.x_units ?? "") as string : "";
+  return {
+    xLabel: xUnits ? `${xTitle} (${xUnits})` : (xTitle || "Feature Index"),
+    shouldReverse: real && (xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber")),
+  };
+});
+
+const mcrContourY = computed(() => {
+  const n = (nodeOutput.value?.data as unknown[] | undefined)?.length ?? 0;
+  return Array.from({ length: n }, (_, i) => i + 1);
+});
+
+const buildMcrContourLayout = (title: string) => {
+  const metadata = nodeOutput.value?.metadata || {};
+  const { xLabel, shouldReverse } = mcrContourXMeta.value;
+  const yLabel = (metadata.y_title as string | undefined)
+    ?? (metadata.is_time_series ? "Time" : "Sample");
+  return {
+    ...basePlotLayout,
+    height: 380,
+    title: { text: title, font: { color: "#94a3b8", size: 13 } },
+    xaxis: { ...basePlotLayout.xaxis, title: xLabel, autorange: shouldReverse ? "reversed" : true },
+    yaxis: { ...basePlotLayout.yaxis, title: yLabel },
+  };
+};
+
+// Original data contour: D = D̂ + residuals.
+const mcrOriginalContourData = computed(() => {
+  if (nodeTypeKey.value !== "model.mcr_als" || !hasOutput.value) return [];
+  const rec = mcrReconstructedMatrix.value;
+  const res = mcrResidualsMatrix.value;
+  if (!rec || !res || rec.length !== res.length) return [];
+  const z = rec.map((row, i) => row.map((v, j) => v + res[i][j]));
+  return [{
+    type: "heatmap",
+    z,
+    x: mcrContourX.value,
+    y: mcrContourY.value,
+    colorscale: "Viridis",
+    hovertemplate: "%{x:.2f}<br>Sample %{y}<br>Intensity: %{z:.4f}<extra></extra>",
+  }];
+});
+
+const mcrOriginalContourLayout = computed(() => buildMcrContourLayout("Original Data (D)"));
+
+// Reconstructed contour: D̂ = C · Sᵀ.
+const mcrReconstructedContourData = computed(() => {
+  if (nodeTypeKey.value !== "model.mcr_als" || !hasOutput.value) return [];
+  const rec = mcrReconstructedMatrix.value;
+  if (!rec) return [];
+  return [{
+    type: "heatmap",
+    z: rec,
+    x: mcrContourX.value,
+    y: mcrContourY.value,
+    colorscale: "Viridis",
+    hovertemplate: "%{x:.2f}<br>Sample %{y}<br>Intensity: %{z:.4f}<extra></extra>",
+  }];
+});
+
+const mcrReconstructedContourLayout = computed(() => buildMcrContourLayout("Reconstructed (D̂ = C·Sᵀ)"));
+
+// Residual contour: diverging colorscale, symmetric around zero.
+const mcrResidualContourData = computed(() => {
+  if (nodeTypeKey.value !== "model.mcr_als" || !hasOutput.value) return [];
+  const res = mcrResidualsMatrix.value;
+  if (!res) return [];
+  const maxAbs = res.reduce((m, row) => row.reduce((rm, v) => Math.max(rm, Math.abs(v)), m), 0);
+  return [{
+    type: "heatmap",
+    z: res,
+    x: mcrContourX.value,
+    y: mcrContourY.value,
+    colorscale: "RdBu",
+    zmid: 0,
+    zmin: -maxAbs,
+    zmax: maxAbs,
+    hovertemplate: "%{x:.2f}<br>Sample %{y}<br>Residual: %{z:.4f}<extra></extra>",
+  }];
+});
+
+const mcrResidualContourLayout = computed(() => buildMcrContourLayout("Residuals (D − D̂)"));
+
+// ============================================================================
 // Plot / Contour Node Visualization (server-rendered Plotly)
 // ============================================================================
 
@@ -1439,14 +1573,21 @@ const classificationScoresData = computed(() => {
   const metadata = nodeOutput.value?.metadata || {};
   if (!scores.length) return [];
 
-  const labels = metadata.sample_labels || Array.from({ length: scores.length }, (_, i) => `Sample ${i + 1}`);
-  const pcLabels = metadata.pc_labels || [];
+  // Display names for hover text (sample IDs). Distinct from class assignments.
+  const sampleLabels = metadata.sample_labels || Array.from({ length: scores.length }, (_, i) => `Sample ${i + 1}`);
+  // Per-sample class assignments. PLS-DA stores these in y_true; SIMCA/KNN
+  // may use sample_labels directly if no y_true is present.
+  const yTrue: any[] = metadata.y_true || [];
+  const classAssignments = yTrue.length === scores.length ? yTrue : sampleLabels;
+  // Use shared pcLabels computed (resolves pc_labels → evr → lv_labels).
+  const axisLabels = pcLabels.value;
   const labelCategories = metadata.label_categories;
 
-  const useCategorical = labelCategories && labelCategories.length > 0 && labelCategories.length < 50;
+  const useCategorical = labelCategories && labelCategories.length > 0 && labelCategories.length < 50
+    && yTrue.length === scores.length;
 
   if (useCategorical) {
-    const colorMap = createCategoryColorMap(labels, labelCategories);
+    const colorMap = createCategoryColorMap(classAssignments, labelCategories);
     const traces: any[] = [];
     const categoryGroups = new Map<string | number, { x: number[], y: number[], labels: string[] }>();
     labelCategories.forEach((cat: any) => {
@@ -1454,12 +1595,12 @@ const classificationScoresData = computed(() => {
     });
 
     scores.forEach((row: number[], idx: number) => {
-      const category = labels[idx];
+      const category = classAssignments[idx];
       const group = categoryGroups.get(category);
       if (group) {
         group.x.push(row[pcaXAxis.value]);
         group.y.push(row[pcaYAxis.value]);
-        group.labels.push(String(labels[idx]));
+        group.labels.push(String(sampleLabels[idx]));
       }
     });
 
@@ -1479,7 +1620,7 @@ const classificationScoresData = computed(() => {
             opacity: 0.8,
             line: { width: 1, color: "rgba(0,0,0,0.3)" },
           },
-          hovertemplate: `%{text}<br>${pcLabels[pcaXAxis.value] || `Dimension ${pcaXAxis.value + 1}`}: %{x:.3f}<br>${pcLabels[pcaYAxis.value] || `Dimension ${pcaYAxis.value + 1}`}: %{y:.3f}<extra></extra>`,
+          hovertemplate: `%{text}<br>${axisLabels[pcaXAxis.value] || `Dimension ${pcaXAxis.value + 1}`}: %{x:.3f}<br>${axisLabels[pcaYAxis.value] || `Dimension ${pcaYAxis.value + 1}`}: %{y:.3f}<extra></extra>`,
         });
       }
     });
@@ -1491,9 +1632,9 @@ const classificationScoresData = computed(() => {
       type: "scatter",
       mode: "markers",
       x, y,
-      text: labels,
+      text: sampleLabels,
       marker: { size: 10, color: "#3b82f6", opacity: 0.8, line: { width: 1, color: "#1e40af" } },
-      hovertemplate: `%{text}<br>${pcLabels[pcaXAxis.value] || `Dimension ${pcaXAxis.value + 1}`}: %{x:.3f}<br>${pcLabels[pcaYAxis.value] || `Dimension ${pcaYAxis.value + 1}`}: %{y:.3f}<extra></extra>`,
+      hovertemplate: `%{text}<br>${axisLabels[pcaXAxis.value] || `Dimension ${pcaXAxis.value + 1}`}: %{x:.3f}<br>${axisLabels[pcaYAxis.value] || `Dimension ${pcaYAxis.value + 1}`}: %{y:.3f}<extra></extra>`,
     }];
   }
 });
@@ -1505,17 +1646,18 @@ const classificationScoresLayout = computed(() => {
   // titles out of sync with the user's dropdown selection even if the data
   // updated. Mirror of the fix in PR #36 on main.
 
-  // Fallback layout
   const metadata = nodeOutput.value?.metadata || {};
-  const pcLabels = metadata.pc_labels || [];
+  // Use the shared pcLabels computed (resolves pc_labels → evr → lv_labels)
+  // so PLS-DA gets "LV1 / LV2" titles instead of "Dimension 1 / Dimension 2".
+  const axisLabels = pcLabels.value;
   const hasCategorical = metadata.label_categories && metadata.label_categories.length > 0 && metadata.label_categories.length < 50;
 
   const layout: Record<string, any> = {
     ...basePlotLayout,
     height: 400,
     showlegend: hasCategorical,
-    xaxis: { ...basePlotLayout.xaxis, title: pcLabels[pcaXAxis.value] || `Dimension ${pcaXAxis.value + 1}` },
-    yaxis: { ...basePlotLayout.yaxis, title: pcLabels[pcaYAxis.value] || `Dimension ${pcaYAxis.value + 1}` },
+    xaxis: { ...basePlotLayout.xaxis, title: axisLabels[pcaXAxis.value] || `Dimension ${pcaXAxis.value + 1}` },
+    yaxis: { ...basePlotLayout.yaxis, title: axisLabels[pcaYAxis.value] || `Dimension ${pcaYAxis.value + 1}` },
   };
 
   if (hasCategorical) {
@@ -2895,6 +3037,9 @@ const classificationAccuracyLayout = computed(() => {
     // MCR / SIMPLISMA / NMF / ICA
     mcrConcentrationData: mcrConcentrationData.value, mcrConcentrationLayout: mcrConcentrationLayout.value,
     mcrSpectraData: mcrSpectraData.value, mcrSpectraLayout: mcrSpectraLayout.value,
+    mcrOriginalContourData: mcrOriginalContourData.value, mcrOriginalContourLayout: mcrOriginalContourLayout.value,
+    mcrReconstructedContourData: mcrReconstructedContourData.value, mcrReconstructedContourLayout: mcrReconstructedContourLayout.value,
+    mcrResidualContourData: mcrResidualContourData.value, mcrResidualContourLayout: mcrResidualContourLayout.value,
     // EFA
     efaEigenvalueData: efaEigenvalueData.value, efaEigenvalueLayout: efaEigenvalueLayout.value,
     // PLS

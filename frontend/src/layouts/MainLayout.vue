@@ -70,7 +70,7 @@
       v-if="isNarrow"
       v-model:visible="navDrawerOpen"
       position="left"
-      :style="{ width: '240px' }"
+      :style="{ width: '224px' }"
       class="nav-drawer"
     >
       <Sidebar :collapsed="false" @click="navDrawerOpen = false" />
@@ -141,7 +141,7 @@ const clampChatWidth = (value: number) => {
 };
 
 const layoutStyle = computed(() => ({
-  "--nav-width": effectiveNavCollapsed.value ? "72px" : "240px",
+  "--nav-width": effectiveNavCollapsed.value ? "72px" : "224px",
   "--chat-width": chatCollapsed.value ? "0px" : `${chatWidth.value}px`,
 }));
 

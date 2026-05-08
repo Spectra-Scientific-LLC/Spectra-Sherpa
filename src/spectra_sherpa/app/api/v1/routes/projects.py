@@ -17,16 +17,23 @@ from sqlalchemy.orm import selectinload
 
 from spectra_sherpa.app.api.deps import demo_guard, get_current_user, get_session, require_project
 from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.app.models.advisor_channel import AdvisorChannel
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.model_artifact import ModelArtifact
 from spectra_sherpa.app.models.project import Project, ProjectVersion
+from spectra_sherpa.app.models.project_data_source import ProjectDataSource
 from spectra_sherpa.app.models.project_script import ProjectScript
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
 from spectra_sherpa.app.schemas.projects import (
+    AdvisorChannelOut,
+    AdvisorChannelUpdate,
     ExperimentBrief,
     ModelBrief,
     ProjectCreate,
+    ProjectDataSourceCreate,
+    ProjectDataSourceOut,
+    ProjectDataSourceUpdate,
     ProjectDetail,
     ProjectSummary,
     ProjectUpdate,
@@ -36,6 +43,10 @@ from spectra_sherpa.app.schemas.projects import (
     SaveProjectRequest,
     ScriptBrief,
     WorkflowBrief,
+)
+from spectra_sherpa.app.services.project_data_sources import (
+    effective_workflow_tab_color,
+    ensure_project_advisor_channel,
 )
 
 logger = logging.getLogger(__name__)
@@ -127,8 +138,42 @@ async def _project_to_detail(project: Project, session: AsyncSession) -> Project
         for e in exp_result.scalars().all()
     ]
 
+    # Project data sources
+    data_source_result = await session.execute(
+        select(ProjectDataSource)
+        .where(ProjectDataSource.project_id == project.id)
+        .order_by(ProjectDataSource.sort_order.asc(), ProjectDataSource.display_name.asc())
+    )
+    data_sources = [
+        ProjectDataSourceOut(
+            id=data_source.id,
+            project_id=data_source.project_id,
+            display_name=data_source.display_name,
+            source_type=data_source.source_type,
+            source_ref=data_source.source_ref,
+            fingerprint=data_source.fingerprint,
+            color=data_source.color,
+            metadata=data_source.metadata_ or {},
+            sort_order=data_source.sort_order,
+            created_at=data_source.created_at,
+            updated_at=data_source.updated_at,
+        )
+        for data_source in data_source_result.scalars().all()
+    ]
+
     # Workflows
-    wf_result = await session.execute(select(Workflow).where(Workflow.project_id == project.id))
+    wf_result = await session.execute(
+        select(Workflow)
+        .where(Workflow.project_id == project.id)
+        .options(
+            selectinload(Workflow.primary_data_source),
+            selectinload(Workflow.data_source_links),
+            selectinload(Workflow.advisor_channels),
+        )
+        .order_by(Workflow.sheet_order.asc(), Workflow.updated_at.desc())
+    )
+    workflow_models = list(wf_result.scalars().all())
+    workflow_name_by_id = {workflow.id: workflow.name for workflow in workflow_models}
     workflows = [
         WorkflowBrief(
             id=w.id,
@@ -136,9 +181,27 @@ async def _project_to_detail(project: Project, session: AsyncSession) -> Project
             description=w.description,
             status=w.status,
             integrity_hash=w.integrity_hash,
+            tab_color=effective_workflow_tab_color(w),
+            sheet_order=w.sheet_order,
+            primary_data_source_id=w.primary_data_source_id,
+            data_source_ids=w.data_source_ids,
+            color_source=w.color_source,
+            tab_color_override=w.tab_color_override,
+            advisor_channel_id=w.advisor_channel_id,
+            created_from_template_name=w.created_from_template_name,
+            created_from_template_version=w.created_from_template_version,
+            created_from_workflow_id=w.created_from_workflow_id,
+            created_from_workflow_name=workflow_name_by_id.get(w.created_from_workflow_id),
         )
-        for w in wf_result.scalars().all()
+        for w in workflow_models
     ]
+
+    advisor_result = await session.execute(
+        select(AdvisorChannel)
+        .where(AdvisorChannel.project_id == project.id)
+        .order_by(AdvisorChannel.channel_type.asc(), AdvisorChannel.updated_at.desc())
+    )
+    advisor_channels = [AdvisorChannelOut.model_validate(channel) for channel in advisor_result.scalars().all()]
 
     # Scripts
     script_result = await session.execute(
@@ -188,7 +251,9 @@ async def _project_to_detail(project: Project, session: AsyncSession) -> Project
         **summary.model_dump(),
         metadata=project.metadata_ or {},
         experiments=experiments,
+        data_sources=data_sources,
         workflows=workflows,
+        advisor_channels=advisor_channels,
         scripts=scripts,
         models=models,
         children=children,
@@ -218,6 +283,8 @@ async def create_project(
         sample_type=payload.sample_type,
     )
     session.add(project)
+    await session.flush()
+    await ensure_project_advisor_channel(project.id, project.name, session)
     await session.commit()
     await session.refresh(project)
     logger.info("Created project '%s' (id=%s)", project.name, project.id)
@@ -249,6 +316,176 @@ async def get_project(
     """Get full project detail (experiments, workflows, children)."""
     project = await require_project(project_id, current_user.id, session)
     return await _project_to_detail(project, session)
+
+
+@router.get("/{project_id}/details", response_model=ProjectDetail)
+async def get_project_details(
+    project_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> ProjectDetail:
+    """Alias for full project detail used by project-context clients."""
+    project = await require_project(project_id, current_user.id, session)
+    return await _project_to_detail(project, session)
+
+
+@router.get("/{project_id}/data-sources", response_model=list[ProjectDataSourceOut])
+async def list_project_data_sources(
+    project_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> list[ProjectDataSourceOut]:
+    """List data sources registered for a project."""
+    await require_project(project_id, current_user.id, session)
+    result = await session.execute(
+        select(ProjectDataSource)
+        .where(ProjectDataSource.project_id == project_id)
+        .order_by(ProjectDataSource.sort_order.asc(), ProjectDataSource.display_name.asc())
+    )
+    return [
+        ProjectDataSourceOut(
+            id=data_source.id,
+            project_id=data_source.project_id,
+            display_name=data_source.display_name,
+            source_type=data_source.source_type,
+            source_ref=data_source.source_ref,
+            fingerprint=data_source.fingerprint,
+            color=data_source.color,
+            metadata=data_source.metadata_ or {},
+            sort_order=data_source.sort_order,
+            created_at=data_source.created_at,
+            updated_at=data_source.updated_at,
+        )
+        for data_source in result.scalars().all()
+    ]
+
+
+@router.get("/{project_id}/advisor-channels", response_model=list[AdvisorChannelOut])
+async def list_project_advisor_channels(
+    project_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> list[AdvisorChannelOut]:
+    """List project-level and sheet-level Sherpa Advisor channels."""
+    await require_project(project_id, current_user.id, session)
+    result = await session.execute(
+        select(AdvisorChannel)
+        .where(AdvisorChannel.project_id == project_id)
+        .order_by(AdvisorChannel.channel_type.asc(), AdvisorChannel.updated_at.desc())
+    )
+    return [AdvisorChannelOut.model_validate(channel) for channel in result.scalars().all()]
+
+
+@router.put("/{project_id}/advisor-channels/{channel_id}", response_model=AdvisorChannelOut)
+async def update_project_advisor_channel(
+    project_id: int,
+    channel_id: int,
+    payload: AdvisorChannelUpdate,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> AdvisorChannelOut:
+    """Update sheet/project advisor channel metadata such as conversation binding."""
+    await require_project(project_id, current_user.id, session)
+    result = await session.execute(
+        select(AdvisorChannel).where(
+            AdvisorChannel.id == channel_id,
+            AdvisorChannel.project_id == project_id,
+        )
+    )
+    channel = result.scalar_one_or_none()
+    if channel is None:
+        raise HTTPException(status_code=404, detail="Advisor channel not found")
+
+    update_data = payload.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(channel, key, value)
+
+    await session.commit()
+    await session.refresh(channel)
+    return AdvisorChannelOut.model_validate(channel)
+
+
+@router.post("/{project_id}/data-sources", response_model=ProjectDataSourceOut, status_code=201)
+async def create_project_data_source(
+    project_id: int,
+    payload: ProjectDataSourceCreate,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> ProjectDataSourceOut:
+    """Create a manually registered project data source."""
+    await require_project(project_id, current_user.id, session)
+    sort_order = await session.scalar(
+        select(func.count(ProjectDataSource.id)).where(ProjectDataSource.project_id == project_id)
+    )
+    data_source = ProjectDataSource(
+        project_id=project_id,
+        display_name=payload.display_name,
+        source_type=payload.source_type,
+        source_ref=payload.source_ref,
+        fingerprint=payload.fingerprint,
+        color=payload.color,
+        metadata_=payload.metadata,
+        sort_order=sort_order or 0,
+    )
+    session.add(data_source)
+    await session.commit()
+    await session.refresh(data_source)
+    return ProjectDataSourceOut(
+        id=data_source.id,
+        project_id=data_source.project_id,
+        display_name=data_source.display_name,
+        source_type=data_source.source_type,
+        source_ref=data_source.source_ref,
+        fingerprint=data_source.fingerprint,
+        color=data_source.color,
+        metadata=data_source.metadata_ or {},
+        sort_order=data_source.sort_order,
+        created_at=data_source.created_at,
+        updated_at=data_source.updated_at,
+    )
+
+
+@router.put("/{project_id}/data-sources/{data_source_id}", response_model=ProjectDataSourceOut)
+async def update_project_data_source(
+    project_id: int,
+    data_source_id: int,
+    payload: ProjectDataSourceUpdate,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> ProjectDataSourceOut:
+    """Update project data-source metadata such as display name or color."""
+    await require_project(project_id, current_user.id, session)
+    result = await session.execute(
+        select(ProjectDataSource).where(
+            ProjectDataSource.id == data_source_id,
+            ProjectDataSource.project_id == project_id,
+        )
+    )
+    data_source = result.scalar_one_or_none()
+    if data_source is None:
+        raise HTTPException(status_code=404, detail="Project data source not found")
+
+    update_data = payload.model_dump(exclude_unset=True)
+    if "metadata" in update_data:
+        update_data["metadata_"] = update_data.pop("metadata")
+    for key, value in update_data.items():
+        setattr(data_source, key, value)
+
+    await session.commit()
+    await session.refresh(data_source)
+    return ProjectDataSourceOut(
+        id=data_source.id,
+        project_id=data_source.project_id,
+        display_name=data_source.display_name,
+        source_type=data_source.source_type,
+        source_ref=data_source.source_ref,
+        fingerprint=data_source.fingerprint,
+        color=data_source.color,
+        metadata=data_source.metadata_ or {},
+        sort_order=data_source.sort_order,
+        created_at=data_source.created_at,
+        updated_at=data_source.updated_at,
+    )
 
 
 @router.put("/{project_id}", response_model=ProjectDetail)

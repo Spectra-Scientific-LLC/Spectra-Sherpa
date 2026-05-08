@@ -1,16 +1,27 @@
 <template>
   <header class="topbar">
     <div class="topbar-left">
-      <Button
-        icon="pi pi-bars"
-        class="p-button-text p-button-rounded"
-        aria-label="Toggle navigation"
+      <button
+        type="button"
+        class="nav-collapse-toggle"
+        :aria-label="props.navCollapsed ? 'Expand navigation' : 'Collapse navigation'"
+        :title="props.navCollapsed ? 'Expand navigation' : 'Collapse navigation'"
         @click="emit('toggle-nav')"
-      />
+      >
+        <i class="pi" :class="props.navCollapsed ? 'pi-chevron-right' : 'pi-chevron-left'"></i>
+      </button>
 
       <!-- Global Project Context - Hidden when chat is open -->
       <div v-if="chatCollapsed" class="project-selector">
         <i class="pi pi-folder-open project-icon"></i>
+        <span
+          v-if="projectStore.currentProject"
+          class="active-project-title"
+          data-test="active-project-title"
+          :title="projectStore.currentProject.name"
+        >
+          {{ projectStore.currentProject.name }}
+        </span>
         <Dropdown
           v-model="selectedProjectId"
           :options="projectStore.projectList"
@@ -489,6 +500,31 @@ const onFileSelected = async (event: Event) => {
   flex: 1;
 }
 
+.nav-collapse-toggle {
+  align-items: center;
+  background: transparent;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  color: #64748b;
+  cursor: pointer;
+  display: inline-flex;
+  height: 26px;
+  justify-content: center;
+  padding: 0;
+  transition: all 0.15s ease;
+  width: 26px;
+}
+
+.nav-collapse-toggle:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  color: #334155;
+}
+
+.nav-collapse-toggle i {
+  font-size: 0.7rem;
+}
+
 .topbar-center {
   display: flex;
   align-items: center;
@@ -517,10 +553,20 @@ const onFileSelected = async (event: Event) => {
   font-size: 1rem;
 }
 
+.active-project-title {
+  color: #0f172a;
+  font-size: 0.95rem;
+  font-weight: 700;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .project-dropdown {
   border: none;
   background: transparent;
-  min-width: 200px;
+  min-width: 150px;
 }
 
 .project-dropdown :deep(.p-dropdown-label) {

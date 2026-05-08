@@ -125,14 +125,16 @@ function factory(
 }
 
 describe("PlotsPanel", () => {
-  it("does not render when hasOutput is false", () => {
+  it("renders an empty state when hasOutput is false", () => {
     const { wrapper } = factory({ hasOutput: false });
-    expect(wrapper.find(".detail-section").exists()).toBe(false);
+    expect(wrapper.find(".detail-section").exists()).toBe(true);
+    expect(wrapper.text()).toContain("Run the node to generate visualizations.");
   });
 
-  it("does not render when availablePlots is empty", () => {
+  it("renders an empty state when availablePlots is empty", () => {
     const { wrapper } = factory({ availablePlots: [] });
-    expect(wrapper.find(".detail-section").exists()).toBe(false);
+    expect(wrapper.find(".detail-section").exists()).toBe(true);
+    expect(wrapper.text()).toContain("No visualizations available for this node type.");
   });
 
   it("renders the PCA subsections when isPCAOutput is true", () => {

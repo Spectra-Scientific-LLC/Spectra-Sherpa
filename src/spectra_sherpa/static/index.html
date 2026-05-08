@@ -19,13 +19,9 @@
 
       Each import map target points at a thin shim served from
       /vendor/*.js that re-exports from `globalThis.__OSS_VENDOR__`,
-      which `src/main.ts` populates during OSS bootstrap.
-
-      STATUS (2026-04): shim pair is scaffolded here for commit 4 of
-      Phase 1b to verify end-to-end. The actual dynamic-import boot
-      sequence is not wired yet; do not merge this branch to main
-      until commit 4 confirms the runtime path works in a running
-      dev environment.
+      which `src/main.ts` populates during OSS bootstrap. The boot
+      sequence itself lives in `src/boot/serverModules.ts` and is
+      driven from `src/main.ts`.
     -->
 
     <script type="importmap">
@@ -34,29 +30,30 @@
           "vue": "/vendor/vue.js",
           "vue-router": "/vendor/vue-router.js",
           "pinia": "/vendor/pinia.js",
-          "primevue/": "/vendor/primevue/"
+          "primevue/button": "/vendor/primevue/button.js",
+          "primevue/card": "/vendor/primevue/card.js",
+          "primevue/checkbox": "/vendor/primevue/checkbox.js",
+          "primevue/column": "/vendor/primevue/column.js",
+          "primevue/datatable": "/vendor/primevue/datatable.js",
+          "primevue/dialog": "/vendor/primevue/dialog.js",
+          "primevue/inputtext": "/vendor/primevue/inputtext.js",
+          "primevue/message": "/vendor/primevue/message.js",
+          "primevue/password": "/vendor/primevue/password.js",
+          "primevue/progressbar": "/vendor/primevue/progressbar.js",
+          "primevue/tabpanel": "/vendor/primevue/tabpanel.js",
+          "primevue/tabview": "/vendor/primevue/tabview.js",
+          "primevue/tag": "/vendor/primevue/tag.js",
+          "primevue/usetoast": "/vendor/primevue/usetoast.js"
         }
       }
     </script>
-    <script type="module" crossorigin src="/assets/index-BKylAMCN.js"></script>
-    <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-Dw2cE7zH.js">
-    <link rel="modulepreload" crossorigin href="/assets/client-DM0emCh-.js">
-    <link rel="modulepreload" crossorigin href="/assets/_plugin-vue_export-helper-BQLJe4u9.js">
-    <link rel="modulepreload" crossorigin href="/assets/preload-helper-CQ36nxok.js">
-    <link rel="modulepreload" crossorigin href="/assets/dropdown.esm-BNJQrglB.js">
-    <link rel="modulepreload" crossorigin href="/assets/checkbox.esm-C5a9WvQw.js">
-    <link rel="modulepreload" crossorigin href="/assets/dialog.esm-Cnv8f694.js">
-    <link rel="modulepreload" crossorigin href="/assets/index.esm-BLHPpush.js">
-    <link rel="modulepreload" crossorigin href="/assets/inputtext.esm-Ctdinaqu.js">
-    <link rel="modulepreload" crossorigin href="/assets/menu.esm-q38FF3Ok.js">
-    <link rel="modulepreload" crossorigin href="/assets/textarea.esm-DJtvx6Fz.js">
-    <link rel="modulepreload" crossorigin href="/assets/vue-router-DfzJ2y9s.js">
-    <link rel="modulepreload" crossorigin href="/assets/useAppConfig-BEPWe7Rf.js">
-    <link rel="modulepreload" crossorigin href="/assets/ws-DKEssNIy.js">
-    <link rel="modulepreload" crossorigin href="/assets/project-BWgGzavZ.js">
-    <link rel="modulepreload" crossorigin href="/assets/llm-BRctkepS.js">
-    <link rel="modulepreload" crossorigin href="/assets/sherpaWs-DAjp0l-p.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-CJY3Hxg0.css">
+    <script type="module" crossorigin src="/assets/index-Bksr68Zd.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/_plugin-vue_export-helper-CXTkFu_Z.js">
+    <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-S-ySWqyJ.js">
+    <link rel="modulepreload" crossorigin href="/assets/sherpaWs-C6HpAyqL.js">
+    <link rel="modulepreload" crossorigin href="/assets/index-Bksr68Zd.js">
+    <link rel="modulepreload" crossorigin href="/assets/llm-BzwghdyY.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-Dr688A_H.css">
   </head>
   <body>
     <div id="app"></div>

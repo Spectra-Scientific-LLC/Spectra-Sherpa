@@ -51,6 +51,7 @@ const routes = [
 
   // --- System pages ---
   { path: "/settings", component: () => import("@/views/settings/SettingsContent.vue") },
+  { path: "/documentation", component: () => import("@/views/DocumentationView.vue") },
   { path: "/logs", component: () => import("@/views/LogsView.vue") },
   {
     path: "/llm-chat",

@@ -31,7 +31,7 @@ export interface SherpaSubscriptionOptions {
   types?: string[];
 }
 
-type SherpaEventHandler = (payload: SherpaEventPayload) => void;
+type SherpaEventHandler = (payload: SherpaEventPayload) => void | Promise<void>;
 
 interface SherpaSubscription {
   handler: SherpaEventHandler;
