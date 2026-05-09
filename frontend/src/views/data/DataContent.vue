@@ -1106,6 +1106,7 @@ import {
   useDataStore,
   type CatalogDatasetInfo,
 } from "@/stores/data";
+import { useAdvisorStore } from "@/stores/advisor";
 import { useProjectStore } from "@/stores/project";
 import { useSherpaStore } from "@/stores/sherpa";
 import { getErrorMessage } from "@/utils/errors";
@@ -1122,11 +1123,54 @@ const { isFeatureEnabled } = useAppConfig();
 const dataStore = useDataStore();
 const projectStore = useProjectStore();
 const sherpaStore = useSherpaStore();
+const advisorStore = useAdvisorStore();
 const toast = useToast();
 const route = useRoute();
 const router = useRouter();
 const activeTab = ref(0);
 const isGuidedExampleSession = ref(false);
+
+// R3 — Sherpa Advisor scope routing for the Data tab.  Maps the local
+// TabView index to the canonical subscope key so each subtab gets its
+// own conversation thread.  Server validates the scope vocabulary; we
+// just send the triple.
+const DATA_SUBSCOPE_KEYS = ["load", "explore", "synthesis"] as const;
+const DATA_SUBSCOPE_TITLES: Record<(typeof DATA_SUBSCOPE_KEYS)[number], string> = {
+  load: "Load",
+  explore: "Explore",
+  synthesis: "Synthesis",
+};
+
+async function syncAdvisorForDataSubtab(): Promise<void> {
+  const projectId = projectStore.currentProjectId;
+  if (projectId == null) return;
+  const subscopeKey = DATA_SUBSCOPE_KEYS[activeTab.value] ?? "load";
+  try {
+    await advisorStore.switchScope({
+      projectId,
+      tabKey: "data",
+      subscopeKey,
+      title: DATA_SUBSCOPE_TITLES[subscopeKey],
+    });
+  } catch (err) {
+    console.warn("[data] switchScope failed", err);
+  }
+}
+
+// Fire on mount and on every Data subtab change.  Project switches are
+// covered by the projectId watcher below.
+watch(activeTab, () => {
+  void syncAdvisorForDataSubtab();
+});
+watch(
+  () => projectStore.currentProjectId,
+  (next) => {
+    if (next != null) void syncAdvisorForDataSubtab();
+  },
+);
+onMounted(() => {
+  void syncAdvisorForDataSubtab();
+});
 
 // --- Load tab state ---
 const libraryCollapsed = ref(true);
