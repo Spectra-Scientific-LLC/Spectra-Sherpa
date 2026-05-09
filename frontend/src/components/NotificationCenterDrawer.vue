@@ -119,7 +119,7 @@
         <div class="notif-body">
           <div class="notif-title-row">
             <span class="notif-title">{{ n.title }}</span>
-            <span class="guidance-rule">{{ n.rule_id }}</span>
+            <span class="guidance-rule">{{ guidanceRuleLabel(n.rule_id) }}</span>
           </div>
           <div v-if="n.body" class="notif-message">{{ n.body }}</div>
           <div class="guidance-actions">
@@ -176,6 +176,7 @@ import { ref, computed, watch } from "vue";
 import Sidebar from "primevue/sidebar";
 import Button from "primevue/button";
 import { resolveGuidanceAction } from "@/lib/actionOntology";
+import { guidanceRuleLabel } from "@/lib/guidanceRules";
 import type { GuidanceNotification } from "@/lib/guidanceAdapter";
 import {
   useNotificationStore,

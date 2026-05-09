@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { useGuidanceStore, type GuidanceEvent } from "@/stores/guidance";
+import { guidanceRuleLabel } from "@/lib/guidanceRules";
 
 const mocks = vi.hoisted(() => ({
   apiGet: vi.fn(),
@@ -203,6 +204,11 @@ describe("guidance store", () => {
       params: { include_dismissed: true, limit: 100 },
     });
     expect(store.notifications[0]?.title).toBe("Start by importing data");
+  });
+
+  it("maps internal rule ids to user-facing labels", () => {
+    expect(guidanceRuleLabel("empty_project_import")).toBe("Project setup");
+    expect(guidanceRuleLabel("unknown_rule")).toBe("Guidance");
   });
 
   it("persists per-rule opt-out from the toast", async () => {
