@@ -1200,68 +1200,6 @@ describe("Sherpa Store communication state", () => {
     sherpa.dispose();
   });
 
-  // Two tests removed in the R1 memory-graph migration: chat → channel
-  // conversation-id binding moved server-side (``update_topic_conversation``
-  // in spectra-server's memory route, called from the WS handler).  The
-  // frontend no longer touches AdvisorChannel.conversation_id directly,
-  // so there is nothing observable here for an end-to-end frontend test
-  // to assert.  Server-side coverage lives in test_memory_routes.py.
-
-  it.skip("keeps parent and generated workflow conversations bound to separate worksheet channels", async () => {
-    const sherpa = useSherpaStore();
-    sherpa.init();
-    mockAdvisorStore.channels[0].conversation_id = null;
-
-    await sherpa.sendMessage("Build a PLS-DA workflow", true);
-    const requestId = lastRequestId();
-    emitSherpa({
-      type: SHERPA_WS_EVENT.chatStart,
-      request_id: requestId,
-      conversation_id: null,
-    });
-    emitSherpa({
-      type: SHERPA_WS_EVENT.workflowProposed,
-      request_id: requestId,
-      parent_workflow_id: "20",
-      parent_conversation_id: "conv-parent",
-      new_workflow_id: "30",
-      new_channel_id: "40",
-      suggested_name: "AI PLS-DA",
-      conversation_id: "conv-ai",
-    });
-    emitSherpa({
-      type: SHERPA_WS_EVENT.chatChunk,
-      request_id: requestId,
-      conversation_id: "conv-ai",
-      chunk: "I generated a PLS-DA workflow.",
-    });
-    emitSherpa({
-      type: SHERPA_WS_EVENT.chatDone,
-      request_id: requestId,
-      conversation_id: "conv-ai",
-    });
-    await flushPromises();
-
-    expect(mockAdvisorStore.updateChannel).toHaveBeenCalledWith(10, {
-      conversation_id: "conv-parent",
-    });
-    expect(mockAdvisorStore.updateChannel).not.toHaveBeenCalledWith(10, {
-      conversation_id: "conv-ai",
-    });
-    expect(mockWorkbookStore.refreshSheets).toHaveBeenCalled();
-    expect(mockAdvisorStore.loadAdvisorChannels).toHaveBeenCalledWith(42);
-    expect(mockWorkbookStore.selectWorkflowSheet).toHaveBeenCalledWith(30);
-    expect(sherpa.currentConversationId).toBe("conv-ai");
-    expect(mockAdvisorStore.channels[0].conversation_id).toBe("conv-parent");
-    expect(mockAdvisorStore.channels[1].conversation_id).toBe("conv-ai");
-    expect(mockAdvisorStore.channels[0].conversation_id).not.toBe(
-      mockAdvisorStore.channels[1].conversation_id,
-    );
-    expect(sherpa.conversations.some((item) => item.id === "conv-ai")).toBe(true);
-
-    sherpa.dispose();
-  });
-
   it("loads server conversation details by id and scopes Topics to the active worksheet", async () => {
     const { useProjectStore } = await import("@/stores/project");
     useProjectStore().currentProjectId = 42;

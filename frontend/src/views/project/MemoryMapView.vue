@@ -19,7 +19,7 @@
           icon="pi pi-refresh"
           class="p-button-text"
           :loading="loading"
-          @click="reload"
+          @click="() => reload()"
           v-tooltip.bottom="'Refresh'"
         />
       </div>
@@ -34,6 +34,12 @@
     <div v-else-if="loading && !graph" class="loading-state">
       <ProgressSpinner style="width: 40px; height: 40px" />
       <span>Loading memory graph...</span>
+    </div>
+
+    <div v-else-if="isLocalUnavailable" class="empty-state">
+      <i class="pi pi-sitemap"></i>
+      <h3>Memory Map unavailable</h3>
+      <p>Memory Map is available when Sherpa Advisor memory is backed by the server.</p>
     </div>
 
     <div v-else-if="error" class="error-banner">
@@ -156,6 +162,7 @@ const projectId = computed(() => projectStore.currentProjectId);
 const graph = ref<MemoryMapData | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
+const isLocalUnavailable = ref(false);
 
 // Tab display labels.  Order mirrors TAB_INHERITANCE_ORDER on the server.
 const TAB_DISPLAY: Record<string, string> = {
@@ -241,17 +248,20 @@ function formatRelative(iso: string): string {
   }
 }
 
-async function reload(): Promise<void> {
-  if (projectId.value === null) return;
+async function reload(projectIdOverride: number | null = null): Promise<void> {
+  const id = projectIdOverride ?? projectId.value;
+  if (id === null) return;
   loading.value = true;
   error.value = null;
+  isLocalUnavailable.value = false;
   try {
     const adapter = getAdvisorMemoryAdapter(isServerBacked.value);
-    const data = await adapter.getMemoryMap(projectId.value);
+    const data = await adapter.getMemoryMap(id);
     graph.value = data;
     if (data === null) {
-      // Local mode — Memory Map is unavailable.  The empty-state UI handles this.
-      error.value = "Memory Map is not available in local mode.";
+      // Local mode — Memory Map is unavailable.  This is an expected
+      // deployment boundary, not a failed request.
+      isLocalUnavailable.value = true;
     }
   } catch (err) {
     error.value = getErrorMessage(err, "Failed to load memory map");
@@ -265,7 +275,10 @@ function goBack(): void {
 }
 
 onMounted(() => {
-  void reload();
+  void (async () => {
+    const project = await projectStore.ensureProjectForBrowserTab();
+    await reload(projectStore.currentProjectId ?? project?.id ?? null);
+  })();
 });
 </script>
 

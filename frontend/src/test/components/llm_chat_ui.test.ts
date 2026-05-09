@@ -68,6 +68,12 @@ const mocks = vi.hoisted(() => ({
   },
   advisorStore: {
     activeChannelId: null as number | null,
+    activeNodeId: null as number | null,
+    activeTopicId: null as number | null,
+    activeNode: null as Record<string, unknown> | null,
+    topics: [] as Array<Record<string, unknown>>,
+    createTopic: vi.fn(async () => ({ id: 101, conversation_id: null })),
+    setActiveTopic: vi.fn(async () => undefined),
   },
   experimentStore: {
     experiments: [] as Array<Record<string, unknown>>,
@@ -305,6 +311,10 @@ describe("ChatPanel", () => {
     mocks.sherpaStore.subscriptionRequired = null;
     mocks.sherpaStore.subscriptionUpgradeUrl = null;
     mocks.advisorStore.activeChannelId = null;
+    mocks.advisorStore.activeNodeId = null;
+    mocks.advisorStore.activeTopicId = null;
+    mocks.advisorStore.activeNode = null;
+    mocks.advisorStore.topics = [];
     mocks.workflowStore.workflowId = null;
     mocks.workflowStore.lastExecutionResults = {};
     mocks.authStore.user = { id: 7, username: "alice" };
@@ -446,6 +456,90 @@ describe("ChatPanel", () => {
 
     expect(wrapper.find('[aria-label="Sherpa topics"]').exists()).toBe(true);
     expect(wrapper.text()).toContain("Topics");
+  });
+
+  it("creates and activates a server-backed Sherpa topic when starting a new Sherpa conversation", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.appConfig.value = { subscription: { plan: "demo" } };
+    mocks.featureFlags.sherpaAdvisor = true;
+    mocks.advisorStore.activeNodeId = 55;
+    mocks.advisorStore.topics = [];
+
+    const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+
+    const sherpaTab = wrapper.findAll("button").find((button) => button.text() === "Sherpa Advisor");
+    expect(sherpaTab).toBeTruthy();
+    await sherpaTab!.trigger("click");
+    await flushPromises();
+
+    await wrapper.find('[aria-label="Start new Sherpa conversation"]').trigger("click");
+    await flushPromises();
+
+    expect(mocks.advisorStore.createTopic).toHaveBeenCalledWith({ title: "Topic 1" });
+    expect(mocks.advisorStore.setActiveTopic).toHaveBeenCalledWith(101);
+    expect(mocks.sherpaStore.startNewConversation).toHaveBeenCalled();
+  });
+
+  it("does not start an unpersisted server Sherpa topic without an active memory node", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.appConfig.value = { subscription: { plan: "demo" } };
+    mocks.featureFlags.sherpaAdvisor = true;
+    mocks.advisorStore.activeNodeId = null;
+
+    const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+
+    const sherpaTab = wrapper.findAll("button").find((button) => button.text() === "Sherpa Advisor");
+    expect(sherpaTab).toBeTruthy();
+    await sherpaTab!.trigger("click");
+    await flushPromises();
+
+    await wrapper.find('[aria-label="Start new Sherpa conversation"]').trigger("click");
+    await flushPromises();
+
+    expect(mocks.advisorStore.createTopic).not.toHaveBeenCalled();
+    expect(mocks.sherpaStore.startNewConversation).not.toHaveBeenCalled();
+    expect(mocks.toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: "warn",
+        summary: "Select a worksheet first",
+      }),
+    );
+  });
+
+  it("guards against duplicate server topic creation from rapid clicks", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.appConfig.value = { subscription: { plan: "demo" } };
+    mocks.featureFlags.sherpaAdvisor = true;
+    mocks.advisorStore.activeNodeId = 55;
+    let resolveCreateTopic: (value: { id: number; conversation_id: null }) => void = () => undefined;
+    mocks.advisorStore.createTopic.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveCreateTopic = resolve;
+        }),
+    );
+
+    const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+
+    const sherpaTab = wrapper.findAll("button").find((button) => button.text() === "Sherpa Advisor");
+    expect(sherpaTab).toBeTruthy();
+    await sherpaTab!.trigger("click");
+    await flushPromises();
+
+    const newButton = wrapper.find('[aria-label="Start new Sherpa conversation"]');
+    await newButton.trigger("click");
+    await newButton.trigger("click");
+
+    expect(mocks.advisorStore.createTopic).toHaveBeenCalledTimes(1);
+
+    resolveCreateTopic({ id: 202, conversation_id: null });
+    await flushPromises();
+
+    expect(mocks.advisorStore.setActiveTopic).toHaveBeenCalledWith(202);
+    expect(mocks.sherpaStore.startNewConversation).toHaveBeenCalledTimes(1);
   });
 
   it("shows a contacting status while Sherpa chat is waiting for acceptance", async () => {

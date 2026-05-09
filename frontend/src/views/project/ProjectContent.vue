@@ -10,7 +10,7 @@
       </div>
       <div class="header-actions">
         <Button
-          v-if="isServerBacked"
+          v-if="isServerBacked && projectStore.currentProjectId"
           label="Memory Map"
           icon="pi pi-sitemap"
           class="p-button-outlined"

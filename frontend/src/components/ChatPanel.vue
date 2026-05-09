@@ -67,6 +67,7 @@
             <Button
               icon="pi pi-plus"
               class="p-button-text p-button-sm llm-settings-btn"
+              :disabled="isCreatingSherpaTopic"
               aria-label="Start new Sherpa conversation"
               @click="startNewSherpaConversation"
               v-tooltip.bottom="'New Sherpa conversation'"
@@ -375,6 +376,7 @@ const authStore = useAuthStore();
 const toast = useToast();
 const { appMode, appConfig, isFeatureEnabled } = useAppConfig();
 const { isDemoMode } = useDemoMode();
+const isCreatingSherpaTopic = ref(false);
 
 const llmSupplier = computed(() => store.currentConfig?.provider ?? undefined);
 
@@ -562,6 +564,35 @@ const sherpaConversationMenuItems = computed(() => {
       command: () => startNewSherpaConversation(),
     },
   ];
+
+  if (appMode.value !== "local") {
+    const activeTopicId = advisorStore.activeTopicId;
+    if (advisorStore.topics.length > 0) {
+      items.push({ separator: true });
+      items.push(
+        ...advisorStore.topics.map((topic, index) => ({
+          label:
+            topic.title
+            || sherpaStore.conversations.find((item) => item.id === topic.conversation_id)?.title
+            || `Topic ${index + 1}`,
+          updatedAt: formatDateTime(topic.last_used_at),
+          icon: topic.id === activeTopicId ? "pi pi-check" : "pi pi-comment",
+          active: topic.id === activeTopicId,
+          command: () => {
+            void onSherpaTopicSelect(topic.id, topic.conversation_id);
+          },
+        })),
+      );
+    } else {
+      items.push({ separator: true });
+      items.push({
+        label: "No saved topics yet",
+        icon: "pi pi-info-circle",
+        disabled: true,
+      });
+    }
+    return items;
+  }
 
   if (sherpaStore.conversations.length > 0) {
     items.push({ separator: true });
@@ -1074,6 +1105,31 @@ const onSherpaConversationSelect = async (conversationId: string | null) => {
   }
 };
 
+const onSherpaTopicSelect = async (topicId: number, conversationId: string | null) => {
+  try {
+    await advisorStore.setActiveTopic(topicId);
+    if (conversationId) {
+      await sherpaStore.loadConversation(conversationId);
+    } else {
+      sherpaStore.startNewConversation();
+    }
+    toast.add({
+      severity: "success",
+      summary: "Sherpa Topic Loaded",
+      detail: "Sherpa topic restored",
+      life: 2000,
+    });
+  } catch (error: unknown) {
+    console.error("Failed to load Sherpa topic:", error);
+    toast.add({
+      severity: "error",
+      summary: "Sherpa Load Failed",
+      detail: getErrorMessage(error, "Unknown error"),
+      life: 3000,
+    });
+  }
+};
+
 const startNewLlmConversation = () => {
   store.startNewConversation();
   userMessage.value = "";
@@ -1085,7 +1141,33 @@ const startNewLlmConversation = () => {
   });
 };
 
-const startNewSherpaConversation = () => {
+const startNewSherpaConversation = async () => {
+  if (isCreatingSherpaTopic.value) return;
+  if (appMode.value !== "local" && advisorStore.activeNodeId === null) {
+    toast.add({
+      severity: "warn",
+      summary: "Select a worksheet first",
+      detail: "Sherpa topics are saved to the active project area or workflow sheet.",
+      life: 3000,
+    });
+    return;
+  }
+
+  if (appMode.value !== "local" && advisorStore.activeNodeId !== null) {
+    isCreatingSherpaTopic.value = true;
+    try {
+      const topic = await advisorStore.createTopic({
+        title: `Topic ${advisorStore.topics.length + 1}`,
+      });
+      if (topic) {
+        await advisorStore.setActiveTopic(topic.id);
+      }
+    } catch (error) {
+      console.warn("[chat] Could not create server Sherpa topic; starting local UI thread", error);
+    } finally {
+      isCreatingSherpaTopic.value = false;
+    }
+  }
   sherpaStore.startNewConversation();
   userMessage.value = "";
   toast.add({
