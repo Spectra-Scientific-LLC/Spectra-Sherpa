@@ -110,6 +110,37 @@ describe("guidance store", () => {
     expect(mocks.wsSend).not.toHaveBeenCalled();
   });
 
+  it("renders glow-only guidance when toasts are disabled", async () => {
+    const store = useGuidanceStore();
+    store.settings = {
+      guidance_enabled: true,
+      toast_enabled: false,
+      glow_enabled: true,
+    };
+
+    await store.handleEvent(makeEvent({ kind: "glow" }));
+
+    expect(store.activeToast).toBeNull();
+    expect(store.activeGlow?.notification_id).toBe(123);
+    expect(mocks.apiPatch).toHaveBeenCalledWith("/guidance/notifications/123", {
+      ack_kind: "shown",
+    });
+  });
+
+  it("skips glow when the action ontology version does not match", async () => {
+    const store = useGuidanceStore();
+    store.settings = {
+      guidance_enabled: true,
+      toast_enabled: false,
+      glow_enabled: true,
+    };
+
+    await store.handleEvent(makeEvent({ kind: "glow", action_version: 99 }));
+
+    expect(store.activeGlow).toBeNull();
+    expect(mocks.apiPatch).not.toHaveBeenCalled();
+  });
+
   it("acknowledges CTA clicks and routes to the action target", async () => {
     const store = useGuidanceStore();
     await store.loadSettings();
@@ -125,6 +156,53 @@ describe("guidance store", () => {
     });
     expect(mocks.wsSend).toHaveBeenCalledWith(expect.stringContaining('"ack_kind":"clicked"'));
     expect(mocks.routerPush).toHaveBeenCalledWith("/workflow");
+  });
+
+  it("acknowledges real action clicks against an active glow", async () => {
+    const store = useGuidanceStore();
+    await store.loadSettings();
+    await store.handleEvent(makeEvent({ kind: "glow" }));
+    mocks.apiPatch.mockClear();
+
+    await store.acknowledgeActionClick("run_workflow");
+
+    expect(store.activeGlow).toBeNull();
+    expect(mocks.apiPatch).toHaveBeenCalledWith("/guidance/notifications/123", {
+      ack_kind: "clicked",
+    });
+  });
+
+  it("loads persisted guidance notification history", async () => {
+    const store = useGuidanceStore();
+    mocks.apiGet.mockResolvedValueOnce({
+      data: [
+        {
+          id: 9,
+          project_id: 1,
+          advisor_node_id: null,
+          rule_id: "empty_project_import",
+          kind: "both",
+          title: "Start by importing data",
+          body: null,
+          action_id: "import_data",
+          action_version: 1,
+          confidence: 0.95,
+          source: "rule",
+          created_at: "2026-05-09T00:00:00Z",
+          expires_at: "2026-05-09T00:10:00Z",
+          shown_at: null,
+          dismissed_at: null,
+          clicked_at: null,
+        },
+      ],
+    });
+
+    await store.loadNotifications({ includeDismissed: true, limit: 100 });
+
+    expect(mocks.apiGet).toHaveBeenCalledWith("/guidance/notifications", {
+      params: { include_dismissed: true, limit: 100 },
+    });
+    expect(store.notifications[0]?.title).toBe("Start by importing data");
   });
 
   it("persists per-rule opt-out from the toast", async () => {

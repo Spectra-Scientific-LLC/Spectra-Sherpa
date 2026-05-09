@@ -13,6 +13,7 @@
           v-if="isServerBacked && projectStore.currentProjectId"
           label="Memory Map"
           icon="pi pi-sitemap"
+          data-action="open_memory_map"
           class="p-button-outlined"
           @click="openMemoryMap"
           v-tooltip.bottom="'Visualize Sherpa Advisor memory for this project'"
@@ -26,6 +27,7 @@
         <Button
           label="New Project"
           icon="pi pi-plus"
+          data-action="new_project"
           @click="showNewProjectDialog"
         />
       </div>
@@ -188,7 +190,7 @@
           </div>
 
           <!-- New Project Card -->
-          <div class="project-card new-project-card" @click="showNewProjectDialog">
+          <div class="project-card new-project-card" data-action="new_project" @click="showNewProjectDialog">
             <div class="new-card-content">
               <i class="pi pi-plus-circle"></i>
               <span>Create New Project</span>

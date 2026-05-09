@@ -12,6 +12,7 @@
     <SherpaUpgradeModal />
     <DemoUpgradeModal />
     <GuidanceToast />
+    <GuidanceGlowOverlay />
     <router-view />
   </div>
 
@@ -19,6 +20,8 @@
     <Toast position="top-right" />
     <SherpaUpgradeModal />
     <DemoUpgradeModal />
+    <GuidanceToast />
+    <GuidanceGlowOverlay />
 
     <!-- Backend Status Banner -->
     <div v-if="!backendConnected" class="backend-status-banner">
@@ -83,6 +86,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import ChatPanel from "@/components/ChatPanel.vue";
+import GuidanceGlowOverlay from "@/components/guidance/GuidanceGlowOverlay.vue";
 import GuidanceToast from "@/components/guidance/GuidanceToast.vue";
 import SherpaUpgradeModal from "@/components/SherpaUpgradeModal.vue";
 import DemoUpgradeModal from "@/components/DemoUpgradeModal.vue";

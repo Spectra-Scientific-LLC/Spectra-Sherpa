@@ -31,10 +31,17 @@
       >
         Action Required ({{ store.actionRequired.length }})
       </button>
+      <button
+        class="notif-tab guidance-tab"
+        :class="{ active: activeTab === 'guidance' }"
+        @click="activeTab = 'guidance'"
+      >
+        Guidance ({{ guidance.notifications.length }})
+      </button>
     </div>
 
     <!-- Action bar -->
-    <div v-if="displayedNotifications.length > 0" class="notif-actions">
+    <div v-if="activeTab !== 'guidance' && displayedNotifications.length > 0" class="notif-actions">
       <Button
         label="Mark all read"
         icon="pi pi-check"
@@ -48,9 +55,18 @@
         @click="store.clearAll()"
       />
     </div>
+    <div v-else-if="activeTab === 'guidance'" class="notif-actions">
+      <Button
+        label="Refresh"
+        icon="pi pi-refresh"
+        class="p-button-text p-button-sm"
+        :loading="guidance.loading"
+        @click="refreshGuidance"
+      />
+    </div>
 
     <!-- Notification list -->
-    <div v-if="displayedNotifications.length > 0" class="notif-list">
+    <div v-if="activeTab !== 'guidance' && displayedNotifications.length > 0" class="notif-list">
       <div
         v-for="n in displayedNotifications"
         :key="n.id"
@@ -90,6 +106,47 @@
         </div>
       </div>
     </div>
+    <div v-else-if="activeTab === 'guidance' && guidance.notifications.length > 0" class="notif-list">
+      <div
+        v-for="n in guidance.notifications"
+        :key="n.id"
+        class="notif-item guidance-item"
+        :class="{ unread: !n.shown_at && !n.clicked_at && !n.dismissed_at }"
+      >
+        <div class="notif-icon severity-guidance">
+          <i class="pi pi-bell"></i>
+        </div>
+        <div class="notif-body">
+          <div class="notif-title-row">
+            <span class="notif-title">{{ n.title }}</span>
+            <span class="guidance-rule">{{ n.rule_id }}</span>
+          </div>
+          <div v-if="n.body" class="notif-message">{{ n.body }}</div>
+          <div class="guidance-actions">
+            <button
+              v-if="guidanceActionLabel(n)"
+              class="guidance-link"
+              type="button"
+              @click.stop="guidance.clickNotification(n)"
+            >
+              {{ guidanceActionLabel(n) }}
+            </button>
+            <button
+              v-if="!n.dismissed_at && !n.clicked_at"
+              class="guidance-link muted"
+              type="button"
+              @click.stop="guidance.dismissNotification(n)"
+            >
+              Dismiss
+            </button>
+          </div>
+          <div class="notif-meta">
+            <span class="notif-time">{{ timeAgo(Date.parse(n.created_at)) }}</span>
+            <span class="notif-source">{{ guidanceStatus(n) }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Empty state -->
     <div v-else class="notif-empty">
@@ -98,9 +155,14 @@
         {{
           activeTab === "action"
             ? "No action required"
+            : activeTab === "guidance"
+              ? "No guidance yet"
             : "No notifications yet"
         }}
       </p>
+      <small v-if="activeTab === 'guidance'">
+        Sherpa Guidance suggestions will appear here after they are shown.
+      </small>
       <small v-if="activeTab === 'all'">
         Notifications from jobs, deployments, and system events will appear
         here.
@@ -110,13 +172,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import Sidebar from "primevue/sidebar";
 import Button from "primevue/button";
+import { resolveGuidanceAction } from "@/lib/actionOntology";
+import type { GuidanceNotification } from "@/lib/guidanceAdapter";
 import {
   useNotificationStore,
   type AppNotification,
 } from "@/stores/notification";
+import { useGuidanceStore } from "@/stores/guidance";
 
 const props = defineProps<{
   modelValue: boolean;
@@ -127,7 +192,8 @@ const emit = defineEmits<{
 }>();
 
 const store = useNotificationStore();
-const activeTab = ref<"all" | "action">("all");
+const guidance = useGuidanceStore();
+const activeTab = ref<"all" | "action" | "guidance">("all");
 const expandedId = ref<string | null>(null);
 
 function toggleExpand(n: AppNotification) {
@@ -150,6 +216,31 @@ const displayedNotifications = computed(() => {
 function onNotificationClick(n: AppNotification) {
   store.markRead(n.id);
 }
+
+function refreshGuidance() {
+  void guidance.loadNotifications({ includeDismissed: true, limit: 100 });
+}
+
+function guidanceActionLabel(n: GuidanceNotification): string | null {
+  return resolveGuidanceAction(n.action_id)?.label ?? null;
+}
+
+function guidanceStatus(n: GuidanceNotification): string {
+  if (n.clicked_at) return "clicked";
+  if (n.dismissed_at) return "dismissed";
+  if (n.shown_at) return "shown";
+  return n.source;
+}
+
+watch(
+  () => [visible.value, activeTab.value] as const,
+  ([isVisible, tab]) => {
+    if (isVisible && tab === "guidance") {
+      refreshGuidance();
+    }
+  },
+  { immediate: true }
+);
 
 function severityIcon(severity: AppNotification["severity"]): string {
   switch (severity) {
@@ -313,6 +404,11 @@ function timeAgo(timestamp: number): string {
   color: #2563eb;
 }
 
+.severity-guidance {
+  background: #ede9fe;
+  color: #7c3aed;
+}
+
 /* Body */
 .notif-body {
   flex: 1;
@@ -368,6 +464,45 @@ function timeAgo(timestamp: number): string {
   color: #94a3b8;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.guidance-item {
+  border-color: #ede9fe;
+}
+
+.guidance-rule {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #f5f3ff;
+  color: #6d28d9;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.guidance-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.guidance-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #6d28d9;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.guidance-link:hover {
+  color: #4c1d95;
+  text-decoration: underline;
+}
+
+.guidance-link.muted {
+  color: #64748b;
 }
 
 /* Empty state */

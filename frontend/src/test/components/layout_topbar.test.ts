@@ -198,6 +198,10 @@ vi.mock("@/components/guidance/GuidanceToast.vue", () => ({
   default: defineComponent({ name: "GuidanceToast", template: "<div />" }),
 }));
 
+vi.mock("@/components/guidance/GuidanceGlowOverlay.vue", () => ({
+  default: defineComponent({ name: "GuidanceGlowOverlay", template: "<div />" }),
+}));
+
 vi.mock("@/composables/useGuidance", () => ({
   useGuidance: () => ({
     start: vi.fn().mockResolvedValue(undefined),

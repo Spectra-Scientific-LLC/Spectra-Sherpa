@@ -60,6 +60,7 @@ export function useActivityTracker() {
     const target = event.target instanceof Element ? event.target.closest("[data-action]") : null;
     const actionId = target?.getAttribute("data-action")?.trim();
     if (actionId) {
+      void guidanceStore.acknowledgeActionClick(actionId);
       send("action_click", { target: actionId });
     }
   }

@@ -48,8 +48,16 @@ export async function patchGuidanceSettings(
   return data;
 }
 
-export async function listGuidanceNotifications(): Promise<GuidanceNotification[]> {
-  const { data } = await api.get<GuidanceNotification[]>("/guidance/notifications");
+export async function listGuidanceNotifications(options?: {
+  includeDismissed?: boolean;
+  limit?: number;
+}): Promise<GuidanceNotification[]> {
+  const { data } = await api.get<GuidanceNotification[]>("/guidance/notifications", {
+    params: {
+      include_dismissed: options?.includeDismissed ?? false,
+      limit: options?.limit ?? 50,
+    },
+  });
   return data;
 }
 

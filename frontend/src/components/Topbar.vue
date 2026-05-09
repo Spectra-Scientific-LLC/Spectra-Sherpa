@@ -48,6 +48,7 @@
               <Button
                 label="New Project"
                 icon="pi pi-plus"
+                data-action="new_project"
                 class="p-button-text p-button-sm"
                 @click="showNewProjectDialog"
               />

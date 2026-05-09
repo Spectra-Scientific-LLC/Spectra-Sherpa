@@ -16,6 +16,7 @@ export function useGuidance() {
     if (!unsubscribe) {
       unsubscribe = subscribeSherpaEvents(
         (payload) => {
+          if (payload.type !== "guidance.event") return;
           void guidanceStore.handleEvent(payload as unknown as GuidanceEvent);
         },
         { types: ["guidance.event"] }
