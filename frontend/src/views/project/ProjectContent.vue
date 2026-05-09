@@ -10,6 +10,14 @@
       </div>
       <div class="header-actions">
         <Button
+          v-if="isServerBacked"
+          label="Memory Map"
+          icon="pi pi-sitemap"
+          class="p-button-outlined"
+          @click="openMemoryMap"
+          v-tooltip.bottom="'Visualize Sherpa Advisor memory for this project'"
+        />
+        <Button
           label="Import"
           icon="pi pi-upload"
           class="p-button-outlined"
@@ -289,6 +297,7 @@ import Checkbox from "primevue/checkbox";
 import ProgressSpinner from "primevue/progressspinner";
 import { useToast } from "primevue/usetoast";
 import { useAdvisorStore } from "@/stores/advisor";
+import { useAppConfig } from "@/composables/useAppConfig";
 import { useProjectStore } from "@/stores/project";
 import { useWorkflowStore, type WorkflowTemplate } from "@/stores/workflow";
 import type { ProjectSummary } from "@/types";
@@ -303,6 +312,17 @@ const toast = useToast();
 const projectStore = useProjectStore();
 const workflowStore = useWorkflowStore();
 const advisorStore = useAdvisorStore();
+const { appMode } = useAppConfig();
+
+// R9 — Memory Map button is server-backed only.  Local mode's
+// adapter returns ``null`` from ``getMemoryMap`` because there is
+// no graph to render; hide the entry so users don't bounce off an
+// empty view.
+const isServerBacked = computed(() => appMode.value !== "local");
+
+function openMemoryMap(): void {
+  router.push("/project/memory-map");
+}
 
 // R4 — Single-scope Sherpa Advisor routing for the Project tab.
 async function syncAdvisorForProject(): Promise<void> {

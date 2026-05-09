@@ -1,5 +1,5 @@
 /**
- * Sherpa Advisor memory adapter (R1).
+ * Sherpa Advisor memory adapter (R1 + R2 + R9).
  *
  * The frontend's only role for memory is **detect** the active scope and
  * **render** the state the server returns.  This module hides the
@@ -8,11 +8,13 @@
  *
  * Server-backed mode (hybrid / enterprise) talks to spectra-server's
  * ``/api/v1/memory/*`` endpoints.  Local mode keeps a minimal per-scope
- * topic list in ``localStorage`` — no graph, no facts, no compaction.
+ * topic list in ``localStorage`` — no graph, no facts, no compaction,
+ * no Memory Map.
  *
- * R1 surface: scope switching + topic CRUD.  Compaction (R2), Memory
- * Map / query / export land in later releases and ship through their
- * own adapter methods.
+ * R1 surface: scope switching + topic CRUD.
+ * R2 surface: compaction (server-backed only; local is a no-op).
+ * R9 surface: Memory Map data fetch (server-backed only; local returns
+ * ``null`` so the view can render an "upgrade to enable" stub).
  */
 
 import api from "@/api/client";
@@ -65,6 +67,38 @@ export interface CompactScopeResult {
   messageCount: number | null;
 }
 
+// R9 — Memory Map types.  Mirror the server response shape exactly so
+// the view can render badge data without an extra normalization layer.
+export interface NodeBadges {
+  topic_count: number;
+  fact_count: number;
+  last_compaction_at: string | null;
+  stale_descendant_count: number;
+}
+
+export interface MemoryMapNode {
+  id: number;
+  tab_key: string;
+  subscope_key: string;
+  node_type: string;
+  title: string | null;
+  badges: NodeBadges;
+}
+
+export interface MemoryMapEdge {
+  id: number;
+  source_node_id: number;
+  target_node_id: number;
+  edge_type: string;
+  weight: number;
+}
+
+export interface MemoryMapData {
+  project_id: number;
+  nodes: MemoryMapNode[];
+  edges: MemoryMapEdge[];
+}
+
 export interface AdvisorMemoryAdapter {
   switchScope(args: ScopeArgs): Promise<ScopeStateEnvelope>;
   listTopics(nodeId: number): Promise<Topic[]>;
@@ -72,6 +106,8 @@ export interface AdvisorMemoryAdapter {
   setActiveTopic(nodeId: number, topicId: number | null): Promise<ScopeStateEnvelope>;
   /** R2: compact the active topic into a summary fact.  Local-mode no-op. */
   compactScope(nodeId: number): Promise<CompactScopeResult>;
+  /** R9: Memory Map data fetch.  Returns ``null`` in local mode (no graph). */
+  getMemoryMap(projectId: number): Promise<MemoryMapData | null>;
 }
 
 // ---------------------------------------------------------------------------
@@ -130,6 +166,13 @@ class ServerAdvisorMemoryAdapter implements AdvisorMemoryAdapter {
       version: data.version,
       messageCount: data.message_count,
     };
+  }
+
+  async getMemoryMap(projectId: number): Promise<MemoryMapData | null> {
+    const { data } = await api.get<MemoryMapData>("/memory/map", {
+      params: { project_id: projectId },
+    });
+    return data;
   }
 }
 
@@ -287,6 +330,14 @@ class LocalAdvisorMemoryAdapter implements AdvisorMemoryAdapter {
     // ``compacted: false`` result tells the UI to show the
     // "nothing to save" toast instead of "memory saved".
     return { nodeId, compacted: false, factId: null, version: null, messageCount: null };
+  }
+
+  async getMemoryMap(_projectId: number): Promise<MemoryMapData | null> {
+    // Local mode has no graph — no edges, no badge data, no
+    // stale-descendant tracking.  Returning ``null`` lets the
+    // Memory Map view render an "upgrade to enable" stub instead of
+    // a misleadingly empty graph.
+    return null;
   }
 }
 

@@ -19,6 +19,15 @@ const routes = [
     meta: { nav: "project" },
   },
   {
+    // R9 — Memory Map view.  Standalone (no nav highlight) because
+    // the entry is the "Memory Map" button on Project Details, not a
+    // top-level tab.  Local mode renders an empty/upgrade state because
+    // ``LocalAdvisorMemoryAdapter.getMemoryMap`` returns null.
+    path: "/project/memory-map",
+    component: () => import("@/views/project/MemoryMapView.vue"),
+    meta: { standalone: true },
+  },
+  {
     path: "/data",
     component: () => import("@/views/data/DataContent.vue"),
     meta: { nav: "data" },
