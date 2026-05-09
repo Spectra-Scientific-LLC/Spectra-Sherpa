@@ -25,7 +25,7 @@ export interface GuidanceEvent {
   rule_id: string;
   confidence: number;
   expires_at: string;
-  source: "rule";
+  source: "rule" | "llm";
 }
 
 const defaultSettings: GuidanceSettings = {
