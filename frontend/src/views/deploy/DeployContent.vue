@@ -379,7 +379,9 @@ import ProgressSpinner from "primevue/progressspinner";
 import { useToast } from "primevue/usetoast";
 
 import LabelChips from "@/components/LabelChips.vue";
+import { useAdvisorStore } from "@/stores/advisor";
 import { useDeployStore } from "@/stores/deploy";
+import { useProjectStore } from "@/stores/project";
 import { useRunsStore } from "@/stores/runs";
 import api from "@/api/client";
 import type { FolderWatch, BatchPredictionResult } from "@/types";
@@ -387,8 +389,46 @@ import type { FolderWatch, BatchPredictionResult } from "@/types";
 const toast = useToast();
 const deployStore = useDeployStore();
 const runsStore = useRunsStore();
+const projectStore = useProjectStore();
+const advisorStore = useAdvisorStore();
 
 const activeTab = ref(0);
+
+// R4 — Sherpa Advisor scope routing for the Deploy tab.
+const DEPLOY_SUBSCOPES = ["integrations", "jobs"] as const;
+const DEPLOY_SUBSCOPE_TITLES: Record<(typeof DEPLOY_SUBSCOPES)[number], string> = {
+  integrations: "Folder Watches",
+  jobs: "Prediction History",
+};
+
+async function syncAdvisorForDeploySubtab(): Promise<void> {
+  const projectId = projectStore.currentProjectId;
+  if (projectId == null) return;
+  const subscopeKey = DEPLOY_SUBSCOPES[activeTab.value] ?? "integrations";
+  try {
+    await advisorStore.switchScope({
+      projectId,
+      tabKey: "deploy",
+      subscopeKey,
+      title: DEPLOY_SUBSCOPE_TITLES[subscopeKey],
+    });
+  } catch (err) {
+    console.warn("[deploy] switchScope failed", err);
+  }
+}
+
+watch(activeTab, () => {
+  void syncAdvisorForDeploySubtab();
+});
+watch(
+  () => projectStore.currentProjectId,
+  (next) => {
+    if (next != null) void syncAdvisorForDeploySubtab();
+  },
+);
+onMounted(() => {
+  void syncAdvisorForDeploySubtab();
+});
 
 // Workflow options for dropdown
 interface WorkflowOption {

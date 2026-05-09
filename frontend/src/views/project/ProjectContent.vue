@@ -278,7 +278,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import Button from "primevue/button";
 import Tag from "primevue/tag";
@@ -288,6 +288,7 @@ import InputText from "primevue/inputtext";
 import Checkbox from "primevue/checkbox";
 import ProgressSpinner from "primevue/progressspinner";
 import { useToast } from "primevue/usetoast";
+import { useAdvisorStore } from "@/stores/advisor";
 import { useProjectStore } from "@/stores/project";
 import { useWorkflowStore, type WorkflowTemplate } from "@/stores/workflow";
 import type { ProjectSummary } from "@/types";
@@ -301,6 +302,23 @@ const router = useRouter();
 const toast = useToast();
 const projectStore = useProjectStore();
 const workflowStore = useWorkflowStore();
+const advisorStore = useAdvisorStore();
+
+// R4 — Single-scope Sherpa Advisor routing for the Project tab.
+async function syncAdvisorForProject(): Promise<void> {
+  const projectId = projectStore.currentProjectId;
+  if (projectId == null) return;
+  try {
+    await advisorStore.switchScope({
+      projectId,
+      tabKey: "project",
+      subscopeKey: "overview",
+      title: "Overview",
+    });
+  } catch (err) {
+    console.warn("[project] switchScope failed", err);
+  }
+}
 const menu = ref();
 const fileInput = ref<HTMLInputElement | null>(null);
 const dialogVisible = ref(false);
@@ -327,7 +345,15 @@ onMounted(async () => {
     await projectStore.fetchProject(projectStore.currentProjectId);
     await projectStore.fetchVersions(projectStore.currentProjectId);
   }
+  void syncAdvisorForProject();
 });
+
+watch(
+  () => projectStore.currentProjectId,
+  (next) => {
+    if (next != null) void syncAdvisorForProject();
+  },
+);
 
 const allProjectsSorted = computed(() =>
   [...projectStore.projects].sort(

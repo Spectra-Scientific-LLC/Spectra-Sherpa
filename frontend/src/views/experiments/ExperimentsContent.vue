@@ -255,6 +255,8 @@ import { useToast } from "primevue/usetoast";
 import ComparisonPanel from "./ComparisonPanel.vue";
 import BatchRunTab from "./BatchRunTab.vue";
 import LabelChips from "@/components/LabelChips.vue";
+import { useAdvisorStore } from "@/stores/advisor";
+import { useProjectStore } from "@/stores/project";
 import { useRunsStore } from "@/stores/runs";
 import { useWorkflowStore } from "@/stores/workflow";
 import type { ExecutionRunSummary } from "@/types";
@@ -262,8 +264,47 @@ import type { ExecutionRunSummary } from "@/types";
 const toast = useToast();
 const runsStore = useRunsStore();
 const workflowStore = useWorkflowStore();
+const projectStore = useProjectStore();
+const advisorStore = useAdvisorStore();
 
 const activeTab = ref(0);
+
+// R4 — Sherpa Advisor scope routing for the Experiments tab.
+const EXPERIMENTS_SUBSCOPES = ["overview", "batch_run", "compare"] as const;
+const EXPERIMENTS_SUBSCOPE_TITLES: Record<(typeof EXPERIMENTS_SUBSCOPES)[number], string> = {
+  overview: "Run History",
+  batch_run: "Batch Run",
+  compare: "Compare",
+};
+
+async function syncAdvisorForExperimentsSubtab(): Promise<void> {
+  const projectId = projectStore.currentProjectId;
+  if (projectId == null) return;
+  const subscopeKey = EXPERIMENTS_SUBSCOPES[activeTab.value] ?? "overview";
+  try {
+    await advisorStore.switchScope({
+      projectId,
+      tabKey: "experiments",
+      subscopeKey,
+      title: EXPERIMENTS_SUBSCOPE_TITLES[subscopeKey],
+    });
+  } catch (err) {
+    console.warn("[experiments] switchScope failed", err);
+  }
+}
+
+watch(activeTab, () => {
+  void syncAdvisorForExperimentsSubtab();
+});
+watch(
+  () => projectStore.currentProjectId,
+  (next) => {
+    if (next != null) void syncAdvisorForExperimentsSubtab();
+  },
+);
+onMounted(() => {
+  void syncAdvisorForExperimentsSubtab();
+});
 const showSaveDialog = ref(false);
 const saveRunName = ref("");
 const saveRunNotes = ref("");

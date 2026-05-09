@@ -182,6 +182,8 @@ import ProgressSpinner from "primevue/progressspinner";
 import Menu from "primevue/menu";
 import { useToast } from "primevue/usetoast";
 
+import { useAdvisorStore } from "@/stores/advisor";
+import { useProjectStore } from "@/stores/project";
 import { useReportStore } from "@/stores/report";
 import { useAppConfig } from "@/composables/useAppConfig";
 import {
@@ -195,8 +197,39 @@ import { downloadBlob, downloadText, downloadJson } from "@/utils/download";
 import api from "@/api/client";
 
 const reportStore = useReportStore();
+const projectStore = useProjectStore();
+const advisorStore = useAdvisorStore();
 const toast = useToast();
 const { isFeatureEnabled } = useAppConfig();
+
+// R4 — Single-scope Sherpa Advisor routing for the Report tab.
+// Today's Report UI has no subtabs; the active scope is always
+// ``report.draft``.  When the report editor grows ``Figures`` and
+// ``Export`` subtabs we can switch this to a TabView watcher.
+async function syncAdvisorForReport(): Promise<void> {
+  const projectId = projectStore.currentProjectId;
+  if (projectId == null) return;
+  try {
+    await advisorStore.switchScope({
+      projectId,
+      tabKey: "report",
+      subscopeKey: "draft",
+      title: "Draft",
+    });
+  } catch (err) {
+    console.warn("[report] switchScope failed", err);
+  }
+}
+
+watch(
+  () => projectStore.currentProjectId,
+  (next) => {
+    if (next != null) void syncAdvisorForReport();
+  },
+);
+onMounted(() => {
+  void syncAdvisorForReport();
+});
 
 const exportMenuRef = ref();
 const previewFrame = ref<HTMLIFrameElement>();
