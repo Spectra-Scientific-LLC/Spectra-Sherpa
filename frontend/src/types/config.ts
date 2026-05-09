@@ -30,6 +30,7 @@ export interface AppFeatures {
   sherpaAgenticTools: boolean
   sherpaDataStory: boolean
   sherpaFullContext: boolean
+  sherpaGuidance: boolean
 }
 
 export interface SubscriptionInfo {

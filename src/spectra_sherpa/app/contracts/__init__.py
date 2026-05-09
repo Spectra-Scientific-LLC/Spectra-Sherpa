@@ -51,6 +51,7 @@ from spectra_sherpa.app.contracts.capabilities import (
     SHERPA_CODE_GEN,
     SHERPA_DATA_STORY,
     SHERPA_FULL_CONTEXT,
+    SHERPA_GUIDANCE,
     SHERPA_PEAK_ID,
     SHERPA_WRITE_REPORT,
 )
@@ -112,6 +113,7 @@ __all__ = [
     "SHERPA_CODE_GEN",
     "SHERPA_DATA_STORY",
     "SHERPA_FULL_CONTEXT",
+    "SHERPA_GUIDANCE",
     "SHERPA_PEAK_ID",
     "SHERPA_WRITE_REPORT",
     "DemoPolicy",

@@ -11,6 +11,7 @@
     <Toast position="top-right" />
     <SherpaUpgradeModal />
     <DemoUpgradeModal />
+    <GuidanceToast />
     <router-view />
   </div>
 
@@ -82,6 +83,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import ChatPanel from "@/components/ChatPanel.vue";
+import GuidanceToast from "@/components/guidance/GuidanceToast.vue";
 import SherpaUpgradeModal from "@/components/SherpaUpgradeModal.vue";
 import DemoUpgradeModal from "@/components/DemoUpgradeModal.vue";
 
@@ -90,12 +92,16 @@ import Topbar from "@/components/Topbar.vue";
 import Toast from "primevue/toast";
 import PrimeSidebar from "primevue/sidebar";
 import { useBackendStatus } from "@/composables/useBackendStatus";
+import { useActivityTracker } from "@/composables/useActivityTracker";
 import { useAppConfig } from "@/composables/useAppConfig";
+import { useGuidance } from "@/composables/useGuidance";
 import { useViewport } from "@/composables/useViewport";
 import { useAuthStore } from "@/stores/auth";
 import { useJobStore } from "@/stores/job";
 
 const { appMode } = useAppConfig();
+const guidance = useGuidance();
+const activityTracker = useActivityTracker();
 const authStore = useAuthStore();
 const jobStore = useJobStore();
 const route = useRoute();
@@ -218,6 +224,10 @@ onMounted(() => {
 
   // Start backend health check
   startHealthCheck();
+  guidance
+    .start()
+    .catch(() => undefined)
+    .finally(() => activityTracker.start());
 });
 
 onBeforeUnmount(() => {
@@ -225,6 +235,8 @@ onBeforeUnmount(() => {
   window.removeEventListener("mouseup", stopResize);
   window.removeEventListener("resize", handleWindowResize);
   stopHealthCheck();
+  guidance.stop();
+  activityTracker.stop();
   jobStore.disconnect();
 });
 

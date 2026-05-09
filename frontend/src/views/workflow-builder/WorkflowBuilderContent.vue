@@ -18,6 +18,7 @@
           <Button
             :label="isWorkflowStale ? 'Run (Mod)' : 'Run'"
             icon="pi pi-play"
+            data-action="run_workflow"
             class="toolbar-btn toolbar-action-btn"
             :loading="isExecuting || isBatchExecuting"
             :disabled="isTrialTabActive || nodes.length === 0 || isExecuting || isBatchExecuting"
@@ -34,6 +35,7 @@
           <Button
             :label="saveButtonLabel"
             icon="pi pi-save"
+            data-action="save_workflow"
             class="toolbar-btn toolbar-action-btn"
             :disabled="isTrialTabActive || (!hasChanges && autosaveStatus !== 'saving')"
             @click="saveWorkflow"

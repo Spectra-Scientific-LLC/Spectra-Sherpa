@@ -17,6 +17,7 @@ SHERPA_WRITE_REPORT = "sherpaWriteReport"
 SHERPA_AGENTIC_TOOLS = "sherpaAgenticTools"
 SHERPA_DATA_STORY = "sherpaDataStory"
 SHERPA_FULL_CONTEXT = "sherpaFullContext"
+SHERPA_GUIDANCE = "sherpaGuidance"
 
 # ── OSS capabilities ───────────────────────────────────────────────────
 
@@ -32,4 +33,5 @@ ALL_SHERPA_CAPABILITIES: tuple[str, ...] = (
     SHERPA_AGENTIC_TOOLS,
     SHERPA_DATA_STORY,
     SHERPA_FULL_CONTEXT,
+    SHERPA_GUIDANCE,
 )

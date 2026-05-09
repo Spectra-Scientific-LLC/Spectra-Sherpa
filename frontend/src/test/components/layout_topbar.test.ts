@@ -194,6 +194,24 @@ vi.mock("@/components/DemoUpgradeModal.vue", () => ({
   default: defineComponent({ name: "DemoUpgradeModal", template: "<div />" }),
 }));
 
+vi.mock("@/components/guidance/GuidanceToast.vue", () => ({
+  default: defineComponent({ name: "GuidanceToast", template: "<div />" }),
+}));
+
+vi.mock("@/composables/useGuidance", () => ({
+  useGuidance: () => ({
+    start: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn(),
+  }),
+}));
+
+vi.mock("@/composables/useActivityTracker", () => ({
+  useActivityTracker: () => ({
+    start: vi.fn(),
+    stop: vi.fn(),
+  }),
+}));
+
 vi.mock("primevue/toast", () => ({
   default: defineComponent({ name: "Toast", template: "<div />" }),
 }));

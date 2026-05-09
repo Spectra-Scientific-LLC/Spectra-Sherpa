@@ -209,6 +209,7 @@
             <Button
               label="Add to My Dataset"
               icon="pi pi-plus"
+              data-action="import_data"
               class="p-button-sm"
               :disabled="!dataStore.activeExperimentId"
               :loading="importing"
@@ -244,6 +245,7 @@
               <Button
                 label="Upload File"
                 icon="pi pi-upload"
+                data-action="import_data"
                 class="p-button-text p-button-sm"
                 :disabled="!dataStore.activeExperimentId"
                 @click="showUploadDialog = true"

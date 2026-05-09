@@ -21,6 +21,7 @@
         In a self-hosted or local installation, this page allows you to
         configure LLM providers, API keys, and data-privacy preferences.
       </p>
+      <GuidanceSettingsSection v-if="showGuidanceSettings" class="demo-guidance" />
     </div>
 
     <TabView v-else v-model:activeIndex="activeTab">
@@ -30,20 +31,29 @@
       <TabPanel header="Integrations">
         <IntegrationsTab />
       </TabPanel>
+      <TabPanel v-if="showGuidanceSettings" header="Guidance">
+        <GuidanceSettingsSection />
+      </TabPanel>
     </TabView>
   </section>
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import TabView from "primevue/tabview";
 import TabPanel from "primevue/tabpanel";
 import ApiKeysTab from "./ApiKeysTab.vue";
+import GuidanceSettingsSection from "./GuidanceSettingsSection.vue";
 import IntegrationsTab from "./IntegrationsTab.vue";
+import { useAppConfig } from "@/composables/useAppConfig";
 import { useDemoMode } from "@/composables/useDemoMode";
 
 const activeTab = ref(0);
 const { isDemoMode } = useDemoMode();
+const { appMode, isFeatureEnabled } = useAppConfig();
+const showGuidanceSettings = computed(
+  () => appMode.value !== "local" && isFeatureEnabled("sherpaGuidance")
+);
 </script>
 
 <style scoped>
@@ -102,5 +112,11 @@ const { isDemoMode } = useDemoMode();
   margin-top: 12px;
   font-size: 0.8rem;
   color: #94a3b8;
+}
+
+.demo-guidance {
+  width: min(520px, 100%);
+  margin-top: 24px;
+  text-align: left;
 }
 </style>
