@@ -143,15 +143,15 @@
             @click="sherpaStore.syncWorkflow()"
             v-tooltip.bottom="'Re-sync workflow'"
           />
-          <!-- Agentic tools toggle (Sherpa tab, subscription-gated) -->
+          <!-- Gen Mode toggle (Sherpa tab, subscription-gated) -->
           <Button
             v-if="activeTab === 'sherpa' && isFeatureEnabled('sherpaAgenticTools')"
             :icon="toolsActive ? 'pi pi-wrench' : 'pi pi-wrench'"
             class="p-button-text p-button-sm"
             :class="{ 'tools-active-btn': toolsActive }"
-            aria-label="Toggle agentic tools"
+            aria-label="Toggle Gen Mode"
             @click="toolsActive = !toolsActive"
-            v-tooltip.bottom="toolsActive ? 'Agentic tools enabled' : 'Enable agentic tools'"
+            v-tooltip.bottom="toolsActive ? 'Gen Mode enabled' : 'Enable Gen Mode'"
           />
           <Button
             icon="pi pi-external-link"
@@ -1799,7 +1799,7 @@ const collapsed = computed(() => props.collapsed);
   border-radius: 6px;
 }
 
-/* Agentic tool progress */
+/* Gen Mode tool progress */
 .tool-progress {
   display: flex;
   align-items: center;

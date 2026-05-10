@@ -31,6 +31,11 @@ export interface GuidanceEvent {
   source: "rule" | "llm";
 }
 
+export interface GuidanceUnavailableEvent {
+  type: "guidance.unavailable";
+  reason?: string | null;
+}
+
 const defaultSettings: GuidanceSettings = {
   guidance_enabled: false,
   toast_enabled: true,
@@ -115,6 +120,17 @@ export const useGuidanceStore = defineStore("guidance", () => {
     } catch {
       /* WebSocket ack already best-efforted; avoid hiding the useful nudge. */
     }
+  }
+
+  function markUnavailable(event?: GuidanceUnavailableEvent): void {
+    settings.value = {
+      ...settings.value,
+      guidance_enabled: false,
+    };
+    activeToast.value = null;
+    activeGlow.value = null;
+    const reason = event?.reason === "entitlement_required" ? " Your plan does not include Guidance." : "";
+    error.value = `Guidance is unavailable for this deployment.${reason}`;
   }
 
   function _clearActive(notificationId: number): void {
@@ -260,7 +276,7 @@ export const useGuidanceStore = defineStore("guidance", () => {
     const advisorStore = useAdvisorStore();
     const matches = (): boolean => {
       const node = advisorStore.activeNode;
-      return node?.tab_key === target.tabKey && node?.subscope_key === target.subscopeKey;
+      return node?.tab_key === target.tabKey && (target.subscopeKey == null || node?.subscope_key === target.subscopeKey);
     };
     if (matches()) return Promise.resolve();
     return new Promise<void>((resolve) => {
@@ -317,6 +333,7 @@ export const useGuidanceStore = defineStore("guidance", () => {
     loadNotifications,
     updateSettings,
     handleEvent,
+    markUnavailable,
     dismiss,
     dontShowAgain,
     clickAction,

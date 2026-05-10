@@ -602,7 +602,7 @@ describe("ChatPanel", () => {
     expect(mocks.sherpaStore.syncWorkflow).not.toHaveBeenCalled();
   });
 
-  it("routes explicit workflow generation requests through agentic tools", async () => {
+  it("routes explicit workflow generation requests through Gen Mode tools", async () => {
     mocks.appMode.value = "enterprise";
     mocks.appConfig.value = { subscription: { plan: "demo" } };
     mocks.featureFlags.chatAssistant = true;

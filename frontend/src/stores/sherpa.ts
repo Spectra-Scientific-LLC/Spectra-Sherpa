@@ -1302,7 +1302,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
     subscriptionRequired.value = null;
     subscriptionUpgradeUrl.value = null;
     _recordActivity(
-      `Sherpa request queued via ${useTools ? "agentic chat" : "chat"}${_formatRequestSuffix(requestId)}.`,
+      `Sherpa request queued via ${useTools ? "Gen Mode" : "chat"}${_formatRequestSuffix(requestId)}.`,
       {
         notify: true,
       }

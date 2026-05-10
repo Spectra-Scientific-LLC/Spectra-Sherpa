@@ -42,7 +42,7 @@
       />
       <span>
         <strong>Button highlights</strong>
-        <small>Reserved for a later release; this setting is saved now.</small>
+        <small>Subtly highlight the recommended action when available.</small>
       </span>
     </label>
 

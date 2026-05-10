@@ -428,7 +428,7 @@ const sherpaFeatureList = computed(() => [
   { key: 'sherpaPeakId', label: 'Peak Identification', enabled: isFeatureEnabled('sherpaPeakId') },
   { key: 'sherpaCodeGen', label: 'Code Generation', enabled: isFeatureEnabled('sherpaCodeGen') },
   { key: 'sherpaWriteReport', label: 'Report Writing', enabled: isFeatureEnabled('sherpaWriteReport') },
-  { key: 'sherpaAgenticTools', label: 'Agentic Tools', enabled: isFeatureEnabled('sherpaAgenticTools') },
+  { key: 'sherpaAgenticTools', label: 'Gen Mode', enabled: isFeatureEnabled('sherpaAgenticTools') },
   { key: 'sherpaFullContext', label: 'Full DAG Context', enabled: isFeatureEnabled('sherpaFullContext') },
 ]);
 

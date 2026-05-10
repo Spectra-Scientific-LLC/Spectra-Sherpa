@@ -15,7 +15,7 @@ export interface GuidanceActionMeta {
    * scope assignment completes.  ``runGuidanceAction`` waits up to
    * 2s for ``advisorStore.activeNode`` to match before dispatching.
    */
-  expectedScope?: { tabKey: string; subscopeKey: string };
+  expectedScope?: { tabKey: string; subscopeKey?: string };
   /**
    * Optional ``data-action`` value of a button to click after
    * navigation + scope-wait complete.  Used to actually open a
@@ -68,14 +68,10 @@ export const GUIDANCE_ACTIONS: Record<string, GuidanceActionMeta> = {
     route: "/experiments",
     label: "Explain results",
     prompt: "Explain the results of my latest run.",
-    // No ``expectedScope`` here — Experiments has dynamic subscopes
-    // (overview / batch_run / compare keyed by active tab).  Live
-    // toasts on /experiments don't race because the user is already
-    // on the page; notification-drawer clicks from other tabs may
-    // race, but landing the prompt in the wrong experiments subscope
-    // is less harmful than landing it in a totally different tab —
-    // accept the small risk until we have a "wait for any scope in
-    // this tab" primitive.
+    // Experiments has dynamic subscopes (overview / batch_run /
+    // compare keyed by active tab). Wait for the tab to settle, but
+    // accept whichever experiments subscope the user lands on.
+    expectedScope: { tabKey: "experiments" },
   },
   new_project: {
     actionId: "new_project",

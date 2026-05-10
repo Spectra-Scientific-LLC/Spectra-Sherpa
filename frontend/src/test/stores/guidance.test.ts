@@ -95,6 +95,22 @@ describe("guidance store", () => {
     expect(store.isEnabled).toBe(true);
   });
 
+  it("disables active guidance when the server reports it is unavailable", async () => {
+    const store = useGuidanceStore();
+    await store.loadSettings();
+    await store.handleEvent(makeEvent({ kind: "both" }));
+
+    store.markUnavailable({
+      type: "guidance.unavailable",
+      reason: "entitlement_required",
+    });
+
+    expect(store.isEnabled).toBe(false);
+    expect(store.activeToast).toBeNull();
+    expect(store.activeGlow).toBeNull();
+    expect(store.error).toContain("plan does not include Guidance");
+  });
+
   it("renders an enabled toast and acknowledges it as shown", async () => {
     const store = useGuidanceStore();
     await store.loadSettings();
@@ -176,6 +192,11 @@ describe("guidance store", () => {
 
   it("routes prompt-backed actions and asks Sherpa Advisor", async () => {
     const store = useGuidanceStore();
+    mocks.advisorActiveNode.value = {
+      id: 77,
+      tab_key: "experiments",
+      subscope_key: "compare",
+    };
     const promptListener = vi.fn();
     window.addEventListener(ADVISOR_PROMPT_REQUEST_EVENT, promptListener);
     await store.loadSettings();

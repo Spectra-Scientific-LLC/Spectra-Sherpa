@@ -173,7 +173,7 @@ const TAB_DISPLAY: Record<string, string> = {
   deploy: "Deploy",
   report: "Report",
 };
-const TAB_ORDER = ["project", "data", "experiments", "workflow", "deploy", "report"];
+const TAB_ORDER = ["project", "data", "workflow", "experiments", "deploy", "report"];
 
 const groupedByTab = computed(() => {
   if (!graph.value) return [];
