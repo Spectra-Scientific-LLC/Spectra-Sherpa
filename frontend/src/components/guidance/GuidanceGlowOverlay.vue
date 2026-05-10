@@ -9,6 +9,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { findActionTarget } from "@/lib/actionTargets";
 import { useGuidanceStore } from "@/stores/guidance";
 
 interface GlowRect {
@@ -31,17 +32,6 @@ const glowStyle = computed(() => {
     height: `${rect.value.height + 10}px`,
   };
 });
-
-function findActionTarget(actionId?: string | null): HTMLElement | null {
-  if (!actionId) return null;
-  const candidates = document.querySelectorAll<HTMLElement>("[data-action]");
-  for (const candidate of candidates) {
-    if (candidate.getAttribute("data-action") === actionId) {
-      return candidate;
-    }
-  }
-  return null;
-}
 
 function clearFadeTimer(): void {
   if (fadeTimer !== null) {

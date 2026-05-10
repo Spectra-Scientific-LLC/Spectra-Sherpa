@@ -16,6 +16,9 @@ const mocks = vi.hoisted(() => ({
     readyState: WebSocket.OPEN,
     send: vi.fn(),
   },
+  advisorActiveNode: {
+    value: null as { id: number; tab_key: string; subscope_key: string } | null,
+  },
 }));
 
 vi.mock("@/api/client", () => ({
@@ -34,6 +37,14 @@ vi.mock("vue-router", () => ({
 vi.mock("@/stores/llm", () => ({
   useLlmStore: () => ({
     wsRef: mocks.ws,
+  }),
+}));
+
+vi.mock("@/stores/advisor", () => ({
+  useAdvisorStore: () => ({
+    get activeNode() {
+      return mocks.advisorActiveNode.value;
+    },
   }),
 }));
 
@@ -254,5 +265,106 @@ describe("guidance store", () => {
     expect(mocks.apiPatch).toHaveBeenCalledWith("/guidance/notifications/123", {
       ack_kind: "dont_show_again",
     });
+  });
+
+  // ---------------------------------------------------------------
+  // PR6 — action execution hardening
+  // ---------------------------------------------------------------
+
+  it("clicks [data-action] target after navigation when clickTarget is set", async () => {
+    // Mount the data-action button BEFORE the click so the wait
+    // resolves immediately. This is the live in-tab path (rule fires
+    // on the same route, target is already in the DOM).
+    const button = document.createElement("button");
+    button.setAttribute("data-action", "create_folder_watch");
+    button.textContent = "New Watch";
+    const clickSpy = vi.fn();
+    button.addEventListener("click", clickSpy);
+    document.body.appendChild(button);
+
+    const store = useGuidanceStore();
+    await store.loadSettings();
+    await store.handleEvent(
+      makeEvent({
+        action_id: "create_folder_watch",
+        rule_id: "deploy_runs_no_automation",
+        kind: "both",
+      }),
+    );
+
+    await store.clickAction();
+
+    expect(mocks.routerPush).toHaveBeenCalledWith("/deploy");
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    document.body.removeChild(button);
+  });
+
+  it("does not throw when clickTarget never appears within timeout", async () => {
+    // Live with a very short timeout via the imported util's default
+    // — the test passes when no error escapes.  We can't easily
+    // shorten the 2s default from outside, so we simulate by
+    // dispatching the action WITHOUT mounting any data-action target
+    // and asserting clickAction resolves cleanly (the test would
+    // exceed vitest's 5s default timeout if the wait hung).
+    const store = useGuidanceStore();
+    await store.loadSettings();
+    await store.handleEvent(
+      makeEvent({
+        action_id: "new_project",
+        rule_id: "empty_project_import",
+        kind: "toast",
+      }),
+    );
+
+    // The button isn't in the DOM. Use vi.useFakeTimers to advance
+    // through the wait without burning real wall clock.
+    vi.useFakeTimers();
+    const clickPromise = store.clickAction();
+    await vi.advanceTimersByTimeAsync(2100);
+    await clickPromise;
+    vi.useRealTimers();
+
+    expect(mocks.routerPush).toHaveBeenCalledWith("/project");
+    // Routing succeeded; nothing crashed; no test assertion failed.
+  }, 10_000);
+
+  it("waits for advisor scope before firing prompt for drawer-clicked report action", async () => {
+    // Simulates the notification-drawer cross-tab click path:
+    // user is on /workflow, clicks a report draft notification,
+    // the prompt must land in report.draft, not workflow.sheet.
+    //
+    // We assert the integration by setting activeNode to match the
+    // expectedScope BEFORE clickAction runs.  The synchronous
+    // ``matches()`` check inside ``_waitForAdvisorScope`` returns
+    // true immediately and the prompt fires.  Real reactivity (watch
+    // firing on a later mutation) is exercised in staging — what we
+    // pin here is the contract: scope must equal expectedScope
+    // before the prompt event dispatches.
+    mocks.advisorActiveNode.value = {
+      id: 99,
+      tab_key: "report",
+      subscope_key: "draft",
+    };
+    const promptListener = vi.fn();
+    window.addEventListener(ADVISOR_PROMPT_REQUEST_EVENT, promptListener);
+
+    const store = useGuidanceStore();
+    await store.loadSettings();
+    await store.handleEvent(
+      makeEvent({
+        action_id: "draft_report_via_advisor",
+        rule_id: "report_idle_with_runs",
+        kind: "toast",
+      }),
+    );
+
+    await store.clickAction();
+
+    expect(mocks.routerPush).toHaveBeenCalledWith("/report");
+    expect(promptListener).toHaveBeenCalledTimes(1);
+    const event = promptListener.mock.calls[0]?.[0] as CustomEvent<AdvisorPromptRequestDetail>;
+    expect(event.detail.prompt).toContain("report");
+    window.removeEventListener(ADVISOR_PROMPT_REQUEST_EVENT, promptListener);
+    mocks.advisorActiveNode.value = null;
   });
 });

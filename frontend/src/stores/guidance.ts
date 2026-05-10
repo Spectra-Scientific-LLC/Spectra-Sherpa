@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import { useAdvisorStore } from "@/stores/advisor";
 import { useLlmStore } from "@/stores/llm";
 import { resolveGuidanceAction, type GuidanceActionMeta } from "@/lib/actionOntology";
+import { waitForActionTarget } from "@/lib/actionTargets";
 import { requestAdvisorPrompt } from "@/lib/advisorPromptActions";
 import {
   acknowledgeGuidanceNotification,
@@ -218,20 +219,36 @@ export const useGuidanceStore = defineStore("guidance", () => {
 
   async function runGuidanceAction(action: ReturnType<typeof resolveGuidanceAction>): Promise<void> {
     if (!action) return;
+    // Step order matters: navigate → wait for scope → click target
+    // → fire prompt.  ``clickTarget`` and ``prompt`` are mutually
+    // exclusive in practice (one opens a modal, the other talks to
+    // the chat).  If both are set we run click first so the prompt
+    // doesn't get visually obscured by the modal that follows.
     if (action.route) {
       await router.push(action.route);
       await nextTick();
     }
+    if (action.expectedScope) {
+      // PR5 race fix: notification-drawer clicks from another tab
+      // race the destination view's onMounted ``switchScope``.
+      // Wait up to 2s for advisor scope to settle on the expected
+      // (tab, subscope) before firing any follow-on action so it
+      // lands in the right topic.  Live in-tab toasts resolve
+      // immediately because the scope is already correct.
+      await _waitForAdvisorScope(action.expectedScope, 2000);
+    }
+    if (action.clickTarget) {
+      // PR6: poll the DOM for ``[data-action="<clickTarget>"]`` and
+      // click it once it appears.  Closes the deploy-CTA gap from
+      // PR5 review — the toast CTA now actually opens the dialog
+      // instead of routing to a page the user is already on.  No-op
+      // on timeout so navigation still completes if the destination
+      // view never mounts the target (route guard reject, error,
+      // etc.).
+      const target = await waitForActionTarget(action.clickTarget, 2000);
+      target?.click();
+    }
     if (action.prompt) {
-      // Notification-drawer clicks from another tab race the
-      // destination view's onMounted ``advisorStore.switchScope``.
-      // When the action declares an expectedScope, wait up to 2s for
-      // the advisor store to settle there before firing the prompt
-      // so it lands in the right topic.  Live in-tab toasts have the
-      // scope already set, so this resolves immediately.
-      if (action.expectedScope) {
-        await _waitForAdvisorScope(action.expectedScope, 2000);
-      }
       requestAdvisorPrompt(action.prompt);
     }
   }
