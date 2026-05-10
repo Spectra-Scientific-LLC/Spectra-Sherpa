@@ -500,6 +500,20 @@ export const useSherpaStore = defineStore("sherpa", () => {
     });
   }
 
+  function _memoryScopesFromPayload(payload: SherpaEventPayload): string[] {
+    const raw = payload.memory_scopes;
+    if (!Array.isArray(raw)) {
+      return [];
+    }
+    return Array.from(
+      new Set(
+        raw
+          .map((scope) => String(scope).trim())
+          .filter(Boolean)
+      )
+    );
+  }
+
   function _createWelcomeMessage(): SherpaMessage {
     return {
       role: "assistant",
@@ -1586,6 +1600,14 @@ export const useSherpaStore = defineStore("sherpa", () => {
           streamingIndex.value !== null
             ? messages.value[streamingIndex.value]?.content ?? ""
             : "";
+        const memoryScopes = _memoryScopesFromPayload(payload);
+        if (
+          memoryScopes.length > 0
+          && streamingIndex.value !== null
+          && messages.value[streamingIndex.value]?.role === "assistant"
+        ) {
+          messages.value[streamingIndex.value].memoryScopes = memoryScopes;
+        }
         finalizeChatCommunication();
         chatState.value = "idle";
         streamingIndex.value = null;

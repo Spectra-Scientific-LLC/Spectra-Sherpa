@@ -20,6 +20,7 @@ export interface SherpaEventPayload {
   text?: string;
   report?: string;
   diagnostics?: Record<string, unknown> | null;
+  memory_scopes?: string[];
   upgrade_url?: string;
   remaining?: number;
   session_expiry_hours?: number;

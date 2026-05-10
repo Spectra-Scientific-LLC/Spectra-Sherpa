@@ -57,13 +57,30 @@ class MockPremiumProvider:
     async def send_decision(self, decision: Any) -> bool:
         return True
 
-    async def identify_peaks(self, *, wavenumbers: list[float], absorbance: list[float]) -> dict[str, Any]:
+    async def identify_peaks(
+        self,
+        *,
+        wavenumbers: list[float],
+        absorbance: list[float],
+        memory_messages: list[dict[str, str]] | None = None,
+    ) -> dict[str, Any]:
         return {"peaks": []}
 
-    async def generate_code(self, *, task_description: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def generate_code(
+        self,
+        *,
+        task_description: str,
+        context: dict[str, Any] | None = None,
+        memory_messages: list[dict[str, str]] | None = None,
+    ) -> dict[str, Any]:
         return {"code": ""}
 
-    async def write_report(self, *, experiment: dict[str, Any]) -> dict[str, Any]:
+    async def write_report(
+        self,
+        *,
+        experiment: dict[str, Any],
+        memory_messages: list[dict[str, str]] | None = None,
+    ) -> dict[str, Any]:
         return {"report": ""}
 
     async def generate_data_story(
@@ -71,6 +88,7 @@ class MockPremiumProvider:
         *,
         dataset_info: dict[str, Any],
         additional_context: str | None = None,
+        memory_messages: list[dict[str, str]] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         yield {"type": "chunk", "text": ""}
 

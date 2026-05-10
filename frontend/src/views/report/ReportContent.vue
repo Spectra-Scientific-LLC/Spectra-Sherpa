@@ -142,6 +142,11 @@
       <span>{{ reportStore.error }}</span>
     </div>
 
+    <MemoryAttribution
+      v-if="reportStore.narrativeText"
+      :scopes="reportStore.narrativeMemoryScopes"
+    />
+
     <!-- Loading state -->
     <div v-if="reportStore.loading" class="loading-state">
       <ProgressSpinner style="width: 40px; height: 40px" />
@@ -182,6 +187,7 @@ import ProgressSpinner from "primevue/progressspinner";
 import Menu from "primevue/menu";
 import { useToast } from "primevue/usetoast";
 
+import MemoryAttribution from "@/components/MemoryAttribution.vue";
 import { useAdvisorStore } from "@/stores/advisor";
 import { useProjectStore } from "@/stores/project";
 import { useReportStore } from "@/stores/report";
@@ -313,6 +319,7 @@ async function onWorkflowChange(): Promise<void> {
   reportStore.reportData = null;
   reportStore.selectedRunIds = [];
   reportStore.narrativeText = null;
+  reportStore.narrativeMemoryScopes = [];
   selectedRunProxy.value = null;
 
   if (reportStore.selectedWorkflowId) {

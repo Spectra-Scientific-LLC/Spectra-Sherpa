@@ -200,6 +200,7 @@ export interface SherpaMessage {
   role: "user" | "assistant" | "system";
   content: string;
   recommendations?: SherpaRecommendationPayload[];
+  memoryScopes?: string[];
 }
 
 export interface SherpaRecommendationPayload {

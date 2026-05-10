@@ -637,6 +637,7 @@
               <span>Generating narrative...</span>
             </div>
             <div v-else-if="dataStore.dataStoryText" class="data-story-text">
+              <MemoryAttribution :scopes="dataStore.dataStoryMemoryScopes" />
               {{ dataStore.dataStoryText }}
             </div>
             <p v-else class="data-story-hint">
@@ -847,6 +848,7 @@
               <span>Generating narrative...</span>
             </div>
             <div v-else-if="dataStore.dataStoryText" class="data-story-text">
+              <MemoryAttribution :scopes="dataStore.dataStoryMemoryScopes" />
               {{ dataStore.dataStoryText }}
             </div>
             <p v-else class="data-story-hint">
@@ -1115,6 +1117,7 @@ import { getErrorMessage } from "@/utils/errors";
 import { useToast } from "primevue/usetoast";
 import type { ExperimentFile, ExperimentSummary } from "@/types";
 import type { ReferenceDatasetOption } from "@/stores/workflow";
+import MemoryAttribution from "@/components/MemoryAttribution.vue";
 import DataQualityPanel from "./DataQualityPanel.vue";
 import PlotlyChart from "@/components/PlotlyChart.vue";
 

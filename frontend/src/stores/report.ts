@@ -6,6 +6,8 @@ import { createSherpaRequestId, subscribeSherpaEvents } from "@/lib/sherpaEvents
 import { SHERPA_WS_ACTION, SHERPA_WS_EVENT } from "@/lib/sherpaWs";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useLlmStore } from "@/stores/llm";
+import { useAdvisorStore } from "@/stores/advisor";
+import { useProjectStore } from "@/stores/project";
 import type { ExecutionRunSummary } from "@/types";
 
 interface WorkflowOption {
@@ -98,6 +100,7 @@ export const useReportStore = defineStore("report", () => {
   const loading = ref(false);
   const error = ref<string | null>(null);
   const narrativeText = ref<string | null>(null);
+  const narrativeMemoryScopes = ref<string[]>([]);
   const narrativeLoading = ref(false);
 
   // Options for selectors
@@ -221,6 +224,7 @@ export const useReportStore = defineStore("report", () => {
         throw new Error("WebSocket not connected");
       }
 
+      narrativeMemoryScopes.value = [];
       const result = await new Promise<string>((resolve, reject) => {
         const requestId = createSherpaRequestId();
         const timeout = window.setTimeout(() => {
@@ -231,6 +235,9 @@ export const useReportStore = defineStore("report", () => {
         const unsubscribe = subscribeSherpaEvents((payload) => {
           if (payload.type === SHERPA_WS_EVENT.reportResult) {
             cleanup();
+            narrativeMemoryScopes.value = Array.isArray(payload.memory_scopes)
+              ? payload.memory_scopes.map((scope) => String(scope)).filter(Boolean)
+              : [];
             resolve(
               typeof payload.report === "string"
                 ? payload.report
@@ -259,13 +266,19 @@ export const useReportStore = defineStore("report", () => {
 
         ws.send(JSON.stringify({
           action: SHERPA_WS_ACTION.writeReport,
-          payload: { request_id: requestId, experiment },
+          payload: {
+            request_id: requestId,
+            experiment,
+            advisor_node_id: useAdvisorStore().activeNodeId,
+            project_id: useProjectStore().currentProjectId,
+          },
         }));
       });
 
       narrativeText.value = result;
     } catch (err: any) {
       narrativeText.value = null;
+      narrativeMemoryScopes.value = [];
       console.error("Failed to generate narrative:", err);
     } finally {
       narrativeLoading.value = false;
@@ -278,6 +291,7 @@ export const useReportStore = defineStore("report", () => {
     reportData.value = null;
     error.value = null;
     narrativeText.value = null;
+    narrativeMemoryScopes.value = [];
     sections.pipelineDetails = true;
     sections.connections = true;
     sections.executionResults = true;
@@ -295,6 +309,7 @@ export const useReportStore = defineStore("report", () => {
     loading,
     error,
     narrativeText,
+    narrativeMemoryScopes,
     narrativeLoading,
     workflows,
     workflowsLoading,

@@ -42,6 +42,7 @@
         "request_id": { "type": "string" },
         "conversation_id": { "type": ["string", "null"] },
         "advisor_node_id": { "type": ["integer", "null"] },
+        "memory_scopes": { "type": "array", "items": { "type": "string" } },
         "chunk_count": { "type": "integer" },
         "first_chunk_ms": { "type": ["integer", "null"] },
         "event_count": { "type": "integer" },
@@ -119,6 +120,7 @@
         "type": { "const": "sherpa_peaks_result" },
         "request_id": { "type": "string" },
         "response": { "type": "string" },
+        "memory_scopes": { "type": "array", "items": { "type": "string" } },
         "timing": { "$ref": "#/definitions/timing" }
       },
       "additionalProperties": true
@@ -141,6 +143,7 @@
         "type": { "const": "sherpa_code_result" },
         "request_id": { "type": "string" },
         "response": { "type": "string" },
+        "memory_scopes": { "type": "array", "items": { "type": "string" } },
         "timing": { "$ref": "#/definitions/timing" }
       },
       "additionalProperties": true
@@ -163,6 +166,7 @@
         "type": { "const": "sherpa_report_result" },
         "request_id": { "type": "string" },
         "response": { "type": "string" },
+        "memory_scopes": { "type": "array", "items": { "type": "string" } },
         "timing": { "$ref": "#/definitions/timing" }
       },
       "additionalProperties": true
@@ -232,6 +236,7 @@
         "type": { "const": "sherpa_data_story_result" },
         "request_id": { "type": "string" },
         "response": { "type": "string" },
+        "memory_scopes": { "type": "array", "items": { "type": "string" } },
         "diagnostics": { "type": "object" },
         "timing": { "$ref": "#/definitions/timing" }
       },

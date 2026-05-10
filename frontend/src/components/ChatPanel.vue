@@ -265,6 +265,10 @@
                   >
                     <ChatMarkdown v-if="message.role === 'assistant'" :source="message.content" />
                     <template v-else>{{ message.content }}</template>
+                    <MemoryAttribution
+                      v-if="message.role === 'assistant'"
+                      :scopes="message.memoryScopes"
+                    />
                   </div>
                 </div>
                 <div v-if="sherpaStore.isSyncing" class="chat-message assistant">
@@ -336,6 +340,7 @@ import Menu from "primevue/menu";
 import { useToast } from "primevue/usetoast";
 
 import ChatMarkdown from "@/components/ChatMarkdown.vue";
+import MemoryAttribution from "@/components/MemoryAttribution.vue";
 import { useAdvisorStore } from "@/stores/advisor";
 import { useLlmStore } from "@/stores/llm";
 import { useSherpaStore } from "@/stores/sherpa";

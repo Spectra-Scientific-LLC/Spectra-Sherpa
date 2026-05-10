@@ -3,6 +3,8 @@ import { ref, computed } from "vue";
 import api from "@/api/client";
 import { createSherpaRequestId, subscribeSherpaEvents } from "@/lib/sherpaEvents";
 import { SHERPA_WS_ACTION, SHERPA_WS_EVENT } from "@/lib/sherpaWs";
+import { useAdvisorStore } from "@/stores/advisor";
+import { useProjectStore } from "@/stores/project";
 import { getErrorMessage } from "@/utils/errors";
 import type {
   ExperimentSummary,
@@ -317,6 +319,7 @@ export const useDataStore = defineStore("data", () => {
   const catalogDatasetLoading = ref(false);
   const catalogDatasetError = ref<string | null>(null);
   const dataStoryText = ref<string | null>(null);
+  const dataStoryMemoryScopes = ref<string[]>([]);
   const dataStoryLoading = ref(false);
   const dataStoryContext = ref("");
 
@@ -545,6 +548,8 @@ export const useDataStore = defineStore("data", () => {
       // Use the Sherpa WS proxy path: entitlement-gated, server-side prompt/template
       const { useLlmStore } = await import("@/stores/llm");
       const llm = useLlmStore();
+      const advisorStore = useAdvisorStore();
+      const projectStore = useProjectStore();
       await llm.connect();
       const ws = llm.wsRef;
       if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -553,6 +558,7 @@ export const useDataStore = defineStore("data", () => {
 
       const summarized = summarizeForDataStory(datasetInfo as StoryObject);
       dataStoryText.value = "";  // Show progressive text as chunks arrive
+      dataStoryMemoryScopes.value = [];
 
       const result = await new Promise<string>((resolve, reject) => {
         const requestId = createSherpaRequestId();
@@ -577,6 +583,9 @@ export const useDataStore = defineStore("data", () => {
             dataStoryText.value = `${dataStoryText.value ?? ""}${typeof payload.text === "string" ? payload.text : ""}`;
           } else if (payload.type === SHERPA_WS_EVENT.dataStoryResult) {
             cleanup();
+            dataStoryMemoryScopes.value = Array.isArray(payload.memory_scopes)
+              ? payload.memory_scopes.map((scope) => String(scope)).filter(Boolean)
+              : [];
             resolve(
               typeof payload.response === "string"
                 ? payload.response
@@ -619,6 +628,8 @@ export const useDataStore = defineStore("data", () => {
               request_id: requestId,
               dataset_info: summarized,
               additional_context: dataStoryContext.value.trim() || null,
+              advisor_node_id: advisorStore.activeNodeId,
+              project_id: projectStore.currentProjectId,
             },
           })
         );
@@ -627,6 +638,7 @@ export const useDataStore = defineStore("data", () => {
       dataStoryText.value = result;
     } catch (error: unknown) {
       console.error("Failed to generate data story:", error);
+      dataStoryMemoryScopes.value = [];
       dataStoryText.value = getErrorMessage(
         error,
         "Unable to generate data story. Check your LLM configuration."
@@ -640,6 +652,7 @@ export const useDataStore = defineStore("data", () => {
     catalogDatasetInfo.value = null;
     catalogDatasetError.value = null;
     dataStoryText.value = null;
+    dataStoryMemoryScopes.value = [];
   };
 
   return {
@@ -665,6 +678,7 @@ export const useDataStore = defineStore("data", () => {
     catalogDatasetLoading,
     catalogDatasetError,
     dataStoryText,
+    dataStoryMemoryScopes,
     dataStoryLoading,
     dataStoryContext,
     experimentDatasets,

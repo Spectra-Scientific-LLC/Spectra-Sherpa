@@ -42,15 +42,32 @@ class AIServiceProvider(Protocol):
         """Acknowledge a user decision."""
         ...
 
-    async def identify_peaks(self, *, wavenumbers: list[float], absorbance: list[float]) -> dict[str, Any]:
+    async def identify_peaks(
+        self,
+        *,
+        wavenumbers: list[float],
+        absorbance: list[float],
+        memory_messages: list[dict[str, str]] | None = None,
+    ) -> dict[str, Any]:
         """Identify spectral peaks."""
         ...
 
-    async def generate_code(self, *, task_description: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def generate_code(
+        self,
+        *,
+        task_description: str,
+        context: dict[str, Any] | None = None,
+        memory_messages: list[dict[str, str]] | None = None,
+    ) -> dict[str, Any]:
         """Generate code for a given task."""
         ...
 
-    async def write_report(self, *, experiment: dict[str, Any]) -> dict[str, Any]:
+    async def write_report(
+        self,
+        *,
+        experiment: dict[str, Any],
+        memory_messages: list[dict[str, str]] | None = None,
+    ) -> dict[str, Any]:
         """Generate a report from experiment data."""
         ...
 
@@ -59,6 +76,7 @@ class AIServiceProvider(Protocol):
         *,
         dataset_info: dict[str, Any],
         additional_context: str | None = None,
+        memory_messages: list[dict[str, str]] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Stream a narrative data story. Yields {type: 'chunk', text: ...} events."""
         yield {}  # pragma: no cover — protocol stub
@@ -105,5 +123,5 @@ class AIServiceProvider(Protocol):
         local_user_id: int | None = None,
         project_id: int | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
-        """Stream agentic chat events."""
+        """Stream Gen Mode chat events."""
         ...
