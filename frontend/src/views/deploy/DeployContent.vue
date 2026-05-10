@@ -12,6 +12,7 @@
           label="New Watch"
           icon="pi pi-plus"
           class="p-button-sm"
+          data-action="create_folder_watch"
           @click="showCreateDialog = true"
         />
         <Button

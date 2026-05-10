@@ -1,8 +1,9 @@
 import { defineStore } from "pinia";
-import { computed, nextTick, ref } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import { useAdvisorStore } from "@/stores/advisor";
 import { useLlmStore } from "@/stores/llm";
-import { resolveGuidanceAction } from "@/lib/actionOntology";
+import { resolveGuidanceAction, type GuidanceActionMeta } from "@/lib/actionOntology";
 import { requestAdvisorPrompt } from "@/lib/advisorPromptActions";
 import {
   acknowledgeGuidanceNotification,
@@ -222,8 +223,48 @@ export const useGuidanceStore = defineStore("guidance", () => {
       await nextTick();
     }
     if (action.prompt) {
+      // Notification-drawer clicks from another tab race the
+      // destination view's onMounted ``advisorStore.switchScope``.
+      // When the action declares an expectedScope, wait up to 2s for
+      // the advisor store to settle there before firing the prompt
+      // so it lands in the right topic.  Live in-tab toasts have the
+      // scope already set, so this resolves immediately.
+      if (action.expectedScope) {
+        await _waitForAdvisorScope(action.expectedScope, 2000);
+      }
       requestAdvisorPrompt(action.prompt);
     }
+  }
+
+  function _waitForAdvisorScope(
+    target: NonNullable<GuidanceActionMeta["expectedScope"]>,
+    timeoutMs: number,
+  ): Promise<void> {
+    const advisorStore = useAdvisorStore();
+    const matches = (): boolean => {
+      const node = advisorStore.activeNode;
+      return node?.tab_key === target.tabKey && node?.subscope_key === target.subscopeKey;
+    };
+    if (matches()) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const stop = watch(
+        () => advisorStore.activeNode,
+        () => {
+          if (matches()) {
+            stop();
+            window.clearTimeout(timer);
+            resolve();
+          }
+        },
+      );
+      const timer = window.setTimeout(() => {
+        // Timeout — proceed anyway.  Worst case the prompt lands in
+        // the prior topic; better than hanging the click forever if
+        // the destination view never mounts (network error etc.).
+        stop();
+        resolve();
+      }, timeoutMs);
+    });
   }
 
   async function dismissNotification(notification: GuidanceNotification): Promise<void> {
