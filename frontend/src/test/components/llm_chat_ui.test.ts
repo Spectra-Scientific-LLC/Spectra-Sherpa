@@ -55,12 +55,15 @@ const mocks = vi.hoisted(() => ({
     activeTools: [] as Array<Record<string, unknown>>,
     subscriptionRequired: null as string | null,
     subscriptionUpgradeUrl: null as string | null,
+    resumeRecap: null as Record<string, unknown> | null,
     init: vi.fn(),
     dispose: vi.fn(),
     syncWorkflow: vi.fn(),
     sendMessage: vi.fn(),
     clearMessages: vi.fn(),
     refreshConversations: vi.fn(),
+    maybeLoadResumeRecap: vi.fn(),
+    dismissResumeRecap: vi.fn(),
     startNewConversation: vi.fn(),
     loadConversation: vi.fn(),
     deleteConversation: vi.fn(),
@@ -310,6 +313,9 @@ describe("ChatPanel", () => {
     mocks.sherpaStore.activeTools = [];
     mocks.sherpaStore.subscriptionRequired = null;
     mocks.sherpaStore.subscriptionUpgradeUrl = null;
+    mocks.sherpaStore.resumeRecap = null;
+    mocks.sherpaStore.maybeLoadResumeRecap.mockReset();
+    mocks.sherpaStore.dismissResumeRecap.mockReset();
     mocks.advisorStore.activeChannelId = null;
     mocks.advisorStore.activeNodeId = null;
     mocks.advisorStore.activeTopicId = null;
@@ -556,6 +562,30 @@ describe("ChatPanel", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("Contacting Sherpa Advisor...");
+  });
+
+  it("renders a dismissible Sherpa session recap card outside the chat turns", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.isDemoMode.value = true;
+    mocks.appConfig.value = { subscription: { plan: "demo" } };
+    mocks.featureFlags.sherpaAdvisor = true;
+    mocks.sherpaStore.resumeRecap = {
+      projectId: 42,
+      recap: "You selected PLS-DA and saved a caveat about class balance.",
+      lastActiveAt: "2026-05-10T08:00:00Z",
+      cached: false,
+    };
+
+    const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+
+    expect(wrapper.find(".sherpa-recap-card").exists()).toBe(true);
+    expect(wrapper.text()).toContain("Session recap");
+    expect(wrapper.text()).toContain("You selected PLS-DA");
+
+    await wrapper.find('[aria-label="Dismiss session recap"]').trigger("click");
+
+    expect(mocks.sherpaStore.dismissResumeRecap).toHaveBeenCalled();
   });
 
   it("shows a preparing status instead of an empty assistant bubble", async () => {

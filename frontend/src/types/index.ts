@@ -204,6 +204,13 @@ export interface SherpaMessage {
   followUps?: string[];
 }
 
+export interface SherpaResumeRecap {
+  projectId: number;
+  recap: string;
+  lastActiveAt: string | null;
+  cached: boolean;
+}
+
 export interface SherpaRecommendationPayload {
   suggestion_id: string;
   workflow_id: number;

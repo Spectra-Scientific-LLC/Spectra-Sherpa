@@ -291,6 +291,7 @@ describe("Sherpa Store communication state", () => {
     mockWorkbookStore.refreshSheets.mockClear();
     mockWorkbookStore.selectWorkflowSheet.mockClear();
     mockWorkflowBuilderConfigStore.autoExecute = false;
+    localStorage.clear();
   });
 
   afterEach(() => {
@@ -1315,6 +1316,114 @@ describe("Sherpa Store communication state", () => {
         updatedAt: "2026-05-07T00:00:00Z",
       },
     ]);
+  });
+
+  it("loads a project resume recap at most once per 24 hours", async () => {
+    vi.setSystemTime(new Date("2026-05-10T08:00:00Z"));
+    const sherpa = useSherpaStore();
+    mockApi.get.mockResolvedValueOnce({
+      data: {
+        recap: "You selected PLS-DA and saved a class-balance caveat.",
+        last_active_at: "2026-05-10T07:00:00Z",
+        cached: false,
+      },
+    });
+
+    await sherpa.maybeLoadResumeRecap(42);
+
+    expect(mockApi.get).toHaveBeenCalledWith("/sherpa/recap", {
+      params: { project_id: 42 },
+    });
+    expect(sherpa.resumeRecap?.recap).toContain("PLS-DA");
+
+    mockApi.get.mockClear();
+    await sherpa.maybeLoadResumeRecap(42);
+    expect(mockApi.get).not.toHaveBeenCalled();
+
+    vi.setSystemTime(new Date("2026-05-11T09:00:00Z"));
+    mockApi.get.mockResolvedValueOnce({
+      data: {
+        recap: "You later compared the model against PCA.",
+        last_active_at: "2026-05-11T08:30:00Z",
+        cached: true,
+      },
+    });
+
+    await sherpa.maybeLoadResumeRecap(42);
+
+    expect(mockApi.get).toHaveBeenCalledTimes(1);
+    expect(sherpa.resumeRecap?.cached).toBe(true);
+    expect(sherpa.resumeRecap?.recap).toContain("PCA");
+  });
+
+  it("does not show a dismissed resume recap until the memory timestamp changes", async () => {
+    vi.setSystemTime(new Date("2026-05-10T08:00:00Z"));
+    const sherpa = useSherpaStore();
+    mockApi.get.mockResolvedValueOnce({
+      data: {
+        recap: "You selected PLS-DA.",
+        last_active_at: "2026-05-10T07:00:00Z",
+        cached: false,
+      },
+    });
+
+    await sherpa.maybeLoadResumeRecap(42);
+    sherpa.dismissResumeRecap();
+    expect(sherpa.resumeRecap).toBeNull();
+
+    vi.setSystemTime(new Date("2026-05-11T09:00:00Z"));
+    mockApi.get.mockResolvedValueOnce({
+      data: {
+        recap: "You selected PLS-DA.",
+        last_active_at: "2026-05-10T07:00:00Z",
+        cached: true,
+      },
+    });
+
+    await sherpa.maybeLoadResumeRecap(42);
+    expect(sherpa.resumeRecap).toBeNull();
+
+    vi.setSystemTime(new Date("2026-05-12T10:00:00Z"));
+    mockApi.get.mockResolvedValueOnce({
+      data: {
+        recap: "You added a new validation result.",
+        last_active_at: "2026-05-12T09:00:00Z",
+        cached: false,
+      },
+    });
+
+    await sherpa.maybeLoadResumeRecap(42);
+    expect(sherpa.resumeRecap?.recap).toContain("validation");
+  });
+
+  it("throttles failed resume recap fetches before retrying", async () => {
+    vi.setSystemTime(new Date("2026-05-10T08:00:00Z"));
+    const sherpa = useSherpaStore();
+    mockApi.get.mockRejectedValueOnce(new Error("recap unavailable"));
+
+    await sherpa.maybeLoadResumeRecap(42);
+
+    expect(mockApi.get).toHaveBeenCalledTimes(1);
+    expect(sherpa.resumeRecap).toBeNull();
+
+    mockApi.get.mockClear();
+    vi.setSystemTime(new Date("2026-05-10T08:30:00Z"));
+    await sherpa.maybeLoadResumeRecap(42);
+    expect(mockApi.get).not.toHaveBeenCalled();
+
+    vi.setSystemTime(new Date("2026-05-10T09:01:00Z"));
+    mockApi.get.mockResolvedValueOnce({
+      data: {
+        recap: "You saved a validated workflow.",
+        last_active_at: "2026-05-10T09:00:00Z",
+        cached: false,
+      },
+    });
+
+    await sherpa.maybeLoadResumeRecap(42);
+
+    expect(mockApi.get).toHaveBeenCalledTimes(1);
+    expect(sherpa.resumeRecap?.recap).toContain("validated workflow");
   });
 
   it("treats persisted results as completed when executionState is still pending", async () => {

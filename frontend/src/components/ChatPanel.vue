@@ -249,6 +249,23 @@
 
               <!-- Sherpa messages -->
               <template v-else>
+                <div v-if="sherpaStore.resumeRecap" class="sherpa-recap-card">
+                  <div class="sherpa-recap-card__icon">
+                    <i class="pi pi-history"></i>
+                  </div>
+                  <div class="sherpa-recap-card__body">
+                    <div class="sherpa-recap-card__eyebrow">Session recap</div>
+                    <p>{{ sherpaStore.resumeRecap.recap }}</p>
+                  </div>
+                  <button
+                    type="button"
+                    class="sherpa-recap-card__dismiss"
+                    aria-label="Dismiss session recap"
+                    @click="sherpaStore.dismissResumeRecap()"
+                  >
+                    <i class="pi pi-times"></i>
+                  </button>
+                </div>
                 <div
                   v-for="(message, idx) in sherpaStore.messages"
                   :key="idx"
@@ -760,6 +777,7 @@ onMounted(async () => {
     sherpaStore.init();
     await loadEgressDefaults();
     await sherpaStore.refreshConversations(projectStore.currentProjectId);
+    await sherpaStore.maybeLoadResumeRecap(projectStore.currentProjectId);
     if (appMode.value === "local") {
       // Local mode derives chat readiness from /config rather than server-owned /llm/debug/config.
       await store.checkConfigChange();
@@ -829,6 +847,7 @@ watch(
   () => projectStore.currentProjectId,
   async (projectId) => {
     await sherpaStore.refreshConversations(projectId);
+    await sherpaStore.maybeLoadResumeRecap(projectId);
     if (appMode.value !== "local") {
       await store.refreshConversations(projectId);
     }
@@ -1693,6 +1712,65 @@ const collapsed = computed(() => props.collapsed);
 .chat-message.user .chat-bubble {
   background: #2563eb;
   color: white;
+}
+
+.sherpa-recap-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #c4b5fd;
+  border-radius: 8px;
+  background: #f5f3ff;
+  color: #312e81;
+}
+
+.sherpa-recap-card__icon {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.sherpa-recap-card__body {
+  min-width: 0;
+}
+
+.sherpa-recap-card__eyebrow {
+  margin-bottom: 3px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: #6d28d9;
+}
+
+.sherpa-recap-card__body p {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.sherpa-recap-card__dismiss {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #6d28d9;
+  cursor: pointer;
+}
+
+.sherpa-recap-card__dismiss:hover {
+  background: #ede9fe;
 }
 
 .chat-bubble--md {

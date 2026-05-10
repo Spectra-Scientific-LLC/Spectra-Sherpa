@@ -21,7 +21,12 @@ import { useWorkflowBuilderConfigStore } from "@/stores/workflowBuilderConfig";
 import { useNotificationStore } from "@/stores/notification";
 import { useProjectStore } from "@/stores/project";
 import { useWorkflowStore } from "@/stores/workflow";
-import type { ConversationSummary, SherpaMessage, SherpaRecommendationPayload } from "@/types";
+import type {
+  ConversationSummary,
+  SherpaMessage,
+  SherpaRecommendationPayload,
+  SherpaResumeRecap,
+} from "@/types";
 
 type SherpaState = "idle" | "syncing" | "chatting" | "error";
 type SherpaSyncState = "idle" | "syncing" | "error";
@@ -49,6 +54,11 @@ export interface ToolEvent {
 }
 
 const STORAGE_KEY = "sherpa_conversations";
+const RESUME_RECAP_LAST_SEEN_PREFIX = "spectra_sherpa_project_recap_last_seen_";
+const RESUME_RECAP_DISMISSED_PREFIX = "spectra_sherpa_project_recap_dismissed_";
+const RESUME_RECAP_FAILURE_PREFIX = "spectra_sherpa_project_recap_failure_";
+const RESUME_RECAP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const RESUME_RECAP_FAILURE_RETRY_MS = 60 * 60 * 1000;
 
 const loadConversations = (): ConversationSummary[] => {
   try {
@@ -103,6 +113,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
   const subscriptionRequired = ref<string | null>(null);
   const subscriptionUpgradeUrl = ref<string | null>(null);
   const lastActivitySummary = ref<string | null>(null);
+  const resumeRecap = ref<SherpaResumeRecap | null>(null);
   const chatServerAcknowledged = ref(false);
   const currentChatRequestId = ref<string | null>(null);
   const currentSyncRequestId = ref<string | null>(null);
@@ -491,6 +502,86 @@ export const useSherpaStore = defineStore("sherpa", () => {
       window.open(url, "_blank", "noopener,noreferrer");
     }
     return url;
+  }
+
+  function _recapStorageKey(prefix: string, projectId: number): string {
+    return `${prefix}${projectId}`;
+  }
+
+  function _readRecapLastSeen(projectId: number): number | null {
+    try {
+      const raw = localStorage.getItem(
+        _recapStorageKey(RESUME_RECAP_LAST_SEEN_PREFIX, projectId)
+      );
+      const parsed = raw === null ? NaN : Number(raw);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function _writeRecapLastSeen(projectId: number, value: number): void {
+    try {
+      localStorage.setItem(
+        _recapStorageKey(RESUME_RECAP_LAST_SEEN_PREFIX, projectId),
+        String(value),
+      );
+    } catch {
+      /* localStorage can be unavailable in tests or hardened browsers. */
+    }
+  }
+
+  function _readRecapFailure(projectId: number): number | null {
+    try {
+      const raw = localStorage.getItem(
+        _recapStorageKey(RESUME_RECAP_FAILURE_PREFIX, projectId)
+      );
+      const parsed = raw === null ? NaN : Number(raw);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function _writeRecapFailure(projectId: number, value: number): void {
+    try {
+      localStorage.setItem(
+        _recapStorageKey(RESUME_RECAP_FAILURE_PREFIX, projectId),
+        String(value),
+      );
+    } catch {
+      /* localStorage can be unavailable in tests or hardened browsers. */
+    }
+  }
+
+  function _clearRecapFailure(projectId: number): void {
+    try {
+      localStorage.removeItem(_recapStorageKey(RESUME_RECAP_FAILURE_PREFIX, projectId));
+    } catch {
+      /* localStorage can be unavailable in tests or hardened browsers. */
+    }
+  }
+
+  function _isRecapDismissed(projectId: number, lastActiveAt: string | null): boolean {
+    try {
+      const dismissedMarker = localStorage.getItem(
+        _recapStorageKey(RESUME_RECAP_DISMISSED_PREFIX, projectId)
+      );
+      return Boolean(dismissedMarker && dismissedMarker === (lastActiveAt || "unknown"));
+    } catch {
+      return false;
+    }
+  }
+
+  function _markRecapDismissed(recap: SherpaResumeRecap): void {
+    try {
+      localStorage.setItem(
+        _recapStorageKey(RESUME_RECAP_DISMISSED_PREFIX, recap.projectId),
+        recap.lastActiveAt || "unknown",
+      );
+    } catch {
+      /* localStorage can be unavailable in tests or hardened browsers. */
+    }
   }
 
   function _appendSystemMessage(content: string): void {
@@ -1215,6 +1306,59 @@ export const useSherpaStore = defineStore("sherpa", () => {
   }
 
   // ── actions ────────────────────────────────────────────────
+
+  async function maybeLoadResumeRecap(projectId = projectStore.currentProjectId): Promise<void> {
+    if (!isServerBacked.value || !projectId) {
+      resumeRecap.value = null;
+      return;
+    }
+    if (resumeRecap.value?.projectId !== projectId) {
+      resumeRecap.value = null;
+    }
+
+    const now = Date.now();
+    const lastSeen = _readRecapLastSeen(projectId);
+    if (lastSeen !== null && now - lastSeen < RESUME_RECAP_INTERVAL_MS) {
+      return;
+    }
+    const lastFailure = _readRecapFailure(projectId);
+    if (lastFailure !== null && now - lastFailure < RESUME_RECAP_FAILURE_RETRY_MS) {
+      return;
+    }
+
+    try {
+      const response = await api.get("/sherpa/recap", {
+        params: { project_id: projectId },
+      });
+      _writeRecapLastSeen(projectId, now);
+      _clearRecapFailure(projectId);
+      const recap = typeof response.data?.recap === "string" ? response.data.recap.trim() : "";
+      const lastActiveAt =
+        typeof response.data?.last_active_at === "string"
+          ? response.data.last_active_at
+          : null;
+      if (!recap || _isRecapDismissed(projectId, lastActiveAt)) {
+        resumeRecap.value = null;
+        return;
+      }
+      resumeRecap.value = {
+        projectId,
+        recap,
+        lastActiveAt,
+        cached: Boolean(response.data?.cached),
+      };
+    } catch (error) {
+      _writeRecapFailure(projectId, now);
+      console.warn("[sherpa] Resume recap could not be loaded:", error);
+    }
+  }
+
+  function dismissResumeRecap(): void {
+    if (resumeRecap.value) {
+      _markRecapDismissed(resumeRecap.value);
+    }
+    resumeRecap.value = null;
+  }
 
   async function syncWorkflow(): Promise<void> {
     if (syncState.value === "syncing") {
@@ -2043,6 +2187,9 @@ export const useSherpaStore = defineStore("sherpa", () => {
     activeTools,
     subscriptionRequired,
     subscriptionUpgradeUrl,
+    resumeRecap,
+    maybeLoadResumeRecap,
+    dismissResumeRecap,
     syncWorkflow,
     sendMessage,
     clearMessages,
