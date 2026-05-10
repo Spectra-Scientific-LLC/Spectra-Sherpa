@@ -345,6 +345,10 @@ import { useProjectStore } from "@/stores/project";
 import { useAuthStore } from "@/stores/auth";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useDemoMode } from "@/composables/useDemoMode";
+import {
+  ADVISOR_PROMPT_REQUEST_EVENT,
+  type AdvisorPromptRequestDetail,
+} from "@/lib/advisorPromptActions";
 import { formatDateTime } from "@/utils/format";
 import { getErrorMessage } from "@/utils/errors";
 import api from "@/api/client";
@@ -482,6 +486,24 @@ const setActiveTab = (tab: ChatTab) => {
 
 const switchToSherpa = () => {
   setActiveTab("sherpa");
+};
+
+const handleAdvisorPromptRequest = async (event: Event) => {
+  const detail = (event as CustomEvent<AdvisorPromptRequestDetail>).detail;
+  const prompt = typeof detail?.prompt === "string" ? detail.prompt.trim() : "";
+  if (!prompt || !sherpaEnabled.value) {
+    return;
+  }
+
+  switchToSherpa();
+  if (props.collapsed) {
+    emit("toggle");
+  }
+  await nextTick();
+  userMessage.value = prompt;
+  if (detail.autoSend !== false) {
+    await sendMessage();
+  }
 };
 
 const inputPlaceholder = computed(() => {
@@ -738,11 +760,13 @@ onMounted(async () => {
   // Listen for config change notifications
   window.addEventListener("llm-config-changed", handleConfigChange);
   window.addEventListener("egress-defaults-changed", loadEgressDefaults);
+  window.addEventListener(ADVISOR_PROMPT_REQUEST_EVENT, handleAdvisorPromptRequest);
 });
 
 onUnmounted(() => {
   window.removeEventListener("llm-config-changed", handleConfigChange);
   window.removeEventListener("egress-defaults-changed", loadEgressDefaults);
+  window.removeEventListener(ADVISOR_PROMPT_REQUEST_EVENT, handleAdvisorPromptRequest);
   sherpaStore.dispose();
 });
 

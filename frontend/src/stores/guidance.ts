@@ -1,8 +1,9 @@
 import { defineStore } from "pinia";
-import { computed, ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useLlmStore } from "@/stores/llm";
 import { resolveGuidanceAction } from "@/lib/actionOntology";
+import { requestAdvisorPrompt } from "@/lib/advisorPromptActions";
 import {
   acknowledgeGuidanceNotification,
   fetchGuidanceSettings,
@@ -194,9 +195,7 @@ export const useGuidanceStore = defineStore("guidance", () => {
     if (!toast) return;
     const action = resolveGuidanceAction(toast.action_id);
     await acknowledgeNotification(toast.notification_id, "clicked");
-    if (action?.route) {
-      await router.push(action.route);
-    }
+    await runGuidanceAction(action);
   }
 
   async function acknowledgeActionClick(actionId: string): Promise<void> {
@@ -213,8 +212,17 @@ export const useGuidanceStore = defineStore("guidance", () => {
   async function clickNotification(notification: GuidanceNotification): Promise<void> {
     const action = resolveGuidanceAction(notification.action_id);
     await acknowledgeNotification(notification.id, "clicked");
-    if (action?.route) {
+    await runGuidanceAction(action);
+  }
+
+  async function runGuidanceAction(action: ReturnType<typeof resolveGuidanceAction>): Promise<void> {
+    if (!action) return;
+    if (action.route) {
       await router.push(action.route);
+      await nextTick();
+    }
+    if (action.prompt) {
+      requestAdvisorPrompt(action.prompt);
     }
   }
 

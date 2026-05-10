@@ -29,11 +29,11 @@ export const GUIDANCE_ACTIONS: Record<string, GuidanceActionMeta> = {
     route: "/project/memory-map",
     label: "Open memory map",
   },
-  ask_sherpa_explain_results: {
-    actionId: "ask_sherpa_explain_results",
+  explain_latest_results: {
+    actionId: "explain_latest_results",
     actionVersion: 1,
     route: "/experiments",
-    label: "Ask Sherpa",
+    label: "Explain results",
     prompt: "Explain the results of my latest run.",
   },
   new_project: { actionId: "new_project", actionVersion: 1, route: "/project", label: "New project" },

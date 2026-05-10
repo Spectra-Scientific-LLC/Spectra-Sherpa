@@ -2,7 +2,7 @@
   <section class="guidance-settings">
     <div class="section-header">
       <div>
-        <h3>Sherpa Guidance</h3>
+        <h3>Guidance</h3>
         <p>Contextual suggestions are based on action-keyed activity in this app.</p>
       </div>
     </div>

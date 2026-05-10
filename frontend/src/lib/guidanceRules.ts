@@ -10,6 +10,6 @@ const GUIDANCE_RULE_LABELS: Record<string, string> = {
 
 export function guidanceRuleLabel(ruleId?: string | null): string {
   if (!ruleId) return "Guidance";
-  if (ruleId.startsWith("llm_")) return "Sherpa insight";
+  if (ruleId.startsWith("llm_")) return "Guidance insight";
   return GUIDANCE_RULE_LABELS[ruleId] ?? "Guidance";
 }

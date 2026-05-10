@@ -161,7 +161,7 @@
         }}
       </p>
       <small v-if="activeTab === 'guidance'">
-        Sherpa Guidance suggestions will appear here after they are shown.
+        Guidance suggestions will appear here after they are shown.
       </small>
       <small v-if="activeTab === 'all'">
         Notifications from jobs, deployments, and system events will appear

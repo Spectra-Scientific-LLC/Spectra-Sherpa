@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { useGuidanceStore, type GuidanceEvent } from "@/stores/guidance";
+import {
+  ADVISOR_PROMPT_REQUEST_EVENT,
+  type AdvisorPromptRequestDetail,
+} from "@/lib/advisorPromptActions";
 import { guidanceRuleLabel } from "@/lib/guidanceRules";
 
 const mocks = vi.hoisted(() => ({
@@ -159,6 +163,32 @@ describe("guidance store", () => {
     expect(mocks.routerPush).toHaveBeenCalledWith("/workflow");
   });
 
+  it("routes prompt-backed actions and asks Sherpa Advisor", async () => {
+    const store = useGuidanceStore();
+    const promptListener = vi.fn();
+    window.addEventListener(ADVISOR_PROMPT_REQUEST_EVENT, promptListener);
+    await store.loadSettings();
+    await store.handleEvent(
+      makeEvent({
+        action_id: "explain_latest_results",
+        title: "Want an explanation of these results?",
+        rule_id: "idle_on_results",
+      }),
+    );
+    mocks.apiPatch.mockClear();
+
+    await store.clickAction();
+
+    expect(mocks.routerPush).toHaveBeenCalledWith("/experiments");
+    expect(promptListener).toHaveBeenCalledTimes(1);
+    const event = promptListener.mock.calls[0]?.[0] as CustomEvent<AdvisorPromptRequestDetail>;
+    expect(event.detail).toEqual({
+      prompt: "Explain the results of my latest run.",
+      autoSend: true,
+    });
+    window.removeEventListener(ADVISOR_PROMPT_REQUEST_EVENT, promptListener);
+  });
+
   it("acknowledges real action clicks against an active glow", async () => {
     const store = useGuidanceStore();
     await store.loadSettings();
@@ -208,6 +238,7 @@ describe("guidance store", () => {
 
   it("maps internal rule ids to user-facing labels", () => {
     expect(guidanceRuleLabel("empty_project_import")).toBe("Project setup");
+    expect(guidanceRuleLabel("llm_run_workflow")).toBe("Guidance insight");
     expect(guidanceRuleLabel("unknown_rule")).toBe("Guidance");
   });
 

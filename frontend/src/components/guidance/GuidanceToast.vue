@@ -1,7 +1,12 @@
 <template>
   <Transition name="guidance-toast">
     <aside v-if="toast" class="guidance-toast" role="status" aria-live="polite">
-      <div class="guidance-toast__chip">Sherpa Guidance</div>
+      <div class="guidance-toast__chips">
+        <div class="guidance-toast__chip">Guidance</div>
+        <div v-if="toast.source === 'llm'" class="guidance-toast__chip guidance-toast__chip--ai">
+          AI
+        </div>
+      </div>
       <button class="guidance-toast__close" type="button" aria-label="Dismiss" @click="guidance.dismiss">
         ×
       </button>
@@ -52,6 +57,12 @@ const actionLabel = computed(() => {
   box-shadow: 0 16px 40px rgba(31, 41, 55, 0.18);
 }
 
+.guidance-toast__chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .guidance-toast__chip {
   display: inline-flex;
   align-items: center;
@@ -62,6 +73,11 @@ const actionLabel = computed(() => {
   color: #6d28d9;
   font-size: 12px;
   font-weight: 700;
+}
+
+.guidance-toast__chip--ai {
+  background: #f5f3ff;
+  color: #4c1d95;
 }
 
 .guidance-toast__close {
