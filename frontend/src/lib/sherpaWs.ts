@@ -24,6 +24,7 @@ export const SHERPA_WS_EVENT = {
   decisionAck: "sherpa_decision_ack",
   chatStart: "sherpa_chat_start",
   chatChunk: "sherpa_chat_chunk",
+  chatFollowUps: "sherpa_chat_follow_ups",
   chatDone: "sherpa_chat_done",
   status: "sherpa_status",
   peaksResult: "sherpa_peaks_result",

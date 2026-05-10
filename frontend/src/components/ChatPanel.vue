@@ -269,6 +269,11 @@
                       v-if="message.role === 'assistant'"
                       :scopes="message.memoryScopes"
                     />
+                    <FollowUpChips
+                      v-if="message.role === 'assistant'"
+                      :suggestions="message.followUps"
+                      @select="sendSherpaFollowUp"
+                    />
                   </div>
                 </div>
                 <div v-if="sherpaStore.isSyncing" class="chat-message assistant">
@@ -340,6 +345,7 @@ import Menu from "primevue/menu";
 import { useToast } from "primevue/usetoast";
 
 import ChatMarkdown from "@/components/ChatMarkdown.vue";
+import FollowUpChips from "@/components/FollowUpChips.vue";
 import MemoryAttribution from "@/components/MemoryAttribution.vue";
 import { useAdvisorStore } from "@/stores/advisor";
 import { useLlmStore } from "@/stores/llm";
@@ -1067,6 +1073,15 @@ const sendMessage = async () => {
     Object.keys(metadata).length > 0 ? metadata : undefined,
   );
   userMessage.value = "";
+};
+
+const sendSherpaFollowUp = async (suggestion: string) => {
+  const message = suggestion.trim();
+  if (!message) {
+    return;
+  }
+  switchToSherpa();
+  await sherpaStore.sendMessage(message, toolsActive.value);
 };
 
 // ── Conversation management (LLM tab) ───────────────────────

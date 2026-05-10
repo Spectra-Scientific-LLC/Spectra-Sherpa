@@ -25,6 +25,7 @@ from spectra_sherpa.app.ws_actions import (
 from spectra_sherpa.app.ws_events import (
     SHERPA_CHAT_CHUNK,
     SHERPA_CHAT_DONE,
+    SHERPA_CHAT_FOLLOW_UPS,
     SHERPA_CHAT_START,
     SHERPA_CODE_ERROR,
     SHERPA_CODE_RESULT,
@@ -82,6 +83,7 @@ def test_frontend_sherpa_ws_contract_matches_backend_constants():
         "decisionAck": SHERPA_DECISION_ACK,
         "chatStart": SHERPA_CHAT_START,
         "chatChunk": SHERPA_CHAT_CHUNK,
+        "chatFollowUps": SHERPA_CHAT_FOLLOW_UPS,
         "chatDone": SHERPA_CHAT_DONE,
         "status": SHERPA_STATUS,
         "peaksResult": SHERPA_PEAKS_RESULT,

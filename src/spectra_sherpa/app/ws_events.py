@@ -15,6 +15,7 @@ SHERPA_RECOMMENDATIONS = "sherpa_recommendations"
 SHERPA_DECISION_ACK = "sherpa_decision_ack"
 SHERPA_CHAT_START = "sherpa_chat_start"
 SHERPA_CHAT_CHUNK = "sherpa_chat_chunk"
+SHERPA_CHAT_FOLLOW_UPS = "sherpa_chat_follow_ups"
 SHERPA_CHAT_DONE = "sherpa_chat_done"
 SHERPA_STATUS = "sherpa_status"
 SHERPA_PEAKS_RESULT = "sherpa_peaks_result"
@@ -37,6 +38,7 @@ SHERPA_WS_EVENTS: tuple[str, ...] = (
     SHERPA_DECISION_ACK,
     SHERPA_CHAT_START,
     SHERPA_CHAT_CHUNK,
+    SHERPA_CHAT_FOLLOW_UPS,
     SHERPA_CHAT_DONE,
     SHERPA_STATUS,
     SHERPA_PEAKS_RESULT,

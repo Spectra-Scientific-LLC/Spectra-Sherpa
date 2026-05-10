@@ -34,6 +34,23 @@
       },
       "additionalProperties": false
     },
+    "sherpa_chat_follow_ups": {
+      "type": "object",
+      "required": ["type", "suggestions"],
+      "properties": {
+        "type": { "const": "sherpa_chat_follow_ups" },
+        "request_id": { "type": "string" },
+        "conversation_id": { "type": ["string", "null"] },
+        "suggestions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "maxItems": 3
+        },
+        "timing": { "$ref": "#/definitions/timing" }
+      },
+      "additionalProperties": false
+    },
     "sherpa_chat_done": {
       "type": "object",
       "required": ["type"],
@@ -269,6 +286,7 @@
   "oneOf": [
     { "$ref": "#/definitions/sherpa_chat_start" },
     { "$ref": "#/definitions/sherpa_chat_chunk" },
+    { "$ref": "#/definitions/sherpa_chat_follow_ups" },
     { "$ref": "#/definitions/sherpa_chat_done" },
     { "$ref": "#/definitions/sherpa_error" },
     { "$ref": "#/definitions/sherpa_status" },

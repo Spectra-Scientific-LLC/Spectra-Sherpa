@@ -816,6 +816,36 @@ describe("Sherpa Store communication state", () => {
     sherpa.dispose();
   });
 
+  it("attaches suggested follow-ups to the active assistant response", async () => {
+    const sherpa = useSherpaStore();
+    sherpa.init();
+
+    await sherpa.sendMessage("What should I do next?");
+    const requestId = lastRequestId();
+
+    emitSherpa({ type: SHERPA_WS_EVENT.chatStart, request_id: requestId });
+    emitSherpa({
+      type: SHERPA_WS_EVENT.chatChunk,
+      request_id: requestId,
+      chunk: "Run the workflow and inspect diagnostics.",
+    });
+    emitSherpa({
+      type: SHERPA_WS_EVENT.chatFollowUps,
+      request_id: requestId,
+      suggestions: ["Explain the latest run?", "Compare preprocessing choices?"],
+    });
+    emitSherpa({ type: SHERPA_WS_EVENT.chatDone, request_id: requestId });
+
+    const assistant = sherpa.messages.at(-1);
+    expect(assistant?.content).toContain("inspect diagnostics");
+    expect(assistant?.followUps).toEqual([
+      "Explain the latest run?",
+      "Compare preprocessing choices?",
+    ]);
+
+    sherpa.dispose();
+  });
+
   it("logs the last visible Sherpa activity when chat times out", async () => {
     const sherpa = useSherpaStore();
     const notifications = useNotificationStore();

@@ -16,6 +16,7 @@ describe("sherpaWs contract", () => {
 
   it("keeps the canonical Sherpa event names stable", () => {
     expect(SHERPA_WS_EVENT.decisionAck).toBe("sherpa_decision_ack");
+    expect(SHERPA_WS_EVENT.chatFollowUps).toBe("sherpa_chat_follow_ups");
     expect(SHERPA_WS_EVENT.subscriptionRequired).toBe("sherpa_subscription_required");
     expect(SHERPA_WS_EVENT.dataStoryResult).toBe("sherpa_data_story_result");
   });

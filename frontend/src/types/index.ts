@@ -201,6 +201,7 @@ export interface SherpaMessage {
   content: string;
   recommendations?: SherpaRecommendationPayload[];
   memoryScopes?: string[];
+  followUps?: string[];
 }
 
 export interface SherpaRecommendationPayload {

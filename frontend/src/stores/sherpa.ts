@@ -514,6 +514,17 @@ export const useSherpaStore = defineStore("sherpa", () => {
     );
   }
 
+  function _followUpsFromPayload(payload: SherpaEventPayload): string[] {
+    const raw = payload.suggestions;
+    if (!Array.isArray(raw)) {
+      return [];
+    }
+    return raw
+      .map((suggestion) => String(suggestion).trim())
+      .filter(Boolean)
+      .slice(0, 3);
+  }
+
   function _createWelcomeMessage(): SherpaMessage {
     return {
       role: "assistant",
@@ -1362,6 +1373,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
       types: [
         SHERPA_WS_EVENT.chatStart,
         SHERPA_WS_EVENT.chatChunk,
+        SHERPA_WS_EVENT.chatFollowUps,
         SHERPA_WS_EVENT.chatDone,
         SHERPA_WS_EVENT.status,
         SHERPA_WS_EVENT.toolStart,
@@ -1585,6 +1597,28 @@ export const useSherpaStore = defineStore("sherpa", () => {
         }
         _recordActivity(
           `Sherpa streamed response${_formatRequestSuffix(payload.request_id)}: ${_truncateForLog(payload.chunk)}${_formatTimingSuffix(payload.timing)}`
+        );
+        noteChatActivity();
+        return;
+      }
+
+      if (payload.type === SHERPA_WS_EVENT.chatFollowUps) {
+        chatServerAcknowledged.value = true;
+        currentChatRequestId.value =
+          typeof payload.request_id === "string" ? payload.request_id : currentChatRequestId.value;
+        currentConversationId.value =
+          typeof payload.conversation_id === "string" ? payload.conversation_id : currentConversationId.value;
+        _ensureAssistantBubbleForStreaming(currentChatRequestId.value);
+        const followUps = _followUpsFromPayload(payload);
+        if (
+          followUps.length > 0
+          && streamingIndex.value !== null
+          && messages.value[streamingIndex.value]?.role === "assistant"
+        ) {
+          messages.value[streamingIndex.value].followUps = followUps;
+        }
+        _recordActivity(
+          `Sherpa suggested follow-up questions${_formatRequestSuffix(payload.request_id)}${_formatTimingSuffix(payload.timing)}.`
         );
         noteChatActivity();
         return;
