@@ -37,11 +37,12 @@
             icon="pi pi-save"
             data-action="save_workflow"
             class="toolbar-btn toolbar-action-btn"
-            :disabled="isTrialTabActive || (!hasChanges && autosaveStatus !== 'saving')"
+            :disabled="isTrialTabActive || autosaveStatus === 'saving'"
             @click="saveWorkflow"
             title="Save workflow definition"
           />
           <Button
+            v-if="advisorAvailable"
             :label="memoryButtonLabel"
             :icon="isCompactingMemory ? 'pi pi-spin pi-spinner' : 'pi pi-bookmark'"
             class="toolbar-btn toolbar-action-btn"
@@ -89,7 +90,11 @@
               />
               <span>Auto update</span>
             </label>
-            <label class="toolbar-state-control" title="Compact and save the active sheet's Sherpa Advisor memory whenever the workflow is explicitly saved">
+            <label
+              v-if="advisorAvailable"
+              class="toolbar-state-control"
+              title="Compact and save the active sheet's Sherpa Advisor memory whenever the workflow is explicitly saved"
+            >
               <Checkbox
                 v-model="autoSaveMemory"
                 binary
@@ -239,6 +244,7 @@ import { useWorkbookStore } from "@/stores/workbook";
 import { useWorkflowBuilderConfigStore } from "@/stores/workflowBuilderConfig";
 import { useClipboardStore, type ClipboardPayload } from "@/stores/clipboard";
 import { useAdvisorStore } from "@/stores/advisor";
+import { useAppConfig } from "@/composables/useAppConfig";
 import WorkbookSheetTabs from "@/components/WorkbookSheetTabs.vue";
 import WorkflowToolbar from "./WorkflowToolbar.vue";
 import WorkflowCanvas from "./WorkflowCanvas.vue";
@@ -261,6 +267,14 @@ const workflowBuilderConfigStore = useWorkflowBuilderConfigStore();
 const { autoExecute, autoSaveMemory } = storeToRefs(workflowBuilderConfigStore);
 const clipboardStore = useClipboardStore();
 const advisorStore = useAdvisorStore();
+const { appMode, isFeatureEnabled } = useAppConfig();
+// Sherpa Advisor (memory compaction, advisor channels) is a server-backed
+// feature.  In OSS local mode the backend has no /memory/compact route and
+// the local adapter no-ops compactScope, so the "Save Memory" button and
+// related controls just advertise a feature that doesn't exist — hide them.
+const advisorAvailable = computed(
+  () => appMode.value !== "local" && isFeatureEnabled("sherpaGuidance"),
+);
 const isCompactingMemory = ref(false);
 const activeAdvisorNodeId = computed(() => advisorStore.activeNodeId);
 const memoryButtonLabel = computed(() => (isCompactingMemory.value ? "Saving…" : "Save Memory"));
@@ -1178,7 +1192,7 @@ const actionMenuItems = computed(() => [
   {
     label: saveButtonLabel.value,
     icon: "pi pi-save",
-    disabled: isTrialTabActive.value || (!hasChanges.value && autosaveStatus.value !== "saving"),
+    disabled: isTrialTabActive.value || autosaveStatus.value === "saving",
     command: saveWorkflow,
   },
   {
