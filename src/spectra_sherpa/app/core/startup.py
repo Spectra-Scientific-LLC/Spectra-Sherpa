@@ -87,7 +87,8 @@ def _ensure_local_secret_key() -> None:
     object.__setattr__(settings, "secret_key", new_key)
     logger.info(
         "Generated a new local SECRET_KEY and saved to %s. "
-        "Set the SECRET_KEY environment variable to use a custom key.",
+        "For network-exposed deployments, set the SECRET_KEY environment variable "
+        "to a stable secret managed outside the data directory.",
         secret_key_storage_path,
     )
 
@@ -655,7 +656,11 @@ async def ensure_spectrochempy_testdata() -> None:
     try:
         spectrochempy_dir = _get_scp_reference_root()
         if spectrochempy_dir is None:
-            logger.info("SpectroChemPy testdata directory not found, skipping")
+            logger.info(
+                "SpectroChemPy not detected — native .scp/.spg/.omnic file support "
+                "and the bundled testdata catalog are disabled. To enable, install "
+                "the optional extra: pip install 'spectra-sherpa[scp]'"
+            )
             return
 
         async with async_session() as session:

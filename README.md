@@ -1,9 +1,11 @@
 # SpectraSherpa by [Spectra Scientific LLC](https://spectrascientific.ai)
 
+[![PyPI](https://img.shields.io/pypi/v/spectra-sherpa)](https://pypi.org/project/spectra-sherpa/)
+[![Python](https://img.shields.io/pypi/pyversions/spectra-sherpa)](https://pypi.org/project/spectra-sherpa/)
+[![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey)]()
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-green)](LICENSE)
 [![CI](https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/actions/workflows/ci.yml/badge.svg)](https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/badge/docs-spectrascientific.ai-blue)](https://docs.spectrascientific.ai)
-[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-green)](LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue)]()
 
 **Open-source, local-first chemometrics platform, AI-ready.**
 

@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import warnings
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import pool
+from sqlalchemy import event, pool
+from sqlalchemy.exc import SAWarning
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 import spectra_sherpa.app.models  # noqa: F401
 from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.db.base import Base
+from spectra_sherpa.app.db.session import apply_sqlite_pragmas
 
 config = context.config
 
@@ -55,8 +58,25 @@ async def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
 
-    async with connectable.connect() as connection:
-        await connection.run_sync(do_run_migrations)
+    if get_url().startswith("sqlite"):
+
+        @event.listens_for(connectable.sync_engine, "connect")
+        def _set_sqlite_pragma(dbapi_connection, _connection_record) -> None:
+            apply_sqlite_pragmas(dbapi_connection)
+
+    # Silence cosmetic SAWarnings emitted by SQLAlchemy's SQLite FK reflection
+    # when Alembic's batch_alter_table(recreate="always") rebuilds tables with
+    # ondelete cascades. The warning is from FK signature reconciliation, not
+    # from FK enforcement (which apply_sqlite_pragmas above turns on). The
+    # migrations themselves are correct; suppressing here keeps fresh-install
+    # logs clean.
+    _fk_reflect_warning = (
+        r"WARNING: SQL-parsed foreign key constraint .* " r"could not be located in PRAGMA foreign_keys for table"
+    )
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message=_fk_reflect_warning, category=SAWarning)
+        async with connectable.connect() as connection:
+            await connection.run_sync(do_run_migrations)
 
     await connectable.dispose()
 

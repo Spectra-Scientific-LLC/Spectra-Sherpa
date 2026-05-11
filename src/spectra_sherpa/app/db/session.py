@@ -24,19 +24,29 @@ else:
 engine = create_async_engine(_database_url, **_engine_kwargs)
 
 
+def apply_sqlite_pragmas(dbapi_connection) -> None:
+    """Apply correctness + tuning pragmas to a SQLite DBAPI connection.
+
+    Exported so Alembic's env.py can attach the same listener to its own
+    short-lived migration engine — without it, FK constraints aren't enforced
+    during migrations and SQLAlchemy logs SAWarnings about FK reflection.
+    """
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.execute("PRAGMA cache_size=-64000")
+    cursor.execute("PRAGMA wal_autocheckpoint=1000")
+    cursor.execute("PRAGMA journal_size_limit=67108864")
+    cursor.close()
+
+
 if _is_sqlite:
 
     @event.listens_for(engine.sync_engine, "connect")
     def _set_sqlite_pragma(dbapi_connection, _connection_record) -> None:
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA synchronous=NORMAL")
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.execute("PRAGMA busy_timeout=5000")
-        cursor.execute("PRAGMA cache_size=-64000")
-        cursor.execute("PRAGMA wal_autocheckpoint=1000")
-        cursor.execute("PRAGMA journal_size_limit=67108864")
-        cursor.close()
+        apply_sqlite_pragmas(dbapi_connection)
 
 
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
