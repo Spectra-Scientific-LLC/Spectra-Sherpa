@@ -779,6 +779,21 @@ const onSaveMemoryClick = async () => {
 };
 
 const saveWorkflow = async () => {
+  // PR #80 made the Save button always clickable (manual checkpoint UX), but
+  // the backend unconditionally appends a workflow_version row on every save
+  // with create_version=true.  Without this guard, repeated clicks on an
+  // unchanged sheet spawn duplicate identical version snapshots that clutter
+  // version history.  When the user has nothing new to save, short-circuit
+  // with a quiet info toast instead of round-tripping.
+  if (!hasChanges.value) {
+    toast.add({
+      severity: "info",
+      summary: "Already saved",
+      detail: "No changes since the last save.",
+      life: 1800,
+    });
+    return;
+  }
   try {
     const savedId = await workflowStore.saveWorkflow();
     if (autoSaveMemory.value && activeAdvisorNodeId.value !== null) {

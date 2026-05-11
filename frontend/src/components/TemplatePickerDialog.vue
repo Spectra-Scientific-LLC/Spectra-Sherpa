@@ -194,11 +194,20 @@ const onUse = async (tpl: TemplateOut) => {
     });
     visible.value = false;
   } catch (err) {
+    const message = getErrorMessage(err, "Template instantiation failed.");
+    // ~half the shipped templates reference SpectroChemPy bundled datasets
+    // (irdata, ramandata, nmrdata, …).  In a base ``pip install spectra-sherpa``
+    // install (no ``[scp]`` extra), ``_resolve_scp_path`` raises a 404 with
+    // "SCP dataset not found: …" — opaque to a user who doesn't know about
+    // optional extras.  Rewrite the toast with the install hint.
+    const isScpMissing = /SCP dataset not found/i.test(message);
     toast.add({
       severity: "error",
-      summary: "Could not start from template",
-      detail: getErrorMessage(err, "Template instantiation failed."),
-      life: 4000,
+      summary: isScpMissing ? "SpectroChemPy required" : "Could not start from template",
+      detail: isScpMissing
+        ? "This template needs the SpectroChemPy extra. Install it with: pip install 'spectra-sherpa[scp]' and restart the app."
+        : message,
+      life: isScpMissing ? 8000 : 4000,
     });
   } finally {
     instantiating.value = null;
