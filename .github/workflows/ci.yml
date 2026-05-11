@@ -1,5 +1,4 @@
 name: CI
-
 on:
   push:
     branches: [main]
@@ -7,27 +6,39 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Cancel in-flight runs of the same PR/branch when a new commit lands.
+# Especially important on the OSS repo where external contributors may
+# push rapid iterations against the same PR.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Use bash on every OS so the grep filters and shell conditionals
+# below work uniformly. Git Bash is preinstalled on windows-latest,
+# so this overrides the default pwsh shell on Windows.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   lint:
+    # Linux-only: black, ruff, and mypy produce identical results on
+    # every OS. Multiplying the matrix would waste minutes and surface
+    # no new bugs.
     name: Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-
       - name: Set up Python 3.11
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-
       - name: Install linters
         run: pip install "black>=26.3.1,<27" "ruff>=0.5,<1" mypy
-
       - name: black --check
         run: black --check src/ tests/
-
       - name: ruff check
         run: ruff check src/ tests/
-
       - name: No server imports in OSS source
         run: |
           SERVER_MODULE="spectrasherpa_""server"
@@ -36,7 +47,6 @@ jobs:
             echo "::error::OSS imports from the server implementation package — this crosses the boundary"
             exit 1
           fi
-
       - name: No server package references in frontend runtime code
         run: |
           SERVER_PACKAGE="spectra-""server"
@@ -53,34 +63,42 @@ jobs:
             echo "::error::OSS frontend references the server package by name in runtime code"
             exit 1
           fi
-
       - name: mypy (core modules)
         run: mypy --follow-imports=silent src/spectra_sherpa/app/core/ --no-error-summary
-
       - name: mypy (dag nodes — warning mode, ratchet down over time)
         run: mypy src/spectra_sherpa/app/services/dag/ --no-error-summary
         continue-on-error: true
 
   backend:
-    name: Backend Tests
-    runs-on: ubuntu-latest
+    # Gate every PR on all three user-facing platforms:
+    #   - ubuntu-latest:  enterprise deployments + most contributors' CI
+    #   - windows-latest: most OSS contributors and proprietary users
+    #                     running locally
+    #   - macos-latest:   maintainer dev environment + macOS users
+    #
+    # Both install profiles run on every OS so we catch Windows- or
+    # macOS-specific regressions in either the base package or the
+    # optional cloud extras. Public-repo Actions on standard runners
+    # are free across all three OSes, so this 6-job matrix has zero
+    # billing impact.
+    name: Backend Tests (${{ matrix.os }} / ${{ matrix.install_profile }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
         install_profile:
           - base
           - cloud
     steps:
       - uses: actions/checkout@v5
-
       - name: Set up Python 3.11
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-
       - name: Install Poetry
         run: pip install poetry
-
       - name: Install dependencies
         run: |
           if [ "${{ matrix.install_profile }}" = "cloud" ]; then
@@ -88,26 +106,28 @@ jobs:
           else
             poetry install --with dev
           fi
-
       - name: No bare app.* imports
         run: |
           if grep -rn -E '^[[:space:]]*(from|import)[[:space:]]+app(\.|[[:space:]]|$)' src/ tests/ scripts/ *.py --include='*.py'; then
             echo "::error::Bare 'app.*' imports found. Use 'spectra_sherpa.app.*' instead."
             exit 1
           fi
-
       - name: No bare app.* patch targets
         run: |
           if grep -rn -E 'patch\([[:space:]]*['"'"'"]app\.|monkeypatch\.setattr\([[:space:]]*['"'"'"]app\.' tests/ *.py --include='*.py'; then
             echo "::error::Bare 'app.*' patch targets found. Use 'spectra_sherpa.app.*' instead."
             exit 1
           fi
-
       - name: Run tests
         run: |
           poetry run pytest tests/ -v --no-cov
 
   scp-compat:
+    # Linux-only for now: SpectroChemPy carries its own platform
+    # support story (numpy/scipy/matplotlib stack). The 'backend' job
+    # above already validates that spectra_sherpa itself works on
+    # Windows and macOS. Expand this matrix only if contributors
+    # report SCP-specific cross-platform issues.
     name: SCP Compat (3.11 / ${{ matrix.scp_version }})
     runs-on: ubuntu-latest
     strategy:
@@ -116,30 +136,23 @@ jobs:
         scp_version: ["0.8.1"]
     steps:
       - uses: actions/checkout@v5
-
       - name: Set up Python 3.11
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-
       - name: Set runtime env vars
         run: |
           echo "SCP_CONFIG_HOME=${{ runner.temp }}/scp-config" >> "$GITHUB_ENV"
           echo "SCP_PROJECTS_HOME=${{ runner.temp }}/scp-projects" >> "$GITHUB_ENV"
           echo "MPLCONFIGDIR=${{ runner.temp }}/mplconfig" >> "$GITHUB_ENV"
-
       - name: Install Poetry
         run: pip install poetry
-
       - name: Install base dependencies
         run: poetry install --with dev
-
       - name: Prepare writable runtime dirs
         run: mkdir -p "$SCP_CONFIG_HOME" "$SCP_PROJECTS_HOME" "$MPLCONFIGDIR"
-
       - name: Pin SpectroChemPy version
         run: poetry run pip install "spectrochempy==${{ matrix.scp_version }}"
-
       - name: Run SCP compatibility suite
         run: |
           poetry run pytest \
@@ -152,22 +165,24 @@ jobs:
             -v --no-cov
 
   frontend:
+    # Linux-only: 'npm ci' with the committed package-lock.json is
+    # deterministic, and the produced bundle is platform-independent.
+    # If a contributor on Windows can't run 'npm ci', the right
+    # diagnostic is a separate "frontend install smoke" job, not a
+    # full build matrix.
     name: Frontend Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-
       - name: Set up Node.js 22
         uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-
       - name: Install dependencies
         run: npm ci
         working-directory: frontend
-
       - name: Verify api-generated.ts matches OSS-canonical OpenAPI spec
         working-directory: frontend
         run: |
@@ -180,32 +195,26 @@ jobs:
             exit 1
           fi
           echo "api-generated.ts matches frontend/contracts/openapi-llm-v1.json."
-
       - name: ESLint
         # Phase B: existing warnings (no-explicit-any, no-unused-vars).
         # This threshold should only decrease — never increase.
         run: npx eslint src/ --max-warnings 310
         working-directory: frontend
-
       - name: TypeScript check
         run: npx vue-tsc --noEmit
         working-directory: frontend
-
       - name: Unit tests
         run: npm run test:unit -- --run
         working-directory: frontend
-
       - name: Build
         run: npm run build
         working-directory: frontend
-
       - name: Verify build produced index.html and all referenced assets
         run: |
           if [ ! -f "src/spectra_sherpa/static/index.html" ]; then
             echo "::error::Build did not produce src/spectra_sherpa/static/index.html"
             exit 1
           fi
-
           # Verify every asset referenced in static/index.html exists
           grep -oP '/assets/[^"]+' src/spectra_sherpa/static/index.html | while read -r asset; do
             if [ ! -f "src/spectra_sherpa/static${asset}" ]; then
@@ -213,9 +222,7 @@ jobs:
               exit 1
             fi
           done
-
           echo "Build produced index.html and all referenced assets."
-
       - name: Warn if static bundle is stale
         continue-on-error: true
         run: |
@@ -228,23 +235,21 @@ jobs:
           fi
 
   security:
+    # Linux-only: bandit and pip-audit are Python-only and produce
+    # identical findings across OSes.
     name: Security Scan
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
       - uses: actions/checkout@v5
-
       - name: Set up Python 3.11
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-
       - name: Install scanners
         run: pip install bandit pip-audit
-
       - name: Bandit (medium+ severity)
         run: bandit -r src/ -ll -q
-
       - name: pip-audit (dependency CVEs)
         run: |
           pip install poetry poetry-plugin-export
@@ -252,22 +257,19 @@ jobs:
           pip-audit -r /tmp/requirements.txt
 
   docs:
+    # Linux-only: mkdocs build output is identical across OSes.
     name: Docs Build & Hygiene
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-
       - name: Set up Python 3.11
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-
       - name: Install mkdocs
         run: pip install "mkdocs<2" "mkdocs-material<9.7" mkdocs-jupyter
-
       - name: Build docs
         run: mkdocs build --strict
-
       - name: Demo-string hygiene check
         run: |
           # Fail if any doc uses APP_MODE=demo or mode="demo" outside of
@@ -276,7 +278,6 @@ jobs:
             docs/ \
             --include='*.md' \
             | grep -iv 'deprecat\|backward.compat\|maps.*enterprise\|accepted.*alias' || true)
-
           if [ -n "$HITS" ]; then
             echo "::error::Stale 'demo' references found in docs:"
             echo "$HITS"
