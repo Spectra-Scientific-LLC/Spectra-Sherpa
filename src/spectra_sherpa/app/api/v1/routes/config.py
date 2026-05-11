@@ -500,8 +500,12 @@ async def test_spectrasherpa_connection(request: SpectraSherpaTestRequest):
         return {"success": False, "error": "Cannot connect to server"}
     except httpx.TimeoutException:
         return {"success": False, "error": "Connection timed out"}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+    except Exception as exc:
+        # Log the full exception server-side; return a generic message so
+        # internal details (stack frames, filesystem paths, library versions)
+        # don't flow back to the client.
+        logger.exception("Deployment key validation failed: %s", exc)
+        return {"success": False, "error": "Deployment key validation failed."}
 
 
 @router.get("/spectrasherpa/user")

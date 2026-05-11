@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -82,13 +83,45 @@ def normalize_relative_data_path(file_path: str) -> str:
     return file_path
 
 
+# Allowlist for sidecar filename segments: alphanumerics + a few separators
+# that don't carry path semantics.  Anything else is mapped to ``_`` so a
+# crafted ``source`` / ``name`` value like ``"../etc/passwd"`` cannot escape
+# ``_OVERRIDES_DIR``.
+_SIDECAR_SEGMENT_SANITIZER = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _safe_sidecar_segment(value: str) -> str:
+    """Defang a user-supplied segment so it can never traverse the filesystem.
+
+    Sanitises by replacing any character outside ``[A-Za-z0-9._-]`` with
+    ``_``, then strips leading dots so the result can never be parsed as
+    ``..`` or a hidden-file prefix.  Empty results raise ``ValueError``.
+    """
+    sanitised = _SIDECAR_SEGMENT_SANITIZER.sub("_", value).lstrip(".")
+    if not sanitised:
+        raise ValueError("Sidecar segment is empty after sanitisation.")
+    return sanitised
+
+
 def sidecar_path(*, file_path: str | None, source: str | None, name: str | None) -> Path:
     if source and name:
-        return _OVERRIDES_DIR / f"ref__{source}__{name}.json"
-    if file_path:
+        sanitised = _OVERRIDES_DIR / f"ref__{_safe_sidecar_segment(source)}__{_safe_sidecar_segment(name)}.json"
+    elif file_path:
         safe = normalize_relative_data_path(file_path).replace("/", "__").replace("\\", "__")
-        return _OVERRIDES_DIR / f"file__{safe}.json"
-    raise ValueError("Either file_path or source+name required")
+        sanitised = _OVERRIDES_DIR / f"file__{_safe_sidecar_segment(safe)}.json"
+    else:
+        raise ValueError("Either file_path or source+name required")
+
+    # Final containment check: the resolved sidecar must live under
+    # ``_OVERRIDES_DIR``.  This is belt-and-braces — the segment
+    # sanitiser above already strips every character that could carry
+    # path semantics — but defends against drift if the directory is
+    # ever computed differently.
+    overrides_root = _OVERRIDES_DIR.resolve()
+    resolved = sanitised.resolve()
+    if not resolved.is_relative_to(overrides_root):
+        raise ValueError("Computed sidecar path escapes the overrides directory.")
+    return sanitised
 
 
 def load_prepared_data_overrides(

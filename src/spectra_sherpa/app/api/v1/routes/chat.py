@@ -72,7 +72,13 @@ async def chat_stream(
                 yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
         except ValueError as exc:
-            yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)})}\n\n"
+            # ``ValueError`` from ``basic_chat`` carries operator-facing config
+            # errors.  Log the original message server-side so it stays
+            # debuggable; surface only a fixed, public-safe message so the
+            # exception's stringification can't leak internal context.
+            logger.warning("BYO chat configuration error: %s", exc)
+            _public_detail = "Chat endpoint is not configured or unreachable."
+            yield f"data: {json.dumps({'type': 'error', 'detail': _public_detail})}\n\n"
         except Exception as exc:
             logger.exception("BYO chat stream failed: %s", exc)
             yield f"data: {json.dumps({'type': 'error', 'detail': 'Chat request failed'})}\n\n"

@@ -220,7 +220,12 @@ async def test_connection(
     except httpx.ConnectError:
         return False, "Could not connect to the endpoint."
     except httpx.HTTPError as exc:
-        return False, f"Connection failed: {exc}"
+        # Log the full exception server-side so connectivity bugs stay
+        # debuggable; the returned message is generic to avoid leaking
+        # internal details (e.g. credential-bearing URLs in the request
+        # exception's stringification) to the validator caller.
+        logger.warning("BYO chat endpoint connection failed: %s", exc)
+        return False, "Connection failed."
 
     if response.status_code in (401, 403):
         return False, "Authentication failed. Check the API key."

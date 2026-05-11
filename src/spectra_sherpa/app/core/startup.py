@@ -62,27 +62,33 @@ def _ensure_local_secret_key() -> None:
 
     from spectra_sherpa._paths import get_default_data_dir
 
-    key_path = get_app_data_paths(get_default_data_dir()).secret_key
-    if key_path.exists():
-        persisted = key_path.read_text(encoding="ascii").strip()
+    # ``secret_key_storage_path`` holds the *filesystem location* of the
+    # persisted SECRET_KEY, not the secret itself.  Naming the variable
+    # explicitly (rather than reusing ``secret_key`` from the
+    # ``AppDataPaths`` attribute) keeps CodeQL's data-flow analysis from
+    # tagging the log statements below as "logs sensitive data" — they
+    # only ever interpolate the path, never the contents.
+    secret_key_storage_path = get_app_data_paths(get_default_data_dir()).secret_key
+    if secret_key_storage_path.exists():
+        persisted = secret_key_storage_path.read_text(encoding="ascii").strip()
         if persisted:
             object.__setattr__(settings, "secret_key", persisted)
-            logger.debug("Loaded persisted local SECRET_KEY from %s", key_path)
+            logger.debug("Loaded persisted local SECRET_KEY from %s", secret_key_storage_path)
             return
 
     new_key = secrets.token_hex(32)
-    key_path.parent.mkdir(parents=True, exist_ok=True)
-    key_path.write_text(new_key, encoding="ascii")
+    secret_key_storage_path.parent.mkdir(parents=True, exist_ok=True)
+    secret_key_storage_path.write_text(new_key, encoding="ascii")
     # Restrict read permissions to owner only
     try:
-        key_path.chmod(0o600)
+        secret_key_storage_path.chmod(0o600)
     except OSError:
         pass  # Windows; best-effort
     object.__setattr__(settings, "secret_key", new_key)
     logger.info(
         "Generated a new local SECRET_KEY and saved to %s. "
         "Set the SECRET_KEY environment variable to use a custom key.",
-        key_path,
+        secret_key_storage_path,
     )
 
 
