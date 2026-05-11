@@ -310,15 +310,25 @@ const llmStatus = computed(() => {
   return { class: "status-red", tooltip: "LLM: Not Configured" };
 });
 
+// Refresh status immediately when the BYO-chat config is saved, instead of
+// waiting up to 60s for the next poll tick. The settings panel dispatches
+// "llm-config-changed" after a successful save (and after a successful
+// test-then-save in the same handler).
+const handleLlmConfigChange = () => {
+  llmStore.checkConfigChange();
+};
+
 onMounted(() => {
   // Only poll LLM config in local mode — server owns model selection in hybrid/enterprise
   if (appMode.value === "local") {
     llmStore.startConfigPolling();
+    window.addEventListener("llm-config-changed", handleLlmConfigChange);
   }
 });
 
 onUnmounted(() => {
   llmStore.stopConfigPolling();
+  window.removeEventListener("llm-config-changed", handleLlmConfigChange);
 });
 
 const computeStatus = computed(() => {

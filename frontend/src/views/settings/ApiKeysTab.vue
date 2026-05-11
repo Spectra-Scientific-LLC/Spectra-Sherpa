@@ -488,16 +488,27 @@ const testByoChatConnection = async () => {
   byoError.value = "";
   testingByo.value = true;
   try {
-    const response = await api.post("/config/byo-chat-config/test", {
+    const payload = {
       endpoint_url: byoUrl.value.trim(),
       endpoint_key: byoKey.value.trim(),
       model: byoModel.value.trim() || "deepseek-chat",
-    });
-    if (response.data.success) {
-      byoMessage.value = response.data.message || "LLM connection successful.";
-    } else {
+    };
+    const response = await api.post("/config/byo-chat-config/test", payload);
+    if (!response.data.success) {
       byoError.value = response.data.message || "LLM connection failed.";
+      return;
     }
+    // Persist immediately on a successful test. Without this the user sees
+    // "Connection successful" but the traffic light stays red and the chat
+    // panel still raises "set CHAT_ENDPOINT_URL" — the test endpoint only
+    // validates the credentials, it does not write them to .env / os.environ.
+    await api.post("/config/byo-chat-config", payload);
+    byoChatConfigured.value = true;
+    byoKey.value = "";
+    localStorage.setItem("llm_verbose", byoVerbose.value ? "true" : "false");
+    localStorage.setItem("llm_max_paragraphs", String(byoMaxParagraphs.value));
+    window.dispatchEvent(new CustomEvent("llm-config-changed"));
+    byoMessage.value = "LLM connection successful — configuration saved.";
   } catch (err: any) {
     byoError.value = err.response?.data?.detail || "Failed to test chat configuration.";
   } finally {
