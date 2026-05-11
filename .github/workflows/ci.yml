@@ -75,6 +75,7 @@ jobs:
         os:
           - ubuntu-latest
           - windows-latest
+          - macos-latest
         install_profile:
           - base
           - cloud
