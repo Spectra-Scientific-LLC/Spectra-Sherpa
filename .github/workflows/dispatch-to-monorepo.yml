@@ -15,6 +15,13 @@ on:
     types: [closed]
     branches: [main]
 
+# Default token permissions: read-only.  The repository_dispatch call
+# to the private monorepo runs under a GitHub App installation token
+# minted at run time, so the default ``GITHUB_TOKEN`` does not need
+# write scopes.
+permissions:
+  contents: read
+
 jobs:
   dispatch:
     if: github.event.pull_request.merged == true

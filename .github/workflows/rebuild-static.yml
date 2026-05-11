@@ -3,6 +3,11 @@ name: Rebuild Frontend Static Bundle
 on:
   workflow_dispatch:
 
+# Default token permissions: read-only.  The rebuilt bundle is
+# uploaded as a workflow artifact; no commits flow back to the repo.
+permissions:
+  contents: read
+
 jobs:
   rebuild:
     name: Rebuild static bundle

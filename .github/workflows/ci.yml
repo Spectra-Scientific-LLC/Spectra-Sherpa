@@ -7,6 +7,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Default token permissions: read-only.  Jobs only run linters, tests,
+# and builds — no writes back to the repo.
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Lint
