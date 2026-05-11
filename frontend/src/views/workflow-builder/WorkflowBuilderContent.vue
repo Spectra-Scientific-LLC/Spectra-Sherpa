@@ -132,6 +132,8 @@
       :workflow-id="workflowStore.workflowId"
     />
 
+    <TemplatePickerDialog v-model:visible="templatePickerVisible" />
+
     <!-- Execution status banner -->
     <div v-if="executionCount > 0" class="execution-banner">
       <i class="pi pi-check-circle"></i>
@@ -162,6 +164,7 @@
           @switch="switchWorkbookSheet"
           @add="addWorkbookSheet"
           @duplicate="duplicateWorkbookSheet"
+          @open-template-picker="templatePickerVisible = true"
           @rename="renameWorkbookSheet"
           @color="colorWorkbookSheet"
           @reorder="reorderWorkbookSheets"
@@ -252,6 +255,7 @@ import { useAdvisorStore } from "@/stores/advisor";
 import { useAppConfig } from "@/composables/useAppConfig";
 import WorkbookSheetTabs from "@/components/WorkbookSheetTabs.vue";
 import VersionHistoryDialog from "@/components/VersionHistoryDialog.vue";
+import TemplatePickerDialog from "@/components/TemplatePickerDialog.vue";
 import WorkflowToolbar from "./WorkflowToolbar.vue";
 import WorkflowCanvas from "./WorkflowCanvas.vue";
 import WorkflowInspector from "./WorkflowInspector.vue";
@@ -285,6 +289,7 @@ const isCompactingMemory = ref(false);
 const activeAdvisorNodeId = computed(() => advisorStore.activeNodeId);
 const memoryButtonLabel = computed(() => (isCompactingMemory.value ? "Saving…" : "Save Memory"));
 const versionHistoryVisible = ref(false);
+const templatePickerVisible = ref(false);
 const canvasRef = ref();
 const exportMenuRef = ref();
 const actionMenuRef = ref();

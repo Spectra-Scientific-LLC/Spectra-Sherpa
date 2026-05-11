@@ -147,6 +147,7 @@ const emit = defineEmits<{
   switch: [index: number];
   add: [];
   duplicate: [workflowId: number];
+  "open-template-picker": [];
   rename: [workflowId: number, name: string];
   color: [workflowId: number, color: string | null];
   reorder: [orderedIds: number[]];
@@ -267,6 +268,13 @@ const addMenuItems = computed(() => {
         if (active && active.kind !== "trial") {
           emit("duplicate", active.workflowId);
         }
+      }
+    },
+    {
+      label: "From Template…",
+      icon: "pi pi-th-large",
+      command: () => {
+        emit("open-template-picker");
       }
     }
   ];

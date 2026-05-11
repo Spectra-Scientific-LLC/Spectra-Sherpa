@@ -255,6 +255,32 @@ export const useWorkbookStore = defineStore("workbook", () => {
     return sheet;
   }
 
+  // Instantiate a curated template as a new sheet in the current project.
+  // Always uses launch_mode=example so the template's bundled / certified
+  // dataset auto-materializes — the v0.4.x picker doesn't yet collect
+  // user-supplied data bindings.  The backend rejects templates that have
+  // no example data with a 400 we surface as a toast.
+  async function openTemplateAsSheet(
+    templateId: number,
+    workflowName: string,
+  ): Promise<WorkbookSheet> {
+    if (projectId.value === null) {
+      throw new Error("Open or create a project before instantiating a template.");
+    }
+    const response = await api.post<WorkflowListItem>(
+      `/workflow-templates/${templateId}/instantiate`,
+      {
+        workflow_name: workflowName,
+        project_id: projectId.value,
+        launch_mode: "example",
+      },
+    );
+    const sheet = toSheet(response.data);
+    sheets.value.push(sheet);
+    await switchSheet(sheets.value.length - 1);
+    return sheet;
+  }
+
   async function renameSheet(workflowId: number, newName: string): Promise<void> {
     const trimmed = newName.trim().slice(0, 40);
     if (!trimmed) return;
@@ -458,6 +484,7 @@ export const useWorkbookStore = defineStore("workbook", () => {
     switchSheet,
     duplicateSheet,
     openVersionAsSheet,
+    openTemplateAsSheet,
     renameSheet,
     setSheetColor,
     reorderSheets,
