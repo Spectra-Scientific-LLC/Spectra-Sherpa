@@ -19,8 +19,8 @@
     </div>
     <template v-else>
       <p class="tp-tagline">
-        Curated starter workflows. Each one comes with a sample dataset so you can
-        see the pipeline run end-to-end before swapping in your own data.
+        Curated starter workflows. Ready-to-run templates include sample data so
+        you can see the pipeline run end-to-end before swapping in your own data.
       </p>
       <div v-for="(group, idx) in groupedTemplates" :key="group.category" class="tp-group">
         <h4 class="tp-group-title">
@@ -39,11 +39,12 @@
               <p v-if="tpl.description" class="tp-row-description">{{ tpl.description }}</p>
             </div>
             <Button
-              :label="instantiating === tpl.id ? 'Creating…' : 'Use'"
-              :icon="instantiating === tpl.id ? 'pi pi-spin pi-spinner' : 'pi pi-arrow-right'"
+              :label="templateButtonLabel(tpl)"
+              :icon="templateButtonIcon(tpl)"
               icon-pos="right"
               class="p-button-sm"
-              :disabled="instantiating !== null || !projectAvailable"
+              :disabled="instantiating !== null || !projectAvailable || !supportsExample(tpl)"
+              :title="templateButtonTitle(tpl)"
               @click="onUse(tpl)"
             />
           </li>
@@ -92,6 +93,7 @@ interface TemplateOut {
 }
 
 const visible = defineModel<boolean>("visible", { default: false });
+const emit = defineEmits<{ "sheet-opened": [] }>();
 
 const workbookStore = useWorkbookStore();
 const toast = useToast();
@@ -158,6 +160,21 @@ const supportsExample = (tpl: TemplateOut): boolean => {
   });
 };
 
+const templateButtonLabel = (tpl: TemplateOut): string => {
+  if (!supportsExample(tpl)) return "Needs data";
+  return instantiating.value === tpl.id ? "Creating…" : "Use";
+};
+
+const templateButtonIcon = (tpl: TemplateOut): string => {
+  if (!supportsExample(tpl)) return "pi pi-lock";
+  return instantiating.value === tpl.id ? "pi pi-spin pi-spinner" : "pi pi-arrow-right";
+};
+
+const templateButtonTitle = (tpl: TemplateOut): string =>
+  supportsExample(tpl)
+    ? "Create a new workflow sheet from this template."
+    : "This template needs a data-binding flow before it can be created from the workbook picker.";
+
 const loadTemplates = async () => {
   loading.value = true;
   loadError.value = null;
@@ -182,10 +199,20 @@ watch(visible, (next) => {
 
 const onUse = async (tpl: TemplateOut) => {
   if (!projectAvailable.value) return;
+  if (!supportsExample(tpl)) {
+    toast.add({
+      severity: "info",
+      summary: "Data binding required",
+      detail: "This template needs your data to be bound before creation.",
+      life: 3000,
+    });
+    return;
+  }
   instantiating.value = tpl.id;
   try {
     const workflowName = `${tpl.name}`;
     const sheet = await workbookStore.openTemplateAsSheet(tpl.id, workflowName);
+    emit("sheet-opened");
     toast.add({
       severity: "success",
       summary: "Template applied",

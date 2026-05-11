@@ -346,6 +346,7 @@ async def test_open_version_as_new_sheet_clones_without_touching_original(
     # New sheet is a distinct workflow in the same project.
     assert new_sheet["id"] != workflow["id"]
     assert new_sheet["project_id"] == project_id
+    assert new_sheet["created_from_workflow_id"] == workflow["id"]
     assert new_sheet["name"] == f"PLS (from v{version_number})"
     assert new_sheet["sheet_order"] == 1
     assert len(new_sheet["nodes"]) == 1

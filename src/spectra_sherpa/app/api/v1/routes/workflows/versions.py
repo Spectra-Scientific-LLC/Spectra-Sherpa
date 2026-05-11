@@ -341,6 +341,7 @@ async def open_version_as_new_sheet(
         created_from_template_id=source.created_from_template_id,
         created_from_template_name=source.created_from_template_name,
         created_from_template_version=source.created_from_template_version,
+        created_from_workflow_id=source.id,
         sheet_order=(max_order if max_order is not None else -1) + 1,
     )
     session.add(new_workflow)

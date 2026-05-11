@@ -71,6 +71,7 @@ interface VersionSummary {
 
 const props = defineProps<{ workflowId: number | null }>();
 const visible = defineModel<boolean>("visible", { default: false });
+const emit = defineEmits<{ "sheet-opened": [] }>();
 
 const workbookStore = useWorkbookStore();
 const toast = useToast();
@@ -115,6 +116,7 @@ const onOpenAsNewSheet = async (versionId: number) => {
   opening.value = versionId;
   try {
     const sheet = await workbookStore.openVersionAsSheet(workflowId.value, versionId);
+    emit("sheet-opened");
     toast.add({
       severity: "success",
       summary: "Opened as new sheet",

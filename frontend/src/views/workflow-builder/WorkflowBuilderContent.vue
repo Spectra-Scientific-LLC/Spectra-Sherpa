@@ -130,9 +130,13 @@
     <VersionHistoryDialog
       v-model:visible="versionHistoryVisible"
       :workflow-id="workflowStore.workflowId"
+      @sheet-opened="resetDialogOpenedSheetUi"
     />
 
-    <TemplatePickerDialog v-model:visible="templatePickerVisible" />
+    <TemplatePickerDialog
+      v-model:visible="templatePickerVisible"
+      @sheet-opened="resetDialogOpenedSheetUi"
+    />
 
     <!-- Execution status banner -->
     <div v-if="executionCount > 0" class="execution-banner">
@@ -727,6 +731,11 @@ const resetCanvasUi = () => {
   nodeOutputs.value.clear();
   executionCount.value = 0;
   lastExecutionTime.value = null;
+};
+
+const resetDialogOpenedSheetUi = () => {
+  resetCanvasUi();
+  inspectorOpen.value = false;
 };
 
 const createNewWorkflow = () => {
