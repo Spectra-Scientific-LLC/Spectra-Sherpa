@@ -37,7 +37,16 @@ except ImportError:
 from spectra_sherpa.app.lib.scp_compat import NDDataset, require_scp, scp
 
 # Filename pattern for extracting species labels
-FILENAME_PATTERN = re.compile(r"^(?P<label>[A-Z0-9]+)[\s_-]?.*\.CSV$", re.IGNORECASE)
+# The previous form ``^[A-Z0-9]+[\s_-]?.*\.CSV$`` flagged as polynomial-redos
+# because ``[A-Z0-9]+`` and ``.*`` could both consume alphanumeric chars,
+# leaving the engine to retry many partitionings on non-matching inputs.
+# Folding the separator into the optional tail group eliminates the
+# overlap: either the filename is just ``LABEL.CSV`` or the label is
+# followed by exactly one separator and then arbitrary content.
+FILENAME_PATTERN = re.compile(
+    r"^(?P<label>[A-Z0-9]+)(?:[\s_-].*)?\.CSV$",
+    re.IGNORECASE,
+)
 CONC_PATTERN = re.compile(r"\(([^()]*?)ppm", re.IGNORECASE)
 
 

@@ -13,10 +13,13 @@ Configuration (environment variables):
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import os
+import socket
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 import httpx
 
@@ -32,6 +35,63 @@ class ChatEndpointConfig:
     url: str
     key: str
     model: str
+
+
+_ALLOW_PRIVATE_ENV = "SPECTRA_SHERPA_ALLOW_PRIVATE_LLM_ENDPOINTS"
+
+
+def _is_safe_outbound_url(url: str) -> tuple[bool, str]:
+    """Return ``(ok, reason)`` for a user-supplied outbound URL.
+
+    Used to defend the BYO chat endpoint validator against SSRF when the
+    server-side process makes the request: a user could otherwise pass
+    ``http://169.254.169.254/`` (cloud metadata) or ``http://localhost``
+    addresses and turn the validator into a confused deputy.
+
+    The check rejects:
+      - non-``http(s)`` schemes (``file://``, ``gopher://``, etc.)
+      - hostnames that resolve into private/loopback/link-local /
+        multicast / reserved / unspecified IP ranges
+
+    Set ``SPECTRA_SHERPA_ALLOW_PRIVATE_LLM_ENDPOINTS=true`` to bypass the
+    private-IP check; that is intended for OSS users running their own
+    local LLM (e.g. Ollama on ``localhost:11434``) where the SSRF threat
+    model does not apply.
+    """
+    try:
+        parsed = urlparse(url)
+    except Exception:  # pragma: no cover — defensive
+        return False, "URL could not be parsed."
+    if parsed.scheme not in ("http", "https"):
+        return False, "Only http(s) URLs are allowed."
+    host = parsed.hostname
+    if not host:
+        return False, "URL must include a host."
+
+    if os.getenv(_ALLOW_PRIVATE_ENV, "").strip().lower() in {"1", "true", "yes", "on"}:
+        return True, ""
+
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return False, "Hostname could not be resolved."
+
+    for info in infos:
+        addr_str = info[4][0]
+        try:
+            ip = ipaddress.ip_address(addr_str)
+        except ValueError:
+            continue
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            return False, "Endpoint resolves to a private or restricted IP address."
+    return True, ""
 
 
 def get_config() -> ChatEndpointConfig:
@@ -136,6 +196,10 @@ async def test_connection(
         return False, "API base URL is required."
     if not key:
         return False, "API key is required."
+
+    ok, reason = _is_safe_outbound_url(url)
+    if not ok:
+        return False, reason
 
     headers = {
         "Authorization": f"Bearer {key}",

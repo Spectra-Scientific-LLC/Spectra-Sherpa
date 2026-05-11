@@ -615,7 +615,10 @@ export const useLlmStore = defineStore("llm", () => {
     }
 
     try {
-      await api.get(`/llm/conversation/${activeId}`, {
+      // ``activeId`` is a server-issued conversation UUID, but encoding the
+      // path segment is defence-in-depth: a malformed value containing
+      // ``/`` or ``..`` would otherwise rewrite the request path.
+      await api.get(`/llm/conversation/${encodeURIComponent(activeId)}`, {
         params: { project_id: projectId },
       });
       if (!listFailed) {
@@ -790,7 +793,7 @@ export const useLlmStore = defineStore("llm", () => {
       ? { project_id: projectStore.currentProjectId }
       : undefined;
     try {
-      const response = await api.get(`/llm/conversation/${conversationId}`, { params });
+      const response = await api.get(`/llm/conversation/${encodeURIComponent(conversationId)}`, { params });
       currentConversationId.value = response.data.conversation_id;
       messages.value = response.data.messages;
     } catch (err) {
@@ -830,7 +833,7 @@ export const useLlmStore = defineStore("llm", () => {
     if (projectStore.currentProjectId == null) {
       throw new Error("Select a project before deleting a server-backed conversation.");
     }
-    await api.delete(`/llm/conversation/${conversationId}`, {
+    await api.delete(`/llm/conversation/${encodeURIComponent(conversationId)}`, {
       params: { project_id: projectStore.currentProjectId },
     });
     conversations.value = conversations.value.filter(
