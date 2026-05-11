@@ -33,6 +33,24 @@ async def health_check() -> dict:
     return result
 
 
+class VersionResponse(BaseModel):
+    backend_version: str
+
+
+@router.get("/version", response_model=VersionResponse)
+async def app_version() -> dict:
+    """Return the running backend's package version.
+
+    Public (no auth) so the frontend can read it before any user is
+    signed in.  Pairs with the build-time-injected
+    ``__SHERPA_FRONTEND_VERSION__`` on the frontend so users can spot
+    bundle/server drift after upgrades.
+    """
+    from spectra_sherpa import __version__
+
+    return {"backend_version": __version__}
+
+
 @router.get("/onboarding")
 async def get_onboarding_status(
     session: AsyncSession = Depends(get_session),

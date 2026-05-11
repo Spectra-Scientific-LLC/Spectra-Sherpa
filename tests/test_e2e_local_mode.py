@@ -72,6 +72,17 @@ class TestLocalModeE2E:
         assert resp.status_code == 200
         assert resp.json()["status"] == "ok"
 
+    async def test_version(self, client: AsyncClient):
+        # /version is public (no auth) and must always return the installed
+        # package version so the frontend footer / About dialog can surface
+        # bundle-vs-server drift.
+        from spectra_sherpa import __version__ as expected_version
+
+        resp = await client.get("/api/v1/version")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body == {"backend_version": expected_version}
+
     async def test_workflow_create_execute_roundtrip(self, client: AsyncClient):
         """Create a workflow via API, read it back, execute it."""
 

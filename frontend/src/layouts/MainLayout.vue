@@ -54,6 +54,7 @@
         <main class="content">
           <router-view />
         </main>
+        <AppFooter />
       </div>
       <div
         v-show="!chatCollapsed && !isNarrow"
@@ -93,6 +94,7 @@ import DemoUpgradeModal from "@/components/DemoUpgradeModal.vue";
 
 import Sidebar from "@/components/Sidebar.vue";
 import Topbar from "@/components/Topbar.vue";
+import AppFooter from "@/components/AppFooter.vue";
 import Toast from "primevue/toast";
 import PrimeSidebar from "primevue/sidebar";
 import { useBackendStatus } from "@/composables/useBackendStatus";

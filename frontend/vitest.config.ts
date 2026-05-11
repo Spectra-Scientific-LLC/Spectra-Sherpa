@@ -1,9 +1,24 @@
 import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath } from 'url'
+import { readFileSync } from 'node:fs'
+import { resolve, dirname } from 'node:path'
+
+// Mirror the build-time-injected frontend version from vite.config.ts so
+// tests that touch useAppVersion / AppFooter / AboutDialog don't blow up on
+// the undefined global.
+const frontendPkg = JSON.parse(
+  readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), 'package.json'),
+    'utf-8',
+  ),
+)
 
 export default defineConfig({
   plugins: [vue()],
+  define: {
+    __SHERPA_FRONTEND_VERSION__: JSON.stringify(frontendPkg.version),
+  },
   test: {
     globals: true,
     environment: 'happy-dom',

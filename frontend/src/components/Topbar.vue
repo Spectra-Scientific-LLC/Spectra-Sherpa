@@ -142,6 +142,7 @@
         @click="toggleUserMenu"
       />
       <Menu ref="userMenu" :model="userMenuItems" :popup="true" />
+      <AboutDialog v-model:visible="aboutVisible" />
     </div>
 
     <!-- Project Dialog -->
@@ -191,6 +192,7 @@ import { useNotifier } from "@/composables/useNotifier";
 import ProjectDialog from "./ProjectDialog.vue";
 import ProjectDetailsDrawer from "./ProjectDetailsDrawer.vue";
 import NotificationCenterDrawer from "./NotificationCenterDrawer.vue";
+import AboutDialog from "./AboutDialog.vue";
 
 const props = defineProps<{
   navCollapsed: boolean;
@@ -216,6 +218,7 @@ const { backendConnected } = useBackendStatus();
 const { appMode, hasLLMConfigured } = useAppConfig();
 const fileInput = ref<HTMLInputElement | null>(null);
 const notificationDrawerVisible = ref(false);
+const aboutVisible = ref(false);
 
 // User menu. Managed-auth items (My Profile, Change Password, Sign Out)
 // are contributed at runtime by the server-provided auth module via
@@ -244,6 +247,13 @@ const userMenuItems = computed(() => [
     icon: "pi pi-book",
     command: () => {
       window.open("https://docs.spectrascientific.ai", "_blank");
+    },
+  },
+  {
+    label: "About SpectraSherpa",
+    icon: "pi pi-info-circle",
+    command: () => {
+      aboutVisible.value = true;
     },
   },
   // Server-module contributions (Sign Out / My Profile / Change Password

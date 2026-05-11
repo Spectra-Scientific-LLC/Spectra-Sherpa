@@ -1,9 +1,21 @@
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import path from "node:path";
+import { readFileSync } from "node:fs";
+
+// Read the frontend bundle's version from package.json at build time and
+// inject it as a global compile-time constant.  The footer + About dialog
+// surface this alongside the backend version so users can spot bundle drift
+// after an upgrade ("FE 0.4.2 vs BE 0.4.3 — hard-reload your browser").
+const frontendPkg = JSON.parse(
+  readFileSync(path.resolve(__dirname, "package.json"), "utf-8"),
+);
 
 export default defineConfig({
   plugins: [vue()],
+  define: {
+    __SHERPA_FRONTEND_VERSION__: JSON.stringify(frontendPkg.version),
+  },
   build: {
     outDir: path.resolve(__dirname, "../src/spectra_sherpa/static"),
     emptyOutDir: true,
