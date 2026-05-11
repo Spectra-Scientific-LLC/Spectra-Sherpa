@@ -140,9 +140,17 @@ def main():
 
         filled_code = "\n".join(new_lines)
 
-        # Write to temp file for inspection
-        tmp = Path(tempfile.mktemp(suffix=f"_pls_{target_name.lower()}.py"))
-        tmp.write_text(filled_code)
+        # Write to temp file for inspection.  ``NamedTemporaryFile`` avoids
+        # the TOCTOU race that ``tempfile.mktemp`` is deprecated for: the
+        # file is created atomically by the OS, then we close it so the
+        # caller below can write into the same path.
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=f"_pls_{target_name.lower()}.py",
+            delete=False,
+        ) as _tmp:
+            _tmp.write(filled_code)
+            tmp = Path(_tmp.name)
         print(f"  Script: {tmp}")
 
         # Execute the complete script

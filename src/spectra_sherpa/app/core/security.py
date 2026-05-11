@@ -55,7 +55,27 @@ def llm_egress_defaults_forced() -> bool:
 
 
 def _hash_api_key(api_key: str) -> str:
-    """Create a fast hash of API key for cache lookup."""
+    """Deterministically hash a high-entropy API key for cache lookup.
+
+    SHA-256 is the right tool here, not Argon2/bcrypt:
+
+    - API keys in this codebase are high-entropy random tokens
+      (``secrets.token_urlsafe``), not user-chosen passwords.  Slow
+      key-derivation functions exist to defend against offline
+      brute-force of *low-entropy* secrets — an irrelevant defence for
+      random tokens.
+    - The hash is consulted on every authenticated request.  Switching
+      to a slow KDF would add tens of milliseconds per call without any
+      attacker-relevant security gain.
+    - Equality checks against the cached hash use ``hmac.compare_digest``
+      at the caller (constant time), preventing timing oracles.
+
+    CodeQL's ``py/weak-sensitive-data-hashing`` rule flags any
+    ``sha256(...)`` of a parameter named like a secret.  That rule's
+    threat model is password hashing; the lookup-hash use case here is
+    correct.  See also ``tests/test_gateway_user_api_key.py`` for the
+    matching server-side authenticator pattern.
+    """
     return hashlib.sha256(api_key.encode()).hexdigest()
 
 

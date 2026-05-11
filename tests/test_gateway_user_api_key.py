@@ -55,6 +55,12 @@ async def test_gateway_accepts_user_api_key(
         user = User(username="gatewayuser")
         test_session.add(user)
         await test_session.commit()
+        # SHA-256 is the correct hash for this lookup pattern: the keys
+        # are high-entropy random tokens, never user-chosen passwords,
+        # and equality is checked via ``hmac.compare_digest`` below.  See
+        # ``app/core/security.py:_hash_api_key`` for the matching
+        # production-side rationale.  ``py/weak-sensitive-data-hashing``
+        # CodeQL flags here are dismissed by-design.
         api_key_hash = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
 
         async def _authenticate_user_api_key(candidate: str, _session: AsyncSession) -> int | None:
