@@ -95,9 +95,14 @@ def discover_files(
         # for backward compatibility with older processed_files dicts)
         if str(f) in exclude or f.name in exclude:
             continue
-        # File stability check
+        # File stability check.  Filesystems whose mtime resolution lags
+        # ``time.time()`` (notably NTFS on Windows) can briefly report
+        # ``mtime > now`` immediately after a write, so clamp negative ages
+        # to zero — otherwise a freshly-touched file with ``settle_time=0``
+        # would be incorrectly rejected as "not settled yet".
         try:
-            if (now - f.stat().st_mtime) < settle_time_seconds:
+            age = max(0.0, now - f.stat().st_mtime)
+            if age < settle_time_seconds:
                 continue
         except OSError:
             continue

@@ -124,12 +124,19 @@ def _clear_port(
 
     remaining = [pid for pid in _find_listening_pids(port) if pid in initial]
     if remaining and force_kill:
+        # ``SIGKILL`` is POSIX-only; fall back to ``SIGTERM`` on Windows so
+        # the function degrades cleanly instead of raising ``AttributeError``.
+        # In real Windows deployments the ``lsof`` guard above short-circuits
+        # this branch entirely; the fallback only matters when callers stub
+        # out ``lsof`` (e.g. from tests).
+        force_signal = getattr(signal, "SIGKILL", signal.SIGTERM)
+        signal_label = "SIGKILL" if force_signal is getattr(signal, "SIGKILL", None) else "SIGTERM"
         print(
-            "Port still busy after grace period. Sending SIGKILL to PID(s): "
+            f"Port still busy after grace period. Sending {signal_label} to PID(s): "
             + ", ".join(str(pid) for pid in remaining),
         )
         for pid in remaining:
-            if not _safe_kill(pid, signal.SIGKILL):
+            if not _safe_kill(pid, force_signal):
                 print(f"  Warning: no permission to force-kill PID {pid}.")
         time.sleep(0.1)
         remaining = [pid for pid in _find_listening_pids(port) if pid in initial]

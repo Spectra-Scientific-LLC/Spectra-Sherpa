@@ -71,16 +71,21 @@ def _record_plugin_failure(name: str, exc: Exception) -> None:
 
 def _get_plugin_dirs() -> list[Path]:
     """Return directories to scan for plugin packages."""
-    dirs: list[Path] = []
+    from spectra_sherpa._paths import _safe_home
 
-    # 1. User home plugins directory
-    home_plugins = Path.home() / ".spectra_sherpa" / "plugins"
-    if home_plugins.is_dir():
-        dirs.append(home_plugins)
+    dirs: list[Path] = []
+    home_plugins: Path | None = None
+
+    # 1. User home plugins directory (when a home dir is determinable)
+    home = _safe_home()
+    if home is not None:
+        home_plugins = home / ".spectra_sherpa" / "plugins"
+        if home_plugins.is_dir():
+            dirs.append(home_plugins)
 
     # 2. Data-dir plugins (may overlap with home in pip-installed mode)
     data_plugins = get_default_data_dir() / "plugins"
-    if data_plugins.is_dir() and data_plugins.resolve() != home_plugins.resolve():
+    if data_plugins.is_dir() and (home_plugins is None or data_plugins.resolve() != home_plugins.resolve()):
         dirs.append(data_plugins)
 
     return dirs

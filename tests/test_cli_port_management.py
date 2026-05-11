@@ -5,6 +5,8 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 import spectra_sherpa.cli as cli
 
 
@@ -29,6 +31,7 @@ def test_clear_port_noop_when_not_in_use(monkeypatch):
     assert killed == []
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="lsof + SIGKILL are POSIX-only")
 def test_clear_port_force_kills_when_pid_survives(monkeypatch):
     monkeypatch.setattr(cli.shutil, "which", lambda _cmd: "/usr/bin/lsof")
     states = [[1001], [1001], []]

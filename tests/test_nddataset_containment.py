@@ -124,7 +124,9 @@ def test_nddataset_import_containment():
     violations = []
 
     for py_file in sorted(src_root.rglob("*.py")):
-        relative = str(py_file.relative_to(src_root))
+        # Normalize to forward slashes so the approved-module list (which
+        # uses ``/`` separators) matches identically on Windows runners.
+        relative = py_file.relative_to(src_root).as_posix()
 
         # Skip if it's an approved module
         if any(relative.endswith(approved) for approved in APPROVED_NDDATASET_MODULES):

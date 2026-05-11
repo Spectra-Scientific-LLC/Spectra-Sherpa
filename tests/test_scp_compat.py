@@ -87,20 +87,32 @@ class TestScpCompatExports:
         with pytest.raises(ImportError, match="requires SpectroChemPy"):
             scp_mod.require_scp("Test feature")
 
-    def test_get_scp_datadirs_prioritizes_env_override(self, monkeypatch: pytest.MonkeyPatch):
+    def test_get_scp_datadirs_prioritizes_env_override(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         from spectra_sherpa.app.lib import scp_compat
 
-        monkeypatch.setenv("SCP_DATADIR", "/tmp/custom-scp-datadir")
+        # Use a real platform-appropriate absolute path so the assertion holds
+        # on Windows (where Path normalizes ``/tmp`` to ``\tmp``) and POSIX.
+        override = tmp_path / "custom-scp-datadir"
+        monkeypatch.setenv("SCP_DATADIR", str(override))
         dirs = scp_compat.get_scp_datadirs()
         assert dirs
-        assert str(dirs[0]) == "/tmp/custom-scp-datadir"
+        assert Path(dirs[0]) == override
 
-    def test_get_scp_datadirs_includes_testdata_fallback(self, monkeypatch: pytest.MonkeyPatch):
+    def test_get_scp_datadirs_includes_testdata_fallback(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ):
         from spectra_sherpa.app.lib import scp_compat
 
         monkeypatch.delenv("SCP_DATADIR", raising=False)
+        # Pin the home dir so the fallback is exercised even on CI runners
+        # where ``Path.home()`` is undeterminable (e.g. GHA Windows).
+        monkeypatch.setattr("spectra_sherpa._paths._safe_home", lambda: tmp_path)
         dirs = scp_compat.get_scp_datadirs()
-        assert any(str(path).endswith(".spectrochempy/testdata") for path in dirs)
+        # Compare via Path parts so ``.spectrochempy/testdata`` matches under
+        # both POSIX and Windows separator conventions.
+        assert any(path.parts[-2:] == (".spectrochempy", "testdata") for path in dirs)
 
     def test_resolve_scp_path_uses_discovered_dirs(
         self,

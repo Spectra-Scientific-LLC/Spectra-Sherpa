@@ -97,7 +97,11 @@ def get_scp_datadirs() -> list[Path]:
         except Exception:
             logger.debug("Could not read scp.preferences.datadir", exc_info=True)
 
-    candidate_dirs.append(Path.home() / ".spectrochempy" / "testdata")
+    from spectra_sherpa._paths import _safe_home
+
+    home = _safe_home()
+    if home is not None:
+        candidate_dirs.append(home / ".spectrochempy" / "testdata")
 
     deduped: list[Path] = []
     seen: set[Path] = set()

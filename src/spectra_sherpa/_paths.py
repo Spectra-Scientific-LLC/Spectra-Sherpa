@@ -22,6 +22,20 @@ def _is_dev_checkout() -> bool:
     return (repo_root / "pyproject.toml").is_file() and (repo_root / "frontend").is_dir()
 
 
+def _safe_home() -> Path | None:
+    """Return ``Path.home()`` or ``None`` when the home dir is undeterminable.
+
+    On hardened or service-style environments (GitHub Actions Windows runners,
+    some container images) neither ``HOME`` nor ``USERPROFILE`` are set, and
+    ``Path.home()`` raises ``RuntimeError``.  Callers should treat ``None`` as
+    "no per-user path available" and skip that candidate.
+    """
+    try:
+        return Path.home()
+    except (RuntimeError, OSError):
+        return None
+
+
 def get_project_root() -> Path | None:
     """Return the repo root when in a dev checkout, else None."""
     if _is_dev_checkout():
@@ -47,7 +61,12 @@ def get_default_data_dir() -> Path:
     root = get_project_root()
     if root is not None:
         return root / "data"
-    return Path.home() / ".spectra_sherpa"
+    home = _safe_home()
+    if home is not None:
+        return home / ".spectra_sherpa"
+    # Last resort: fall back to the package dir so the process can still write
+    # local data (cache, .env, etc.) when no home directory is available.
+    return _PACKAGE_DIR / ".spectra_sherpa"
 
 
 def get_static_dir() -> Path:
@@ -59,9 +78,15 @@ def get_env_file_search_paths() -> list[Path]:
     """Return candidate ``.env`` paths from lowest to highest precedence.
 
     The shared user-level ``~/.env`` acts as a global base layer. Repository-
-    or workspace-specific files override it later in the list.
+    or workspace-specific files override it later in the list.  When the home
+    directory is undeterminable (e.g. some CI runners) the user-level entry is
+    silently skipped rather than raising.
     """
-    paths = [Path.home() / ".env", Path.cwd() / ".env"]
+    paths: list[Path] = []
+    home = _safe_home()
+    if home is not None:
+        paths.append(home / ".env")
+    paths.append(Path.cwd() / ".env")
     data = get_default_data_dir()
     paths.append(data / ".env")
     root = get_project_root()
@@ -81,7 +106,8 @@ def get_env_file_search_paths() -> list[Path]:
 
 def get_local_env_file_search_paths() -> list[Path]:
     """Return writable local override ``.env`` paths, excluding ``~/.env``."""
-    home_env = (Path.home() / ".env").expanduser().resolve()
+    home = _safe_home()
+    home_env = (home / ".env").resolve() if home is not None else None
     return [path for path in get_env_file_search_paths() if path != home_env]
 
 

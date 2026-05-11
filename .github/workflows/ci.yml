@@ -62,14 +62,23 @@ jobs:
         continue-on-error: true
 
   backend:
-    name: Backend Tests
-    runs-on: ubuntu-latest
+    name: Backend Tests (${{ matrix.os }} / ${{ matrix.install_profile }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
         install_profile:
           - base
           - cloud
+    defaults:
+      run:
+        # Force bash on every runner so the existing POSIX-style ``if [...]``
+        # and ``grep`` snippets keep working on windows-latest (Git Bash
+        # ships preinstalled).
+        shell: bash
     steps:
       - uses: actions/checkout@v5
 

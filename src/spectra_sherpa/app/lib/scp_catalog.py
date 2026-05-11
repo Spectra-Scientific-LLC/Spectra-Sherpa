@@ -151,7 +151,10 @@ def _find_nested_nmr_entries(category_dir: Path, category_name: str, technique_l
         if not ((item / "fid").exists() or (item / "ser").exists()):
             continue
 
-        rel = f"{category_name}/{item.relative_to(category_dir)}"
+        # Always emit POSIX-style separators so the catalog ``name`` field is
+        # stable across operating systems (Windows ``rglob`` returns paths
+        # with ``\`` separators).
+        rel = f"{category_name}/{item.relative_to(category_dir).as_posix()}"
         if rel in seen:
             continue
         seen.add(rel)
