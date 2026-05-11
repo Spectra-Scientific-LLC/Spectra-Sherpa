@@ -328,10 +328,14 @@ describe("Topbar action hover labels", () => {
     expect(wrapper.get('[aria-label="User menu"]').attributes("title")).toBe("Open user menu");
   });
 
-  it("shows the active project title as standalone topbar context", () => {
+  it("shows the active project name in the project-selector dropdown", () => {
     const wrapper = mountTopbar(true);
 
-    expect(wrapper.get('[data-test="active-project-title"]').text()).toBe("Demo Project");
+    // The dropdown's #value slot renders the current project's name as its
+    // selected display.  This is the single source of project-context truth
+    // in the topbar — a previously duplicated standalone <span> next to the
+    // folder icon was removed because it showed the same name twice.
+    expect(wrapper.get(".project-value").text()).toBe("Demo Project");
   });
 
   it("updates the chat toggle label when the chat panel is open", () => {

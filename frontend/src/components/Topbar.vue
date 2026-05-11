@@ -14,14 +14,6 @@
       <!-- Global Project Context - Hidden when chat is open -->
       <div v-if="chatCollapsed" class="project-selector">
         <i class="pi pi-folder-open project-icon"></i>
-        <span
-          v-if="projectStore.currentProject"
-          class="active-project-title"
-          data-test="active-project-title"
-          :title="projectStore.currentProject.name"
-        >
-          {{ projectStore.currentProject.name }}
-        </span>
         <Dropdown
           v-model="selectedProjectId"
           :options="projectStore.projectList"
@@ -562,16 +554,6 @@ const onFileSelected = async (event: Event) => {
 .project-icon {
   color: #64748b;
   font-size: 1rem;
-}
-
-.active-project-title {
-  color: #0f172a;
-  font-size: 0.95rem;
-  font-weight: 700;
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .project-dropdown {
