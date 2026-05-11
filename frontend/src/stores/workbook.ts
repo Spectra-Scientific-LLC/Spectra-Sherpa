@@ -238,6 +238,23 @@ export const useWorkbookStore = defineStore("workbook", () => {
     return sheet;
   }
 
+  // Non-destructive version-restore: opens the snapshot of a specific
+  // workflow_version as a brand-new sheet in the same project.  The original
+  // workflow + its version history are untouched, so users can compare-side
+  // by-side or copy nodes between sheets.
+  async function openVersionAsSheet(
+    workflowId: number,
+    versionId: number,
+  ): Promise<WorkbookSheet> {
+    const response = await api.post<WorkflowListItem>(
+      `/workflows/${workflowId}/versions/${versionId}/open-as-new-sheet`,
+    );
+    const sheet = toSheet(response.data);
+    sheets.value.push(sheet);
+    await switchSheet(sheets.value.length - 1);
+    return sheet;
+  }
+
   async function renameSheet(workflowId: number, newName: string): Promise<void> {
     const trimmed = newName.trim().slice(0, 40);
     if (!trimmed) return;
@@ -440,6 +457,7 @@ export const useWorkbookStore = defineStore("workbook", () => {
     addSheet,
     switchSheet,
     duplicateSheet,
+    openVersionAsSheet,
     renameSheet,
     setSheetColor,
     reorderSheets,

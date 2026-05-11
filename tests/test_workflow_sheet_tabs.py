@@ -307,3 +307,89 @@ async def test_workflow_advisor_channel_endpoint_and_conversation_binding(
     )
     assert update_response.status_code == 200
     assert update_response.json()["conversation_id"] == "conv-sheet-1"
+
+
+async def test_open_version_as_new_sheet_clones_without_touching_original(
+    auth_client: AsyncClient,
+    test_session: AsyncSession,
+) -> None:
+    """Non-destructive counterpart to /restore.
+
+    Opening a workflow version as a new sheet must create a fresh workflow
+    row in the same project, populated from the version's snapshot, while
+    leaving the original workflow + all its other versions untouched.
+    """
+    project_id = await _create_project(auth_client)
+    workflow = await _create_workflow(auth_client, project_id, "PLS")
+
+    # Save explicitly with create_version=true so we have a version row to
+    # open.  The initial POST /workflows doesn't create one by itself.
+    save_resp = await auth_client.put(
+        f"/api/v1/workflows/{workflow['id']}",
+        json={"name": "PLS", "create_version": True},
+    )
+    assert save_resp.status_code == 200
+
+    versions_resp = await auth_client.get(f"/api/v1/workflows/{workflow['id']}/versions")
+    assert versions_resp.status_code == 200
+    versions = versions_resp.json()["versions"]
+    assert len(versions) >= 1
+    version_id = versions[0]["id"]
+    version_number = versions[0]["version_number"]
+
+    open_resp = await auth_client.post(
+        f"/api/v1/workflows/{workflow['id']}/versions/{version_id}/open-as-new-sheet",
+    )
+    assert open_resp.status_code == 201
+    new_sheet = open_resp.json()
+
+    # New sheet is a distinct workflow in the same project.
+    assert new_sheet["id"] != workflow["id"]
+    assert new_sheet["project_id"] == project_id
+    assert new_sheet["name"] == f"PLS (from v{version_number})"
+    assert new_sheet["sheet_order"] == 1
+    assert len(new_sheet["nodes"]) == 1
+    assert new_sheet["nodes"][0]["node_id"] == "data_1"
+
+    # Original workflow's content is untouched.
+    original_resp = await auth_client.get(f"/api/v1/workflows/{workflow['id']}")
+    assert original_resp.status_code == 200
+    assert original_resp.json()["id"] == workflow["id"]
+
+    # The new sheet starts with zero version rows of its own — it's a fresh
+    # workflow, the version history did not follow.
+    new_version_count = await test_session.scalar(
+        select(func.count(WorkflowVersion.id)).where(WorkflowVersion.workflow_id == new_sheet["id"])
+    )
+    assert new_version_count == 0
+
+    # Opening the same version a second time disambiguates with " (2)".
+    second_open_resp = await auth_client.post(
+        f"/api/v1/workflows/{workflow['id']}/versions/{version_id}/open-as-new-sheet",
+    )
+    assert second_open_resp.status_code == 201
+    assert second_open_resp.json()["name"] == f"PLS (from v{version_number}) (2)"
+
+
+async def test_open_version_as_new_sheet_rejects_wrong_workflow_version_id(
+    auth_client: AsyncClient,
+) -> None:
+    """A version that belongs to a different workflow must 404, not silently clone."""
+    project_id = await _create_project(auth_client)
+    workflow_a = await _create_workflow(auth_client, project_id, "Workflow A")
+    workflow_b = await _create_workflow(auth_client, project_id, "Workflow B")
+
+    save_resp = await auth_client.put(
+        f"/api/v1/workflows/{workflow_a['id']}",
+        json={"name": "Workflow A", "create_version": True},
+    )
+    assert save_resp.status_code == 200
+
+    a_versions = await auth_client.get(f"/api/v1/workflows/{workflow_a['id']}/versions")
+    a_version_id = a_versions.json()["versions"][0]["id"]
+
+    # Try to open A's version via B's workflow id — must 404.
+    resp = await auth_client.post(
+        f"/api/v1/workflows/{workflow_b['id']}/versions/{a_version_id}/open-as-new-sheet",
+    )
+    assert resp.status_code == 404

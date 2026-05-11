@@ -127,6 +127,11 @@
       </div>
     </div>
 
+    <VersionHistoryDialog
+      v-model:visible="versionHistoryVisible"
+      :workflow-id="workflowStore.workflowId"
+    />
+
     <!-- Execution status banner -->
     <div v-if="executionCount > 0" class="execution-banner">
       <i class="pi pi-check-circle"></i>
@@ -246,6 +251,7 @@ import { useClipboardStore, type ClipboardPayload } from "@/stores/clipboard";
 import { useAdvisorStore } from "@/stores/advisor";
 import { useAppConfig } from "@/composables/useAppConfig";
 import WorkbookSheetTabs from "@/components/WorkbookSheetTabs.vue";
+import VersionHistoryDialog from "@/components/VersionHistoryDialog.vue";
 import WorkflowToolbar from "./WorkflowToolbar.vue";
 import WorkflowCanvas from "./WorkflowCanvas.vue";
 import WorkflowInspector from "./WorkflowInspector.vue";
@@ -278,6 +284,7 @@ const advisorAvailable = computed(
 const isCompactingMemory = ref(false);
 const activeAdvisorNodeId = computed(() => advisorStore.activeNodeId);
 const memoryButtonLabel = computed(() => (isCompactingMemory.value ? "Saving…" : "Save Memory"));
+const versionHistoryVisible = ref(false);
 const canvasRef = ref();
 const exportMenuRef = ref();
 const actionMenuRef = ref();
@@ -1194,6 +1201,14 @@ const actionMenuItems = computed(() => [
     icon: "pi pi-save",
     disabled: isTrialTabActive.value || autosaveStatus.value === "saving",
     command: saveWorkflow,
+  },
+  {
+    label: "Version history…",
+    icon: "pi pi-history",
+    disabled: isTrialTabActive.value || workflowStore.workflowId === null,
+    command: () => {
+      versionHistoryVisible.value = true;
+    },
   },
   {
     separator: true,
