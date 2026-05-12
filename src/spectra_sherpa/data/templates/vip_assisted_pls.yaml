@@ -28,6 +28,7 @@ template_data:
     label: Full-Spectrum PLS
     parameters:
       n_components: 5
+      scale: false
     position_x: 175
     position_y: 450
   - node_id: vip_select
@@ -43,6 +44,7 @@ template_data:
     label: Reduced PLS
     parameters:
       n_components: 3
+      scale: false
     position_x: 500
     position_y: 700
   - node_id: viz_1

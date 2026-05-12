@@ -39,6 +39,7 @@ template_data:
     label: PLS (Full Spectrum)
     parameters:
       n_components: 5
+      scale: false
     position_x: 175
     position_y: 650
   - node_id: varsel_1
@@ -54,6 +55,7 @@ template_data:
     label: PLS (Selected Variables)
     parameters:
       n_components: 5
+      scale: false
     position_x: 500
     position_y: 900
   - node_id: viz_1

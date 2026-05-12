@@ -36,6 +36,115 @@ from .core_utils import (
     prepare_class_labels as _prepare_class_labels,
 )
 
+
+def _fit_plsda_mahalanobis_state(
+    train_scores: np.ndarray,
+    train_labels: np.ndarray,
+    classes: np.ndarray,
+) -> dict[str, np.ndarray]:
+    """Fit mdatools-style Gaussian discriminant state in PLS score space."""
+    train_scores = np.asarray(train_scores, dtype=np.float64)
+    if train_scores.ndim == 1:
+        train_scores = train_scores.reshape(-1, 1)
+    train_labels = np.asarray(train_labels)
+    classes = np.asarray(classes)
+
+    n_train, n_components = train_scores.shape
+    n_classes = len(classes)
+
+    class_means = np.zeros((n_classes, n_components), dtype=np.float64)
+    class_counts = np.zeros(n_classes, dtype=np.int64)
+    deviations = np.zeros_like(train_scores)
+
+    for k, cls in enumerate(classes):
+        mask = train_labels == cls
+        cnt = int(mask.sum())
+        class_counts[k] = cnt
+        if cnt:
+            class_means[k] = train_scores[mask].mean(axis=0)
+            deviations[mask] = train_scores[mask] - class_means[k]
+
+    if n_train - n_classes > 0:
+        pooled_cov = (deviations.T @ deviations) / float(n_train - n_classes)
+    else:
+        pooled_cov = (deviations.T @ deviations) / max(1, n_train - 1)
+
+    try:
+        cov_inv = np.linalg.inv(pooled_cov + 1e-10 * np.eye(n_components))
+    except np.linalg.LinAlgError:
+        diag = np.diag(pooled_cov)
+        cov_inv = np.diag(1.0 / np.where(diag > 1e-12, diag, 1.0))
+
+    class_priors = np.maximum(class_counts / max(1, n_train), 1e-12)
+    class_priors /= class_priors.sum()
+    return {
+        "class_score_means": class_means,
+        "score_covariance_inverse": cov_inv,
+        "class_priors": class_priors,
+    }
+
+
+def _plsda_mahalanobis_probabilities_from_state(
+    test_scores: np.ndarray,
+    class_score_means: np.ndarray,
+    score_covariance_inverse: np.ndarray,
+    class_priors: np.ndarray,
+) -> np.ndarray:
+    """Apply a fitted Gaussian discriminant state to PLS scores."""
+    test_scores = np.asarray(test_scores, dtype=np.float64)
+    if test_scores.ndim == 1:
+        test_scores = test_scores.reshape(-1, 1)
+    class_score_means = np.asarray(class_score_means, dtype=np.float64)
+    score_covariance_inverse = np.asarray(score_covariance_inverse, dtype=np.float64)
+    class_priors = np.asarray(class_priors, dtype=np.float64)
+
+    n_test = test_scores.shape[0]
+    n_classes = class_score_means.shape[0]
+    log_priors = np.log(np.maximum(class_priors, 1e-12))
+
+    log_post = np.empty((n_test, n_classes), dtype=np.float64)
+    for k in range(n_classes):
+        diff = test_scores - class_score_means[k]
+        d2 = np.einsum("ij,jk,ik->i", diff, score_covariance_inverse, diff)
+        log_post[:, k] = -0.5 * d2 + log_priors[k]
+
+    log_post -= log_post.max(axis=1, keepdims=True)
+    probs = np.exp(log_post)
+    probs /= probs.sum(axis=1, keepdims=True)
+    return probs
+
+
+def _plsda_mahalanobis_probabilities(
+    train_scores: np.ndarray,
+    train_labels: np.ndarray,
+    test_scores: np.ndarray,
+    classes: np.ndarray,
+) -> np.ndarray:
+    """mdatools-style PLS-DA posterior probabilities.
+
+    Gaussian discriminant analysis in PLS score space:
+      μ_k = mean(T_train[y==k])
+      Σ   = pooled within-class covariance of (T_train − μ_{y_train})
+      d²_{i,k} = (t_i − μ_k)' Σ⁻¹ (t_i − μ_k)
+      π_k = n_k / n
+      P(k | t_i) ∝ exp(−d²_{i,k} / 2) · π_k    (normalised across k)
+
+    Falls back to a diagonal covariance if the pooled covariance is
+    rank-deficient (very small CV fold sizes). Identical scores for two
+    classes (degenerate calibration) return uniform probabilities.
+
+    Reference: Kucheryavskiy, *Chemometrics with R*, ch. 9 (mdatools
+    `plsda()` classification rule).
+    """
+    state = _fit_plsda_mahalanobis_state(train_scores, train_labels, classes)
+    return _plsda_mahalanobis_probabilities_from_state(
+        test_scores,
+        state["class_score_means"],
+        state["score_covariance_inverse"],
+        state["class_priors"],
+    )
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -84,10 +193,11 @@ class PLSDANode(Node):
                 name="scale",
                 label="Mean Center + Unit Variance",
                 param_type="boolean",
-                default=True,
+                default=False,
                 description=(
-                    "Apply mean centering and unit-variance scaling before PLS-DA. "
-                    "Recommended for spectral data — leave enabled unless spectra are already pre-scaled."
+                    "Apply mean centering and unit-variance scaling inside PLS-DA. "
+                    "Default is off so workflow templates can express preprocessing explicitly "
+                    "and avoid double scaling."
                 ),
                 required=False,
                 category="basic",
@@ -118,7 +228,26 @@ class PLSDANode(Node):
                     "Apply Platt scaling (sigmoid calibration) to cross-validated predictions "
                     "to produce statistically calibrated posterior probabilities. "
                     "Reference: Platt (1999). Recommended when probability estimates are used "
-                    "for downstream decision-making."
+                    "for downstream decision-making. Applied only when probability_method='softmax'."
+                ),
+                required=False,
+                category="advanced",
+            ),
+            NodeParameter(
+                name="probability_method",
+                label="Probability Rule",
+                param_type="select",
+                default="softmax",
+                options=["softmax", "mahalanobis"],
+                description=(
+                    "How class probabilities and the classification decision are derived. "
+                    "'softmax' (default, backwards-compatible): softmax of raw PLS Y-hat — "
+                    "fast, common in engineering practice, but probabilities are uncalibrated. "
+                    "'mahalanobis' (mdatools-style): Gaussian discriminant in PLS score space — "
+                    "estimate per-class score means and pooled within-class covariance, "
+                    "compute Mahalanobis distance to each class mean, convert to posterior "
+                    "via Bayes' rule with class priors π_k = n_k/n. Theoretically grounded "
+                    "and recommended for regulated reporting (Kucheryavskiy, Chemometrics with R, ch. 9)."
                 ),
                 required=False,
                 category="advanced",
@@ -185,7 +314,10 @@ class PLSDANode(Node):
 
         params = self._resolve_params()
         n_components = params.get("n_components", 2)
-        scale = params.get("scale", True)
+        scale = params.get("scale", False)
+        probability_method = params.get("probability_method", "softmax")
+        if probability_method not in ("softmax", "mahalanobis"):
+            probability_method = "softmax"
 
         X_expr = inputs.get("X", inputs.get("default", "input_data"))
         y_expr = inputs.get("y")
@@ -223,9 +355,46 @@ class PLSDANode(Node):
         lines.append(f"{indent}_y_pred_raw = np.asarray(_pls.predict(_X_ndd).data, dtype=np.float64)")
         lines.append(f"{indent}if _y_pred_raw.ndim == 1:")
         lines.append(f"{indent}    _y_pred_raw = _y_pred_raw.reshape(-1, len(_classes))")
-        lines.append(f"{indent}# Softmax to probabilities")
-        lines.append(f"{indent}_exp = np.exp(_y_pred_raw - _y_pred_raw.max(axis=1, keepdims=True))")
-        lines.append(f"{indent}_probs = _exp / _exp.sum(axis=1, keepdims=True)")
+        lines.append(f"{indent}_probability_method = {probability_method!r}")
+        lines.append(f"{indent}_mahalanobis_state = None")
+        lines.append(f"{indent}if _probability_method == 'mahalanobis':")
+        lines.append(f"{indent}    _scores = np.asarray(_pls.transform(_X_ndd).data, dtype=np.float64)")
+        lines.append(f"{indent}    if _scores.ndim == 1:")
+        lines.append(f"{indent}        _scores = _scores.reshape(-1, 1)")
+        lines.append(f"{indent}    _means = np.zeros((len(_classes), _scores.shape[1]), dtype=np.float64)")
+        lines.append(f"{indent}    _counts = np.zeros(len(_classes), dtype=np.int64)")
+        lines.append(f"{indent}    _dev = np.zeros_like(_scores)")
+        lines.append(f"{indent}    for _k, _cls in enumerate(_classes):")
+        lines.append(f"{indent}        _mask = _y_labels == _cls")
+        lines.append(f"{indent}        _counts[_k] = int(_mask.sum())")
+        lines.append(f"{indent}        if _counts[_k]:")
+        lines.append(f"{indent}            _means[_k] = _scores[_mask].mean(axis=0)")
+        lines.append(f"{indent}            _dev[_mask] = _scores[_mask] - _means[_k]")
+        lines.append(f"{indent}    _denom = max(1, _scores.shape[0] - len(_classes))")
+        lines.append(f"{indent}    _cov = (_dev.T @ _dev) / float(_denom)")
+        lines.append(f"{indent}    try:")
+        lines.append(f"{indent}        _cov_inv = np.linalg.inv(_cov + 1e-10 * np.eye(_scores.shape[1]))")
+        lines.append(f"{indent}    except np.linalg.LinAlgError:")
+        lines.append(f"{indent}        _diag = np.diag(_cov)")
+        lines.append(f"{indent}        _cov_inv = np.diag(1.0 / np.where(_diag > 1e-12, _diag, 1.0))")
+        lines.append(f"{indent}    _priors = np.maximum(_counts / max(1, _scores.shape[0]), 1e-12)")
+        lines.append(f"{indent}    _priors = _priors / _priors.sum()")
+        lines.append(f"{indent}    _log_post = np.empty((_scores.shape[0], len(_classes)), dtype=np.float64)")
+        lines.append(f"{indent}    for _k in range(len(_classes)):")
+        lines.append(f"{indent}        _diff = _scores - _means[_k]")
+        lines.append(f"{indent}        _d2 = np.einsum('ij,jk,ik->i', _diff, _cov_inv, _diff)")
+        lines.append(f"{indent}        _log_post[:, _k] = -0.5 * _d2 + np.log(_priors[_k])")
+        lines.append(f"{indent}    _log_post -= _log_post.max(axis=1, keepdims=True)")
+        lines.append(f"{indent}    _probs = np.exp(_log_post)")
+        lines.append(f"{indent}    _probs = _probs / _probs.sum(axis=1, keepdims=True)")
+        lines.append(
+            f"{indent}    _mahalanobis_state = {{'class_score_means': _means, "
+            "'score_covariance_inverse': _cov_inv, 'class_priors': _priors}}"
+        )
+        lines.append(f"{indent}else:")
+        lines.append(f"{indent}    # Softmax to probabilities")
+        lines.append(f"{indent}    _exp = np.exp(_y_pred_raw - _y_pred_raw.max(axis=1, keepdims=True))")
+        lines.append(f"{indent}    _probs = _exp / _exp.sum(axis=1, keepdims=True)")
         lines.append(f"{indent}_pred_idx = np.argmax(_probs, axis=1)")
         lines.append(f"{indent}_pred_labels = np.array([_classes[i] for i in _pred_idx])")
         lines.append(f"{indent}_accuracy = np.mean(_pred_labels == _y_labels)")
@@ -234,8 +403,14 @@ class PLSDANode(Node):
         )
 
         # Store result
+        lines.append(
+            f"{indent}_model_payload = {{'model': _pls, 'classes': _classes, "
+            "'type': 'plsda', 'probability_method': _probability_method}}"
+        )
+        lines.append(f"{indent}if _mahalanobis_state is not None:")
+        lines.append(f"{indent}    _model_payload.update(_mahalanobis_state)")
         lines.append(f"{indent}results['{self.node_id}'] = {{")
-        lines.append(f"{indent}    'model': {{'model': _pls, 'classes': _classes, 'type': 'plsda'}},")
+        lines.append(f"{indent}    'model': _model_payload,")
         lines.append(f"{indent}    'predictions': _pred_labels,")
         lines.append(f"{indent}    'probabilities': _probs,")
         lines.append(f"{indent}}}")
@@ -285,8 +460,15 @@ class PLSDANode(Node):
         n_components = self.parameters.get("n_components", 2)
         requested_n_components = int(n_components)
         component_limit_reason = None
-        scale = self.parameters.get("scale", True)
+        scale = self.parameters.get("scale", False)
         cv_folds = self.parameters.get("cv_folds", 5)
+        probability_method = self.parameters.get("probability_method", "softmax")
+        if probability_method not in ("softmax", "mahalanobis"):
+            logger.warning(
+                "[PLS-DA] Unknown probability_method=%r; falling back to 'softmax'",
+                probability_method,
+            )
+            probability_method = "softmax"
 
         # Convert inputs to numpy arrays
         X_data = to_numpy_2d(X_ds, name="X", dtype=np.float64)
@@ -356,20 +538,45 @@ class PLSDANode(Node):
                 f"Model may be corrupted or incompatible."
             )
 
-        # CRITICAL: Convert raw PLS predictions to proper probabilities using softmax
-        # PLS regression outputs are unbounded continuous values (-∞ to +∞), NOT probabilities!
-        # Softmax converts them to valid probabilities (0-1 range, sum to 1)
+        # Convert raw PLS predictions to class probabilities. Two rules:
+        #   softmax     — softmax of Y-hat (engineering shortcut; default for BC)
+        #   mahalanobis — Gaussian discriminant in PLS score space (mdatools-style)
         from scipy.special import softmax
 
-        Y_pred_prob = softmax(Y_pred_raw_np, axis=1)
+        mahalanobis_state = None
+        if probability_method == "mahalanobis":
+            # Extract training X-scores to fit class means + pooled covariance.
+            train_scores_raw = _safe_getattr(pls, ("x_scores", "_x_scores", "x_scores_"))
+            if train_scores_raw is None:
+                train_scores_raw = pls.transform(X_ndd)
+            train_scores_np = np.asarray(
+                train_scores_raw.data if hasattr(train_scores_raw, "data") else train_scores_raw,
+                dtype=np.float64,
+            )
+            mahalanobis_state = _fit_plsda_mahalanobis_state(train_scores_np, y_array, classes)
+            Y_pred_prob = _plsda_mahalanobis_probabilities_from_state(
+                train_scores_np,
+                mahalanobis_state["class_score_means"],
+                mahalanobis_state["score_covariance_inverse"],
+                mahalanobis_state["class_priors"],
+            )
+        else:
+            Y_pred_prob = softmax(Y_pred_raw_np, axis=1)
 
-        y_pred_train = classes[np.argmax(Y_pred_prob, axis=1)]
-
-        # Cross-validation predictions (also returns softmax-normalized probabilities)
-        y_pred_cv, Y_pred_cv_prob = self._cross_val_predict_plsda(X_ds, y_array, classes, n_components, scale, cv_folds)
+        # Cross-validation predictions (probability rule honours probability_method)
+        y_pred_cv, Y_pred_cv_prob = self._cross_val_predict_plsda(
+            X_ds, y_array, classes, n_components, scale, cv_folds, probability_method
+        )
 
         # Optional: Platt scaling for calibrated posterior probabilities (Platt 1999)
         calibrate = self.parameters.get("calibrate_probabilities", False)
+        if calibrate and probability_method != "softmax":
+            logger.info(
+                "[PLS-DA] calibrate_probabilities is only applicable when probability_method='softmax'; "
+                "skipping Platt scaling because probability_method=%r already returns proper posteriors.",
+                probability_method,
+            )
+            calibrate = False
         if calibrate:
             try:
                 from sklearn.base import BaseEstimator, ClassifierMixin
@@ -405,6 +612,8 @@ class PLSDANode(Node):
             except Exception as exc:
                 logger.warning("Platt scaling failed, falling back to softmax: %s", exc)
                 calibrate = False
+
+        y_pred_train = classes[np.argmax(Y_pred_prob, axis=1)]
 
         # Calculate metrics
         train_accuracy = accuracy_score(y_array, y_pred_train)
@@ -550,11 +759,20 @@ class PLSDANode(Node):
                 "effective_n_components": int(n_components),
                 "component_limit_warning": component_limit_reason,
                 "probabilities_calibrated": calibrate,
+                "probability_method": probability_method,
                 "probabilities_warning": (
                     "Class probabilities are softmax-transformed raw PLS regression outputs. "
                     "They are NOT statistically calibrated — do not interpret as true posterior "
                     "probabilities. Apply Platt scaling or isotonic regression on the CV "
                     "predictions for calibrated confidence estimates (Platt 1999)."
+                    if probability_method == "softmax" and not calibrate
+                    else (
+                        "Class probabilities are Bayesian posteriors from a Gaussian discriminant "
+                        "on PLS scores (mdatools-style) with class priors π_k = n_k/n. "
+                        "Reference: Kucheryavskiy, Chemometrics with R, ch. 9."
+                        if probability_method == "mahalanobis"
+                        else "Class probabilities have been calibrated via Platt scaling (Platt 1999)."
+                    )
                 ),
                 "label_categories": label_categories,
                 "lv_labels": lv_labels,
@@ -581,20 +799,32 @@ class PLSDANode(Node):
                     "f1": float(cv_f1_macro),
                     "train_accuracy": float(train_accuracy),
                     "balanced_accuracy": float(cv_balanced_accuracy),
+                    "probability_method": probability_method,
                 },
             }
         )
+
+        model_payload = {
+            "model": pls,
+            "classes": classes.tolist(),
+            "type": "plsda",
+            "probability_method": probability_method,
+        }
+        if mahalanobis_state is not None:
+            model_payload.update(
+                {
+                    "class_score_means": mahalanobis_state["class_score_means"].tolist(),
+                    "score_covariance_inverse": mahalanobis_state["score_covariance_inverse"].tolist(),
+                    "class_priors": mahalanobis_state["class_priors"].tolist(),
+                }
+            )
 
         # SherpaDataset-only return: one serialization boundary at API layer
         return NodeResult(
             outputs={
                 "default": scores_dataset,  # SherpaDataset: scores (n_samples, n_components)
                 "loadings": loadings_dataset,  # SherpaDataset: loadings (n_components, n_features)
-                "model": {  # Wrapped model dict for ClassifierPredictNode
-                    "model": pls,
-                    "classes": classes.tolist(),
-                    "type": "plsda",
-                },
+                "model": model_payload,  # Wrapped model dict for ClassifierPredictNode
                 "plots": plots,  # Pre-built Plotly traces (legitimate visualization output)
             },
             diagnostics={
@@ -608,12 +838,28 @@ class PLSDANode(Node):
                 "component_limit_warning": component_limit_reason,
                 "n_classes": len(classes),
                 "confusion_matrix_cv": cm_cv.tolist(),
+                "probability_method": probability_method,
             },
         )
 
-    def _cross_val_predict_plsda(self, X, y, classes, n_components, scale, cv_folds):
+    def _cross_val_predict_plsda(
+        self,
+        X,
+        y,
+        classes,
+        n_components,
+        scale,
+        cv_folds,
+        probability_method: str = "softmax",
+    ):
         """
         Perform cross-validated predictions for PLS-DA using SpectroChemPy.
+
+        Args:
+            probability_method: 'softmax' applies softmax to PLS Y-hat;
+                'mahalanobis' fits Gaussian discriminant on the training-fold
+                PLS scores and classifies the held-out fold's scores by
+                Mahalanobis distance with class priors.
 
         Returns:
             y_pred: Predicted class labels
@@ -645,22 +891,45 @@ class PLSDANode(Node):
             pls = scp.PLSRegression(n_components=n_components, scale=scale)
             pls.fit(X_train, Y_train_dummy_dataset)
 
-            # Predict on test fold
-            Y_test_pred_raw = pls.predict(X_test)
-            # Extract numpy array (raw PLS regression outputs, NOT probabilities)
-            Y_test_pred_raw_np = to_numpy_2d(Y_test_pred_raw, name="Y_test_pred_raw", dtype=np.float64)
-
-            # Validate prediction shape before argmax
-            if Y_test_pred_raw_np.ndim != 2 or Y_test_pred_raw_np.shape[1] != len(classes):
-                raise ValueError(
-                    f"CV fold prediction has unexpected shape {Y_test_pred_raw_np.shape}. "
-                    f"Expected (n_test_samples, {len(classes)})."
+            if probability_method == "mahalanobis":
+                # Project both train and test folds onto the fold's PLS LVs,
+                # then apply Gaussian discriminant with class priors. No raw
+                # Y-hat is needed.
+                train_scores_raw = _safe_getattr(pls, ("x_scores", "_x_scores", "x_scores_"))
+                if train_scores_raw is None:
+                    train_scores_raw = pls.transform(X_train)
+                test_scores_raw = pls.transform(X_test)
+                train_scores_np = np.asarray(
+                    train_scores_raw.data if hasattr(train_scores_raw, "data") else train_scores_raw,
+                    dtype=np.float64,
                 )
+                test_scores_np = np.asarray(
+                    test_scores_raw.data if hasattr(test_scores_raw, "data") else test_scores_raw,
+                    dtype=np.float64,
+                )
+                Y_test_pred_prob = _plsda_mahalanobis_probabilities(
+                    train_scores=train_scores_np,
+                    train_labels=y_train,
+                    test_scores=test_scores_np,
+                    classes=classes,
+                )
+            else:
+                # Predict on test fold
+                Y_test_pred_raw = pls.predict(X_test)
+                # Extract numpy array (raw PLS regression outputs, NOT probabilities)
+                Y_test_pred_raw_np = to_numpy_2d(Y_test_pred_raw, name="Y_test_pred_raw", dtype=np.float64)
 
-            # CRITICAL: Apply softmax to convert raw PLS outputs to proper probabilities
-            from scipy.special import softmax
+                # Validate prediction shape before argmax
+                if Y_test_pred_raw_np.ndim != 2 or Y_test_pred_raw_np.shape[1] != len(classes):
+                    raise ValueError(
+                        f"CV fold prediction has unexpected shape {Y_test_pred_raw_np.shape}. "
+                        f"Expected (n_test_samples, {len(classes)})."
+                    )
 
-            Y_test_pred_prob = softmax(Y_test_pred_raw_np, axis=1)
+                # CRITICAL: Apply softmax to convert raw PLS outputs to proper probabilities
+                from scipy.special import softmax
+
+                Y_test_pred_prob = softmax(Y_test_pred_raw_np, axis=1)
 
             y_pred[test_idx] = classes[np.argmax(Y_test_pred_prob, axis=1)]
             Y_pred_prob[test_idx] = Y_test_pred_prob

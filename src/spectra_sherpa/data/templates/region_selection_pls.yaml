@@ -34,6 +34,7 @@ template_data:
     label: PLS Regression
     parameters:
       n_components: 5
+      scale: false
     position_x: 425
     position_y: 800
   - node_id: viz_1

@@ -36,6 +36,11 @@ from ...node_base import (
     PortMetadata,
     register_node,
 )
+from .._chemometric_diagnostics import (
+    hotelling_t2_per_sample,
+    pomerantsev_dd_limit,
+    q_residuals_per_sample,
+)
 from .core_utils import (
     create_spectral_dataset as _create_spectral_dataset,
 )
@@ -83,10 +88,19 @@ class PLSNode(Node):
             ),
             NodeParameter(
                 name="scale",
-                label="Scale Data",
+                label="Autoscale (Unit-Variance Scale)",
                 param_type="boolean",
-                default=True,
-                description="Apply mean centering and scaling",
+                default=False,
+                description=(
+                    "Whether to divide each variable by its standard deviation in addition "
+                    "to mean-centering. Default changed True → False in v0.4.3 to match the "
+                    "spectroscopy convention (Kucheryavskiy, Chemometrics with R, ch. 8): "
+                    "autoscaling amplifies low-variance baseline regions of NIR/IR/Raman "
+                    "spectra and is rarely appropriate. Mean-centering is always applied. "
+                    "Enable only for non-spectroscopic data or when variables have "
+                    "incommensurate units. Saved workflows that explicitly set 'scale' "
+                    "continue to use the stored value."
+                ),
                 required=False,
                 category="basic",
             ),
@@ -197,7 +211,7 @@ class PLSNode(Node):
 
         params = self._resolve_params()
         n_components = params.get("n_components", 3)
-        scale = params.get("scale", True)
+        scale = params.get("scale", False)
 
         X_expr = inputs.get("X", inputs.get("default", "input_data"))
         y_expr = inputs.get("y")
@@ -347,7 +361,7 @@ class PLSNode(Node):
         y_dataset = scp.NDDataset(y_2d)
 
         n_components = self.parameters.get("n_components", 3)
-        scale = self.parameters.get("scale", True)
+        scale = self.parameters.get("scale", False)
 
         # Validate n_components
         max_components = min(X_ds.shape[0] - 1, X_ds.shape[1])
@@ -521,6 +535,59 @@ class PLSNode(Node):
         logger.debug("  - X_scores shape: %s", X_scores_data.shape if X_scores_data is not None else "N/A")
         logger.debug("  - Coefficients shape: %s", coef_data.shape if coef_data is not None else "N/A")
 
+        # -----------------------------------------------------------------
+        # Per-sample Hotelling T² and Q-residuals (chemometric diagnostics)
+        # -----------------------------------------------------------------
+        # Closes the gap flagged by the v0.4.2 audit (mdatools/PLS_Toolbox
+        # emit these as standard PLS outputs; PLS_Toolbox-grade workflows
+        # require them for outlier flagging and audit trail).  T² uses the
+        # full Mahalanobis form because PLS scores are not orthogonal; Q
+        # is the squared reconstruction error in the model's preprocessing
+        # space.  Critical limits use the Pomerantsev (J. Chemom. 2008)
+        # data-driven moments method, which handles heavy-tailed Q better
+        # than the classical χ²-with-fixed-DoF approximation.
+        t2_values: np.ndarray | None = None
+        q_values: np.ndarray | None = None
+        t2_limit: float | None = None
+        q_limit: float | None = None
+        t2_dof: float | None = None
+        q_dof: float | None = None
+        try:
+            if X_scores_data is not None and X_loadings_data is not None:
+                X_np = np.asarray(X_ds.X, dtype=np.float64)
+                T_np = np.asarray(X_scores_data, dtype=np.float64)
+                P_np = np.asarray(X_loadings_data, dtype=np.float64)
+                # Loadings come back as (n_components, n_features); transpose so
+                # reconstruction T @ P_t.T returns (n_samples, n_features).
+                if P_np.shape == (n_components, X_np.shape[1]):
+                    P_t = P_np
+                elif P_np.shape == (X_np.shape[1], n_components):
+                    P_t = P_np.T
+                else:
+                    raise ValueError(f"Unexpected loadings shape {P_np.shape}")
+
+                X_mean = np.mean(X_np, axis=0)
+                X_centered = X_np - X_mean
+                if scale:
+                    X_std = np.std(X_np, axis=0, ddof=0)
+                    X_std = np.where(X_std > 1e-12, X_std, 1.0)
+                    X_preprocessed = X_centered / X_std
+                else:
+                    X_preprocessed = X_centered
+
+                reconstructed = T_np @ P_t
+                q_values = q_residuals_per_sample(X_preprocessed, reconstructed)
+
+                if T_np.shape[0] > 1:
+                    score_cov = (T_np.T @ T_np) / float(T_np.shape[0] - 1)
+                    t2_values = hotelling_t2_per_sample(T_np, score_covariance=score_cov)
+                    t2_limit, t2_dof, _ = pomerantsev_dd_limit(t2_values, 0.95)
+                    q_limit, q_dof, _ = pomerantsev_dd_limit(q_values, 0.95)
+        except Exception:
+            logger.debug("[PLS Node] Failed to compute T²/Q diagnostics", exc_info=True)
+            t2_values = None
+            q_values = None
+
         # Extract label_categories for categorical coloring
         label_categories = None
         _y_coord = X_ds.sample_axis
@@ -691,6 +758,23 @@ class PLSNode(Node):
                 meta_dict.update(regression_meta)
             if cv_meta is not None:
                 meta_dict["cv"] = cv_meta
+            if t2_values is not None and q_values is not None:
+                # Per-sample T² + Q with DD-based 95% limits.  Stored on
+                # the X scores dataset (which is the canonical "per-sample"
+                # view for the frontend) so the detail-view plots can read
+                # them without a separate node.
+                meta_dict["hotelling_t2"] = t2_values.tolist()
+                meta_dict["q_residuals"] = q_values.tolist()
+                if t2_limit is not None:
+                    meta_dict["t2_limit"] = float(t2_limit)
+                if q_limit is not None:
+                    meta_dict["q_limit"] = float(q_limit)
+                if t2_dof is not None and np.isfinite(t2_dof):
+                    meta_dict["t2_dof"] = float(t2_dof)
+                if q_dof is not None and np.isfinite(q_dof):
+                    meta_dict["q_dof"] = float(q_dof)
+                meta_dict["t2_q_method"] = "pomerantsev_dd_moments"
+                meta_dict["t2_q_confidence"] = 0.95
             quality_summary: dict = {"n_components": int(n_components)}
             if pls_r2 is not None:
                 quality_summary["r2"] = float(pls_r2)
@@ -755,6 +839,14 @@ class PLSNode(Node):
                 "rmsecv": pls_rmsecv,
                 "cv_method": cv_method if pls_r2_cv is not None else "none",
                 "n_components": n_components,
+                "t2_limit": float(t2_limit) if t2_limit is not None else None,
+                "q_limit": float(q_limit) if q_limit is not None else None,
+                "n_t2_outliers": (
+                    int(np.sum(t2_values > t2_limit)) if t2_values is not None and t2_limit is not None else None
+                ),
+                "n_q_outliers": (
+                    int(np.sum(q_values > q_limit)) if q_values is not None and q_limit is not None else None
+                ),
             },
         )
 

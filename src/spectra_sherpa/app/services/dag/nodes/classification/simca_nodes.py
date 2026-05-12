@@ -22,6 +22,7 @@ from ...io_contracts import (
     to_numpy_2d,
 )
 from ...node_base import Node, NodeMetadata, NodeParameter, NodeResult, PortMetadata, register_node
+from .._chemometric_diagnostics import pomerantsev_dd_limit
 from ..modeling import create_spectral_dataset
 from ..visualization import generate_confusion_matrix_heatmap
 from .core_utils import (
@@ -74,6 +75,23 @@ class SIMCANode(Node):
                 max_value=0.99,
                 step=0.01,
                 description="Confidence level for class boundaries",
+                required=False,
+            ),
+            NodeParameter(
+                name="critical_limits_method",
+                label="Critical-Limits Method",
+                param_type="select",
+                default="ddmoments",
+                options=["ddmoments", "classical"],
+                description=(
+                    "How T² and Q critical limits are computed for class membership. "
+                    "'ddmoments' (default in v0.4.3+): Pomerantsev data-driven moments "
+                    "(J. Chemom. 2008) — estimates effective degrees of freedom from the "
+                    "calibration distribution; more robust on heavy-tailed Q and small classes. "
+                    "'classical': F-distribution T² + χ² Q (Nomikos & MacGregor 1995, "
+                    "Jackson & Mudholkar 1979) — the pre-v0.4.3 behaviour, kept for "
+                    "reproducibility with legacy reports."
+                ),
                 required=False,
             ),
         ],
@@ -307,6 +325,16 @@ class SIMCANode(Node):
         # Get parameters
         n_components = self.parameters.get("n_components", 3)
         confidence_level = self.parameters.get("confidence_level", 0.95)
+        critical_limits_method = self.parameters.get("critical_limits_method", "ddmoments")
+        if critical_limits_method not in ("ddmoments", "classical"):
+            logger.warning(
+                "[SIMCA Node] Unknown critical_limits_method=%r; falling back to 'ddmoments'",
+                critical_limits_method,
+            )
+            critical_limits_method = "ddmoments"
+
+        # Per-class DoF/h captured for the audit trail when DD moments is active.
+        dd_limit_diagnostics: dict[str, dict[str, float]] = {}
 
         # Get unique classes
         classes = np.unique(y_array)
@@ -353,26 +381,49 @@ class SIMCANode(Node):
             # Reference: Nomikos & MacGregor (1995), Technometrics
             eigenvalues = np.maximum(pca.explained_variance_[:n_components], 1e-10)
 
-            alpha = 1 - confidence_level
-            df2 = n_class_samples - n_components
-            # Ensure df2 > 0 (should be guaranteed by check above, but defensive)
-            if df2 <= 0:
-                df2 = 1
-            F_crit = f.ppf(1 - alpha, n_components, df2)
-            T2_limit = (n_components * (n_class_samples - 1) * (n_class_samples + 1)) / (n_class_samples * df2) * F_crit
+            # Per-sample T² and Q on the class's own calibration data —
+            # used both for the data-driven (DD moments) critical limits and
+            # left around for downstream audit even when the classical
+            # method is selected.
+            t2_class_cal = np.sum((scores_data**2) / eigenvalues, axis=1)
+            recon_class = scores_data @ loadings_data
+            q_class_cal = np.sum((X_class_scaled - recon_class) ** 2, axis=1)
 
-            # Calculate Q limit using chi-squared distribution
-            # Reference: Jackson & Mudholkar (1979), Technometrics
-            # Q follows approximately chi-squared distribution
-            total_var = np.sum(pca.explained_variance_)
-            # Estimate total variance from scaled class data
-            data_var = np.var(X_class_scaled)
-            remaining_var = max(0, data_var - total_var)
-            # Estimate degrees of freedom for residual space
-            n_residual_dims = max(1, X_class.shape[1] - n_components)
-            from scipy.stats import chi2
+            if critical_limits_method == "ddmoments":
+                # Pomerantsev (J. Chemom. 2008) data-driven moments. More
+                # robust than F/χ²-with-fixed-DoF for heavy-tailed Q and
+                # small classes.
+                T2_limit, t2_dof, t2_h = pomerantsev_dd_limit(t2_class_cal, confidence_level)
+                Q_limit, q_dof, q_h = pomerantsev_dd_limit(q_class_cal, confidence_level)
+                dd_limit_diagnostics[str(cls)] = {
+                    "t2_limit": float(T2_limit),
+                    "q_limit": float(Q_limit),
+                    "t2_dof": float(t2_dof) if np.isfinite(t2_dof) else float("nan"),
+                    "q_dof": float(q_dof) if np.isfinite(q_dof) else float("nan"),
+                    "t2_h": float(t2_h) if np.isfinite(t2_h) else float("nan"),
+                    "q_h": float(q_h) if np.isfinite(q_h) else float("nan"),
+                }
+            else:
+                # Classical limits — preserved for legacy reproducibility.
+                alpha = 1 - confidence_level
+                df2 = n_class_samples - n_components
+                if df2 <= 0:
+                    df2 = 1
+                F_crit = f.ppf(1 - alpha, n_components, df2)
+                T2_limit = (
+                    (n_components * (n_class_samples - 1) * (n_class_samples + 1)) / (n_class_samples * df2) * F_crit
+                )
 
-            Q_limit = max(remaining_var * chi2.ppf(confidence_level, n_residual_dims) / n_residual_dims, 1e-10)
+                total_var = np.sum(pca.explained_variance_)
+                data_var = np.var(X_class_scaled)
+                remaining_var = max(0, data_var - total_var)
+                n_residual_dims = max(1, X_class.shape[1] - n_components)
+                from scipy.stats import chi2
+
+                Q_limit = max(
+                    remaining_var * chi2.ppf(confidence_level, n_residual_dims) / n_residual_dims,
+                    1e-10,
+                )
 
             # Ensure limits are valid (not zero, not NaN, not inf)
             if not np.isfinite(T2_limit) or T2_limit <= 0:
@@ -387,6 +438,9 @@ class SIMCANode(Node):
                 "loadings": loadings_data,
                 "eigenvalues": eigenvalues,
                 "class_mean": class_mean,  # CRITICAL: Required for projecting new samples
+                "x_mean": scaler.mean_.astype(np.float64),
+                "x_scale": scaler.scale_.astype(np.float64),
+                "pca_mean": pca.mean_.astype(np.float64),
                 "n_samples": n_class_samples,
             }
             T2_limits[cls] = T2_limit
@@ -462,6 +516,9 @@ class SIMCANode(Node):
                 "class_mean": (
                     model["class_mean"].tolist() if hasattr(model["class_mean"], "tolist") else model["class_mean"]
                 ),
+                "x_mean": model["x_mean"].tolist() if hasattr(model["x_mean"], "tolist") else model["x_mean"],
+                "x_scale": model["x_scale"].tolist() if hasattr(model["x_scale"], "tolist") else model["x_scale"],
+                "pca_mean": model["pca_mean"].tolist() if hasattr(model["pca_mean"], "tolist") else model["pca_mean"],
                 "n_samples": model["n_samples"],
             }
             for cls, model in class_models.items()
@@ -524,12 +581,15 @@ class SIMCANode(Node):
                 "acceptance_stats": {
                     "T2_limits": {str(k): float(v) for k, v in T2_limits.items()},
                     "Q_limits": {str(k): float(v) for k, v in Q_limits.items()},
+                    "critical_limits_method": critical_limits_method,
+                    "dd_diagnostics": dd_limit_diagnostics,
                 },
                 "quality_summary": {
                     "accuracy": float(train_accuracy),
                     "n_components": int(n_components),
                     "n_classes": int(len(classes)),
                     "confidence_level": float(confidence_level),
+                    "critical_limits_method": critical_limits_method,
                 },
             }
         )
@@ -556,5 +616,6 @@ class SIMCANode(Node):
             diagnostics={
                 "accuracy": float(train_accuracy),
                 "n_classes": len(classes),
+                "critical_limits_method": critical_limits_method,
             },
         )

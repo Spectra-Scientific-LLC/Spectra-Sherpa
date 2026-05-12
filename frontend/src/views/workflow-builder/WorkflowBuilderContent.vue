@@ -1507,7 +1507,7 @@ const getDefaultParams = (nodeType: string): ParamsMap => {
     'preprocess.clip_range': { min_wavenumber: 400, max_wavenumber: 4000 },
     // Analysis nodes - use backend parameter names directly (n_components)
     'model.pca': { n_components: "5", standardized: false, scaled: false },
-    'model.pls': { n_components: 3, scale: true },
+    'model.pls': { n_components: 3, scale: false },
     'model.mcr_als': { n_components: 3, max_iter: 100 },
     'model.efa': { n_components: 10, direction: 'both' },
     'model.pcr': { n_components: 3, scale: true },
@@ -1518,7 +1518,7 @@ const getDefaultParams = (nodeType: string): ParamsMap => {
     'model.simplisma': { n_components: 3, noise: 3 },
     'stats.summary': {},
     // Classification nodes
-    'classification.plsda': { n_components: 3, scale: true },
+    'classification.plsda': { n_components: 3, scale: false },
     'classification.knn': { n_neighbors: 5, metric: 'euclidean' },
     'classification.simca': { n_components: 3, confidence_level: 0.95 },
     // Output nodes

@@ -40,6 +40,7 @@ template_data:
     label: PLS Regression
     parameters:
       n_components: 4
+      scale: false
     position_x: 175
     position_y: 700
   - node_id: predict_1

@@ -98,11 +98,14 @@ class MCRNode(Node):
                 name="max_iter",
                 label="Maximum Iterations",
                 param_type="number",
-                default=50,
+                default=200,
                 min_value=10,
-                max_value=500,
+                max_value=1000,
                 step=10,
-                description="Maximum ALS iterations",
+                description=(
+                    "Maximum ALS iterations. Raised from 50 → 200 in v0.4.3 to give the "
+                    "tighter default tolerance (1e-5) room to converge on typical spectra."
+                ),
                 required=False,
                 category="advanced",
             ),
@@ -110,11 +113,16 @@ class MCRNode(Node):
                 name="tol",
                 label="Convergence Tolerance",
                 param_type="number",
-                default=0.1,
-                min_value=0.001,
+                default=1e-5,
+                min_value=1e-8,
                 max_value=1.0,
-                step=0.01,
-                description="Convergence tolerance for ALS",
+                step=1e-6,
+                description=(
+                    "Relative change in St between successive ALS iterations at which the solver "
+                    "stops. Lowered from 0.1 → 1e-5 in v0.4.3 to match mdatools / pyMCR convention; "
+                    "values >1e-3 emit a 'loose-tolerance' warning. References: Tauler et al. "
+                    "(Chemom. Intell. Lab. Syst. 1995); pyMCR uses 1e-5, mdatools `mcrals()` uses 1e-6."
+                ),
                 required=False,
                 category="advanced",
             ),
@@ -182,8 +190,8 @@ class MCRNode(Node):
         n_components = params.get("n_components", 3)
         nn_C = "True" if params.get("non_negative_C", True) else "False"
         nn_St = "True" if params.get("non_negative_St", True) else "False"
-        max_iter = params.get("max_iter", 50)
-        tol = params.get("tol", 0.1)
+        max_iter = params.get("max_iter", 200)
+        tol = params.get("tol", 1e-5)
 
         X_expr = inputs.get("default", inputs.get("X", "input_data"))
 
@@ -242,10 +250,21 @@ class MCRNode(Node):
 
         # Get parameters
         n_components = self.parameters.get("n_components", 3)
-        max_iter = self.parameters.get("max_iter", 50)
-        tol = self.parameters.get("tol", 0.1)
+        max_iter = self.parameters.get("max_iter", 200)
+        tol = self.parameters.get("tol", 1e-5)
         non_negative_C = self.parameters.get("non_negative_C", True)
         non_negative_St = self.parameters.get("non_negative_St", True)
+
+        # Surface loose tolerances: the SCP/legacy default of 0.1 silently
+        # produces under-converged solutions for serious work. mdatools
+        # uses 1e-6 and pyMCR uses 1e-5 — anything looser than 1e-3 is a
+        # numerical-correctness red flag worth flagging to the user.
+        if tol > 1e-3:
+            logger.warning(
+                "[MCR-ALS Node] tol=%.4g is loose; chemometric convention is ≤1e-3 "
+                "(mdatools 1e-6, pyMCR 1e-5). Results may be under-converged.",
+                tol,
+            )
 
         # Validate input shape
         if len(input_ds.shape) != 2:

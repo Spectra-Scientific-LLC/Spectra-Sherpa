@@ -44,6 +44,7 @@ template_data:
     label: PLS-DA
     parameters:
       n_components: 5
+      scale: false
     position_x: 175
     position_y: 650
   - node_id: predict_1

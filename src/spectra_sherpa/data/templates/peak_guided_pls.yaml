@@ -58,6 +58,7 @@ template_data:
     label: PLS on Peak Regions
     parameters:
       n_components: 3
+      scale: false
     position_x: 175
     position_y: 850
   - node_id: predict_1
