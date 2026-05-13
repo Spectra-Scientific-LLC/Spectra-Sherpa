@@ -3855,10 +3855,9 @@ devenv = ["check-manifest", "pytest (>=4.3)", "pytest-cov", "pytest-mock (>=3.3)
 name = "urllib3"
 version = "2.7.0"
 description = "HTTP library with thread-safe connection pooling, file post, and more."
-optional = true
+optional = false
 python-versions = ">=3.10"
 groups = ["main"]
-markers = "python_version < \"3.15\" and extra == \"scp\""
 files = [
     {file = "urllib3-2.7.0-py3-none-any.whl", hash = "sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897"},
     {file = "urllib3-2.7.0.tar.gz", hash = "sha256:231e0ec3b63ceb14667c67be60f2f2c40a518cb38b03af60abc813da26505f4c"},
@@ -4200,4 +4199,4 @@ scp = ["spectrochempy"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "529e1e544a6950633f2daa918e68a39544156a16c22df7a40fcf88902b2a5f4f"
+content-hash = "2e3d3563b4612fff8f11d162818ec29e579530eb1164e75411ef368a9d16a71a"
