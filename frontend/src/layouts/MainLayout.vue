@@ -105,7 +105,7 @@ import { useViewport } from "@/composables/useViewport";
 import { useAuthStore } from "@/stores/auth";
 import { useJobStore } from "@/stores/job";
 
-const { appMode } = useAppConfig();
+const { appMode, appConfig } = useAppConfig();
 const guidance = useGuidance();
 const activityTracker = useActivityTracker();
 const authStore = useAuthStore();
@@ -124,6 +124,9 @@ const navCollapsed = ref(localStorage.getItem("navCollapsed") === "true");
 const chatCollapsed = ref(readBooleanPreference("chatCollapsed", true));
 const chatWidth = ref(360);
 const isResizing = ref(false);
+const layoutMounted = ref(false);
+const guidanceRuntimeStarted = ref(false);
+const guidanceRuntimeStarting = ref(false);
 const isPublicRoute = computed(() => Boolean(route.meta.public));
 const isStandaloneRoute = computed(() => Boolean(route.meta.standalone));
 const isShelllessRoute = computed(() => isPublicRoute.value || isStandaloneRoute.value);
@@ -214,7 +217,67 @@ const handleWindowResize = () => {
   chatWidth.value = clampChatWidth(chatWidth.value);
 };
 
+const stopGuidanceRuntime = () => {
+  if (!guidanceRuntimeStarted.value) {
+    return;
+  }
+  guidance.stop();
+  activityTracker.stop();
+  guidanceRuntimeStarted.value = false;
+};
+
+const maybeStartGuidanceRuntime = async () => {
+  if (guidanceRuntimeStarted.value || guidanceRuntimeStarting.value) {
+    return;
+  }
+  if (!layoutMounted.value || appMode.value === "local") {
+    return;
+  }
+  if (!backendConnected.value || !authStore.user) {
+    return;
+  }
+  if (!appConfig.value?.features?.sherpaGuidance) {
+    return;
+  }
+  guidanceRuntimeStarting.value = true;
+  try {
+    await guidance.start();
+    activityTracker.start();
+    guidanceRuntimeStarted.value = true;
+  } catch (error) {
+    guidanceRuntimeStarted.value = false;
+    console.warn("[guidance] startup failed", error);
+  } finally {
+    guidanceRuntimeStarting.value = false;
+  }
+};
+
+watch(
+  [
+    layoutMounted,
+    backendConnected,
+    () => authStore.user,
+    () => appConfig.value?.features?.sherpaGuidance,
+    appMode,
+  ],
+  () => {
+    if (
+      !layoutMounted.value ||
+      appMode.value === "local" ||
+      !backendConnected.value ||
+      !authStore.user ||
+      !appConfig.value?.features?.sherpaGuidance
+    ) {
+      stopGuidanceRuntime();
+      return;
+    }
+    void maybeStartGuidanceRuntime();
+  },
+  { immediate: true },
+);
+
 onMounted(() => {
+  layoutMounted.value = true;
   if (localStorage.getItem("chatCollapsed") === null) {
     localStorage.setItem("chatCollapsed", "true");
   }
@@ -230,10 +293,6 @@ onMounted(() => {
 
   // Start backend health check
   startHealthCheck();
-  guidance
-    .start()
-    .catch(() => undefined)
-    .finally(() => activityTracker.start());
 });
 
 onBeforeUnmount(() => {
@@ -241,8 +300,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("mouseup", stopResize);
   window.removeEventListener("resize", handleWindowResize);
   stopHealthCheck();
-  guidance.stop();
-  activityTracker.stop();
+  stopGuidanceRuntime();
   jobStore.disconnect();
 });
 

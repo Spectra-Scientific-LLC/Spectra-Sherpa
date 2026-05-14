@@ -1,11 +1,15 @@
 /* eslint-disable vue/one-component-per-file */
 import { mount } from "@vue/test-utils";
-import { defineComponent } from "vue";
+import { defineComponent, nextTick } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   routeMeta: { public: false as boolean, standalone: false as boolean },
   appMode: { __v_isRef: true, value: "local" },
+  appConfig: {
+    __v_isRef: true,
+    value: { features: { sherpaGuidance: false } },
+  },
   hasLLMConfigured: { __v_isRef: true, value: false },
   backendConnected: { __v_isRef: true, value: true },
   backendDegraded: { __v_isRef: true, value: false },
@@ -21,8 +25,16 @@ const mocks = vi.hoisted(() => ({
     connect: vi.fn().mockResolvedValue(undefined),
     disconnect: vi.fn(),
   },
+  guidanceStart: vi.fn().mockResolvedValue(undefined),
+  guidanceStop: vi.fn(),
+  activityStart: vi.fn(),
+  activityStop: vi.fn(),
   authStore: {
-    user: { id: 7, username: "alice", capabilities: { admin: false } },
+    user: { id: 7, username: "alice", capabilities: { admin: false } } as {
+      id: number;
+      username: string;
+      capabilities: { admin: boolean };
+    } | null,
     logout: vi.fn(),
   },
   projectStore: {
@@ -75,6 +87,7 @@ vi.mock("primevue/usetoast", () => ({
 vi.mock("@/composables/useAppConfig", () => ({
   useAppConfig: () => ({
     appMode: mocks.appMode,
+    appConfig: mocks.appConfig,
     hasLLMConfigured: mocks.hasLLMConfigured,
   }),
 }));
@@ -204,15 +217,15 @@ vi.mock("@/components/guidance/GuidanceGlowOverlay.vue", () => ({
 
 vi.mock("@/composables/useGuidance", () => ({
   useGuidance: () => ({
-    start: vi.fn().mockResolvedValue(undefined),
-    stop: vi.fn(),
+    start: mocks.guidanceStart,
+    stop: mocks.guidanceStop,
   }),
 }));
 
 vi.mock("@/composables/useActivityTracker", () => ({
   useActivityTracker: () => ({
-    start: vi.fn(),
-    stop: vi.fn(),
+    start: mocks.activityStart,
+    stop: mocks.activityStop,
   }),
 }));
 
@@ -280,8 +293,16 @@ describe("MainLayout chat panel defaults", () => {
     localStorage.clear();
     mocks.routeMeta.public = false;
     mocks.routeMeta.standalone = false;
+    mocks.appMode.value = "local";
+    mocks.appConfig.value = { features: { sherpaGuidance: false } };
+    mocks.backendConnected.value = true;
+    mocks.authStore.user = { id: 7, username: "alice", capabilities: { admin: false } };
     mocks.jobStore.connect.mockClear();
     mocks.jobStore.disconnect.mockClear();
+    mocks.guidanceStart.mockClear();
+    mocks.guidanceStop.mockClear();
+    mocks.activityStart.mockClear();
+    mocks.activityStop.mockClear();
   });
 
   it("starts with the chat panel collapsed on first load", () => {
@@ -308,6 +329,31 @@ describe("MainLayout chat panel defaults", () => {
     expect(wrapper.findComponent(TopbarStub).exists()).toBe(false);
     expect(wrapper.findComponent(SidebarStub).exists()).toBe(false);
     expect(wrapper.findComponent(ChatPanelStub).exists()).toBe(false);
+  });
+
+  it("starts guidance after authenticated server-backed config is ready", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.appConfig.value = { features: { sherpaGuidance: true } };
+
+    mount(MainLayout, mainLayoutMountOptions);
+    await nextTick();
+    await nextTick();
+
+    expect(mocks.guidanceStart).toHaveBeenCalledTimes(1);
+    expect(mocks.activityStart).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start guidance before an authenticated user is available", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.appConfig.value = { features: { sherpaGuidance: true } };
+    mocks.authStore.user = null;
+
+    mount(MainLayout, mainLayoutMountOptions);
+    await nextTick();
+    await nextTick();
+
+    expect(mocks.guidanceStart).not.toHaveBeenCalled();
+    expect(mocks.activityStart).not.toHaveBeenCalled();
   });
 });
 
