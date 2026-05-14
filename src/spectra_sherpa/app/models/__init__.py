@@ -1,5 +1,6 @@
 from spectra_sherpa.app.models.advisor_channel import AdvisorChannel
 from spectra_sherpa.app.models.api_key import APIKey
+from spectra_sherpa.app.models.audit_event import AuditChainHead, AuditEvent, AuditEventChain
 from spectra_sherpa.app.models.background_job import BackgroundJob
 from spectra_sherpa.app.models.batch_prediction import BatchPrediction
 from spectra_sherpa.app.models.cal_model import CalModel
@@ -36,6 +37,9 @@ from spectra_sherpa.app.models.workflow_version import WorkflowVersion
 __all__ = [
     "APIKey",
     "AdvisorChannel",
+    "AuditChainHead",
+    "AuditEvent",
+    "AuditEventChain",
     "BackgroundJob",
     "BatchPrediction",
     "CalModel",

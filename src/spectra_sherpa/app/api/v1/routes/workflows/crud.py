@@ -596,6 +596,29 @@ async def create_workflow(
     await sync_workflow_data_sources(workflow, session, payload.nodes)
     await ensure_sheet_advisor_channel(workflow, session, workflow.tab_color)
 
+    # ISO 17025 audit — workflow.created with full identity + param snapshot
+    # commits in the same TX as the workflow row itself (decision #9
+    # fail-closed). target_id = workflow.id (assigned by the flush above).
+    from spectra_sherpa.app.services.audit import audit_emitter
+
+    audit_emitter.emit(
+        session=session,
+        action="workflow.created",
+        target_type="Workflow",
+        target_id=workflow.id,
+        after={
+            "name": workflow.name,
+            "project_id": workflow.project_id,
+            "technique": workflow.technique,
+            "integrity_hash": workflow.integrity_hash,
+            "node_count": len(payload.nodes),
+            "edge_count": len(payload.edges),
+        },
+        context={
+            "parameter_set": {n.node_id: n.parameters for n in payload.nodes if n.parameters},
+        },
+    )
+
     await session.commit()
     await session.refresh(workflow)
 
@@ -912,6 +935,17 @@ async def update_workflow(
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
+    # Capture before-state for audit. Pre-mutation snapshot of fields
+    # the route is allowed to change. Picked to support reproducibility
+    # of "what changed" without dumping the entire row.
+    _audit_before = {
+        "name": workflow.name,
+        "status": workflow.status,
+        "integrity_hash": workflow.integrity_hash,
+        "node_count": len(workflow.nodes or []),
+        "parameter_set": {n.node_id: n.parameters for n in (workflow.nodes or []) if n.parameters},
+    }
+
     if payload.nodes is not None:
         node_types = [n.node_type for n in payload.nodes]
         unknown_types = [node_type for node_type in node_types if node_type not in node_registry]
@@ -1126,6 +1160,53 @@ async def update_workflow(
             snapshot=snapshot,
         )
         session.add(version)
+        await session.flush()  # assign version.id for audit
+
+        # ISO 17025 audit — workflow_version.created with the full
+        # parameter-set snapshot in the context payload.
+        from spectra_sherpa.app.services.audit import audit_emitter
+
+        audit_emitter.emit(
+            session=session,
+            action="workflow_version.created",
+            target_type="WorkflowVersion",
+            target_id=version.id,
+            after={
+                "workflow_id": workflow_id,
+                "version_number": new_version_number,
+                "change_description": version.change_description,
+                "integrity_hash": snapshot.get("integrity_hash"),
+                "node_count": len(snapshot.get("nodes", [])),
+                "edge_count": len(snapshot.get("edges", [])),
+            },
+            context={
+                "parameter_set": {
+                    n["node_id"]: n["parameters"] for n in snapshot.get("nodes", []) if n.get("parameters")
+                },
+            },
+        )
+
+    # ISO 17025 audit — workflow.updated. Captures the before-snapshot
+    # taken at load time and the after-snapshot from the now-mutated
+    # workflow row, so an auditor can reconstruct the parameter delta
+    # for the run that follows. Commits with the row update (fail-closed).
+    from spectra_sherpa.app.services.audit import audit_emitter as _audit_emitter
+
+    _audit_after = {
+        "name": workflow.name,
+        "status": workflow.status,
+        "integrity_hash": workflow.integrity_hash,
+        "node_count": len(workflow.nodes or []),
+        "parameter_set": {n.node_id: n.parameters for n in (workflow.nodes or []) if n.parameters},
+    }
+    _audit_emitter.emit(
+        session=session,
+        action="workflow.updated",
+        target_type="Workflow",
+        target_id=workflow_id,
+        before=_audit_before,
+        after=_audit_after,
+    )
 
     await session.commit()
 
@@ -1166,6 +1247,24 @@ async def delete_workflow(
         raise HTTPException(status_code=404, detail="Workflow not found")
 
     project_id = workflow.project_id
+
+    # ISO 17025 audit — emit BEFORE the delete so before_state captures
+    # the row's identity. The audit row commits in the same TX as the
+    # delete (fail-closed).
+    from spectra_sherpa.app.services.audit import audit_emitter
+
+    audit_emitter.emit(
+        session=session,
+        action="workflow.deleted",
+        target_type="Workflow",
+        target_id=workflow_id,
+        before={
+            "name": workflow.name,
+            "project_id": project_id,
+            "integrity_hash": workflow.integrity_hash,
+        },
+    )
+
     await session.delete(workflow)
     if project_id is not None:
         await session.flush()

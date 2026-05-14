@@ -285,6 +285,23 @@ async def create_project(
     session.add(project)
     await session.flush()
     await ensure_project_advisor_channel(project.id, project.name, session)
+
+    # ISO 17025 audit — project.created (Phase 3 coverage expansion).
+    from spectra_sherpa.app.services.audit import audit_emitter
+
+    audit_emitter.emit(
+        session=session,
+        action="project.created",
+        target_type="Project",
+        target_id=project.id,
+        after={
+            "name": project.name,
+            "parent_id": project.parent_id,
+            "technique": project.technique,
+            "sample_type": project.sample_type,
+        },
+    )
+
     await session.commit()
     await session.refresh(project)
     logger.info("Created project '%s' (id=%s)", project.name, project.id)
@@ -428,6 +445,27 @@ async def create_project_data_source(
         sort_order=sort_order or 0,
     )
     session.add(data_source)
+    await session.flush()
+
+    # ISO 17025 audit — project_data_source.created. Captures "what
+    # data source was registered against project X" — answers a real
+    # auditor question.
+    from spectra_sherpa.app.services.audit import audit_emitter
+
+    audit_emitter.emit(
+        session=session,
+        action="project_data_source.created",
+        target_type="ProjectDataSource",
+        target_id=data_source.id,
+        after={
+            "project_id": project_id,
+            "display_name": data_source.display_name,
+            "source_type": data_source.source_type,
+            "source_ref": data_source.source_ref,
+            "fingerprint": data_source.fingerprint,
+        },
+    )
+
     await session.commit()
     await session.refresh(data_source)
     return ProjectDataSourceOut(
@@ -465,11 +503,44 @@ async def update_project_data_source(
     if data_source is None:
         raise HTTPException(status_code=404, detail="Project data source not found")
 
+    _audit_before = {
+        "display_name": data_source.display_name,
+        "source_type": data_source.source_type,
+        "source_ref": data_source.source_ref,
+        "fingerprint": data_source.fingerprint,
+        "color": data_source.color,
+        "metadata_": data_source.metadata_,
+    }
+
     update_data = payload.model_dump(exclude_unset=True)
     if "metadata" in update_data:
         update_data["metadata_"] = update_data.pop("metadata")
     for key, value in update_data.items():
         setattr(data_source, key, value)
+
+    _audit_after = {
+        "display_name": data_source.display_name,
+        "source_type": data_source.source_type,
+        "source_ref": data_source.source_ref,
+        "fingerprint": data_source.fingerprint,
+        "color": data_source.color,
+        "metadata_": data_source.metadata_,
+    }
+
+    # ISO 17025 audit — project_data_source.updated. Idempotent: idle
+    # PUTs (no payload fields, or fields equal to current state) do
+    # not emit. Matches the experiment.updated guard.
+    if _audit_before != _audit_after:
+        from spectra_sherpa.app.services.audit import audit_emitter
+
+        audit_emitter.emit(
+            session=session,
+            action="project_data_source.updated",
+            target_type="ProjectDataSource",
+            target_id=data_source.id,
+            before=_audit_before,
+            after=_audit_after,
+        )
 
     await session.commit()
     await session.refresh(data_source)
@@ -503,11 +574,45 @@ async def update_project(
             raise HTTPException(status_code=400, detail="Cannot set project as its own parent")
         await require_project(payload.parent_id, current_user.id, session)
 
+    # Capture before-state for audit — picked to support
+    # reproducibility of "what changed" without dumping the whole row.
+    _audit_before = {
+        "name": project.name,
+        "description": project.description,
+        "parent_id": project.parent_id,
+        "technique": project.technique,
+        "sample_type": project.sample_type,
+        "metadata_": project.metadata_,
+    }
+
     update_data = payload.model_dump(exclude_unset=True)
     if "metadata" in update_data:
         update_data["metadata_"] = update_data.pop("metadata")
     for key, value in update_data.items():
         setattr(project, key, value)
+
+    _audit_after = {
+        "name": project.name,
+        "description": project.description,
+        "parent_id": project.parent_id,
+        "technique": project.technique,
+        "sample_type": project.sample_type,
+        "metadata_": project.metadata_,
+    }
+
+    # ISO 17025 audit — project.updated. Idempotent: only emit when
+    # something actually changed. Matches the experiment.updated guard.
+    if _audit_before != _audit_after:
+        from spectra_sherpa.app.services.audit import audit_emitter
+
+        audit_emitter.emit(
+            session=session,
+            action="project.updated",
+            target_type="Project",
+            target_id=project.id,
+            before=_audit_before,
+            after=_audit_after,
+        )
 
     await session.commit()
     await session.refresh(project)
@@ -536,6 +641,22 @@ async def delete_project(
     ):
         ma.project_id = None
 
+    # ISO 17025 audit — emit BEFORE delete so before_state captures
+    # the row identity. Commits in the same TX as the delete.
+    from spectra_sherpa.app.services.audit import audit_emitter
+
+    audit_emitter.emit(
+        session=session,
+        action="project.deleted",
+        target_type="Project",
+        target_id=project_id,
+        before={
+            "name": project.name,
+            "parent_id": project.parent_id,
+            "technique": project.technique,
+        },
+    )
+
     await session.delete(project)
     await session.commit()
     logger.info("Deleted project id=%s", project_id)
@@ -560,6 +681,24 @@ async def link_experiment(
     experiment = result.scalar_one_or_none()
     if experiment is None:
         raise HTTPException(status_code=404, detail="Experiment not found")
+
+    # ISO 17025 audit — experiment.project_linked. Project-membership
+    # changes are state mutations on the entity (project_id flips), so
+    # the audit row targets the experiment with before/after project_id.
+    # Idempotent: if the experiment is already linked here, suppress the
+    # event so idle re-POSTs don't pollute the trail.
+    previous_project_id = experiment.project_id
+    if previous_project_id != project_id:
+        from spectra_sherpa.app.services.audit import audit_emitter
+
+        audit_emitter.emit(
+            session=session,
+            action="experiment.project_linked",
+            target_type="Experiment",
+            target_id=experiment.id,
+            before={"project_id": previous_project_id},
+            after={"project_id": project_id},
+        )
 
     experiment.project_id = project_id
     await session.commit()
@@ -587,6 +726,20 @@ async def unlink_experiment(
     if experiment is None:
         raise HTTPException(status_code=404, detail="Experiment not linked to this project")
 
+    # ISO 17025 audit — experiment.project_unlinked. The 404 above
+    # already proved project_id == project_id, so the transition is
+    # always project_id → None.
+    from spectra_sherpa.app.services.audit import audit_emitter
+
+    audit_emitter.emit(
+        session=session,
+        action="experiment.project_unlinked",
+        target_type="Experiment",
+        target_id=experiment.id,
+        before={"project_id": project_id},
+        after={"project_id": None},
+    )
+
     experiment.project_id = None
     await session.commit()
     logger.info("Unlinked experiment %s from project %s", experiment_id, project_id)
@@ -608,6 +761,20 @@ async def link_workflow(
     workflow = result.scalar_one_or_none()
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+
+    # ISO 17025 audit — workflow.project_linked (idempotent).
+    previous_project_id = workflow.project_id
+    if previous_project_id != project_id:
+        from spectra_sherpa.app.services.audit import audit_emitter
+
+        audit_emitter.emit(
+            session=session,
+            action="workflow.project_linked",
+            target_type="Workflow",
+            target_id=workflow.id,
+            before={"project_id": previous_project_id},
+            after={"project_id": project_id},
+        )
 
     workflow.project_id = project_id
     await session.commit()
@@ -635,6 +802,18 @@ async def unlink_workflow(
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not linked to this project")
 
+    # ISO 17025 audit — workflow.project_unlinked.
+    from spectra_sherpa.app.services.audit import audit_emitter
+
+    audit_emitter.emit(
+        session=session,
+        action="workflow.project_unlinked",
+        target_type="Workflow",
+        target_id=workflow.id,
+        before={"project_id": project_id},
+        after={"project_id": None},
+    )
+
     workflow.project_id = None
     await session.commit()
     logger.info("Unlinked workflow %s from project %s", workflow_id, project_id)
@@ -661,6 +840,22 @@ async def link_model(
     if model is None:
         raise HTTPException(status_code=404, detail="Model artifact not found")
 
+    # ISO 17025 audit — model_artifact.project_linked. target_id uses
+    # the row's integer PK so chains can join to the Phase 1 model
+    # artifact lifecycle events; artifact_uid recorded in after_state.
+    previous_project_id = model.project_id
+    if previous_project_id != project_id:
+        from spectra_sherpa.app.services.audit import audit_emitter
+
+        audit_emitter.emit(
+            session=session,
+            action="model_artifact.project_linked",
+            target_type="ModelArtifact",
+            target_id=model.id,
+            before={"project_id": previous_project_id, "artifact_uid": artifact_uid},
+            after={"project_id": project_id, "artifact_uid": artifact_uid},
+        )
+
     model.project_id = project_id
     await session.commit()
     logger.info("Linked model %s to project %s", artifact_uid, project_id)
@@ -686,6 +881,18 @@ async def unlink_model(
     model = result.scalar_one_or_none()
     if model is None:
         raise HTTPException(status_code=404, detail="Model not linked to this project")
+
+    # ISO 17025 audit — model_artifact.project_unlinked.
+    from spectra_sherpa.app.services.audit import audit_emitter
+
+    audit_emitter.emit(
+        session=session,
+        action="model_artifact.project_unlinked",
+        target_type="ModelArtifact",
+        target_id=model.id,
+        before={"project_id": project_id, "artifact_uid": artifact_uid},
+        after={"project_id": None, "artifact_uid": artifact_uid},
+    )
 
     model.project_id = None
     await session.commit()

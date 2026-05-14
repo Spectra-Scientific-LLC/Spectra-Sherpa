@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -41,6 +43,8 @@ from spectra_sherpa.app.services.experiments import (
 )
 from spectra_sherpa.app.services.file_storage import FileValidationError, save_upload_file
 from spectra_sherpa.app.services.version_storage import ContentAddressableStorage
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/experiments")
 
@@ -290,10 +294,28 @@ async def delete_experiment_file_endpoint(
         raise HTTPException(status_code=404, detail="File not found")
 
     file_path = experiment_dir(experiment_id) / experiment_file.file_path
-    if file_path.exists():
-        file_path.unlink()
 
+    # ISO 17025 — commit the audited DB transaction BEFORE removing
+    # bytes from disk. If the audit insert / chainer commit fails,
+    # delete_experiment_file rolls back and the file stays. Reverse
+    # ordering would leave the disk gone but the row still present.
     await delete_experiment_file(session, experiment_file)
+
+    # DB+audit succeeded. Filesystem unlink is best-effort cleanup —
+    # an orphan file is recoverable; an orphan DB row is not.
+    if file_path.exists():
+        try:
+            file_path.unlink()
+        except OSError as exc:
+            logger.warning(
+                "Audited delete of ExperimentFile id=%s succeeded but "
+                "filesystem unlink of %s failed: %s. File is now an "
+                "orphan; safe to remove out-of-band.",
+                experiment_file.id,
+                file_path,
+                exc,
+            )
+
     return {"status": "deleted"}
 
 

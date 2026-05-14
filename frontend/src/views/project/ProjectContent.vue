@@ -19,6 +19,14 @@
           v-tooltip.bottom="'Visualize Sherpa Advisor memory for this project'"
         />
         <Button
+          v-if="projectStore.currentProjectId"
+          label="Audit"
+          icon="pi pi-shield"
+          class="p-button-outlined"
+          @click="openProjectAudit"
+          v-tooltip.bottom="'Open audit trail for this project'"
+        />
+        <Button
           label="Import"
           icon="pi pi-upload"
           class="p-button-outlined"
@@ -324,6 +332,20 @@ const isServerBacked = computed(() => appMode.value !== "local");
 
 function openMemoryMap(): void {
   router.push("/project/memory-map");
+}
+
+function openProjectAudit(): void {
+  const projectId = projectStore.currentProjectId;
+  if (!projectId) return;
+  void router.push({
+    path: "/audit",
+    query: {
+      scope_type: "Project",
+      scope_id: String(projectId),
+      target_type: "Project",
+      target_id: String(projectId),
+    },
+  });
 }
 
 // R4 — Single-scope Sherpa Advisor routing for the Project tab.

@@ -85,6 +85,7 @@ const workflowBuilderConfigStore = {
 
 vi.mock("vue-router", () => ({
   useRoute: () => ({ query: { project_id: "1" } }),
+  useRouter: () => ({ push: vi.fn() }),
 }));
 
 vi.mock("primevue/usetoast", () => ({

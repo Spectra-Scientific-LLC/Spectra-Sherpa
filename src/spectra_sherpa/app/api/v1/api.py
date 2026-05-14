@@ -8,6 +8,7 @@ from fastapi import APIRouter
 
 from spectra_sherpa.app.api.v1.routes import (
     api_keys,
+    audit_events,
     builder,
     chat,
     compute,
@@ -93,6 +94,8 @@ def build_api_router(
     router.include_router(projects.router, tags=["projects"])
     router.include_router(project_scripts.router, tags=["project-scripts"])
     router.include_router(models.router, tags=["models"])
+    # Phase 4 C2 — audit query API (gated on app_config.audit_enabled).
+    router.include_router(audit_events.router, tags=["audit"])
 
     # BYO chat endpoint (OSS-only, capability-gated by CHAT_ASSISTANT)
     router.include_router(chat.router, tags=["chat"])

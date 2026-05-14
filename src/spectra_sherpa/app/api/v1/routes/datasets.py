@@ -12,6 +12,7 @@ from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
 from spectra_sherpa.app.models.nist_library import NistLibrary
 from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.services.audit import audit_excluded
 from spectra_sherpa.app.services.dataset_registry import dataset_registry
 from spectra_sherpa.app.services.experiments import experiment_dir
 
@@ -230,6 +231,7 @@ class BranchRequest(BaseModel):
 
 
 @router.post("/{dataset_id}/branch")
+@audit_excluded("process-local dataset handle; persistent DatasetVersion ledger required before audit coverage")
 async def dataset_branch(
     dataset_id: str,
     payload: BranchRequest,

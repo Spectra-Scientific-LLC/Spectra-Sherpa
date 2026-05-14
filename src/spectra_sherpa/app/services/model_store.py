@@ -248,6 +248,7 @@ async def persist_model_artifact_records(
     from sqlalchemy import select as sa_select
 
     from spectra_sherpa.app.models.model_artifact import ModelArtifact
+    from spectra_sherpa.app.services.audit import audit_emitter
 
     # Check which artifact_uids already exist (idempotency guard)
     uids = [a["artifact_uid"] for a in saved_artifacts]
@@ -288,6 +289,31 @@ async def persist_model_artifact_records(
             artifact_uid,
             model_type,
             art.get("node_id"),
+        )
+
+        # Emit an audit event in the SAME transaction as the artifact
+        # row. Fail-closed: if audit insert fails on commit, the whole
+        # transaction rolls back and the model artifact is not created
+        # either. target_id is the stable artifact_uid (string), not
+        # the autoincrement PK — that way deletion / re-creation audits
+        # link cleanly even if the integer row id changes.
+        audit_emitter.emit(
+            session=session,
+            action="model_artifact.created",
+            target_type="ModelArtifact",
+            target_id=artifact_uid,
+            after={
+                "artifact_uid": artifact_uid,
+                "model_type": model_type,
+                "workflow_id": workflow_id,
+                "workflow_version_id": workflow_version_id,
+                "project_id": project_id,
+                "user_id": user_id,
+                "node_id": art.get("node_id"),
+                "n_features": art.get("n_features"),
+                "n_components": art.get("n_components"),
+                "integrity_hash": art.get("integrity_hash"),
+            },
         )
 
     return rows

@@ -291,6 +291,19 @@ async def delete_model(
     if model is None:
         raise HTTPException(status_code=404, detail="Model artifact not found")
 
+    # ISO 17025 audit — emit BEFORE the commit so the audit row writes
+    # in the same TX as the is_active mutation (fail-closed).
+    from spectra_sherpa.app.services.audit import audit_emitter
+
+    audit_emitter.emit(
+        session=session,
+        action="model_artifact.deleted",
+        target_type="ModelArtifact",
+        target_id=artifact_uid,
+        before={"is_active": True, "artifact_uid": artifact_uid, "model_type": model.model_type},
+        after={"is_active": False, "purge_files": purge},
+    )
+
     model.is_active = False
     await session.commit()
 

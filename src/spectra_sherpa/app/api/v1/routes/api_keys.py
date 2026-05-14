@@ -49,14 +49,32 @@ async def set_api_key(
     encrypted = encrypt_value(payload.key)
 
     if api_key:
+        action = "api_key.updated"
         api_key.key_encrypted = encrypted
     else:
+        action = "api_key.created"
         api_key = APIKey(
             user_id=current_user.id,
             service_name=payload.service_name,
             key_encrypted=encrypted,
         )
         session.add(api_key)
+
+    await session.flush()  # ensure api_key.id is assigned for both branches
+
+    # ISO 17025 audit — Phase 3 coverage. The plaintext key is never
+    # written to the audit log; the audit event records only the
+    # service_name and api_key.id so an investigator can correlate
+    # "who configured the X integration" without leaking secrets.
+    from spectra_sherpa.app.services.audit import audit_emitter
+
+    audit_emitter.emit(
+        session=session,
+        action=action,
+        target_type="APIKey",
+        target_id=api_key.id,
+        after={"service_name": api_key.service_name, "user_id": api_key.user_id},
+    )
 
     await session.commit()
     return {"status": "stored"}
@@ -83,6 +101,17 @@ async def delete_api_key(
     api_key = result.scalar_one_or_none()
     if api_key is None:
         raise HTTPException(status_code=404, detail="API key not found")
+
+    # ISO 17025 audit — emit BEFORE delete (Phase 3 coverage).
+    from spectra_sherpa.app.services.audit import audit_emitter
+
+    audit_emitter.emit(
+        session=session,
+        action="api_key.deleted",
+        target_type="APIKey",
+        target_id=api_key.id,
+        before={"service_name": api_key.service_name, "user_id": api_key.user_id},
+    )
 
     await session.delete(api_key)
     await session.commit()

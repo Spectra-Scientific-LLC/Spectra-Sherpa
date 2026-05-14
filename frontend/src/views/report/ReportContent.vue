@@ -8,8 +8,16 @@
           Assemble, preview, and export analysis reports
         </p>
       </div>
-      <div v-if="reportStore.isReady" class="header-actions">
+      <div v-if="reportStore.isReady || reportStore.selectedWorkflowId" class="header-actions">
         <Button
+          v-if="reportStore.selectedWorkflowId"
+          label="Audit"
+          icon="pi pi-shield"
+          class="p-button-sm p-button-outlined"
+          @click="openWorkflowAudit"
+        />
+        <Button
+          v-if="reportStore.isReady"
           ref="exportBtnRef"
           label="Export"
           icon="pi pi-download"
@@ -186,6 +194,7 @@ import ToggleButton from "primevue/togglebutton";
 import ProgressSpinner from "primevue/progressspinner";
 import Menu from "primevue/menu";
 import { useToast } from "primevue/usetoast";
+import { useRouter } from "vue-router";
 
 import MemoryAttribution from "@/components/MemoryAttribution.vue";
 import { useAdvisorStore } from "@/stores/advisor";
@@ -206,6 +215,7 @@ const reportStore = useReportStore();
 const projectStore = useProjectStore();
 const advisorStore = useAdvisorStore();
 const toast = useToast();
+const router = useRouter();
 const { isFeatureEnabled } = useAppConfig();
 
 // R4 — Single-scope Sherpa Advisor routing for the Report tab.
@@ -267,6 +277,19 @@ function getRunName(runId: number): string {
 
 function removeRun(runId: number): void {
   reportStore.selectedRunIds = reportStore.selectedRunIds.filter((id) => id !== runId);
+}
+
+function openWorkflowAudit(): void {
+  if (!reportStore.selectedWorkflowId) return;
+  void router.push({
+    path: "/audit",
+    query: {
+      scope_type: "Workflow",
+      scope_id: String(reportStore.selectedWorkflowId),
+      target_type: "Workflow",
+      target_id: String(reportStore.selectedWorkflowId),
+    },
+  });
 }
 
 // Build ReportData from backend response for the HTML generator

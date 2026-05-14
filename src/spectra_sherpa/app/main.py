@@ -231,6 +231,22 @@ def _make_lifespan(
 
             init_model_store(settings.data_dir)
 
+            # Audit subsystem (ISO 17025 readiness — phase 1):
+            #   * Mint process_boot_id once per app boot; pairs with
+            #     app_monotonic_ns on each event for strict within-process
+            #     forensic ordering even when wall clocks skew.
+            #   * Install the before_flush listener so audit events written
+            #     by service-code emit() calls commit in the same DB
+            #     transaction as the business mutation (fail-closed when
+            #     audit_enabled=True).
+            from spectra_sherpa.app.services.audit import (
+                init_process_boot_id,
+                install_audit_flush_listener,
+            )
+
+            init_process_boot_id()
+            install_audit_flush_listener()
+
             logger.info("Phase 1 complete")
 
             # Phase 2: DB-mutating tasks — only the leader worker runs these.
@@ -609,7 +625,16 @@ def create_app(
     # so every middleware downstream (and every route logger) sees the
     # request ID via the ``request_id`` ContextVar / log filter.
     from spectra_sherpa.app.core.request_id import RequestIDMiddleware
+    from spectra_sherpa.app.services.audit import AuditMiddleware
 
+    # AuditMiddleware is registered FIRST so Starlette's prepend semantics
+    # place it INNERMOST — it runs after api_key_middleware has populated
+    # ``request.state.user`` / ``request.state.api_key`` and after
+    # RequestIDMiddleware has bound the request id, so the AuditContext
+    # this middleware sets carries the correct actor + request id for
+    # every event emitted during the request. No-op when audit is
+    # disabled — see ``app_config.audit_enabled``.
+    _app.add_middleware(AuditMiddleware)
     _app.middleware("http")(api_key_middleware)
     _app.add_middleware(RateLimitMiddleware)
     for mw in extra_middleware or []:

@@ -57,6 +57,11 @@ const routes = [
     component: () => import("@/views/report/ReportContent.vue"),
     meta: { nav: "report" },
   },
+  {
+    path: "/audit",
+    component: () => import("@/views/audit/AuditContent.vue"),
+    meta: { nav: "audit" },
+  },
 
   // --- System pages ---
   { path: "/settings", component: () => import("@/views/settings/SettingsContent.vue") },

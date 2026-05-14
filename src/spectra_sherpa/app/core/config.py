@@ -236,6 +236,15 @@ class AppConfig(BaseModel):
     egress_enabled: bool = Field(
         default=False, description="Enable network egress (external API calls). Defaults to False in local mode."
     )
+    audit_enabled: bool = Field(
+        default=False,
+        description=(
+            "Enable the structured audit-log subsystem (ISO 17025 readiness). "
+            "Default False; turned on per deployment via SHERPA_AUDIT_ENABLED. "
+            "OSS provides the event-capture layer; commercial audit pipeline "
+            "(chain, retention, admin UI) gates on additional entitlement keys."
+        ),
+    )
     api_base_url: str = Field(default="http://localhost:8000", description="Backend API base URL")
 
     # Integration fields for commercial server extensions (enterprise/hybrid/demo).
@@ -335,6 +344,11 @@ class AppConfig(BaseModel):
         # Egress: disabled by default in local (privacy-first), enabled in hybrid/enterprise
         egress_enabled = _get_bool("EGRESS_ENABLED", mode != "local")
 
+        # Audit subsystem: off by default everywhere. Operators opt in via
+        # SHERPA_AUDIT_ENABLED. Cloud/Hybrid Team-tier deployments turn this on;
+        # the commercial server's entitlement check then gates the full pipeline.
+        audit_enabled = _get_bool("SHERPA_AUDIT_ENABLED", False)
+
         # Enterprise/hybrid integration fields
         site_profile = os.getenv("SITE_PROFILE", "").strip() or None
         rate_limit_raw = _get_int("RATE_LIMIT_EXECUTIONS", 0) if mode != "local" else 0
@@ -345,6 +359,7 @@ class AppConfig(BaseModel):
         return cls(
             mode=mode,  # type: ignore[arg-type]
             egress_enabled=egress_enabled,
+            audit_enabled=audit_enabled,
             api_base_url=os.getenv("API_BASE_URL", "http://localhost:8000"),
             site_profile=site_profile,
             rate_limit_executions=rate_limit_executions,
@@ -413,9 +428,40 @@ class AppConfig(BaseModel):
         else:
             limits = None
 
+        # Phase 4 — unified audit entitlement block per
+        # ``packages/spectra-server/docs/dev/audit/phase0-design.md §3``
+        # ("Entitlement model — single capability source"). Frontend
+        # gating reads this block; the legacy top-level ``auditEnabled``
+        # field stays for backwards-compat but new UI code paths must
+        # use ``audit.localQuery`` instead.
+        #
+        #   localQuery     — OSS deployment-level (governed by
+        #                    SHERPA_AUDIT_ENABLED). Server cannot
+        #                    override; OSS users get this for free.
+        #   fullPipeline   — server-only capability (audit.full
+        #                    entitlement). Defaults False at OSS base;
+        #                    server overlay elevates when entitled.
+        #   reportPack     — server-only capability (audit.report_pack).
+        #                    Same shape as fullPipeline.
+        #   exportAudited  — when localQuery is true, audit-export
+        #                    actions emit their own audit rows. Mirrors
+        #                    localQuery in OSS today; server overlay
+        #                    may set this independently in future.
+        audit_block: dict[str, bool] = {
+            "localQuery": self.audit_enabled,
+            "fullPipeline": False,
+            "reportPack": False,
+            "exportAudited": self.audit_enabled,
+        }
+
         result: dict[str, Any] = {
             "mode": self.mode,
             "egressEnabled": self.egress_enabled,
+            # Legacy field — kept for existing frontend code paths.
+            # Phase 4 introduces ``audit{}`` (above) as the new
+            # single-source-of-truth for audit-pack gating.
+            "auditEnabled": self.audit_enabled,
+            "audit": audit_block,
             "apiBaseUrl": self.api_base_url,
             "registrationEnabled": registration_enabled,
             "registrationRequiresCode": registration_requires_code,

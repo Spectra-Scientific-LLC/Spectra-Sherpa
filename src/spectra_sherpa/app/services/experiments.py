@@ -72,6 +72,18 @@ async def create_experiment(
         ensure_experiment_dirs(experiment.id)
         write_metadata(metadata_file, metadata)
         experiment.metadata_path = relative_to_data_dir(metadata_file)
+
+        # ISO 17025 audit — experiment.created (Phase 3 coverage).
+        from spectra_sherpa.app.services.audit import audit_emitter
+
+        audit_emitter.emit(
+            session=session,
+            action="experiment.created",
+            target_type="Experiment",
+            target_id=experiment.id,
+            after={"name": experiment.name, "project_id": experiment.project_id},
+        )
+
         await session.commit()
     except Exception:
         await session.rollback()
@@ -112,6 +124,29 @@ async def update_experiment(
     metadata: dict[str, Any] | None,
     project_id: int | None = None,
 ) -> Experiment:
+    # Capture pre-mutation state for audit (Phase 3 update coverage).
+    # Read pre-state metadata from disk BEFORE write_metadata overwrites
+    # it — without this snapshot the audit row would prove "metadata
+    # touched" without recording what actually changed (ISO 17025 §7.5
+    # requires the trail to answer 'what was the old value?').
+    _previous_metadata: dict[str, Any] = {}
+    if experiment.metadata_path:
+        try:
+            _previous_metadata = read_metadata(resolve_data_path(experiment.metadata_path))
+        except (OSError, ValueError, json.JSONDecodeError):
+            # Unreadable metadata file = empty pre-state. Don't fail the
+            # update on a corrupted/missing snapshot file; the diff just
+            # shows {} → new.
+            _previous_metadata = {}
+
+    _audit_before = {
+        "name": experiment.name,
+        "description": experiment.description,
+        "project_id": experiment.project_id,
+        "metadata": _previous_metadata,
+        "metadata_sha256": _canonical_metadata_sha256(_previous_metadata),
+    }
+
     if name is not None:
         experiment.name = name
     if description is not None:
@@ -119,10 +154,33 @@ async def update_experiment(
     if project_id is not None:
         experiment.project_id = project_id
     try:
+        _new_metadata: dict[str, Any] = _previous_metadata
         if metadata is not None:
             metadata_file = metadata_path_for(experiment.id)
             write_metadata(metadata_file, metadata)
             experiment.metadata_path = relative_to_data_dir(metadata_file)
+            _new_metadata = metadata
+
+        # ISO 17025 audit — experiment.updated. Emitted only when
+        # something actually changed; idle PUTs don't generate noise.
+        from spectra_sherpa.app.services.audit import audit_emitter
+
+        _audit_after = {
+            "name": experiment.name,
+            "description": experiment.description,
+            "project_id": experiment.project_id,
+            "metadata": _new_metadata,
+            "metadata_sha256": _canonical_metadata_sha256(_new_metadata),
+        }
+        if _audit_before != _audit_after:
+            audit_emitter.emit(
+                session=session,
+                action="experiment.updated",
+                target_type="Experiment",
+                target_id=experiment.id,
+                before=_audit_before,
+                after=_audit_after,
+            )
 
         await session.commit()
     except Exception:
@@ -132,7 +190,32 @@ async def update_experiment(
     return experiment
 
 
+def _canonical_metadata_sha256(metadata: dict[str, Any]) -> str:
+    """Stable hash for metadata equality / quick-diff in the audit trail.
+
+    sort_keys=True so reordering keys doesn't flip the hash. Used as a
+    forensic-friendly anchor: even if downstream consumers truncate the
+    full ``metadata`` snapshot for storage, the hash remains a tamper-
+    evident witness of the exact bytes that were live at audit time.
+    """
+    import hashlib
+
+    payload = json.dumps(metadata, sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 async def delete_experiment(session: AsyncSession, experiment: Experiment) -> None:
+    # ISO 17025 audit — emit BEFORE delete so before_state captures
+    # the row identity. Commits in the same TX as the delete.
+    from spectra_sherpa.app.services.audit import audit_emitter
+
+    audit_emitter.emit(
+        session=session,
+        action="experiment.deleted",
+        target_type="Experiment",
+        target_id=experiment.id,
+        before={"name": experiment.name, "project_id": experiment.project_id},
+    )
     await session.delete(experiment)
     await session.commit()
 
@@ -178,9 +261,29 @@ async def add_experiment_file(
         file_size_bytes=file_size_bytes,
     )
     session.add(experiment_file)
-    if flush_only:
-        await session.flush()
-    else:
+    await session.flush()  # assign file id for audit target
+
+    # ISO 17025 audit — experiment_file.created (Phase 3 — "what data
+    # was loaded into the experiment"). Commits in the same TX as the
+    # ExperimentFile row whether the caller used flush_only or commit
+    # path.
+    from spectra_sherpa.app.services.audit import audit_emitter
+
+    audit_emitter.emit(
+        session=session,
+        action="experiment_file.created",
+        target_type="ExperimentFile",
+        target_id=experiment_file.id,
+        after={
+            "experiment_id": experiment_id,
+            "file_path": file_path,
+            "file_type": file_type,
+            "stage": stage,
+            "file_size_bytes": file_size_bytes,
+        },
+    )
+
+    if not flush_only:
         await session.commit()
     await session.refresh(experiment_file)
     return experiment_file
@@ -410,6 +513,22 @@ async def get_experiment_file(session: AsyncSession, experiment_id: int, file_id
 
 
 async def delete_experiment_file(session: AsyncSession, experiment_file: ExperimentFile) -> None:
+    # ISO 17025 audit — emit before delete so before_state captures
+    # the row's identity (what data was removed from the experiment).
+    from spectra_sherpa.app.services.audit import audit_emitter
+
+    audit_emitter.emit(
+        session=session,
+        action="experiment_file.deleted",
+        target_type="ExperimentFile",
+        target_id=experiment_file.id,
+        before={
+            "experiment_id": experiment_file.experiment_id,
+            "file_path": experiment_file.file_path,
+            "file_type": experiment_file.file_type,
+            "stage": experiment_file.stage,
+        },
+    )
     await session.delete(experiment_file)
     await session.commit()
 

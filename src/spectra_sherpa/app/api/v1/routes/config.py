@@ -221,6 +221,19 @@ async def get_config(
                     config["limits"] = overlay["limits"]
                 if overlay.get("demo") is not None:
                     config["demo"] = overlay["demo"]
+                # Phase 4 — server elevates audit pack capabilities
+                # (fullPipeline, reportPack) when the deployment's
+                # plan entitles them. localQuery and exportAudited
+                # remain governed by the OSS deployment flag and are
+                # NOT overridable by the server overlay (per design §3
+                # — audit.basic is a deployment capability, not a plan
+                # entitlement).
+                overlay_audit = overlay.get("audit")
+                if overlay_audit is not None and isinstance(config.get("audit"), dict):
+                    if "fullPipeline" in overlay_audit:
+                        config["audit"]["fullPipeline"] = bool(overlay_audit["fullPipeline"])
+                    if "reportPack" in overlay_audit:
+                        config["audit"]["reportPack"] = bool(overlay_audit["reportPack"])
                 # Explicit merge of server-owned auth-policy flags. The
                 # base shape defaults both to False (see
                 # AppConfig.to_client_safe); the overlay may override

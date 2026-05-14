@@ -45,6 +45,13 @@ export interface AppLimits {
   sessionExpiryHours?: number
 }
 
+export interface AuditConfig {
+  localQuery: boolean
+  fullPipeline: boolean
+  reportPack: boolean
+  exportAudited: boolean
+}
+
 export interface DemoContract {
   featuredDatasets: string[]
   featuredTemplates: string[]
@@ -90,6 +97,7 @@ export interface AppConfig {
   llms: Record<string, LLMConfig>
   limits?: AppLimits
   subscription?: SubscriptionInfo | null
+  audit?: AuditConfig
   demo?: DemoContract | null
 }
 

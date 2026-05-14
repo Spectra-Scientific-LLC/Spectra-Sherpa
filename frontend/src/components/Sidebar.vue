@@ -7,7 +7,7 @@
     <nav class="nav-list">
       <!-- Main Navigation (6 pages) -->
       <RouterLink
-        v-for="item in mainNavItems"
+        v-for="item in visibleMainNavItems"
         :key="item.to"
         class="nav-link"
         :to="item.to"
@@ -39,13 +39,16 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from "vue";
 import { useDemoMode } from "@/composables/useDemoMode";
+import { useAppConfig } from "@/composables/useAppConfig";
 
 defineProps<{
   collapsed: boolean;
 }>();
 
 const { isDemoMode } = useDemoMode();
+const { appConfig } = useAppConfig();
 
 // Main navigation — chemometrician workflow
 const mainNavItems = [
@@ -55,7 +58,16 @@ const mainNavItems = [
   { label: "Experiments", to: "/experiments", icon: "pi pi-chart-bar" },
   { label: "Deploy", to: "/deploy", icon: "pi pi-cloud-upload" },
   { label: "Report", to: "/report", icon: "pi pi-file-pdf" },
+  { label: "Audit", to: "/audit", icon: "pi pi-shield", requiresAudit: true },
 ];
+
+const visibleMainNavItems = computed(() =>
+  mainNavItems.filter((item) => {
+    if (!item.requiresAudit) return true;
+    const audit = appConfig.value?.audit;
+    return Boolean(audit?.localQuery || audit?.fullPipeline || audit?.reportPack);
+  }),
+);
 
 // Secondary navigation
 const secondaryNavItems = [

@@ -120,6 +120,71 @@ class TestFeatureFlags:
 
 
 # ===========================================================================
+# 1b. Phase 4 unified audit block per design §3
+# ===========================================================================
+
+
+class TestUnifiedAuditBlock:
+    """Pin the ``audit{}`` block shape returned by ``to_client_safe()``.
+
+    Per phase0-design.md §3 ("Entitlement model — single capability
+    source") the frontend gates audit-pack UI surfaces on this block:
+
+      * localQuery     — OSS deployment flag (audit_enabled). Server
+                         cannot override.
+      * fullPipeline   — server-only (audit.full). False at OSS base.
+      * reportPack     — server-only (audit.report_pack). False at base.
+      * exportAudited  — mirrors localQuery in OSS today.
+
+    These tests pin the keys + their OSS-base values. Server overlay
+    elevation of fullPipeline / reportPack is covered separately on
+    the spectra-server side (TestSubscriptionConfig).
+    """
+
+    def test_audit_block_present_with_all_keys(self):
+        cfg = _make_config(mode="local")
+        audit = cfg.to_client_safe()["audit"]
+        assert set(audit.keys()) == {"localQuery", "fullPipeline", "reportPack", "exportAudited"}
+
+    def test_local_query_mirrors_audit_enabled_true(self):
+        cfg = _make_config(mode="local")
+        cfg.audit_enabled = True
+        audit = cfg.to_client_safe()["audit"]
+        assert audit["localQuery"] is True
+        assert audit["exportAudited"] is True
+
+    def test_local_query_mirrors_audit_enabled_false(self):
+        cfg = _make_config(mode="local")
+        cfg.audit_enabled = False
+        audit = cfg.to_client_safe()["audit"]
+        assert audit["localQuery"] is False
+        assert audit["exportAudited"] is False
+
+    def test_server_only_pack_capabilities_default_false(self):
+        """fullPipeline and reportPack are NEVER True in OSS base —
+        only the server overlay can elevate them. Catches a future
+        regression where someone tries to derive these from a local
+        env flag.
+        """
+        for audit_enabled in (True, False):
+            cfg = _make_config(mode="local")
+            cfg.audit_enabled = audit_enabled
+            audit = cfg.to_client_safe()["audit"]
+            assert audit["fullPipeline"] is False
+            assert audit["reportPack"] is False
+
+    def test_legacy_audit_enabled_field_kept_for_back_compat(self):
+        """Top-level ``auditEnabled`` is still present alongside the
+        unified block so existing frontend reads don't break.
+        """
+        cfg = _make_config(mode="local")
+        cfg.audit_enabled = True
+        safe = cfg.to_client_safe()
+        assert safe["auditEnabled"] is True
+        assert safe["audit"]["localQuery"] is True
+
+
+# ===========================================================================
 # 2. Limits per mode
 # ===========================================================================
 

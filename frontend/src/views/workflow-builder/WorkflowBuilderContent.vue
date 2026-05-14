@@ -57,6 +57,14 @@
             :disabled="isTrialTabActive"
             @click="toggleExportMenu"
           />
+          <Button
+            label="Audit"
+            icon="pi pi-shield"
+            class="toolbar-btn toolbar-action-btn"
+            :disabled="isTrialTabActive || workflowStore.workflowId === null"
+            @click="openWorkflowAudit"
+            title="Open audit trail for this workflow"
+          />
         </div>
         <Menu ref="exportMenuRef" :model="exportMenuItems" :popup="true" />
 
@@ -248,7 +256,7 @@ import Menu from "primevue/menu";
 import TieredMenu from "primevue/tieredmenu";
 import OverlayPanel from "primevue/overlaypanel";
 import { useToast } from "primevue/usetoast";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useWorkflowStore, type WorkflowNode, type WorkflowEdge } from "@/stores/workflow";
 import { useExperimentStore } from "@/stores/experiment";
 import { useProjectStore } from "@/stores/project";
@@ -273,6 +281,7 @@ type ParamsMap = Record<string, unknown>;
 
 const toast = useToast();
 const route = useRoute();
+const router = useRouter();
 const workflowStore = useWorkflowStore();
 const experimentStore = useExperimentStore();
 const projectStore = useProjectStore();
@@ -1249,6 +1258,19 @@ const actionMenuItems = computed(() => [
     items: exportMenuItems,
   },
 ]);
+
+const openWorkflowAudit = () => {
+  if (workflowStore.workflowId === null) return;
+  void router.push({
+    path: "/audit",
+    query: {
+      scope_type: "Workflow",
+      scope_id: String(workflowStore.workflowId),
+      target_type: "Workflow",
+      target_id: String(workflowStore.workflowId),
+    },
+  });
+};
 
 const toggleExportMenu = (event: Event) => {
   exportMenuRef.value?.toggle(event);

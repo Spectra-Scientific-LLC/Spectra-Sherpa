@@ -33,6 +33,45 @@ from spectra_sherpa.app.services.serialization import serialize_result
 
 from ._helpers import _auto_persist_run, _raise_execution_persistence_error, _validate_edge_refs
 
+
+def _collect_input_ports(workflow: Workflow, initial_data: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Capture the input ports + data-source linkage for the
+    reproducibility record.
+
+    Phase 1 contract: each entry is at minimum
+    ``{"port_name": str, "data_source_id": int | None}``. Phase 3 will
+    add per-port ``dataset_hash``, ``file_hashes``, ``target_hash`` etc.
+    once the multi-port abstraction lands. Returns an empty list when
+    no inputs are present so the reproducibility record's input-ports
+    field is always set (per v0.5 spec).
+
+    Important: this helper deliberately consumes only **scalar columns**
+    on ``workflow`` — touching relationships like ``data_source_links``
+    here triggers lazy-loading from inside an async route, which fires
+    a synchronous DB round-trip outside the greenlet context and
+    breaks the request. Multi-data-source coverage moves to Phase 3
+    alongside an explicit eager-load.
+    """
+    ports: list[dict[str, Any]] = []
+    if workflow.primary_data_source_id is not None:
+        ports.append(
+            {
+                "port_name": "primary",
+                "data_source_id": workflow.primary_data_source_id,
+            }
+        )
+    if initial_data:
+        for node_id, payload in initial_data.items():
+            payload_keys = sorted(payload.keys()) if isinstance(payload, dict) else []
+            ports.append(
+                {
+                    "port_name": f"initial:{node_id}",
+                    "payload_keys": payload_keys,
+                }
+            )
+    return ports
+
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/workflows")
@@ -280,6 +319,21 @@ async def execute_workflow(
     wf_project_id = getattr(workflow, "project_id", None)
     wf_params_snapshot = {n.node_id: n.parameters for n in workflow.nodes if n.parameters}
 
+    # ISO 17025 audit (Phase 1d): record workflow.run.started in its own
+    # transaction so the started event survives even if the execution
+    # session rolls back. No-op when audit_enabled is False. Failure of
+    # the audit emit cannot block real workflow execution — the
+    # informational started event is not the binding record (that's the
+    # workflow.run.completed / failed emitted by _auto_persist_run).
+    from spectra_sherpa.app.api.v1.routes.workflows._helpers import emit_workflow_run_started
+
+    await emit_workflow_run_started(
+        workflow_id=workflow_id,
+        workflow_version_id=wf_version_id,
+        integrity_hash=wf_integrity_hash,
+        params_snapshot=wf_params_snapshot,
+    )
+
     executor = None
     try:
         # Build DAG executor
@@ -378,7 +432,22 @@ async def execute_workflow(
                 project_id=wf_project_id,
             )
 
-        # Update workflow execution timestamp
+        # Update workflow execution timestamp.
+        #
+        # Audit-trail note (Phase 1d): this commit covers two writes —
+        # ``workflow.last_executed_at`` (which has no audit event of its
+        # own) and the artifact rows persisted by
+        # ``persist_model_artifact_records`` (each carries a
+        # ``model_artifact.created`` audit event in the same TX). The
+        # binding workflow-run audit event lives in the
+        # ``_auto_persist_run`` call below, which opens its own logical
+        # transaction. The original Phase 1d patch attempted to collapse
+        # both commits into one so the run audit covered everything;
+        # that change broke route-level autoflush ordering and was
+        # reverted. The denormalized ``last_executed_at`` field is
+        # treated as derived metadata (not audit-critical); the
+        # ExecutionRun row + workflow.run.* audit remain the binding
+        # record of what ran.
         workflow.last_executed_at = datetime.utcnow()
         await session.commit()
 
@@ -396,6 +465,13 @@ async def execute_workflow(
 
         diagnostics_serialized = serialize_result(getattr(executor, "diagnostics", {}), owner_user_id=user_id)
 
+        # ISO 17025 reproducibility — capture input-port linkage so the
+        # audit record can later answer "which data did this run consume?".
+        # Phase 1 ships a port-name + data-source-id pair; per-port file
+        # hashes / target hashes / fitted-state hashes land in Phase 3
+        # alongside the multi-port abstraction.
+        input_ports_record = _collect_input_ports(workflow, payload.initial_data)
+
         # Auto-persist results so they survive page refresh
         persisted = await _auto_persist_run(
             session,
@@ -410,6 +486,7 @@ async def execute_workflow(
             integrity_hash=wf_integrity_hash,
             model_ids=[a["artifact_uid"] for a in (executor.saved_artifacts or [])],
             params_snapshot=wf_params_snapshot,
+            input_ports=input_ports_record,
         )
         if not persisted:
             _raise_execution_persistence_error()
