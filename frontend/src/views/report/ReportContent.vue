@@ -181,6 +181,12 @@
         multiple formats.
       </p>
     </div>
+
+    <ValidationWalkthroughPanel
+      :workflow-id="reportStore.selectedWorkflowId"
+      :audit-config="auditConfig"
+      @open-audit="openWorkflowAudit"
+    />
   </section>
 </template>
 
@@ -197,6 +203,7 @@ import { useToast } from "primevue/usetoast";
 import { useRouter } from "vue-router";
 
 import MemoryAttribution from "@/components/MemoryAttribution.vue";
+import ValidationWalkthroughPanel from "@/views/report/ValidationWalkthroughPanel.vue";
 import { useAdvisorStore } from "@/stores/advisor";
 import { useProjectStore } from "@/stores/project";
 import { useReportStore } from "@/stores/report";
@@ -216,7 +223,8 @@ const projectStore = useProjectStore();
 const advisorStore = useAdvisorStore();
 const toast = useToast();
 const router = useRouter();
-const { isFeatureEnabled } = useAppConfig();
+const { isFeatureEnabled, appConfig } = useAppConfig();
+const auditConfig = computed(() => appConfig.value?.audit);
 
 // R4 — Single-scope Sherpa Advisor routing for the Report tab.
 // Today's Report UI has no subtabs; the active scope is always

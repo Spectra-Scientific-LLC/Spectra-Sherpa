@@ -1,0 +1,118 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://spectrascientific.ai/schemas/audit_events_v1.json",
+  "title": "Sherpa Audit Events v1",
+  "description": "Wire schema for audit events surfaced via GET /api/v1/audit/events (audit.basic capability) and bundled into report packs as audit_export.{csv,jsonl}. Published by OSS so external consumers (lab QA, regulatory reviewers, third-party tooling) can validate exports independently of the running server. The corresponding Pydantic source of truth is spectra_sherpa.app.schemas.audit.AuditEventOut.",
+  "definitions": {
+    "actor_kind": {
+      "type": "string",
+      "enum": ["user", "system", "api_key", "webhook"],
+      "description": "Originator of the action. user/api_key require actor_id; system/webhook may have actor_id=null and a system_actor string in context."
+    },
+    "iso_utc_datetime": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp with timezone offset. Always emitted with +00:00 by the server."
+    },
+    "audit_event": {
+      "type": "object",
+      "required": [
+        "id",
+        "tenant_id",
+        "actor_kind",
+        "action",
+        "target_type",
+        "target_id",
+        "request_id",
+        "ts_app_utc",
+        "ts_db_utc"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Auto-increment row id. Stable forensic ordering within a tenant when paired with tenant_sequence on the chain row."
+        },
+        "tenant_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Tenant scope. 'default' for OSS Local; deployment-key id for hosted."
+        },
+        "actor_id": {
+          "type": ["integer", "null"],
+          "description": "FK to user.id when actor_kind in {user, api_key}. NULL for actor_kind in {system, webhook}."
+        },
+        "actor_kind": { "$ref": "#/definitions/actor_kind" },
+        "action": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Dotted action verb. Examples: 'workflow.run.completed', 'experiment.updated', 'audit.export', 'audit.report_pack.generated'."
+        },
+        "target_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Class name of the audited entity. Examples: 'Workflow', 'Experiment', 'ExperimentFile', 'ModelArtifact', 'Project', 'AuditExport', 'ReportPack'."
+        },
+        "target_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Stable identifier for the audited entity. Integer-as-string for ORM rows; opaque string for server-minted artefacts."
+        },
+        "before_state": {
+          "type": ["object", "null"],
+          "description": "State snapshot before the mutation. NULL on creation events."
+        },
+        "after_state": {
+          "type": ["object", "null"],
+          "description": "State snapshot after the mutation. NULL on deletion events."
+        },
+        "context": {
+          "type": ["object", "null"],
+          "description": "Action-class-specific payload. For workflow.run.* events, carries the minimum reproducibility record (see docs/audit/minimum-reproducibility-record.md)."
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 36,
+          "description": "Request correlation id. UUID-as-string."
+        },
+        "ts_app_utc": {
+          "$ref": "#/definitions/iso_utc_datetime",
+          "description": "Wall-clock UTC at the application layer when the event was constructed."
+        },
+        "ts_db_utc": {
+          "$ref": "#/definitions/iso_utc_datetime",
+          "description": "Wall-clock UTC at the database when the row landed (server_default=func.now())."
+        }
+      },
+      "additionalProperties": false
+    },
+    "audit_event_query_response": {
+      "type": "object",
+      "required": ["events", "has_more"],
+      "properties": {
+        "events": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/audit_event" }
+        },
+        "next_cursor": {
+          "type": ["string", "null"],
+          "description": "Opaque pagination token. When non-null, pass back as ?cursor= on the next request to continue. Currently the integer id of the last returned row, serialised as a string for forward compatibility."
+        },
+        "has_more": {
+          "type": "boolean",
+          "description": "True when at least one row exists beyond the page boundary."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/definitions/audit_event" },
+    { "$ref": "#/definitions/audit_event_query_response" }
+  ]
+}

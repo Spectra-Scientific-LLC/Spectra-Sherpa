@@ -1,8 +1,12 @@
-"""E2E tests for Sherpa Advisor agentic workflow generation.
+"""E2E tests for OSS Sherpa Advisor agentic workflow generation.
 
-Covers the full round-trip:
-  1. POST /workflows/{parent}/ai-fork creates a PCA workflow from a prompt
-  2. The propose_workflow WS interception path (via mocked LLM events)
+Covers POST /workflows/{parent}/ai-fork creating a PCA workflow from a
+prompt and the OSS-side validation rules.
+
+The WS-handler interception test that lived here previously was moved to
+the server package because it depends on spectrasherpa_server.ws_handlers
+internals; keeping it here would leak the OSS / server boundary into the
+public mirror.
 
 Run:
     direnv exec . python -m pytest tests/test_agentic_workflow_generation.py -v --no-cov
@@ -11,8 +15,7 @@ Run:
 from __future__ import annotations
 
 import uuid
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -557,127 +560,7 @@ async def test_ai_fork_requires_parent_data_source(auth_client: AsyncClient) -> 
     assert "data source" in resp.json()["detail"].lower()
 
 
-# ---------------------------------------------------------------------------
-# Test 5 — WS propose_workflow interception end-to-end
-#
-# Mocks the LLM event stream to emit a propose_workflow tool call, then
-# verifies that _fork_conversation_and_workflow is called with the correct
-# workflow_id extracted from the dict-shaped workflow_context.
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_propose_workflow_interception_calls_fork(test_user) -> None:
-    """WS handler intercepts propose_workflow and calls the fork helper.
-
-    This exercises the two bugs that were fixed:
-    1. propose_workflow required session/user → always returned success=False
-    2. getattr(workflow_context_dict, "workflow_id") → always None
-
-    With both fixes:
-    - The tool returns success=True
-    - parent_wf_id is correctly read via .get("workflow_id") on the dict
-    - _fork_conversation_and_workflow is called with workflow_id=42
-    - A SHERPA_WORKFLOW_PROPOSED event is emitted
-    """
-    ws_handlers_mod = pytest.importorskip(
-        "spectrasherpa_server.ws_handlers",
-        reason="spectrasherpa_server not installed in this environment",
-    )
-    from spectra_sherpa.app.ws_events import SHERPA_WORKFLOW_PROPOSED
-
-    dag_spec = {
-        "nodes": [
-            {"id": "src_1", "type": "data.source", "parameters": {}},
-            {"id": "pca_1", "type": "model.pca", "parameters": {"n_components": 3}},
-        ],
-        "edges": [{"source": "src_1", "target": "pca_1", "from_output": "default", "to_input": "default"}],
-    }
-
-    fork_result = {
-        "new_conversation_id": str(uuid.uuid4()),
-        "new_workflow_id": 999,
-        "new_channel_id": 888,
-    }
-    mock_fork = AsyncMock(return_value=fork_result)
-
-    messages_sent: list[dict] = []
-
-    async def mock_send_or_raise(_ws, msg):
-        messages_sent.append(msg)
-
-    async def fake_event_stream():
-        yield {"type": "start", "conversation_id": "conv-123"}
-        yield {
-            "type": "tool_start",
-            "tool": "propose_workflow",
-            "round": 1,
-            "arguments": {
-                "dag_spec": dag_spec,
-                "suggested_name": "Sherpa: PCA",
-                "human_explanation": "PCA is appropriate for this dataset.",
-            },
-        }
-        yield {
-            "type": "tool_result",
-            "tool": "propose_workflow",
-            "round": 1,
-            "success": True,
-            "summary": '{"status": "intercepted"}',
-            "error": None,
-            "error_category": None,
-        }
-        yield {"type": "chunk", "text": "I've generated a PCA workflow."}
-        yield {"type": "done", "conversation_id": "conv-123", "tool_calls": []}
-
-    mock_advisor = MagicMock()
-    mock_advisor.chat_with_tools = MagicMock(return_value=fake_event_stream())
-
-    payload = {
-        "payload": {
-            "request_id": str(uuid.uuid4()),
-            "message": "Generate a PCA workflow for the wine dataset.",
-            "conversation_id": None,
-            "project_id": 1,
-            "workflow_id": 42,
-            "workflow_context": {
-                "workflow_id": 42,
-                "workflow_name": "Parent Workflow",
-                "nodes": [],
-                "edges": [],
-            },
-        }
-    }
-
-    with (
-        patch.object(ws_handlers_mod, "_fork_conversation_and_workflow", mock_fork),
-        patch.object(ws_handlers_mod, "_send_or_raise", mock_send_or_raise),
-        patch.object(ws_handlers_mod, "_sherpa_proxy_preamble", AsyncMock(return_value=True)),
-        patch(_ADVISOR_REGISTRY_PATH, return_value=mock_advisor),
-    ):
-        from spectrasherpa_server.ws_handlers import handle_sherpa_chat_with_tools
-
-        fake_user = SimpleNamespace(id=test_user.id)
-        mock_ws = MagicMock()
-        rate_limiter = MagicMock()
-        rate_limiter.check_rate_limit = AsyncMock(return_value=None)
-
-        await handle_sherpa_chat_with_tools(mock_ws, payload, fake_user, rate_limiter)
-
-    # The fork helper must have been called with workflow_id=42 (from dict context)
-    mock_fork.assert_awaited_once()
-    call_kwargs = mock_fork.call_args.kwargs
-    assert call_kwargs["parent_workflow_id"] == 42, (
-        f"parent_workflow_id was {call_kwargs.get('parent_workflow_id')!r}, expected 42. "
-        "This indicates the dict-context getattr bug is still present."
-    )
-
-    # A SHERPA_WORKFLOW_PROPOSED event must have been sent
-    proposed_events = [m for m in messages_sent if m.get("type") == SHERPA_WORKFLOW_PROPOSED]
-    assert len(proposed_events) == 1, (
-        f"Expected 1 SHERPA_WORKFLOW_PROPOSED event, got {len(proposed_events)}. "
-        f"All event types seen: {[m.get('type') for m in messages_sent]}"
-    )
-    assert proposed_events[0]["new_workflow_id"] == 999
-    assert proposed_events[0]["new_channel_id"] == 888
-    assert proposed_events[0]["suggested_name"] == "Sherpa: PCA"
+# Test 5 (propose_workflow WS interception) was moved to the server package
+# because it directly imports spectrasherpa_server.ws_handlers and patches
+# its private symbols. See:
+#   packages/spectra-server/tests/test_agentic_workflow_propose_interception.py
