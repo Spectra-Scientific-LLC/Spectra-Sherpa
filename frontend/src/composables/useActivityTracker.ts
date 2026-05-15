@@ -7,6 +7,7 @@ import { useLlmStore } from "@/stores/llm";
 import { useProjectStore } from "@/stores/project";
 
 type GuidanceActivityKind = "route_change" | "scope_switch" | "action_click" | "idle_tick";
+const IDLE_TICK_SECONDS = 5;
 
 interface ActivityPayload {
   kind: GuidanceActivityKind;
@@ -27,6 +28,7 @@ export function useActivityTracker() {
   const advisorStore = useAdvisorStore();
   let idleTimer: number | null = null;
   let unwatchRoute: (() => void) | null = null;
+  let unwatchProject: (() => void) | null = null;
   let unwatchScope: (() => void) | null = null;
   let lastActivityAt = Date.now();
 
@@ -34,9 +36,17 @@ export function useActivityTracker() {
     return appMode.value !== "local" && isFeatureEnabled("sherpaGuidance") && guidanceStore.isEnabled;
   }
 
-  function send(kind: GuidanceActivityKind, extras: Partial<ActivityPayload> = {}): void {
+  async function send(kind: GuidanceActivityKind, extras: Partial<ActivityPayload> = {}): Promise<void> {
     if (!canTrack()) return;
-    const ws = llmStore.wsRef;
+    let ws = llmStore.wsRef;
+    if (ws?.readyState !== WebSocket.OPEN) {
+      try {
+        await llmStore.connect();
+      } catch {
+        return;
+      }
+      ws = llmStore.wsRef;
+    }
     if (ws?.readyState !== WebSocket.OPEN) return;
     const projectId = projectStore.currentProjectId ?? undefined;
     const scopeNodeId = advisorStore.activeNodeId ?? undefined;
@@ -61,11 +71,14 @@ export function useActivityTracker() {
     const actionId = target?.getAttribute("data-action")?.trim();
     if (actionId) {
       void guidanceStore.acknowledgeActionClick(actionId);
-      send("action_click", { target: actionId });
+      void send("action_click", { target: actionId });
     }
   }
 
   function start(): void {
+    if (unwatchRoute !== null || idleTimer !== null) {
+      return;
+    }
     if (appMode.value === "local" || !isFeatureEnabled("sherpaGuidance")) {
       return;
     }
@@ -75,31 +88,41 @@ export function useActivityTracker() {
       () => route.fullPath,
       () => {
         noteActivity();
-        send("route_change", { route: route.path });
+        void send("route_change", { route: route.path });
       },
       { immediate: true }
+    );
+    unwatchProject = watch(
+      () => projectStore.currentProjectId,
+      (projectId, previousProjectId) => {
+        if (projectId == null || projectId === previousProjectId) return;
+        noteActivity();
+        void send("route_change", { route: route.path, project_id: projectId });
+      }
     );
     unwatchScope = watch(
       () => advisorStore.activeNodeId,
       () => {
-        send("scope_switch");
+        void send("scope_switch");
       }
     );
     idleTimer = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
       const idleSeconds = Math.floor((Date.now() - lastActivityAt) / 1000);
-      if (idleSeconds >= 30) {
-        send("idle_tick", { idle_seconds: idleSeconds });
+      if (idleSeconds >= IDLE_TICK_SECONDS) {
+        void send("idle_tick", { idle_seconds: idleSeconds });
       }
-    }, 30_000);
+    }, IDLE_TICK_SECONDS * 1000);
   }
 
   function stop(): void {
     document.removeEventListener("click", onClick, { capture: true });
     document.removeEventListener("keydown", noteActivity, { capture: true });
     unwatchRoute?.();
+    unwatchProject?.();
     unwatchScope?.();
     unwatchRoute = null;
+    unwatchProject = null;
     unwatchScope = null;
     if (idleTimer !== null) {
       window.clearInterval(idleTimer);

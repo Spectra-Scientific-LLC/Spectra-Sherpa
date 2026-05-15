@@ -47,6 +47,7 @@ OSS_PUBLIC_PATHS: List[str] = [
     "/api/health",
     "/api/ready",
     "/api/v1/health",
+    "/api/v1/version",
     "/api/v1/config",
     "/docs",
     "/redoc",

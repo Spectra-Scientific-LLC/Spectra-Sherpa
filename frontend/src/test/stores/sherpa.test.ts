@@ -1055,6 +1055,34 @@ describe("Sherpa Store communication state", () => {
     sherpa.dispose();
   });
 
+  it("shows a system message when secondary Sherpa LLM is used", async () => {
+    const sherpa = useSherpaStore();
+    const notifications = useNotificationStore();
+    sherpa.init();
+
+    await sherpa.sendMessage("Explain this workflow", true);
+    const payload = JSON.parse(mockWs.send.mock.calls[0][0] as string);
+
+    emitSherpa({
+      type: SHERPA_WS_EVENT.status,
+      request_id: payload.payload.request_id,
+      payload: {
+        connected: true,
+        stage: "secondary_llm",
+        detail: "Secondary LLM supplier used.",
+      },
+    });
+
+    expect(sherpa.messages.at(-1)?.content).toBe("Secondary LLM supplier used.");
+    expect(
+      notifications.notifications.some((notification) =>
+        notification.message.includes("Secondary LLM supplier used.")
+      )
+    ).toBe(true);
+
+    sherpa.dispose();
+  });
+
   it("surfaces Sherpa sync timeouts in notifications", async () => {
     const sherpa = useSherpaStore();
     const notifications = useNotificationStore();

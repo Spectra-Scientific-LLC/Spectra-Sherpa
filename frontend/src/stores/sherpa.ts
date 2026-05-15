@@ -1837,6 +1837,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
           context_filter_result:
             "Sherpa finished the workflow context privacy check.",
           model_dispatch: "Sherpa is preparing the model request.",
+          secondary_llm: "Secondary LLM supplier used.",
           tool_round_limit:
             "Sherpa reached the tool round limit and is finishing without more tool calls.",
         };
@@ -1845,9 +1846,9 @@ export const useSherpaStore = defineStore("sherpa", () => {
         const statusMessage = `${baseMessage}${_formatRequestSuffix(payload.request_id)}${extraDetail}${_formatTimingSuffix(payload.timing)}`;
         _recordActivity(statusMessage, {
           notify: true,
-          severity: stage === "tool_round_limit" ? "warning" : "info",
+          severity: stage === "tool_round_limit" || stage === "secondary_llm" ? "warning" : "info",
         });
-        if (stage === "tool_round_limit") {
+        if (stage === "tool_round_limit" || stage === "secondary_llm") {
           _appendSystemMessage(detail || baseMessage);
         }
         noteChatActivity();

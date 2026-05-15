@@ -170,6 +170,18 @@ def test_ready_endpoint_is_public_when_http_auth_required(monkeypatch: pytest.Mo
     assert response.json() == {"status": "ok", "database": "ok"}
 
 
+def test_version_endpoint_is_public_when_http_auth_required(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("spectra_sherpa.app.core.security.requires_http_auth", lambda _host: True)
+
+    app = app_main.create_app(include_server_routers=False)
+    client = TestClient(app)
+
+    response = client.get("/api/v1/version")
+
+    assert response.status_code == 200
+    assert "backend_version" in response.json()
+
+
 def test_create_app_rejects_invalid_extra_router_config():
     extra = APIRouter()
     with pytest.raises(TypeError, match="config must be a prefix string or mapping"):

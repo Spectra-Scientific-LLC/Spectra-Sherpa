@@ -1,7 +1,7 @@
 /* eslint-disable vue/one-component-per-file */
-import { mount } from "@vue/test-utils";
+import { enableAutoUnmount, mount } from "@vue/test-utils";
 import { defineComponent, nextTick } from "vue";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   routeMeta: { public: false as boolean, standalone: false as boolean },
@@ -110,9 +110,13 @@ vi.mock("@/composables/useNotifier", () => ({
   }),
 }));
 
-vi.mock("@/stores/auth", () => ({
-  useAuthStore: () => mocks.authStore,
-}));
+vi.mock("@/stores/auth", async () => {
+  const { reactive } = await vi.importActual<typeof import("vue")>("vue");
+  mocks.authStore = reactive(mocks.authStore) as typeof mocks.authStore;
+  return {
+    useAuthStore: () => mocks.authStore,
+  };
+});
 
 vi.mock("@/stores/job", () => ({
   useJobStore: () => mocks.jobStore,
@@ -207,6 +211,14 @@ vi.mock("@/components/DemoUpgradeModal.vue", () => ({
   default: defineComponent({ name: "DemoUpgradeModal", template: "<div />" }),
 }));
 
+vi.mock("@/components/AppFooter.vue", () => ({
+  default: defineComponent({ name: "AppFooter", template: "<div />" }),
+}));
+
+vi.mock("@/components/AboutDialog.vue", () => ({
+  default: defineComponent({ name: "AboutDialog", template: "<div />" }),
+}));
+
 vi.mock("@/components/guidance/GuidanceToast.vue", () => ({
   default: defineComponent({ name: "GuidanceToast", template: "<div />" }),
 }));
@@ -260,6 +272,8 @@ vi.mock("@/components/NotificationCenterDrawer.vue", () => ({
 
 import MainLayout from "@/layouts/MainLayout.vue";
 import Topbar from "@/components/Topbar.vue";
+
+enableAutoUnmount(afterEach);
 
 const mainLayoutMountOptions = {
   global: {
@@ -354,6 +368,31 @@ describe("MainLayout chat panel defaults", () => {
 
     expect(mocks.guidanceStart).not.toHaveBeenCalled();
     expect(mocks.activityStart).not.toHaveBeenCalled();
+  });
+
+  it("starts guidance once when login rehydrates the user after layout mount", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.appConfig.value = { features: { sherpaGuidance: true } };
+    mocks.authStore.user = null;
+
+    mount(MainLayout, mainLayoutMountOptions);
+    await nextTick();
+    await nextTick();
+
+    expect(mocks.guidanceStart).not.toHaveBeenCalled();
+    expect(mocks.activityStart).not.toHaveBeenCalled();
+
+    mocks.authStore.user = { id: 7, username: "alice", capabilities: { admin: false } };
+    await nextTick();
+    await nextTick();
+
+    expect(mocks.guidanceStart).toHaveBeenCalledTimes(1);
+    expect(mocks.activityStart).toHaveBeenCalledTimes(1);
+
+    await nextTick();
+
+    expect(mocks.guidanceStart).toHaveBeenCalledTimes(1);
+    expect(mocks.activityStart).toHaveBeenCalledTimes(1);
   });
 });
 
