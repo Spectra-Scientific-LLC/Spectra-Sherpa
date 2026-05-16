@@ -25,7 +25,7 @@ const mocks = vi.hoisted(() => ({
     connect: vi.fn().mockResolvedValue(undefined),
     disconnect: vi.fn(),
   },
-  guidanceStart: vi.fn().mockResolvedValue(undefined),
+  guidanceStart: vi.fn().mockResolvedValue(true),
   guidanceStop: vi.fn(),
   activityStart: vi.fn(),
   activityStop: vi.fn(),
@@ -313,7 +313,8 @@ describe("MainLayout chat panel defaults", () => {
     mocks.authStore.user = { id: 7, username: "alice", capabilities: { admin: false } };
     mocks.jobStore.connect.mockClear();
     mocks.jobStore.disconnect.mockClear();
-    mocks.guidanceStart.mockClear();
+    mocks.guidanceStart.mockReset();
+    mocks.guidanceStart.mockResolvedValue(true);
     mocks.guidanceStop.mockClear();
     mocks.activityStart.mockClear();
     mocks.activityStop.mockClear();
@@ -392,6 +393,80 @@ describe("MainLayout chat panel defaults", () => {
     await nextTick();
 
     expect(mocks.guidanceStart).toHaveBeenCalledTimes(1);
+    expect(mocks.activityStart).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not attach the activity tracker if readiness is lost during guidance.start()", async () => {
+    // Review finding: guidance.start() can resolve after a retry/backoff
+    // window that spanned a logout.  The tracker must not bind to a
+    // torn-down session — readiness is re-checked after the await.
+    mocks.appMode.value = "enterprise";
+    mocks.appConfig.value = { features: { sherpaGuidance: true } };
+
+    let resolveStart: () => void = () => {};
+    mocks.guidanceStart.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveStart = () => resolve(true);
+        }),
+    );
+
+    mount(MainLayout, mainLayoutMountOptions);
+    await nextTick();
+    await nextTick();
+    expect(mocks.guidanceStart).toHaveBeenCalledTimes(1);
+    expect(mocks.activityStart).not.toHaveBeenCalled();
+
+    // Readiness lost while start() is still in flight.
+    mocks.authStore.user = null;
+    await nextTick();
+    await nextTick();
+
+    // start() finally resolves — the post-await readiness re-check must
+    // refuse to start the tracker and must stop guidance instead.
+    resolveStart();
+    await nextTick();
+    await nextTick();
+
+    expect(mocks.activityStart).not.toHaveBeenCalled();
+    expect(mocks.guidanceStop).toHaveBeenCalled();
+  });
+
+  it("restarts guidance if readiness returns before a cancelled startup unwinds", async () => {
+    // Review follow-up: a quick logout/login bounce can restore readiness
+    // before the cancelled guidance.start() promise resolves.  The stale
+    // startup must not be marked started, and MainLayout must kick off a
+    // fresh startup once its in-flight guard is cleared.
+    mocks.appMode.value = "enterprise";
+    mocks.appConfig.value = { features: { sherpaGuidance: true } };
+
+    let resolveFirstStart: () => void = () => {};
+    mocks.guidanceStart.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveFirstStart = () => resolve(false);
+        }),
+    );
+    mocks.guidanceStart.mockResolvedValue(true);
+
+    mount(MainLayout, mainLayoutMountOptions);
+    await nextTick();
+    await nextTick();
+    expect(mocks.guidanceStart).toHaveBeenCalledTimes(1);
+
+    mocks.authStore.user = null;
+    await nextTick();
+    await nextTick();
+    mocks.authStore.user = { id: 8, username: "bob", capabilities: { admin: false } };
+    await nextTick();
+    await nextTick();
+
+    resolveFirstStart();
+    await nextTick();
+    await nextTick();
+    await nextTick();
+
+    expect(mocks.guidanceStart).toHaveBeenCalledTimes(2);
     expect(mocks.activityStart).toHaveBeenCalledTimes(1);
   });
 });

@@ -78,13 +78,20 @@ export const useGuidanceStore = defineStore("guidance", () => {
     );
   }
 
-  async function loadSettings(): Promise<void> {
+  // Returns true on success, false if the fetch failed.  Audit F2: the
+  // failure must be observable to the caller — a transient 401 / startup
+  // race used to leave settings at the disabled default with no retry,
+  // silently freezing guidance off until a full reload.  Callers
+  // (useGuidance.start) retry on a false return.
+  async function loadSettings(): Promise<boolean> {
     loading.value = true;
     error.value = null;
     try {
       settings.value = await fetchGuidanceSettings();
+      return true;
     } catch (err) {
       error.value = err instanceof Error ? err.message : "Failed to load guidance settings.";
+      return false;
     } finally {
       loading.value = false;
     }

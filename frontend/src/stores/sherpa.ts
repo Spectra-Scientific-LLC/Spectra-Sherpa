@@ -1826,6 +1826,14 @@ export const useSherpaStore = defineStore("sherpa", () => {
         const stage = String(payload.payload?.stage || "unknown");
         const detail =
           typeof payload.payload?.detail === "string" ? payload.payload.detail : null;
+        // Audit findings #15 + #19: the server attaches the secondary model
+        // name and an explicit tool-support flag on the secondary_llm warning
+        // event so the frontend can render contextual messaging without
+        // hard-coding model identity into the bundle.
+        const secondaryModel =
+          typeof payload.payload?.secondary_model === "string"
+            ? payload.payload.secondary_model
+            : null;
         const stageMessages: Record<string, string> = {
           authorizing: "Sherpa server acknowledged the request.",
           rate_limit_check: "Sherpa is checking request limits.",
@@ -1837,16 +1845,27 @@ export const useSherpaStore = defineStore("sherpa", () => {
           context_filter_result:
             "Sherpa finished the workflow context privacy check.",
           model_dispatch: "Sherpa is preparing the model request.",
-          secondary_llm: "Secondary LLM supplier used.",
+          secondary_llm: secondaryModel
+            ? `Primary AI is busy — Sherpa is using a backup model (${secondaryModel}). Responses may be briefer; agentic tools are unavailable for this reply.`
+            : "Primary AI is busy — Sherpa is using a backup model. Responses may be briefer and some agentic tools are unavailable.",
           tool_round_limit:
             "Sherpa reached the tool round limit and is finishing without more tool calls.",
         };
         const baseMessage = stageMessages[stage] || `Sherpa status: ${stage}.`;
-        const extraDetail = detail && detail !== baseMessage ? ` ${detail}` : "";
-        const statusMessage = `${baseMessage}${_formatRequestSuffix(payload.request_id)}${extraDetail}${_formatTimingSuffix(payload.timing)}`;
+        // For secondary_llm the server-provided detail already includes the
+        // model name + tool-availability hint; treating it as the canonical
+        // text avoids redundant phrasing in the activity toast.
+        const useServerDetail = stage === "secondary_llm" && detail !== null;
+        const renderedMessage = useServerDetail ? detail : baseMessage;
+        const extraDetail = !useServerDetail && detail && detail !== baseMessage ? ` ${detail}` : "";
+        const statusMessage = `${renderedMessage}${_formatRequestSuffix(payload.request_id)}${extraDetail}${_formatTimingSuffix(payload.timing)}`;
+        // Severity split (audit finding #16): the secondary-LLM event signals
+        // a degraded server-side service outside the user's control and
+        // warrants a warning.  tool_round_limit is operational (Sherpa hit
+        // its in-request loop budget) and stays at info.
         _recordActivity(statusMessage, {
           notify: true,
-          severity: stage === "tool_round_limit" || stage === "secondary_llm" ? "warning" : "info",
+          severity: stage === "secondary_llm" ? "warning" : "info",
         });
         if (stage === "tool_round_limit" || stage === "secondary_llm") {
           _appendSystemMessage(detail || baseMessage);

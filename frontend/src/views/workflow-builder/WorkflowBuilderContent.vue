@@ -300,7 +300,7 @@ const advisorAvailable = computed(
 );
 const isCompactingMemory = ref(false);
 const activeAdvisorNodeId = computed(() => advisorStore.activeNodeId);
-const memoryButtonLabel = computed(() => (isCompactingMemory.value ? "Saving…" : "Save Memory"));
+const memoryButtonLabel = computed(() => (isCompactingMemory.value ? "Memorizing…" : "Memorize"));
 const versionHistoryVisible = ref(false);
 const templatePickerVisible = ref(false);
 const canvasRef = ref();

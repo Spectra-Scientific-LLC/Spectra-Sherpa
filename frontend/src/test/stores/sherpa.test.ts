@@ -1055,7 +1055,7 @@ describe("Sherpa Store communication state", () => {
     sherpa.dispose();
   });
 
-  it("shows a system message when secondary Sherpa LLM is used", async () => {
+  it("shows the secondary model name but never the supplier URL/key (audit F3/F4)", async () => {
     const sherpa = useSherpaStore();
     const notifications = useNotificationStore();
     sherpa.init();
@@ -1063,22 +1063,35 @@ describe("Sherpa Store communication state", () => {
     await sherpa.sendMessage("Explain this workflow", true);
     const payload = JSON.parse(mockWs.send.mock.calls[0][0] as string);
 
+    // Real server payload shape after audit #15/#19: detail carries the
+    // model-named message; secondary_model is the configured label only.
     emitSherpa({
       type: SHERPA_WS_EVENT.status,
       request_id: payload.payload.request_id,
       payload: {
         connected: true,
         stage: "secondary_llm",
-        detail: "Secondary LLM supplier used.",
+        detail:
+          "Primary AI is busy — Sherpa is using a backup model (deepseek-chat). " +
+          "Responses may be briefer; agentic tools are unavailable for this reply.",
+        secondary_model: "deepseek-chat",
+        tool_support: false,
       },
     });
 
-    expect(sherpa.messages.at(-1)?.content).toBe("Secondary LLM supplier used.");
+    const rendered = sherpa.messages.at(-1)?.content ?? "";
+    // Positive: the model label IS surfaced so users can tell a
+    // degraded turn apart (product decision).
+    expect(rendered).toContain("deepseek-chat");
     expect(
       notifications.notifications.some((notification) =>
-        notification.message.includes("Secondary LLM supplier used.")
+        notification.message.includes("deepseek-chat")
       )
     ).toBe(true);
+
+    // Negative: never expose supplier base URL / API key / env-var name
+    // in any user-facing surface.
+    expect(rendered).not.toMatch(/api\.deepseek\.com|https?:\/\/|sk-|SHERPA_GUIDANCE/i);
 
     sherpa.dispose();
   });

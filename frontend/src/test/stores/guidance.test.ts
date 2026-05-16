@@ -89,10 +89,25 @@ describe("guidance store", () => {
   it("loads guidance settings from the namespaced API", async () => {
     const store = useGuidanceStore();
 
-    await store.loadSettings();
+    const ok = await store.loadSettings();
 
     expect(mocks.apiGet).toHaveBeenCalledWith("/guidance/settings");
     expect(store.isEnabled).toBe(true);
+    expect(ok).toBe(true);
+  });
+
+  it("returns false from loadSettings on fetch failure (audit F2 retry contract)", async () => {
+    const store = useGuidanceStore();
+    mocks.apiGet.mockRejectedValueOnce(new Error("Authentication required"));
+
+    const ok = await store.loadSettings();
+
+    // Failure must be observable so useGuidance.start() can retry —
+    // previously this was swallowed and guidance silently froze
+    // disabled until a full reload.
+    expect(ok).toBe(false);
+    expect(store.error).toContain("Authentication required");
+    expect(store.isEnabled).toBe(false);
   });
 
   it("disables active guidance when the server reports it is unavailable", async () => {

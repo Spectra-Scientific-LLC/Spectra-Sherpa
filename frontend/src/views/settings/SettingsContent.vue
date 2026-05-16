@@ -7,21 +7,34 @@
       </div>
     </div>
 
-    <!-- Demo / enterprise-managed mode: no user-configurable settings -->
-    <div v-if="isDemoMode" class="demo-notice">
-      <div class="demo-notice-icon">
-        <i class="pi pi-lock" />
+    <!-- Demo / enterprise-managed mode: deployment settings are locked,
+         but per-user preferences (e.g. guidance) stay editable. -->
+    <div v-if="isDemoMode">
+      <div class="demo-notice">
+        <div class="demo-notice-icon">
+          <i class="pi pi-lock" />
+        </div>
+        <h3>Deployment Settings Managed by Administrator</h3>
+        <p>
+          API keys, LLM providers, and integrations are pre-configured for
+          this environment and can't be changed here.
+        </p>
+        <p class="demo-hint">
+          In a self-hosted or local installation, this page also lets you
+          configure LLM providers, API keys, and data-privacy preferences.
+        </p>
       </div>
-      <h3>Settings Managed by Administrator</h3>
-      <p>
-        API keys, integrations, and preferences are pre-configured for this
-        demo environment. No user changes are required.
-      </p>
-      <p class="demo-hint">
-        In a self-hosted or local installation, this page allows you to
-        configure LLM providers, API keys, and data-privacy preferences.
-      </p>
-      <GuidanceSettingsSection v-if="showGuidanceSettings" class="demo-guidance" />
+
+      <div v-if="showGuidanceSettings" class="my-preferences">
+        <h3 class="my-preferences-title">
+          <i class="pi pi-user-edit" /> My Preferences
+        </h3>
+        <p class="my-preferences-subtitle">
+          These settings are personal to your account and can be changed
+          even on a managed deployment.
+        </p>
+        <GuidanceSettingsSection class="demo-guidance" />
+      </div>
     </div>
 
     <TabView v-else v-model:activeIndex="activeTab">
@@ -114,9 +127,38 @@ const showGuidanceSettings = computed(
   color: #94a3b8;
 }
 
+.my-preferences {
+  max-width: 520px;
+  margin: 24px auto 0;
+  padding: 24px 28px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.my-preferences-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.my-preferences-title i {
+  color: #6366f1;
+}
+
+.my-preferences-subtitle {
+  margin: 0 0 16px;
+  font-size: 0.85rem;
+  color: #64748b;
+  line-height: 1.5;
+}
+
 .demo-guidance {
-  width: min(520px, 100%);
-  margin-top: 24px;
+  width: 100%;
   text-align: left;
 }
 </style>

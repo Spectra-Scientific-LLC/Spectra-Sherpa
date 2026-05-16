@@ -217,8 +217,19 @@ const handleWindowResize = () => {
   chatWidth.value = clampChatWidth(chatWidth.value);
 };
 
+const isGuidanceRuntimeReady = (): boolean =>
+  layoutMounted.value &&
+  appMode.value !== "local" &&
+  backendConnected.value &&
+  !!authStore.user &&
+  !!appConfig.value?.features?.sherpaGuidance;
+
 const stopGuidanceRuntime = () => {
-  if (!guidanceRuntimeStarted.value) {
+  // Also tear down a startup that is still in flight — guidance.start()
+  // can be mid-retry/backoff; guidance.stop() cancels it (review
+  // finding: previously only a fully-started runtime was stopped, so a
+  // logout during startup left the retry loop running).
+  if (!guidanceRuntimeStarted.value && !guidanceRuntimeStarting.value) {
     return;
   }
   guidance.stop();
@@ -230,18 +241,27 @@ const maybeStartGuidanceRuntime = async () => {
   if (guidanceRuntimeStarted.value || guidanceRuntimeStarting.value) {
     return;
   }
-  if (!layoutMounted.value || appMode.value === "local") {
-    return;
-  }
-  if (!backendConnected.value || !authStore.user) {
-    return;
-  }
-  if (!appConfig.value?.features?.sherpaGuidance) {
+  if (!isGuidanceRuntimeReady()) {
     return;
   }
   guidanceRuntimeStarting.value = true;
+  let restartAfterCancelledStart = false;
   try {
-    await guidance.start();
+    const guidanceStarted = await guidance.start();
+    if (!guidanceStarted) {
+      guidance.stop();
+      restartAfterCancelledStart = isGuidanceRuntimeReady();
+      return;
+    }
+    // The settings fetch can retry across a backoff window that spans a
+    // logout / backend drop, and stopGuidanceRuntime() may have
+    // cancelled this very startup.  Re-check readiness before attaching
+    // the activity tracker so we never bind it to a torn-down session
+    // (review finding).
+    if (!isGuidanceRuntimeReady()) {
+      guidance.stop();
+      return;
+    }
     activityTracker.start();
     guidanceRuntimeStarted.value = true;
   } catch (error) {
@@ -249,6 +269,9 @@ const maybeStartGuidanceRuntime = async () => {
     console.warn("[guidance] startup failed", error);
   } finally {
     guidanceRuntimeStarting.value = false;
+    if (restartAfterCancelledStart) {
+      void maybeStartGuidanceRuntime();
+    }
   }
 };
 
@@ -261,13 +284,7 @@ watch(
     appMode,
   ],
   () => {
-    if (
-      !layoutMounted.value ||
-      appMode.value === "local" ||
-      !backendConnected.value ||
-      !authStore.user ||
-      !appConfig.value?.features?.sherpaGuidance
-    ) {
+    if (!isGuidanceRuntimeReady()) {
       stopGuidanceRuntime();
       return;
     }
