@@ -144,6 +144,28 @@ class FolderWatchService:
                     await session.commit()
                     return
 
+                # Audit Item 2: a folder-watch poll that has new files is
+                # a workflow-execution trigger — enforce the per-session
+                # demo quota (one slot per triggered run, consistent with
+                # the batch-predict entrypoint).  Background service: no
+                # HTTP to raise, so log + skip this run.  Files are NOT
+                # marked processed, so they retry once quota frees up.
+                from spectra_sherpa.app.contracts.demo_policy import (
+                    consume_demo_execution_quota,
+                )
+
+                allowed, _remaining = consume_demo_execution_quota(watch.user_id)
+                if not allowed:
+                    logger.warning(
+                        "Watch '%s': demo execution quota exhausted for user %s — skipping run",
+                        watch.name,
+                        watch.user_id,
+                    )
+                    watch.last_error = "Demo execution limit reached for this session."
+                    watch.last_poll_at = datetime.now(timezone.utc)
+                    await session.commit()
+                    return
+
                 logger.info(
                     "Watch '%s': found %d new file(s) in %s",
                     watch.name,

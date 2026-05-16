@@ -309,6 +309,13 @@ async def execute_workflow(
                     detail=f"Node type '{nt}' is not available in demo mode.",
                 )
 
+    # Audit Item 2: enforce the per-session demo execution quota.  Done
+    # after the hidden-node check so a rejected workflow doesn't burn a
+    # slot; no-op outside demo.
+    from spectra_sherpa.app.api.deps import enforce_demo_execution_quota
+
+    enforce_demo_execution_quota(user_id)
+
     # Snapshot ORM attributes while session is clean (before execution may
     # dirty or expire them, making lazy loads fail in the error handler).
     # workflow.nodes is eagerly loaded via selectinload, but session.commit()

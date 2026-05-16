@@ -101,6 +101,7 @@ CONFIG_ERROR_SUBSCRIPTION_OVERLAY_UNAVAILABLE = "subscription_overlay_unavailabl
 
 
 async def get_optional_current_user(
+    request: Request,
     session: AsyncSession = Depends(get_session),
     token: str | None = Depends(get_bearer_token_optional),
     api_key: str | None = Depends(api_key_header),
@@ -109,8 +110,22 @@ async def get_optional_current_user(
     Resolve user context if credentials are present.
 
     Returns None for anonymous/public requests so /config remains publicly readable.
+
+    Audit Item 4: this public route previously called
+    ``get_user_from_credentials`` without the client host, so the hybrid
+    credential-free fallback (``_resolve_user``) saw ``client_host=None``
+    and granted implicit local identity on a *public* endpoint,
+    weakening the hybrid boundary.  Pass the real client host so the
+    fallback can only fire for an actual loopback caller.
     """
-    user = await get_user_from_credentials(session=session, api_key=api_key, token=token)
+    from spectra_sherpa.app.core.security import get_client_host
+
+    user = await get_user_from_credentials(
+        session=session,
+        api_key=api_key,
+        token=token,
+        client_host=get_client_host(request),
+    )
     if user is not None and hasattr(user, "is_active") and not user.is_active:
         return None
     return user

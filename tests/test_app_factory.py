@@ -250,3 +250,38 @@ async def test_lifespan_runs_extra_shutdown_before_core_teardown(monkeypatch: py
     assert "extra_shutdown" in events
     assert events.index("extra_startup") < events.index("inside")
     assert events.index("extra_shutdown") < events.index("job_manager_shutdown")
+
+
+# --------------------------------------------------------------------------
+# Audit SEC-3: wildcard CORS must not be credentialed
+# --------------------------------------------------------------------------
+
+
+def _cors_kwargs(app: FastAPI) -> dict:
+    from fastapi.middleware.cors import CORSMiddleware
+
+    for mw in app.user_middleware:
+        if mw.cls is CORSMiddleware:
+            return dict(getattr(mw, "kwargs", None) or getattr(mw, "options", {}))
+    raise AssertionError("CORSMiddleware not registered")
+
+
+def test_wildcard_cors_disables_credentials(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(app_main, "get_cors_origins", lambda: ["*"])
+    app = app_main.create_app(include_server_routers=False)
+    kw = _cors_kwargs(app)
+
+    # Reflected/wildcard origin must never be combined with credentials.
+    assert kw["allow_credentials"] is False
+    assert kw.get("allow_origin_regex") == r".*"
+    assert kw.get("allow_origins") in ([], None)
+
+
+def test_explicit_cors_keeps_credentials(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(app_main, "get_cors_origins", lambda: ["https://app.example.com"])
+    app = app_main.create_app(include_server_routers=False)
+    kw = _cors_kwargs(app)
+
+    assert kw["allow_credentials"] is True
+    assert kw["allow_origins"] == ["https://app.example.com"]
+    assert kw.get("allow_origin_regex") is None

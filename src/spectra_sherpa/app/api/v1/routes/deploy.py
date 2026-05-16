@@ -111,6 +111,15 @@ async def batch_predict(
             detail=f"No files found matching '{payload.file_pattern}' in {payload.folder_path}",
         )
 
+    # Audit Item 2 (review follow-up): batch prediction is a
+    # workflow-execution entrypoint — enforce the per-session demo quota
+    # (one slot per batch run).  Done *after* file discovery succeeds and
+    # `files` is non-empty so a bad folder/pattern (422) doesn't burn a
+    # limited demo slot without running anything.  No-op outside demo.
+    from spectra_sherpa.app.api.deps import enforce_demo_execution_quota
+
+    enforce_demo_execution_quota(current_user.id)
+
     # Build params snapshot from workflow nodes
     params_snapshot: dict = {}
     for node in workflow.nodes:

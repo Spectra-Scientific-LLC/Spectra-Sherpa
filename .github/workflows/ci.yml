@@ -231,16 +231,21 @@ jobs:
 
           echo "Build produced index.html and all referenced assets."
 
-      - name: Warn if static bundle is stale
-        continue-on-error: true
+      # Audit BND-2: this was a non-blocking ``::warning::`` with
+      # continue-on-error, so a stale committed bundle shipped silently
+      # (the recurring source of stale-asset incidents).  The monorepo
+      # workflow already hard-fails on this (PR #97); make the
+      # public-mirror CI consistent so the OSS repo also rejects a
+      # bundle that does not match its source.
+      - name: Fail if static bundle is stale
         run: |
           if [ -n "$(git status --porcelain -- src/spectra_sherpa/static)" ]; then
-            echo "::warning::Committed static bundle is stale — frontend source changed after the last build."
-            echo "::warning::Trigger the 'Rebuild Frontend Static Bundle' workflow and commit the updated assets."
+            echo "::error::Committed static bundle is out of date — frontend source changed after the last build. Run 'npm --prefix frontend run build' and commit the regenerated src/spectra_sherpa/static output."
             git status --short -- src/spectra_sherpa/static
-          else
-            echo "Static bundle is up to date."
+            git diff -- src/spectra_sherpa/static/index.html | head -80
+            exit 1
           fi
+          echo "Static bundle is up to date."
 
   security:
     name: Security Scan

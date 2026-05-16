@@ -416,6 +416,38 @@ def _mount_frontend(app: FastAPI) -> None:
     logger.info("Frontend SPA mounted from %s", static_dir)
 
 
+async def _authorize_workflow_channel(requested: str, ws_user: Any) -> str | None:
+    """Audit Item 1 (Critical): gate ``workflow:{id}`` WS subscription.
+
+    ``workflow:{id}`` carries another user's node ids, statuses, timing,
+    and error strings during execution.  Returns ``requested`` only when
+    ``ws_user`` owns that workflow or is an admin; ``None`` otherwise —
+    including for an unknown id, which is denied without confirming
+    existence.  Extracted to module scope so the security boundary is
+    directly unit-testable.
+    """
+    if ws_user is None:
+        return None
+    try:
+        wf_id = int(requested.split(":", 1)[1])
+    except (TypeError, ValueError):
+        return None
+
+    from sqlalchemy import select
+
+    from spectra_sherpa.app.contracts.auth_resolver import is_admin_user
+    from spectra_sherpa.app.db.session import async_session
+    from spectra_sherpa.app.models.workflow import Workflow
+
+    async with async_session() as session:
+        owner_id = (await session.execute(select(Workflow.user_id).where(Workflow.id == wf_id))).scalar_one_or_none()
+    if owner_id is None:
+        return None
+    if owner_id == ws_user.id or await is_admin_user(ws_user):
+        return requested
+    return None
+
+
 # ---------------------------------------------------------------------------
 # WebSocket endpoint (standalone — registered on app inside create_app)
 # ---------------------------------------------------------------------------
@@ -483,9 +515,10 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             if requested == job_channel:
                 return requested
             return None
-        # Allow workflow status channels (workflow:{workflow_id})
+        # Audit Item 1 (Critical): workflow status channels are
+        # ownership-gated (see _authorize_workflow_channel).
         if requested.startswith("workflow:"):
-            return requested
+            return await _authorize_workflow_channel(requested, ws_user)
         return requested
 
     # ---- Action dispatcher ----
@@ -643,11 +676,25 @@ def create_app(
     for mw in extra_middleware or []:
         mw(_app)
     _app.add_middleware(RequestIDMiddleware)
+    if _allow_all:
+        # Audit SEC-3: a reflected/wildcard origin combined with
+        # ``allow_credentials=True`` lets ANY site issue credentialed
+        # cross-origin requests and read the response.  Browsers forbid
+        # ``*`` + credentials anyway; make that explicit and refuse to
+        # send credentialed CORS in wildcard mode.  Operators that need
+        # credentialed cross-origin must set an explicit CORS_ORIGINS
+        # allowlist.  Not a hard startup failure — wildcard is a valid
+        # convenience for non-credentialed/dev use — but loudly warned.
+        logger.warning(
+            "CORS_ORIGINS='*' — wildcard origin reflection is enabled with "
+            "credentials DISABLED. Set an explicit CORS_ORIGINS allowlist for "
+            "any deployment that relies on credentialed cross-origin requests."
+        )
     _app.add_middleware(
         CORSMiddleware,
         allow_origins=origins if not _allow_all else [],
         allow_origin_regex=r".*" if _allow_all else None,
-        allow_credentials=True,
+        allow_credentials=not _allow_all,
         allow_methods=["*"],
         allow_headers=["*"],
     )

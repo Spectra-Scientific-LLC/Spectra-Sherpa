@@ -314,8 +314,24 @@ async def delete_model(
             store = get_model_store()
             store.delete(artifact_uid)
             logger.info("Purged model artifact %s (DB soft-deleted + disk removed)", artifact_uid)
-        except (RuntimeError, Exception) as e:
-            logger.warning("Soft-deleted %s but disk purge failed: %s", artifact_uid, e)
+        except (OSError, RuntimeError) as e:
+            # Audit DATA-8: previously this swallowed *every* exception
+            # with a warning and still returned 204, so a caller that
+            # asked for an irreversible purge was told it succeeded while
+            # the files remained — and a soft-deleted row keeps a DB
+            # record, so the orphan-reconcile sweep won't GC them either.
+            # Surface the failure: the soft-delete is durable (and the
+            # row still exists, so re-issuing delete?purge=true retries
+            # the disk removal), but the response must not claim success.
+            logger.error("Soft-deleted %s but on-disk purge FAILED: %s", artifact_uid, e)
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"Model {artifact_uid} was soft-deleted, but removing its on-disk "
+                    "artifact failed; files remain. Retry deletion with purge=true, or "
+                    "let the startup reconcile sweep clean it once the row is gone."
+                ),
+            ) from e
     else:
         logger.info("Soft-deleted model artifact %s", artifact_uid)
 

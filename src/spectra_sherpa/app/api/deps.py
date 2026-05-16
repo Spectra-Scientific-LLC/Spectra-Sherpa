@@ -152,9 +152,16 @@ async def _resolve_user(
     # credentials were provided AND the client is loopback (defense-in-depth;
     # gateway middleware already enforces this, but we double-check here).
     if is_hybrid() and not has_credentials:
-        if client_host is not None and not is_loopback(client_host):
+        # Audit Item 4: a missing client host must be treated as
+        # NOT-loopback, not as "skip the loopback check".  Previously
+        # ``client_host is None`` fell through to the implicit grant, so
+        # any caller that resolved the user without threading the host
+        # (e.g. the public /config route) silently obtained local
+        # identity in hybrid mode.  Only an affirmatively-loopback host
+        # may receive the implicit local identity.
+        if client_host is None or not is_loopback(client_host):
             logger.warning(
-                "Hybrid mode: rejected credential-free request from non-loopback host %r",
+                "Hybrid mode: rejected credential-free request from non-loopback/unknown host %r",
                 client_host,
             )
             return None
@@ -217,6 +224,23 @@ def demo_guard(capability: str):
                 )
 
     return _guard
+
+
+def enforce_demo_execution_quota(user_id: int | None) -> None:
+    """Atomically check-and-consume one demo execution slot; 429 if exhausted.
+
+    Audit Item 2: every workflow-execution entrypoint must call this so
+    the advertised per-session demo limit is actually enforced.  No-op
+    (and no consumption) outside demo / when no provider is installed.
+    """
+    from spectra_sherpa.app.contracts.demo_policy import consume_demo_execution_quota
+
+    allowed, remaining = consume_demo_execution_quota(user_id)
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=("Demo execution limit reached for this session. " "Sign up or upgrade to run more workflows."),
+        )
 
 
 def check_demo_capability(capability: str) -> None:
