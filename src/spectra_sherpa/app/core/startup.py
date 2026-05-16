@@ -542,6 +542,30 @@ async def reconcile_stale_jobs() -> None:
         logger.warning("Skipping job reconciliation; database not initialized.")
 
 
+async def reconcile_orphan_model_artifacts() -> None:
+    """GC on-disk model artifacts left with no DB row by a hard crash.
+
+    Audit DATA-2 backstop.  ``store.save()`` writes the artifact files
+    before the ``ModelArtifact`` row is committed; caught failures get a
+    compensating delete at the call site, but a hard process kill (OOM /
+    pod eviction / SIGKILL) between the two leaves an orphan file with
+    no DB row and no exception handler.  This leader-only, idempotent
+    sweep (a sibling of :func:`reconcile_stale_jobs`) removes such
+    orphans and abandoned promote scratch dirs, but only those older
+    than the grace window so an in-flight concurrent save is never
+    reaped.
+    """
+    try:
+        from spectra_sherpa.app.services.model_store import reconcile_orphan_artifacts
+
+        async with async_session() as session:
+            await reconcile_orphan_artifacts(session)
+    except OperationalError:
+        logger.warning("Skipping orphan-artifact reconciliation; database not initialized.")
+    except Exception as exc:  # pragma: no cover - best-effort janitor
+        logger.warning("Orphan-artifact reconciliation failed: %s", exc)
+
+
 def ensure_spectrochempy_data() -> None:
     """Ensure SpectroChemPy test data is available before DB-dependent setup.
 

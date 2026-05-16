@@ -4,7 +4,10 @@ Tests for ModelArtifact DB model and ModelStore file persistence.
 
 from __future__ import annotations
 
+import io
 import json
+import os
+import time
 
 import numpy as np
 import pytest
@@ -1226,3 +1229,247 @@ class TestLoadApplyModelNode:
         assert "result" in output_names
         assert "labels" in output_names
         assert "model_id" in output_names
+
+
+# ---------------------------------------------------------------------------
+# Audit DATA-1/2/3/4: model-artifact store durability & integrity
+# ---------------------------------------------------------------------------
+
+
+class TestModelStoreDurability:
+    """Atomic save, verified load, orphan reconcile, import-collision safety."""
+
+    @pytest.fixture()
+    def store(self, tmp_path):
+        from spectra_sherpa.app.services.model_store import ModelStore
+
+        return ModelStore(tmp_path)
+
+    @pytest.fixture()
+    def manifest(self):
+        return {"model_type": "pls", "n_features": 10, "n_components": 2}
+
+    @pytest.fixture()
+    def arrays(self):
+        rng = np.random.default_rng(7)
+        return {"coef": rng.standard_normal((2, 10)).astype(np.float64)}
+
+    # ── DATA-1: atomic save ──────────────────────────────────────────
+
+    def test_save_leaves_no_staging_dir(self, store, manifest, arrays):
+        store.save("uid-clean", manifest, arrays)
+        children = sorted(p.name for p in store.models_dir.iterdir())
+        assert children == ["uid-clean"]
+        assert not any(c.startswith(".staging-") or ".old-" in c for c in children)
+
+    def test_failed_save_preserves_prior_artifact(self, store, manifest, arrays, monkeypatch):
+        # First save succeeds.
+        store.save("uid-keep", dict(manifest), dict(arrays))
+        good_hash = store.load_manifest("uid-keep")["integrity_hash"]
+
+        # A re-save that blows up after staging the npz but before
+        # promotion must leave the original artifact fully intact and
+        # leave no scratch dirs behind (audit DATA-1).
+        from spectra_sherpa.app.services import model_store as ms
+
+        def boom(_path):
+            raise RuntimeError("disk full mid-save")
+
+        monkeypatch.setattr(ms, "_sha256_file", boom)
+        with pytest.raises(RuntimeError, match="disk full"):
+            store.save("uid-keep", {"model_type": "tampered"}, {"x": np.zeros(3)})
+        monkeypatch.undo()
+
+        manifest_after, arrays_after = store.load("uid-keep")
+        assert manifest_after["model_type"] == "pls"
+        assert manifest_after["integrity_hash"] == good_hash
+        np.testing.assert_array_equal(arrays_after["coef"], arrays["coef"])
+        assert store.verify_integrity("uid-keep") is True
+        children = [p.name for p in store.models_dir.iterdir()]
+        assert children == ["uid-keep"]
+
+    def test_resave_overwrites_atomically(self, store, manifest):
+        store.save("uid-rs", dict(manifest), {"coef": np.ones((2, 10))})
+        new = {"coef": np.full((2, 10), 9.0)}
+        store.save("uid-rs", dict(manifest), new)
+        loaded_manifest, loaded_arrays = store.load("uid-rs")
+        np.testing.assert_array_equal(loaded_arrays["coef"], new["coef"])
+        assert store.verify_integrity("uid-rs") is True
+        assert [p.name for p in store.models_dir.iterdir()] == ["uid-rs"]
+
+    # ── DATA-3: verified load ────────────────────────────────────────
+
+    def test_load_raises_on_corrupt_npz(self, store, manifest, arrays):
+        from spectra_sherpa.app.services.model_store import ModelArtifactIntegrityError
+
+        store.save("uid-corrupt", manifest, arrays)
+        npz_path = store._artifact_dir("uid-corrupt") / "arrays.npz"
+        # Realistic corruption: a still-parseable npz with different
+        # content (bit-rot / partial overwrite).  np.load succeeds but
+        # the hash no longer matches — exactly what verify must catch
+        # and np.load alone would not.
+        buf = io.BytesIO()
+        np.savez_compressed(buf, coef=np.zeros((2, 10)))
+        npz_path.write_bytes(buf.getvalue())
+
+        with pytest.raises(ModelArtifactIntegrityError, match="corrupt"):
+            store.load("uid-corrupt")
+        # Explicit opt-out still returns the (now-wrong) arrays for tooling.
+        manifest_only, arrays_only = store.load("uid-corrupt", verify=False)
+        assert manifest_only["model_type"] == "pls"
+        np.testing.assert_array_equal(arrays_only["coef"], np.zeros((2, 10)))
+        assert store.verify_integrity("uid-corrupt") is False
+
+        # A totally unparseable npz is also rejected by verified load.
+        npz_path.write_bytes(b"not a real npz")
+        with pytest.raises(ModelArtifactIntegrityError, match="corrupt"):
+            store.load("uid-corrupt")
+
+    def test_load_raises_when_manifest_has_no_hash(self, store, manifest, arrays):
+        from spectra_sherpa.app.services.model_store import ModelArtifactIntegrityError
+
+        store.save("uid-nohash", manifest, arrays)
+        mpath = store._artifact_dir("uid-nohash") / "manifest.json"
+        mpath.write_text(json.dumps({"model_type": "pls"}))
+        with pytest.raises(ModelArtifactIntegrityError, match="no integrity_hash"):
+            store.load("uid-nohash")
+
+    async def test_load_apply_node_rejects_corrupt_model(self, store, manifest, monkeypatch):
+        from spectra_sherpa.app.services import model_store as ms
+        from spectra_sherpa.app.services.dag.nodes.modeling.load_apply_node import (
+            LoadApplyModelNode,
+        )
+
+        store.save("uid-bad", {"model_type": "pls", "n_features": 3}, {"coef": np.ones((1, 3))})
+        (store._artifact_dir("uid-bad") / "arrays.npz").write_bytes(b"garbage")
+        monkeypatch.setattr(ms, "_store", store)
+
+        node = LoadApplyModelNode(node_id="n1", parameters={"model_id": "uid-bad"})
+        with pytest.raises(ValueError, match="corrupt"):
+            await node.execute(X_new=np.zeros((2, 3)))
+
+    # ── DATA-2: orphan reconcile ─────────────────────────────────────
+
+    async def test_reconcile_orphan_artifacts(self, store, test_session, test_user):
+        from spectra_sherpa.app.models.model_artifact import ModelArtifact
+        from spectra_sherpa.app.services.model_store import reconcile_orphan_artifacts
+
+        # Referenced artifact (has a DB row) — must be kept.
+        store.save("uid-referenced", {"model_type": "pls"}, {"a": np.ones(2)})
+        test_session.add(
+            ModelArtifact(
+                artifact_uid="uid-referenced",
+                user_id=test_user.id,
+                node_id="n",
+                model_type="pls",
+                name="ref",
+                artifact_dir=str(store._artifact_dir("uid-referenced")),
+                integrity_hash="x",
+                n_features=2,
+            )
+        )
+        await test_session.commit()
+
+        # Old orphan (no DB row) — must be reaped.
+        store.save("uid-orphan-old", {"model_type": "pls"}, {"a": np.ones(2)})
+        # Recent orphan — within grace, must be kept.
+        store.save("uid-orphan-new", {"model_type": "pls"}, {"a": np.ones(2)})
+        # Abandoned staging scratch — swept once past grace.
+        (store.models_dir / ".staging-uid-x-abcd").mkdir()
+        # A *stale* .old- backup whose canonical artifact is present —
+        # the promote completed, so this is genuine scratch and is reaped.
+        store.save("uid-stale", {"model_type": "pls"}, {"a": np.ones(2)})
+        (store.models_dir / "uid-stale.old-deadbeef").mkdir()
+
+        old = time.time() - 7200
+        for name in ("uid-orphan-old", ".staging-uid-x-abcd", "uid-stale.old-deadbeef"):
+            os.utime(store.models_dir / name, (old, old))
+
+        removed = await reconcile_orphan_artifacts(test_session, store=store, grace_seconds=3600)
+
+        assert set(removed) == {"uid-orphan-old", ".staging-uid-x-abcd", "uid-stale.old-deadbeef"}
+        assert store._artifact_dir("uid-referenced").exists()
+        assert store._artifact_dir("uid-orphan-new").exists()
+        assert store._artifact_dir("uid-stale").exists()
+        assert not store._artifact_dir("uid-orphan-old").exists()
+
+    async def test_reconcile_recovers_artifact_from_interrupted_resave(self, store, manifest, arrays, test_session):
+        """Audit DATA-1 crash safety: a hard kill between _promote's two
+        renames leaves the canonical dir gone and only ``<uid>.old-<hex>``
+        (with its original, pre-grace mtime).  Reconcile must RESTORE it,
+        never reap it — otherwise the sole good copy is destroyed."""
+        from spectra_sherpa.app.services.model_store import reconcile_orphan_artifacts
+
+        store.save("uid-rs", dict(manifest), dict(arrays))
+        good_hash = store.load_manifest("uid-rs")["integrity_hash"]
+
+        # Reproduce the post-rename1 / pre-rename2 on-disk state exactly.
+        canonical = store._artifact_dir("uid-rs")
+        backup = store.models_dir / "uid-rs.old-deadbeef"
+        os.replace(canonical, backup)
+        # The renamed backup keeps the original (old) mtime — prove grace
+        # does not gate recovery by making it ancient and the canonical
+        # absent.  Also leave the unpromoted staging scratch behind.
+        ancient = time.time() - 7200
+        os.utime(backup, (ancient, ancient))
+        staging = store.models_dir / ".staging-uid-rs-tmp"
+        staging.mkdir()
+        os.utime(staging, (ancient, ancient))
+        assert not canonical.exists()
+
+        removed = await reconcile_orphan_artifacts(test_session, store=store, grace_seconds=3600)
+
+        # Canonical restored from the backup, fully intact.
+        assert canonical.exists()
+        assert not backup.exists()
+        rec_manifest, rec_arrays = store.load("uid-rs")
+        assert rec_manifest["integrity_hash"] == good_hash
+        np.testing.assert_array_equal(rec_arrays["coef"], arrays["coef"])
+        assert store.verify_integrity("uid-rs") is True
+        # The backup was recovered (not in removed); staging reaped.
+        assert "uid-rs.old-deadbeef" not in removed
+        assert ".staging-uid-rs-tmp" in removed
+
+    # ── DATA-4: import collision safety ──────────────────────────────
+
+    def test_remap_model_uids_in_snapshot(self):
+        from spectra_sherpa.app.api.v1.routes.projects import (
+            _remap_model_uids_in_snapshot,
+        )
+
+        snap = {
+            "models": [{"artifact_uid": "old1"}, {"artifact_uid": "untouched"}],
+            "workflows": [
+                {
+                    "nodes": [
+                        {"parameters": {"model_id": "old1"}},
+                        {"parameters": {"threshold": 5}},
+                        {"parameters": None},
+                    ]
+                }
+            ],
+        }
+        _remap_model_uids_in_snapshot(snap, {"old1": "new1"})
+        assert snap["models"][0]["artifact_uid"] == "new1"
+        assert snap["models"][1]["artifact_uid"] == "untouched"
+        assert snap["workflows"][0]["nodes"][0]["parameters"]["model_id"] == "new1"
+        assert snap["workflows"][0]["nodes"][1]["parameters"] == {"threshold": 5}
+
+        # Empty remap is a no-op.
+        frozen = json.loads(json.dumps(snap))
+        _remap_model_uids_in_snapshot(snap, {})
+        assert snap == frozen
+
+    def test_purge_artifacts(self, store, manifest, arrays, monkeypatch):
+        from spectra_sherpa.app.api.v1.routes import projects as proj
+        from spectra_sherpa.app.services import model_store as ms
+
+        store.save("uid-p1", dict(manifest), dict(arrays))
+        store.save("uid-p2", dict(manifest), dict(arrays))
+        monkeypatch.setattr(ms, "_store", store)
+
+        proj._purge_artifacts([])  # no-op, no error
+        proj._purge_artifacts(["uid-p1", "uid-missing"])  # missing uid tolerated
+
+        assert not store._artifact_dir("uid-p1").exists()
+        assert store._artifact_dir("uid-p2").exists()

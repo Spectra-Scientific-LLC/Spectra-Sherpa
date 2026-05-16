@@ -541,6 +541,27 @@ async def execute_workflow(
                     await session.rollback()
                 except Exception:
                     pass
+                # Audit DATA-2: the DB rows could not be committed, so
+                # these artifacts are now unreachable files on disk with
+                # no ModelArtifact row referencing them.  Compensating
+                # cleanup — delete them so a failed run can't leak orphan
+                # artifacts (the startup reconcile sweep is the backstop
+                # for hard kills that skip this handler entirely).
+                try:
+                    from spectra_sherpa.app.services.model_store import get_model_store
+
+                    orphan_store = get_model_store()
+                    for art in executor.saved_artifacts:
+                        try:
+                            orphan_store.delete(art["artifact_uid"])
+                        except Exception as del_err:  # pragma: no cover - best-effort
+                            logger.warning(
+                                "Could not clean orphan artifact %s: %s",
+                                art.get("artifact_uid"),
+                                del_err,
+                            )
+                except Exception:
+                    pass
 
         # Preserve successfully completed node outputs when later nodes fail.
         partial_results: dict[str, Any] = {}

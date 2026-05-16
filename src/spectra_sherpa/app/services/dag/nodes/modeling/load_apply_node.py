@@ -14,7 +14,7 @@ import numpy as np
 
 from spectra_sherpa.app.lib.adapters.scp_extractors import EXTRACT_REGISTRY
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-from spectra_sherpa.app.services.model_store import get_model_store
+from spectra_sherpa.app.services.model_store import ModelArtifactIntegrityError, get_model_store
 
 from ...node_base import (
     Node,
@@ -202,9 +202,17 @@ class LoadApplyModelNode(Node):
         # --- Load artifact ---
         store = get_model_store()
         try:
+            # verify=True (default): a corrupt/truncated npz raises
+            # ModelArtifactIntegrityError rather than silently applying
+            # wrong arrays to new data (audit DATA-3).
             manifest, arrays = store.load(model_id)
         except FileNotFoundError:
             raise ValueError(f"Model artifact '{model_id}' not found")
+        except ModelArtifactIntegrityError as exc:
+            raise ValueError(
+                f"Model artifact '{model_id}' is corrupt and cannot be applied: {exc}. "
+                "Re-train or re-import the model."
+            ) from exc
 
         model_type = manifest.get("model_type", "")
 

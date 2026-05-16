@@ -8,6 +8,7 @@ import io
 import json
 import logging
 import zipfile
+from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response, StreamingResponse
@@ -1155,6 +1156,50 @@ async def export_project(
     )
 
 
+def _remap_model_uids_in_snapshot(project_json: dict[str, Any], remap: dict[str, str]) -> None:
+    """Rewrite artifact-uid references in an import snapshot after collisions.
+
+    Audit DATA-4: when an imported model's uid collided with an existing
+    artifact we saved it under a fresh server-generated uid.  The
+    snapshot blob (persisted as ``ProjectVersion.snapshot``) must point
+    at the new uid so a later version-restore + ``model.load_apply``
+    resolves the imported model and not whatever happened to own the
+    colliding uid.
+    """
+    if not remap:
+        return
+    for m in project_json.get("models", []):
+        if isinstance(m, dict) and m.get("artifact_uid") in remap:
+            m["artifact_uid"] = remap[m["artifact_uid"]]
+    for wf in project_json.get("workflows", []):
+        for node in wf.get("nodes", []) if isinstance(wf, dict) else []:
+            params = node.get("parameters") if isinstance(node, dict) else None
+            if isinstance(params, dict) and params.get("model_id") in remap:
+                params["model_id"] = remap[params["model_id"]]
+
+
+def _purge_artifacts(uids: list[str]) -> None:
+    """Best-effort delete of artifacts written by a now-rolled-back import.
+
+    Audit DATA-4 / DATA-2: ``store.save()`` writes files before the
+    transaction commits.  If the import rolls back, the DB rows vanish
+    but the files would leak as orphans — remove them here.
+    """
+    if not uids:
+        return
+    try:
+        from spectra_sherpa.app.services.model_store import get_model_store
+
+        store = get_model_store()
+    except Exception:
+        return
+    for au in uids:
+        try:
+            store.delete(au)
+        except Exception:  # pragma: no cover - best-effort cleanup
+            logger.warning("Could not purge rolled-back import artifact %s", au)
+
+
 @router.post(
     "/import", response_model=ProjectDetail, status_code=201, dependencies=[Depends(demo_guard("project_import"))]
 )
@@ -1186,6 +1231,9 @@ async def import_project(
 
     project: Project | None = None
     models_imported = 0
+    # Artifacts written to disk during this import; purged if the
+    # transaction rolls back so a failed import leaves no orphans (DATA-4).
+    imported_artifact_uids: list[str] = []
 
     try:
         upload_stream = io.BytesIO(upload_bytes)
@@ -1310,6 +1358,23 @@ async def import_project(
                 )
                 session.add(script)
 
+            # Audit DATA-4: an archive must never overwrite an artifact
+            # that already exists (on disk or in the DB) — a crafted
+            # archive could otherwise target a victim's known uid and
+            # corrupt their model.  Pre-resolve which candidate uids are
+            # already taken in the DB; the per-model loop also checks
+            # disk (covers another project's files and intra-archive
+            # duplicate uids).  Colliding models are saved under a fresh
+            # server-generated uid and the snapshot is remapped to it.
+            uid_remap: dict[str, str] = {}
+            candidate_uids = [e[0] for e in model_entries]
+            existing_db_uids: set[str] = set()
+            if candidate_uids:
+                _dup_res = await session.execute(
+                    select(ModelArtifact.artifact_uid).where(ModelArtifact.artifact_uid.in_(candidate_uids))
+                )
+                existing_db_uids = set(_dup_res.scalars().all())
+
             # Extract and import validated models
             for uid, m_data, manifest_bytes, arrays_bytes in model_entries:
                 try:
@@ -1324,18 +1389,29 @@ async def import_project(
                     with np.load(arrays_buf, allow_pickle=False) as npz:
                         arrays = dict(npz)
 
+                    target_uid = uid
+                    if uid in existing_db_uids or store._artifact_dir(uid).exists():
+                        target_uid = str(_uuid.uuid4())
+                        uid_remap[uid] = target_uid
+                        logger.info(
+                            "Import artifact uid %s collides with an existing artifact — " "remapped to fresh uid %s",
+                            uid,
+                            target_uid,
+                        )
+
                     # Save via ModelStore (computes new integrity hash)
-                    integrity_hash = store.save(uid, manifest, arrays)
+                    integrity_hash = store.save(target_uid, manifest, arrays)
+                    imported_artifact_uids.append(target_uid)
 
                     # Create DB record
                     model_row = ModelArtifact(
-                        artifact_uid=uid,
+                        artifact_uid=target_uid,
                         user_id=current_user.id,
                         project_id=project.id,
                         node_id=m_data.get("node_id", "imported"),
                         model_type=m_data.get("model_type", "unknown"),
-                        name=m_data.get("name", f"Imported model {uid[:8]}"),
-                        artifact_dir=str(store._artifact_dir(uid)),
+                        name=m_data.get("name", f"Imported model {target_uid[:8]}"),
+                        artifact_dir=str(store._artifact_dir(target_uid)),
                         integrity_hash=integrity_hash,
                         n_features=m_data.get("n_features", 0),
                         n_components=m_data.get("n_components"),
@@ -1346,6 +1422,10 @@ async def import_project(
                     logger.warning("ModelStore not initialized — cannot import model %s", uid)
                 except Exception as exc:
                     logger.warning("Failed to import model %s: %s", uid, exc)
+
+            # Keep the persisted snapshot internally consistent with the
+            # uids we actually wrote (DATA-4).
+            _remap_model_uids_in_snapshot(project_json, uid_remap)
 
             # Save import snapshot as version 1
             version = ProjectVersion(
@@ -1360,15 +1440,18 @@ async def import_project(
             await session.commit()
     except HTTPException:
         await session.rollback()
+        _purge_artifacts(imported_artifact_uids)
         raise
     except (zipfile.BadZipFile, KeyError, json.JSONDecodeError) as exc:
         await session.rollback()
+        _purge_artifacts(imported_artifact_uids)
         raise HTTPException(
             status_code=400,
             detail=f"Invalid .spectrapy archive: {exc}",
         )
     except Exception:
         await session.rollback()
+        _purge_artifacts(imported_artifact_uids)
         raise
 
     if project is None:
