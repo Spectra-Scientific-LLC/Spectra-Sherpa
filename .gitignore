@@ -24,6 +24,7 @@ build/
 
 # MkDocs build output
 site/
+.cache/
 
 # Node
 node_modules/
@@ -50,6 +51,8 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+__MACOSX/
+._*
 
 # IDE
 .vscode/
@@ -79,6 +82,10 @@ exports/
 *_2026*/
 *_2025*/
 *.zip
+# Test-data fixtures are intentionally tracked despite the *.zip rule
+# above; allow them explicitly so nothing is tracked-but-ignored by
+# accident (the release tooling treats such a mismatch as a fault).
+!tests/fixtures/**/*.zip
 *.pkl
 
 # uv lock (we use poetry)
@@ -95,14 +102,14 @@ uv.lock
 frontend/.vite/
 
 # CLA Assistant local signature cache (generated when the bot posts;
-# OSS/proprietary split: the authoritative signature state lives on the
-# CLA Assistant backend, not in the repo)
+# authoritative signature state lives on the CLA Assistant backend)
 signatures/
 
 # Legacy backend/ directory (superseded by src/spectra_sherpa/)
 backend/
 
-# Spectrasherpa server (separate paid repo)
+# Commercial server package (a separate repository — never vendored
+# into this tree; guard against an accidental sibling checkout)
 spectrasherpa-server/
 
 # SpectroChemPy runtime data (downloaded at runtime, not part of source)
@@ -111,9 +118,6 @@ spectrasherpa-server/
 # Internal planning docs (top-level only, not src/spectra_sherpa/app/contracts/)
 /contracts/
 
-# Internal plan drafts under docs/plans/ — the rest of docs/plans/ is
-# public OSS design documentation and should stay tracked.  These two
-# files are proprietary / in-progress and live only on the author's
-# laptop.
-docs/plans/hybrid-1.5-workflow-plan.md
-docs/plans/structural-refactor-plan-2026.md
+# Local planning drafts under docs/plans/ are working documents, not
+# part of the published package (the release tooling rejects this path).
+docs/plans/

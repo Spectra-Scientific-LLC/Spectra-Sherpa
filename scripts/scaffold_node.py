@@ -17,10 +17,10 @@ Examples:
     python scripts/scaffold_node.py --name MedianFilterNode --type chemometrics --category preprocessing
 
     # Create a machine learning estimator node:
-    python scripts/scaffold_node.py --name RandomForestNode --type estimator --category modeling
+    python scripts/scaffold_node.py --name RandomForestNode --type estimator --category regression
 
     # Create a raw node with full control:
-    python scripts/scaffold_node.py --name AdvancedPeakFinderNode --type raw --category analysis
+    python scripts/scaffold_node.py --name AdvancedPeakFinderNode --type raw --category preprocessing
 """
 
 import argparse
@@ -33,13 +33,26 @@ from textwrap import dedent
 # ═══════════════════════════════════════════════════════════════════════════
 
 VALID_CATEGORIES = [
+    "data",
     "preprocessing",
-    "modeling",
-    "analysis",
-    "data_io",
-    "visualization",
-    "custom",
+    "exploratory",
+    "regression",
+    "classification",
+    "clustering",
+    "selection",
+    "output",
 ]
+
+CATEGORY_PACKAGES = {
+    "data": "data",
+    "preprocessing": "preprocessing",
+    "exploratory": "modeling",
+    "regression": "modeling",
+    "classification": "classification",
+    "clustering": "modeling",
+    "selection": "selection",
+    "output": "output",
+}
 
 VALID_NODE_TYPES = [
     "chemometrics",  # ChemometricsNode - default OSS path
@@ -56,8 +69,7 @@ VALID_NODE_TYPES = [
 
 def get_chemometrics_node_template(class_name: str, node_type: str, category: str, description: str) -> str:
     """Generate ChemometricsNode template (default authoring path)."""
-    return dedent(
-        f'''\
+    return dedent(f'''\
         """
         {class_name} - {description}
 
@@ -94,14 +106,12 @@ def get_chemometrics_node_template(class_name: str, node_type: str, category: st
                 data = np.asarray(dataset.data, dtype=np.float64)
                 result = data * scale
                 return result
-        '''
-    )
+        ''')
 
 
 def get_transform_node_template(class_name: str, node_type: str, category: str, description: str) -> str:
     """Generate TransformSpecNode template (stateless transform)."""
-    return dedent(
-        f'''\
+    return dedent(f'''\
         """
         {class_name} - {description}
 
@@ -197,8 +207,7 @@ def get_transform_node_template(class_name: str, node_type: str, category: str, 
 
         if __name__ == "__main__":
             import asyncio
-            from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-            from spectra_sherpa.app.lib.axes import SpectralAxis
+            from spectra_sherpa.sdk import SherpaDataset, SpectralAxis
 
             async def test_{node_type}_node():
                 # Create sample data
@@ -215,14 +224,12 @@ def get_transform_node_template(class_name: str, node_type: str, category: str, 
                 print(f"Transform applied: {{node.parameters}}")
 
             asyncio.run(test_{node_type}_node())
-    '''
-    )
+    ''')
 
 
 def get_estimator_node_template(class_name: str, node_type: str, category: str, description: str) -> str:
     """Generate EstimatorSpecNode template (sklearn-style fit/predict)."""
-    return dedent(
-        f'''\
+    return dedent(f'''\
         """
         {class_name} - {description}
 
@@ -384,8 +391,7 @@ def get_estimator_node_template(class_name: str, node_type: str, category: str, 
 
         if __name__ == "__main__":
             import asyncio
-            from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-            from spectra_sherpa.app.lib.axes import SpectralAxis
+            from spectra_sherpa.sdk import SherpaDataset, SpectralAxis
 
             async def test_{node_type}_node():
                 # Create sample training data
@@ -413,14 +419,12 @@ def get_estimator_node_template(class_name: str, node_type: str, category: str, 
                 print(f"Predictions: {{predictions}}")
 
             asyncio.run(test_{node_type}_node())
-    '''
-    )
+    ''')
 
 
 def get_custom_node_template(class_name: str, node_type: str, category: str, description: str) -> str:
     """Generate custom Node template (full control)."""
-    return dedent(
-        f'''\
+    return dedent(f'''\
         """
         {class_name} - {description}
 
@@ -436,8 +440,7 @@ def get_custom_node_template(class_name: str, node_type: str, category: str, des
             PortMetadata,
             NodeResult,
         )
-        from spectra_sherpa.sdk import register_node
-        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+        from spectra_sherpa.sdk import SherpaDataset, register_node
 
 
         @register_node
@@ -585,7 +588,7 @@ def get_custom_node_template(class_name: str, node_type: str, category: str, des
 
         if __name__ == "__main__":
             import asyncio
-            from spectra_sherpa.app.lib.axes import SpectralAxis
+            from spectra_sherpa.sdk import SpectralAxis
 
             async def test_{node_type}_node():
                 # Create sample data
@@ -602,14 +605,12 @@ def get_custom_node_template(class_name: str, node_type: str, category: str, des
                 print(f"Diagnostics: {{result.diagnostics}}")
 
             asyncio.run(test_{node_type}_node())
-    '''
-    )
+    ''')
 
 
-def get_test_template(class_name: str, node_type: str, category: str) -> str:
+def get_test_template(class_name: str, node_type: str, category: str, package_name: str, module_name: str) -> str:
     """Generate test file template."""
-    return dedent(
-        f'''\
+    return dedent(f'''\
         """
         Tests for {class_name}
 
@@ -618,9 +619,8 @@ def get_test_template(class_name: str, node_type: str, category: str) -> str:
 
         import numpy as np
         import pytest
-        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-        from spectra_sherpa.app.lib.axes import SpectralAxis
-        from spectra_sherpa.app.services.dag.nodes.{category} import {class_name}
+        from spectra_sherpa.sdk import SherpaDataset, SpectralAxis
+        from spectra_sherpa.app.services.dag.nodes.{package_name}.{module_name} import {class_name}
 
 
         @pytest.fixture
@@ -680,14 +680,19 @@ def get_test_template(class_name: str, node_type: str, category: str) -> str:
         # - Metadata preservation
         # - Provenance tracking
         # - Python code generation
-    '''
-    )
+    ''')
 
 
-def get_docs_template(class_name: str, description: str, category: str, node_type: str) -> str:
+def get_docs_template(
+    class_name: str,
+    description: str,
+    category: str,
+    node_type: str,
+    package_name: str,
+    module_name: str,
+) -> str:
     """Generate documentation template."""
-    return dedent(
-        f"""\
+    return dedent(f"""\
         # {class_name}
 
         ## Overview
@@ -733,8 +738,8 @@ def get_docs_template(class_name: str, description: str, category: str, node_typ
         ## Usage Example
 
         ```python
-        from spectra_sherpa.app.services.dag.nodes.{category} import {class_name}
-        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+        from spectra_sherpa.app.services.dag.nodes.{package_name}.{module_name} import {class_name}
+        from spectra_sherpa.sdk import SherpaDataset
         import numpy as np
 
         # Create sample data
@@ -785,8 +790,7 @@ def get_docs_template(class_name: str, description: str, category: str, node_typ
 
         - Related Node 1
         - Related Node 2
-    """
-    )
+    """)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -897,14 +901,28 @@ def interactive_prompt() -> dict:
     }
 
 
-def generate_scaffold(class_name: str, node_type: str, category: str, description: str, output_dir: Path | None = None):
+def _node_package_for_category(category: str) -> str:
+    """Return the source package that owns a toolbar category."""
+    return CATEGORY_PACKAGES[category]
+
+
+def generate_scaffold(
+    class_name: str,
+    node_type: str,
+    category: str,
+    description: str,
+    output_dir: Path | None = None,
+    repo_root: Path | None = None,
+):
     """Generate all scaffold files."""
     node_slug = _to_snake_case(class_name.replace("Node", ""))
+    module_name = _to_snake_case(class_name)
+    package_name = _node_package_for_category(category)
+    repo_root = repo_root or Path(__file__).parent.parent
 
     # Determine output directory
     if output_dir is None:
-        repo_root = Path(__file__).parent.parent
-        output_dir = repo_root / "src" / "spectra_sherpa" / "app" / "services" / "dag" / "nodes"
+        output_dir = repo_root / "src" / "spectra_sherpa" / "app" / "services" / "dag" / "nodes" / package_name
 
     # Generate node implementation
     if node_type == "chemometrics":
@@ -917,10 +935,9 @@ def generate_scaffold(class_name: str, node_type: str, category: str, descriptio
         node_code = get_custom_node_template(class_name, node_slug, category, description)
 
     # Determine file paths
-    node_file = output_dir / f"{_to_snake_case(class_name)}.py"
-    repo_root = Path(__file__).parent.parent
-    test_file = repo_root / "tests" / "nodes" / f"test_{_to_snake_case(class_name)}.py"
-    docs_file = repo_root / "docs" / "nodes" / f"{_to_snake_case(class_name)}.md"
+    node_file = output_dir / f"{module_name}.py"
+    test_file = repo_root / "tests" / "nodes" / f"test_{module_name}.py"
+    docs_file = repo_root / "docs" / "dev" / "generated_nodes" / f"{module_name}.md"
 
     # Create directories if needed
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -932,15 +949,15 @@ def generate_scaffold(class_name: str, node_type: str, category: str, descriptio
     print("Generating scaffold files...")
     print("=" * 80)
 
-    node_file.write_text(node_code)
+    node_file.write_text(node_code, encoding="utf-8")
     print(f"✓ Node implementation: {node_file}")
 
-    test_code = get_test_template(class_name, node_type, category)
-    test_file.write_text(test_code)
+    test_code = get_test_template(class_name, node_type, category, package_name, module_name)
+    test_file.write_text(test_code, encoding="utf-8")
     print(f"✓ Test file: {test_file}")
 
-    docs_code = get_docs_template(class_name, description, category, node_type)
-    docs_file.write_text(docs_code)
+    docs_code = get_docs_template(class_name, description, category, node_type, package_name, module_name)
+    docs_file.write_text(docs_code, encoding="utf-8")
     print(f"✓ Documentation: {docs_file}")
 
     # Print next steps
@@ -955,8 +972,8 @@ def generate_scaffold(class_name: str, node_type: str, category: str, descriptio
     print(f"   pytest {test_file}")
     print()
     print("3. Register your node:")
-    print(f"   Add to src/spectra_sherpa/app/services/dag/nodes/{category}.py:")
-    print(f"   from .{_to_snake_case(class_name)} import {class_name}")
+    print(f"   Add to src/spectra_sherpa/app/services/dag/nodes/{package_name}/__init__.py:")
+    print(f"   from .{module_name} import {class_name}")
     print()
     print("4. Update documentation:")
     print(f"   Edit: {docs_file}")
@@ -965,7 +982,7 @@ def generate_scaffold(class_name: str, node_type: str, category: str, descriptio
     print(f"   python {node_file}")
     print()
     print("=" * 80)
-    print("Scaffold generation complete! 🎉")
+    print("Scaffold generation complete!")
     print("=" * 80)
     print()
     print("Time saved: ~90 minutes (75% reduction from 2 hours to 30 minutes)")
@@ -981,8 +998,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Generate boilerplate code for SpectraSherpa nodes",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=dedent(
-            """
+        epilog=dedent("""
             Examples:
               # Interactive mode:
               python scripts/scaffold_node.py
@@ -991,16 +1007,19 @@ def main():
               python scripts/scaffold_node.py --name MedianFilterNode --type chemometrics --category preprocessing
 
               # Create an estimator node:
-              python scripts/scaffold_node.py --name RandomForestNode --type estimator --category modeling
-        """
-        ),
+              python scripts/scaffold_node.py --name RandomForestNode --type estimator --category regression
+        """),
     )
 
     parser.add_argument("--name", help="Node class name (e.g., MedianFilterNode)")
     parser.add_argument("--type", choices=VALID_NODE_TYPES, help="Node type")
     parser.add_argument("--category", choices=VALID_CATEGORIES, help="Node category")
     parser.add_argument("--description", help="Brief description")
-    parser.add_argument("--output", type=Path, help="Output directory (default: src/...nodes/)")
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="Override node output directory (default: current category package)",
+    )
 
     args = parser.parse_args()
 

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "spectra-sherpa"
-version = "0.4.3"
+version = "0.4.4"
 description = "SpectraSherpa — local-first spectroscopy platform for chemometricians"
 authors = ["Spectra Scientific LLC <info@spectrascientific.ai>"]
 readme = "README.md"
@@ -35,7 +35,6 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Chemistry",
     "Topic :: Scientific/Engineering :: Information Analysis",
