@@ -1,9 +1,11 @@
 """
-SpectraSherpa SDK — stable public API for third-party plugins.
+SpectraSherpa SDK — convenient public imports for plugins and custom nodes.
 
-Third-party plugin developers should import ONLY from this module.
-Everything under ``spectra_sherpa.app.*`` is internal and subject
-to change without notice.
+The full OSS package is open for third-party use. This module collects the
+most common, compatibility-oriented symbols for node authors so plugins do not
+need to chase internal file layout changes. Advanced integrations may import
+directly from ``spectra_sherpa.app.*`` when they intentionally depend on a
+lower-level API; prefer this module for ordinary node and plugin development.
 
 Quick start
 -----------
@@ -11,6 +13,7 @@ Quick start
 
     from spectra_sherpa.sdk import (
         Node, NodeMetadata, NodeParameter, PortMetadata,
+        SherpaDataset, SpectralAxis, SampleAxis,
         register_node, add_processing_step,
     )
 
@@ -43,14 +46,29 @@ Quick start
             )
             return result
 
-Version policy
---------------
-- Minor bumps (1.x → 1.y): additive only, no removals.
-- Major bumps (1.x → 2.0): may remove deprecated symbols (6-month notice).
-- Patch bumps (1.x.y → 1.x.z): bug fixes only.
+Compatibility policy
+--------------------
+SpectraSherpa is pre-1.0. Symbols exported here are the preferred
+compatibility surface for plugins and custom nodes; changes are additive when
+possible, and breaking changes are called out in the changelog.
 """
 
 from __future__ import annotations
+
+# ── Dataset and axis primitives ─────────────────────────────────────
+from spectra_sherpa.app.lib.axes import (
+    AxisInfo,
+    FeatureAxis,
+    FrequencyAxis,
+    MZAxis,
+    PotentialAxis,
+    SampleAxis,
+    SpatialAxis,
+    SpectralAxis,
+    TimeAxis,
+)
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+from spectra_sherpa.app.services.dag.io_contracts import build_dataset_like, coerce_to_sherpa
 
 # ── Provenance / processing history ────────────────────────────────
 # ── Sample management ────────────────────────────────────────────────
@@ -97,6 +115,19 @@ from spectra_sherpa.sdk_nodes import (
 )
 
 __all__ = [
+    # Dataset and axis primitives
+    "SherpaDataset",
+    "AxisInfo",
+    "FeatureAxis",
+    "SpectralAxis",
+    "TimeAxis",
+    "MZAxis",
+    "PotentialAxis",
+    "FrequencyAxis",
+    "SpatialAxis",
+    "SampleAxis",
+    "coerce_to_sherpa",
+    "build_dataset_like",
     # Core node system
     "Node",
     "NodeMetadata",

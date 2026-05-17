@@ -4,9 +4,9 @@ Covers POST /workflows/{parent}/ai-fork creating a PCA workflow from a
 prompt and the OSS-side validation rules.
 
 The WS-handler interception test that lived here previously was moved to
-the server package because it depends on spectrasherpa_server.ws_handlers
-internals; keeping it here would leak the OSS / server boundary into the
-public mirror.
+the commercial server's test suite because it depends on that server's
+WS-handler internals; keeping it in OSS would couple these tests to the
+server implementation.
 
 Run:
     direnv exec . python -m pytest tests/test_agentic_workflow_generation.py -v --no-cov
@@ -560,7 +560,7 @@ async def test_ai_fork_requires_parent_data_source(auth_client: AsyncClient) -> 
     assert "data source" in resp.json()["detail"].lower()
 
 
-# Test 5 (propose_workflow WS interception) was moved to the server package
-# because it directly imports spectrasherpa_server.ws_handlers and patches
-# its private symbols. See:
-#   the corresponding server-side test
+# Test 5 (propose_workflow WS interception) was moved to the commercial
+# server's test suite because it directly imports that server's
+# WS-handler internals and patches private symbols. See the
+# corresponding server-side test.

@@ -6,7 +6,7 @@ Creates three tables that together implement the audit-trail substrate:
     transaction as the business mutation that triggered them.
     Append-only.
   * ``audit_event_chain`` — chain rows, written post-commit by the
-    proprietary server-side chainer. Append-only. Empty in OSS-only
+    commercial server's chainer. Append-only. Empty in OSS-only
     deployments.
   * ``audit_chain_head`` — per-tenant chain cursor, maintained by the
     chainer under ``SELECT ... FOR UPDATE``.

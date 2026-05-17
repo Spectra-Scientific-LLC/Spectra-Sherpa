@@ -130,10 +130,10 @@ class AuditEvent(Base):
 class AuditEventChain(Base):
     """One chain row per ``AuditEvent``.
 
-    Written post-commit by the server-side chainer (see
-    ``spectrasherpa_server.audit.chainer``). OSS deployments never insert
-    here — the table exists in the schema so the contract is published
-    and verification tooling can rely on a stable shape.
+    Written post-commit by the commercial server's audit chainer. OSS
+    deployments never insert here — the table exists in the schema so
+    the contract is published and verification tooling can rely on a
+    stable shape.
 
     The chain links via ``prev_hash``; verification walks rows in
     ``(tenant_id, tenant_sequence)`` order and confirms each
