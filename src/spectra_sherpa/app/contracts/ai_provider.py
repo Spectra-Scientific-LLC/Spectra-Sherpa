@@ -21,6 +21,22 @@ class AIServiceProvider(Protocol):
     OSS WebSocket handlers and route code program against this protocol.
     The concrete ``SherpaAdvisor`` class (and any server override)
     must satisfy it.
+
+    Exception contract (part of this protocol — server implementations
+    raise these, OSS callers catch them; see ``ai_provider_errors``):
+
+    * :class:`~spectra_sherpa.app.contracts.ai_provider_errors.SherpaAdvisorUnavailable`
+      — base "advisor exists but cannot serve this request". Callers
+      that do not need to distinguish failure modes catch this.
+    * :class:`~spectra_sherpa.app.contracts.ai_provider_errors.SherpaAuthorizationError`
+      — deployment key invalid/revoked/unauthorized.
+    * :class:`~spectra_sherpa.app.contracts.ai_provider_errors.SubscriptionRequiredError`
+      — feature needs a subscription the user lacks.
+
+    Implementations MUST signal these conditions with these types only,
+    so OSS error handling stays stable as the server implementation
+    evolves. Any other exception is treated as an unexpected backend
+    failure by OSS callers.
     """
 
     @property

@@ -24,70 +24,26 @@ logger = logging.getLogger(__name__)
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session, get_user_from_credentials
 from spectra_sherpa.app.contracts.capabilities import CHAT_ASSISTANT
+from spectra_sherpa.app.contracts.llm_catalog import provider_route_catalog_dicts
 from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.core.security import get_bearer_token_optional
 
-# Provider metadata previously lived in core/llm_registry.py (moved to server).
-# Kept inline here for the /config endpoint's availability checks.
-PROVIDERS: dict[str, dict[str, Any]] = {
-    "openai": {
-        "id": "openai",
-        "name": "OpenAI",
-        "default_model": "gpt-4o",
-        "env_var": "OPENAI_API_KEY",
-        "supports_streaming": True,
-        "cost_per_million_input": 2.50,
-        "cost_per_million_output": 10.00,
-        "supports_vision": True,
-    },
-    "anthropic": {
-        "id": "anthropic",
-        "name": "Anthropic",
-        "default_model": "claude-sonnet-4-6",
-        "env_var": "ANTHROPIC_API_KEY",
-        "supports_streaming": True,
-        "cost_per_million_input": 3.00,
-        "cost_per_million_output": 15.00,
-        "supports_vision": True,
-    },
-    "deepseek": {
-        "id": "deepseek",
-        "name": "DeepSeek",
-        "default_model": "deepseek-chat",
-        "env_var": "DEEPSEEK_API_KEY",
-        "supports_streaming": True,
-        "cost_per_million_input": 0.27,
-        "cost_per_million_output": 1.10,
-        "supports_vision": False,
-    },
-    "gemini": {
-        "id": "gemini",
-        "name": "Google Gemini",
-        "default_model": "gemini-1.5-pro",
-        "env_var": "GEMINI_API_KEY",
-        "supports_streaming": True,
-        "cost_per_million_input": 1.25,
-        "cost_per_million_output": 5.00,
-        "supports_vision": True,
-    },
-    "custom_llm": {
-        "id": "custom_llm",
-        "name": "Custom LLM",
-        "default_model": "custom-model",
-        "env_var": "CUSTOM_LLM_API_KEY",
-        "supports_streaming": True,
-        "cost_per_million_input": 0.0,
-        "cost_per_million_output": 0.0,
-        "supports_vision": False,
-    },
-}
+
+# Provider metadata comes from the injectable LLM provider catalog
+# contract. _providers() reads it live, so a server that injects a
+# replacement catalog at startup is reflected here at request time
+# without the OSS tree changing. The OSS default is byte-identical to
+# the historical inline dict.
+def _providers() -> dict[str, dict[str, Any]]:
+    return provider_route_catalog_dicts()
 
 
 def _get_provider(provider_id: str) -> dict[str, Any]:
     """Look up provider metadata by ID."""
-    if provider_id not in PROVIDERS:
+    catalog = _providers()
+    if provider_id not in catalog:
         raise ValueError(f"Unknown provider: {provider_id}")
-    return PROVIDERS[provider_id]
+    return catalog[provider_id]
 
 
 from spectra_sherpa.app.models.api_key import APIKey
@@ -197,7 +153,7 @@ async def get_config(
     config["configError"] = None
 
     # Update LLM availability by checking actual sources
-    for provider_id in PROVIDERS.keys():
+    for provider_id in _providers().keys():
         is_available = await _check_provider_availability(provider_id, session, user_id=user_id)
         if provider_id in config["llms"]:
             config["llms"][provider_id]["enabled"] = is_available
@@ -312,7 +268,7 @@ async def get_configured_llms(session: AsyncSession = Depends(get_session)):
     """
     available = []
 
-    for provider_id, provider_meta in PROVIDERS.items():
+    for provider_id, provider_meta in _providers().items():
         is_available = await _check_provider_availability(provider_id, session)
         if is_available:
             available.append(

@@ -71,6 +71,12 @@ from spectra_sherpa.app.contracts.key_resolver import (
     get_extra_key_resolver,
     set_extra_key_resolver,
 )
+from spectra_sherpa.app.contracts.llm_catalog import (
+    LLMProviderMeta,
+    get_llm_provider_catalog,
+    reset_llm_provider_catalog,
+    set_llm_provider_catalog,
+)
 from spectra_sherpa.app.contracts.public_path_provider import (
     OSS_PUBLIC_PATHS,
     get_public_paths,
@@ -127,4 +133,8 @@ __all__ = [
     "registration_requires_code",
     "set_registration_enabled",
     "set_registration_requires_code",
+    "LLMProviderMeta",
+    "get_llm_provider_catalog",
+    "set_llm_provider_catalog",
+    "reset_llm_provider_catalog",
 ]

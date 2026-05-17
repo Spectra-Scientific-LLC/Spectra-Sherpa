@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional
 
@@ -18,6 +19,7 @@ from spectra_sherpa.app.contracts.capabilities import (
     ALL_SHERPA_CAPABILITIES,
     CHAT_ASSISTANT,
 )
+from spectra_sherpa.app.contracts.llm_catalog import provider_core_config_dicts
 from spectra_sherpa.app.core.app_paths import AppDataPaths, get_app_data_paths
 
 
@@ -208,7 +210,7 @@ def _refresh_settings_singleton() -> Settings:
 class LLMConfig(BaseModel):
     """Configuration for an LLM provider"""
 
-    provider: Literal["openai", "anthropic", "deepseek", "gemini", "custom_llm"]
+    provider: str
     api_key: Optional[str] = None
     model: str
     base_url: Optional[str] = None  # For custom endpoints
@@ -217,6 +219,30 @@ class LLMConfig(BaseModel):
     def is_configured(self) -> bool:
         """Check if this LLM has an API key configured"""
         return self.api_key is not None and len(self.api_key) > 0
+
+
+class AppMode(str, Enum):
+    """Canonical deployment-mode identifiers.
+
+    Single source of truth for the three deployment modes. ``str``-based
+    so existing ``app_config.mode == "local"`` comparisons and JSON
+    serialization keep working unchanged; new callers and tests should
+    import this instead of hard-coding the literals.
+
+    Migrating the remaining ~37 string-comparison sites to ``AppMode``
+    is a separate, non-urgent follow-up: mode strings are stable and are
+    not an OSS/proprietary churn source, so a big-bang change to the
+    security-critical auth/mode path is not worth the risk here.
+    """
+
+    LOCAL = "local"
+    HYBRID = "hybrid"
+    ENTERPRISE = "enterprise"
+
+    @classmethod
+    def values(cls) -> tuple[str, ...]:
+        """Valid mode strings — the canonical set for input validation."""
+        return tuple(m.value for m in cls)
 
 
 class ExecutionConfig(BaseModel):
@@ -281,54 +307,19 @@ class AppConfig(BaseModel):
 
         # Determine app mode from environment
         raw_mode = os.getenv("APP_MODE", "local").strip().lower()
-        if raw_mode not in ("local", "hybrid", "enterprise"):
+        if raw_mode not in AppMode.values():
             logger.warning("Unknown APP_MODE=%r — falling back to 'local'", raw_mode)
-            raw_mode = "local"
+            raw_mode = AppMode.LOCAL.value
 
         mode = raw_mode
 
-        # Provider metadata — inlined for the /config endpoint's availability checks.
-        # Previously imported from spectra_sherpa.app.core.llm_registry; the server
-        # now owns provider selection policy through its admin routes.
-        # OSS keeps a minimal static list here solely to populate AppConfig.llms
-        # so that /api/v1/config can report provider availability to the frontend.
-        PROVIDERS: dict[str, dict[str, Any]] = {
-            "openai": {
-                "id": "openai",
-                "name": "OpenAI",
-                "default_model": "gpt-4o",
-                "base_url": "https://api.openai.com/v1",
-                "env_var": "OPENAI_API_KEY",
-            },
-            "anthropic": {
-                "id": "anthropic",
-                "name": "Anthropic",
-                "default_model": "claude-sonnet-4-6",
-                "base_url": "https://api.anthropic.com",
-                "env_var": "ANTHROPIC_API_KEY",
-            },
-            "deepseek": {
-                "id": "deepseek",
-                "name": "DeepSeek",
-                "default_model": "deepseek-chat",
-                "base_url": "https://api.deepseek.com",
-                "env_var": "DEEPSEEK_API_KEY",
-            },
-            "gemini": {
-                "id": "gemini",
-                "name": "Google Gemini",
-                "default_model": "gemini-1.5-pro",
-                "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-                "env_var": "GEMINI_API_KEY",
-            },
-            "custom_llm": {
-                "id": "custom_llm",
-                "name": "Custom LLM",
-                "default_model": "custom-model",
-                "base_url": "",
-                "env_var": "CUSTOM_LLM_API_KEY",
-            },
-        }
+        # Provider metadata comes from the injectable LLM provider
+        # catalog contract (spectra_sherpa.app.contracts.llm_catalog).
+        # OSS uses the static default; the commercial server replaces it
+        # via set_llm_provider_catalog() at startup so provider-selection
+        # policy can change without the OSS tree churning. The default is
+        # byte-identical to the historical inline dict.
+        PROVIDERS: dict[str, dict[str, Any]] = provider_core_config_dicts()
 
         # Build LLM configs from registry
         llm_configs: dict[str, LLMConfig] = {}
@@ -385,7 +376,28 @@ class AppConfig(BaseModel):
 
     def get_configured_llms(self) -> Dict[str, LLMConfig]:
         """Get only LLMs that have API keys configured"""
-        return {name: llm_config for name, llm_config in self.llms.items() if llm_config.is_configured}
+        return {name: llm_config for name, llm_config in self._live_llm_configs().items() if llm_config.is_configured}
+
+    def _live_llm_configs(self) -> dict[str, LLMConfig]:
+        """LLM configs projected from the current provider catalog.
+
+        ``app_config`` is created at module import, while commercial
+        extensions inject provider policy during startup. Read the catalog
+        live here so newly injected providers appear in client config
+        without reloading this module.
+        """
+        configs: dict[str, LLMConfig] = {}
+        for provider_id, provider_meta in provider_core_config_dicts().items():
+            env_var = str(provider_meta.get("env_var") or f"{provider_id.upper()}_API_KEY")
+            model_env = f"{provider_id.upper()}_MODEL"
+            existing = self.llms.get(provider_id)
+            configs[provider_id] = LLMConfig(
+                provider=provider_id,
+                api_key=os.getenv(env_var) or (existing.api_key if existing is not None else None),
+                model=os.getenv(model_env, str(provider_meta["default_model"])),
+                base_url=str(provider_meta.get("base_url") or ""),
+            )
+        return configs
 
     def to_client_safe(self) -> dict:
         """Return client-safe configuration (no secrets).
@@ -399,7 +411,8 @@ class AppConfig(BaseModel):
         overlay provider overrides them in its payload, the config
         route merges those values on top.
         """
-        has_llm = len(self.get_configured_llms()) > 0
+        live_llms = self._live_llm_configs()
+        has_llm = any(llm.is_configured for llm in live_llms.values())
 
         from spectra_sherpa.app.contracts.auth_policy import (
             registration_requires_code as _registration_requires_code_flag,
@@ -477,7 +490,7 @@ class AppConfig(BaseModel):
             },
             "llms": {
                 name: {"provider": llm.provider, "model": llm.model, "enabled": llm.is_configured}
-                for name, llm in self.llms.items()
+                for name, llm in live_llms.items()
             },
             "limits": limits,
         }

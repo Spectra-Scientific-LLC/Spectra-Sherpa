@@ -16,10 +16,10 @@ on the OSS side, update ``EXPECTED_OSS_AUDIT_ROUTES`` below explicitly
 so the change is visible in review.
 
 Why pin this:
-- ``mirror.yml`` runs the OSS package alone via ``git subtree split``.
-  If a server route ever leaked into the OSS router (or someone added a
-  shim with a 401/402 instead of letting it 404), the public mirror
-  would advertise an endpoint it cannot serve.
+- The OSS package is published and runs standalone. If a server route
+  ever leaked into the OSS router (or someone added a shim with a
+  401/402 instead of letting it 404), the public repo would advertise
+  an endpoint it cannot serve.
 - A net-new OSS audit route is a deliberate decision (it crosses the
   audit-capability boundary). This test forces the conversation.
 """
