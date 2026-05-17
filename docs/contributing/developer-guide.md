@@ -39,7 +39,7 @@ See [docs/dev/architecture.md](../dev/architecture.md) for a deeper walkthrough.
 
 ```bash
 git clone https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa.git
-cd Spectra-Sherpa/spectra-sherpa
+cd Spectra-Sherpa
 poetry install --with dev            # installs the app + dev tools
 poetry install --with dev -E scp     # also installs SpectroChemPy (optional)
 ```

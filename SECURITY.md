@@ -22,7 +22,7 @@ Please include:
 
 ## Scope
 
-This policy covers the open-source **SpectraSherpa** core (this repository). The proprietary commercial server package is not in scope for public reports.
+This policy covers the open-source **SpectraSherpa** core (this repository). The commercial server package (a separate repository, not part of this tree) is not in scope for public reports.
 
 ## Response Timeline
 

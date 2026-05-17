@@ -24,8 +24,7 @@ Compatibility accessors (`X`, `get_observation_axis()`, `axis()`, `set_extra()/g
 ## Importing
 
 ```python
-from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-from spectra_sherpa.app.lib.axes import SpectralAxis, TimeAxis, MZAxis, SampleAxis
+from spectra_sherpa.sdk import SherpaDataset, SpectralAxis, TimeAxis, MZAxis, SampleAxis
 ```
 
 ---

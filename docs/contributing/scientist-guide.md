@@ -64,7 +64,7 @@ explained_var = pca.explained_variance_ratio_
 **SpectraSherpa (same computation, with provenance):**
 
 ```python
-from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, SpectralAxis
+from spectra_sherpa.sdk import SherpaDataset, SpectralAxis
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 
@@ -126,7 +126,7 @@ it into a processing step in the Workflow Builder. Once added, it:
 
 ```bash
 git clone https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa.git
-cd Spectra-Sherpa/spectra-sherpa
+cd Spectra-Sherpa
 pip install poetry
 poetry install --with dev
 ```
@@ -155,9 +155,9 @@ The interactive prompt asks for:
 It generates three files:
 
 ```
-src/spectra_sherpa/app/services/dag/nodes/asymmetric_least_squares_node.py  ← your implementation
-tests/nodes/test_asymmetric_least_squares_node.py                           ← your tests
-docs/nodes/asymmetric_least_squares_node.md                                 ← documentation template
+src/spectra_sherpa/app/services/dag/nodes/preprocessing/asymmetric_least_squares_node.py  ← your implementation
+tests/nodes/test_asymmetric_least_squares_node.py                                          ← your tests
+docs/dev/generated_nodes/asymmetric_least_squares_node.md                                  ← documentation template
 ```
 
 For a guided walkthrough of loading external data and connecting it to a
@@ -196,7 +196,7 @@ or scikit-learn output:
 ```python
 import asyncio
 import numpy as np
-from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, SpectralAxis
+from spectra_sherpa.sdk import SherpaDataset, SpectralAxis
 
 
 def test_als_baseline_removes_offset():
@@ -275,7 +275,7 @@ not be asked to fix style issues manually.
 
 | What you want to understand | Where to look |
 |-----------------------------|---------------|
-| How a preprocessing node is structured | `src/spectra_sherpa/app/services/dag/nodes/preprocessing.py` |
+| How a preprocessing node is structured | `src/spectra_sherpa/app/services/dag/nodes/preprocessing/` |
 | How a fit/predict model node works | `src/spectra_sherpa/app/services/dag/nodes/modeling/pca_nodes.py` |
 | The SherpaDataset API | `src/spectra_sherpa/app/lib/sherpa_dataset.py` |
 | Axis types: spectral, sample, time | `src/spectra_sherpa/app/lib/axes.py` |

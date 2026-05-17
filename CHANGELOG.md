@@ -7,13 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-05-17
+
 ### Added
-- **Extension Contract guide** — `docs/dev/extension-contract.md` documents the stable, OSS-owned integration surface (AI advisor, auth resolvers, config overlay, demo policy, LLM provider catalog, public paths) and the compatibility rules extension authors should follow.
+- **Public SDK import surface** — `from spectra_sherpa.sdk import …` now also re-exports the dataset/axis primitives (`SherpaDataset`, `SpectralAxis`, `FeatureAxis`, `SampleAxis`, `TimeAxis`, `MZAxis`, …) plus `coerce_to_sherpa` / `build_dataset_like`. Plugins and custom nodes can import everything they need from one stable module instead of internal paths.
+- **AI / LLM extension guide** — `docs/dev/llm-feature-contract.md` documents the OSS-owned AI boundary (provider Protocol, registry seam, capability vocabulary, BYO chat proxy) and includes a complete, generic recipe for implementing and registering your own provider. Linked from the documentation navigation.
 - **Injectable LLM provider catalog** — new `spectra_sherpa.app.contracts.llm_catalog` (`LLMProviderMeta`, `get_llm_provider_catalog` / `set_llm_provider_catalog`) supersedes the previously duplicated, hard-coded provider tables. The OSS default is unchanged; a deployment can supply its own provider catalog without editing source, and `/api/v1/config` reflects it at request time.
 - **`AppMode` enum** — a canonical, string-compatible identifier for `local` / `hybrid` / `enterprise`, giving deployment-mode checks a single source of truth.
 - **`CONTRIBUTORS.md`** — append-only contributor credits.
 
 ### Changed
+- **OSS scope documentation consolidated** — `OSS_SCOPE.md` is now the single source of truth for what the OSS package owns and the extension seams it exposes; redundant boundary documents were removed.
+- **Node scaffold generator corrected** — `scripts/scaffold_node.py` now uses the real toolbar categories and writes generated nodes, tests, and docs into the correct source-package locations; generated files are written as UTF-8 so generation works on all platforms.
+- **README positioning** — clarified the open-source, local-first scope and removed subscription/tier marketing from the OSS README.
 - **Documented `AIServiceProvider` exception contract** — the advisor protocol now specifies the exceptions an implementation must raise (`SherpaAdvisorUnavailable`, `SherpaAuthorizationError`, `SubscriptionRequiredError`) so error handling stays stable across implementations.
 - **`/api/v1/config` provider metadata sourced from the catalog contract** — output is byte-identical for local installs.
 

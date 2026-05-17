@@ -31,17 +31,17 @@ Advanced options:
 
 ```bash
 python scripts/scaffold_node.py --name ClipFloorNode --type transform --category preprocessing
-python scripts/scaffold_node.py --name MyModelNode --type estimator --category modeling
-python scripts/scaffold_node.py --name CustomLogicNode --type raw --category analysis
+python scripts/scaffold_node.py --name MyModelNode --type estimator --category regression
+python scripts/scaffold_node.py --name CustomLogicNode --type raw --category preprocessing
 ```
 
 ## Generated files
 
 For `MySNVNode`:
 
-- Node: `src/spectra_sherpa/app/services/dag/nodes/my_snv_node.py`
+- Node: `src/spectra_sherpa/app/services/dag/nodes/preprocessing/my_snv_node.py`
 - Tests: `tests/nodes/test_my_snv_node.py`
-- Docs: `docs/nodes/my_snv_node.md`
+- Docs: `docs/dev/generated_nodes/my_snv_node.md`
 
 ## Authoring guidance
 
@@ -49,7 +49,7 @@ For `MySNVNode`:
 - Keep `node_type` namespaced and stable.
 - Use `dataset.data`, `dataset.feature_axis`, and `dataset.meta` as the standard API surface.
 - Add targeted tests for parameter behavior, shape handling, and diagnostics.
-- Valid categories: `data`, `synthesis`, `preprocessing`, `exploratory`, `regression`, `classification`, `clustering`, `validation`, `output`, `deploy`.
+- Scaffolded categories: `data`, `preprocessing`, `exploratory`, `regression`, `classification`, `clustering`, `selection`, `output`.
 
 ## Registration
 

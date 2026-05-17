@@ -179,6 +179,11 @@ OSS owns the host. Extensions register implementations. The AI-provider
 seam in particular is a stable three-function signature; breaking it
 breaks any registered AI provider and requires a superseding ADR.
 
+Anyone can implement these contracts — no fork or change to this repo is
+required. For a complete, generic worked example (implement a provider,
+register it at startup, stay in schema), see
+[AI / LLM Integration §4](llm-feature-contract.md).
+
 ### 8. WebSocket Lifecycle
 
 Real-time communication uses a single WebSocket endpoint at `/ws`. Clients send JSON messages with an `"action"` key; the server responds with messages using a `"type"` key.

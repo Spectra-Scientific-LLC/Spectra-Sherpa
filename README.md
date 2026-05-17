@@ -18,7 +18,7 @@ SpectraSherpa brings transparent, reproducible multivariate analysis to spectros
 - **No coding required** — Visual drag-and-drop workflow builder with over 60 processing nodes. Go from raw spectra to a deployed PLS model without writing Python.
 - **Extensible when you need it** — Export any workflow to standalone Python or Jupyter notebooks. Add custom nodes via plugins or drop-in scripts.
 - **Modern metadata management** — Versioned projects, experiments, workflows, and model artifacts with full provenance tracking and audit trails.
-- **AI-ready** — Built-in chat assistant connects to any OpenAI-compatible endpoint you choose (bring your own key and URL). Full AI advisor with agentic tools, peak identification, code generation, and contextual workflow analysis [available via subscription](https://spectrascientific.ai).
+- **AI-ready** — Built-in chat assistant connects to any OpenAI-compatible endpoint you choose (bring your own key and URL), with egress controls you can inspect and configure.
 
 ## For Python data analysts and chemometricians
 
@@ -31,7 +31,7 @@ PCA, PLS, MCR-ALS, and classification nodes produce results validated side-by-si
 The internal data container is a thin wrapper over NumPy: a `(n_samples, n_features)` array with labeled wavelength and sample axes. Your existing code works directly:
 
 ```python
-from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, SpectralAxis, SampleAxis
+from spectra_sherpa.sdk import SherpaDataset, SpectralAxis, SampleAxis
 
 dataset = SherpaDataset(
     X=your_array,                                        # shape: (n_samples, n_features)
@@ -58,8 +58,8 @@ See the **[Scientist Contributor Guide](docs/contributing/scientist-guide.md)** 
 
 ## Try It
 
-**Free online demo** — Register and explore SpectraSherpa at [demo.spectrascientific.ai](https://demo.spectrascientific.ai/register) with all features including the AI advisor enabled.
-*(Note: For a limited time, use the access code `welcome_to_spectra_sherpa` to create an account. No upload of proprietary data to the demo server is allowed. Accounts inactive for more than a week will be automatically deleted.)*
+**Free online demo** — Register and explore SpectraSherpa at [demo.spectrascientific.ai](https://demo.spectrascientific.ai/register).
+*(Note: For a limited time, use the access code `welcome_to_spectra_sherpa` to create an account. Do not upload confidential or proprietary datasets to the hosted demo. Accounts inactive for more than a week will be automatically deleted.)*
 
 **Install locally:**
 
@@ -101,14 +101,6 @@ See the [Applications Guide](docs/user/applications.md) for the current support 
 - **AI Chat** — Connect any OpenAI-compatible chat endpoint for AI-assisted analysis and workflow guidance. See [Configuration](docs/user/configuration.md) for setup.
 - **Plugin System** — Add your own processing nodes by dropping a Python file into a folder or installing a package
 - **Privacy Controls** — Fine-grained egress permissions; "deny all" network policy by default; local-first architecture for IP-sensitive labs
-
-### Deployment modes & licensing
-
-| Mode | Use case |
-|------|----------|
-| `local` **[Free]** | Single-user desktop analysis, privacy-first. Opens straight to the app — no account, no external services, network egress denied by default. |
-| `hybrid` **[Paid Subscription]** | Local GUI with optional managed/remote services integrated. |
-| `enterprise` **[Paid Subscription]** | Shared, multi-user lab environments with extension-defined access and authentication. |
 
 ## Algorithm Library
 

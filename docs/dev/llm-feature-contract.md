@@ -175,3 +175,88 @@ Canonical frontend constants:
 
 ---
 
+## 4. Implement and register your own provider
+
+The provider seam is open: **anyone** can supply the AI behavior — an
+in-house model gateway, a local model, a rules engine, a research
+prototype. OSS ships none, so whatever you register *is* the advisor.
+This section is a complete, generic recipe; it does not assume any
+particular backend.
+
+### 4a. Minimal provider
+
+`AIServiceProvider` is a structural `Protocol`, so you only implement
+the capabilities you choose to advertise. Advertise them through
+`has_feature`; OSS and the frontend gate every `sherpa_*` action on the
+matching capability flag, so methods you do not implement are simply
+never called. Signal "cannot serve this" with the contract error types
+from `spectra_sherpa.app.contracts.ai_provider_errors` — never a bare
+`Exception`, or OSS will treat it as an unexpected backend failure.
+
+```python
+# myprovider/provider.py
+from spectra_sherpa.app.contracts.ai_provider_errors import (
+    SherpaAdvisorUnavailable,
+)
+
+
+class MyProvider:
+    """A provider that enables only code generation. Everything else
+    stays disabled and the UI hides it automatically."""
+
+    @property
+    def is_available(self) -> bool:
+        return True
+
+    def has_feature(self, feature: str) -> bool:
+        return feature == "sherpaCodeGen"
+
+    async def generate_code(
+        self, *, task_description: str, context=None, memory_messages=None
+    ) -> dict:
+        # Call your model / gateway / template engine here. Keep the
+        # return shape aligned with contracts/sherpa-ws-v1.json.
+        code = f"# generated stub for: {task_description}\n"
+        return {"code": code, "language": "python"}
+
+    # Any capability you do NOT advertise can fail fast and generically:
+    async def identify_peaks(self, **_kw) -> dict:
+        raise SherpaAdvisorUnavailable("peak ID not provided by MyProvider")
+```
+
+### 4b. Register it at startup
+
+`set_sherpa_advisor()` is process-global and idempotent; call it once
+while your package imports, or from an app/startup hook:
+
+```python
+# myprovider/__init__.py
+from spectra_sherpa.app.contracts.ai_provider_registry import (
+    set_sherpa_advisor,
+)
+from .provider import MyProvider
+
+set_sherpa_advisor(MyProvider())
+```
+
+Make it load without patching OSS by shipping a tiny separate package
+and importing it where your deployment is composed (a site
+`conftest`/bootstrap, a WSGI/ASGI factory, or a `[project.entry-points]`
+group your launcher iterates). OSS never imports your package — the
+dependency arrow points one way, into OSS.
+
+### 4c. Stay in contract
+
+- Stream/return shapes for `sherpa_*` events **must** validate against
+  `src/spectra_sherpa/contracts/sherpa-ws-v1.json`. Add a
+  consumer-driven contract test that exercises your provider and
+  asserts each emitted event against that schema — the same schema OSS
+  publishes, so your provider and the host can evolve independently.
+- Treat the three-function registry signature and the error types as a
+  stable ABI. If they ever change, OSS bumps a minor version and records
+  a superseding ADR.
+- You do not need OSS's permission, a fork, or any code change in this
+  repo to add functionality — the seam is the whole point.
+
+---
+

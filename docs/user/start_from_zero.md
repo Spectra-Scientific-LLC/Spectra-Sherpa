@@ -8,20 +8,20 @@ Before you start, you need three free tools installed. If you already have any o
 
 ---
 
-## Step 1 — Install Python 3.11+
+## Step 1 — Install Python 3.11 or 3.12
 
-SpectraSherpa requires Python 3.11 or newer.
+SpectraSherpa is tested on Python 3.11 and 3.12. Use Python 3.12 if you are starting from scratch.
 
 **Windows:**
 1. Go to [python.org/downloads](https://www.python.org/downloads/)
-2. Download the latest Python 3.12 or 3.13 installer
+2. Download the latest Python 3.12 installer
 3. Run the installer — **check "Add python.exe to PATH"** at the bottom of the first screen (this is critical)
 4. Click "Install Now"
 5. Verify: open a Command Prompt and type:
    ```
    python --version
    ```
-   You should see `Python 3.12.x` or `Python 3.13.x`
+   You should see `Python 3.12.x`
 
 **macOS:**
 1. Go to [python.org/downloads](https://www.python.org/downloads/) and download the macOS installer, or use Homebrew:
