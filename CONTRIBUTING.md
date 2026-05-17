@@ -35,11 +35,9 @@ Not sure which applies to you? Start with the
 [Scientist Contributor Guide](docs/contributing/scientist-guide.md) — it is
 shorter and does not require any background in web development.
 
-For contributions that touch extension contracts, plugin interfaces, API
-specs, or the boundary with the commercial server, read
-[docs/dev/governance.md](docs/dev/governance.md) first. It defines what
-OSS owns, how conflicts are resolved, and what counts as a stability
-surface.
+For contributions that touch extension contracts, plugin interfaces, or
+API specs, see `OSS_SCOPE.md` at the repo root for what the OSS package
+owns and the stability surface it commits to.
 
 ---
 

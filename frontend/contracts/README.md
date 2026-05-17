@@ -10,9 +10,6 @@ what lives here.
 |------|-------|----------|-----------|
 | `openapi-llm-v1.json` | `spectra-sherpa` (this repo) | `frontend/src/types/api-generated.ts` (generated); third-party API clients; commercial server conformance tests | Versioned by the `/api/v1` prefix |
 
-See [governance.md](../../docs/dev/governance.md) for the full
-ownership model.
-
 ## Regenerating `api-generated.ts` from this spec
 
 ```bash

@@ -3,10 +3,8 @@
 This document defines what the open-source SpectraSherpa repository owns
 and lists the extension points it exposes for external packages.
 
-The authoritative boundary model — ownership rules, stability guarantees,
-conflict resolution, and the full list of shared seams — lives in
-[`docs/dev/governance.md`](docs/dev/governance.md). This file summarizes
-the split from the OSS side for quick reference.
+This file summarizes, from the OSS side, what the OSS package owns and
+the stability surface it commits to for external packages.
 
 ## What OSS owns
 

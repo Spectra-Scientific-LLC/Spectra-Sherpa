@@ -87,5 +87,4 @@ The `/api/v1/config` route reflects the injected catalog at request
 time. No OSS file changes when the proprietary catalog changes — that is
 the contract working as intended.
 
-See also: [LLM feature contract](llm-feature-contract.md),
-[Governance](governance.md).
+See also: [LLM feature contract](llm-feature-contract.md).
