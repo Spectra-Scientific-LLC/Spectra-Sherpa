@@ -1,5 +1,5 @@
 // Keep these labels aligned with the starter rule IDs in
-// packages/spectra-server/src/spectrasherpa_server/guidance/rules_starter.py.
+// the guidance rules starter module.
 // Each label is the user-facing chip rendered in the notification
 // drawer.  Pure function — no internal identifiers should ever leak
 // to the UI; any rule_id missing from this map falls through to

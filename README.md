@@ -102,11 +102,13 @@ See the [Applications Guide](docs/user/applications.md) for the current support 
 - **Plugin System** — Add your own processing nodes by dropping a Python file into a folder or installing a package
 - **Privacy Controls** — Fine-grained egress permissions; "deny all" network policy by default; local-first architecture for IP-sensitive labs
 
-| Mode | Login required? | Use Case |
-|------|-----------------|----------|
-| `local` | No — single user, opens straight to the app | Desktop analysis, privacy-first |
-| `hybrid` | Optional external service integration | Local GUI with remote services |
-| `enterprise` | Extension-defined | Shared lab environments, multi-user operation |
+### Deployment modes & licensing
+
+| Mode | Use case |
+|------|----------|
+| `local` **[Free]** | Single-user desktop analysis, privacy-first. Opens straight to the app — no account, no external services, network egress denied by default. |
+| `hybrid` **[Paid Subscription]** | Local GUI with optional managed/remote services integrated. |
+| `enterprise` **[Paid Subscription]** | Shared, multi-user lab environments with extension-defined access and authentication. |
 
 ## Algorithm Library
 

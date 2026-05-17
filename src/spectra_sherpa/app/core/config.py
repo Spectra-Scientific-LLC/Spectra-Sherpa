@@ -442,7 +442,7 @@ class AppConfig(BaseModel):
             limits = None
 
         # Phase 4 — unified audit entitlement block per
-        # ``packages/spectra-server/docs/dev/audit/phase0-design.md §3``
+        # ``the audit-subsystem design specification §3``
         # ("Entitlement model — single capability source"). Frontend
         # gating reads this block; the legacy top-level ``auditEnabled``
         # field stays for backwards-compat but new UI code paths must

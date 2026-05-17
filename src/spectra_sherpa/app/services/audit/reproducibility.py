@@ -2,7 +2,7 @@
 
 Single source of truth for the record that every ``workflow.run.*``
 audit event must carry. Per
-``packages/spectra-server/docs/audit/minimum-reproducibility-record.md``
+``the reproducibility-record specification``
 the record carries enough information for an independent investigator
 to reconstruct the run: identity, hierarchy, workflow definition,
 parameters, model linkage, and the execution environment.

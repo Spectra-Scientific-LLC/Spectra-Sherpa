@@ -1,6 +1,6 @@
 """Phase 4 C2 — ``GET /api/v1/audit/events`` paginated query.
 
-Per ``packages/spectra-server/docs/dev/audit/phase0-design.md §3``,
+Per ``the audit-subsystem design specification §3``,
 this is the OSS-side query handler gated by ``audit.basic`` (which
 the design treats as a deployment capability, not a plan
 entitlement: granted whenever ``SHERPA_AUDIT_ENABLED=true``).

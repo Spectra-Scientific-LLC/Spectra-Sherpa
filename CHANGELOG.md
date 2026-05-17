@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.4.3] - 2026-05-17
-
 ### Added
 - **Extension Contract guide** — `docs/dev/extension-contract.md` documents the stable, OSS-owned integration surface (AI advisor, auth resolvers, config overlay, demo policy, LLM provider catalog, public paths) and the compatibility rules extension authors should follow.
 - **Injectable LLM provider catalog** — new `spectra_sherpa.app.contracts.llm_catalog` (`LLMProviderMeta`, `get_llm_provider_catalog` / `set_llm_provider_catalog`) supersedes the previously duplicated, hard-coded provider tables. The OSS default is unchanged; a deployment can supply its own provider catalog without editing source, and `/api/v1/config` reflects it at request time.

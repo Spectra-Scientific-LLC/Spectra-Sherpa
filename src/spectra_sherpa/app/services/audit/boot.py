@@ -12,7 +12,7 @@ metadata (``hostname``, ``pid``, ``container_id``, ``runtime_image``)
 is captured separately on the reproducibility record for forensic
 context.
 
-See ``packages/spectra-server/docs/dev/audit/phase0-design.md`` decision
+See ``the audit-subsystem design specification`` decision
 #4 and §8.
 """
 

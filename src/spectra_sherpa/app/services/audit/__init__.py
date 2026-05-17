@@ -31,7 +31,7 @@ Service-code call site (anywhere inside a session):
         context={"reproducibility_record": {...}},
     )
 
-See ``packages/spectra-server/docs/dev/audit/phase0-design.md`` for the
+See ``the audit-subsystem design specification`` for the
 locked design.
 """
 

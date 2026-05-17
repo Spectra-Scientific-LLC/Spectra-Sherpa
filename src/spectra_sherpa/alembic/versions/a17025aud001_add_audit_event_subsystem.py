@@ -18,7 +18,7 @@ partitioning on ``ts_db_utc``, role grants for ``app_audit_writer`` and
 migration: partitioning matters at volume, role grants matter for
 production. Neither is required for Phase 1 smoke tests.
 
-See ``packages/spectra-server/docs/dev/audit/phase0-design.md`` for
+See ``the audit-subsystem design specification`` for
 locked design decisions and ``minimum-reproducibility-record.md`` for
 the field-level reproducibility contract.
 

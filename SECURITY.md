@@ -11,7 +11,7 @@
 
 If you discover a security vulnerability in SpectraSherpa, please report it responsibly.
 
-**Email**: security@spectrascientific.ai
+**Email**: info@spectrascientific.ai
 
 Please include:
 

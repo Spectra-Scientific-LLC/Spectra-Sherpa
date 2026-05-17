@@ -1,7 +1,7 @@
 """Pydantic schemas for the audit query API.
 
 Phase 4 C2 — wire schema for ``GET /api/v1/audit/events``. Per
-``packages/spectra-server/docs/dev/audit/phase0-design.md §3``:
+``the audit-subsystem design specification §3``:
 
     audit.basic | Any deployment with SHERPA_AUDIT_ENABLED=true
     (incl. OSS Local) | GET /api/v1/audit/events paginated query

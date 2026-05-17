@@ -563,4 +563,4 @@ async def test_ai_fork_requires_parent_data_source(auth_client: AsyncClient) -> 
 # Test 5 (propose_workflow WS interception) was moved to the server package
 # because it directly imports spectrasherpa_server.ws_handlers and patches
 # its private symbols. See:
-#   packages/spectra-server/tests/test_agentic_workflow_propose_interception.py
+#   the corresponding server-side test

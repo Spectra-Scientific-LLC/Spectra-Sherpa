@@ -26,7 +26,6 @@ nav:
   - Developer Reference:
       - Setup: dev/setup.md
       - Architecture: dev/architecture.md
-      - Extension Contract: dev/extension-contract.md
       - Your First Node: dev/first_plugin.md
       - Node Scaffold Generator: dev/node_scaffold_generator.md
   - Examples:
